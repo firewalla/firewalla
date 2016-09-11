@@ -5,7 +5,6 @@ sudo rm -r -f ~/.forever/*
 sudo mount -t tmpfs -o size=50m tmpfs /bspool
 
 cd ~/firewalla
-cp etc/netrc ~/.netrc
 git pull
 git submodule update --init --recursive
 sudo cp -r -f imports/cstack/* /opt/critical-stack/.
@@ -26,4 +25,3 @@ sleep 30
 cd ..
 cd sys
 forever start kickstart.js --config /encipher.config/netbot.config
-rm ~/.netrc
