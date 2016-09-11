@@ -1,0 +1,8 @@
+machine github.com
+login encipher-io
+password blueberry0
+
+
+machine api.github.com
+login encipher-io
+password blueberry0

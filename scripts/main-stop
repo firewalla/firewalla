@@ -1,0 +1,6 @@
+#!/bin/bash -
+
+forever stop main 
+forever stop ui
+sudo rm -r -f /tmp/*
+sudo rm -r -f ~/.forever/*

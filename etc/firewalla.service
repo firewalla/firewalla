@@ -1,0 +1,17 @@
+[Unit]
+Description=firewalla
+After=syslog.target network.target brofish.service
+Wants=brofish.service
+
+[Service]
+User=pi
+Type=forking
+PIDFile=/home/pi/.forever/pids/main.pid
+ExecStart=/home/pi/firewalla/scripts/main-run
+ExecStop=/home/pi/firewalla/scripts/main-stop
+Restart=always
+RestartSec=15
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

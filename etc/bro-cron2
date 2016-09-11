@@ -1,0 +1,8 @@
+#!/bin/sh
+sync
+logger "brocron2 running"
+/usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
+/usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
+/usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
+
+

@@ -1,0 +1,9 @@
+mkdir tmp
+mkdir tmp/bro
+mkdir tmp/critical-stack
+cp -r -f /usr/local/bro/* tmp/bro/.
+cp -r -f /opt/critical-stack/* tmp/critical-stack/.
+sudo docker build -t rottiesoft:fishbowl .
+rm -r -f tmp
+
+

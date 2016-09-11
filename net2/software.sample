@@ -1,0 +1,9 @@
+{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
+{"ts":1463900443.321772,"host":"192.168.2.221","software_type":"HTTP::BROWSER","name":"MicroMessenger Client","unparsed_version":"MicroMessenger Client"}
+{"ts":1463901402.761722,"host":"192.168.2.221","software_type":"HTTP::BROWSER","name":"AppleCoreMedia","version.major":1,"version.minor":0,"version.minor2":0,"version.minor3":13,"version.addl":"F69","unparsed_version":"AppleCoreMedia/1.0.0.13
+F69 (iPhone; U; CPU OS 9_3_2 like Mac OS X; en_us)"}
+{"ts":1463901403.371779,"host":"192.168.2.221","software_type":"HTTP::BROWSER","name":"Amazon","version.major":17045,"version.minor":0,"version.addl":"CFNetwork/758","unparsed_version":"Amazon/17045.0 CFNetwork/758.4.3 Darwin/15.5.0"}
+{"ts":1463901463.331764,"host":"192.168.2.221","software_type":"HTTP::BROWSER","name":"Speedtest","version.major":3,"version.minor":7,"version.minor2":2,"version.minor3":10,"version.addl":"CFNetwork/758","unparsed_version":"Speedtest/3.7.2.10
+ CFNetwork/758.4.3 Darwin/15.5.0"}
+{"ts":1463901523.021735,"host":"192.168.2.221","software_type":"HTTP::BROWSER","name":"MobileSafari","version.major":601,"version.minor":1,"version.addl":"CFNetwork/758","unparsed_version":"MobileSafari/601.1 CFNetwork/758.4.3 Darwin/15.5.0"}
+

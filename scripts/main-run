@@ -1,0 +1,62 @@
+#!/bin/bash -
+sudo rm -r -f /tmp/*
+sudo rm -r -f /home/pi/.forever/*
+cd /home/pi/firewalla
+cp etc/netrc ~/.netrc
+cd /tmp 
+cp /home/pi/firewalla/encipher/lib/encipherio.js /home/pi/firewalla/node_modules/encipher/lib/encipherio.js 
+if [ ! -f /home/pi/firewalla/bin/dev ]; then
+     cp /home/pi/firewalla/bin/real/bitbridge4 /home/pi/firewalla/bin/.
+     cp /home/pi/firewalla/bin/mock/bitbridge6 /home/pi/firewalla/bin/.
+else
+     cp /home/pi/firewalla/bin/mock/* /home/pi/firewalla/bin/.
+fi
+nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
+sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
+cd /home/pi/firewalla
+if [ ! -f /home/pi/firewalla/node_modules/stats-lite/stats.js ]; then
+    echo "Updating NPM Stats"
+    npm install stats-lite --save
+fi
+if [ ! -f /home/pi/firewalla/node_modules/cron/package.json ]; then
+    echo "Updating NPM CRON"
+    npm install cron --save
+fi
+if [ ! -f /home/pi/firewalla/node_modules/nat-pmp/package.json ]; then
+    echo "Updating NPM CRON"
+    npm install nat-pmp 
+    npm install nat-upnp 
+fi
+if [ ! -f /home/pi/firewalla/node_modules/mobile-detect/package.json ]; then
+    echo "Updating NPM MOBILE-DETECT"
+    npm install mobile-detect --save
+fi
+if [ ! -f /home/pi/firewalla/node_modules/socket.io-client/package.json ]; then
+    echo "Updating NPM MOBILE-DETECT"
+    npm install socket.io-client@1.4.8
+fi
+if [ ! -f /home/pi/firewalla/node_modules/bleno/package.json ]; then
+    echo "Updating NPM BLENO"
+    sudo cp /home/pi/firewalla/config/netbot.config /encipher.config/.
+    sudo apt-get install -y bluetooth bluez libbluetooth-dev libudev-dev
+    npm install bleno --save
+    sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+fi
+sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+cd net2
+forever start --uid main main.js
+cd ..
+cd sys
+forever start --uid ui kickstart.js --config /encipher.config/netbot.config
+cd ..
+cd monitor
+forever start --uid monitor MonitorMain.js 
+cd ..
+rm /home/pi/.netrc
+sudo /usr/local/bro/bin/broctl cron
+sudo /usr/local/bro/bin/broctl cron enable
+sync
+sudo service ntp stop
+sudo ntpd -gq
+sudo service ntp start
+sync

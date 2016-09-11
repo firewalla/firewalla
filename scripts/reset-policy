@@ -1,0 +1,12 @@
+#!/bin/bash -
+forever stop main
+forever stop monitor
+rm ~/.forever/main.log
+rm ~/.forever/monitor.log
+redis-cli KEYS "policy:*" | xargs redis-cli DEL
+cd /home/pi/firewalla/net2
+forever start --uid main main.js
+cd ..
+cd monitor
+forever start --uid monitor MonitorMain.js
+

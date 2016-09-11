@@ -1,0 +1,70 @@
+{
+    "version": 1.42,
+    "discovery": {
+      "networkInterfaces": ["eth0","wlan0"]
+    },
+    "iptables": {
+       "defaults": [
+          "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+          "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
+          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
+       ]
+    },
+    "monitoringInterface": "eth0",
+    "bro": {
+      "notice" : {
+         "monitor" : {
+         },
+         "ignore" : {
+            "SSL::Invalid_Server_Cert":"ignore",
+            "PacketFilter::Dropped_Packets":"ignore"
+         },
+         "path" : "/blog/current/notice.log",
+         "expires": 604800
+      },
+      "intel" : {
+         "path": "/blog/current/intel.log",
+         "expires": 604800,
+         "ignore" : {
+           "none":"ignore"
+         }
+      },
+      "dns": {
+         "path": "/blog/current/dns.log",
+         "expires": 43200
+      },
+      "software": {
+         "path": "/blog/current/software.log",
+         "expires": 604800
+      },
+      "http": {
+         "path": "/blog/current/http.log",
+         "expires": 3600
+      },
+      "ssl": {
+         "path": "/blog/current/ssl.log",
+         "expires": 43200
+      },
+      "conn": {
+         "path": "/blog/current/conn.log",
+         "flowstashExpires": 1800, 
+         "expires": 86400
+      },
+      "ssh": {
+         "path": "/blog/current/ssh.log",
+         "expires": 86400
+      },
+      "x509": {
+         "path": "/blog/current/x509.log",
+         "expires": 7200
+      },
+      "knownHosts": {
+         "path": "/blog/current/known_hosts.log",
+         "expires": 3600
+      },
+      "userAgent": {
+         "expires": 604800
+      }
+    }
+}

@@ -1,0 +1,15 @@
+#!/bin/bash -
+forever stop main
+forever stop ui
+cd /home/pi/firewalla/
+cp etc/netrc ~/.netrc
+sudo -u pi cp etc/netrc /home/pi/.netrc
+cd .git
+sudo chown -R pi *
+cd ..
+sudo -u pi git pull
+sudo -u pi git submodule update --init --recursive
+sync
+
+cd /home/pi/firewalla/scripts
+./main-run

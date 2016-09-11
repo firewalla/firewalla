@@ -1,0 +1,29 @@
+sudo rm -r -f /tmp/*
+sudo rm -r -f /blog/*
+sudo rm -r -f /bspool/*
+sudo rm -r -f ~/.forever/*
+sudo mount -t tmpfs -o size=50m tmpfs /bspool
+
+cd ~/firewalla
+cp etc/netrc ~/.netrc
+git pull
+git submodule update --init --recursive
+sudo cp -r -f imports/cstack/* /opt/critical-stack/.
+
+
+cd /usr/local/bro/bin
+sudo ./broctl deploy
+sleep 60
+sudo ./broctl cron enable
+
+cd /tmp
+nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
+cd ~/firewalla
+cd net2
+forever start main.js
+sleep 30
+
+cd ..
+cd sys
+forever start kickstart.js --config /encipher.config/netbot.config
+rm ~/.netrc
