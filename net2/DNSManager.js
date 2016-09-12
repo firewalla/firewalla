@@ -211,30 +211,6 @@ module.exports = class DNSManager {
         }
     }
 
-    /*
-
-                this.resolveLocalHost(o[ipsrc], (err,data)=> {
-                    if (data) {
-                        o['shname']=data.name;
-                    }
-                    this.resolvehost(o[ipdst],(err,data2)=> {
-                        if (data2!=null && data2.name!=null) {
-                            o['dhname'] = data2.name;
-                            o['org'] = data2.org;
-                            appManager.query(data2.name,null,(err,result)=> {
-                                if (err==null && result) {
-                                    for (let i in result) {
-                                        o['appr']=i;
-                                    }
-                                }
-                                cb();
-                            });
-                        } else {
-                            cb();
-                        }
-                    });
-                });
-    */
     getIntel(ip, flow, dnsdata,  callback) {
         log.info("Get Intel:",ip);
         if (dnsdata) {

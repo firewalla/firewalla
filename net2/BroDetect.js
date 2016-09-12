@@ -423,7 +423,23 @@ module.exports = class {
                 log.error("Conn:Drop", obj);
                 return;
             }
+            
+            if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
+                log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
+                return;
+            }
 
+            if (obj.proto=="tcp" && (obj.orig_ip_bytes==0 || obj.resp_ip_bytes==0)) {
+                log.error("Conn:Drop:TCPZeroLength",obj.conn_state,obj);
+                return;
+            }
+
+            if (obj.proto=="icmp") {
+                log.error("Conn:Drop:ICMP",obj.conn_state,obj);
+                return;
+            }
+
+/*
             if (obj.conn_state) {
                 if (obj.conn_state!="SF") {
                     if (obj.conn_state!="S0" && obj.proto!="udp") {
@@ -431,6 +447,14 @@ module.exports = class {
                         return;
                     } 
                 }
+            }
+*/
+            if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3"
+                || obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+                (obj.conn_state == "S0" && obj.proto!="udp")) {
+                    log.error("Conn:Drop:State",obj.conn_state,obj);
+                    return;
             }
 
             log.info("ProcessingConection:",obj.uid);
@@ -474,6 +498,7 @@ module.exports = class {
                 obj.duration = 0;
             }
 
+            let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
             let flowspec = this.flowstash[flowspecKey];
             if (flowspec == null) {
@@ -573,9 +598,9 @@ module.exports = class {
             if (tmpspec) {
                 let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
                 let strdata = JSON.stringify(tmpspec);
-                let redisObj = [key, tmpspec.ts, strdata];
+                //let redisObj = [key, tmpspec.ts, strdata];
+                let redisObj = [key, now, strdata];
                 log.info("Conn:Save:Temp", redisObj);
-                console.log("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
                         if (this.config.bro.conn.expires) {
@@ -587,7 +612,6 @@ module.exports = class {
 
             // TODO: Need to write code take care to ensure orig host is us ...
             let hostsChanged = {}; // record and update host lastActive
-            let now = Math.ceil(Date.now() / 1000);
             if (now > this.flowstashExpires) {
                 console.log("Processing Flow Stash");
                 for (let i in this.flowstash) {
@@ -614,9 +638,8 @@ module.exports = class {
                     delete spec._afmap;
                     let key = "flow:conn:" + spec.fd + ":" + spec.lh;
                     let strdata = JSON.stringify(spec);
-                    let redisObj = [key, spec.ts, strdata];
-                    log.debug("Conn:Save", redisObj);
-                    console.log("Conn:Save", redisObj);
+                    let redisObj = [key, now, strdata];
+                    log.info("Conn:Save:Summary", redisObj);
 
                     rclient.zremrangebyscore(key,this.flowstashExpires-this.config.bro.conn.flowstashExpires, "+inf", (err, data) => {
                         console.log("Conn:Info:",err,data);
