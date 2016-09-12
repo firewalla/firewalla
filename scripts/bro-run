@@ -20,9 +20,9 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 
 if [[ $branch =~ release.* ]]
   then
-    sudo -u pi git fetch origin master
-    sudo -u pi git reset --hard origin/master
-    echo "on master"
+    sudo -u pi git fetch origin release_pi_1_0
+    sudo -u pi git reset --hard origin/release_pi_1_0
+    echo "on release"
   else
     echo "on devbranch"
   fi
