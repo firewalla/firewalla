@@ -18,6 +18,7 @@ sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
+sleep 2
 if [[ $branch =~ release.* ]]
   then
     sudo -u pi git fetch origin release_pi_1_0
