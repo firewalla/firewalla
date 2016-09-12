@@ -1,6 +1,7 @@
 [Unit]
 Description=BroFish
 After=ssh.service 
+Requires=network-online.target
 Before=firewalla.service
 
 [Service]
