@@ -23,12 +23,16 @@ sudo apt-get -y install git
 - Reboot
 ```
 
-- Install
+- Install On Device
 ```
 git clone https://github.com/firewalla/firewalla --branch origin/release_pi_1_0--single-branch
 cd firewalla
 ./buildraw
 sudo apt-get clean
+
+
+** for development please create your own branch. (release_pi_1_0 is for official releases)
+
 ```
 
 
