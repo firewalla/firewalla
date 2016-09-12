@@ -1,6 +1,6 @@
 [Unit]
 Description=BroFish
-After=NetworkManager.service systemd-resolved.service 
+After=ssh.service 
 Before=firewalla.service
 
 [Service]
