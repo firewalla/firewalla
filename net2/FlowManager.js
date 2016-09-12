@@ -25,7 +25,7 @@ var rclient = redis.createClient();
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager();
+var dnsManager = new DNSManager('info');
 
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
