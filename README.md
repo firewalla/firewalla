@@ -35,7 +35,7 @@ Encipher Connect is a secure messenger used to talk to Raspberry Pi.
 
 ```
 https://itunes.apple.com/us/app/encipher-connect/id1082886344?mt=8
-'''
+```
 
 * connect ethernet port to router.
 * install encipher connect from app store.
