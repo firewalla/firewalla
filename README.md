@@ -14,19 +14,22 @@ sudo apt-get -y install git
 
 ```
 - Configure Pi
-sudo raspi-config
-..* Change Password
-..* Host Name
-..* Advance Options -> Memory Split (Change to 16)
-..* Expand File System
-..* Reboot
+```
+- sudo raspi-config
+- Change Password
+- Host Name
+- Advance Options -> Memory Split (Change to 16)
+- Expand File System
+- Reboot
+```
 
 - Install
-
-git clone https://github.com/firewalla/firewalla --single-branch
+```
+git clone https://github.com/firewalla/firewalla --branch origin/release_pi_1_0--single-branch
 cd firewalla
 ./buildraw
 sudo apt-get clean
+```
 
 
 ### Get IPhone Software
