@@ -33,10 +33,10 @@ rclient.on("error", function (err) {
 var async = require('async');
 var instance = null;
 var HostManager = require("../net2/HostManager.js");
-var hostManager = new HostManager("cli", 'client', 'debug');
+var hostManager = new HostManager("cli", 'client', 'info');
 
 var AppManager = require('../net2/AppManager.js');
-var appManager = new AppManager('../net2/appSignature.json', 'debug');
+var appManager = new AppManager('../net2/appSignature.json', 'info');
 
 var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
@@ -59,10 +59,9 @@ module.exports = class FlowMonitor {
 
 
     flowIntel(flows) {
-        log.info("FLOWWWWWWWWWWWWWWW INTEL",flows.length);
         for (let i in flows) {
             let flow = flows[i];
-            log.info("FLOW:INTEL:PROCESSING",flow);
+            log.debug("FLOW:INTEL:PROCESSING",flow);
             if (flow['intel'] && flow['intel']['c']) {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
@@ -158,7 +157,7 @@ module.exports = class FlowMonitor {
     //   {set: host}
     summarizeNeighbors(host,flows,direction) {
         let key = "neighbor:"+host.o.mac;
-        log.info("Summarizing Neighbors ",flows.length,key);
+        log.debug("Summarizing Neighbors ",flows.length,key);
 
 
         rclient.hgetall(key,(err,data)=> {
@@ -254,7 +253,7 @@ module.exports = class FlowMonitor {
                  savedData[i] = JSON.stringify(data[i]);
              }
              rclient.hmset(key,savedData,(err,d)=>{
-                 log.info("Set Host Summary",key,savedData,d);
+                 log.debug("Set Host Summary",key,savedData,d);
              });
         });
     }
@@ -391,16 +390,13 @@ module.exports = class FlowMonitor {
                     }
                     if (service == null || service == "dlp") {
                         this.flows(listip, period, (err, inSpec, outSpec) => {
-                            console.log("=================================================================================");
                             log.debug("monitor:flow:", host.toShortString());
                             log.debug("inspec", inSpec);
                             log.debug("outspec", outSpec);
-                            console.log("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
                             if (outSpec) {
                                 if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
                                     (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
                                     (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
-                                    console.log("=======", outSpec);
                                     this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
                                             this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
@@ -429,7 +425,6 @@ module.exports = class FlowMonitor {
                                 if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
                                     (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
                                     (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
-                                    console.log("=======", inSpec);
                                     this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
                                             this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {

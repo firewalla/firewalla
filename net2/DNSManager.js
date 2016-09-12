@@ -378,17 +378,17 @@ module.exports = class DNSManager {
             // filter out short connections
 
             if (o.du && o.du<0.0001) {
-                 console.log("### NOT LOOKUP 1:",o);
+                 //console.log("### NOT LOOKUP 1:",o);
                  cb();
                  return;
             }
             if (o.ob && o.ob == 0 && o.rb && o.rb<10000) {
-                 console.log("### NOT LOOKUP 2:",o);
+                 //console.log("### NOT LOOKUP 2:",o);
                  cb();
                  return;
             }
             if (o.rb && o.rb <2500) {
-                 console.log("### NOT LOOKUP 3:",o);
+                 //console.log("### NOT LOOKUP 3:",o);
                  cb();
                  return;
             }
@@ -414,7 +414,7 @@ module.exports = class DNSManager {
                         }
                         if (data.intel && data.intel.c) {
                             o['intel'] = data.intel;
-                            log.info("DNS:QUERY:RESOLVED:INTEL:",o[ipdst],o,{});
+                            log.info("DNS:QUERY:RESOLVED:INTEL22:",o[ipdst],o,{});
                         }
                     }
                     cb();

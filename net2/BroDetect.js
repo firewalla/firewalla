@@ -153,10 +153,7 @@ module.exports = class {
             if (this.connLog != null) {
                 log.info("Initializing watchers: connInitialized", this.config.bro.conn.path);
                 this.connLog.on('line', (data) => {
-                    //log.debug("Detect:Conn",data);
-                    setTimeout(()=>{
-                        this.processConnData(data);
-                    },2000);
+                    this.processConnData(data);
                 });
             } else {
                 setTimeout(this.initWatchers, 5000);
@@ -198,6 +195,9 @@ module.exports = class {
             log = require("./logger.js")("discover", loglevel);
             this.appmap = {};
             this.apparray = [];
+            this.connmap = {};
+            this.connarray = [];
+         
             this.initWatchers();
             instances[name] = this;
             let c = require('./MessageBus.js');
@@ -218,14 +218,44 @@ module.exports = class {
         }
     }
 
+    addConnMap(key,value) {
+        if (this.connmap[key]!=null) {
+             return;
+        } 
+        log.info("CONN DEBUG",this.connarray.length,key,value,"length:");
+        this.connarray.push(value);
+        this.connmap[key] = value;
+        let mapsize = 9000;
+        if (this.connarray.length>mapsize) {
+            let removed = this.connarray.splice(0,this.connarray.length-mapsize);
+            for (let i in removed) {
+                delete this.connmap[removed[i]['uid']];
+            }
+        }
+    }
+
+    lookupConnMap(key) {
+        let obj = this.connmap[key];
+        if (obj) {
+            delete this.connmap[key];
+            let index = this.connarray.indexOf(obj);
+            if (index>-1) {
+                this.connarray.splice(index,1);
+            }
+        }
+        return obj;
+    }
+
     addAppMap(key,value) {
         if (ValidateIPaddress(value.host)) {
              return;
         }
+
         if (this.appmap[key]!=null) {
              return;
         } 
-        console.log("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        
+        log.info("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
         let mapsize = 9000;
@@ -403,6 +433,8 @@ module.exports = class {
                 }
             }
 
+            log.info("ProcessingConection:",obj.uid);
+
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
             let flowdir = "in";
@@ -498,6 +530,21 @@ module.exports = class {
                 }
             } else {
                 flowspec._afmap[obj.uid]=obj.uid;
+                // redo some older lookup ...
+                for (let i in flowspec._afmap) {
+                    let afobj = this.lookupAppMap(i);
+                    if (afobj) {
+                        log.info("DEBUG AFOBJ DELAY RESOLVE",afobj);
+                        let flow_afobj = flowspec.af[afobj.host];
+                        if (flow_afobj) {
+                            flow_afobj.rqbl += afobj.rqbl;
+                            flow_afobj.rsbl += afobj.rsbl;
+                        } else {
+                            flowspec.af[afobj.host] = afobj;
+                            delete afobj['host'];
+                        }
+                    }
+                }
             }
 
             if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
@@ -527,7 +574,7 @@ module.exports = class {
                 let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
                 let strdata = JSON.stringify(tmpspec);
                 let redisObj = [key, tmpspec.ts, strdata];
-                log.debug("Conn:Save:Temp", redisObj);
+                log.info("Conn:Save:Temp", redisObj);
                 console.log("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {

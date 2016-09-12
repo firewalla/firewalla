@@ -10,7 +10,7 @@ PIDFile=/home/pi/.forever/pids/main.pid
 ExecStart=/home/pi/firewalla/scripts/main-run
 ExecStop=/home/pi/firewalla/scripts/main-stop
 Restart=always
-RestartSec=15
+RestartSec=30
 TimeoutStartSec=300
 
 [Install]

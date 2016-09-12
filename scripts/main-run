@@ -2,7 +2,6 @@
 sudo rm -r -f /tmp/*
 sudo rm -r -f /home/pi/.forever/*
 cd /home/pi/firewalla
-cp etc/netrc ~/.netrc
 cd /tmp 
 cp /home/pi/firewalla/encipher/lib/encipherio.js /home/pi/firewalla/node_modules/encipher/lib/encipherio.js 
 if [ ! -f /home/pi/firewalla/bin/dev ]; then
@@ -52,7 +51,6 @@ cd ..
 cd monitor
 forever start --uid monitor MonitorMain.js 
 cd ..
-rm /home/pi/.netrc
 sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync

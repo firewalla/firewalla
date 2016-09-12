@@ -84,10 +84,10 @@ module.exports = class {
     scan(range, fast, callback) {
         //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         fast = true;
-        let cmdline = 'sudo nmap -T5 -PO  --disable-arp-ping ' + range + ' -oX - | xml-json host';
-        // let    cmdline = 'sudo nmap -sn -PO   --disable-arp-ping '+range+' -oX - | xml-json host';
+        let cmdline = 'sudo nmap -T5 -PO --host-timeout 200s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
+        // let    cmdline = 'sudo nmap -sn -PO  --host-timeout 20s --disable-arp-ping '+range+' -oX - | xml-json host';
         if (fast == true) {
-            cmdline = 'sudo nmap -sn -PO   --disable-arp-ping ' + range + ' -oX - | xml-json host';
+            cmdline = 'sudo nmap -sn -PO --host-timeout 20s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
         }
         console.log("Running commandline: ", cmdline);
 

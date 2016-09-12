@@ -13,20 +13,18 @@ rm -r -f /bspool/*
 umount /bspool
 mount -t tmpfs -o size=70m tmpfs /bspool
 cd /home/pi/firewalla
-cp etc/netrc ~/.netrc
-sudo -u pi cp etc/netrc /home/pi/.netrc
 cd .git
 sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-if [ "$branch" == "master" ]
+if [[ $branch =~ release.* ]]
   then
     sudo -u pi git fetch origin master
     sudo -u pi git reset --hard origin/master
     echo "on master"
   else
-    echo "No hardest"
+    echo "on devbranch"
   fi
 sudo -u pi git pull
 sudo cp etc/bro-cron /etc/cron.hourly/.
@@ -47,9 +45,9 @@ sync
 #cd /home/pi/firewalla
 #cp -r -f imports/cstack/* /opt/critical-stack/.
 /usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
-rm /home/pi/.netrc
 cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
 sudo -u pi crontab -r
 sudo -u pi crontab /home/pi/firewalla/etc/brotab
 sudo dhclient -6 eth0
 
+sudo /opt/vc/bin/tvservice -o
