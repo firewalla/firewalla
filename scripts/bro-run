@@ -28,7 +28,6 @@ if [[ $branch =~ release.* ]]
   fi
 sudo -u pi git pull
 sudo cp etc/bro-cron /etc/cron.hourly/.
-rm /home/pi/firewalla/imports/cstack.tar.gz
 cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
