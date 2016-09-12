@@ -44,6 +44,12 @@ https://itunes.apple.com/us/app/encipher-connect/id1082886344?mt=8
 
 If anything bad happens, unplug it. 
 
+### Contributions
+
+* origin/master:  latest / greatest
+* release_pi_1:   current released code for pi, will be pulled automatically by all deployed boards.
+* dev_<>: development branchs.
+* Please do a pull request for features
 
 
 
