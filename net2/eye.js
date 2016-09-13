@@ -36,6 +36,10 @@ if (program.host == null) {
             console.log("==== by count ====");
             console.log(neighborArray);
             console.log("==== by date ====");
+            if (neighborArray == null) { 
+                console.log("Found Nothing");
+                return;
+            }
             neighborArray.sort(function (a, b) {
                 return Number(b.ts) - Number(a.ts);
             });
