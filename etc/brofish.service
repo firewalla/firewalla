@@ -1,6 +1,7 @@
 [Unit]
 Description=BroFish
-After=NetworkManager.service systemd-resolved.service
+After=dhcpcd.service 
+Requires=network-online.target network.service
 Before=firewalla.service
 
 [Service]
