@@ -65,26 +65,42 @@ module.exports = class FlowMonitor {
             if (flow['intel'] && flow['intel']['c']) {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
-                if (c == "av") {
+                if (c == "av" && (flow.du && Number(flow.du)>60)) {
                     let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                    let actionobj = {
+                        title: "Video Watching",
+                        actions: ["block","ignore"],
+                        src: flow.sh,
+                        dst: flow.dh,
+                        dhname: flow["dhname"],
+                        target: flow.lhost,
+                        msg: msg
+                    };
+                    alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                        if (obj != null) {
+                            this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
                                             msg:msg
-                                        });
-                    alarmManager.alarm(flow.sh, "warn", 'minor', '0', {"msg":msg}, null, null);
+                            });
+                        }
+                    });
                 } else if (c=="porn") {
                     let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                                        });
                     let actionobj = {
                         title: "Questionable Action",
                         actions: ["block","ignore"],
                         src: flow.sh,
                         dst: flow.dh,
+                        dhname: flow["dhname"],
                         target: flow.lhost,
                         msg: msg
                     };
-                    alarmManager.alarm(flow.sh, "warn", 'minor', '0', {"msg":msg}, actionobj, null);
+                    alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                        if (obj!=null) {
+                              this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                   msg:msg
+                              });
+                        }
+                    });
                 } else if (c=="intel") {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
@@ -137,10 +153,22 @@ module.exports = class FlowMonitor {
                     */
                 } else {
                     let msg = "Doing "+c+" "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                    let actionobj = {
+                        title: "Notify Action",
+                        actions: ["block","ignore"],
+                        src: flow.sh,
+                        dst: flow.dh,
+                        dhname: flow["dhname"],
+                        target: flow.lhost,
+                        msg: msg
+                    };
+                    alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
+                        if (obj!=null) {
+                             this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
                                             msg:msg
-                                        });
-                    alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
+                             });
+                        }
+                    });
                 }
             } 
         }

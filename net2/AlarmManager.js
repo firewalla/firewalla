@@ -48,6 +48,50 @@ module.exports = class {
         return instance;
     }
 
+    // duplication
+    // ignored alarm
+    // .. check
+    //
+    // callback(err, alarmObj, action) action: ignore, save, notify, duplicate
+    alarmCheck(hip, alarmObj,callback) {
+        // check if alarm is ignored
+        // write bunch code here
+        //
+        log.info("alarm:check:", hip,alarmObj,{});
+        let action = "notify";
+        let timeblock = 10*60;
+        if (alarmObj.alarmtype!="intel" && alarmObj.alarmtype!="porn") {
+            timeblock = 30*60;
+        }
+        this.read(hip, timeblock, null, null, null, (err, alarms)=> {
+            if (alarms == null) {
+                log.info("alarm:check:noprevious", hip,alarmObj);
+                callback(err, alarmObj, action); 
+            }  else {
+                for (let i in alarms) {
+                    let alarm = JSON.parse(alarms[i]);
+                    console.log("alarm:check:iterating",alarm.actionobj.src,alarmObj.actionobj.src, alarm.actionobj.dst,alarmObj.actionobj.dst, alarm.alarmtype,alarmObj.alarmtype); 
+                    if (alarm.actionobj && alarmObj.actionobj) {
+                        if (alarm.actionobj.src == alarmObj.actionobj.src &&
+                            alarm.actionobj.dst == alarmObj.actionobj.dst &&
+                            alarm.alarmtype == alarmObj.alarmtype) {
+                            log.info("alarm:check:duplicate",alarm,{});
+                            callback(null, null, "duplicate"); 
+                            return;
+                        }
+                        if (alarm.actionobj.dhname && alarmObj.actionobj.dhname) {
+                            if (alarm.actionobj.dhname == alarmObj.actionobj.dhname) {
+                                log.info("alarm:check:duplicate:dhname",alarm,{});
+                                callback(null, null, "duplicate"); 
+                                return;
+                            }
+                        }
+                    }
+                }
+                callback(null, alarmObj, "notify");
+            }
+        });
+    }
 
     // 
     // action obj { 'cmd': {command object}, 'title':'display title','confirmation:' msg}
@@ -72,23 +116,35 @@ module.exports = class {
         if (alarmtype == 'intel') {
             bone.intel(hip, "check", {});
         }
-        rclient.zadd(redisObj, (err, response) => {
-            if (err) {
-                log.error("alarm:save:error", err);
-                if (callback)
-                    callback(err, null)
-            } else {
-                if (hip != "0.0.0.0") {
-                    this.alarm("0.0.0.0", alarmtype, alarmseverity, severityscore, obj, actionobj, callback);
-                } else {
-                    if (callback) {
-                        callback(err, null)
-                    }
+        this.alarmCheck(hip, obj, (err, alarmobj, action)=>{ 
+            if (alarmobj == null ) {
+                log.error("alarm:save:duplicated", err, alarmobj, obj,{} );
+                if (callback) {
+                    callback(err, null, action);  
                 }
-                rclient.expireat(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7);
+                return;
             }
+            rclient.zadd(redisObj, (err, response) => {
+                if (err) {
+                    log.error("alarm:save:error", err);
+                    if (callback)
+                        callback(err, obj)
+                } else {
+                    if (hip != "0.0.0.0") {
+                        this.alarm("0.0.0.0", alarmtype, alarmseverity, severityscore, obj, actionobj, callback);
+                    } else {
+                        if (callback) {
+                            callback(err, obj)
+                        }
+                    }
+                    rclient.expireat(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7);
+                }
+            });
         });
     }
+
+
+    // WARNING: Alarm are json strings, not parsed
 
     read(hip, secondsago, alarmtypes, alarmseverity, severityscore, callback) {
         let key = "alarm:ip4:" + hip;
@@ -118,7 +174,7 @@ module.exports = class {
                 log.info("Returning Alarms ", hip, results.length, "compressed to ", alarms.length);
                 callback(null, alarms);
             } else {
-                log.info("Error on alarms", err, results);
+                log.info("Error on alarms", key, err, results);
                 callback(err, null);
             }
 
