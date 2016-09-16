@@ -495,7 +495,9 @@ module.exports = class {
             }
 
             if (obj.duration == null) {
-                obj.duration = 0;
+                obj.duration = Number(0);
+            } else {
+                obj.duration = Number(obj.duration);
             }
 
             let now = Math.ceil(Date.now() / 1000);

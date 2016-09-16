@@ -38,6 +38,16 @@ var bone = require("../lib/Bone.js");
 */
 
 
+function getDomain(ip) {
+    if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
+        let splited = ip.split(".");
+        if (splited.length>=3) {
+            return (splited[splited.length-2]+"."+splited[splited.length-1]);
+        }
+    }
+    return ip;
+}
+
 
 module.exports = class {
     constructor(loglevel) {
@@ -80,11 +90,11 @@ module.exports = class {
                             return;
                         }
                         if (alarm.actionobj.dhname && alarmObj.actionobj.dhname) {
-                            if (alarm.actionobj.dhname == alarmObj.actionobj.dhname) {
+                            if (getDomain(alarm.actionobj.dhname) == getDomain(alarmObj.actionobj.dhname)) {
                                 log.info("alarm:check:duplicate:dhname",alarm,{});
                                 callback(null, null, "duplicate"); 
                                 return;
-                            }
+                            } 
                         }
                     }
                 }

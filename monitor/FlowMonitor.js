@@ -42,6 +42,7 @@ var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
 
+
 module.exports = class FlowMonitor {
     constructor(timeslice, monitorTime, loglevel) {
         this.timeslice = timeslice; // in seconds
@@ -65,7 +66,7 @@ module.exports = class FlowMonitor {
             if (flow['intel'] && flow['intel']['c']) {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
-                if (c == "av" && (flow.du && Number(flow.du)>60)) {
+                if (c == "av" && (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>2000000)) {
                     let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
                     let actionobj = {
                         title: "Video Watching",
@@ -83,7 +84,7 @@ module.exports = class FlowMonitor {
                             });
                         }
                     });
-                } else if (c=="porn") {
+                } else if (c=="porn" && (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>2000000)) {
                     let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
                     let actionobj = {
                         title: "Questionable Action",
