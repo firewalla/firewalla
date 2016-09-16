@@ -23,6 +23,7 @@ if [[ $branch =~ release.* ]]
   then
     sudo -u pi git fetch origin release_pi_1_0
     sudo -u pi git reset --hard origin/release_pi_1_0
+#    sudo /opt/vc/bin/tvservice -o
     echo "on release"
   else
     echo "on devbranch"
@@ -50,4 +51,3 @@ sudo -u pi crontab -r
 sudo -u pi crontab /home/pi/firewalla/etc/brotab
 sudo dhclient -6 eth0 &
 
-sudo /opt/vc/bin/tvservice -o
