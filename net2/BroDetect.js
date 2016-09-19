@@ -429,40 +429,32 @@ module.exports = class {
                 return;
             }
 
-            if (obj.proto=="tcp" && (obj.orig_ip_bytes==0 || obj.resp_ip_bytes==0)) {
-                log.error("Conn:Drop:TCPZeroLength",obj.conn_state,obj);
+            if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+                log.error("Conn:Drop:ZeroLength2",obj.conn_state,obj);
                 return;
             }
 
             if (obj.proto=="icmp") {
-                log.error("Conn:Drop:ICMP",obj.conn_state,obj);
                 return;
             }
 
-/*
-            if (obj.conn_state) {
-                if (obj.conn_state!="SF") {
-                    if (obj.conn_state!="S0" && obj.proto!="udp") {
+            if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
+                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3"
+                    || obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                    obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+                    obj.conn_state == "S0") {
                         log.error("Conn:Drop:State",obj.conn_state,obj);
                         return;
-                    } 
                 }
             }
-*/
-            if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3"
-                || obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
-                obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
-                (obj.conn_state == "S0" && obj.proto!="udp")) {
-                    log.error("Conn:Drop:State",obj.conn_state,obj);
-                    return;
-            }
 
-            log.info("ProcessingConection:",obj.uid);
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
             let flowdir = "in";
             let lhost = null;
+
+            log.info("ProcessingConection:",obj.uid,host,dst);
 
             // ignore multicast IP
             // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
@@ -478,7 +470,11 @@ module.exports = class {
                 return;
             }
 
-            if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
+            if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
+                flowdir = 'local';
+                lhost = host;
+                return;
+            } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
                 flowdir = 'local';
                 lhost = host;
                 //log.debug("Dropping both ip address", host,dst);
@@ -575,7 +571,7 @@ module.exports = class {
             }
 
             if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
-                let portflowkey = obj['id.resp_p'];
+                let portflowkey = obj.proto+"."+obj['id.resp_p'];
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
