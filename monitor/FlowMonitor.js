@@ -42,6 +42,17 @@ var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
 
+function getDomain(ip) {
+    if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
+        let splited = ip.split(".");
+        if (splited.length>=3) {
+            return (splited[splited.length-2]+"."+splited[splited.length-1]);
+        }
+    }
+    return ip;
+}
+
+
 
 module.exports = class FlowMonitor {
     constructor(timeslice, monitorTime, loglevel) {
@@ -51,11 +62,51 @@ module.exports = class FlowMonitor {
         if (instance == null) {
             let c = require('../net2/MessageBus.js');
             this.publisher = new c(loglevel);
+            this.recordedFlows = {};
 
             instance = this;
             log = require("../net2/logger.js")("FlowMonitor", loglevel);
         }
         return instance;
+    }
+
+    // flow record is a very simple way to look back past n seconds,
+    // if 'av' for example, shows up too many times ... likely to be 
+    // av
+
+    flowIntelRecordFlow(flow,limit) {
+        let key = flow.dh;
+        if (flow["dhname"] != null) {
+            key = getDomain(flow["dhname"]);  
+        }  
+        let record = this.recordedFlows[key];
+        if (record) {
+            record.ts = Date.now()/1000;
+            record.count += 1;
+        } else {
+            record = {}
+            record.ts = Date.now()/1000;
+            record.count = 1;
+            this.recordedFlows[key] = record;
+        }   
+        // clean  up
+        let oldrecords = [];
+        for (let k in this.recordedFlows) {
+           if (this.recordedFlows[k].ts < Date.now()/1000-60*5) {
+               oldrecords.push(k);
+           }
+        }
+
+        for (let i in oldrecords) {
+           delete this.recordedFlows[oldrecords[i]];
+        }
+        
+        log.info("FLOW:INTEL:RECORD", key,record,{});
+        if (record.count>limit) {
+            record.count = 0-limit;
+            return true;
+        }
+        return false;
     }
 
 
@@ -66,47 +117,51 @@ module.exports = class FlowMonitor {
             if (flow['intel'] && flow['intel']['c']) {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
-                if (c == "av" && (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>2000000)) {
-                    let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
-                    let actionobj = {
-                        title: "Video Watching",
-                        actions: ["block","ignore"],
-                        src: flow.sh,
-                        dst: flow.dh,
-                        dhname: flow["dhname"],
-                        target: flow.lhost,
-                        msg: msg
-                    };
-                    alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                        if (obj != null) {
-                            this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                            });
-                        }
-                    });
-                } else if (c=="porn" && (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>2000000)) {
-                    let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
-                    let actionobj = {
-                        title: "Questionable Action",
-                        actions: ["block","ignore"],
-                        src: flow.sh,
-                        dst: flow.dh,
-                        dhname: flow["dhname"],
-                        target: flow.lhost,
-                        msg: msg
-                    };
-                    alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                        if (obj!=null) {
-                              this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                   msg:msg
-                              });
-                        }
-                    });
+                if (c == "av") {
+                    if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) || this.flowIntelRecordFlow(flow,3) ) {
+                        let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
+                        let actionobj = {
+                            title: "Video Watching",
+                            actions: ["block","ignore"],
+                            src: flow.sh,
+                            dst: flow.dh,
+                            dhname: flow["dhname"],
+                            target: flow.lhost,
+                            msg: msg
+                        };
+                        alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                            if (obj != null) {
+                                this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                                msg:msg
+                                });
+                            }
+                        });
+                    }
+                } else if (c=="porn") {
+                    if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
+                        let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
+                        let actionobj = {
+                            title: "Questionable Action",
+                            actions: ["block","ignore"],
+                            src: flow.sh,
+                            dst: flow.dh,
+                            dhname: flow["dhname"],
+                            target: flow.lhost,
+                            msg: msg
+                        };
+                        alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                            if (obj!=null) {
+                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                       msg:msg
+                                  });
+                            }
+                        });
+                    }
                 } else if (c=="intel") {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-                    let msg = "Watching Intel "+flow["shname"] +" "+flow["dhname"];
+                    let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
                     let intelobj = null;
                     if (flow.fd == "in") {
                         intelobj = {
@@ -152,7 +207,7 @@ module.exports = class FlowMonitor {
                                         });
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
-                } else {
+                } else if (this.flowIntelRecordFlow(flow,3)) {
                     let msg = "Doing "+c+" "+flow["shname"] +" "+flow["dhname"];
                     let actionobj = {
                         title: "Notify Action",

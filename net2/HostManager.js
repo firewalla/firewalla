@@ -1072,7 +1072,7 @@ module.exports = class {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
         json.version = sysManager.config.version;
-        json.device = "Fishbone (beta)"
+        json.device = "Firewalla (beta)"
 
         flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 16, (err, sys) => {
             json.flowsummary = sys;
