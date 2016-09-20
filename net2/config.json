@@ -32,7 +32,7 @@
       },
       "dns": {
          "path": "/blog/current/dns.log",
-         "expires": 43200
+         "expires": 172800
       },
       "software": {
          "path": "/blog/current/software.log",
