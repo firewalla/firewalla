@@ -267,6 +267,7 @@ module.exports = class FlowManager {
             async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
                 rclient.zrevrangebyscore([key, from, to,'limit',0,maxflow], (err, result) => {
+                    log.info("SummarizeBytes:",key,from,to,result.length);
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
                     if (err == null) {
@@ -274,6 +275,9 @@ module.exports = class FlowManager {
                             let o = JSON.parse(result[i]);
                             if (o == null) {
                                 log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                continue;
+                            }
+                            if (o.ts<to) {
                                 continue;
                             }
                             sys.inbytes += o.rb;
@@ -290,6 +294,9 @@ module.exports = class FlowManager {
                                 let o = JSON.parse(result[i]);
                                 if (o == null) {
                                     log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                    continue;
+                                }
+                                if (o.ts<to) {
                                     continue;
                                 }
                                 sys.inbytes += o.ob;

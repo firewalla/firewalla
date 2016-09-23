@@ -1076,7 +1076,7 @@ module.exports = class {
         json.version = sysManager.config.version;
         json.device = "Firewalla (beta)"
 
-        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 30, (err, sys) => {
+        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 15, 60 * 15 / 15, (err, sys) => {
             json.flowsummary = sys;
             if (includeHosts) {
                 let _hosts = [];

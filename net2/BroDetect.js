@@ -203,7 +203,7 @@ module.exports = class {
             let c = require('./MessageBus.js');
             this.publisher = new c(loglevel);
             this.flowstash = {};
-            this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires*2;
+            this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
             this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
         }
     }
@@ -642,20 +642,24 @@ module.exports = class {
                     let key = "flow:conn:" + spec.fd + ":" + spec.lh;
                     let strdata = JSON.stringify(spec);
                     let redisObj = [key, now, strdata];
-                    log.info("Conn:Save:Summary", redisObj);
+                    let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
+                    let send = this.flowstashExpires;
 
-                    rclient.zremrangebyscore(key,this.flowstashExpires-this.config.bro.conn.flowstashExpires, "+inf", (err, data) => {
-                        console.log("Conn:Info:",err,data);
-                        rclient.zadd(redisObj, (err, response) => {
-                            if (err == null) {
-                                if (this.config.bro.conn.expires) {
-                                    rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
+                    setTimeout(()=>{
+                        log.info("Conn:Save:Summary", redisObj,sstart,send);
+                        rclient.zremrangebyscore(key,sstart,send, (err, data) => {
+                            console.log("Conn:Info:",err,data);
+                            rclient.zadd(redisObj, (err, response) => {
+                                if (err == null) {
+                                    if (this.config.bro.conn.expires) {
+                                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
+                                    }
+                                } else {
+                                    log.error("Conn:Save:Error", err);
                                 }
-                            } else {
-                                log.error("Conn:Save:Error", err);
-                            }
+                            });
                         });
-                    });
+                    },this.config.bro.conn.flowstashExpires*1000);
 
                     try {
                         let hostChanged = hostsChanged[spec.lh];
