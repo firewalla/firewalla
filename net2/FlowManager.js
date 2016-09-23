@@ -271,6 +271,9 @@ module.exports = class FlowManager {
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
                     if (err == null) {
+                        /* there is an issue here where if the flow started long ago, 
+                           it may not show up.  the ts in connection is the starting time
+                        */
                         for (let i in result) {
                             let o = JSON.parse(result[i]);
                             if (o == null) {

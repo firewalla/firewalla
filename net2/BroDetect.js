@@ -501,6 +501,10 @@ module.exports = class {
                 obj.duration = Number(obj.duration);
             }
 
+            // Warning for long running tcp flows, the conn structure logs the ts as the
+            // first packet.  when this happens, if the flow started a while back, it 
+            // will get summarize here
+
             let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
             let flowspec = this.flowstash[flowspecKey];
@@ -526,7 +530,9 @@ module.exports = class {
                 flowspec.ob += obj.orig_ip_bytes;
                 flowspec.rb += obj.resp_ip_bytes;
                 flowspec.ct += 1;
-                flowspec.ts = obj.ts;
+                if (flowspec.ts < obj.ts) {
+                    flowspec.ts = obj.ts;
+                }
                 flowspec.du += obj.duration;
             }
 

@@ -1291,9 +1291,10 @@ module.exports = class {
                         for (let i in acls) {
                             let acl = acls[i];
                             log.debug("comparing ", acl, data);
-                            if (acl.src == data.src && acl.dst == data.dst) {
+                            if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
                                 if (acl.state == data.state) {
                                     log.debug("System:setPolicy:Nochange", name, data);
+                                    callback(null,null);
                                     return;
                                 } else {
                                     acl.state = data.state;
