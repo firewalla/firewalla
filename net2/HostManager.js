@@ -513,10 +513,12 @@ class Host {
                 this.loadPolicy((err, data) => {
                     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
                     policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        policyManager.executeAcl(this, this.o.ipv4Addr, this.policy.acl, (err, changed) => {
-                            if (err == null && changed == true) {
-                                this.savePoicy(null);
-                            }
+                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
+                                if (err == null && changed == true) {
+                                    this.savePoicy(null);
+                                }
+                            });
                         });
                     });
                 });
@@ -1074,7 +1076,7 @@ module.exports = class {
         json.version = sysManager.config.version;
         json.device = "Firewalla (beta)"
 
-        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 16, (err, sys) => {
+        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 30, (err, sys) => {
             json.flowsummary = sys;
             if (includeHosts) {
                 let _hosts = [];
@@ -1252,10 +1254,12 @@ module.exports = class {
                             this.syncHost(hostbymac, true, (err) => {
                                 if (this.type == "server") {
                                     policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy.acl, (err, changed) => {
-                                            if (err == null && changed == true) {
-                                                hostbymac.savePolicy(null);
-                                            }
+                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
+                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
+                                                if (err == null && changed == true) {
+                                                    hostbymac.savePolicy(null);
+                                                }
+                                            });
                                         });
                                     });
                                 }
@@ -1397,10 +1401,12 @@ module.exports = class {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
-                    policyManager.executeAcl(this, "0.0.0.0", this.policy.acl, (err, changed) => {
-                        if (changed == true && err == null) {
-                            this.savePolicy(null);
-                        }
+                    dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                        policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
+                            if (changed == true && err == null) {
+                                this.savePolicy(null);
+                            }
+                        });
                     });
                 });
             }

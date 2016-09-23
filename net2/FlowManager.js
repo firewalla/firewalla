@@ -252,7 +252,7 @@ module.exports = class FlowManager {
         sys.outbytes = 0;
         sys.flowinbytes = [];
         sys.flowoutbytes = [];
-        async.eachLimit(hosts, 1, (host, cb) => {
+        async.eachLimit(hosts, 5, (host, cb) => {
             let listip = []
             listip.push(host.o.ipv4Addr);
             if (host.ipv6Addr && host.ipv6Addr.length > 0) {
@@ -264,7 +264,7 @@ module.exports = class FlowManager {
             host.flowsummary.inbytes = 0;
             host.flowsummary.outbytes = 0;
             let flows = [];
-            async.eachLimit(listip, 1, (ip, cb2) => {
+            async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
                 rclient.zrevrangebyscore([key, from, to,'limit',0,maxflow], (err, result) => {
                     host.flowsummary.inbytesArray = [];
@@ -304,7 +304,7 @@ module.exports = class FlowManager {
                 });
             }, (err) => {
                 //  break flows down in to blocks
-                let btime = Date.now() / 1000 - block;
+                let btime = from - block;
                 let flowinbytes = [];
                 let flowoutbytes = [];
                 let currentFlowin = 0;
@@ -360,7 +360,7 @@ module.exports = class FlowManager {
                 cb();
             });
         }, (err) => {
-
+            console.log(sys);
             callback(err, sys);
         });
     }
@@ -380,6 +380,10 @@ module.exports = class FlowManager {
                         let o = JSON.parse(result[i]);
                         if (o == null) {
                             log.error("Host:Flows:Sorting:Parsing", result[i]);
+                            continue;
+                        }
+                        if (o.rb == 0 && o.ob ==0) {
+                            // ignore zero length flows
                             continue;
                         }
                         let ts = o.ts;

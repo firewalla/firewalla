@@ -118,7 +118,7 @@ module.exports = class FlowMonitor {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
                 if (c == "av") {
-                    if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) || this.flowIntelRecordFlow(flow,3) ) {
+                    if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
                         let actionobj = {
                             title: "Video Watching",
@@ -126,7 +126,12 @@ module.exports = class FlowMonitor {
                             src: flow.sh,
                             dst: flow.dh,
                             dhname: flow["dhname"],
-                            target: flow.lhost,
+                            shname: flow["shname"],
+                            mac: flow["mac"],
+                            appr: flow["appr"],
+                            org: flow["org"],
+                            target: flow.lh,
+                            fd: flow.fd,
                             msg: msg
                         };
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
@@ -146,7 +151,12 @@ module.exports = class FlowMonitor {
                             src: flow.sh,
                             dst: flow.dh,
                             dhname: flow["dhname"],
-                            target: flow.lhost,
+                            shname: flow["shname"],
+                            mac: flow["mac"],
+                            appr: flow["appr"],
+                            org: flow["org"],
+                            target: flow.lh,
+                            fd: flow.fd,
                             msg: msg
                         };
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
@@ -178,6 +188,13 @@ module.exports = class FlowMonitor {
                     } else {
                         intelobj = {
                             ts: flow.ts,
+                            shname: flow["shname"],
+                            dhname: flow["dhname"],
+                            mac: flow["mac"],
+                            target: flow.lh,
+                            fd: flow.fd,
+                            appr: flow["appr"],
+                            org: flow["org"],
                             "id.orig_h": flow.dh,
                             "id.resp_h": flow.sh,
                             "seen.indicator_type":"Intel::DOMAIN", 
@@ -215,7 +232,12 @@ module.exports = class FlowMonitor {
                         src: flow.sh,
                         dst: flow.dh,
                         dhname: flow["dhname"],
-                        target: flow.lhost,
+                        shname: flow["shname"],
+                        mac: flow["mac"],
+                        appr: flow["appr"],
+                        org: flow["org"],
+                        target: flow.lh,
+                        fd: flow.fd,
                         msg: msg
                     };
                     alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
@@ -495,7 +517,7 @@ module.exports = class FlowMonitor {
                                                 actions: ["block","ignore"],
                                                 src: flow.dh,
                                                 dst: flow.sh,
-                                                target: flow.lhost,
+                                                target: flow.lh,
                                               //info: ,
                                               //infourl:
                                                 msg: msg
@@ -523,7 +545,7 @@ module.exports = class FlowMonitor {
                                                 actions: ["block","ignore"],
                                                 src: flow.sh,
                                                 dst: flow.dh,
-                                                target: flow.lhost,
+                                                target: flow.lh,
                                                 msg: msg
                                             }
                                             alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj);

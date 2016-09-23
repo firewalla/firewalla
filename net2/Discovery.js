@@ -247,14 +247,14 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                     let d = JSON.parse(JSON.stringify(host));
                                     let actionobj = {
                                          title: "New Host",
                                          actions: ["hblock","ignore"],
                                          target: host.ipv4Addr,
                                     }
-                                    alarmManager.alarm(host.ipv4Addr, "newhost", 'major', '50', d, actionobj, null);
+                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, null);
+                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                 }
                             });
                         }
@@ -422,7 +422,7 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
+                                    //this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                 }
                             });
                         }
@@ -469,8 +469,10 @@ module.exports = class {
                                          title: "New Host",
                                          actions: ["hblock","ignore"],
                                          target: data.ipv4Addr,
+                                         mac: data.mac, 
                                     }
-                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'major', '50', d, actionobj, null);
+                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, null);
+                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", data);
                                 }
                             });
                         } else {
@@ -547,9 +549,13 @@ module.exports = class {
                                     ipv6array = JSON.parse(data.ipv6);
                                 }
 
+                                // only keep around 5 ipv6 around
+                                ipv6array = ipv6array.slice(Math.max(ipv6array.length - 5))
+
                                 if (ipv6array.indexOf(v6addr) == -1) {
                                     ipv6array.push(v6addr);
                                 }
+                                
                                 data.mac = mac.toUpperCase();
                                 data.ipv6 = JSON.stringify(ipv6array);
                                 data.ipv6Addr = JSON.stringify(ipv6array);

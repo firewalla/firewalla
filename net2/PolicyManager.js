@@ -32,6 +32,7 @@ var async = require('async');
 var VpnManager = require('../vpn/VpnManager.js');
 var vpnManager = new VpnManager('info');
 
+var ip = require('ip');
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -66,6 +67,7 @@ module.exports = class {
 
     // this should flush ip6tables as well
     flush(config) {
+       iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
             let myip = sysManager.myIp();
@@ -75,11 +77,20 @@ module.exports = class {
             log.info("PolicyManager:flush", defaultTable, {});
             iptable.run(defaultTable);
         });
+       });
     }
 
     defaults(config) {}
 
     block(protocol, src, dst, sport, dport, state, callback) {
+        if (ip.isV4Format(src) || ip.isV4Format(dst)) {
+            this.block4(protocol,src,dst,sport,dport,state,callback);
+        } else {
+            this.block6(protocol,src,dst,sport,dport,state,callback);
+        }
+    }
+
+    block4(protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -151,8 +162,9 @@ module.exports = class {
         if (state == true) {
             p.action = "-D";
             ip6table.drop(p);
-            p.action = "-A";
-            ip6table.drop(p, callback);
+            let p2 = JSON.parse(JSON.stringify(p));
+            p2.action = "-A";
+            ip6table.drop(p2, callback);
         } else {
             p.action = "-D";
             ip6table.drop(p, callback);
@@ -357,7 +369,13 @@ module.exports = class {
                                     block['done'] = true;
                                 }
                             }
-                            cb();
+                            if (block.duplex && block.duplex == true) {
+                                 this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                                      cb();
+                                 });
+                            } else {
+                                cb();
+                            }
                         });
                         host.appliedAcl[aclkey] = block;
                     }

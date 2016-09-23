@@ -203,7 +203,8 @@ module.exports = class {
             let c = require('./MessageBus.js');
             this.publisher = new c(loglevel);
             this.flowstash = {};
-            this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
+            this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires*2;
+            this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
         }
     }
 
@@ -424,19 +425,23 @@ module.exports = class {
                 return;
             }
             
+            // drop layer 2.5
+            if (obj.proto=="icmp") {
+                return;
+            }
+
+            // drop layer 3 
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
                 log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
                 return;
             }
 
+            // drop layer 4
             if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
                 log.error("Conn:Drop:ZeroLength2",obj.conn_state,obj);
                 return;
             }
 
-            if (obj.proto=="icmp") {
-                return;
-            }
 
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
                 if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3"
@@ -444,7 +449,7 @@ module.exports = class {
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
                         log.error("Conn:Drop:State",obj.conn_state,obj);
-                        return;
+               //         return;
                 }
             }
 
