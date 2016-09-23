@@ -516,7 +516,7 @@ class Host {
                         dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
                             policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
                                 if (err == null && changed == true) {
-                                    this.savePoicy(null);
+                                    this.savePolicy(null);
                                 }
                             });
                         });
@@ -952,7 +952,8 @@ class Host {
             if (err != null) {
                 log.error("Host:Policy:Save:Error", key, err);
             }
-            callback(err, null);
+            if (callback) 
+                callback(err, null);
         });
 
     }
