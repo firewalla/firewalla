@@ -266,7 +266,7 @@ module.exports = class FlowManager {
             let flows = [];
             async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
-                rclient.zrevrangebyscore([key, from, to,'limit',0,maxflow], (err, result) => {
+                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,maxflow], (err, result) => {
                     log.info("SummarizeBytes:",key,from,to,result.length);
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
@@ -274,15 +274,19 @@ module.exports = class FlowManager {
                         /* there is an issue here where if the flow started long ago, 
                            it may not show up.  the ts in connection is the starting time
                         */
-                        for (let i in result) {
+                        for (let i=0;i<result.length;i++) {
                             let o = JSON.parse(result[i]);
                             if (o == null) {
                                 log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                i++;
                                 continue;
                             }
-                            if (o.ts<to) {
+                            o._ts = Number(result[i+1]); 
+                            if (o._ts<to) {
+                                i++;
                                 continue;
-                            }
+                            }  
+                            i++;
                             sys.inbytes += o.rb;
                             sys.outbytes += o.ob;
                             host.flowsummary.inbytes += o.rb;
@@ -291,17 +295,21 @@ module.exports = class FlowManager {
                         }
                     }
                     let okey = "flow:conn:" + "out" + ":" + ip;
-                    rclient.zrevrangebyscore([okey, from, to,'limit',0,maxflow], (err, result) => {
+                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,maxflow], (err, result) => {
                         if (err == null) {
-                            for (let i in result) {
+                            for (let i=0;i<result.length;i++) {
                                 let o = JSON.parse(result[i]);
                                 if (o == null) {
                                     log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                    i++;
                                     continue;
                                 }
-                                if (o.ts<to) {
+                                o._ts = Number(result[i+1]);
+                                if (o._ts<to) {
+                                    i++;
                                     continue;
                                 }
+                                i++;
                                 sys.inbytes += o.ob;
                                 sys.outbytes += o.rb;
                                 host.flowsummary.inbytes += o.ob;
@@ -321,11 +329,11 @@ module.exports = class FlowManager {
                 let currentFlowout = 0;
 
                 flows.sort(function (a, b) {
-                    return Number(b.ts) - Number(a.ts);
+                    return Number(b._ts) - Number(a._ts);
                 })
                 for (let i in flows) {
                     let flow = flows[i];
-                    if (flow.ts > btime) {
+                    if (flow._ts > btime) {
                         if (flow.fd == "in") {
                             currentFlowin += flow.rb;
                             currentFlowout += flow.ob;
