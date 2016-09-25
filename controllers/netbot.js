@@ -532,6 +532,7 @@ class netBot extends ControllerBot {
 
 
             flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
+                console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = host.toJson();
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
                     console.log("Found alarms");

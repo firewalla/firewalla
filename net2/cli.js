@@ -13,7 +13,7 @@ var program = require('commander');
 var HostManager = require('./HostManager.js');
 var SysManager = require('./SysManager.js');
 var FlowManager = require('./FlowManager.js');
-var flowManager = new FlowManager('info');
+var flowManager = new FlowManager('error');
 
 program.version('0.0.2')
     .option('--host [host]', 'configuration')
@@ -23,6 +23,7 @@ program.version('0.0.2')
     .option('--hours [hours]', '(optional) name')
     .option('--interface [interface]', '(optional) name')
     .option('--notice ', '(optional) endpoint')
+    .option('--maxcount [recent]', '(optional) endpoint')
     .option('--dynaflow [dynaflow]', '(optional) endpoint') //dynamic flow listings, sorted by time
 
 program.parse(process.argv);
@@ -37,6 +38,11 @@ let end = "+inf";
 let start = "-inf";
 if (program.hours) {
     hours = Number(program.hours);
+}
+
+let maxcount = 10;
+if (program.maxcount) {
+    maxcount = program.maxcount;
 }
 
 let pasthours = 8;
@@ -111,12 +117,12 @@ let config = {
     }
 };
 
-var sysmanager = new SysManager('info');
+var sysmanager = new SysManager('error');
 sysmanager.update(null);
 
 console.log("Mutlicast Test", sysmanager.isMulticastIP("223.0.0.1"));
 
-var watcher = new HostManager("cli", 'client', 'info');
+var watcher = new HostManager("cli", 'client', 'error');
 
 let c = require('./MessageBus.js');
 this.subscriber = new c('debug');
@@ -128,7 +134,7 @@ this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, ip
 function flows(listip, direction) {
     flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true, (err, result) => {
         console.log("--- Connectionby most recent ---", result.length);
-        let max = 10;
+        let max = 1000;
         if (program.dynaflow) {
             max = 100;
         }

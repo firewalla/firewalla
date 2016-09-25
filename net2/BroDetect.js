@@ -511,6 +511,7 @@ module.exports = class {
             if (flowspec == null) {
                 flowspec = {
                     ts: obj.ts,
+                   _ts: now,
                     sh: host, // source
                     dh: dst, // dstination
                     ob: obj.orig_ip_bytes, // transfer bytes
@@ -533,12 +534,14 @@ module.exports = class {
                 if (flowspec.ts < obj.ts) {
                     flowspec.ts = obj.ts;
                 }
+                flowspec._ts = now;
                 flowspec.du += obj.duration;
             }
 
             let tmpspec = {
                 ts: obj.ts,
                 sh: host, // source
+               _ts: now,
                 dh: dst, // dstination
                 ob: obj.orig_ip_bytes, // transfer bytes
                 rb: obj.resp_ip_bytes,
@@ -621,7 +624,9 @@ module.exports = class {
 
             // TODO: Need to write code take care to ensure orig host is us ...
             let hostsChanged = {}; // record and update host lastActive
+
             if (now > this.flowstashExpires) {
+                let stashed={};
                 console.log("Processing Flow Stash");
                 for (let i in this.flowstash) {
                     let spec = this.flowstash[i];
@@ -647,25 +652,17 @@ module.exports = class {
                     delete spec._afmap;
                     let key = "flow:conn:" + spec.fd + ":" + spec.lh;
                     let strdata = JSON.stringify(spec);
-                    let redisObj = [key, now, strdata];
-                    let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
-                    let send = this.flowstashExpires;
+                    let ts = spec._ts;
+                    if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
+                        ts = spec.ts;
+                    }
+                    let redisObj = [key, ts, strdata];
+                    if (stashed[key]) {
+                        stashed[key].push(redisObj);
+                    } else {
+                        stashed[key]=[redisObj];
+                    }
 
-                    setTimeout(()=>{
-                        log.info("Conn:Save:Summary", redisObj,sstart,send);
-                        rclient.zremrangebyscore(key,sstart,send, (err, data) => {
-                            console.log("Conn:Info:",err,data);
-                            rclient.zadd(redisObj, (err, response) => {
-                                if (err == null) {
-                                    if (this.config.bro.conn.expires) {
-                                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
-                                    }
-                                } else {
-                                    log.error("Conn:Save:Error", err);
-                                }
-                            });
-                        });
-                    },this.config.bro.conn.flowstashExpires*1000);
 
                     try {
                         let hostChanged = hostsChanged[spec.lh];
@@ -681,6 +678,30 @@ module.exports = class {
                     }
 
                 }
+
+                let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
+                let send = this.flowstashExpires;
+                setTimeout(()=>{
+                    log.info("Conn:Save:Summary", sstart,send,this.flowstashExpires);
+                    for (let key in stashed) {
+                        let stash = stashed[key];
+                        log.info("Conn:Save:Summary:Wipe",key, "Resoved To: ", stash.length);
+                        rclient.zremrangebyscore(key,sstart,send, (err, data) => {
+                            console.log("Conn:Info:Removed",key,err,data);
+                            for (let i in stash) {
+                                rclient.zadd(stash[i], (err, response) => {
+                                    if (err == null) {
+                                        if (this.config.bro.conn.expires) {
+                                            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
+                                        }
+                                    } else {
+                                        log.error("Conn:Save:Error", err);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                },this.config.bro.conn.flowstashExpires*1000);
 
                 this.flowstashExpires = now + this.config.bro.conn.flowstashExpires;
                 this.flowstash = {};
