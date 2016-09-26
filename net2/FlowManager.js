@@ -25,7 +25,7 @@ var rclient = redis.createClient();
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager('info');
+var dnsManager = new DNSManager('error');
 
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
@@ -252,7 +252,7 @@ module.exports = class FlowManager {
         sys.outbytes = 0;
         sys.flowinbytes = [];
         sys.flowoutbytes = [];
-        async.eachLimit(hosts, 1, (host, cb) => {
+        async.eachLimit(hosts, 5, (host, cb) => {
             let listip = []
             listip.push(host.o.ipv4Addr);
             if (host.ipv6Addr && host.ipv6Addr.length > 0) {
@@ -264,18 +264,29 @@ module.exports = class FlowManager {
             host.flowsummary.inbytes = 0;
             host.flowsummary.outbytes = 0;
             let flows = [];
-            async.eachLimit(listip, 1, (ip, cb2) => {
+            async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
-                rclient.zrevrangebyscore([key, from, to,'limit',0,maxflow], (err, result) => {
+                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,maxflow], (err, result) => {
+                    log.info("SummarizeBytes:",key,from,to,result.length);
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
                     if (err == null) {
-                        for (let i in result) {
+                        /* there is an issue here where if the flow started long ago, 
+                           it may not show up.  the ts in connection is the starting time
+                        */
+                        for (let i=0;i<result.length;i++) {
                             let o = JSON.parse(result[i]);
                             if (o == null) {
                                 log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                i++;
                                 continue;
                             }
+                            o._ts = Number(result[i+1]); 
+                            if (o._ts<to) {
+                                i++;
+                                continue;
+                            }  
+                            i++;
                             sys.inbytes += o.rb;
                             sys.outbytes += o.ob;
                             host.flowsummary.inbytes += o.rb;
@@ -284,14 +295,21 @@ module.exports = class FlowManager {
                         }
                     }
                     let okey = "flow:conn:" + "out" + ":" + ip;
-                    rclient.zrevrangebyscore([okey, from, to,'limit',0,maxflow], (err, result) => {
+                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,maxflow], (err, result) => {
                         if (err == null) {
-                            for (let i in result) {
+                            for (let i=0;i<result.length;i++) {
                                 let o = JSON.parse(result[i]);
                                 if (o == null) {
                                     log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                    i++;
                                     continue;
                                 }
+                                o._ts = Number(result[i+1]);
+                                if (o._ts<to) {
+                                    i++;
+                                    continue;
+                                }
+                                i++;
                                 sys.inbytes += o.ob;
                                 sys.outbytes += o.rb;
                                 host.flowsummary.inbytes += o.ob;
@@ -304,18 +322,18 @@ module.exports = class FlowManager {
                 });
             }, (err) => {
                 //  break flows down in to blocks
-                let btime = Date.now() / 1000 - block;
+                let btime = from - block;
                 let flowinbytes = [];
                 let flowoutbytes = [];
                 let currentFlowin = 0;
                 let currentFlowout = 0;
 
                 flows.sort(function (a, b) {
-                    return Number(b.ts) - Number(a.ts);
+                    return Number(b._ts) - Number(a._ts);
                 })
                 for (let i in flows) {
                     let flow = flows[i];
-                    if (flow.ts > btime) {
+                    if (flow._ts > btime) {
                         if (flow.fd == "in") {
                             currentFlowin += flow.rb;
                             currentFlowout += flow.ob;
@@ -360,7 +378,7 @@ module.exports = class FlowManager {
                 cb();
             });
         }, (err) => {
-
+            console.log(sys);
             callback(err, sys);
         });
     }
@@ -380,6 +398,10 @@ module.exports = class FlowManager {
                         let o = JSON.parse(result[i]);
                         if (o == null) {
                             log.error("Host:Flows:Sorting:Parsing", result[i]);
+                            continue;
+                        }
+                        if (o.rb == 0 && o.ob ==0) {
+                            // ignore zero length flows
                             continue;
                         }
                         let ts = o.ts;
@@ -478,6 +500,9 @@ module.exports = class FlowManager {
         let ts = Date.now() / 1000;
         let t = ts - obj.ts
         t = (t / 60).toFixed(1);
+        let _ts = Date.now() / 1000;
+        let _t = _ts - obj._ts
+        _t = (_t / 60).toFixed(1);
         let org = "";
         if (obj.org) {
             org = "(" + obj.org + ")";
@@ -486,7 +511,7 @@ module.exports = class FlowManager {
         if (obj.appr) {
             appr = "#" + obj.appr + "#";
         }
-        return t + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+        return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
     }
 
     toStringShortShort2(obj, type, interest) {
@@ -509,14 +534,14 @@ module.exports = class FlowManager {
             return name + "min : rx " + obj.rb + ", tx " + obj.ob;
         } else if (type == "rxdata" || type == "in") {
             if (interest == 'txdata') {
-                return time + " min ago, " + sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+                return sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
             }
-            return time + " min ago, " + sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+            return sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
         } else if (type == "txdata" || type == "out") {
             if (interest == 'txdata') {
-                return time + " min ago, " + sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+                return sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
             }
-            return time + " min ago, " + sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+            return sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
         }
     }
 

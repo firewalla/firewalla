@@ -113,6 +113,7 @@ module.exports = class {
         obj['alarmtype'] = alarmtype;
         obj['alarmseverity'] = alarmseverity;
         obj['severityscore'] = severityscore;
+        let now = Date.now()/1000;
         if (actionobj != null) {
             obj['actionobj'] = actionobj;
         }
@@ -120,7 +121,7 @@ module.exports = class {
             obj['ts'] = Date.now() / 1000;
         }
 
-        let redisObj = [key, obj.ts, JSON.stringify(obj)];
+        let redisObj = [key, now, JSON.stringify(obj)];
         log.info("alarm:ip4:", key, actionobj);
 
         if (alarmtype == 'intel') {

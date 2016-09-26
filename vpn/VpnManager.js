@@ -190,7 +190,7 @@ module.exports = class {
             log.info("VpnManager:Start:portMap", external);
             setInterval(() => {
                 this.setNat(null)
-            }, 7000000);
+            }, 7210*1000);
             if (callback) {
                 this.portmapped = true;
                 callback(null, external, 1194);

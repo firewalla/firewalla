@@ -29,7 +29,7 @@ var spoofer = null;
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager('info');
+var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
@@ -513,10 +513,12 @@ class Host {
                 this.loadPolicy((err, data) => {
                     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
                     policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        policyManager.executeAcl(this, this.o.ipv4Addr, this.policy.acl, (err, changed) => {
-                            if (err == null && changed == true) {
-                                this.savePoicy(null);
-                            }
+                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
+                                if (err == null && changed == true) {
+                                    this.savePolicy(null);
+                                }
+                            });
                         });
                     });
                 });
@@ -950,7 +952,8 @@ class Host {
             if (err != null) {
                 log.error("Host:Policy:Save:Error", key, err);
             }
-            callback(err, null);
+            if (callback) 
+                callback(err, null);
         });
 
     }
@@ -1072,9 +1075,9 @@ module.exports = class {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
         json.version = sysManager.config.version;
-        json.device = "Fishbone (beta)"
+        json.device = "Firewalla (beta)"
 
-        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 16, (err, sys) => {
+        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 15, 60 * 15 / 15, (err, sys) => {
             json.flowsummary = sys;
             if (includeHosts) {
                 let _hosts = [];
@@ -1252,10 +1255,12 @@ module.exports = class {
                             this.syncHost(hostbymac, true, (err) => {
                                 if (this.type == "server") {
                                     policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy.acl, (err, changed) => {
-                                            if (err == null && changed == true) {
-                                                hostbymac.savePolicy(null);
-                                            }
+                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
+                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
+                                                if (err == null && changed == true) {
+                                                    hostbymac.savePolicy(null);
+                                                }
+                                            });
                                         });
                                     });
                                 }
@@ -1287,9 +1292,10 @@ module.exports = class {
                         for (let i in acls) {
                             let acl = acls[i];
                             log.debug("comparing ", acl, data);
-                            if (acl.src == data.src && acl.dst == data.dst) {
+                            if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
                                 if (acl.state == data.state) {
                                     log.debug("System:setPolicy:Nochange", name, data);
+                                    callback(null,null);
                                     return;
                                 } else {
                                     acl.state = data.state;
@@ -1397,10 +1403,12 @@ module.exports = class {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
-                    policyManager.executeAcl(this, "0.0.0.0", this.policy.acl, (err, changed) => {
-                        if (changed == true && err == null) {
-                            this.savePolicy(null);
-                        }
+                    dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                        policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
+                            if (changed == true && err == null) {
+                                this.savePolicy(null);
+                            }
+                        });
                     });
                 });
             }

@@ -14,7 +14,7 @@
  */
 'use strict';
 
-let tick = 60 * 20; // waking up every 5 min
+let tick = 60 * 15; // waking up every 5 min
 let monitorWindow = 60 * 60 * 8; // eight hours window
 
 let FlowMonitor = require('./FlowMonitor.js');

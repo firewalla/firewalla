@@ -41,6 +41,9 @@ var intelManager = new IntelManager('debug');
 var builder = require('botbuilder');
 var uuid = require('uuid');
 
+var async = require('async');
+
+
 class netBot extends ControllerBot {
 
     _block2(ip, dst, cron, timezone, duration, callback) {
@@ -102,14 +105,16 @@ class netBot extends ControllerBot {
 
     _family(ip, value, callback) {
         if (ip === "0.0.0.0") {
-            this.hostManager.setPolicy("family", value, (err, data) => {
-                if (err == null) {
-                    if (callback != null)
-                        callback(null, "Success");
-                } else {
-                    if (callback != null)
-                        callback(err, "Unable to block ip " + ip);
-                }
+            this.hostManager.loadPolicy((err, data) => {
+                this.hostManager.setPolicy("family", value, (err, data) => {
+                    if (err == null) {
+                        if (callback != null)
+                            callback(null, "Success");
+                    } else {
+                        if (callback != null)
+                            callback(err, "Unable to block ip " + ip);
+                    }
+                });
             });
         } else {
             this.hostManager.getHost(ip, (err, host) => {
@@ -140,14 +145,16 @@ class netBot extends ControllerBot {
 
     _adblock(ip, value, callback) {
         if (ip === "0.0.0.0") {
-            this.hostManager.setPolicy("adblock", value, (err, data) => {
-                if (err == null) {
-                    if (callback != null)
-                        callback(null, "Success");
-                } else {
-                    if (callback != null)
-                        callback(err, "Unable to block ip " + ip);
-                }
+            this.hostManager.loadPolicy((err, data) => {
+                this.hostManager.setPolicy("adblock", value, (err, data) => {
+                    if (err == null) {
+                        if (callback != null)
+                            callback(null, "Success");
+                    } else {
+                        if (callback != null)
+                            callback(err, "Unable to block ip " + ip);
+                    }
+                });
             });
         } else {
             this.hostManager.getHost(ip, (err, host) => {
@@ -177,14 +184,16 @@ class netBot extends ControllerBot {
     }
 
     _vpn(ip, value, callback) {
-        this.hostManager.setPolicy("vpn", value, (err, data) => {
-            if (err == null) {
-                if (callback != null)
-                    callback(null, "Success");
-            } else {
-                if (callback != null)
-                    callback(err, "Unable to block ip " + ip);
-            }
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("vpn", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to block ip " + ip);
+                }
+            });
         });
     }
 
@@ -342,83 +351,40 @@ class netBot extends ControllerBot {
         //
         //       console.log("Set: ",gid,msg);
         if (msg.data.item == "policy") {
-            if (msg.data.value.monitor!= null) {
+          async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
+            if (o=="monitor") {
                 this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
-                    let reply = {
-                        type: 'jsonmsg',
-                        mtype: 'policy',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                    };
-                    reply.code = 200;
-                    reply.data = msg.data.value;
-                    console.log("Repling monitor", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    cb(err);
                 });
             }
-            if (msg.data.value.blockin != null) {
+            else if (o=="blockin") {
                 this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
-                    let reply = {
-                        type: 'jsonmsg',
-                        mtype: 'policy',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                    };
-                    reply.code = 200;
-                    reply.data = msg.data.value;
-                    console.log("Repling blockin", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    cb(err);
                 });
             }
-            if (msg.data.value.acl != null) {
+            else if (o=="acl") {
                 this._block(msg.target, "acl", msg.data.value.acl, (err, obj) => {
-                    let reply = {
-                        type: 'jsonmsg',
-                        mtype: 'policy',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                    };
-                    reply.code = 200;
-                    reply.data = msg.data.value;
-                    console.log("Repling ACL block", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    cb(err);
                 });
             }
-            if (msg.data.value.family != null) {
+            else if (o=="family") {
                 this._family(msg.target, msg.data.value.family, (err, obj) => {
-                    let reply = {
-                        type: 'jsonmsg',
-                        mtype: 'policy',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                    };
-                    reply.code = 200;
-                    reply.data = msg.data.value;
-                    console.log("Repling family", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    cb(err);
                 });
             }
-            if (msg.data.value.adblock != null) {
+            else if (o=="adblock") {
                 this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
-                    let reply = {
-                        type: 'jsonmsg',
-                        mtype: 'policy',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                    };
-                    reply.code = 200;
-                    reply.data = msg.data.value;
-                    console.log("Repling adblock", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    cb(err);
                 });
             }
-            if (msg.data.value.vpn != null) {
+            else if (o=="vpn") {
                 this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
+                    cb(err);
+                });
+            } else {
+                cb();
+            }
+          }, (err)=> {
                     let reply = {
                         type: 'jsonmsg',
                         mtype: 'policy',
@@ -430,8 +396,8 @@ class netBot extends ControllerBot {
                     reply.data = msg.data.value;
                     console.log("Repling vpn", reply.code, reply.data);
                     this.txData(this.primarygid, "", reply, "jsondata", "", null);
-                });
-            }
+
+          });
         } else if (msg.data.item === "host") {
             //data.item = "host"
             //data.value = "{ name: " "}"                           
@@ -566,6 +532,7 @@ class netBot extends ControllerBot {
 
 
             flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
+                console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = host.toJson();
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
                     console.log("Found alarms");

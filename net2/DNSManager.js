@@ -37,6 +37,8 @@ var bone = require('../lib/Bone.js');
 var AppManager = require('./AppManager.js');
 var appManager = new AppManager('../net2/appSignature.json', 'debug');
 
+const dns = require('dns');
+
 function parseX509Subject(subject) {
     let array = subject.split(',');
     let result = {};
@@ -57,6 +59,20 @@ module.exports = class DNSManager {
             log = require("./logger.js")("DNSManager", loglevel);
         }
         return instance;
+    }
+
+    resolveMac(mac,callback) {
+        if (mac == null) {
+            callback(null,null)
+        } else {
+            rclient.hgetall("host:mac:" + data.mac, (err, data) => {
+                if (err == null && data != null) {
+                     callback(err, data);
+                } else {
+                     callback(err, null);
+                }
+            });
+        }
     }
 
     // Reslve v6 or v4 address into a local host
@@ -298,7 +314,7 @@ module.exports = class DNSManager {
     resolveAny(ip,flow, callback) {
         this.resolveLocalHost(ip, (err, data) => {
             if (data) {
-                callback(null, data);
+                callback(null, data, true);
             } else {
                 this.resolvehost(ip, (err, data2,dnsdata) => {
                     if (data2 == null) {
@@ -318,7 +334,7 @@ module.exports = class DNSManager {
                                     data2['appr'] = i;
                                 }
                             }
-                            callback(null, data2);
+                            callback(null, data2,false);
                         });
                       });
                 });
@@ -346,6 +362,86 @@ module.exports = class DNSManager {
         return o.ipv4Addr;
     }
 
+
+    dnsLookup(host,callback) {
+        if (host == null) {
+            callback(null,null);
+        } else {
+            dns.lookup(host, (err, addresses, family) => {
+                callback(err, addresses);
+            });
+        }
+    }
+
+    queryAcl(list, callback) {
+        if (list == null || list.length == 0) {
+            callback(null,list);
+            return;
+        }
+        async.eachLimit(list,10, (o, cb) => {
+            o.srcs = [];
+            o.dsts = [];
+            if (sysManager.isLocalIP(o.src)) {
+                 this.resolveMac(o.mac,(err,data)=> {
+                     if (data!=null) {
+                         o.srcs = [];
+                         o.srcs.push(data.ipv4);
+                         if (data.ipv6Addr!=null) {
+                            let ipv6 = JSON.parse(data.ipv6Addr);
+                            ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
+                            o.srcs = o.srcs.concat(ipv6); 
+                         }  
+                     } else {
+                         o.srcs = [o.src];
+                     }
+                     if (o.dhname) {
+                          this.dnsLookup(o.dhname,(err, list)=> {
+                              if (list && list.length>0) {
+                                  o.dsts = o.dsts.concat(list);
+                              } else {
+                                  o.dsts = [o.dst];
+                              }
+                              cb();
+                          });
+                     } else {
+                          o.dsts = [o.dst];
+                          cb();
+                      }
+                 });
+            } else {
+                 this.dnsLookup(o.shname,(err, list)=> {
+                     if (list && list.length>0) {
+                         o.srcs = o.srcs.concat(list);
+                     } else {
+                         o.srcs = [o.src];
+                     }
+                     this.resolveMac(o.mac,(err,data)=> {
+                         if (data!=null) {
+                             o.dsts = [];
+                             o.dsts.push(data.ipv4);
+                             if (data.ipv6Addr!=null) {
+                                ipv6 = JSON.parse(data.ipv6Addr);
+                                ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
+                                o.dsts = o.dsts.concat(ipv6); 
+                             }  
+                             cb();
+                         } else {
+                             o.dsts = [o.dst];
+                             cb();
+                         }
+                     });
+                 });
+            } 
+        },(err)=> {
+            log.info("DNS:QueryACL:",list,{});
+            callback(err,list);
+        });    
+     
+    }
+
+    // Need to write code to drop the noise before calling this function.
+    // this is a bit expensive due to the lookup part
+
     query(list, ipsrc, ipdst, callback) {
         if (list == null || list.length == 0) {
             callback(null);
@@ -358,7 +454,7 @@ module.exports = class DNSManager {
                  cb();
                  return;
             }
-            if (o.ob && o.ob == 0 && o.rb && o.rb<10000) {
+            if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
                  //console.log("### NOT LOOKUP 2:",o);
                  cb();
                  return;
@@ -369,7 +465,7 @@ module.exports = class DNSManager {
                  return;
             }
             
-            this.resolveAny(o[ipsrc],o, (err, data) => {
+            this.resolveAny(o[ipsrc],o, (err, data, local) => {
                 if (data) {
                     o['shname'] = this.name(data);
                     o['org'] = data.org;
@@ -378,8 +474,12 @@ module.exports = class DNSManager {
                         o['intel'] = data.intel;
                         log.info("DNS:QUERY:RESOLVED:INTEL:",o[ipsrc],o,{});
                     }
+                    if (local == true) {
+                        o['mac'] = data.mac;
+                    }
+                   
                 }
-                this.resolveAny(o[ipdst],o, (err, data) => {
+                this.resolveAny(o[ipdst],o, (err, data,local) => {
                     if (data) {
                         o['dhname'] = this.name(data);
                         if (data.org) {
@@ -391,6 +491,9 @@ module.exports = class DNSManager {
                         if (data.intel && data.intel.c) {
                             o['intel'] = data.intel;
                             log.info("DNS:QUERY:RESOLVED:INTEL22:",o[ipdst],o,{});
+                        }
+                        if (local == true) {
+                            o['mac'] = data.mac;
                         }
                     }
                     cb();
