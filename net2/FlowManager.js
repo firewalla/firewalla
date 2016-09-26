@@ -500,6 +500,9 @@ module.exports = class FlowManager {
         let ts = Date.now() / 1000;
         let t = ts - obj.ts
         t = (t / 60).toFixed(1);
+        let _ts = Date.now() / 1000;
+        let _t = _ts - obj._ts
+        _t = (_t / 60).toFixed(1);
         let org = "";
         if (obj.org) {
             org = "(" + obj.org + ")";
@@ -508,7 +511,7 @@ module.exports = class FlowManager {
         if (obj.appr) {
             appr = "#" + obj.appr + "#";
         }
-        return t + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+        return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
     }
 
     toStringShortShort2(obj, type, interest) {
