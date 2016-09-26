@@ -430,9 +430,18 @@ module.exports = class {
                 return;
             }
 
+            if (obj.service && obj.service == "dns") {
+                return;
+            }
+
             // drop layer 3 
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
                 log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
+                return;
+            }
+
+            if (obj.orig_bytes == null || obj.resp_bytes == null) {
+                log.error("Conn:Drop:NullBytes",obj);
                 return;
             }
 
@@ -512,10 +521,11 @@ module.exports = class {
                 flowspec = {
                     ts: obj.ts,
                    _ts: now,
+                  __ts: obj.ts,  // this is the first time found 
                     sh: host, // source
                     dh: dst, // dstination
-                    ob: obj.orig_ip_bytes, // transfer bytes
-                    rb: obj.resp_ip_bytes,
+                    ob: obj.orig_bytes, // transfer bytes
+                    rb: obj.resp_bytes,
                     ct: 1, // count
                     fd: flowdir, // flow direction
                     lh: lhost, // this is local ip address
@@ -528,8 +538,8 @@ module.exports = class {
                 this.flowstash[flowspecKey] = flowspec;
                 log.debug("Conn:FlowSpec:Create:", flowspec);
             } else {
-                flowspec.ob += obj.orig_ip_bytes;
-                flowspec.rb += obj.resp_ip_bytes;
+                flowspec.ob += obj.orig_bytes;
+                flowspec.rb += obj.resp_bytes;
                 flowspec.ct += 1;
                 if (flowspec.ts < obj.ts) {
                     flowspec.ts = obj.ts;
@@ -543,8 +553,8 @@ module.exports = class {
                 sh: host, // source
                _ts: now,
                 dh: dst, // dstination
-                ob: obj.orig_ip_bytes, // transfer bytes
-                rb: obj.resp_ip_bytes,
+                ob: obj.orig_bytes, // transfer bytes
+                rb: obj.resp_bytes,
                 ct: 1, // count
                 fd: flowdir, // flow direction
                 lh: lhost, // this is local ip address
@@ -595,13 +605,13 @@ module.exports = class {
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
-                    port_flow.ob += obj.orig_ip_bytes;
-                    port_flow.rb += obj.resp_ip_bytes;
+                    port_flow.ob += obj.orig_bytes;
+                    port_flow.rb += obj.resp_bytes;
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
-                    ob: obj.orig_ip_bytes,
-                    rb: obj.resp_ip_bytes,
+                    ob: obj.orig_bytes,
+                    rb: obj.resp_bytes,
                     ct: 1
                 };
                 //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
