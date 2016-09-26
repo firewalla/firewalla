@@ -456,8 +456,8 @@ module.exports = class {
 
 
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
-                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3"
-                    || obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
+                    obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
                         log.error("Conn:Drop:State",obj.conn_state,obj);

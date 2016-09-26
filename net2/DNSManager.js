@@ -420,7 +420,7 @@ module.exports = class DNSManager {
                              o.dsts = [];
                              o.dsts.push(data.ipv4);
                              if (data.ipv6Addr!=null) {
-                                ipv6 = JSON.parse(data.ipv6Addr);
+                                let ipv6 = JSON.parse(data.ipv6Addr);
                                 ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
                                 o.dsts = o.dsts.concat(ipv6); 
                              }  
