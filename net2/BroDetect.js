@@ -1049,13 +1049,15 @@ module.exports = class {
                 // write this to an alarm
                         let actionobj = {
                             title: "Security Notice",
-                            actions: ["block","ignore"],
+                            actions: ["ignore"],
                             src: obj.src,
                             dst: obj.dst,
-                            target: "0.0.0.0",
+                            target: obj.src,
                         };
+                        /*
                         alarmManager.alarm("0.0.0.0","notice", 'info', '0', obj, actionobj, (err,obj,action)=> {
                         });
+                        */
                 
             } else {
                 log.debug("Notice:Drop", JSON.parse(data));
