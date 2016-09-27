@@ -455,6 +455,7 @@ module.exports = class {
             }
 
 
+            /*
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
                 if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
@@ -464,6 +465,7 @@ module.exports = class {
                //         return;
                 }
             }
+            */
 
 
             let host = obj["id.orig_h"];
