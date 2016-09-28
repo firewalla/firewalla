@@ -1076,6 +1076,9 @@ module.exports = class {
         }
         json.version = sysManager.config.version;
         json.device = "Firewalla (beta)"
+        if (sysManager.publicIp) {
+             json.publicIp = sysManager.publicIp;
+        }
 
         flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 15, 60 * 15 / 15, (err, sys) => {
             json.flowsummary = sys;

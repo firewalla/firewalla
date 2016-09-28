@@ -38,6 +38,8 @@ var async = require('async');
 
 var natUpnp = require('nat-upnp');
 
+var publicIp = require('public-ip');
+
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -120,8 +122,18 @@ module.exports = class {
         });
     }
 
+    publicIp() {
+       publicIp.v4((err, ip) => {
+          if (err != null) {
+                return;
+          }
+          sysManager.publicIp = ip;
+       });
+    }
+
     start() {
         this.startDiscover(true);
+        this.publicIp();
         setTimeout(() => {
             this.startDiscover(false);
         }, 1000 * 60 * 10);
@@ -131,6 +143,10 @@ module.exports = class {
         setInterval(() => {
             this.startDiscover(true);
         }, 1000 * 60 * 5);
+        setInterval(() => {
+            this.publicIp();
+        }, 1000 * 60 * 60*24);
+     
         this.natScan();
     }
 
@@ -333,6 +349,17 @@ module.exports = class {
                 }
                 this.interfaces[list[i].name] = list[i];
                 redisobjs.push(JSON.stringify(list[i]));
+
+                // "{\"name\":\"eth0\",\"ip_address\":\"192.168.2.225\",\"mac_address\":\"b8:27:eb:bd:54:da\",\"type\":\"Wired\",\"gateway\":\"192.168.2.1\",\"subnet\":\"192.168.2.0/24\"}"
+                if (list[i].type=="Wired") {
+                    let host = {
+                        name:"Firewalla",
+                         uid:list[i].ip_address,
+                         mac:list[i].mac_address.toUpperCase(),
+                    ipv4Addr:list[i].ip_address,
+                    };
+                    this.processHost(host);
+                }
             }
             /*
             let interfaces = os.interfaces();
@@ -391,9 +418,27 @@ module.exports = class {
             this.hosts = [];
             for (let h in hosts) {
                 let host = hosts[h];
+                this.processHost(host);
+            }
+            console.log("Done Processing ++++++++++++++++++++");
+
+            setTimeout(() => {
+                callback(null, null);
+                this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+                sysManager.setOperationalState("LastScan", Date.now() / 1000);
+            }, 2000);
+        });
+    }
+
+    /* host.uid = ip4 adress
+       host.mac = mac address
+       host.ipv4Addr 
+    */
+
+    processHost(host) {
                 if (host.mac == null) {
                     log.debug("Discovery:Nmap:HostMacNull:", h, hosts[h]);
-                    continue;
+                    return;
                 }
 
                 let key = "host:ip4:" + host.uid;
@@ -455,6 +500,9 @@ module.exports = class {
                                     data.macVendor = host.macVendor;
                                 }
                                 newhost = true;
+                                if (host.name) { 
+                                    data.bname = host.name;
+                                }
                                 let c = this.hostCache[host.uid];
                                 if (c && Date.now() / 1000 < c.expires) {
                                     data.name = c.name;
@@ -480,37 +528,6 @@ module.exports = class {
                         }
                     });
                 }
-
-            }
-            /*
-                        for (let p in ports) {
-                             let port = ports[p];
-                             this.DB.Port.DBModel.find({ where: {uid: port.uid} }).then((dbobj)=> {
-                                if (dbobj) { // if the record exists in the db
-                                    port.firstFoundTimestamp = dbobj.firstFoundTimestamp;
-                                    dbobj.updateAttributes(
-                                        port 
-                                    );
-                                } else {
-                                    port.firstFoundTimestamp = Date.now()/1000; 
-                                    this.DB.Port.DBModel.create(port);
-                                }
-                             });
-                        }
-             
-                        this.DB.Port.DBModel.sync();
-                        this.DB.Host.DBModel.sync();
-                        this.DB.sync();
-                     */
-
-            console.log("Done Processing ++++++++++++++++++++");
-
-            setTimeout(() => {
-                callback(null, null);
-                this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-                sysManager.setOperationalState("LastScan", Date.now() / 1000);
-            }, 2000);
-        });
     }
 
     //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show

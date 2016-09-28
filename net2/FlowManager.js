@@ -405,7 +405,10 @@ module.exports = class FlowManager {
                             continue;
                         }
                         let ts = o.ts;
-                        if (interval == 0 || o.ts < interval) {
+                        if (o._ts) {
+                            ts = o._ts;
+                        }
+                        if (interval == 0 || ts < interval) {
                             if (interval == 0) {
                                 interval = Date.now() / 1000;
                             }
