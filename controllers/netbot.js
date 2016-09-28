@@ -485,7 +485,7 @@ class netBot extends ControllerBot {
                 this.deviceHandler(msg, gid, msg.target, ips);
             });
         } else if (msg.data.item === "vpn" || msg.data.item === "vpnreset") {
-            let regenerate = false;
+            let regenerate = true;
             if (msg.data.item === "vpnreset") {
                 regenerate = true;
             }

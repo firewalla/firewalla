@@ -360,6 +360,9 @@ module.exports = class {
             } else {
                 if (block['dst'] != null && block['src'] != null) {
                     let aclkey = block['dst'] + "," + block['src'];
+                    if (block['protocol'] != null) {
+                        aclkey = block['dst'] + "," + block['src']+","+block['protocol']+","+block['sport']+","+block['dport'];
+                    }
                     if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
                         cb();
                     } else {
