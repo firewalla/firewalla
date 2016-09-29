@@ -111,7 +111,7 @@ module.exports = class {
                 if (intf != null) {
                     log.debug("Prepare to scan subnet", intf);
                     if (this.nmap == null) {
-                        this.nmap = new Nmap(intf.subnet);
+                        this.nmap = new Nmap(intf.subnet,false);
                     }
                     this.scan(intf.subnet, fast, (err, result) => {
                         this.bonjourWatch();
@@ -136,7 +136,7 @@ module.exports = class {
         this.publicIp();
         setTimeout(() => {
             this.startDiscover(false);
-        }, 1000 * 60 * 10);
+        }, 1000 * 60 * 2);
         setInterval(() => {
             this.startDiscover(false);
         }, 1000 * 60 * 100);
@@ -441,6 +441,8 @@ module.exports = class {
                     return;
                 }
 
+                let nname = host.nname;
+
                 let key = "host:ip4:" + host.uid;
                 log.debug("Discovery:Nmap:Scan:Found", key, host.mac, host.uid);
                 rclient.hgetall(key, (err, data) => {
@@ -489,6 +491,9 @@ module.exports = class {
                                 if (host.macVendor) {
                                     data.macVendor = host.macVendor;
                                 }
+                                if (data.bname == null && nname!=null) {
+                                    data.bname = nname;
+                                }
                             } else {
                                 data = {};
                                 data.ipv4 = host.ipv4Addr;
@@ -502,6 +507,9 @@ module.exports = class {
                                 newhost = true;
                                 if (host.name) { 
                                     data.bname = host.name;
+                                }
+                                if (nname) {
+                                    data.bname = nname;
                                 }
                                 let c = this.hostCache[host.uid];
                                 if (c && Date.now() / 1000 < c.expires) {

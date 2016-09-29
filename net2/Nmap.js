@@ -83,8 +83,8 @@ module.exports = class {
 
     scan(range, fast, callback) {
         //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
-        fast = true;
-        let cmdline = 'sudo nmap -T5 -PO --host-timeout 200s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
+        let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 --disable-arp-ping ' + range + ' -oX - | xml-json host';
+        // let cmdline = 'sudo nmap -T5 -PO --host-timeout 200s  --disable-arp-ping ' + range + ' -oX - | xml-json host'; 
         // let    cmdline = 'sudo nmap -sn -PO  --host-timeout 20s --disable-arp-ping '+range+' -oX - | xml-json host';
         if (fast == true) {
             cmdline = 'sudo nmap -sn -PO --host-timeout 20s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
@@ -170,6 +170,27 @@ module.exports = class {
                     if (hostjson['uptime']) {
                         host['uptime'] = hostjson['uptime']['seconds'];
                     }
+
+                    try {
+                        if (fast == false) {
+                        }
+                        if (hostjson.hostscript) {
+                        }
+                        if (hostjson.hostscript && hostjson.hostscript.script && hostjson.hostscript.script.id == "nbstat") {
+                            let scriptout = hostjson.hostscript.script;
+                            if (scriptout.elem) {
+                                for (let i in scriptout.elem) {
+                                    if (scriptout.elem[i].key == "server_name") {
+                                        host.nname = scriptout.elem[i]["_"];
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch(e) {
+                        console.log("Discovery:Nmap:Netbios:Error",e,host);
+                    }
+
                     hosts.push(host);
                 } catch (e) {}
             }
