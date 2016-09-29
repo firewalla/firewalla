@@ -282,7 +282,7 @@ module.exports = class DNSManager {
                   cb();
                   return;
               }
-              if (r.c) {
+              if (r.c || r.a) {
                   log.info("#################### GOT INTEL",r,dnsdata,{});
                   dnsdata.intel = r;
                   let key = "dns:ip:"+ip;
