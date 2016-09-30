@@ -1076,6 +1076,8 @@ module.exports = class {
         }
         json.version = sysManager.config.version;
         json.device = "Firewalla (beta)"
+        json.publicIp = sysManager.publicIp;
+        json.ddns = sysManager.ddns;
         if (sysManager.publicIp) {
              json.publicIp = sysManager.publicIp;
         }

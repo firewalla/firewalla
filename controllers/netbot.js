@@ -213,6 +213,11 @@ class netBot extends ControllerBot {
         // sysmanager.setConfig(this.sensorConfig);
         sysmanager.update((err, data) => {});
 
+        setInterval(()=>{
+            sysmanager.update((err, data) => {});
+        },1000*60*60*10);
+
+
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
 
