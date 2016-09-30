@@ -33,6 +33,8 @@ var ip = require('ip');
 var async = require('async');
 
 
+var ttlExpire = 60;
+
 module.exports = class {
     constructor(path, loglevel) {
         if (instance == null) {
@@ -184,13 +186,14 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: 7200,
-            timeout: 7200
+            ttl: 0,
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
+            /*
             setInterval(() => {
                 this.setNat(null)
-            }, 7210*1000);
+            }, ttlExpire*1000);
+            */
             if (callback) {
                 this.portmapped = true;
                 callback(null, external, 1194);
