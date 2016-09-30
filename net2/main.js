@@ -71,12 +71,14 @@ var alarmManager = new AlarmManager('debug');
 
 var bone = require("../lib/Bone.js");
 setTimeout(()=>{
-bone.checkin(config,null);
+    sysManager.checkIn((err,data)=>{
+    });
 },5000);
 
 setInterval(()=>{
-   bone.checkin(config,null);
-},1000*60*60*12);;
+    sysManager.checkIn((err,data)=>{
+    });
+},1000*60*60*12);
 
 
 setTimeout(()=>{

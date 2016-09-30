@@ -251,10 +251,9 @@ module.exports = class {
                 password = this.generatePassword(5);
             }
 
-            publicIp.v4((err, ip) => {
-                if (err != null) {
-                    callback(err, null);
-                    return;
+                let ip = sysManager.myDDNS();
+                if (ip == null) {
+                    ip = sysManager.publicIp();
                 }
                 let cmd = "sudo ./ovpngen.sh " + clientname + " " + password + " " + sysManager.myIp() + " " + ip;
                 log.info("VPNManager:GEN", cmd);
@@ -268,7 +267,6 @@ module.exports = class {
                         }
                     });
                 });
-            });
         });
     }
 }
