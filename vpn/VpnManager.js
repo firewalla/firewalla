@@ -33,7 +33,7 @@ var ip = require('ip');
 var async = require('async');
 
 
-var ttlExpire = 60;
+var ttlExpire = 600;
 
 module.exports = class {
     constructor(path, loglevel) {
@@ -187,19 +187,23 @@ module.exports = class {
             private: 1194,
             public: 1194,
             ttl: 0,
+            description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
-            /*
-            setInterval(() => {
+            setTimeout(() => {
+                log.info("VpnManager:Restart:portMap");
                 this.setNat(null)
             }, ttlExpire*1000);
-            */
             if (callback) {
                 this.portmapped = true;
                 callback(null, external, 1194);
             }
         }, (err) => {
             log.info("VpnManager:Start:portMap:Failed");
+            setTimeout(() => {
+                log.info("VpnManager:Restart:portMap");
+                this.setNat(null)
+            }, ttlExpire*1000);
             if (callback) {
                 callback(null, null, null);
             }
