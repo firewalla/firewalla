@@ -186,14 +186,14 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: 0,
+            ttl: ttlExpire,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
             setTimeout(() => {
                 log.info("VpnManager:Restart:portMap");
                 this.setNat(null)
-            }, ttlExpire*1000);
+            }, ttlExpire/3*1000);
             if (callback) {
                 this.portmapped = true;
                 callback(null, external, 1194);
