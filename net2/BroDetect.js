@@ -680,12 +680,14 @@ module.exports = class {
 
 
                     try {
-                        let hostChanged = hostsChanged[spec.lh];
-                        if (hostChanged == null) {
-                            hostsChanged[spec.lh] = Number(spec.ts);
-                        } else {
-                            if (hostChanged < spec.ts) {
-                                hostsChanged[spec.lh] = spec.ts;
+                        if (spec.ob>0 && spec.rb>0) { 
+                            let hostChanged = hostsChanged[spec.lh];
+                            if (hostChanged == null) {
+                                hostsChanged[spec.lh] = Number(spec.ts);
+                            } else {
+                                if (hostChanged < spec.ts) {
+                                    hostsChanged[spec.lh] = spec.ts;
+                                }
                             }
                         }
                     } catch (e) {
