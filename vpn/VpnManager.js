@@ -75,6 +75,8 @@ module.exports = class {
                         error(err);
                     }
                 }
+                this.upnpClient.close();
+                this.upnpClient = null;
             });
         });
     }
