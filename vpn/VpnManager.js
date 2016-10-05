@@ -33,7 +33,7 @@ var ip = require('ip');
 var async = require('async');
 
 
-var ttlExpire = 600;
+var ttlExpire = 60*60*12;
 
 module.exports = class {
     constructor(path, loglevel) {
@@ -81,12 +81,18 @@ module.exports = class {
         });
     }
 
-    unpunchNat(opts) {
-        if (this.upnpClient == null) {
-            return;
-        }
-        this.upnpClient.portUnmapping(opts);
+    unpunchNat(opts, callback) {
         log.info("VpnManager:UnpunchNat", opts);
+        if (this.upnpClient == null) {
+            this.upnpClient = natupnp.createClient();
+        }
+        this.upnpClient.portUnmapping(opts,(err)=>{
+            this.upnpClient.close();
+            this.upnpClient = null;
+            if (callback) {
+                callback(err);
+            }
+        });
     }
 
     setupNat2(opts, success, error) {
@@ -188,7 +194,7 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: ttlExpire,
+            ttl: 0,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
@@ -205,7 +211,7 @@ module.exports = class {
             setTimeout(() => {
                 log.info("VpnManager:Restart:portMap");
                 this.setNat(null)
-            }, ttlExpire*1000);
+            }, ttlExpire/3*1000);
             if (callback) {
                 callback(null, null, null);
             }
@@ -219,16 +225,22 @@ module.exports = class {
                  callback(null, this.portmapped, this.portmapped);
             return;
         }
-        require('child_process').exec("sudo service openvpn start", (err, out, code) => {
-            log.info("VpnManager:Start", err);
-            if (err && this.started == false) {
-                if (callback) {
-                    callback(err);
+        this.unpunchNat({
+            protocol: 'udp',
+            private: 1194,
+            public: 1194
+        },(err)=>{
+            require('child_process').exec("sudo service openvpn start", (err, out, code) => {
+                log.info("VpnManager:Start", err);
+                if (err && this.started == false) {
+                    if (callback) {
+                        callback(err);
+                    }
+                    return;
                 }
-                return;
-            }
-            this.started = true;
-            this.setNat(callback);
+                this.started = true;
+                this.setNat(callback);
+            });
         });
     }
 

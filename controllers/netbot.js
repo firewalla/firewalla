@@ -276,7 +276,7 @@ class netBot extends ControllerBot {
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "NetBot is Ready" + "\n\n" + this.helpString(), "Fishbone Booted");
+            this.tx(this.primarygid, "200", "Fishbone Awakens");
             this.setupDialog();
         }, 2000);
 
