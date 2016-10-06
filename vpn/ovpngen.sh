@@ -98,5 +98,7 @@ sudo chmod 600 -R /etc/openvpn
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
 echo $2 > /home/pi/ovpns/$NAME$FILEEXT$PASSEXT
+cp /home/pi/ovpns/$NAME$FILEEXT /home/pi/ovpns/fishboneVPN1.ovpn
+cp /home/pi/ovpns/$NAME$FILEEXT$PASSEXT /home/pi/ovpns/fishboneVPN1.ovpn.password
  
 # Original script written by Eric Jodoin.

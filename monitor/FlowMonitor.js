@@ -35,9 +35,6 @@ var instance = null;
 var HostManager = require("../net2/HostManager.js");
 var hostManager = new HostManager("cli", 'client', 'info');
 
-var AppManager = require('../net2/AppManager.js');
-var appManager = new AppManager('../net2/appSignature.json', 'info');
-
 var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
 var alarmManager = new AlarmManager('debug');

@@ -34,9 +34,6 @@ var instance = null;
 
 var bone = require('../lib/Bone.js');
 
-var AppManager = require('./AppManager.js');
-var appManager = new AppManager('../net2/appSignature.json', 'debug');
-
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -236,7 +233,7 @@ module.exports = class DNSManager {
                 // in order to use the cache, 
                 log.info("Intel:Cached", ip, dnsdata,intel);
                 if (intel && intel.ts && intel.ts>(Date.now()/1000-24*60*60)) { // otherwise expired
-                    if (intel.c!=null) {
+                    if (intel.c!=null || intel.apps!=null) {
                         callback(null, JSON.parse(dnsdata._intel));
                         return;
                     } else if (dnsdata.host == null && intel.rcount && intel.rcount == 1) {
@@ -257,6 +254,8 @@ module.exports = class DNSManager {
             //return;
             dnsdata = {};
         }
+
+        console.log("#########3 CACHE MISS ON IP",ip);
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
@@ -282,7 +281,7 @@ module.exports = class DNSManager {
                   cb();
                   return;
               }
-              if (r.c || r.a) {
+              if (r.c || r.apps) {
                   log.info("#################### GOT INTEL",r,dnsdata,{});
                   dnsdata.intel = r;
                   let key = "dns:ip:"+ip;
@@ -327,15 +326,17 @@ module.exports = class DNSManager {
                             if (intel.s) {
                                  log.info("#################### GOT INTEL2",data2,intel,{});
                             }
-                        }
-                        appManager.query(data2.name, null, (err, result) => {
-                            if (err == null && result) {
-                                for (let i in result) {
+                            if (intel.apps) {
+                                for (let i in intel.apps) {
                                     data2['appr'] = i;
+                                    break;
                                 }
                             }
-                            callback(null, data2,false);
-                        });
+                        }
+                        if (data2.appr) {
+                            console.log("#######################3 APPR ", data2);
+                        }
+                        callback(null, data2,false);
                       });
                 });
             }
