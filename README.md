@@ -47,7 +47,7 @@ https://itunes.apple.com/us/app/encipher-connect/id1082886344?mt=8
 * connect ethernet port to router.
 * install encipher connect from app store.
 * launch encipher connect
-* tap on 'fishbowl' and connect
+* tap on 'Firewalla Bot' and connect
 
 If anything bad happens, unplug it. 
 
