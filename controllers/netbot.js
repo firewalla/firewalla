@@ -236,7 +236,7 @@ class netBot extends ControllerBot {
                 } else if (o.macVendor != null) {
                     name = "(?)" + o.macVendor + " (" + o.ipv4Addr + ")";
                 }
-                this.tx(this.primarygid, "New host found in network: " + name, "Found new host " + name);
+                this.tx2(this.primarygid, "New host found in network: " + name, "Found new host " + name, {uid:o.ipv4Addr});
             }
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
@@ -254,7 +254,7 @@ class netBot extends ControllerBot {
                 }
             }
             if (m)
-                this.tx(this.primarygid, m, n);
+                this.tx2(this.primarygid, m, n, {id:msg.id});
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
             let m = null;
@@ -271,7 +271,7 @@ class netBot extends ControllerBot {
                 }
             }
             if (m)
-                this.tx(this.primarygid, m, n);
+                this.tx2(this.primarygid, m, n, {id:msg.id});
         });
 
         setTimeout(() => {
@@ -338,7 +338,7 @@ class netBot extends ControllerBot {
 
                     console.log("Sending Msg:", msg);
 
-                    this.txQ(this.primarygid, msg, msg);
+                    this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
                 });
             }
             if (callback)

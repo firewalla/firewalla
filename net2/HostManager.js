@@ -66,9 +66,10 @@ var MobileDetect = require('mobile-detect');
 
 
 class Host {
-    constructor(obj, callback) {
+    constructor(obj,mgr, callback) {
         this.callbacks = {};
         this.o = obj;
+        this.mgr = mgr;
         if (this.o.ipv4) {
             this.o.ipv4Addr = this.o.ipv4;
         }
@@ -510,6 +511,10 @@ class Host {
                     });
                 });
             } else if (type == "HostPolicy:Changed" && this.type == "server") {
+                this.applyPolicy((err)=>{
+                });
+                log.info("HostPolicy:Changed", channel, ip, type, obj);
+   /*
                 this.loadPolicy((err, data) => {
                     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
                     policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
@@ -522,8 +527,28 @@ class Host {
                         });
                     });
                 });
-                log.info("HostPolicy:Changed", channel, ip, type, obj);
+*/
             }
+        });
+    }
+
+    applyPolicy(callback) {
+        this.loadPolicy((err, data) => {
+            log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
+            let policy = JSON.parse(JSON.stringify(this.policy));
+            // check for global
+            if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
+                policy.monitor = false;
+            }
+            policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
+                dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                    policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
+                        if (err == null && changed == true) {
+                            this.savePolicy(callback);
+                        }
+                    });
+                });
+            });
         });
     }
 
@@ -1146,7 +1171,7 @@ module.exports = class {
                 return;
             }
             if (err == null && o != null) {
-                host = new Host(o);
+                host = new Host(o,this);
                 host.type = this.type;
                 //this.hosts.all.push(host);
                 this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
@@ -1240,7 +1265,7 @@ module.exports = class {
                         let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
                         if (hostbymac == null) {
-                            hostbymac = new Host(o);
+                            hostbymac = new Host(o,this);
                             hostbymac.type = this.type;
                             this.hosts.all.push(hostbymac);
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
@@ -1248,14 +1273,25 @@ module.exports = class {
                         } else {
                             hostbymac.update(o);
                         }
+                        // two mac have the same IP,  pick the latest, until the otherone update itself 
                         /*
-                        if (hostbyip != null) {
-                            if (hostbyip.mac != o.mac) {
-                                hostbyip.mac = o.mac;
+                        if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
+                            log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
+                            if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+                                this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }
-                            // need to take care of ip address change by checking mac
                         }
                         */
+                        this.syncHost(hostbymac, true, (err) => {
+                            if (this.type == "server") {
+                                hostbymac.applyPolicy((err)=>{
+                                    cb();
+                                });
+                            } else {
+                               cb();
+                            }
+                        });
+                       /*
                         hostbymac.loadPolicy((err, policy) => {
                             this.syncHost(hostbymac, true, (err) => {
                                 if (this.type == "server") {
@@ -1272,6 +1308,7 @@ module.exports = class {
                                 cb();
                             });
                         });
+                       */
                     } else {
                         cb();
                     }
@@ -1412,6 +1449,9 @@ module.exports = class {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
                             if (changed == true && err == null) {
                                 this.savePolicy(null);
+                            }
+                            for (let i in this.hosts.all) {
+                                this.hosts.all[i].applyPolicy();
                             }
                         });
                     });

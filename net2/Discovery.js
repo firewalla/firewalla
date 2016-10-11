@@ -269,8 +269,9 @@ module.exports = class {
                                          actions: ["hblock","ignore"],
                                          target: host.ipv4Addr,
                                     }
-                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, null);
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
+                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
+                                        this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         }
@@ -452,6 +453,7 @@ module.exports = class {
                             let changeset = this.mergeHosts(data, host);
                             changeset['lastActiveTimestamp'] = Date.now() / 1000;
                             changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
@@ -527,8 +529,9 @@ module.exports = class {
                                          target: data.ipv4Addr,
                                          mac: data.mac, 
                                     }
-                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, null);
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", data);
+                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
+                                         this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         } else {

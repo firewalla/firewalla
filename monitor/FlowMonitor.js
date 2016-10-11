@@ -26,6 +26,8 @@ var sysManager = new SysManager('info');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
+var uuid = require('uuid');
+
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
 });
@@ -134,7 +136,8 @@ module.exports = class FlowMonitor {
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                                msg:msg
+                                                msg:msg,
+                                                obj:obj
                                 });
                             }
                         });
@@ -159,7 +162,8 @@ module.exports = class FlowMonitor {
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj!=null) {
                                   this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                       msg:msg
+                                       msg:msg,
+                                       obj:obj
                                   });
                             }
                         });
@@ -172,6 +176,7 @@ module.exports = class FlowMonitor {
                     let intelobj = null;
                     if (flow.fd == "in") {
                         intelobj = {
+                            uid: uuid.v4(),
                             ts: flow.ts,
                             "id.orig_h": flow.sh,
                             "id.resp_h": flow.dh,
@@ -184,6 +189,7 @@ module.exports = class FlowMonitor {
                         }
                     } else {
                         intelobj = {
+                            uid: uuid.v4(),
                             ts: flow.ts,
                             shname: flow["shname"],
                             dhname: flow["dhname"],
@@ -240,7 +246,8 @@ module.exports = class FlowMonitor {
                     alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
                         if (obj!=null) {
                              this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
+                                            msg:msg,
+                                            obj:obj
                              });
                         }
                     });
@@ -502,10 +509,6 @@ module.exports = class FlowMonitor {
                                     (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
                                     this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
-                                            this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                direction: "out",
-                                                "txRatioRanked": [flow]
-                                            });
                                             let copy = JSON.parse(JSON.stringify(flow));
                                             let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
                                             copy.msg = msg;
@@ -519,7 +522,13 @@ module.exports = class FlowMonitor {
                                               //infourl:
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj);
+                                            alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                    direction: "out",
+                                                    "txRatioRanked": [flow],
+                                                    id:data.id,
+                                                });
+                                            });
                                         }
                                     });
                                 }
@@ -530,10 +539,6 @@ module.exports = class FlowMonitor {
                                     (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
                                     this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
-                                            this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                direction: "in",
-                                                "txRatioRanked": [flow]
-                                            });
                                             let copy = JSON.parse(JSON.stringify(flow));
                                             let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
                                             copy.msg = msg;
@@ -545,7 +550,13 @@ module.exports = class FlowMonitor {
                                                 target: flow.lh,
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj);
+                                            alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                    direction: "in",
+                                                    "txRatioRanked": [flow],
+                                                    id:data.id,
+                                                });
+                                            });
                                         }
                                     });
                                 }

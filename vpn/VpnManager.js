@@ -89,6 +89,7 @@ module.exports = class {
         this.upnpClient.portUnmapping(opts,(err)=>{
             this.upnpClient.close();
             this.upnpClient = null;
+            this.portmapped = false;
             if (callback) {
                 callback(err);
             }

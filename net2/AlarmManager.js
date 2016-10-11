@@ -109,7 +109,11 @@ module.exports = class {
 
     alarm(hip, alarmtype, alarmseverity, severityscore, obj, actionobj, callback) {
         let key = "alarm:ip4:" + hip;
-        obj['id'] = uuid.v4();
+        if (obj.uid!=null) {
+            obj['id'] = obj.uid;
+        } else {
+            obj['id'] = uuid.v4();
+        }
         obj['alarmtype'] = alarmtype;
         obj['alarmseverity'] = alarmseverity;
         obj['severityscore'] = severityscore;
