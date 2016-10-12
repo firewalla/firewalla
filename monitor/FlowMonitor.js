@@ -227,7 +227,7 @@ module.exports = class FlowMonitor {
                                         });
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
-                } else if (this.flowIntelRecordFlow(flow,3)) {
+                } else if (c=="games" && this.flowIntelRecordFlow(flow,3)) {
                     let msg = "Doing "+c+" "+flow["shname"] +" "+flow["dhname"];
                     let actionobj = {
                         title: "Notify Action",
