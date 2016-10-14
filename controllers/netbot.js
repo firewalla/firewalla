@@ -543,7 +543,7 @@ class netBot extends ControllerBot {
                     console.log("Found alarms");
                     jsonobj.alarms = alarms;
                     // hour block = summarize into blocks of hours ...
-                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, (err, result) => {
+                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, (err, result,activities) => {
                         console.log("--- Connectionby most recent ---", result.length);
                         let response = {
                             time: [],
@@ -580,6 +580,7 @@ class netBot extends ControllerBot {
                             }
                         }
                         jsonobj.flows = response;
+                        jsonobj.activities = activities;
 
                         flowManager.sort(result, 'duration');
                         console.log("-----------Sort by rx------------------------");

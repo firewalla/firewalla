@@ -26,6 +26,7 @@ var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('info');
+var bone = require("../lib/Bone.js");
 
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
@@ -35,6 +36,92 @@ var async = require('async');
 var instance = null;
 
 var maxflow = 10000;
+
+class FlowGraph {
+    constructor(name,flowarray) {
+         if (flowarray) {
+             this.flowarray = flowarray;
+         } else {
+             this.flowarray = [];
+         }
+         this.name = name;
+    }
+
+    flowarraySorted(recent) {
+        if (recent == true) {
+             this.flowarray.sort(function (a, b) {
+                 return Number(b[1]) - Number(a[1]);
+             })
+             return this.flowarray;
+        } else {
+             this.flowarray.sort(function (a, b) {
+                 return Number(a[1]) - Number(b[1]);
+             })
+             return this.flowarray;
+        }
+    }
+
+
+    addFlow(flow) {
+         if (flow.flows == null) {
+             let flowStart = Math.ceil(Number(flow.__ts) - Number(flow.du));
+             let flowEnd = Math.ceil(Number(flow.__ts));
+             if (flow.__ts==null) {
+                 flowStart = Math.ceil(Number(flow._ts) - Number(flow.du));
+                 flowEnd = Math.ceil(Number(flow._ts));
+             }
+             let ob = Number(flow.ob);
+             let rb = Number(flow.rb);
+                
+             this.addRawFlow(flowStart,flowEnd,ob,rb);
+         } else {
+             //console.log("$$$ before ",flow.flows);
+             for (let i in flow.flows) {
+                 let f = flow.flows[i];
+                 this.addRawFlow(f[0],f[1],f[2],f[3]);
+             }
+             //console.log("$$$ after",this.flowarray);
+         }
+    }
+
+    addRawFlow(flowStart, flowEnd, ob,rb) {
+         let insertindex = 0;
+
+         for (let i in this.flowarray) {
+             let e = this.flowarray[i];
+             if (flowStart < e[0]) {
+                 break;
+             }
+             if (flowStart<e[1]) {
+                 flowStart = e[0];
+                 break;
+             }
+             insertindex = Number(i)+Number(1);
+         }
+
+         let removed = Number(0);
+         for (let i = insertindex; i <this.flowarray.length;i++) {
+             let e = this.flowarray[Number(i)];
+             if (e[1]<flowEnd) {
+                 ob += e[2];
+                 rb += e[3];
+                 removed++;
+                 continue;
+             } else if (e[1]>=flowEnd) {
+                 ob += e[2];
+                 rb += e[3];
+                 flowEnd = e[1];
+                 removed++;
+                 break;
+             }
+         }
+
+         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb]);
+    //     console.log("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
+
+    }
+
+}
 
 module.exports = class FlowManager {
     constructor(loglevel) {
@@ -383,6 +470,92 @@ module.exports = class FlowManager {
         });
     }
 
+    summarizeActivityFromConnections(flows,callback) {
+        let appdb = {};
+        let activitydb = {};
+
+        for (let i in flows) {
+            let flow = flows[i];
+            if (flow.flows) {
+                 let fg = new FlowGraph("raw");
+                 //console.log("$$$ Before",flow.flows);
+                 for (let i in flow.flows) {
+                       let f = flow.flows[i];
+                       fg.addRawFlow(f[0],f[1],f[2],f[3]);
+                 }
+                 flow.flows = fg.flowarray;
+                 //console.log("$$$ After",flow.flows);
+            }
+            if (flow.appr) {
+                if (appdb[flow.appr]) {
+                    appdb[flow.appr].push(flow);
+                } else {
+                    appdb[flow.appr] = [flow];
+                }
+            }
+            if (flow.intel && flow.intel.c && flow.intel.c!="intel") {
+                if (activitydb[flow.intel.c]) {
+                    activitydb[flow.intel.c].push(flow);
+                } else {
+                    activitydb[flow.intel.c] = [flow];
+                }
+            }
+        }
+
+/*
+        console.log("--------------appsdb ---- ");
+        console.log(appdb);
+        console.log("--------------activitydb---- ");
+        console.log(activitydb);
+*/
+        console.log(activitydb);
+ 
+        let flowobj = {id:0,app:{},activity:{}};
+        let hasFlows = false;
+
+        let linearActivities= [];
+
+        for (let i in appdb) {
+            let f = new FlowGraph(i);
+            for (let j in appdb[i]) {
+                f.addFlow(appdb[i][j]);
+                hasFlows = true;
+            }
+            flowobj.app[f.name]= f.flowarraySorted(true);
+            for (let k in flowobj.app[f.name]) {
+                let _f = flowobj.app[f.name][k];
+                linearActivities.push(f.name,_f[0],_f[1],_f[2],_f[3]);
+            }
+        }
+        for (let i in activitydb) {
+            let f = new FlowGraph(i);
+            for (let j in activitydb[i]) {
+                f.addFlow(activitydb[i][j]);
+                hasFlows = true;
+            }
+            flowobj.activity[f.name]=f.flowarraySorted(true);;
+            for (let k in flowobj.activity[f.name]) {
+                let _f = flowobj.activity[f.name][k];
+                linearActivities.push(f.name,_f[0],_f[1],_f[2],_f[3]);
+            }
+         
+        }
+        // linear these flows
+       
+        if (!hasFlows) {
+            if (callback) {
+                callback(null,null);
+            }
+            return;
+        }
+
+        bone.flowgraph("clean", [flowobj],(err,data)=>{
+            if (callback) {
+                callback(err,data);
+            }
+        });
+    }
+
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, callback) {
         let sorted = [];
         let conndb = {};
@@ -447,6 +620,13 @@ module.exports = class FlowManager {
                                     }
                                 }
                             }
+                            if (o.flows) {
+                                if (flow.flows) {
+                                    flow.flows = flow.flows.concat(o.flows);
+                                } else {
+                                    flow.flows = o.flows;
+                                }
+                            }
                         }
                     }
 
@@ -489,7 +669,9 @@ module.exports = class FlowManager {
                             log.error("flow:conn unable to map dns", err);
                         }
                         log.debug("flows:sorted Query dns manager returnes");
-                        callback(null, sorted);
+                        this.summarizeActivityFromConnections(sorted,(err,activities)=>{
+                            callback(null, sorted,activities);
+                        });
                     });;
                 } else {
                     callback(null, sorted);

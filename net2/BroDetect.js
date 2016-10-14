@@ -538,6 +538,7 @@ module.exports = class {
                     bl: this.config.bro.conn.flowstashExpires,
                     pf: {}, //port flow
                     af: {}, //application flows
+                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
                 _afmap: {}
                 }
                 this.flowstash[flowspecKey] = flowspec;
@@ -551,6 +552,7 @@ module.exports = class {
                 }
                 flowspec._ts = now;
                 flowspec.du += obj.duration;
+                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]);
             }
 
             let tmpspec = {
@@ -567,6 +569,7 @@ module.exports = class {
                 bl: 0,
                 pf: {},
                 af: {},
+             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
             };
 
             let afobj = this.lookupAppMap(obj.uid);

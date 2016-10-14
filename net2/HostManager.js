@@ -324,7 +324,10 @@ class Host {
         } else {}
         if (this.o.dtype) {
             this.dtype = JSON.parse(this.o.dtype);
-        } else {}
+        } 
+        if (this.o.activities) {
+            this.activities= JSON.parse(this.o.activities);
+        } 
     }
 
     redisfy() {
@@ -336,6 +339,9 @@ class Host {
         }
         if (this.dtype) {
             this.o.dtype = JSON.stringify(this.dtype);
+        }
+        if (this.activities) {
+            this.o.activities= JSON.stringify(this.activities);
         }
     }
 
@@ -775,6 +781,10 @@ class Host {
 
         if (this.o.bname) {
             json.bname = this.o.bname;
+        }
+
+        if (this.activities) {
+            json.activities= this.activities;
         }
 
         if (this.o.name) {
