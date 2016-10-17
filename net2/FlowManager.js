@@ -73,18 +73,18 @@ class FlowGraph {
              let ob = Number(flow.ob);
              let rb = Number(flow.rb);
                 
-             this.addRawFlow(flowStart,flowEnd,ob,rb);
+             this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
          } else {
              //console.log("$$$ before ",flow.flows);
              for (let i in flow.flows) {
                  let f = flow.flows[i];
-                 this.addRawFlow(f[0],f[1],f[2],f[3]);
+                 this.addRawFlow(f[0],f[1],f[2],f[3],1);
              }
              //console.log("$$$ after",this.flowarray);
          }
     }
 
-    addRawFlow(flowStart, flowEnd, ob,rb) {
+    addRawFlow(flowStart, flowEnd, ob,rb,ct) {
          let insertindex = 0;
 
          for (let i in this.flowarray) {
@@ -105,18 +105,20 @@ class FlowGraph {
              if (e[1]<flowEnd) {
                  ob += e[2];
                  rb += e[3];
+                 ct += e[4];
                  removed++;
                  continue;
              } else if (e[1]>=flowEnd) {
                  ob += e[2];
                  rb += e[3];
+                 ct += e[4];
                  flowEnd = e[1];
                  removed++;
                  break;
              }
          }
 
-         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb]);
+         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
     //     console.log("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
 
     }
@@ -513,8 +515,6 @@ module.exports = class FlowManager {
         let flowobj = {id:0,app:{},activity:{}};
         let hasFlows = false;
 
-        let linearActivities= [];
-
         for (let i in appdb) {
             let f = new FlowGraph(i);
             for (let j in appdb[i]) {
@@ -524,7 +524,6 @@ module.exports = class FlowManager {
             flowobj.app[f.name]= f.flowarraySorted(true);
             for (let k in flowobj.app[f.name]) {
                 let _f = flowobj.app[f.name][k];
-                linearActivities.push(f.name,_f[0],_f[1],_f[2],_f[3]);
             }
         }
         for (let i in activitydb) {
@@ -536,7 +535,6 @@ module.exports = class FlowManager {
             flowobj.activity[f.name]=f.flowarraySorted(true);;
             for (let k in flowobj.activity[f.name]) {
                 let _f = flowobj.activity[f.name][k];
-                linearActivities.push(f.name,_f[0],_f[1],_f[2],_f[3]);
             }
          
         }

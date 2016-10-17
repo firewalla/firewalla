@@ -1,7 +1,7 @@
 [Unit]
 Description=BroFish
 After=dhcpcd.service 
-Requires=network-online.target network.service
+Requires=network-online.target 
 Before=firewalla.service
 
 [Service]

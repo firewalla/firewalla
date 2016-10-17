@@ -374,8 +374,8 @@ module.exports = class FlowMonitor {
         flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
-            /*
             if (activities !=null) {
+                /*
                 if (host.activities!=null) {
                     if (host.activities.app && host.activities.app.length >0) {
                         host.activities.app = activities.app.concat(host.activities.app);
@@ -387,8 +387,10 @@ module.exports = class FlowMonitor {
                     host.activities = activities;
                 }
                 host.save("activities",null);
+                */
+                host.activities = activities;
+                host.save("activities",null);
             }
-            */
             flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true, (err, result,activities2) => {
                 this.flowIntel(result);
                 this.summarizeNeighbors(host,result,'out');
