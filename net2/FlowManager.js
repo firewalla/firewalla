@@ -483,7 +483,11 @@ module.exports = class FlowManager {
                  //console.log("$$$ Before",flow.flows);
                  for (let i in flow.flows) {
                        let f = flow.flows[i];
-                       fg.addRawFlow(f[0],f[1],f[2],f[3]);
+                       let count = f[4];
+                       if (count ==null) {
+                           count =1;
+                       }
+                       fg.addRawFlow(f[0],f[1],f[2],f[3],count);
                  }
                  flow.flows = fg.flowarray;
                  //console.log("$$$ After",flow.flows);
