@@ -69,16 +69,27 @@ module.exports = class {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
             let myip = sysManager.myIp();
-            for (let i in defaultTable) {
-                defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
+
+            // only flush when myip is a valid ip address
+            if (this.is_ip_valid(myip)) {
+                for (let i in defaultTable) {
+                    defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
+                }
+                log.info("PolicyManager:flush", defaultTable, {});
+                iptable.run(defaultTable);
             }
-            log.info("PolicyManager:flush", defaultTable, {});
-            iptable.run(defaultTable);
         });
     }
 
     defaults(config) {}
 
+    is_ip_valid(myip) {
+        if(myip.startsWith("169.254.")) {
+                return 0;
+        }
+        return 1;
+    }
+    
     block(src, dst, psrc, pdst, state, callback) {
         let action = '-A';
         if (state == false || state == null) {

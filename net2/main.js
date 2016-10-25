@@ -16,6 +16,8 @@
 
 // config.discovery.networkInterface
 
+var log = require("./logger.js")("main", "info");
+
 console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -37,6 +39,22 @@ let bd = new BroDetector("bro_detector", config, "info");
 var Discovery = require("./Discovery.js");
 let d = new Discovery("nmap", config, "info");
 
+// make sure there is at least one usable enternet
+d.discoverInterfaces(function(err, list) {
+    var failure = 1;
+    if (list.length > 0) {
+        for(var i in list) {
+            var interf = list[i];
+            log.info("Active ethernet is found: " + interf.name + " (" + interf.ip_address + ")");
+            failure = 0;
+        }
+    }
+
+    if(failure) {
+        log.error("Failed to find any alive ethernets, taking down the entire main.js")
+        process.exit(1);        
+    }
+});
 
 let c = require('./MessageBus.js');
 this.publisher = new c('debug');

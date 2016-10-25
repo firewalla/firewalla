@@ -80,7 +80,7 @@ module.exports = class {
             this.name = name;
             this.config = config;
             //  this.networks = this.getSubnet(networkInterface,family);
-            console.log("Scanning Address:", this.networks);
+//            console.log("Scanning Address:", this.networks);
             instances[name] = this;
             let p = require('./MessageBus.js');
             this.publisher = new p(loglevel);
@@ -134,6 +134,18 @@ module.exports = class {
         this.natScan();
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        alarmManager.release();
+        sysManager.release();
+        bonjour.destroy();
+        log.debug("Calling release function of Discovery");
+    }
+    
     natScan() {
         setInterval(() => {
             this.upnpClient.getMappings(function (err, results) {
@@ -321,10 +333,18 @@ module.exports = class {
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
+		if(callback) {
+			callback(null, []);
+		}
                 return;
             }
+
+            // ignore 169.254.x.x
+            list = list.filter(function(x) { return !x.ip_address.startsWith("169.254.") });
+            
             for (let i in list) {
                 log.debug(list[i], {});
+
                 redisobjs.push(list[i].name);
                 list[i].gateway = require('netroute').getGateway(list[i].name);
                 list[i].subnet = this.getSubnet(list[i].name, 'IPv4');

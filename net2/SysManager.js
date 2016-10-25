@@ -58,6 +58,16 @@ module.exports = class {
         log.debug("Sys:Insert:Local", ip, "***");
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        sclient.quit();
+        console.log("Calling release function of SysManager");
+    }
+
     update(callback) {
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
