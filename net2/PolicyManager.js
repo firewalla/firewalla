@@ -32,6 +32,7 @@ var async = require('async');
 var VpnManager = require('../vpn/VpnManager.js');
 var vpnManager = new VpnManager('info');
 
+var ip = require('ip');
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -66,31 +67,30 @@ module.exports = class {
 
     // this should flush ip6tables as well
     flush(config) {
+       iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
             let myip = sysManager.myIp();
-
-            // only flush when myip is a valid ip address
-            if (this.is_ip_valid(myip)) {
-                for (let i in defaultTable) {
-                    defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
-                }
-                log.info("PolicyManager:flush", defaultTable, {});
-                iptable.run(defaultTable);
+            for (let i in defaultTable) {
+                defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
             }
+            log.info("PolicyManager:flush", defaultTable, {});
+            iptable.run(defaultTable);
         });
+       });
     }
 
     defaults(config) {}
 
-    is_ip_valid(myip) {
-        if(myip.startsWith("169.254.")) {
-                return 0;
+    block(protocol, src, dst, sport, dport, state, callback) {
+        if (ip.isV4Format(src) || ip.isV4Format(dst)) {
+            this.block4(protocol,src,dst,sport,dport,state,callback);
+        } else {
+            this.block6(protocol,src,dst,sport,dport,state,callback);
         }
-        return 1;
     }
-    
-    block(src, dst, psrc, pdst, state, callback) {
+
+    block4(protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -107,8 +107,17 @@ module.exports = class {
         if (dst) {
             p.dst = dst;
         }
+        if (dport) {
+            p.dport = dport;
+        }
+        if (sport) {
+            p.sport = sport;
+        }
+        if (protocol) {
+            p.protocol = protocol;
+        }
 
-        log.info("PolicyManager:Block:IPTABLE4", JSON.stringify(p), src, dst, psrc, pdst, state);
+        log.info("PolicyManager:Block:IPTABLE4", JSON.stringify(p), src, dst, sport, dport, state);
         if (state == true) {
             p.action = "-D";
             iptable.drop(p, null);
@@ -121,7 +130,7 @@ module.exports = class {
 
     }
 
-    block6(src, dst, psrc, pdst, state, callback) {
+    block6(protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -139,12 +148,23 @@ module.exports = class {
             p.dst = dst;
         }
 
-        log.info("PolicyManager:Block:IPTABLE6", JSON.stringify(p), src, dst, psrc, pdst, state);
+        if (dport) {
+            p.dport = dport;
+        }
+        if (sport) {
+            p.sport = sport;
+        }
+        if (protocol) {
+            p.protocol = protocol;
+        }
+
+        log.info("PolicyManager:Block:IPTABLE6", JSON.stringify(p), src, dst, sport, dport, state);
         if (state == true) {
             p.action = "-D";
             ip6table.drop(p);
-            p.action = "-A";
-            ip6table.drop(p, callback);
+            let p2 = JSON.parse(JSON.stringify(p));
+            p2.action = "-A";
+            ip6table.drop(p2, callback);
         } else {
             p.action = "-D";
             ip6table.drop(p, callback);
@@ -156,11 +176,11 @@ module.exports = class {
     family(ip, state, callback) {
         log.info("PolicyManager:Family:IPTABLE", ip, state);
         if (state == true) {
-            iptable.dnsChange(ip, "198.101.242.72:53", false, (err, data) => {
-                iptable.dnsChange(ip, "198.101.242.72:53", true, callback);
+            iptable.dnsChange(ip, "208.67.222.123:53", false, (err, data) => {
+                iptable.dnsChange(ip, "208.67.222.123:53", true, callback);
             });
         } else {
-            iptable.dnsChange(ip, "198.101.242.72:53", state, callback);
+            iptable.dnsChange(ip, "208.67.222.123:53", state, callback);
         }
     }
 
@@ -177,11 +197,11 @@ module.exports = class {
 
     hblock(host, state) {
         log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
-        this.block(null, host.o.ipv4Addr, null, null, state, (err, data) => {
-           this.block(host.o.ipv4Addr, null, null, null, state, (err, data) => {
+        this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
+           this.block(null,host.o.ipv4Addr, null, null, null, state, (err, data) => {
             for (let i in host.ipv6Addr) {
-                this.block6(null, host.ipv6Addr[i], null, null, state,(err,data)=>{
-                    this.block6(host.ipv6Addr[i],null, null, null, state,(err,data)=>{
+                this.block6(null,null, host.ipv6Addr[i], null, null, state,(err,data)=>{
+                    this.block6(null,host.ipv6Addr[i],null, null, null, state,(err,data)=>{
                     });
                 });
             }
@@ -250,7 +270,7 @@ module.exports = class {
             if (p == "acl") {
                 continue;
             } else if (p == "blockout") {
-                this.block(ip, null, null, null, policy[p]);
+                this.block(null,ip, null, null, null, policy[p]);
             } else if (p == "blockin") {
                 this.hblock(host, policy[p]);
                 //    this.block(null,ip,null,null,policy[p]); 
@@ -292,17 +312,17 @@ module.exports = class {
                 log.info("PolicyManager:Cron:Install", block);
                 host.policyJobs[id] = new CronJob(block.cron, () => {
                         log.info("PolicyManager:Cron:On=====", block);
-                        this.block(ip, null, null, null, true);
+                        this.block(null, ip, null, null, null, true);
                         if (block.duration) {
                             setTimeout(() => {
                                 log.info("PolicyManager:Cron:Done=====", block);
-                                this.block(ip, null, null, null, false);
+                                this.block(null,ip, null, null, null, false);
                             }, block.duration * 1000 * 60);
                         }
                     }, () => {
                         /* This function is executed when the job stops */
                         log.info("PolicyManager:Cron:Off=====", block);
-                        this.block(ip, null, null, null, false);
+                        this.block(null,ip, null, null, null, false);
                     },
                     true, /* Start the job right now */
                     block.timeZone /* Time zone of this job. */
@@ -340,16 +360,25 @@ module.exports = class {
             } else {
                 if (block['dst'] != null && block['src'] != null) {
                     let aclkey = block['dst'] + "," + block['src'];
+                    if (block['protocol'] != null) {
+                        aclkey = block['dst'] + "," + block['src']+","+block['protocol']+","+block['sport']+","+block['dport'];
+                    }
                     if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
                         cb();
                     } else {
-                        this.block(block.src, block.dst, null, null, block['state'], (err) => {
+                        this.block(block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
                             if (err == null) {
                                 if (block['state'] == false) {
                                     block['done'] = true;
                                 }
                             }
-                            cb();
+                            if (block.duplex && block.duplex == true) {
+                                 this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                                      cb();
+                                 });
+                            } else {
+                                cb();
+                            }
                         });
                         host.appliedAcl[aclkey] = block;
                     }

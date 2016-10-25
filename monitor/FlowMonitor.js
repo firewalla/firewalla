@@ -26,6 +26,8 @@ var sysManager = new SysManager('info');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
+var uuid = require('uuid');
+
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
 });
@@ -33,14 +35,23 @@ rclient.on("error", function (err) {
 var async = require('async');
 var instance = null;
 var HostManager = require("../net2/HostManager.js");
-var hostManager = new HostManager("cli", 'client', 'debug');
-
-var AppManager = require('../net2/AppManager.js');
-var appManager = new AppManager('../net2/appSignature.json', 'debug');
+var hostManager = new HostManager("cli", 'client', 'info');
 
 var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
+
+function getDomain(ip) {
+    if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
+        let splited = ip.split(".");
+        if (splited.length>=3) {
+            return (splited[splited.length-2]+"."+splited[splited.length-1]);
+        }
+    }
+    return ip;
+}
+
+
 
 module.exports = class FlowMonitor {
     constructor(timeslice, monitorTime, loglevel) {
@@ -50,6 +61,7 @@ module.exports = class FlowMonitor {
         if (instance == null) {
             let c = require('../net2/MessageBus.js');
             this.publisher = new c(loglevel);
+            this.recordedFlows = {};
 
             instance = this;
             log = require("../net2/logger.js")("FlowMonitor", loglevel);
@@ -57,9 +69,47 @@ module.exports = class FlowMonitor {
         return instance;
     }
 
+    // flow record is a very simple way to look back past n seconds,
+    // if 'av' for example, shows up too many times ... likely to be 
+    // av
+
+    flowIntelRecordFlow(flow,limit) {
+        let key = flow.dh;
+        if (flow["dhname"] != null) {
+            key = getDomain(flow["dhname"]);  
+        }  
+        let record = this.recordedFlows[key];
+        if (record) {
+            record.ts = Date.now()/1000;
+            record.count += 1;
+        } else {
+            record = {}
+            record.ts = Date.now()/1000;
+            record.count = 1;
+            this.recordedFlows[key] = record;
+        }   
+        // clean  up
+        let oldrecords = [];
+        for (let k in this.recordedFlows) {
+           if (this.recordedFlows[k].ts < Date.now()/1000-60*5) {
+               oldrecords.push(k);
+           }
+        }
+
+        for (let i in oldrecords) {
+           delete this.recordedFlows[oldrecords[i]];
+        }
+        
+        log.info("FLOW:INTEL:RECORD", key,record,{});
+        if (record.count>limit) {
+            record.count = 0-limit;
+            return true;
+        }
+        return false;
+    }
+
 
     flowIntel(flows) {
-        log.info("FLOWWWWWWWWWWWWWWW INTEL",flows.length);
         for (let i in flows) {
             let flow = flows[i];
             log.info("FLOW:INTEL:PROCESSING",flow);
@@ -67,33 +117,66 @@ module.exports = class FlowMonitor {
                 log.info("########## flowIntel",flow);
                 let c = flow['intel']['c'];
                 if (c == "av") {
-                    let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                                        });
-                    alarmManager.alarm(flow.sh, "warn", 'minor', '0', {"msg":msg}, null, null);
+                    if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
+                        let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
+                        let actionobj = {
+                            title: "Video Watching",
+                            actions: ["block","ignore"],
+                            src: flow.sh,
+                            dst: flow.dh,
+                            dhname: flow["dhname"],
+                            shname: flow["shname"],
+                            mac: flow["mac"],
+                            appr: flow["appr"],
+                            org: flow["org"],
+                            target: flow.lh,
+                            fd: flow.fd,
+                            msg: msg
+                        };
+                        alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                            if (obj != null) {
+                                this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                                msg:msg,
+                                                obj:obj
+                                });
+                            }
+                        });
+                    }
                 } else if (c=="porn") {
-                    let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                                        });
-                    let actionobj = {
-                        title: "Questionable Action",
-                        actions: ["block","ignore"],
-                        src: flow.sh,
-                        dst: flow.dh,
-                        target: flow.lhost,
-                        msg: msg
-                    };
-                    alarmManager.alarm(flow.sh, "warn", 'minor', '0', {"msg":msg}, actionobj, null);
+                    if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
+                        let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
+                        let actionobj = {
+                            title: "Questionable Action",
+                            actions: ["block","ignore"],
+                            src: flow.sh,
+                            dst: flow.dh,
+                            dhname: flow["dhname"],
+                            shname: flow["shname"],
+                            mac: flow["mac"],
+                            appr: flow["appr"],
+                            org: flow["org"],
+                            target: flow.lh,
+                            fd: flow.fd,
+                            msg: msg
+                        };
+                        alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
+                            if (obj!=null) {
+                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                       msg:msg,
+                                       obj:obj
+                                  });
+                            }
+                        });
+                    }
                 } else if (c=="intel") {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-                    let msg = "Watching Intel "+flow["shname"] +" "+flow["dhname"];
+                    let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
                     let intelobj = null;
                     if (flow.fd == "in") {
                         intelobj = {
+                            uid: uuid.v4(),
                             ts: flow.ts,
                             "id.orig_h": flow.sh,
                             "id.resp_h": flow.dh,
@@ -106,7 +189,15 @@ module.exports = class FlowMonitor {
                         }
                     } else {
                         intelobj = {
+                            uid: uuid.v4(),
                             ts: flow.ts,
+                            shname: flow["shname"],
+                            dhname: flow["dhname"],
+                            mac: flow["mac"],
+                            target: flow.lh,
+                            fd: flow.fd,
+                            appr: flow["appr"],
+                            org: flow["org"],
                             "id.orig_h": flow.dh,
                             "id.resp_h": flow.sh,
                             "seen.indicator_type":"Intel::DOMAIN", 
@@ -136,12 +227,30 @@ module.exports = class FlowMonitor {
                                         });
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
-                } else {
+                } else if (c=="games" && this.flowIntelRecordFlow(flow,3)) {
                     let msg = "Doing "+c+" "+flow["shname"] +" "+flow["dhname"];
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                                        });
-                    alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
+                    let actionobj = {
+                        title: "Notify Action",
+                        actions: ["block","ignore"],
+                        src: flow.sh,
+                        dst: flow.dh,
+                        dhname: flow["dhname"],
+                        shname: flow["shname"],
+                        mac: flow["mac"],
+                        appr: flow["appr"],
+                        org: flow["org"],
+                        target: flow.lh,
+                        fd: flow.fd,
+                        msg: msg
+                    };
+                    alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
+                        if (obj!=null) {
+                             this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                            msg:msg,
+                                            obj:obj
+                             });
+                        }
+                    });
                 }
             } 
         }
@@ -158,7 +267,7 @@ module.exports = class FlowMonitor {
     //   {set: host}
     summarizeNeighbors(host,flows,direction) {
         let key = "neighbor:"+host.o.mac;
-        log.info("Summarizing Neighbors ",flows.length,key);
+        log.debug("Summarizing Neighbors ",flows.length,key);
 
 
         rclient.hgetall(key,(err,data)=> {
@@ -254,7 +363,7 @@ module.exports = class FlowMonitor {
                  savedData[i] = JSON.stringify(data[i]);
              }
              rclient.hmset(key,savedData,(err,d)=>{
-                 log.info("Set Host Summary",key,savedData,d);
+                 log.debug("Set Host Summary",key,savedData,d);
              });
         });
     }
@@ -262,10 +371,27 @@ module.exports = class FlowMonitor {
     detect(listip, period,host,callback) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, (err, result) => {
+        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
-            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true, (err, result) => {
+            if (activities !=null) {
+                /*
+                if (host.activities!=null) {
+                    if (host.activities.app && host.activities.app.length >0) {
+                        host.activities.app = activities.app.concat(host.activities.app);
+                    }
+                    if (host.activities.activity && host.activities.activity.length >0) {
+                        host.activities.activity = activities.activity.concat(host.activities.activity);
+                    }
+                } else {
+                    host.activities = activities;
+                }
+                host.save("activities",null);
+                */
+                host.activities = activities;
+                host.save("activities",null);
+            }
+            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true, (err, result,activities2) => {
                 this.flowIntel(result);
                 this.summarizeNeighbors(host,result,'out');
             });
@@ -273,12 +399,15 @@ module.exports = class FlowMonitor {
     }
 
 
-    flows(listip, period, callback) {
+    flows(listip, period,host, callback) {
         let end = Date.now() / 1000;
         let start = end - this.monitorTime; // in seconds
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, (err, result) => {
-            //this.flowIntel(result);
+        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, (err, result,activities) => {
             let inSpec = flowManager.getFlowCharacteristics(result, "in", 1000000, stddev_limit);
+            if (activities !=null) {
+                host.activities = activities;
+                host.save("activities",null);
+            }
             flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true, (err, resultout) => {
                 let outSpec = flowManager.getFlowCharacteristics(resultout, "out", 500000, stddev_limit);
                 callback(null, inSpec, outSpec);
@@ -390,23 +519,16 @@ module.exports = class FlowMonitor {
                         }
                     }
                     if (service == null || service == "dlp") {
-                        this.flows(listip, period, (err, inSpec, outSpec) => {
-                            console.log("=================================================================================");
+                        this.flows(listip, period,host, (err, inSpec, outSpec) => {
                             log.debug("monitor:flow:", host.toShortString());
                             log.debug("inspec", inSpec);
                             log.debug("outspec", outSpec);
-                            console.log("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
                             if (outSpec) {
                                 if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
                                     (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
                                     (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
-                                    console.log("=======", outSpec);
                                     this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
-                                            this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                direction: "out",
-                                                "txRatioRanked": [flow]
-                                            });
                                             let copy = JSON.parse(JSON.stringify(flow));
                                             let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
                                             copy.msg = msg;
@@ -415,12 +537,18 @@ module.exports = class FlowMonitor {
                                                 actions: ["block","ignore"],
                                                 src: flow.dh,
                                                 dst: flow.sh,
-                                                target: flow.lhost,
+                                                target: flow.lh,
                                               //info: ,
                                               //infourl:
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj);
+                                            alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                    direction: "out",
+                                                    "txRatioRanked": [flow],
+                                                    id:data.id,
+                                                });
+                                            });
                                         }
                                     });
                                 }
@@ -429,13 +557,8 @@ module.exports = class FlowMonitor {
                                 if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
                                     (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
                                     (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
-                                    console.log("=======", inSpec);
                                     this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
                                         if (flow) {
-                                            this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                direction: "in",
-                                                "txRatioRanked": [flow]
-                                            });
                                             let copy = JSON.parse(JSON.stringify(flow));
                                             let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
                                             copy.msg = msg;
@@ -444,10 +567,16 @@ module.exports = class FlowMonitor {
                                                 actions: ["block","ignore"],
                                                 src: flow.sh,
                                                 dst: flow.dh,
-                                                target: flow.lhost,
+                                                target: flow.lh,
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj);
+                                            alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                    direction: "in",
+                                                    "txRatioRanked": [flow],
+                                                    id:data.id,
+                                                });
+                                            });
                                         }
                                     });
                                 }

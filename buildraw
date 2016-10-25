@@ -1,0 +1,50 @@
+cd  ~/firewalla
+cp ./etc/netrc ~/.netrc
+git pull
+
+sudo apt-get update  
+sudo    apt-get install -y curl 
+sudo    apt-get install -y redis-server && \
+sudo    apt-get install -y ca-certificates && \
+sudo    apt-get install -y nmap && \
+sudo    apt-get install -y dsniff && \
+sudo    apt-get install -y bluetooth bluez libbluetooth-dev libudev-dev && \
+sudo    curl -sL https://deb.nodesource.com/setup_4.x | sudo -E bash -  && \
+sudo    apt-get install -y nodejs  && \
+sudo    apt-get install -y libzmq3 libzmq3-dev  &&\
+sudo    npm install forever -g && \
+sudo    npm install xml-json -g && \
+sudo    mkdir /blog && \
+sudo    mkdir /bspool
+sudo apt-get  -y install openvpn
+sudo apt-get  -y install easy-rsa
+sudo rm -r -f /etc/openvpn
+sudo mkdir /etc/openvpn
+sudo cp -r /usr/share/easy-rsa /etc/openvpn
+
+cd firewalla
+npm install
+cd imports
+tar -zxvf bro.tar.gz
+sudo cp -r -f  bro /usr/local/.
+rm -r -f bro
+cd ../bin
+cp ./real/bit* .
+cd ../etc
+sudo cp sysctl.conf /etc/sysctl.conf
+sudo cp bro-cron /etc/cron.hourly/.
+crontab ./brotab
+cd ../config
+sudo mkdir /encipher.config
+sudo cp netbot.config /encipher.config/
+sudo mkdir /firewalla
+sudo chmod 777 /firewalla
+
+cd /home/pi/firewalla/etc/
+sudo cp brofish.service /etc/systemd/system/.
+sudo cp firewalla.service /etc/systemd/system/.
+sudo systemctl daemon-reload
+sudo systemctl enable brofish
+sudo systemctl enable firewalla
+
+sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)

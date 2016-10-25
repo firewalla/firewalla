@@ -38,6 +38,8 @@ var async = require('async');
 
 var natUpnp = require('nat-upnp');
 
+var publicIp = require('public-ip');
+
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -109,7 +111,7 @@ module.exports = class {
                 if (intf != null) {
                     log.debug("Prepare to scan subnet", intf);
                     if (this.nmap == null) {
-                        this.nmap = new Nmap(intf.subnet);
+                        this.nmap = new Nmap(intf.subnet,false);
                     }
                     this.scan(intf.subnet, fast, (err, result) => {
                         this.bonjourWatch();
@@ -120,17 +122,31 @@ module.exports = class {
         });
     }
 
+    publicIp() {
+       publicIp.v4((err, ip) => {
+          if (err != null) {
+                return;
+          }
+          sysManager.publicIp = ip;
+       });
+    }
+
     start() {
         this.startDiscover(true);
+        this.publicIp();
         setTimeout(() => {
             this.startDiscover(false);
-        }, 1000 * 60 * 10);
+        }, 1000 * 60 * 2);
         setInterval(() => {
             this.startDiscover(false);
         }, 1000 * 60 * 100);
         setInterval(() => {
             this.startDiscover(true);
         }, 1000 * 60 * 5);
+        setInterval(() => {
+            this.publicIp();
+        }, 1000 * 60 * 60*24);
+     
         this.natScan();
     }
 
@@ -259,14 +275,15 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                     let d = JSON.parse(JSON.stringify(host));
                                     let actionobj = {
                                          title: "New Host",
                                          actions: ["hblock","ignore"],
                                          target: host.ipv4Addr,
                                     }
-                                    alarmManager.alarm(host.ipv4Addr, "newhost", 'major', '50', d, actionobj, null);
+                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
+                                        this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         }
@@ -353,6 +370,17 @@ module.exports = class {
                 }
                 this.interfaces[list[i].name] = list[i];
                 redisobjs.push(JSON.stringify(list[i]));
+
+                // "{\"name\":\"eth0\",\"ip_address\":\"192.168.2.225\",\"mac_address\":\"b8:27:eb:bd:54:da\",\"type\":\"Wired\",\"gateway\":\"192.168.2.1\",\"subnet\":\"192.168.2.0/24\"}"
+                if (list[i].type=="Wired") {
+                    let host = {
+                        name:"Firewalla",
+                         uid:list[i].ip_address,
+                         mac:list[i].mac_address.toUpperCase(),
+                    ipv4Addr:list[i].ip_address,
+                    };
+                    this.processHost(host);
+                }
             }
             /*
             let interfaces = os.interfaces();
@@ -411,10 +439,30 @@ module.exports = class {
             this.hosts = [];
             for (let h in hosts) {
                 let host = hosts[h];
+                this.processHost(host);
+            }
+            console.log("Done Processing ++++++++++++++++++++");
+
+            setTimeout(() => {
+                callback(null, null);
+                this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+                sysManager.setOperationalState("LastScan", Date.now() / 1000);
+            }, 2000);
+        });
+    }
+
+    /* host.uid = ip4 adress
+       host.mac = mac address
+       host.ipv4Addr 
+    */
+
+    processHost(host) {
                 if (host.mac == null) {
                     log.debug("Discovery:Nmap:HostMacNull:", h, hosts[h]);
-                    continue;
+                    return;
                 }
+
+                let nname = host.nname;
 
                 let key = "host:ip4:" + host.uid;
                 log.debug("Discovery:Nmap:Scan:Found", key, host.mac, host.uid);
@@ -425,6 +473,7 @@ module.exports = class {
                             let changeset = this.mergeHosts(data, host);
                             changeset['lastActiveTimestamp'] = Date.now() / 1000;
                             changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
@@ -442,7 +491,7 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
+                                    //this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                 }
                             });
                         }
@@ -464,6 +513,9 @@ module.exports = class {
                                 if (host.macVendor) {
                                     data.macVendor = host.macVendor;
                                 }
+                                if (data.bname == null && nname!=null) {
+                                    data.bname = nname;
+                                }
                             } else {
                                 data = {};
                                 data.ipv4 = host.ipv4Addr;
@@ -475,6 +527,12 @@ module.exports = class {
                                     data.macVendor = host.macVendor;
                                 }
                                 newhost = true;
+                                if (host.name) { 
+                                    data.bname = host.name;
+                                }
+                                if (nname) {
+                                    data.bname = nname;
+                                }
                                 let c = this.hostCache[host.uid];
                                 if (c && Date.now() / 1000 < c.expires) {
                                     data.name = c.name;
@@ -489,8 +547,11 @@ module.exports = class {
                                          title: "New Host",
                                          actions: ["hblock","ignore"],
                                          target: data.ipv4Addr,
+                                         mac: data.mac, 
                                     }
-                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'major', '50', d, actionobj, null);
+                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
+                                         this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         } else {
@@ -498,37 +559,6 @@ module.exports = class {
                         }
                     });
                 }
-
-            }
-            /*
-                        for (let p in ports) {
-                             let port = ports[p];
-                             this.DB.Port.DBModel.find({ where: {uid: port.uid} }).then((dbobj)=> {
-                                if (dbobj) { // if the record exists in the db
-                                    port.firstFoundTimestamp = dbobj.firstFoundTimestamp;
-                                    dbobj.updateAttributes(
-                                        port 
-                                    );
-                                } else {
-                                    port.firstFoundTimestamp = Date.now()/1000; 
-                                    this.DB.Port.DBModel.create(port);
-                                }
-                             });
-                        }
-             
-                        this.DB.Port.DBModel.sync();
-                        this.DB.Host.DBModel.sync();
-                        this.DB.sync();
-                     */
-
-            console.log("Done Processing ++++++++++++++++++++");
-
-            setTimeout(() => {
-                callback(null, null);
-                this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-                sysManager.setOperationalState("LastScan", Date.now() / 1000);
-            }, 2000);
-        });
     }
 
     //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
@@ -567,9 +597,13 @@ module.exports = class {
                                     ipv6array = JSON.parse(data.ipv6);
                                 }
 
+                                // only keep around 5 ipv6 around
+                                ipv6array = ipv6array.slice(Math.max(ipv6array.length - 5))
+
                                 if (ipv6array.indexOf(v6addr) == -1) {
                                     ipv6array.push(v6addr);
                                 }
+                                
                                 data.mac = mac.toUpperCase();
                                 data.ipv6 = JSON.stringify(ipv6array);
                                 data.ipv6Addr = JSON.stringify(ipv6array);

@@ -24,6 +24,8 @@ var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+var bone = require("../lib/Bone.js");
+
 
 let DNSServers = {
     "75.75.75.75": true,
@@ -82,6 +84,8 @@ module.exports = class {
                 if (this.sysinfo['oper'] == null) {
                     this.sysinfo.oper = {};
                 }
+                this.ddns = this.sysinfo["ddns"];
+                this.publicIp = this.sysinfo["publicIp"];
                 //         console.log("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
@@ -118,6 +122,25 @@ module.exports = class {
 
     myIp() {
         return this.monitoringInterface().ip_address;
+    }
+
+    myMAC() {
+        if (this.monitoringInterface()) {
+            return this.monitoringInterface().mac_address;
+        } else {
+            return null;
+        }
+    }
+ 
+    myDDNS() {
+        return this.ddns;
+    }
+
+    getSysInfo(callback) {
+              callback(null,{
+                ip: this.myIp(),
+                mac: this.myMAC(),
+              });
     }
 
     isMulticastIP4(ip) {
@@ -207,6 +230,28 @@ module.exports = class {
             return true;
         }
         return false;
+    }
+
+    checkIn(callback) {
+        this.getSysInfo((err,data)=>{
+            bone.checkin(this.config,data,(err,data)=>{
+                console.log("CheckedIn:", data);
+                if (data.ddns) {
+                    this.ddns = data.ddns;
+                    rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
+                         if (callback) {
+                             callback(null,null);
+                         }
+                    });
+                }
+                if (data.publicIp) {
+                    this.publicIp = data.publicIp;
+                    rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
+                    });
+                }
+            });
+        });
+
     }
 
     redisclean() {

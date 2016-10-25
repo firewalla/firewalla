@@ -25,7 +25,8 @@ var rclient = redis.createClient();
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager();
+var dnsManager = new DNSManager('info');
+var bone = require("../lib/Bone.js");
 
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
@@ -35,6 +36,94 @@ var async = require('async');
 var instance = null;
 
 var maxflow = 10000;
+
+class FlowGraph {
+    constructor(name,flowarray) {
+         if (flowarray) {
+             this.flowarray = flowarray;
+         } else {
+             this.flowarray = [];
+         }
+         this.name = name;
+    }
+
+    flowarraySorted(recent) {
+        if (recent == true) {
+             this.flowarray.sort(function (a, b) {
+                 return Number(b[1]) - Number(a[1]);
+             })
+             return this.flowarray;
+        } else {
+             this.flowarray.sort(function (a, b) {
+                 return Number(a[1]) - Number(b[1]);
+             })
+             return this.flowarray;
+        }
+    }
+
+
+    addFlow(flow) {
+         if (flow.flows == null) {
+             let flowStart = Math.ceil(Number(flow.__ts) - Number(flow.du));
+             let flowEnd = Math.ceil(Number(flow.__ts));
+             if (flow.__ts==null) {
+                 flowStart = Math.ceil(Number(flow._ts) - Number(flow.du));
+                 flowEnd = Math.ceil(Number(flow._ts));
+             }
+             let ob = Number(flow.ob);
+             let rb = Number(flow.rb);
+                
+             this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
+         } else {
+             //console.log("$$$ before ",flow.flows);
+             for (let i in flow.flows) {
+                 let f = flow.flows[i];
+                 this.addRawFlow(f[0],f[1],f[2],f[3],1);
+             }
+             //console.log("$$$ after",this.flowarray);
+         }
+    }
+
+    addRawFlow(flowStart, flowEnd, ob,rb,ct) {
+         let insertindex = 0;
+
+         for (let i in this.flowarray) {
+             let e = this.flowarray[i];
+             if (flowStart < e[0]) {
+                 break;
+             }
+             if (flowStart<e[1]) {
+                 flowStart = e[0];
+                 break;
+             }
+             insertindex = Number(i)+Number(1);
+         }
+
+         let removed = Number(0);
+         for (let i = insertindex; i <this.flowarray.length;i++) {
+             let e = this.flowarray[Number(i)];
+             if (e[1]<flowEnd) {
+                 ob += e[2];
+                 rb += e[3];
+                 ct += e[4];
+                 removed++;
+                 continue;
+             } else if (e[1]>=flowEnd) {
+                 ob += e[2];
+                 rb += e[3];
+                 ct += e[4];
+                 flowEnd = e[1];
+                 removed++;
+                 break;
+             }
+         }
+
+         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
+    //     console.log("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
+
+    }
+
+}
 
 module.exports = class FlowManager {
     constructor(loglevel) {
@@ -252,7 +341,7 @@ module.exports = class FlowManager {
         sys.outbytes = 0;
         sys.flowinbytes = [];
         sys.flowoutbytes = [];
-        async.eachLimit(hosts, 1, (host, cb) => {
+        async.eachLimit(hosts, 5, (host, cb) => {
             let listip = []
             listip.push(host.o.ipv4Addr);
             if (host.ipv6Addr && host.ipv6Addr.length > 0) {
@@ -264,18 +353,29 @@ module.exports = class FlowManager {
             host.flowsummary.inbytes = 0;
             host.flowsummary.outbytes = 0;
             let flows = [];
-            async.eachLimit(listip, 1, (ip, cb2) => {
+            async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
-                rclient.zrevrangebyscore([key, from, to,'limit',0,maxflow], (err, result) => {
+                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,maxflow], (err, result) => {
+                    log.info("SummarizeBytes:",key,from,to,result.length);
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
                     if (err == null) {
-                        for (let i in result) {
+                        /* there is an issue here where if the flow started long ago, 
+                           it may not show up.  the ts in connection is the starting time
+                        */
+                        for (let i=0;i<result.length;i++) {
                             let o = JSON.parse(result[i]);
                             if (o == null) {
                                 log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                i++;
                                 continue;
                             }
+                            o._ts = Number(result[i+1]); 
+                            if (o._ts<to) {
+                                i++;
+                                continue;
+                            }  
+                            i++;
                             sys.inbytes += o.rb;
                             sys.outbytes += o.ob;
                             host.flowsummary.inbytes += o.rb;
@@ -284,14 +384,21 @@ module.exports = class FlowManager {
                         }
                     }
                     let okey = "flow:conn:" + "out" + ":" + ip;
-                    rclient.zrevrangebyscore([okey, from, to,'limit',0,maxflow], (err, result) => {
+                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,maxflow], (err, result) => {
                         if (err == null) {
-                            for (let i in result) {
+                            for (let i=0;i<result.length;i++) {
                                 let o = JSON.parse(result[i]);
                                 if (o == null) {
                                     log.error("Host:Flows:Sorting:Parsing", result[i]);
+                                    i++;
                                     continue;
                                 }
+                                o._ts = Number(result[i+1]);
+                                if (o._ts<to) {
+                                    i++;
+                                    continue;
+                                }
+                                i++;
                                 sys.inbytes += o.ob;
                                 sys.outbytes += o.rb;
                                 host.flowsummary.inbytes += o.ob;
@@ -304,18 +411,18 @@ module.exports = class FlowManager {
                 });
             }, (err) => {
                 //  break flows down in to blocks
-                let btime = Date.now() / 1000 - block;
+                let btime = from - block;
                 let flowinbytes = [];
                 let flowoutbytes = [];
                 let currentFlowin = 0;
                 let currentFlowout = 0;
 
                 flows.sort(function (a, b) {
-                    return Number(b.ts) - Number(a.ts);
+                    return Number(b._ts) - Number(a._ts);
                 })
                 for (let i in flows) {
                     let flow = flows[i];
-                    if (flow.ts > btime) {
+                    if (flow._ts > btime) {
                         if (flow.fd == "in") {
                             currentFlowin += flow.rb;
                             currentFlowout += flow.ob;
@@ -360,8 +467,94 @@ module.exports = class FlowManager {
                 cb();
             });
         }, (err) => {
-
+            console.log(sys);
             callback(err, sys);
+        });
+    }
+
+    summarizeActivityFromConnections(flows,callback) {
+        let appdb = {};
+        let activitydb = {};
+
+        for (let i in flows) {
+            let flow = flows[i];
+            if (flow.flows) {
+                 let fg = new FlowGraph("raw");
+                 //console.log("$$$ Before",flow.flows);
+                 for (let i in flow.flows) {
+                       let f = flow.flows[i];
+                       let count = f[4];
+                       if (count ==null) {
+                           count =1;
+                       }
+                       fg.addRawFlow(f[0],f[1],f[2],f[3],count);
+                 }
+                 flow.flows = fg.flowarray;
+                 //console.log("$$$ After",flow.flows);
+            }
+            if (flow.appr) {
+                if (appdb[flow.appr]) {
+                    appdb[flow.appr].push(flow);
+                } else {
+                    appdb[flow.appr] = [flow];
+                }
+            }
+            if (flow.intel && flow.intel.c && flow.intel.c!="intel") {
+                if (activitydb[flow.intel.c]) {
+                    activitydb[flow.intel.c].push(flow);
+                } else {
+                    activitydb[flow.intel.c] = [flow];
+                }
+            }
+        }
+
+/*
+        console.log("--------------appsdb ---- ");
+        console.log(appdb);
+        console.log("--------------activitydb---- ");
+        console.log(activitydb);
+*/
+        console.log(activitydb);
+ 
+        let flowobj = {id:0,app:{},activity:{}};
+        let hasFlows = false;
+
+        for (let i in appdb) {
+            let f = new FlowGraph(i);
+            for (let j in appdb[i]) {
+                f.addFlow(appdb[i][j]);
+                hasFlows = true;
+            }
+            flowobj.app[f.name]= f.flowarraySorted(true);
+            for (let k in flowobj.app[f.name]) {
+                let _f = flowobj.app[f.name][k];
+            }
+        }
+        for (let i in activitydb) {
+            let f = new FlowGraph(i);
+            for (let j in activitydb[i]) {
+                f.addFlow(activitydb[i][j]);
+                hasFlows = true;
+            }
+            flowobj.activity[f.name]=f.flowarraySorted(true);;
+            for (let k in flowobj.activity[f.name]) {
+                let _f = flowobj.activity[f.name][k];
+            }
+         
+        }
+        // linear these flows
+       
+        if (!hasFlows) {
+            if (callback) {
+                callback(null,null);
+            }
+            return;
+        }
+
+        bone.flowgraph("clean", [flowobj],(err,data)=>{
+            if (callback) {
+                callback(err,data);
+            }
         });
     }
 
@@ -382,8 +575,15 @@ module.exports = class FlowManager {
                             log.error("Host:Flows:Sorting:Parsing", result[i]);
                             continue;
                         }
+                        if (o.rb == 0 && o.ob ==0) {
+                            // ignore zero length flows
+                            continue;
+                        }
                         let ts = o.ts;
-                        if (interval == 0 || o.ts < interval) {
+                        if (o._ts) {
+                            ts = o._ts;
+                        }
+                        if (interval == 0 || ts < interval) {
                             if (interval == 0) {
                                 interval = Date.now() / 1000;
                             }
@@ -420,6 +620,13 @@ module.exports = class FlowManager {
                                     } else {
                                         flow.pf[i] = o.pf[i]
                                     }
+                                }
+                            }
+                            if (o.flows) {
+                                if (flow.flows) {
+                                    flow.flows = flow.flows.concat(o.flows);
+                                } else {
+                                    flow.flows = o.flows;
                                 }
                             }
                         }
@@ -464,7 +671,9 @@ module.exports = class FlowManager {
                             log.error("flow:conn unable to map dns", err);
                         }
                         log.debug("flows:sorted Query dns manager returnes");
-                        callback(null, sorted);
+                        this.summarizeActivityFromConnections(sorted,(err,activities)=>{
+                            callback(null, sorted,activities);
+                        });
                     });;
                 } else {
                     callback(null, sorted);
@@ -478,6 +687,9 @@ module.exports = class FlowManager {
         let ts = Date.now() / 1000;
         let t = ts - obj.ts
         t = (t / 60).toFixed(1);
+        let _ts = Date.now() / 1000;
+        let _t = _ts - obj._ts
+        _t = (_t / 60).toFixed(1);
         let org = "";
         if (obj.org) {
             org = "(" + obj.org + ")";
@@ -486,7 +698,7 @@ module.exports = class FlowManager {
         if (obj.appr) {
             appr = "#" + obj.appr + "#";
         }
-        return t + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+        return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
     }
 
     toStringShortShort2(obj, type, interest) {
@@ -509,14 +721,14 @@ module.exports = class FlowManager {
             return name + "min : rx " + obj.rb + ", tx " + obj.ob;
         } else if (type == "rxdata" || type == "in") {
             if (interest == 'txdata') {
-                return time + " min ago, " + sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+                return sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
             }
-            return time + " min ago, " + sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+            return sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
         } else if (type == "txdata" || type == "out") {
             if (interest == 'txdata') {
-                return time + " min ago, " + sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+                return sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
             }
-            return time + " min ago, " + sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+            return sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
         }
     }
 

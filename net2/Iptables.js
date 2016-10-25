@@ -41,6 +41,7 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
 exports.flush = flush;
+exports.flush6 = flush6;
 exports.run = run;
 
 

@@ -28,6 +28,9 @@ var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager();
 
+var AlarmManager = require('./AlarmManager.js');
+var alarmManager = new AlarmManager('info');
+
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
 });
@@ -153,10 +156,7 @@ module.exports = class {
             if (this.connLog != null) {
                 log.info("Initializing watchers: connInitialized", this.config.bro.conn.path);
                 this.connLog.on('line', (data) => {
-                    //log.debug("Detect:Conn",data);
-                    setTimeout(()=>{
-                        this.processConnData(data);
-                    },2000);
+                    this.processConnData(data);
                 });
             } else {
                 setTimeout(this.initWatchers, 5000);
@@ -198,12 +198,16 @@ module.exports = class {
             log = require("./logger.js")("discover", loglevel);
             this.appmap = {};
             this.apparray = [];
+            this.connmap = {};
+            this.connarray = [];
+         
             this.initWatchers();
             instances[name] = this;
             let c = require('./MessageBus.js');
             this.publisher = new c(loglevel);
             this.flowstash = {};
             this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
+            this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
         }
     }
 
@@ -218,14 +222,44 @@ module.exports = class {
         }
     }
 
+    addConnMap(key,value) {
+        if (this.connmap[key]!=null) {
+             return;
+        } 
+        log.info("CONN DEBUG",this.connarray.length,key,value,"length:");
+        this.connarray.push(value);
+        this.connmap[key] = value;
+        let mapsize = 9000;
+        if (this.connarray.length>mapsize) {
+            let removed = this.connarray.splice(0,this.connarray.length-mapsize);
+            for (let i in removed) {
+                delete this.connmap[removed[i]['uid']];
+            }
+        }
+    }
+
+    lookupConnMap(key) {
+        let obj = this.connmap[key];
+        if (obj) {
+            delete this.connmap[key];
+            let index = this.connarray.indexOf(obj);
+            if (index>-1) {
+                this.connarray.splice(index,1);
+            }
+        }
+        return obj;
+    }
+
     addAppMap(key,value) {
         if (ValidateIPaddress(value.host)) {
              return;
         }
+
         if (this.appmap[key]!=null) {
              return;
         } 
-        console.log("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        
+        log.info("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
         let mapsize = 9000;
@@ -393,20 +427,53 @@ module.exports = class {
                 log.error("Conn:Drop", obj);
                 return;
             }
+            
+            // drop layer 2.5
+            if (obj.proto=="icmp") {
+                return;
+            }
 
-            if (obj.conn_state) {
-                if (obj.conn_state!="SF") {
-                    if (obj.conn_state!="S0" && obj.proto!="udp") {
+            if (obj.service && obj.service == "dns") {
+                return;
+            }
+
+            // drop layer 3 
+            if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
+                log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
+                return;
+            }
+
+            if (obj.orig_bytes == null || obj.resp_bytes == null) {
+                log.error("Conn:Drop:NullBytes",obj);
+                return;
+            }
+
+            // drop layer 4
+            if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+                log.error("Conn:Drop:ZeroLength2",obj.conn_state,obj);
+                return;
+            }
+
+
+            /*
+            if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
+                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
+                    obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                    obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+                    obj.conn_state == "S0") {
                         log.error("Conn:Drop:State",obj.conn_state,obj);
-                        return;
-                    } 
+               //         return;
                 }
             }
+            */
+
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
             let flowdir = "in";
             let lhost = null;
+
+            log.info("ProcessingConection:",obj.uid,host,dst);
 
             // ignore multicast IP
             // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
@@ -422,7 +489,11 @@ module.exports = class {
                 return;
             }
 
-            if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
+            if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
+                flowdir = 'local';
+                lhost = host;
+                return;
+            } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
                 flowdir = 'local';
                 lhost = host;
                 //log.debug("Dropping both ip address", host,dst);
@@ -439,18 +510,27 @@ module.exports = class {
             }
 
             if (obj.duration == null) {
-                obj.duration = 0;
+                obj.duration = Number(0);
+            } else {
+                obj.duration = Number(obj.duration);
             }
 
+            // Warning for long running tcp flows, the conn structure logs the ts as the
+            // first packet.  when this happens, if the flow started a while back, it 
+            // will get summarize here
+
+            let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
             let flowspec = this.flowstash[flowspecKey];
             if (flowspec == null) {
                 flowspec = {
                     ts: obj.ts,
+                   _ts: now,
+                  __ts: obj.ts,  // this is the first time found 
                     sh: host, // source
                     dh: dst, // dstination
-                    ob: obj.orig_ip_bytes, // transfer bytes
-                    rb: obj.resp_ip_bytes,
+                    ob: obj.orig_bytes, // transfer bytes
+                    rb: obj.resp_bytes,
                     ct: 1, // count
                     fd: flowdir, // flow direction
                     lh: lhost, // this is local ip address
@@ -458,24 +538,30 @@ module.exports = class {
                     bl: this.config.bro.conn.flowstashExpires,
                     pf: {}, //port flow
                     af: {}, //application flows
+                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
                 _afmap: {}
                 }
                 this.flowstash[flowspecKey] = flowspec;
                 log.debug("Conn:FlowSpec:Create:", flowspec);
             } else {
-                flowspec.ob += obj.orig_ip_bytes;
-                flowspec.rb += obj.resp_ip_bytes;
+                flowspec.ob += obj.orig_bytes;
+                flowspec.rb += obj.resp_bytes;
                 flowspec.ct += 1;
-                flowspec.ts = obj.ts;
+                if (flowspec.ts < obj.ts) {
+                    flowspec.ts = obj.ts;
+                }
+                flowspec._ts = now;
                 flowspec.du += obj.duration;
+                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]);
             }
 
             let tmpspec = {
                 ts: obj.ts,
                 sh: host, // source
+               _ts: now,
                 dh: dst, // dstination
-                ob: obj.orig_ip_bytes, // transfer bytes
-                rb: obj.resp_ip_bytes,
+                ob: obj.orig_bytes, // transfer bytes
+                rb: obj.resp_bytes,
                 ct: 1, // count
                 fd: flowdir, // flow direction
                 lh: lhost, // this is local ip address
@@ -483,6 +569,7 @@ module.exports = class {
                 bl: 0,
                 pf: {},
                 af: {},
+             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
             };
 
             let afobj = this.lookupAppMap(obj.uid);
@@ -498,10 +585,25 @@ module.exports = class {
                 }
             } else {
                 flowspec._afmap[obj.uid]=obj.uid;
+                // redo some older lookup ...
+                for (let i in flowspec._afmap) {
+                    let afobj = this.lookupAppMap(i);
+                    if (afobj) {
+                        log.info("DEBUG AFOBJ DELAY RESOLVE",afobj);
+                        let flow_afobj = flowspec.af[afobj.host];
+                        if (flow_afobj) {
+                            flow_afobj.rqbl += afobj.rqbl;
+                            flow_afobj.rsbl += afobj.rsbl;
+                        } else {
+                            flowspec.af[afobj.host] = afobj;
+                            delete afobj['host'];
+                        }
+                    }
+                }
             }
 
             if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
-                let portflowkey = obj['id.resp_p'];
+                let portflowkey = obj.proto+"."+obj['id.resp_p'];
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
@@ -511,13 +613,13 @@ module.exports = class {
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
-                    port_flow.ob += obj.orig_ip_bytes;
-                    port_flow.rb += obj.resp_ip_bytes;
+                    port_flow.ob += obj.orig_bytes;
+                    port_flow.rb += obj.resp_bytes;
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
-                    ob: obj.orig_ip_bytes,
-                    rb: obj.resp_ip_bytes,
+                    ob: obj.orig_bytes,
+                    rb: obj.resp_bytes,
                     ct: 1
                 };
                 //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
@@ -526,9 +628,9 @@ module.exports = class {
             if (tmpspec) {
                 let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
                 let strdata = JSON.stringify(tmpspec);
-                let redisObj = [key, tmpspec.ts, strdata];
-                log.debug("Conn:Save:Temp", redisObj);
-                console.log("Conn:Save:Temp", redisObj);
+                //let redisObj = [key, tmpspec.ts, strdata];
+                let redisObj = [key, now, strdata];
+                log.info("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
                         if (this.config.bro.conn.expires) {
@@ -540,8 +642,9 @@ module.exports = class {
 
             // TODO: Need to write code take care to ensure orig host is us ...
             let hostsChanged = {}; // record and update host lastActive
-            let now = Math.ceil(Date.now() / 1000);
+
             if (now > this.flowstashExpires) {
+                let stashed={};
                 console.log("Processing Flow Stash");
                 for (let i in this.flowstash) {
                     let spec = this.flowstash[i];
@@ -567,30 +670,27 @@ module.exports = class {
                     delete spec._afmap;
                     let key = "flow:conn:" + spec.fd + ":" + spec.lh;
                     let strdata = JSON.stringify(spec);
-                    let redisObj = [key, spec.ts, strdata];
-                    log.debug("Conn:Save", redisObj);
-                    console.log("Conn:Save", redisObj);
+                    let ts = spec._ts;
+                    if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
+                        ts = spec.ts;
+                    }
+                    let redisObj = [key, ts, strdata];
+                    if (stashed[key]) {
+                        stashed[key].push(redisObj);
+                    } else {
+                        stashed[key]=[redisObj];
+                    }
 
-                    rclient.zremrangebyscore(key,this.flowstashExpires-this.config.bro.conn.flowstashExpires, "+inf", (err, data) => {
-                        console.log("Conn:Info:",err,data);
-                        rclient.zadd(redisObj, (err, response) => {
-                            if (err == null) {
-                                if (this.config.bro.conn.expires) {
-                                    rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
-                                }
-                            } else {
-                                log.error("Conn:Save:Error", err);
-                            }
-                        });
-                    });
 
                     try {
-                        let hostChanged = hostsChanged[spec.lh];
-                        if (hostChanged == null) {
-                            hostsChanged[spec.lh] = Number(spec.ts);
-                        } else {
-                            if (hostChanged < spec.ts) {
-                                hostsChanged[spec.lh] = spec.ts;
+                        if (spec.ob>0 && spec.rb>0) { 
+                            let hostChanged = hostsChanged[spec.lh];
+                            if (hostChanged == null) {
+                                hostsChanged[spec.lh] = Number(spec.ts);
+                            } else {
+                                if (hostChanged < spec.ts) {
+                                    hostsChanged[spec.lh] = spec.ts;
+                                }
                             }
                         }
                     } catch (e) {
@@ -598,6 +698,30 @@ module.exports = class {
                     }
 
                 }
+
+                let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
+                let send = this.flowstashExpires;
+                setTimeout(()=>{
+                    log.info("Conn:Save:Summary", sstart,send,this.flowstashExpires);
+                    for (let key in stashed) {
+                        let stash = stashed[key];
+                        log.info("Conn:Save:Summary:Wipe",key, "Resoved To: ", stash.length);
+                        rclient.zremrangebyscore(key,sstart,send, (err, data) => {
+                            console.log("Conn:Info:Removed",key,err,data);
+                            for (let i in stash) {
+                                rclient.zadd(stash[i], (err, response) => {
+                                    if (err == null) {
+                                        if (this.config.bro.conn.expires) {
+                                            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
+                                        }
+                                    } else {
+                                        log.error("Conn:Save:Error", err);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                },this.config.bro.conn.flowstashExpires*1000);
 
                 this.flowstashExpires = now + this.config.bro.conn.flowstashExpires;
                 this.flowstash = {};
@@ -909,6 +1033,7 @@ module.exports = class {
                 log.error("Notice:Drop My IP", obj);
                 return;
             }
+            log.info("Notice:Processing",obj);
             if (this.config.bro.notice.ignore[obj.note] == null) {
                 let strdata = JSON.stringify(obj);
                 let key = "notice:" + obj.src;
@@ -927,11 +1052,25 @@ module.exports = class {
                         }
                     }
                 });
+
+                // write this to an alarm
+                        let actionobj = {
+                            title: "Security Notice",
+                            actions: ["ignore"],
+                            src: obj.src,
+                            dst: obj.dst,
+                            target: obj.src,
+                        };
+                        /*
+                        alarmManager.alarm("0.0.0.0","notice", 'info', '0', obj, actionobj, (err,obj,action)=> {
+                        });
+                        */
+                
             } else {
                 log.debug("Notice:Drop", JSON.parse(data));
             }
         } catch (e) {
-            log.error("Notice:Error Unable to save", e);
+            log.error("Notice:Error Unable to save", e,data);
         }
     }
 

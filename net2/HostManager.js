@@ -29,7 +29,7 @@ var spoofer = null;
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager('info');
+var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
@@ -66,9 +66,10 @@ var MobileDetect = require('mobile-detect');
 
 
 class Host {
-    constructor(obj, callback) {
+    constructor(obj,mgr, callback) {
         this.callbacks = {};
         this.o = obj;
+        this.mgr = mgr;
         if (this.o.ipv4) {
             this.o.ipv4Addr = this.o.ipv4;
         }
@@ -323,7 +324,10 @@ class Host {
         } else {}
         if (this.o.dtype) {
             this.dtype = JSON.parse(this.o.dtype);
-        } else {}
+        } 
+        if (this.o.activities) {
+            this.activities= JSON.parse(this.o.activities);
+        } 
     }
 
     redisfy() {
@@ -335,6 +339,9 @@ class Host {
         }
         if (this.dtype) {
             this.o.dtype = JSON.stringify(this.dtype);
+        }
+        if (this.activities) {
+            this.o.activities= JSON.stringify(this.activities);
         }
     }
 
@@ -510,18 +517,44 @@ class Host {
                     });
                 });
             } else if (type == "HostPolicy:Changed" && this.type == "server") {
+                this.applyPolicy((err)=>{
+                });
+                log.info("HostPolicy:Changed", channel, ip, type, obj);
+   /*
                 this.loadPolicy((err, data) => {
                     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
                     policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        policyManager.executeAcl(this, this.o.ipv4Addr, this.policy.acl, (err, changed) => {
-                            if (err == null && changed == true) {
-                                this.savePoicy(null);
-                            }
+                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
+                                if (err == null && changed == true) {
+                                    this.savePolicy(null);
+                                }
+                            });
                         });
                     });
                 });
-                log.info("HostPolicy:Changed", channel, ip, type, obj);
+*/
             }
+        });
+    }
+
+    applyPolicy(callback) {
+        this.loadPolicy((err, data) => {
+            log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
+            let policy = JSON.parse(JSON.stringify(this.policy));
+            // check for global
+            if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
+                policy.monitor = false;
+            }
+            policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
+                dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                    policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
+                        if (err == null && changed == true) {
+                            this.savePolicy(callback);
+                        }
+                    });
+                });
+            });
         });
     }
 
@@ -750,6 +783,10 @@ class Host {
             json.bname = this.o.bname;
         }
 
+        if (this.activities) {
+            json.activities= this.activities;
+        }
+
         if (this.o.name) {
             json.name = this.o.name;
         }
@@ -950,7 +987,8 @@ class Host {
             if (err != null) {
                 log.error("Host:Policy:Save:Error", key, err);
             }
-            callback(err, null);
+            if (callback) 
+                callback(err, null);
         });
 
     }
@@ -1072,9 +1110,14 @@ module.exports = class {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
         json.version = sysManager.config.version;
-        json.device = "Fishbone (beta)"
+        json.device = "Firewalla (beta)"
+        json.publicIp = sysManager.publicIp;
+        json.ddns = sysManager.ddns;
+        if (sysManager.publicIp) {
+             json.publicIp = sysManager.publicIp;
+        }
 
-        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 30, 60 * 30 / 16, (err, sys) => {
+        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 15, 60 * 15 / 15, (err, sys) => {
             json.flowsummary = sys;
             if (includeHosts) {
                 let _hosts = [];
@@ -1138,7 +1181,7 @@ module.exports = class {
                 return;
             }
             if (err == null && o != null) {
-                host = new Host(o);
+                host = new Host(o,this);
                 host.type = this.type;
                 //this.hosts.all.push(host);
                 this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
@@ -1232,7 +1275,7 @@ module.exports = class {
                         let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
                         if (hostbymac == null) {
-                            hostbymac = new Host(o);
+                            hostbymac = new Host(o,this);
                             hostbymac.type = this.type;
                             this.hosts.all.push(hostbymac);
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
@@ -1240,28 +1283,42 @@ module.exports = class {
                         } else {
                             hostbymac.update(o);
                         }
+                        // two mac have the same IP,  pick the latest, until the otherone update itself 
                         /*
-                        if (hostbyip != null) {
-                            if (hostbyip.mac != o.mac) {
-                                hostbyip.mac = o.mac;
+                        if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
+                            log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
+                            if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+                                this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }
-                            // need to take care of ip address change by checking mac
                         }
                         */
+                        this.syncHost(hostbymac, true, (err) => {
+                            if (this.type == "server") {
+                                hostbymac.applyPolicy((err)=>{
+                                    cb();
+                                });
+                            } else {
+                               cb();
+                            }
+                        });
+                       /*
                         hostbymac.loadPolicy((err, policy) => {
                             this.syncHost(hostbymac, true, (err) => {
                                 if (this.type == "server") {
                                     policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy.acl, (err, changed) => {
-                                            if (err == null && changed == true) {
-                                                hostbymac.savePolicy(null);
-                                            }
+                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
+                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
+                                                if (err == null && changed == true) {
+                                                    hostbymac.savePolicy(null);
+                                                }
+                                            });
                                         });
                                     });
                                 }
                                 cb();
                             });
                         });
+                       */
                     } else {
                         cb();
                     }
@@ -1287,9 +1344,10 @@ module.exports = class {
                         for (let i in acls) {
                             let acl = acls[i];
                             log.debug("comparing ", acl, data);
-                            if (acl.src == data.src && acl.dst == data.dst) {
+                            if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
                                 if (acl.state == data.state) {
                                     log.debug("System:setPolicy:Nochange", name, data);
+                                    callback(null,null);
                                     return;
                                 } else {
                                     acl.state = data.state;
@@ -1397,10 +1455,15 @@ module.exports = class {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
-                    policyManager.executeAcl(this, "0.0.0.0", this.policy.acl, (err, changed) => {
-                        if (changed == true && err == null) {
-                            this.savePolicy(null);
-                        }
+                    dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                        policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
+                            if (changed == true && err == null) {
+                                this.savePolicy(null);
+                            }
+                            for (let i in this.hosts.all) {
+                                this.hosts.all[i].applyPolicy();
+                            }
+                        });
                     });
                 });
             }

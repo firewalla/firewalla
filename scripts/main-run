@@ -2,11 +2,17 @@
 sudo rm -r -f /tmp/*
 sudo rm -r -f /home/pi/.forever/*
 cd /home/pi/firewalla
+branch=$(git rev-parse --abbrev-ref HEAD)
 cd /tmp 
-cp /home/pi/firewalla/encipher/lib/encipherio.js /home/pi/firewalla/node_modules/encipher/lib/encipherio.js 
 if [ ! -f /home/pi/firewalla/bin/dev ]; then
+  if [[ $branch =~ release.* ]]
+    then
      cp /home/pi/firewalla/bin/real/bitbridge4 /home/pi/firewalla/bin/.
      cp /home/pi/firewalla/bin/mock/bitbridge6 /home/pi/firewalla/bin/.
+    else
+     cp /home/pi/firewalla/bin/real/bitbridge4 /home/pi/firewalla/bin/.
+     cp /home/pi/firewalla/bin/real/bitbridge6 /home/pi/firewalla/bin/.
+  fi
 else
      cp /home/pi/firewalla/bin/mock/* /home/pi/firewalla/bin/.
 fi

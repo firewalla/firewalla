@@ -1,5 +1,5 @@
 {
-    "version": 1.42,
+    "version": 1.56,
     "discovery": {
       "networkInterfaces": ["eth0","wlan0"]
     },
@@ -32,7 +32,7 @@
       },
       "dns": {
          "path": "/blog/current/dns.log",
-         "expires": 43200
+         "expires": 259200 
       },
       "software": {
          "path": "/blog/current/software.log",
@@ -48,7 +48,7 @@
       },
       "conn": {
          "path": "/blog/current/conn.log",
-         "flowstashExpires": 1800, 
+         "flowstashExpires": 900, 
          "expires": 86400
       },
       "ssh": {
