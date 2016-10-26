@@ -18,6 +18,10 @@ var instance = null;
 var log = null;
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
+var Firewalla = require('../net2/Firewalla.js');
+//TODO: support real config file for Firewalla class
+var firewalla = new Firewalla('/path/to/config', 'info');
+var fHome = firewalla.getFirewallaHome();
 
 var redis = require("redis");
 var rclient = redis.createClient();
@@ -31,6 +35,8 @@ var natpmp = require('nat-pmp');
 var natupnp = require('nat-upnp');
 var ip = require('ip');
 var async = require('async');
+
+var util = require('util');
 
 
 var ttlExpire = 60*60*12;
@@ -137,7 +143,8 @@ module.exports = class {
     }
 
     install(callback) {
-        this.install1 = require('child_process').exec("cd /home/pi/firewalla/vpn; sudo ./install1.sh", (err, out, code) => {
+	let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh', fHome);
+        this.install1 = require('child_process').exec(install1_cmd, (err, out, code) => {
             if (err) {
                 log.error("VPNManager:INSTALL:Error", "Unable to install1.sh", err);
             }
@@ -148,9 +155,13 @@ module.exports = class {
                             callback(err, null);
                         return;
                     }
-                    let cmd = "sudo ./install2.sh " + sysManager.myIp() + " " + ip;
+
+                    // !! Pay attention to the parameter "-E" which is used to preserve the
+                    // enviornment valueables when running sudo commands
+                    
+                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s", fHome, sysManager.myIp(), ip);
                     log.info("VPNManager:INSTALL:cmd", cmd);
-                    this.install2 = require('child_process').exec("cd /home/pi/firewalla/vpn; " + cmd, (err, out, code) => {
+                    this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
                         if (err) {
                             log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
                         }
@@ -208,7 +219,7 @@ module.exports = class {
                 callback(null, external, 1194);
             }
         }, (err) => {
-            log.info("VpnManager:Start:portMap:Failed");
+            log.info("VpnManager:Start:portMap:Failed: " + err);
             setTimeout(() => {
                 log.info("VpnManager:Restart:portMap");
                 this.setNat(null)
@@ -256,10 +267,12 @@ module.exports = class {
     }
 
     getOvpnFile(clientname, password, regenerate, callback) {
-
-        fs.readFile("/home/pi/ovpns/" + clientname + ".ovpn", 'utf8', (err, ovpn) => {
+        let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
+        let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
+        
+        fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
             if (ovpn != null && regenerate == false) {
-                let password = fs.readFileSync("/home/pi/ovpns/" + clientname + ".ovpn.password", 'utf8');
+                let password = fs.readFileSync(ovpn_password, 'utf8');
                 log.info("VPNManager:Found older ovpn file");
                 callback(null, ovpn, password);
                 return;
@@ -273,22 +286,22 @@ module.exports = class {
                 password = this.generatePassword(5);
             }
 
-                let ip = sysManager.myDDNS();
-                if (ip == null) {
-                    ip = sysManager.publicIp();
+            let ip = sysManager.myDDNS();
+            if (ip == null) {
+                ip = sysManager.publicIp;
+            }
+            let cmd = util.format("cd %s/vpn; sudo -E ./ovpngen.sh %s %s %s %s; sync", fHome, clientname, password, sysManager.myIp(), ip);
+            log.info("VPNManager:GEN", cmd);
+            this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
+                if (err) {
+                    log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
                 }
-                let cmd = "sudo ./ovpngen.sh " + clientname + " " + password + " " + sysManager.myIp() + " " + ip;
-                log.info("VPNManager:GEN", cmd);
-                this.getovpn = require('child_process').exec("cd /home/pi/firewalla/vpn; " + cmd + ";sync", (err, out, code) => {
-                    if (err) {
-                        log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
+                fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
+                    if (callback) {
+                        callback(err, ovpn, password);
                     }
-                    fs.readFile("/home/pi/ovpns/" + clientname + ".ovpn", 'utf8', (err, ovpn) => {
-                        if (callback) {
-                            callback(err, ovpn, password);
-                        }
-                    });
                 });
+            });
         });
     }
 }
