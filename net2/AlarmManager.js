@@ -103,6 +103,16 @@ module.exports = class {
         });
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        sclient.quit();
+        log.debug("Calling release function of AlarmManager");
+    }
+    
     // 
     // action obj { 'cmd': {command object}, 'title':'display title','confirmation:' msg}
     //
