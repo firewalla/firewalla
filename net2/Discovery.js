@@ -38,9 +38,6 @@ var async = require('async');
 
 var natUpnp = require('nat-upnp');
 
-var publicIp = require('public-ip');
-
-
 /*
  *   config.discovery.networkInterfaces : list of interfaces
  */
@@ -123,12 +120,12 @@ module.exports = class {
     }
 
     publicIp() {
-       publicIp.v4((err, ip) => {
-          if (err != null) {
-                return;
-          }
-          sysManager.publicIp = ip;
-       });
+        var getIP = require('external-ip')();
+        getIP(function(err, ip) {
+            if(err == null) {
+                sysManager.publicIp = ip;
+            }
+        });
     }
 
     start() {
@@ -373,11 +370,12 @@ module.exports = class {
 
                 // "{\"name\":\"eth0\",\"ip_address\":\"192.168.2.225\",\"mac_address\":\"b8:27:eb:bd:54:da\",\"type\":\"Wired\",\"gateway\":\"192.168.2.1\",\"subnet\":\"192.168.2.0/24\"}"
                 if (list[i].type=="Wired") {
+                    console.log(require('util').inspect(list[i]));
                     let host = {
                         name:"Firewalla",
                          uid:list[i].ip_address,
                          mac:list[i].mac_address.toUpperCase(),
-                    ipv4Addr:list[i].ip_address,
+                        ipv4Addr:list[i].ip_address,
                     };
                     this.processHost(host);
                 }

@@ -89,7 +89,9 @@ module.exports = class {
                 var getIP = require('external-ip')();
                 var self = this;
                 getIP(function(err,ip) {
-                    self.publicIp = ip;
+                    if(err == null) {
+                        self.publicIp = ip;
+                    }
                 });
                 //         console.log("System Manager Initialized with Config", this.sysinfo);
             }
