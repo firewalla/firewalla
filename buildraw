@@ -48,3 +48,8 @@ sudo systemctl enable brofish
 sudo systemctl enable firewalla
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+
+# Set firewalla global environment variable
+if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
+    sudo bash -c '/bin/echo "FIREWALLA_HOME=/home/pi/firewalla" >> /etc/environment'
+fi

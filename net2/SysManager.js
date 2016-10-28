@@ -86,6 +86,11 @@ module.exports = class {
                 }
                 this.ddns = this.sysinfo["ddns"];
                 this.publicIp = this.sysinfo["publicIp"];
+                var getIP = require('external-ip')();
+                var self = this;
+                getIP(function(err,ip) {
+                    self.publicIp = ip;
+                });
                 //         console.log("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
