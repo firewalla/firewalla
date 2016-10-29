@@ -54,8 +54,8 @@ if [ ! -f $FIREWALLA_HOME/node_modules/external-ip/package.json ]; then
     npm install external-ip
 fi
 
-if ! fgrep '"version": "0.3.0",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
-    npm install network@0.3.0
+if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
+    npm install network@git+https://git@github.com/melvinto/network.git
 fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
