@@ -4,7 +4,7 @@ var chai = require('chai');
 var expect = chai.expect,
     exec  = require('child_process').exec;
 var SysManager= require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
+var sysManager = new SysManager('debug');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('../test/config.json', 'utf8'));
 sysManager.setConfig(config);

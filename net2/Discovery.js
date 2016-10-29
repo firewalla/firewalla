@@ -341,6 +341,10 @@ module.exports = class {
         return changeset;
     }
 
+    is_interface_valid(netif) {
+        return netif.ip_address != null && netif.mac_address != null && netif.type != null && !netif.ip_address.startsWith("169.254.");
+    }
+
     discoverInterfaces(callback) {
         this.interfaces = {};
         network.get_interfaces_list((err, list) => {
@@ -354,9 +358,10 @@ module.exports = class {
                 return;
             }
 
-            // ignore 169.254.x.x
-            list = list.filter(function(x) { return !x.ip_address.startsWith("169.254.") });
-            
+	    // ignore any invalid interfaces
+            let self = this;
+	    list = list.filter(function(x) { return self.is_interface_valid(x) });
+
             for (let i in list) {
                 log.debug(list[i], {});
 
