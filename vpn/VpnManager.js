@@ -164,7 +164,7 @@ module.exports = class {
                         mydns = "8.8.8.8"; // use google DNS as default
                     }
                     let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s", fHome, sysManager.myIp(), ip, mydns);
-                    log.info("VPNManager:INSTALL:cmd", cmd);
+                    log.info("VPNManager:INSTALL:cmd", install2_cmd);
                     this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
                         if (err) {
                             log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
