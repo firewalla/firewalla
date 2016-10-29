@@ -143,6 +143,11 @@ module.exports = class {
         return this.ddns;
     }
 
+
+    myDNS() {
+        return this.monitoringInterface().dns;
+    }
+
     getSysInfo(callback) {
               callback(null,{
                 ip: this.myIp(),

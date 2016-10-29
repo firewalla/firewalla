@@ -159,7 +159,11 @@ module.exports = class {
                     // !! Pay attention to the parameter "-E" which is used to preserve the
                     // enviornment valueables when running sudo commands
                     
-                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s", fHome, sysManager.myIp(), ip);
+                    let mydns = sysManager.myDNS()[0]; 
+                    if (mydns == null) {
+                        mydns = "8.8.8.8"; // use google DNS as default
+                    }
+                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s", fHome, sysManager.myIp(), ip, mydns);
                     log.info("VPNManager:INSTALL:cmd", cmd);
                     this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
                         if (err) {
