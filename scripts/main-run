@@ -53,6 +53,11 @@ if [ ! -f $FIREWALLA_HOME/node_modules/external-ip/package.json ]; then
     echo "Updating NPM EXTERNAL-IP"
     npm install external-ip
 fi
+
+if ! fgrep '"version": "0.3.0",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
+    npm install network@0.3.0
+fi
+
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 cd net2
 forever start --uid main main.js

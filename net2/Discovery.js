@@ -16,6 +16,7 @@
 var log;
 var ip = require('ip');
 var os = require('os');
+var dns = require('dns');
 var network = require('network');
 var Nmap = require('./Nmap.js');
 var instances = {};
@@ -37,9 +38,6 @@ var alarmManager = new AlarmManager('debug');
 var async = require('async');
 
 var natUpnp = require('nat-upnp');
-
-var publicIp = require('public-ip');
-
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -123,12 +121,12 @@ module.exports = class {
     }
 
     publicIp() {
-       publicIp.v4((err, ip) => {
-          if (err != null) {
-                return;
-          }
-          sysManager.publicIp = ip;
-       });
+        var getIP = require('external-ip')();
+        getIP(function(err, ip) {
+            if(err == null) {
+                sysManager.publicIp = ip;
+            }
+        });
     }
 
     start() {
@@ -368,6 +366,7 @@ module.exports = class {
                 if (list[i].subnet.length > 0) {
                     list[i].subnet = list[i].subnet[0];
                 }
+                list[i].dns = dns.getServers();
                 this.interfaces[list[i].name] = list[i];
                 redisobjs.push(JSON.stringify(list[i]));
 
@@ -375,9 +374,9 @@ module.exports = class {
                 if (list[i].type=="Wired") {
                     let host = {
                         name:"Firewalla",
-                         uid:list[i].ip_address,
-                         mac:list[i].mac_address.toUpperCase(),
-                    ipv4Addr:list[i].ip_address,
+                        uid:list[i].ip_address,
+                        mac:list[i].mac_address.toUpperCase(),
+                        ipv4Addr:list[i].ip_address,
                     };
                     this.processHost(host);
                 }
@@ -472,7 +471,11 @@ module.exports = class {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
                             changeset['lastActiveTimestamp'] = Date.now() / 1000;
-                            changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            if(data.firstFoundTimestamp != null) {
+                                changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            } else {
+                                changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
+                            }
                             changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {

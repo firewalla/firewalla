@@ -7,6 +7,8 @@ fi
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 LOCALIP=$1
 PUBLICIP=$2
+DNS=$3
+: ${DNS:="8.8.8.8"}
 # Ask user for desired level of encryption
 ENCRYPT="1024"
 # Copy the easy-rsa files to a directory inside the new openvpn directory
@@ -44,13 +46,18 @@ echo "build-dh"
 openvpn --genkey --secret keys/ta.key
 
 # Write config file for server using the template .txt file
-sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/server.conf
+sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt > $FIREWALLA_HOME/vpn/server_config.txt.tmp
+# Set DNS
+sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
 fi
 
+
 # Write default file for client .ovpn profiles, to be used by the MakeOVPN script, using template .txt file
 sed 's/PUBLICIP/'$PUBLICIP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt
+
+
 
 # Make directory under home directory for .ovpn profiles
 mkdir -p ~/ovpns

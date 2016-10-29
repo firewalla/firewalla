@@ -5,21 +5,17 @@ var expect = chai.expect;
 
 
 var SysManager= require('../net2/SysManager.js');
-var sysManager = new SysManager('debug');
+var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('../test/config.json', 'utf8'));
 sysManager.setConfig(config);
 
-var Discovery = require('../net2/Discovery.js');
-
-var discovery = new Discovery("test", config, "debug");
-
-discovery.discoverInterfaces(function(err, list) {
-    console.log(list);
-});
+setTimeout(function() {
+console.log(sysManager.myIp());
+    process.exit();
+},1000);
 
 setTimeout(function() {
-    sysManager.release();
-    discovery.release();
+console.log(sysManager.config);
     process.exit();
 },3000);
