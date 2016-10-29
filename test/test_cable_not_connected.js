@@ -5,14 +5,14 @@ var expect = chai.expect;
 
 
 var SysManager= require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
+var sysManager = new SysManager('debug');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('../test/config.json', 'utf8'));
 sysManager.setConfig(config);
 
 var Discovery = require('../net2/Discovery.js');
 
-var discovery = new Discovery("test", config, "info");
+var discovery = new Discovery("test", config, "debug");
 
 discovery.discoverInterfaces(function(err, list) {
 	if(list.length == 0) {

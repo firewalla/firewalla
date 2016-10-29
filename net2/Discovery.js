@@ -16,6 +16,7 @@
 var log;
 var ip = require('ip');
 var os = require('os');
+var dns = require('dns');
 var network = require('network');
 var Nmap = require('./Nmap.js');
 var instances = {};
@@ -365,6 +366,7 @@ module.exports = class {
                 if (list[i].subnet.length > 0) {
                     list[i].subnet = list[i].subnet[0];
                 }
+                list[i].dns = dns.getServers();
                 this.interfaces[list[i].name] = list[i];
                 redisobjs.push(JSON.stringify(list[i]));
 
@@ -469,7 +471,11 @@ module.exports = class {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
                             changeset['lastActiveTimestamp'] = Date.now() / 1000;
-                            changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            if(data.firstFoundTimestamp != null) {
+                                changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            } else {
+                                changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
+                            }
                             changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {

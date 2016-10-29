@@ -35,7 +35,7 @@
     "nat-pmp": "^1.0.0",
     "nat-upnp": "^1.0.2",
     "netroute": "^1.0.2",
-    "network": "^0.3.0",
+    "network": "git+https://git@github.com/melvinto/network.git",
     "node-persist": "0.0.8",
     "node-static": "^0.7.7",
     "public-ip": "^1.2.0",
