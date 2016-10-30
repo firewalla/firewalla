@@ -159,7 +159,7 @@ module.exports = class {
                     // !! Pay attention to the parameter "-E" which is used to preserve the
                     // enviornment valueables when running sudo commands
                     
-                    let mydns = sysManager.myDNS()[0]; 
+                    var mydns = sysManager.myDNS()[0]; 
                     if (mydns == null) {
                         mydns = "8.8.8.8"; // use google DNS as default
                     }
@@ -294,7 +294,13 @@ module.exports = class {
             if (ip == null) {
                 ip = sysManager.publicIp;
             }
-            let cmd = util.format("cd %s/vpn; sudo -E ./ovpngen.sh %s %s %s %s; sync", fHome, clientname, password, sysManager.myIp(), ip);
+
+            var mydns = sysManager.myDNS()[0]; 
+            if (mydns == null) {
+                mydns = "8.8.8.8"; // use google DNS as default
+            }
+            
+            let cmd = util.format("cd %s/vpn; sudo -E ./ovpngen.sh %s %s %s %s %s; sync", fHome, clientname, password, sysManager.myIp(), ip, mydns);
             log.info("VPNManager:GEN", cmd);
             this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
                 if (err) {
