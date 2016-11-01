@@ -4,5 +4,8 @@ logger "brocron2 running"
 /usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
-sudo service brofish start
-
+if [ ! -f /bspool/bro/.pid ]; then
+    logger 'bro restart due to bro vanished'
+    sudo service brofish stop
+    sudo service brofish start
+fi
