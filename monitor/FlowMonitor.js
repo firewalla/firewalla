@@ -41,6 +41,9 @@ var stddev_limit = 8;
 var AlarmManager = require('../net2/AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
 
+var IntelManager = require('../net2/IntelManager.js');
+var intelManager = new IntelManager('debug');
+
 function getDomain(ip) {
     if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
         let splited = ip.split(".");
@@ -542,11 +545,21 @@ module.exports = class FlowMonitor {
                                               //infourl:
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
-                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                    direction: "out",
-                                                    "txRatioRanked": [flow],
-                                                    id:data.id,
+                                            let remoteHost = flow.dh;
+                                            if (flow.lh == flow.dh) {
+                                                remoteHost = flow.sh;
+                                            }
+ 
+                                            intelManager._location(remoteHost,(err,loc)=>{  
+                                                if (loc) {
+                                                    copy.lobj = loc;
+                                                }
+                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                    this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                        direction: "out",
+                                                        "txRatioRanked": [flow],
+                                                        id:data.id,
+                                                    });
                                                 });
                                             });
                                         }
@@ -570,11 +583,21 @@ module.exports = class FlowMonitor {
                                                 target: flow.lh,
                                                 msg: msg
                                             }
-                                            alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
-                                                this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                    direction: "in",
-                                                    "txRatioRanked": [flow],
-                                                    id:data.id,
+                                            let remoteHost = flow.dh;
+                                            if (flow.lh == flow.dh) {
+                                                remoteHost = flow.sh;
+                                            }
+ 
+                                            intelManager._location(remoteHost,(err,loc)=>{  
+                                                if (loc) {
+                                                    copy.lobj = loc;
+                                                }
+                                                alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                    this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                        direction: "in",
+                                                        "txRatioRanked": [flow],
+                                                        id:data.id,
+                                                    });
                                                 });
                                             });
                                         }
@@ -583,7 +606,7 @@ module.exports = class FlowMonitor {
                             }
                         });
                     } else if (service == "detect") {
-                        log.debug("Running Detect");
+                        log.info("Running Detect");
                         this.detect(listip, period, host, (err) => {
                         });
                     }
