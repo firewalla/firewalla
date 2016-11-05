@@ -46,9 +46,10 @@ echo "build-dh"
 openvpn --genkey --secret keys/ta.key
 
 # Write config file for server using the template .txt file
-sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt > $FIREWALLA_HOME/vpn/server_config.txt.tmp
+sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt > /etc/openvpn/server.conf
 # Set DNS
-sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
+sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
+# sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
 fi

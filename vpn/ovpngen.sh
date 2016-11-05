@@ -2,12 +2,19 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-# ovpngen <clientname> <keypassword> local  <publicip> 
+# ovpngen <clientname> <keypassword> <local ip> <publicip> <dns>
 
 LOCALIP=$3
+DNS=$5
+: ${DNS:="8.8.8.8"}
+
 
 # Write config file for server using the template .txt file
 sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/server.conf
+
+# Set DNS
+sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
+
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
 fi
