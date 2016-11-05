@@ -551,7 +551,7 @@ class netBot extends ControllerBot {
                             tx: [],
                             duration: []
                         };
-                        let max = 10;
+                        let max = 50;
                         for (let i in result) {
                             let s = result[i];
                             response.time.push(s);
