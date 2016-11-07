@@ -376,11 +376,13 @@ module.exports = class {
                         };
                         changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
                         log.debug("Dns:Redis:Merge", key, changeset, {});
+                        /* JERRY temporary comment out, seem this one may distored last active time
                         rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
                             if (err) {
                                 log.error("Discovery:Nmap:Update:Error", err);
                             }
                         });
+                        */ 
                     }
                 });
             }
