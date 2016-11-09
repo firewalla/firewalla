@@ -87,10 +87,14 @@ module.exports = class {
                         callback(null, null, null);
                         return;
                     }
+                    this._location(ip,(err,lobj)=>{ 
+                        obj.lobj = lobj;
+                        log.info("Intel:Location",ip,obj.lobj);
 
-                    bone.intel(ip, "check", {cobj:obj},(err,data)=>{
-                        this._packageCymon(ip, obj);
-                        callback(err, obj, weburl);
+                        bone.intel(ip, "check", {cobj:obj},(err,data)=>{
+                            this._packageCymon(ip, obj);
+                            callback(err, obj, weburl);
+                        });
                     });
                 } else {
                     //            callback(null,null,null);
@@ -167,6 +171,63 @@ module.exports = class {
         }
     }
 
+    /* curl ipinfo.io/98.124.243.43/
+{
+  "ip": "98.124.243.43",
+  "hostname": "No Hostname",
+  "city": "Kirkland",
+  "region": "Washington",
+  "country": "US",
+  "loc": "47.6727,-122.1873",
+  "org": "AS21740 eNom, Incorporated",
+  "postal": "98033"
+ */
+    _location(ip,callback) {
+      this.cachelookup(ip, "ipinfo", (err,data)=>{
+        if (data!=null) {
+            callback(null, JSON.parse(data));
+            return;
+        }
+        let weburl = "https://ipinfo.io/" + ip;
+
+        var options = {
+            uri: weburl,
+            method: 'GET',
+            // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
+        };
+
+        request(options, (err, httpResponse, body) => {
+            if (err != null) {
+                let stack = new Error().stack;
+                console.log("Error while requesting ", err, stack);
+                callback(err, null, null);
+                return;
+            }
+            if (httpResponse == null) {
+                let stack = new Error().stack;
+                console.log("Error while response ", err, stack);
+                callback(500, null, null);
+                return;
+            }
+            if (httpResponse.statusCode < 200 ||
+                httpResponse.statusCode > 299) {
+                console.log("**** Error while response HTTP ", httpResponse.statusCode);
+                callback(httpResponse.statusCode, null, null);
+                return;
+            }
+            if (err === null && body != null) {
+                this.cacheAdd(ip, "ipinfo", body);
+                let obj = JSON.parse(body);
+                if (obj != null) {
+                    callback(null,obj);
+                } else {
+                    callback(null,null);
+                }
+            }
+        });
+      });
+    }
+
     _lookup(ip, callback) {
         let weburl = "https://cymon.io/" + ip;
         let url = "https://cymon.io" + "/api/nexus/v1/ip/" + ip + "/events?limit=100";
@@ -204,9 +265,13 @@ module.exports = class {
                         console.log("INFO:====== No Intel Information!!", ip);
                         callback(null, null, null);
                     } else {
-                        bone.intel(ip, "check", {cobj:obj},(err,data)=>{
-                            this._packageCymon(ip, obj);
-                            callback(err, obj, obj.weburl);
+                        this._location(ip,(err,lobj)=>{ 
+                            obj.lobj = lobj;
+                            log.info("Intel:Location",ip,obj.lobj);
+                            bone.intel(ip, "check", {cobj:obj},(err,data)=>{
+                                this._packageCymon(ip, obj);
+                                callback(err, obj, obj.weburl);
+                            });
                         });
                     }
                 } else {

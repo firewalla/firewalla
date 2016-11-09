@@ -11,7 +11,7 @@
 var fs = require('fs');
 var program = require('commander');
 
-var HostManager = require("./HostManager.js");
+var HostManager = require("../net2/HostManager.js");
 var hostManager = new HostManager("cli", 'client', 'info');
 
 program.version('0.0.2')

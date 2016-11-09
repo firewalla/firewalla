@@ -1,8 +1,20 @@
-#!/bin/sh
+#!/bin/bash
 sync
-logger "brocron2 running"
 /usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
 
 
+#check whether bro process is running using ps -ef
+#normally, bro process should contain following 3:
+#/bin/bash /usr/local/bro/share/broctl/scripts/run-bro -1 -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
+#/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broct/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
+#/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
+    
+bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
+logger "detected bro process count:$bro_process_cnt"  
+if [[ $bro_process_cnt < 3 ]]; then
+    logger 'bro restart due to bro vanished'
+    sudo service brofish stop
+    sudo service brofish start
+fi

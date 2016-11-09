@@ -1,12 +1,10 @@
 {
-    "version": 1.60,
+    "version": 1.33,
     "discovery": {
       "networkInterfaces": ["eth0","wlan0"]
     },
     "iptables": {
        "defaults": [
-          "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-          "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
           "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
        ]
@@ -32,7 +30,7 @@
       },
       "dns": {
          "path": "/blog/current/dns.log",
-         "expires": 259200 
+         "expires": 43200
       },
       "software": {
          "path": "/blog/current/software.log",
@@ -48,7 +46,7 @@
       },
       "conn": {
          "path": "/blog/current/conn.log",
-         "flowstashExpires": 900, 
+         "flowstashExpires": 1800,
          "expires": 86400
       },
       "ssh": {

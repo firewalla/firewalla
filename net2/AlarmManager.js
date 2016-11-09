@@ -103,13 +103,27 @@ module.exports = class {
         });
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        sclient.quit();
+        log.debug("Calling release function of AlarmManager");
+    }
+    
     // 
     // action obj { 'cmd': {command object}, 'title':'display title','confirmation:' msg}
     //
 
     alarm(hip, alarmtype, alarmseverity, severityscore, obj, actionobj, callback) {
         let key = "alarm:ip4:" + hip;
-        obj['id'] = uuid.v4();
+        if (obj.uid!=null) {
+            obj['id'] = obj.uid;
+        } else {
+            obj['id'] = uuid.v4();
+        }
         obj['alarmtype'] = alarmtype;
         obj['alarmseverity'] = alarmseverity;
         obj['severityscore'] = severityscore;

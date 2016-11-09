@@ -194,6 +194,7 @@ function inviteFirstAdmin(gid, callback) {
 
         if (group.symmetricKeys) {
             if (group.symmetricKeys.length === 1) {
+//            if (group.symmetricKeys.length > 0) { //uncomment to add more users
                 var obj = eptcloud.eptGenerateInvite(gid);
                 /*
                 eptcloud.eptinviteGroupByRid(gid, obj.r,function(e,r) {

@@ -825,6 +825,28 @@ var legoEptCloud = class {
         });
     }
 
+    sendTextToGroup2(gid, _msg, beepmsg, beepdata,from, callback) {
+        let msg = {
+            msg: _msg,
+            type: 'msg',
+            from: from
+        };
+        let beep = null;
+        if (beepmsg != null) {
+            beep = {
+                cmd: 'apn',
+                msg: beepmsg,
+                data: beepdata
+            };
+        }
+        this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
+            console.log("sending logs ", e, r);
+            if (callback) {
+                callback(e);
+            }
+        });
+    }
+
     sendDataToGroup(gid, _msg, obj, type, from, beepmsg, whisper, callback) {
         let msg = {
             msg: _msg,

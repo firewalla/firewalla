@@ -236,7 +236,7 @@ class netBot extends ControllerBot {
                 } else if (o.macVendor != null) {
                     name = "(?)" + o.macVendor + " (" + o.ipv4Addr + ")";
                 }
-                this.tx(this.primarygid, "New host found in network: " + name, "Found new host " + name);
+                this.tx2(this.primarygid, "New host found in network: " + name, "Found new host " + name, {uid:o.ipv4Addr});
             }
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
@@ -254,7 +254,7 @@ class netBot extends ControllerBot {
                 }
             }
             if (m)
-                this.tx(this.primarygid, m, n);
+                this.tx2(this.primarygid, m, n, {id:msg.id});
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
             let m = null;
@@ -271,7 +271,7 @@ class netBot extends ControllerBot {
                 }
             }
             if (m)
-                this.tx(this.primarygid, m, n);
+                this.tx2(this.primarygid, m, n, {id:msg.id});
         });
 
         setTimeout(() => {
@@ -338,7 +338,7 @@ class netBot extends ControllerBot {
 
                     console.log("Sending Msg:", msg);
 
-                    this.txQ(this.primarygid, msg, msg);
+                    this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
                 });
             }
             if (callback)
@@ -543,7 +543,7 @@ class netBot extends ControllerBot {
                     console.log("Found alarms");
                     jsonobj.alarms = alarms;
                     // hour block = summarize into blocks of hours ...
-                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, (err, result) => {
+                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, (err, result,activities) => {
                         console.log("--- Connectionby most recent ---", result.length);
                         let response = {
                             time: [],
@@ -551,7 +551,7 @@ class netBot extends ControllerBot {
                             tx: [],
                             duration: []
                         };
-                        let max = 10;
+                        let max = 50;
                         for (let i in result) {
                             let s = result[i];
                             response.time.push(s);
@@ -580,6 +580,7 @@ class netBot extends ControllerBot {
                             }
                         }
                         jsonobj.flows = response;
+                        jsonobj.activities = activities;
 
                         flowManager.sort(result, 'duration');
                         console.log("-----------Sort by rx------------------------");

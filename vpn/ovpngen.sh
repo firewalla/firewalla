@@ -1,18 +1,27 @@
 #!/bin/bash 
 
-# ovpngen <clientname> <keypassword> local  <publicip> 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+# ovpngen <clientname> <keypassword> <local ip> <publicip> <dns>
 
 LOCALIP=$3
+DNS=$5
+: ${DNS:="8.8.8.8"}
+
 
 # Write config file for server using the template .txt file
-sed 's/LOCALIP/'$LOCALIP'/' </home/pi/firewalla/vpn/server_config.txt >/etc/openvpn/server.conf
+sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/server.conf
+
+# Set DNS
+sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
+
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
 fi
 
 
 PUBLICIP=$4
-sed 's/PUBLICIP/'$PUBLICIP'/' </home/pi/firewalla/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt
+sed 's/PUBLICIP/'$PUBLICIP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
@@ -93,12 +102,12 @@ cat $TA >> $NAME$FILEEXT
 echo "</tls-auth>" >> $NAME$FILEEXT 
 
 # Copy the .ovpn profile to the home directory for convenient remote access
-cp /etc/openvpn/easy-rsa/keys/$NAME$FILEEXT /home/pi/ovpns/$NAME$FILEEXT
+cp /etc/openvpn/easy-rsa/keys/$NAME$FILEEXT ~/ovpns/$NAME$FILEEXT
 sudo chmod 600 -R /etc/openvpn
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
-echo $2 > /home/pi/ovpns/$NAME$FILEEXT$PASSEXT
-cp /home/pi/ovpns/$NAME$FILEEXT /home/pi/ovpns/fishboneVPN1.ovpn
-cp /home/pi/ovpns/$NAME$FILEEXT$PASSEXT /home/pi/ovpns/fishboneVPN1.ovpn.password
+echo $2 > ~/ovpns/$NAME$FILEEXT$PASSEXT
+cp ~/ovpns/$NAME$FILEEXT ~/ovpns/fishboneVPN1.ovpn
+cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/fishboneVPN1.ovpn.password
  
 # Original script written by Eric Jodoin.

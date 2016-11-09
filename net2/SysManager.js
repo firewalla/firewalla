@@ -60,6 +60,16 @@ module.exports = class {
         log.debug("Sys:Insert:Local", ip, "***");
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        sclient.quit();
+        console.log("Calling release function of SysManager");
+    }
+
     update(callback) {
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
@@ -76,6 +86,13 @@ module.exports = class {
                 }
                 this.ddns = this.sysinfo["ddns"];
                 this.publicIp = this.sysinfo["publicIp"];
+                var getIP = require('external-ip')();
+                var self = this;
+                getIP(function(err,ip) {
+                    if(err == null) {
+                        self.publicIp = ip;
+                    }
+                });
                 //         console.log("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
@@ -124,6 +141,11 @@ module.exports = class {
  
     myDDNS() {
         return this.ddns;
+    }
+
+
+    myDNS() {
+        return this.monitoringInterface().dns;
     }
 
     getSysInfo(callback) {

@@ -16,6 +16,7 @@
 var log;
 var ip = require('ip');
 var os = require('os');
+var dns = require('dns');
 var network = require('network');
 var Nmap = require('./Nmap.js');
 var instances = {};
@@ -37,9 +38,6 @@ var alarmManager = new AlarmManager('debug');
 var async = require('async');
 
 var natUpnp = require('nat-upnp');
-
-var publicIp = require('public-ip');
-
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -82,7 +80,7 @@ module.exports = class {
             this.name = name;
             this.config = config;
             //  this.networks = this.getSubnet(networkInterface,family);
-            console.log("Scanning Address:", this.networks);
+//            console.log("Scanning Address:", this.networks);
             instances[name] = this;
             let p = require('./MessageBus.js');
             this.publisher = new p(loglevel);
@@ -123,12 +121,12 @@ module.exports = class {
     }
 
     publicIp() {
-       publicIp.v4((err, ip) => {
-          if (err != null) {
-                return;
-          }
-          sysManager.publicIp = ip;
-       });
+        var getIP = require('external-ip')();
+        getIP(function(err, ip) {
+            if(err == null) {
+                sysManager.publicIp = ip;
+            }
+        });
     }
 
     start() {
@@ -150,6 +148,18 @@ module.exports = class {
         this.natScan();
     }
 
+    /**
+     * Only call release function when the SysManager instance is no longer
+     * needed
+     */
+    release() {
+        rclient.quit();
+        alarmManager.release();
+        sysManager.release();
+        bonjour.destroy();
+        log.debug("Calling release function of Discovery");
+    }
+    
     natScan() {
         setInterval(() => {
             this.upnpClient.getMappings(function (err, results) {
@@ -250,7 +260,7 @@ module.exports = class {
                     if (err == null) {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
-                            changeset['lastActiveTimestamp'] = Date.now() / 1000;
+                        // JERRRY    changeset['lastActiveTimestamp'] = Date.now() / 1000;
                             changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
                             log.info("Discovery:Bonjour:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
@@ -269,8 +279,9 @@ module.exports = class {
                                          actions: ["hblock","ignore"],
                                          target: host.ipv4Addr,
                                     }
-                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, null);
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
+                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
+                                        this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         }
@@ -330,6 +341,10 @@ module.exports = class {
         return changeset;
     }
 
+    is_interface_valid(netif) {
+        return netif.ip_address != null && netif.mac_address != null && netif.type != null && !netif.ip_address.startsWith("169.254.");
+    }
+
     discoverInterfaces(callback) {
         this.interfaces = {};
         network.get_interfaces_list((err, list) => {
@@ -337,16 +352,28 @@ module.exports = class {
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
+		if(callback) {
+			callback(null, []);
+		}
                 return;
             }
+
+	    // ignore any invalid interfaces
+            let self = this;
+
+             console.log("Got Interface",list);
+	    list = list.filter(function(x) { return self.is_interface_valid(x) });
+
             for (let i in list) {
                 log.debug(list[i], {});
+
                 redisobjs.push(list[i].name);
                 list[i].gateway = require('netroute').getGateway(list[i].name);
                 list[i].subnet = this.getSubnet(list[i].name, 'IPv4');
                 if (list[i].subnet.length > 0) {
                     list[i].subnet = list[i].subnet[0];
                 }
+                list[i].dns = dns.getServers();
                 this.interfaces[list[i].name] = list[i];
                 redisobjs.push(JSON.stringify(list[i]));
 
@@ -354,9 +381,9 @@ module.exports = class {
                 if (list[i].type=="Wired") {
                     let host = {
                         name:"Firewalla",
-                         uid:list[i].ip_address,
-                         mac:list[i].mac_address.toUpperCase(),
-                    ipv4Addr:list[i].ip_address,
+                        uid:list[i].ip_address,
+                        mac:list[i].mac_address.toUpperCase(),
+                        ipv4Addr:list[i].ip_address,
                     };
                     this.processHost(host);
                 }
@@ -372,7 +399,7 @@ module.exports = class {
             log.debug("Setting redis", redisobjs, {});
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
-                    log.error("Discovery::Interfaces:Error", error);
+                    log.error("Discovery::Interfaces:Error", redisobjs,error);
                 } else {
                     log.debug("Discovery::Interfaces", error, result.length);
                 }
@@ -451,7 +478,12 @@ module.exports = class {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
                             changeset['lastActiveTimestamp'] = Date.now() / 1000;
-                            changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            if(data.firstFoundTimestamp != null) {
+                                changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
+                            } else {
+                                changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
+                            }
+                            changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
@@ -527,8 +559,9 @@ module.exports = class {
                                          target: data.ipv4Addr,
                                          mac: data.mac, 
                                     }
-                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, null);
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", data);
+                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
+                                         this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                    });
                                 }
                             });
                         } else {

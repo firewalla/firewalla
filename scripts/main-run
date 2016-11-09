@@ -1,52 +1,63 @@
 #!/bin/bash -
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
 sudo rm -r -f /tmp/*
 sudo rm -r -f /home/pi/.forever/*
-cd /home/pi/firewalla
+cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 cd /tmp 
-if [ ! -f /home/pi/firewalla/bin/dev ]; then
+if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
   if [[ $branch =~ release.* ]]
     then
-     cp /home/pi/firewalla/bin/real/bitbridge4 /home/pi/firewalla/bin/.
-     cp /home/pi/firewalla/bin/mock/bitbridge6 /home/pi/firewalla/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
     else
-     cp /home/pi/firewalla/bin/real/bitbridge4 /home/pi/firewalla/bin/.
-     cp /home/pi/firewalla/bin/real/bitbridge6 /home/pi/firewalla/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
   fi
 else
-     cp /home/pi/firewalla/bin/mock/* /home/pi/firewalla/bin/.
+     cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
 fi
 nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
-cd /home/pi/firewalla
-if [ ! -f /home/pi/firewalla/node_modules/stats-lite/stats.js ]; then
+cd $FIREWALLA_HOME
+if [ ! -f $FIREWALLA_HOME/node_modules/stats-lite/stats.js ]; then
     echo "Updating NPM Stats"
     npm install stats-lite --save
 fi
-if [ ! -f /home/pi/firewalla/node_modules/cron/package.json ]; then
+if [ ! -f $FIREWALLA_HOME/node_modules/cron/package.json ]; then
     echo "Updating NPM CRON"
     npm install cron --save
 fi
-if [ ! -f /home/pi/firewalla/node_modules/nat-pmp/package.json ]; then
+if [ ! -f $FIREWALLA_HOME/node_modules/nat-pmp/package.json ]; then
     echo "Updating NPM CRON"
     npm install nat-pmp 
     npm install nat-upnp 
 fi
-if [ ! -f /home/pi/firewalla/node_modules/mobile-detect/package.json ]; then
+if [ ! -f $FIREWALLA_HOME/node_modules/mobile-detect/package.json ]; then
     echo "Updating NPM MOBILE-DETECT"
     npm install mobile-detect --save
 fi
-if [ ! -f /home/pi/firewalla/node_modules/socket.io-client/package.json ]; then
+if [ ! -f $FIREWALLA_HOME/node_modules/socket.io-client/package.json ]; then
     echo "Updating NPM MOBILE-DETECT"
     npm install socket.io-client@1.4.8
 fi
-if [ ! -f /home/pi/firewalla/node_modules/bleno/package.json ]; then
+if [ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json ]; then
     echo "Updating NPM BLENO"
-    sudo cp /home/pi/firewalla/config/netbot.config /encipher.config/.
+    sudo cp $FIREWALLA_HOME/config/netbot.config /encipher.config/.
     sudo apt-get install -y bluetooth bluez libbluetooth-dev libudev-dev
     npm install bleno --save
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 fi
+if [ ! -f $FIREWALLA_HOME/node_modules/external-ip/package.json ]; then
+    echo "Updating NPM EXTERNAL-IP"
+    npm install external-ip
+fi
+
+if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
+    npm install network@git+https://git@github.com/melvinto/network.git
+fi
+
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 cd net2
 forever start --uid main main.js
