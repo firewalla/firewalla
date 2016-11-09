@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 /*    Copyright 2016 Rottiesoft LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -50,7 +51,7 @@ var intercomm = require('../lib/intercomm.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration file, default to ./config/default.config')
-    .option('--admin_invite_timeout [admin_invite_timeout]', 'admin invite timeout')
+    .option('--admin_invite_timeout [admin_invite_timeout]', 'admin invite timeout');
 
 program.parse(process.argv);
 
@@ -130,7 +131,7 @@ function generateEncryptionKey() {
 
 function initializeGroup(callback) {
 
-    groupId = storage.getItemSync('groupId');
+    let groupId = storage.getItemSync('groupId');
     if (groupId != null) {
         console.log("Found stored group x", groupId);
         callback(null, groupId);
@@ -172,15 +173,52 @@ function displayKey(key) {
 
 function displayInvite(obj) {
     console.log("\n\n-------------------------------\n");
-    console.log("Please scan this to get the invite directly.\n\n")
+    console.log("Please scan this to get the invite directly.\n\n");
     console.log("\n\n-------------------------------\n");
     var str = JSON.stringify(obj);
     qrcode.generate(str);
 }
 
+function openInvite(group,gid,ttl) {
+                var obj = eptcloud.eptGenerateInvite(gid);
+                var txtfield = {
+                    'gid': gid,
+                    'seed': symmetrickey.seed,
+                    'keyhint': 'You will find the key on the back of your device',
+                    'service': config.service,
+                    'type': config.serviceType,
+                    'mid': uuid.v4(),
+                    'exp': Date.now() / 1000 + adminTotalInterval,
+                };
+                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
+                displayKey(symmetrickey.userkey);
+                displayInvite(obj);
+
+                service = intercomm.publish(null, config.endpoint_name, 'devhi', 80, 'tcp', txtfield);
+                intercomm.bpublish(gid, obj.r, config.serviceType);
+
+                var timer = setInterval(function () {
+                    console.log("Open Invite Start Interal", ttl , "Inviting rid", obj.r);
+                    eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
+                        console.log("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
+                        ttl--;
+                        if (!e) {
+                            clearInterval(timer);
+                            intercomm.stop(service);
+                        }
+                        if (ttl <= 0) {
+                            clearInterval(timer);
+                            intercomm.stop(service);
+                            intercomm.bstop();
+                        }
+                    });
+                }, adminInviteInterval * 1000);
+
+}
+
 function inviteFirstAdmin(gid, callback) {
     console.log("Initializing first admin");
-    eptcloud.groupFind(gid, function (err, group) {
+    eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
             console.log("Error lookiong up group", err);
             callback(err, false);
@@ -210,7 +248,7 @@ function inviteFirstAdmin(gid, callback) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
-                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key),
+                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                     displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
@@ -238,6 +276,7 @@ function inviteFirstAdmin(gid, callback) {
 
 
             } else {
+                openInvite(group,gid,60);
                 console.log("Found Group ", gid, "with", group.symmetricKeys.length, "members");
                 callback(null, true);
             }
