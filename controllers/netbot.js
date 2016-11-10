@@ -57,6 +57,14 @@ class netBot extends ControllerBot {
         this._block(ip, 'block', value, callback);
     }
 
+    _ignore(ip,reason,callback) {
+        this.hostManager.ignoreIP(ip,reason,callback);
+    }
+
+    _unignore(ip,callback) {
+        this.hostManager.unignoreIP(ip,callback);
+    }
+
     _block(ip, blocktype, value, callback) {
         console.log("_block", ip, blocktype, value);
         if (ip === "0.0.0.0") {
@@ -386,6 +394,16 @@ class netBot extends ControllerBot {
                 this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
                     cb(err);
                 });
+            }
+            else if (o=="ignore") {
+                this._ignore(msg.target, msg.data.value.ignore.reason, (err, obj)=> {
+                    cb(err);
+                });
+            }
+            else if (o=="unignore") {
+                this._unignore(msg.target, (err, obj) => {
+                    cb(err);
+                });
             } else {
                 cb();
             }
@@ -399,7 +417,7 @@ class netBot extends ControllerBot {
                     };
                     reply.code = 200;
                     reply.data = msg.data.value;
-                    console.log("Repling vpn", reply.code, reply.data);
+                    console.log("Repling ", reply.code, reply.data);
                     this.txData(this.primarygid, "", reply, "jsondata", "", null);
 
           });

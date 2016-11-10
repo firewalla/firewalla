@@ -1161,7 +1161,10 @@ module.exports = class {
                                 json.scan[d] = JSON.parse(data[d]);
                             }
                         }
-                        callback(null, json);
+                        this.loadIgnoredIP((err,ipdata)=>{ 
+                            json.ignoredIP = ipdata;
+                            callback(null, json);
+                        });
                     });
                 });
             });
@@ -1467,6 +1470,62 @@ module.exports = class {
                     });
                 });
             }
+        });
+    }
+
+    loadIgnoredIP(callback) {
+        let key = "policy:ignore"
+        rclient.hgetall(key, (err, data) => {
+            if (err != null) {
+                log.error("Ignored:Policy:Load:Error", key, err);
+                if (callback) {
+                    callback(err, null);
+                }
+            } else {
+                if (data) {
+                    let ignored= {};
+                    for (let k in data) {
+                        ignored[k] = JSON.parse(data[k]);
+                    }
+                    if (callback)
+                        callback(null, ignored);
+                } else {
+                    if (callback)
+                        callback(null, null);
+                }
+            }
+        });
+    }
+
+    unignoreIP(ip,callback) {
+        let key = "policy:ignore";
+        rclient.hdel(key,ip,callback);
+        log.info("Unignore:",ip);
+    }
+ 
+    ignoreIP(ip,reason,callback) {
+        let now = Math.ceil(Date.now() / 1000);
+        let key = "policy:ignore";
+        let obj = {
+           ip: ip,
+           ts: now,
+       reason: reason
+        }; 
+        let objkey ={};
+        objkey[ip]=JSON.stringify(obj);
+        rclient.hmset(key,objkey,(err,data)=> {
+            if (err!=null) {
+                callback(err,null);
+            } else {
+                callback(null,null);
+            }
+        });  
+    }
+
+    isIgnoredIP(ip,callback) {
+        let key = "policy:ignore";
+        rclient.hmget(key,ip,(err,data)=> {
+            callback(err,data);
         });
     }
 }
