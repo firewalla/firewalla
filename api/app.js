@@ -7,7 +7,6 @@ var bodyParser = require('body-parser');
 var argv = require('minimist')(process.argv.slice(2));
 var swagger = require("swagger-node-express");
 
-var routes = require('./routes/index');
 var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
@@ -26,24 +25,17 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// app.use(function(req, res, next) {
-//     res.header("Access-Control-Allow-Origin", "*");
-//     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-//     res.header("Access-Control-Allow-Methods: GET, POST, DELETE, PUT");
-//     next();
-// });
+var subpath_v1 = express();
+app.use("/v1", subpath_v1);
+subpath_v1.use('/sys', system);
+subpath_v1.use('/message', message);
+subpath_v1.use('/ss', shadowsocks);
 
-var subpath = express();
-app.use("/v1", subpath);
-app.use('/', routes);
-app.use(express.static('dist'));
-app.use("/docs", subpath);
+var subpath_docs = express();
+app.use("/docs", subpath_docs);
+subpath_docs.use("/", express.static('dist'));
 
-subpath.use('/sys', system);
-subpath.use('/message', message);
-subpath.use('/ss', shadowsocks);
-
-swagger.setAppHandler(subpath);
+swagger.setAppHandler(subpath_docs);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -80,20 +72,20 @@ app.use(function(err, req, res, next) {
 module.exports = app;
 
 swagger.setApiInfo({
-    title: "example API",
+    title: "Firewalla API",
     description: "API to do something, manage something...",
     termsOfServiceUrl: "",
-    contact: "yourname@something.com",
+    contact: "tt@firewalla.com",
     license: "",
     licenseUrl: ""
 });
 
 
-subpath.get('/', function (req, res) {
+subpath_docs.get('/', function (req, res) {
     res.sendfile(__dirname + '/dist/index.html');
 });
 
-swagger.configureSwaggerPaths('', 'api-docs', '');
+swagger.configureSwaggerPaths('', '/docs/api-docs', '');
 
 var domain = 'localhost';
 if(argv.domain !== undefined)

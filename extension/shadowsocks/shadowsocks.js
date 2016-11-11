@@ -121,8 +121,9 @@ module.exports = class {
             private: 8388,
             public: 8388
         });
-        require('child_process').exec("ssserver -d stop -c " + configFileLocation, (err, out, code) => {
-            log.info("Stopping OpenVpn", err);
+        let cmd = require('util').format("ssserver -d stop --pid %s/run/ss.pid", fHome);
+        require('child_process').exec(cmd, (err, out, code) => {
+            log.info("Stopping ShadowSocket", err);
             if (callback) {
                 callback(err);
             }
@@ -176,7 +177,9 @@ module.exports = class {
             private: 8388,
             public: 8388
         },(err)=>{
-            require('child_process').exec("ssserver -d start -c " + configFileLocation, (err, out, code) => {
+            let cmd = require('util').format("ssserver -d start -c %s --pid-file %s/run/ss.pid --log-file %s/log/ss.log", configFileLocation, fHome, fHome);
+            console.log(cmd);
+            require('child_process').exec(cmd, (err, out, code) => {
                 log.info("Shadowsocks:Start", err);
                 if (err && this.started == false) {
                     if (callback) {

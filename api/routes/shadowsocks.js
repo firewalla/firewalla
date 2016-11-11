@@ -30,6 +30,14 @@ router.post('/:action', function(req, res, next) {
                 res.json(result);
             }
         });
+    } else if (action === "stop") {
+        ss.stop(function(err, result) {
+            if(err) {
+                res.json(err);
+            } else {
+                res.json(result);
+            }
+        });
     }
 });
 
