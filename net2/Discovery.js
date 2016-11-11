@@ -260,7 +260,7 @@ module.exports = class {
                     if (err == null) {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
-                            changeset['lastActiveTimestamp'] = Date.now() / 1000;
+                        // JERRRY    changeset['lastActiveTimestamp'] = Date.now() / 1000;
                             changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
                             log.info("Discovery:Bonjour:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
@@ -360,6 +360,8 @@ module.exports = class {
 
 	    // ignore any invalid interfaces
             let self = this;
+
+             console.log("Got Interface",list);
 	    list = list.filter(function(x) { return self.is_interface_valid(x) });
 
             for (let i in list) {
@@ -397,7 +399,7 @@ module.exports = class {
             log.debug("Setting redis", redisobjs, {});
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
-                    log.error("Discovery::Interfaces:Error", error);
+                    log.error("Discovery::Interfaces:Error", redisobjs,error);
                 } else {
                     log.debug("Discovery::Interfaces", error, result.length);
                 }

@@ -374,7 +374,7 @@ module.exports = class {
                             name: hostname,
                             bname: hostname
                         };
-                        changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
+                        //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
                         log.debug("Dns:Redis:Merge", key, changeset, {});
                         rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
                             if (err) {
@@ -683,7 +683,7 @@ module.exports = class {
 
 
                     try {
-                        if (spec.ob>0 && spec.rb>0) { 
+                        if (spec.ob>0 && spec.rb>0 && spec.ct>1) { 
                             let hostChanged = hostsChanged[spec.lh];
                             if (hostChanged == null) {
                                 hostsChanged[spec.lh] = Number(spec.ts);

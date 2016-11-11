@@ -1,7 +1,9 @@
+# TODO: make the build process running in current folder instead of hardcoded ~/firewalla
 cd  ~/firewalla
 cp ./etc/netrc ~/.netrc
 git pull
 
+# TODO: check local apt mirror
 sudo apt-get update  
 sudo    apt-get install -y curl 
 sudo    apt-get install -y redis-server && \
@@ -26,6 +28,7 @@ sudo cp -r /usr/share/easy-rsa /etc/openvpn
 sudo apt-get install python-pip
 sudo pip install shadowsocks
 
+# TODO: check local npm mirror
 cd firewalla
 npm install
 cd imports
