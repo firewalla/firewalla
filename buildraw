@@ -24,6 +24,10 @@ sudo rm -r -f /etc/openvpn
 sudo mkdir /etc/openvpn
 sudo cp -r /usr/share/easy-rsa /etc/openvpn
 
+# install shadowsocks
+sudo apt-get install python-pip
+sudo pip install shadowsocks
+
 # TODO: check local npm mirror
 cd firewalla
 npm install

@@ -70,6 +70,24 @@ module.exports = class {
         console.log("Calling release function of SysManager");
     }
 
+    getPublicIP(callback) {
+        var ip = this.publicIp;
+        let self = this;
+        if (ip == null) {
+            var getIP = require('external-ip')();
+            getIP(function(err, ip2) {
+                if(err == null) {
+                    self.publicIp = ip2;
+                    callback(undefined, ip2);
+                } else {
+                    callback(err, undefined);
+                }
+            })
+        } else {
+            callback(undefined, ip);
+        }
+    }
+    
     update(callback) {
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
@@ -128,7 +146,11 @@ module.exports = class {
     }
 
     myIp() {
-        return this.monitoringInterface().ip_address;
+        if(this.monitoringInterface()) {
+            return this.monitoringInterface().ip_address;            
+        } else {
+            return undefined;
+        }
     }
 
     myMAC() {
