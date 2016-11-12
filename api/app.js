@@ -10,6 +10,7 @@ var swagger = require("swagger-node-express");
 var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
+var encipher = require('./routes/fastencipher');
 
 var app = express();
 
@@ -30,6 +31,7 @@ app.use("/v1", subpath_v1);
 subpath_v1.use('/sys', system);
 subpath_v1.use('/message', message);
 subpath_v1.use('/ss', shadowsocks);
+subpath_v1.use('/encipher', encipher);
 
 var subpath_docs = express();
 app.use("/docs", subpath_docs);

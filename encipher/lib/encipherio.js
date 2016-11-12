@@ -606,6 +606,23 @@ var legoEptCloud = class {
         });
     }
 
+    // Direct one-to-one message handling
+    receiveMessage(gid, msg, callback) {
+        let logMessage = require('util').format("Got encrytped message from group %s", gid);
+        console.log(logMessage);
+
+        this.getKey(gid, (err, key, cacheGroup) => {
+            if (err != null && key == null) {
+                callback(err, null);
+                return;
+            }
+
+            let decryptedMsg = this.decrypt(msg, key);
+            let msgJson = JSON.parse(decryptedMsg);
+            console.log(require('util').inspect(msgJson));
+        });
+    }
+    
     getMsgFromGroup(gid, timestamp, count, callback) {
         var self = this;
         this.getKey(gid, (err, key, cacheGroup) => {

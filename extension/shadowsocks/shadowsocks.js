@@ -80,8 +80,12 @@ module.exports = class {
                         error(err);
                     }
                 }
-                this.upnpClient.close();
-                this.upnpClient = null;
+
+                // Just add protection code to avoid crash upnpClient is null
+                if (this.upnpClient != null) {
+                    this.upnpClient.close();
+                    this.upnpClient = null;
+                }
             });
         });
     }
