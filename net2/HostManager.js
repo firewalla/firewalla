@@ -1523,9 +1523,28 @@ module.exports = class {
     }
 
     isIgnoredIP(ip,callback) {
+        if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
+            callback(null,null);
+            return;
+        }
         let key = "policy:ignore";
-        rclient.hmget(key,ip,(err,data)=> {
+        rclient.hget(key,ip,(err,data)=> {
             callback(err,data);
+        });
+    }
+
+    isIgnoredIPs(ips,callback) {
+        let ignored = false;
+        async.each(ips, (ip, cb) => {
+            this.isIgnoredIP(ip,(err,data)=>{
+                if (err==null&& data!=null) {
+                    ignored = true;
+                }
+                cb();
+            });
+        } , (err) => {
+            log.info("HostManager:isIgnoredIPs:",ips,ignored);
+            callback(null,ignored );
         });
     }
 }

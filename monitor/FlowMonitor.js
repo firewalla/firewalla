@@ -117,8 +117,16 @@ module.exports = class FlowMonitor {
             let flow = flows[i];
             log.info("FLOW:INTEL:PROCESSING",flow);
             if (flow['intel'] && flow['intel']['c']) {
-                log.info("########## flowIntel",flow);
-                let c = flow['intel']['c'];
+              log.info("########## flowIntel",flow);
+              let c = flow['intel']['c'];
+
+              hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
+               if (ignore == true) {
+                   log.info("######## flowIntel:Ignored",flow);
+               }
+              
+               if (ignore == false) {
+                log.info("######## flowIntel:Ignored",flow);
                 if (c == "av") {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
@@ -255,6 +263,8 @@ module.exports = class FlowMonitor {
                         }
                     });
                 }
+               }
+              });
             } 
         }
     }
