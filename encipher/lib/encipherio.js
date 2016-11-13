@@ -526,6 +526,20 @@ var legoEptCloud = class {
         return k.replace('-', '');
     }
 
+    // This is to encrypt message for direct communication between app and pi.
+    // The message will not be transferred via cloud
+    // just encrypt and send via callback
+    encryptMessage(gid, msg, callback) {
+        this.getKey(gid, (err, key, cacheGroup) => {
+            if (err != null && key == null) {
+                callback(err, null)
+                return;
+            }
+            var crypted = this.encrypt(msg, key);
+            log('encrypted text ', crypted);
+            callback(null, crypted);
+        });
+    }
     /* 
      * beep is the structure to send a apn notification
      *    - beep content is not encrypted
@@ -541,6 +555,7 @@ var legoEptCloud = class {
     */
 
     // VALID MTYPE:  jsondata
+
 
     sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
         var self = this;
@@ -619,7 +634,7 @@ var legoEptCloud = class {
 
             let decryptedMsg = this.decrypt(msg, key);
             let msgJson = JSON.parse(decryptedMsg);
-            console.log(require('util').inspect(msgJson));
+            callback(null, msgJson);
         });
     }
     

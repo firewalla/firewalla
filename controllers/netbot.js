@@ -694,7 +694,7 @@ class netBot extends ControllerBot {
     }
 
 
-    msgHandler(gid, rawmsg) {
+    msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
             console.log("Received jsondata", msg);
@@ -717,7 +717,13 @@ class netBot extends ControllerBot {
                             datamodel.code = 500;
                         }
                         console.log("Sending data", datamodel.replyid, datamodel.id);
-                        this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null);
+                        if(callback) {
+                            // use callback to return data instead of a separate msg channel
+                            callback(null, datamodel);
+                        } else {
+                            this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null);
+                        }
+
                     });
                 } else if (rawmsg.message.obj.mtype === "set") {
                     // mtype: set
