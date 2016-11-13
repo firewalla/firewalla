@@ -10,6 +10,7 @@ var swagger = require("swagger-node-express");
 var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
+var encipher = require('./routes/fastencipher');
 
 var app = express();
 
@@ -27,9 +28,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
+subpath_v1.use(bodyParser.json());
+subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use('/sys', system);
 subpath_v1.use('/message', message);
 subpath_v1.use('/ss', shadowsocks);
+subpath_v1.use('/encipher', encipher);
 
 var subpath_docs = express();
 app.use("/docs", subpath_docs);
