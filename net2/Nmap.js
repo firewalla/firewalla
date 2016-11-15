@@ -98,6 +98,11 @@ module.exports = class {
             return;
         }
 
+        this.nmapScan(cmdline,callback);
+     }
+
+     nmapScan(cmdline,callback) {
+
         this.process = require('child_process').exec(cmdline, (err, out, code) => {
             let outarray = out.split("\n");
             let hosts = [];
@@ -172,8 +177,6 @@ module.exports = class {
                     }
 
                     try {
-                        if (fast == false) {
-                        }
                         if (hostjson.hostscript) {
                         }
                         if (hostjson.hostscript && hostjson.hostscript.script && hostjson.hostscript.script.id == "nbstat") {
