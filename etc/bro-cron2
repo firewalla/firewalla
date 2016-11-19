@@ -18,3 +18,10 @@ if [[ $bro_process_cnt < 3 ]]; then
     sudo service brofish stop
     sudo service brofish start
 fi
+
+forever_process_cnt=`forever list | grep "STOPPED" | grep -v grep | wc -l`
+if [[ $forever_process_cnt > 0 ]]; then
+    logger `forever process STOPPED`
+    forever list | logger
+    forever restartall
+fi
