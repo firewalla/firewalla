@@ -6,6 +6,19 @@ var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var argv = require('minimist')(process.argv.slice(2));
 var swagger = require("swagger-node-express");
+const passport = require('passport');
+var Strategy = require('passport-http-bearer').Strategy;
+var db = require('./db');
+
+passport.use(new Strategy(
+  function(token, cb) {
+    db.users.findByToken(token, function(err, user) {
+      if (err) { return cb(err); }
+      if (!user) { return cb(null, false); }
+      return cb(null, user);
+    });
+  }));
+
 
 var system = require('./routes/system');
 var message = require('./routes/message');
@@ -28,6 +41,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
+subpath_v1.use(passport.initialize());
+subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use('/sys', system);
