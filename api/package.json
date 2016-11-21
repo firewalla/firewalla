@@ -11,9 +11,11 @@
     "debug": "~2.2.0",
     "express": "~4.13.4",
     "jade": "~1.11.0",
+    "minimist": "*",
     "morgan": "~1.7.0",
+    "passport": "*",
+    "passport-http-bearer": "^1.0.1",
     "serve-favicon": "~2.3.0",
-    "swagger-node-express": "~2.0",
-    "minimist": "*"
+    "swagger-node-express": "~2.0"
   }
 }

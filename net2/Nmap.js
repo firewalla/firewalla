@@ -98,10 +98,10 @@ module.exports = class {
             return;
         }
 
-        this.nmapScan(cmdline,callback);
+        this.nmapScan(cmdline,true,callback);
      }
 
-     nmapScan(cmdline,callback) {
+     nmapScan(cmdline,requiremac,callback) {
 
         this.process = require('child_process').exec(cmdline, (err, out, code) => {
             let outarray = out.split("\n");
@@ -137,7 +137,7 @@ module.exports = class {
                         }
                     }
 
-                    if (host.mac == null) {
+                    if (host.mac == null && requiremac == true) {
                         console.log("skipping host, no mac address", host);
                         continue;
                     }
