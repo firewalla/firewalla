@@ -79,6 +79,9 @@ cd ..
 cd monitor
 forever start --uid monitor MonitorMain.js 
 cd ..
+cd api
+forever start --uid api bin/www
+cd ..
 sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync
