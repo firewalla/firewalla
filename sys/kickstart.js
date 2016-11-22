@@ -252,7 +252,7 @@ function inviteFirstAdmin(gid, callback) {
                     displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name, 'devhi', 80, 'tcp', txtfield);
+                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {
