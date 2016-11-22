@@ -564,12 +564,14 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
-                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
+                                                  if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "out",
                                                         "txRatioRanked": [flow],
                                                         id:data.id,
                                                     });
+                                                  }
                                                 });
                                             });
                                         }
@@ -603,11 +605,13 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
                                                 alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                  if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "in",
                                                         "txRatioRanked": [flow],
                                                         id:data.id,
                                                     });
+                                                  }
                                                 });
                                             });
                                         }
