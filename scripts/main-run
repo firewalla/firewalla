@@ -79,9 +79,16 @@ cd ..
 cd monitor
 forever start --uid monitor MonitorMain.js 
 cd ..
-cd api
-forever start --uid api bin/www
-cd ..
+if [[ $branch =~ release.* ]] 
+   then
+    echo "Release branch skipping api"      
+   else
+    echo "Master branch running api"      
+    cd api
+    forever start --uid api bin/www
+    cd ..
+fi
+
 sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync
