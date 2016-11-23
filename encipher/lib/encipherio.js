@@ -380,14 +380,18 @@ var legoEptCloud = class {
                     callback(httpResponse.statusCode, null);
                 });
             } else {
+                if(body.length == 0) {
+                    callback("invalid group id", null);
+                    return;
+                }
                 var b = null;
                 try {
                     b = JSON.parse(body);
+                    self.groupCache[gid] = self.parseGroup(b);
+                    callback(err, b);
                 } catch (e) {
                     callback(e, null);
                 }
-                self.groupCache[gid] = self.parseGroup(b);
-                callback(err, b);
             }
         });
     }
@@ -629,6 +633,11 @@ var legoEptCloud = class {
         this.getKey(gid, (err, key, cacheGroup) => {
             if (err != null && key == null) {
                 callback(err, null);
+                return;
+            }
+
+            if(key == null) {
+                callback("key not found, invalid group?", null);
                 return;
             }
 
