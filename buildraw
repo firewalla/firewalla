@@ -31,6 +31,9 @@ sudo pip install shadowsocks
 # TODO: check local npm mirror
 cd firewalla
 npm install
+cd api
+npm install
+cd ..
 cd imports
 tar -zxvf bro.tar.gz
 sudo cp -r -f  bro /usr/local/.
