@@ -1,6 +1,7 @@
 "use strict"
 var express = require('express');
 var router = express.Router();
+const passport = require('passport')
 
 var Config = require('../../lib/Config.js');
 
@@ -22,11 +23,10 @@ if (config == null) {
 var eptname = config.endpoint_name;
 var appId = config.appId;
 var appSecret = config.appSecret;
-var gid = "PASTE_GID_HERE"; // Hard coded, need fix..
 var cloud = require('../../encipher');
 
 var eptcloud = new cloud(eptname);
-var nbController = null;
+var nbControllers = {};
 
 // Initialize cloud and netbot controller
 eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
@@ -38,34 +38,51 @@ eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
             console.log("Success logged in", result, ept);
             eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
                 console.log("Groups found ", err, groups);
-                let NetBotController = require("../../controllers/netbot.js");
-                let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json");
-                nbConfig.controller = config.controllers[0];
-                nbController = new NetBotController(nbConfig, config, eptcloud, groups, gid, true);
-                if(nbController) {
-                    console.log("netbot controller is intialized successfully");
-                }
+                groups.forEach(function(group) {
+                    let groupID = group.gid;
+                    let NetBotController = require("../../controllers/netbot.js");
+                    let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json");
+                    nbConfig.controller = config.controllers[0];
+                    let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true);
+                    if(nbController) {
+                        nbControllers[groupID] = nbController;
+                        console.log("netbot controller for group " + groupID + " is intialized successfully");
+                    }
+                });
             });
         }); 
     }
 });
 
 /* fast encipher api */
-router.get('/ping', function(req, res, next) {
-    res.send("pong!");
-});
+router.get('/ping', 
+    passport.authenticate('bearer', { session: false }),
+    function(req, res, next) {
+        res.send("pong!");
+    });
 
-router.post('/message', function(req, res, next) {
+/* IMPORTANT 
+ * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
+ * -- message is encrypted already 
+ */
+router.post('/message/:gid', function(req, res, next) {
+    var gid = req.params.gid;
     var message = req.body.message;
     eptcloud.receiveMessage(gid, message, (err, decryptedMessage) => {
         if(err) {
-            console.log("Got error: " + err);
-            res.send("message failed");
+            res.json({"error" : err});
+            return;
         } else {
             decryptedMessage.mtype = decryptedMessage.message.mtype;
+            let nbController = nbControllers[gid];
+            if(!nbController) {
+                res.json({"error" : "invalid group id"});
+                return;
+            }
             nbController.msgHandler(gid, decryptedMessage, (err, response) => {
                 if(err) {
                     res.json({ error: err });
+                    return;
                 } else {
                     eptcloud.encryptMessage(gid, JSON.stringify(response), (err, encryptedResponse) => {
                         if(err) {
