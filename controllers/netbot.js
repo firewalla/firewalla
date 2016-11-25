@@ -717,12 +717,7 @@ class netBot extends ControllerBot {
                             datamodel.code = 500;
                         }
                         console.log("Sending data", datamodel.replyid, datamodel.id);
-                        if(callback) {
-                            // use callback to return data instead of a separate msg channel
-                            callback(null, datamodel);
-                        } else {
-                            this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null);
-                        }
+                        this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
 
                     });
                 } else if (rawmsg.message.obj.mtype === "set") {
