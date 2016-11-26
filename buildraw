@@ -8,25 +8,31 @@ function perr_and_exit()
 
 function usage()
 {
-    echo "Usage:"
+    cat << EOM
+Usage: buildraw [-t] [-n] [-h]"
+    -t      Use npm mirror from taobao.org.
+    -n      Skip apt dependency installations. 
+    -h      Show this help.
+EOM
 }
 
 function install_dependencies() 
 {
-    git pull || perr_and_exit "Failed to pull latest code"
+    git pull || perr_and_exit "Failed to pull latest firewalla code."
 
     # TODO: check local apt mirror
-    echo "Intalling node source repository..."
+    echo "Installing node source repository..."
     sudo  curl -sL https://deb.nodesource.com/setup_4.x | sudo -E bash -   || perr_and_exit "Failed to install node source repo"
 
+    echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
     apt_pkg_list="curl redis-server ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn easy-rsa python-pip phantomjs" #phantomjs is not required, install it just to make npm installation process clean.
 
-    echo "Install dependencies..."
+    echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed package"
 
-    echo "Installing required npms..."
+    echo "Installing required npms, please be patient..."
     [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
     sudo $NPM install forever -g 
     sudo $NPM install xml-json -g 
@@ -40,19 +46,17 @@ function install_dependencies()
     sudo mkdir -p /etc/openvpn || perr_and_exit "Failed to create new openvpn configure folder."
     sudo cp -r /usr/share/easy-rsa /etc/openvpn || perr_and_exit "Failed to copy easy_rsa."
 
-    echo "Setting shadowsocks..."
-    # install shadowsocks
+    echo "Installing shadowsocks..."
     sudo pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
 }
 
-
 function install_walla()
 {
-
-    echo "npm install packages, please be patient..."
+    echo "Install npm packages, please be patient..."
+    [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
     sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/package.template.json > $basedir/package.json
     sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/npm-shrinkwrap.template.json > $basedir/npm-shrinkwrap.json
-    echo "$NPM"
+
     cd $basedir && $NPM install || perr_and_exit "Failed to execute npm install"
     cd $basedir/api && $NPM install ||  perr_and_exit "Failed to execute npm install for api."
 
@@ -68,14 +72,13 @@ function install_walla()
     sudo cp $basedir/config/netbot.config /encipher.config/ || perr_and_exit "Failed top copy encipher config."
     sudo mkdir -p /firewalla && sudo chmod 777 /firewalla || perr_and_exit "Failed to create /firewalla."
 
+    echo "Setting brofish and firewalla services..."
     sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.servie."
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
     sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemctl scripts."
     sudo systemctl enable brofish || perr_and_exit "Failed to enable brofish service."
     sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
-
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities."
-
     # Set firewalla global environment variable
     if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
         sudo bash -c '/bin/echo "FIREWALLA_HOME=$basedir" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
@@ -93,7 +96,7 @@ while getopts "tnh" opt; do
     case $opt in
         t) USE_TAOBAO_NPM=1;;
         n) NO_DEPS=1;;
-        h) usage; exit;;
+        h) usage; exit 0;;
         ?) perr_and_exit "Invalid option $opt";;       
     esac
 done
@@ -106,6 +109,6 @@ done
 
 install_walla
 
-echo "Installation successful"
+echo "Installation successful."
 
 exit 0
