@@ -188,7 +188,7 @@ function openInvite(group,gid,ttl) {
                     'service': config.service,
                     'type': config.serviceType,
                     'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminTotalInterval,
+                    'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
