@@ -1,5 +1,5 @@
 {
-    "version": 1.60,
+    "version": 1.65,
     "discovery": {
       "networkInterfaces": ["eth0","wlan0"]
     },
