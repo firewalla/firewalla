@@ -166,8 +166,16 @@ module.exports = class {
     }
 
 
-    myDNS() {
+    myDNS() { // return array
         return this.monitoringInterface().dns;
+    }
+
+    myGateway() {
+        return this.monitoringInterface().gateway;
+    }
+
+    mySubnet() {
+        return this.monitoringInterface().subnet;
     }
 
     getSysInfo(callback) {
