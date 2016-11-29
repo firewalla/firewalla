@@ -188,7 +188,7 @@ function openInvite(group,gid,ttl) {
                     'service': config.service,
                     'type': config.serviceType,
                     'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminTotalInterval,
+                    'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
@@ -252,7 +252,7 @@ function inviteFirstAdmin(gid, callback) {
                     displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name, 'devhi', 80, 'tcp', txtfield);
+                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {

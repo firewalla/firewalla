@@ -38,8 +38,7 @@ var intelManager = new IntelManager('debug');
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
-var AlarmManager = require("./AlarmManager.js");
-var alarmManager = new AlarmManager("info");
+var alarmManager = null;
 
 var uuid = require('uuid');
 var bone = require("../lib/Bone.js");
@@ -478,6 +477,10 @@ class Host {
 
                         log.debug("Host:Subscriber:Intel:Write", obj);
 
+                        if (alarmManager == null) {
+                            let AlarmManager = require("./AlarmManager.js");
+                            alarmManager = new AlarmManager("info");
+                        }
                         alarmManager.alarm(hip, "intel", obj.alarmseverity, iobj.severityscore, obj, actionobj, (err, data) => {
                             if (this.callbacks[e]) {
                                 log.debug("Callbacks: ", channel, ip, type, obj);
@@ -1134,6 +1137,10 @@ module.exports = class {
                     json.policy = this.policy;
                 }
                 log.debug("Reading Alarms");
+                if (alarmManager == null) {
+                     let AlarmManager = require("./AlarmManager.js");
+                     alarmManager = new AlarmManager("info");
+                }
                 alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
                     //       rclient.zrevrangebyscore([key,Date.now()/1000,Date.now()/1000-60*60*24], (err,results)=> {
                     log.debug("Done Reading Alarms");
@@ -1523,8 +1530,12 @@ module.exports = class {
     }
 
     isIgnoredIP(ip,callback) {
-        if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
+        if (ip == null || ip == undefined) {
             callback(null,null);
+            return;
+        }
+        if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
+            callback(null,"predefined");
             return;
         }
         let key = "policy:ignore";

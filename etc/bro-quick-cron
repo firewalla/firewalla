@@ -1,0 +1,13 @@
+#!/bin/bash
+sync
+
+mem=$(free -m | awk '/-/{print $4}')
+(( mem <= 80 )) && logger "Memory reboot"+$mem
+(( mem <= 80 )) && sudo reboot
+    
+bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
+if [[ $bro_process_cnt < 3 ]]; then
+    logger 'bro-quick-cron: bro restart due to bro vanished'
+    sudo service brofish stop
+    sudo service brofish start
+fi
