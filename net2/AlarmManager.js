@@ -29,6 +29,7 @@ var uuid = require('uuid');
 
 var bone = require("../lib/Bone.js");
 
+            var hostManager = null;
 
 
 /* alarms:
@@ -73,6 +74,16 @@ module.exports = class {
         if (alarmObj.alarmtype!="intel" && alarmObj.alarmtype!="porn") {
             timeblock = 30*60;
         }
+     if (hostManager == null) {
+            let HostManager = require("../net2/HostManager.js");
+            hostManager = new HostManager("cli", 'client', 'info');
+     }
+     hostManager.isIgnoredIPs([alarmObj.actionobj.src, alarmObj.actionobj.dst,alarmObj.actionobj.shname,alarmObj.actionobj.dhname,alarmObj.dhname,alarmObj.shname],(err,ignore)=>{
+       if (ignore == true) {
+          log.info("######## AlarmManager:flowIntel:Ignored",alarmObj);
+       }
+              
+       if (ignore == false) {
         this.read(hip, timeblock, null, null, null, (err, alarms)=> {
             if (alarms == null) {
                 log.info("alarm:check:noprevious", hip,alarmObj);
@@ -101,6 +112,10 @@ module.exports = class {
                 callback(null, alarmObj, "notify");
             }
         });
+       } else {
+            callback(null,null,"ignore");
+       }
+     });
     }
 
     /**

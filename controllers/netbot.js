@@ -356,7 +356,7 @@ class netBot extends ControllerBot {
 
     }
 
-    setHandler(gid, msg) {
+    setHandler(gid, msg, callback) {
         // mtype: set
         // target = "ip address" 0.0.0.0 is self
         // data.item = policy
@@ -418,7 +418,7 @@ class netBot extends ControllerBot {
                     reply.code = 200;
                     reply.data = msg.data.value;
                     console.log("Repling ", reply.code, reply.data);
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
 
           });
         } else if (msg.data.item === "host") {
@@ -439,14 +439,14 @@ class netBot extends ControllerBot {
                 if (host == null) {
                     console.log("Host not found");
                     reply.code = 404;
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     return;
                 }
 
                 if (data.value.name == host.o.name) {
                     console.log("Host not changed", data.value.name, host.o.name);
                     reply.code = 200;
-                    this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                    this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     return;
                 }
 
@@ -455,11 +455,11 @@ class netBot extends ControllerBot {
                 host.save(null, (err) => {
                     if (err) {
                         reply.code = 500;
-                        this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                        this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     } else {
                         reply.code = 200;
                         reply.data = msg.data.value;
-                        this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                        this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     }
                 });
             });
@@ -477,7 +477,7 @@ class netBot extends ControllerBot {
                     replyid: msg.id,
                 };
                 reply.code = 200;
-                this.txData(this.primarygid, "", reply, "jsondata", "", null);
+                this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
             });
         }
 
@@ -499,13 +499,13 @@ class netBot extends ControllerBot {
         });
     }
 
-    getHandler(gid, msg) {
+    getHandler(gid, msg, callback) {
         // mtype: get
         // target = ip address
         // data.item = [app, alarms, host]
         if (msg.data.item === "host" && msg.target) {
             this.getAllIPForHost(msg.target, (err, ips) => {
-                this.deviceHandler(msg, gid, msg.target, ips);
+                this.deviceHandler(msg, gid, msg.target, ips, callback);
             });
         } else if (msg.data.item === "vpn" || msg.data.item === "vpnreset") {
             let regenerate = true;
@@ -530,14 +530,14 @@ class netBot extends ControllerBot {
                             portmapped: this.hostManager.policy['vpnPortmapped']
                         }
                     }
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null);
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
             });
         }
 
     }
 
-    deviceHandler(msg, gid, target, listip) {
+    deviceHandler(msg, gid, target, listip, callback) {
         console.log("Getting Devices", gid, target, listip);
         this.hostManager.getHost(target, (err, host) => {
             if (host == null) {
@@ -549,7 +549,7 @@ class netBot extends ControllerBot {
                     replyid: msg.id,
                     code: 404,
                 };
-                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null);
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 return;
             }
 
@@ -621,7 +621,7 @@ class netBot extends ControllerBot {
                             data: jsonobj
                         };
                         console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
-                        this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null);
+                        this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null, callback);
                     });
                 });
             });
@@ -637,7 +637,7 @@ class netBot extends ControllerBot {
       target: '0.0.0.0' }
     */
 
-    cmdHandler(gid, msg) {
+    cmdHandler(gid, msg, callback) {
         if (msg.data.item === "reboot") {
             console.log("Rebooting");
             let datamodel = {
@@ -648,7 +648,7 @@ class netBot extends ControllerBot {
                 replyid: msg.id,
                 code: 200
             }
-            this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null);
+            this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
             console.log("Reseting");
@@ -661,7 +661,7 @@ class netBot extends ControllerBot {
                     replyid: msg.id,
                     code: 200
                 }
-                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null);
+                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetpolicy") {
             console.log("Reseting");
@@ -674,7 +674,7 @@ class netBot extends ControllerBot {
                     replyid: msg.id,
                     code: 200
                 }
-                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null);
+                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "upgrade") {
             console.log("upgrading");
@@ -687,7 +687,7 @@ class netBot extends ControllerBot {
                     replyid: msg.id,
                     code: 200
                 }
-                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null);
+                this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
 
         }
@@ -728,7 +728,7 @@ class netBot extends ControllerBot {
                     //
                     this.setHandler(gid, msg);
                 } else if (rawmsg.message.obj.mtype === "get") {
-                    this.getHandler(gid, msg);
+                    this.getHandler(gid, msg, callback);
                 } else if (rawmsg.message.obj.mtype === "cmd") {
                     this.cmdHandler(gid, msg);
                 }
