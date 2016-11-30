@@ -1,0 +1,6 @@
+#!/bin/bash
+sync
+
+mem=$(free -m | awk '/-/{print $4}')
+(( mem <= 80 )) && logger "Memory reboot"+$mem
+(( mem <= 80 )) && sudo reboot
