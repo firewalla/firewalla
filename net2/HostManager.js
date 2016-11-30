@@ -38,8 +38,7 @@ var intelManager = new IntelManager('debug');
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
-var AlarmManager = require("./AlarmManager.js");
-var alarmManager = new AlarmManager("info");
+var alarmManager = null;
 
 var uuid = require('uuid');
 var bone = require("../lib/Bone.js");
@@ -478,6 +477,10 @@ class Host {
 
                         log.debug("Host:Subscriber:Intel:Write", obj);
 
+                        if (alarmManager == null) {
+                            let AlarmManager = require("./AlarmManager.js");
+                            alarmManager = new AlarmManager("info");
+                        }
                         alarmManager.alarm(hip, "intel", obj.alarmseverity, iobj.severityscore, obj, actionobj, (err, data) => {
                             if (this.callbacks[e]) {
                                 log.debug("Callbacks: ", channel, ip, type, obj);
@@ -1134,6 +1137,10 @@ module.exports = class {
                     json.policy = this.policy;
                 }
                 log.debug("Reading Alarms");
+                if (alarmManager == null) {
+                     let AlarmManager = require("./AlarmManager.js");
+                     alarmManager = new AlarmManager("info");
+                }
                 alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
                     //       rclient.zrevrangebyscore([key,Date.now()/1000,Date.now()/1000-60*60*24], (err,results)=> {
                     log.debug("Done Reading Alarms");
@@ -1161,7 +1168,10 @@ module.exports = class {
                                 json.scan[d] = JSON.parse(data[d]);
                             }
                         }
-                        callback(null, json);
+                        this.loadIgnoredIP((err,ipdata)=>{ 
+                            json.ignoredIP = ipdata;
+                            callback(null, json);
+                        });
                     });
                 });
             });
@@ -1467,6 +1477,85 @@ module.exports = class {
                     });
                 });
             }
+        });
+    }
+
+    loadIgnoredIP(callback) {
+        let key = "policy:ignore"
+        rclient.hgetall(key, (err, data) => {
+            if (err != null) {
+                log.error("Ignored:Policy:Load:Error", key, err);
+                if (callback) {
+                    callback(err, null);
+                }
+            } else {
+                if (data) {
+                    let ignored= {};
+                    for (let k in data) {
+                        ignored[k] = JSON.parse(data[k]);
+                    }
+                    if (callback)
+                        callback(null, ignored);
+                } else {
+                    if (callback)
+                        callback(null, null);
+                }
+            }
+        });
+    }
+
+    unignoreIP(ip,callback) {
+        let key = "policy:ignore";
+        rclient.hdel(key,ip,callback);
+        log.info("Unignore:",ip);
+    }
+ 
+    ignoreIP(ip,reason,callback) {
+        let now = Math.ceil(Date.now() / 1000);
+        let key = "policy:ignore";
+        let obj = {
+           ip: ip,
+           ts: now,
+       reason: reason
+        }; 
+        let objkey ={};
+        objkey[ip]=JSON.stringify(obj);
+        rclient.hmset(key,objkey,(err,data)=> {
+            if (err!=null) {
+                callback(err,null);
+            } else {
+                callback(null,null);
+            }
+        });  
+    }
+
+    isIgnoredIP(ip,callback) {
+        if (ip == null || ip == undefined) {
+            callback(null,null);
+            return;
+        }
+        if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
+            callback(null,"predefined");
+            return;
+        }
+        let key = "policy:ignore";
+        rclient.hget(key,ip,(err,data)=> {
+            callback(err,data);
+        });
+    }
+
+    isIgnoredIPs(ips,callback) {
+        let ignored = false;
+        async.each(ips, (ip, cb) => {
+            this.isIgnoredIP(ip,(err,data)=>{
+                if (err==null&& data!=null) {
+                    ignored = true;
+                }
+                cb();
+            });
+        } , (err) => {
+            log.info("HostManager:isIgnoredIPs:",ips,ignored);
+            callback(null,ignored );
         });
     }
 }

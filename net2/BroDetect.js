@@ -162,6 +162,17 @@ module.exports = class {
                 setTimeout(this.initWatchers, 5000);
             }
         }
+        if (this.connLogdev == null) {
+            this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
+            if (this.connLogdev != null) {
+                log.info("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
+                this.connLogdev.on('line', (data) => {
+                    this.processConnData(data);
+                });
+            } else {
+                setTimeout(this.initWatchers, 5000);
+            }
+        }
 
         if (this.x509Log == null) {
             this.x509Log = new Tail(this.config.bro.x509.path, '\n');
