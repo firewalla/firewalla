@@ -80,10 +80,10 @@ if [[ $branch =~ release.* ]]
    then
     echo "Release branch skipping api"      
    else
-    #check_upgrade swagger-node-express ~2.0
-    #check_upgrade minimist 1.2.x
-    #check_upgrade express ^4.14.0
-    #check_upgrade body-parser 1.9.x
+    check_upgrade swagger-node-express ~2.0
+    check_upgrade minimist 1.2.x
+    check_upgrade express ^4.14.0
+    check_upgrade body-parser 1.9.x
     echo "Master branch running api"      
     cd api
     forever start --uid api bin/www
