@@ -49,10 +49,18 @@ if [ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json ]; then
     npm install bleno --save
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 fi
-if [ ! -f $FIREWALLA_HOME/node_modules/external-ip/package.json ]; then
-    echo "Updating NPM EXTERNAL-IP"
-    npm install external-ip
-fi
+
+function check_upgrade {
+    PACKAGE_NAME=$1
+    PACKAGE_VERSION=$2
+    if [ ! -f $FIREWALLA_HOME/node_modules/$PACKAGE_NAME/package.json ]; then
+        echo "Updating NPM $PACKAGE_NAME"
+        npm install $PACKAGE_NAME@$PACKAGE_VERSION
+    fi
+}
+
+check_upgrade external-ip ^0.2.4
+check_upgrade jsonfile ^2.4.0
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
@@ -68,6 +76,20 @@ cd ..
 cd monitor
 forever start --uid monitor MonitorMain.js 
 cd ..
+if [[ $branch =~ release.* ]] 
+   then
+    echo "Release branch skipping api"      
+   else
+    check_upgrade swagger-node-express ~2.0
+    check_upgrade minimist 1.2.x
+    check_upgrade express ^4.14.0
+    check_upgrade body-parser 1.9.x
+    echo "Master branch running api"      
+    cd api
+    forever start --uid api bin/www
+    cd ..
+fi
+
 sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync

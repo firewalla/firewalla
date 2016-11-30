@@ -10,6 +10,10 @@ sync
 #/bin/bash /usr/local/bro/share/broctl/scripts/run-bro -1 -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
 #/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broct/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
 #/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
+
+mem=$(free -m | awk '/-/{print $4}')
+(( mem <= 80 )) && logger "Memory reboot"+$mem
+(( mem <= 80 )) && sudo reboot
     
 bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
 logger "detected bro process count:$bro_process_cnt"  
@@ -18,3 +22,11 @@ if [[ $bro_process_cnt < 3 ]]; then
     sudo service brofish stop
     sudo service brofish start
 fi
+
+forever_process_cnt=`forever list | grep "STOPPED" | grep -v grep | wc -l`
+if [[ $forever_process_cnt > 0 ]]; then
+    logger `forever process STOPPED`
+    forever list | logger
+    forever restartall
+fi
+

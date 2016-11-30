@@ -1,5 +1,5 @@
 {
-    "version": 1.60,
+    "version": 1.65,
     "discovery": {
       "networkInterfaces": ["eth0","wlan0"]
     },
@@ -48,6 +48,7 @@
       },
       "conn": {
          "path": "/blog/current/conn.log",
+         "pathdev": "/blog/current/conndev.log",
          "flowstashExpires": 900, 
          "expires": 86400
       },

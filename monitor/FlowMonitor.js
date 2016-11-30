@@ -117,8 +117,16 @@ module.exports = class FlowMonitor {
             let flow = flows[i];
             log.info("FLOW:INTEL:PROCESSING",flow);
             if (flow['intel'] && flow['intel']['c']) {
-                log.info("########## flowIntel",flow);
-                let c = flow['intel']['c'];
+              log.info("########## flowIntel",flow);
+              let c = flow['intel']['c'];
+
+              hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
+               if (ignore == true) {
+                   log.info("######## flowIntel:Ignored",flow);
+               }
+              
+               if (ignore == false) {
+                log.info("######## flowIntel:Ignored",flow);
                 if (c == "av") {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
@@ -255,6 +263,8 @@ module.exports = class FlowMonitor {
                         }
                     });
                 }
+               }
+              });
             } 
         }
     }
@@ -554,12 +564,14 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
-                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
+                                                  if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "out",
                                                         "txRatioRanked": [flow],
                                                         id:data.id,
                                                     });
+                                                  }
                                                 });
                                             });
                                         }
@@ -593,11 +605,13 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
                                                 alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                  if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "in",
                                                         "txRatioRanked": [flow],
                                                         id:data.id,
                                                     });
+                                                  }
                                                 });
                                             });
                                         }
