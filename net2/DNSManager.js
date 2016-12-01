@@ -268,6 +268,12 @@ module.exports = class DNSManager {
 
         iplist.push(ip);
 
+        if (iplist.indexOf("firewalla.encipher.io") > -1) {
+           log.info("###Intel:DNS:SkipSelf",iplist,flow);
+           callback(null,null);
+           return; 
+        }
+
         flowlist.push({iplist:iplist,flow:flow});
 
         bone.intel("*","check",{flowlist:flowlist},(err,data)=> {
