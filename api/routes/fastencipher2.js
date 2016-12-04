@@ -52,7 +52,7 @@ router.post('/message/cleartext/:gid',
                 return;
             } else {
                 console.log("got response: " + JSON.stringify(response));
-                res.json(JSON.stringify(response));
+                res.json(response);
             }
         });
     }
