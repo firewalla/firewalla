@@ -389,6 +389,22 @@ module.exports = class {
                 });
             }
         });
+        rclient.keys("stats:hour*",(err,keys)=> {
+            let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
+            for (let j in keys) {
+                rclient.zscan(keys[j],0,(err,data)=>{
+                    if (data && data.length==2) {
+                       let array = data[1];
+                       for (let i=0;i<array.length;i++) {
+                           if (array[i]<expireDate) {
+                               rclient.zrem(keys[j],array[i]);
+                           }
+                           i += Number(1);
+                       }
+                    }
+                });
+            }
+        });
     }
 
 };

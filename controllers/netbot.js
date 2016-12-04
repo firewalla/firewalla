@@ -554,14 +554,15 @@ class netBot extends ControllerBot {
             }
 
 
-            flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
+          //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
+            flowManager.summarizeBytes2([host], Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
                 console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = host.toJson();
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
                     console.log("Found alarms");
                     jsonobj.alarms = alarms;
                     // hour block = summarize into blocks of hours ...
-                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, (err, result,activities) => {
+                    flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true,false, (err, result,activities) => {
                         console.log("--- Connectionby most recent ---", result.length);
                         let response = {
                             time: [],
