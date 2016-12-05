@@ -127,7 +127,7 @@ this.subscriber.subscribe("DiscoveryEvent","DiscoveryStart", null, (channel,ip,m
 });
 
 function flows(listip, direction) {
-      flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true, (err,result) => {
+      flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true,false, (err,result) => {
             console.log("--- Connectionby most recent ---",result.length);
             let max = 10;
             if (program.dynaflow) {

@@ -2,7 +2,6 @@ var express = require('express');
 var router = express.Router();
 const passport = require('passport')
 
-
 var SysManager = require('../../net2/SysManager.js');
 var sysManager = new SysManager('info');
 
@@ -15,11 +14,16 @@ router.get('/info',
         res.json({
             ip_address: sysManager.myIp(),
             mac_address: sysManager.myMAC(),
-            gateway: '10.0.2.1',
-            subnet: '255.255.255.0',
-            dns: [ '8.8.8.8', '8.8.4.4' ],
+            gateway: sysManager.myGateway(),
+            subnet: sysManager.mySubnet(),
+            dns: sysManager.myDNS(),
             ddns: sysManager.myDDNS()
         });
+    });
+
+router.get('/flow',
+    function(req, res, next) {
+        
     });
 
 module.exports = router;

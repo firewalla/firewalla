@@ -183,6 +183,7 @@ module.exports = class {
   "postal": "98033"
  */
     _location(ip,callback) {
+      log.info("Looking up location:",ip);
       this.cachelookup(ip, "ipinfo", (err,data)=>{
         if (data!=null) {
             callback(null, JSON.parse(data));
