@@ -23,7 +23,7 @@ passport.use(new Strategy(
 var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
-var encipher = require('./routes/fastencipher');
+var encipher = require('./routes/fastencipher2');
 
 var app = express();
 

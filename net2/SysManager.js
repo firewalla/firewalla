@@ -166,8 +166,16 @@ module.exports = class {
     }
 
 
-    myDNS() {
+    myDNS() { // return array
         return this.monitoringInterface().dns;
+    }
+
+    myGateway() {
+        return this.monitoringInterface().gateway;
+    }
+
+    mySubnet() {
+        return this.monitoringInterface().subnet;
     }
 
     getSysInfo(callback) {
@@ -378,6 +386,22 @@ module.exports = class {
                 });
                 rclient.zremrangebyrank(keys[k], 0, -20, (err, data) => {
                     //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                });
+            }
+        });
+        rclient.keys("stats:hour*",(err,keys)=> {
+            let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
+            for (let j in keys) {
+                rclient.zscan(keys[j],0,(err,data)=>{
+                    if (data && data.length==2) {
+                       let array = data[1];
+                       for (let i=0;i<array.length;i++) {
+                           if (array[i]<expireDate) {
+                               rclient.zrem(keys[j],array[i]);
+                           }
+                           i += Number(1);
+                       }
+                    }
                 });
             }
         });
