@@ -444,7 +444,7 @@ module.exports = class FlowManager {
     }
 
     summarizeBytes2(hosts,from,to,block,callback) {
-        async.eachLimit(hosts, 5, (host, cb) => {
+        async.eachLimit(hosts, 1, (host, cb) => {
             this.summarizeHostBytes(host,from,to,block,(err,data)=>{
                 host.flowsummary = data;
                 cb();
