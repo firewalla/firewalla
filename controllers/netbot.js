@@ -727,11 +727,11 @@ class netBot extends ControllerBot {
                     // data.item = policy
                     // data.value = {'block':1},
                     //
-                    this.setHandler(gid, msg);
+                    this.setHandler(gid, msg, callback);
                 } else if (rawmsg.message.obj.mtype === "get") {
                     this.getHandler(gid, msg, callback);
                 } else if (rawmsg.message.obj.mtype === "cmd") {
-                    this.cmdHandler(gid, msg);
+                    this.cmdHandler(gid, msg, callback);
                 }
             }
         } else {
