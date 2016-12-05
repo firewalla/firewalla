@@ -47,6 +47,7 @@ class FlowGraph {
          this.name = name;
     }
 
+
     flowarraySorted(recent) {
         if (recent == true) {
              this.flowarray.sort(function (a, b) {
@@ -133,6 +134,100 @@ module.exports = class FlowManager {
             log = require("./logger.js")("FlowManager", loglevel);
         }
         return instance;
+    }
+
+    // stats are 'hour', 'day'
+    // stats:hour:ip_address score=bytes key=_ts-_ts%3600
+    // ip = 0.0.0.0 is system
+    recordStats(ip,type,ts,inBytes,outBytes,callback) {
+        let period = 3600;
+        if (type === "day") {
+            period = 60*60*24;
+        } else if (type ==="month") {
+            period = 60*60*24*30;
+        }
+        let inkey = "stats:"+type+":in:"+ip;
+        let outkey = "stats:"+type+":out:"+ip;
+        let subkey = ts-ts%period;
+        rclient.zincrby(inkey,Number(inBytes),subkey,(err,data)=>{
+            rclient.zincrby(outkey,Number(outBytes),subkey,(err,data)=>{
+                if (callback) {
+                    callback(err);
+                } 
+            }); 
+        }); 
+    }
+
+    getStats(iplist,type,from,to,callback) {
+        let outdb = {};
+        let indb = {};
+        let inbytes = 0;
+        let outbytes = 0;
+        async.eachLimit(iplist, 1, (ip, cb) => {
+            let inkey = "stats:"+type+":in:"+ip;
+            let outkey = "stats:"+type+":out:"+ip;
+            rclient.zscan(inkey,0,(err,data)=>{
+                if (data && data.length==2) {
+                    let array = data[1];
+                    for (let i=0;i<array.length;i++) {
+                        let clock = Number(array[i]);
+                        let bytes = Number(array[i+1]);
+                        i++;
+                        if (clock<from) {
+                            continue;
+                        }
+                        if (to!=-1 &&  clock>to) {
+                            continue;
+                        }
+                        
+                        if (indb[clock]) {
+                            indb[clock] += bytes;
+                        } else {
+                            indb[clock] = bytes;
+                        }
+                        inbytes+=bytes;
+                    }
+                } 
+                rclient.zscan(outkey,0,(err,data)=>{
+                    if (data && data.length==2) {
+                        let array = data[1];
+                        for (let i=0;i<array.length;i++) {
+                            let clock = Number(array[i]);
+                            let bytes = Number(array[i+1]);
+                            i++;
+                            if (clock<from) {
+                                continue;
+                            }
+                            if (outdb[clock]) {
+                                outdb[clock] += bytes;
+                            } else {
+                                outdb[clock] = bytes;
+                            }
+                            outbytes+=bytes;
+                        }
+                    }
+                    cb();
+                });
+            });
+        }, (err)=>{
+            let tsnow = Math.ceil(Date.now()/1000);
+            tsnow = tsnow-tsnow%3600;
+            let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
+
+            let keys = Object.keys(outdb); // or loop over the object to get the array
+            keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
+               var key = keys[i];
+               flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
+            }  
+            keys = Object.keys(indb); // or loop over the object to get the array
+            keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
+               var key = keys[i];
+               flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
+            }  
+            callback(err, flowdata);
+        });
     }
 
     // 
@@ -334,7 +429,34 @@ module.exports = class FlowManager {
 
     }
 
+    summarizeHostBytes(host,from,to,block,callback) {
+            let listip = []
+            listip.push(host.o.ipv4Addr);
+            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+                for (let j in host['ipv6Addr']) {
+                    listip.push(host['ipv6Addr'][j]);
+                }
+            }
+            host.flowsummary = {};
+            host.flowsummary.inbytes = 0;
+            host.flowsummary.outbytes = 0;
+            this.getStats(listip,block,from,to,callback);
+    }
+
+    summarizeBytes2(hosts,from,to,block,callback) {
+        async.eachLimit(hosts, 1, (host, cb) => {
+            this.summarizeHostBytes(host,from,to,block,(err,data)=>{
+                host.flowsummary = data;
+                cb();
+            });
+        },(err) => {
+            callback(null,null);
+        });
+    }
+
     // block is in seconds
+    // deprecated 
+/*
     summarizeBytes(hosts, from, to, block, callback) {
         let sys = {};
         sys.inbytes = 0;
@@ -360,9 +482,6 @@ module.exports = class FlowManager {
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
                     if (err == null) {
-                        /* there is an issue here where if the flow started long ago, 
-                           it may not show up.  the ts in connection is the starting time
-                        */
                         for (let i=0;i<result.length;i++) {
                             let o = JSON.parse(result[i]);
                             if (o == null) {
@@ -471,6 +590,7 @@ module.exports = class FlowManager {
             callback(err, sys);
         });
     }
+*/
 
     summarizeActivityFromConnections(flows,callback) {
         let appdb = {};
@@ -558,7 +678,7 @@ module.exports = class FlowManager {
         });
     }
 
-    summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, callback) {
+    summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
         let conndb = {};
         async.each(ipList, (ip, cb) => {
@@ -566,7 +686,8 @@ module.exports = class FlowManager {
             rclient.zrevrangebyscore([key, from, to,"limit",0,maxflow], (err, result) => {
                 //log.debug("Flow:Summarize",key,from,to,hours,result.length);
                 let interval = 0;
-
+                let totalInBytes = 0;
+                let totalOutBytes = 0;
                 if (err == null) {
                     // group together
                     for (let i in result) {
@@ -630,14 +751,29 @@ module.exports = class FlowManager {
                                 }
                             }
                         }
+
+                        if (saveStats) {
+                            if (direction == 'in') {
+                                totalInBytes+=Number(o.rb);
+                                totalOutBytes+=Number(o.ob);
+                                this.recordStats(ip,"hour",o.ts,o.rb,o.ob,null);
+                            } else {
+                                totalInBytes+=Number(o.ob);
+                                totalOutBytes+=Number(o.rb);
+                                this.recordStats(ip,"hour",o.ts,o.ob,o.rb,null);
+                            }
+                        }
+                    }
+
+                    if (saveStats) {
+                        let ts = Math.ceil(Date.now() / 1000);
+                        this.recordStats("0.0.0.0","hour",ts,totalInBytes,totalOutBytes,null);
                     }
 
                     for (let i in conndb) {
                         sorted.push(conndb[i]);
                     }
                     conndb = {};
-
-
                     cb();
                 } else {
                     log.error("Unable to search software");
