@@ -893,7 +893,7 @@ class Host {
                         this.notice = result
                         rclient.zrevrangebyscore(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10], (err, result) => {
                             this.http = result;
-                            flowManager.summarizeConnections([ip], "in", end, start, "rxdata", 1, true, (err, result) => {
+                            flowManager.summarizeConnections([ip], "in", end, start, "rxdata", 1, true,false, (err, result) => {
                                 this.conn = result;
                                 callback(null, this);
                             });
@@ -1119,9 +1119,10 @@ module.exports = class {
         if (sysManager.publicIp) {
              json.publicIp = sysManager.publicIp;
         }
+     flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
 
-        flowManager.summarizeBytes(this.hosts.all, Date.now() / 1000, Date.now() / 1000 - 60 * 15, 60 * 15 / 15, (err, sys) => {
-            json.flowsummary = sys;
+         flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
+            json.flowsummary = data;
             if (includeHosts) {
                 let _hosts = [];
                 for (let i in this.hosts.all) {
@@ -1176,7 +1177,8 @@ module.exports = class {
                 });
             });
         });
-    }
+     });
+   }
 
     getHost(ip, callback) {
         dnsManager.resolveLocalHost(ip, (err, o) => {

@@ -39,7 +39,7 @@ var async = require('async');
 var util = require('util');
 
 
-var ttlExpire = 60*60*12;
+var ttlExpire = 60*60*1;
 
 module.exports = class {
     constructor(path, loglevel) {

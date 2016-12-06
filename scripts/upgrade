@@ -1,13 +1,18 @@
 #!/bin/bash -
 forever stop main
 forever stop ui
-cd /home/pi/firewalla/
-cd .git
-sudo chown -R pi *
-cd ..
-sudo -u pi git pull
-sudo -u pi git submodule update --init --recursive
+forever stop monitor
+forever stop api
 sync
+#cd /home/pi/firewalla/
+#cd .git
+#sudo chown -R pi *
+#cd ..
+#sudo -u pi git pull
+#sync
 
-cd /home/pi/firewalla/scripts
-./main-run
+#cd /home/pi/firewalla/scripts
+#./main-run
+sync
+sync
+sudo reboot
