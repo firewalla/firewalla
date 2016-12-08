@@ -71,8 +71,10 @@ If anything bad happens, unplug it.
 
 #### ACTIONTEC
 * T3200M 
+
 #### ASUS
 * N600 RT-N56U (NAT Acceleration must be turned off)
+
 #### GOOGLE
 * OnHub TGR-1900 (TP-Link)
 * OnHub SRT-AC1900 (ASUS)
