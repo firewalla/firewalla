@@ -78,17 +78,20 @@ If anything bad happens, unplug it.
 #### GOOGLE
 * OnHub TGR-1900 (TP-Link)
 * OnHub SRT-AC1900 (ASUS)
+
 #### LINKSYS
 * N600 EA2500 (Not support guest network)
 * AC1900 EA7500 (Express Forwarding must be disabled)
 * AC2400 EA8350
 * AC2600 Max-Stream EA8500 (Express Forwarding must be disabled)
+
 #### NETGEAR
 * N600 WNDR3400 (Not compatible with guest network)
 * AC1600 R6250
 * AC1750 R6400 
 * AC2350 Nighthawk X4 R7500
 * AC2600 Nighthawk X4S R7800 
+
 
 
 
