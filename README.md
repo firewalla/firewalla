@@ -1,5 +1,13 @@
 
 ## Firewalla  (Pre-Alpha)
+## Install From Image
+```
+Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
+Prepare a blank microsd card > 8GB size
+Follow the same step as installing a raspberry pi image
+https://www.raspberrypi.org/documentation/installation/installing-images/
+```
+
 ### To Build On Raspberry Pi
 - Download Jessie Lite
 ```
@@ -58,6 +66,11 @@ If anything bad happens, unplug it.
 * dev_<>: development branchs.
 * Please do a pull request for features
 
+
+### Following Routers are NOT supported
+
+#### ACTIONTEC
+##### T3200M 
 
 
 
