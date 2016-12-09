@@ -163,10 +163,11 @@ module.exports = class FlowManager {
         let indb = {};
         let inbytes = 0;
         let outbytes = 0;
+        let lotsofkeys = 24*60;
         async.eachLimit(iplist, 1, (ip, cb) => {
             let inkey = "stats:"+type+":in:"+ip;
             let outkey = "stats:"+type+":out:"+ip;
-            rclient.zscan(inkey,0,(err,data)=>{
+            rclient.zscan(inkey,0,'count',lotsofkeys,(err,data)=>{
                 if (data && data.length==2) {
                     let array = data[1];
                     for (let i=0;i<array.length;i++) {
@@ -188,7 +189,7 @@ module.exports = class FlowManager {
                         inbytes+=bytes;
                     }
                 } 
-                rclient.zscan(outkey,0,(err,data)=>{
+                rclient.zscan(outkey,0,'count',lotsofkeys,(err,data)=>{
                     if (data && data.length==2) {
                         let array = data[1];
                         for (let i=0;i<array.length;i++) {
