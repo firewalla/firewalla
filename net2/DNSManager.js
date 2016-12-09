@@ -232,7 +232,7 @@ module.exports = class DNSManager {
                 // rcount == 1, if we only got intel of the ip address ... 
                 // in order to use the cache, 
                 log.info("Intel:Cached", ip, dnsdata,intel);
-                if (intel && intel.ts && intel.ts>(Date.now()/1000-24*60*60)) { // otherwise expired
+                if (intel && intel.ts && intel.ts>(Date.now()/1000-48*60*60)) { // otherwise expired
                     if (intel.c!=null || intel.apps!=null) {
                         callback(null, JSON.parse(dnsdata._intel));
                         return;
@@ -246,16 +246,18 @@ module.exports = class DNSManager {
                    
                     }
                     log.info("Intel:Cached Passed", ip);
+                } else {
+                    log.info("Intel:Cached Failed", ip,intel,dnsdata);
                 }
+            } else {
             }
         }  else {
-            log.info("Intel:DNSNULL:", ip);
             //callback(null,null);
             //return;
             dnsdata = {};
         }
 
-        console.log("#########3 CACHE MISS ON IP",ip);
+        console.log("######################### CACHE MISS ON IP",ip);
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
@@ -277,7 +279,7 @@ module.exports = class DNSManager {
         flowlist.push({iplist:iplist,flow:flow});
 
         bone.intel("*","check",{flowlist:flowlist},(err,data)=> {
-           if (err || data == null) {
+           if (err || data == null || data.length ==0) {
                callback(err,null);
                return;
            }
@@ -288,14 +290,12 @@ module.exports = class DNSManager {
                   return;
               }
               if (r.c || r.apps) {
-                  log.info("#################### GOT INTEL",r,dnsdata,{});
                   dnsdata.intel = r;
                   let key = "dns:ip:"+ip;
                   if (rintel == null) {
                       rintel = r;  
                   }
                   rclient.hset(key, "_intel", JSON.stringify(r),(err,data)=> {
-                      log.info("##### GOT INTEL 3",ip,data,{});
                       cb();
                       rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
                   });
@@ -323,7 +323,6 @@ module.exports = class DNSManager {
             } else {
                 this.resolvehost(ip, (err, data2,dnsdata) => {
                     if (data2 == null) {
-                        log.info("###### ERROR looking up",ip);
                         data2 = {};
                     }
                       this.getIntel(ip,flow, dnsdata,(err,intel)=> {

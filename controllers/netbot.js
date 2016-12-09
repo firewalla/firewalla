@@ -580,7 +580,7 @@ class netBot extends ControllerBot {
                         }
                         flowManager.sort(result, 'rxdata');
                         console.log("-----------Sort by rx------------------------");
-                        max = 10;
+                        max = 15;
                         for (let i in result) {
                             let s = result[i];
                             response.rx.push(s);
@@ -590,7 +590,7 @@ class netBot extends ControllerBot {
                         }
                         flowManager.sort(result, 'txdata');
                         console.log("-----------  Sort by tx------------------");
-                        max = 10;
+                        max = 15;
                         for (let i in result) {
                             let s = result[i];
                             response.tx.push(s);
@@ -601,6 +601,7 @@ class netBot extends ControllerBot {
                         jsonobj.flows = response;
                         jsonobj.activities = activities;
 
+                        /*
                         flowManager.sort(result, 'duration');
                         console.log("-----------Sort by rx------------------------");
                         max = 10;
@@ -611,6 +612,7 @@ class netBot extends ControllerBot {
                                 break;
                             }
                         }
+                        */
                         //flowManager.getFlowCharacteristics(result,direction,1000000,2);
                         let datamodel = {
                             type: 'jsonmsg',
@@ -703,7 +705,6 @@ class netBot extends ControllerBot {
                 if (rawmsg.message.obj.mtype === "init") {
                     console.log("Process Init load event");
                     this.hostManager.toJson(true, (err, json) => {
-                        console.log("To Json");
                         let datamodel = {
                             type: 'jsonmsg',
                             mtype: 'init',

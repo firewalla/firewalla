@@ -1270,7 +1270,7 @@ module.exports = class {
             for (let i in keys) {
                 multiarray.push(['hgetall', keys[i]]);
             }
-            let since = Date.now()/1000-60*60*24*7*2; // two weeks
+            let since = Date.now()/1000-60*60*24*7; // two weeks
             rclient.multi(multiarray).exec((err, replies) => {
                 async.each(replies, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
