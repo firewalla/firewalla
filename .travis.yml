@@ -1,9 +1,15 @@
-language: node_js
-
-node_js:
-  - "4"
-
 sudo: required
+language: generic
 
-before_install:
-  - "./buildraw"
+services:
+  - docker
+
+script:
+  - wget -O- http://travis.debian.net/script.sh | sh -
+
+branches:
+  except:
+    - /^debian\/\d/
+
+
+
