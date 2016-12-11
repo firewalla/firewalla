@@ -1,15 +1,10 @@
-sudo: required
 language: generic
 
-services:
-  - docker
+env:
+  - ARCH=x64
+  - ARCH=arm
 
 script:
-  - wget -O- http://travis.debian.net/script.sh | sh -
-
-branches:
-  except:
-    - /^debian\/\d/
-
+  - "bash -ex .travis-ci.sh"
 
 
