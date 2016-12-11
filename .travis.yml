@@ -7,5 +7,5 @@ env:
 
 script:
   - "bash -ex .travis-ci.sh"
-
+  - "./buildraw"
 
