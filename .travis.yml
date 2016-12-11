@@ -4,3 +4,6 @@ node_js:
   - "4"
 
 sudo: required
+
+before_install:
+  - "./buildraw"
