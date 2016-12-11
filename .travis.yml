@@ -1,7 +1,6 @@
 language: generic
 
 env:
-  - ARCH=x64
   - ARCH=arm
 
 script:
