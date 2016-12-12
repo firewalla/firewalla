@@ -2,8 +2,8 @@ language: generic
 
 sudo: required
 
-before_install:
-  - sudo echo 'deb http://archive.raspbian.org/raspbian/ jessie main'>>/etc/apt/sources.list
+before_script:
+  - echo "deb http://archive.raspbian.org/raspbian/ jessie main" | sudo tee -a /etc/apt/sources.list
 
 script:
   - "cat /etc/apt/sources.list"
