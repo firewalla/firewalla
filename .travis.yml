@@ -2,10 +2,6 @@ language: generic
 
 sudo: required
 
-env:
-  - ARCH=arm
-
 script:
-  - "bash -ex .travis-ci.sh"
-  - "./buildraw"
+  - "cat /etc/apt/sources.list"
 
