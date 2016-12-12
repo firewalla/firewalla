@@ -9,6 +9,7 @@ cd /tmp
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
   if [[ $branch =~ release.* ]]
     then
+     export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
     else

@@ -588,6 +588,7 @@ class netBot extends ControllerBot {
                                 break;
                             }
                         }
+                        //console.log(JSON.stringify(response.rx));
                         flowManager.sort(result, 'txdata');
                         console.log("-----------  Sort by tx------------------");
                         max = 15;

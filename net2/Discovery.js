@@ -74,7 +74,7 @@ var natUpnp = require('nat-upnp');
 module.exports = class {
     constructor(name, config, loglevel) {
         if (instances[name] == null) {
-            log = require("./logger.js")("discovery", loglevel);
+            log = require("./logger.js")("Discovery", loglevel);
 
             this.hosts = [];
             this.name = name;
@@ -237,7 +237,7 @@ module.exports = class {
                     uid: ipv4addr,
                     ipv4Addr: ipv4addr,
                     ipv4: ipv4addr,
-                    lastActiveTimestamp: now,
+                //    lastActiveTimestamp: now,
                     firstFoundTimestamp: now,
                     bname: name,
                     host: service.host
@@ -477,7 +477,7 @@ module.exports = class {
                     if (err == null) {
                         if (data != null) {
                             let changeset = this.mergeHosts(data, host);
-                            changeset['lastActiveTimestamp'] = Date.now() / 1000;
+                            changeset['lastActiveTimestamp'] = Math.floor(Date.now() / 1000);
                             if(data.firstFoundTimestamp != null) {
                                 changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
                             } else {

@@ -1029,7 +1029,7 @@ module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
         if (instances[name] == null) {
-            log = require("./logger.js")("discovery", loglevel);
+            log = require("./logger.js")("HostManager", loglevel);
             this.instanceName = name;
             this.hosts = {}; // all, active, dead, alarm
             this.hostsdb = {};

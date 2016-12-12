@@ -44,7 +44,7 @@ var ttlExpire = 60*60*1;
 module.exports = class {
     constructor(path, loglevel) {
         if (instance == null) {
-            log = require("../net2/logger.js")("vpn manager", loglevel);
+            log = require("../net2/logger.js")("VpnManager", loglevel);
 
             instance = this;
         }

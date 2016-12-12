@@ -206,7 +206,7 @@ module.exports = class {
             return instances[name];
         } else {
             this.config = config;
-            log = require("./logger.js")("discover", loglevel);
+            log = require("./logger.js")("BroDetect", loglevel);
             this.appmap = {};
             this.apparray = [];
             this.connmap = {};
@@ -495,6 +495,10 @@ module.exports = class {
                 if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
                     return;
                 }
+  
+                if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+                    return;
+                }
             } catch (e) {
                 log.error("Conn:Data:Error checking ulticast", e);
                 return;
@@ -518,6 +522,13 @@ module.exports = class {
             } else {
                 log.error("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
                 return;
+            }
+
+            if (obj.orig_bytes == null) {
+                obj.orig_bytes = 0;
+            }
+            if (obj.resp_bytes == null) {
+                obj.resp_bytes = 0;
             }
 
             if (obj.duration == null) {
@@ -743,10 +754,12 @@ module.exports = class {
                         dnsManager.resolveLocalHost(i, (err, data) => {
                             if (data != null && data.lastActiveTimestamp != null) {
                                 if (data.lastActiveTimestamp < hostsChanged[i]) {
+                                    /*
                                     log.debug("Conn:Flow:Resolve:Updated", i, hostsChanged[i]);
                                     rclient.hmset("host:mac:" + data.mac, {
                                         'lastActiveTimestamp': Number(hostsChanged[i])
                                     });
+                                    */
                                 }
                             } else {
                                 log.info("Conn:Flow:Resolve:Host Can not find ", i);
