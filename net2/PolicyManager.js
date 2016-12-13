@@ -59,7 +59,7 @@ var ip = require('ip');
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")("policy manager", loglevel);
+            log = require("./logger.js")("PolicyManager", loglevel);
             instance = this;
         }
         return instance;

@@ -33,6 +33,7 @@ var async = require('async');
 var instance = null;
 
 var bone = require('../lib/Bone.js');
+var flowUtil = require('../net2/FlowUtil.js');
 
 const dns = require('dns');
 
@@ -282,7 +283,11 @@ module.exports = class DNSManager {
            return; 
         }
 
-        flowlist.push({iplist:iplist,flow:flow});
+        let _flow = flowUtil.hashFlow(flow);
+
+        flowlist.push({iplist:iplist,flow:_flow});
+
+        console.log("######## Sending:",JSON.stringify(flowlist));
 
         bone.intel("*","check",{flowlist:flowlist},(err,data)=> {
            if (err || data == null || data.length ==0) {
@@ -465,7 +470,9 @@ module.exports = class DNSManager {
             callback(null);
         }
         let resolve = 0;
-        async.eachLimit(list,10, (o, cb) => {
+        let now = Math.ceil(Date.now()/1000);
+        console.log("Resoving list",list.length);
+        async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
 
             if (o.du && o.du<0.0001) {
@@ -520,7 +527,7 @@ module.exports = class DNSManager {
                 });
             });
         }, (err) => {
-            log.info("DNS:QUERY:RESOLVED:COUNT",resolve,list.length);
+            log.info("DNS:QUERY:RESOLVED:COUNT",resolve,list.length,Math.ceil(Date.now()/1000)-now);
             callback(err);
         });
     }
