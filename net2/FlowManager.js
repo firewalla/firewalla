@@ -168,7 +168,7 @@ module.exports = class FlowManager {
         let indb = {};
         let inbytes = 0;
         let outbytes = 0;
-        let lotsofkeys = 24*60;  
+        let lotsofkeys = 24*30*6;  //half months ... of data 
         console.log("Getting stats:",type,iplist,from,to);
         async.eachLimit(iplist, 1, (ip, cb) => {
             let inkey = "stats:"+type+":in:"+ip;
@@ -190,11 +190,11 @@ module.exports = class FlowManager {
                         }
                         
                         if (indb[clock]) {
-                            indb[clock] += bytes;
+                            indb[clock] += Number(bytes);
                         } else {
-                            indb[clock] = bytes;
+                            indb[clock] = Number(bytes);
                         }
-                        inbytes+=bytes;
+                        inbytes+=Number(bytes);
                     }
                 } 
                 rclient.zscan(outkey,0,'count',lotsofkeys,(err,data)=>{
@@ -211,11 +211,11 @@ module.exports = class FlowManager {
                                 continue;
                             }
                             if (outdb[clock]) {
-                                outdb[clock] += bytes;
+                                outdb[clock] += Number(bytes);
                             } else {
-                                outdb[clock] = bytes;
+                                outdb[clock] = Number(bytes);
                             }
-                            outbytes+=bytes;
+                            outbytes+=Number(bytes);
                         }
                     }
                     cb();
@@ -722,11 +722,11 @@ module.exports = class FlowManager {
                             if (direction == 'in') {
                                 totalInBytes+=Number(o.rb);
                                 totalOutBytes+=Number(o.ob);
-                                this.recordStats(ip,"hour",o.ts,o.rb,o.ob,null);
+                                this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
                             } else {
                                 totalInBytes+=Number(o.ob);
                                 totalOutBytes+=Number(o.rb);
-                                this.recordStats(ip,"hour",o.ts,o.ob,o.rb,null);
+                                this.recordStats(ip,"hour",o.ts,Number(o.ob),Number(o.rb),null);
                             }
                         }
                         let ts = o.ts;

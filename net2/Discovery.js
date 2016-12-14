@@ -617,7 +617,9 @@ module.exports = class {
                                 data.mac = mac.toUpperCase();
                                 data.ipv6 = JSON.stringify(ipv6array);
                                 data.ipv6Addr = JSON.stringify(ipv6array);
-                                data.lastActiveTimestamp = Date.now() / 1000;
+                                //v6 at times will discver neighbors that not there ... 
+                                //so we don't update last active here
+                                //data.lastActiveTimestamp = Date.now() / 1000;
                             } else {
                                 data = {};
                                 data.mac = mac.toUpperCase();
