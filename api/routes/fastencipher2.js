@@ -46,7 +46,16 @@ router.post('/message/cleartext/:gid',
     function(req, res, next) {
         var gid = req.params.gid;
         let controller = cloudWrapper.getNetBotController(gid);
+
+        var alreadySent = false;
+
         controller.msgHandler(gid, req.body, (err, response) => {
+            if(alreadySent) {
+                return;
+            }
+
+            alreadySent = true;
+            
             if(err) {
                 res.json({ error: err });
                 return;
