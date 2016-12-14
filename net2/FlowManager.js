@@ -695,10 +695,10 @@ module.exports = class FlowManager {
 
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
-        let conndb = {};
         async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
             rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
+                let conndb = {};
                 if (result.length>0) 
                     log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                 let interval = 0;
