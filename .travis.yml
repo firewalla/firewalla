@@ -3,4 +3,5 @@ language: generic
 sudo: required
 
 script:
+  - "sudo ls /usr/share/easy-rsa"
   - "./buildraw"

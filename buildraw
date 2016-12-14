@@ -27,7 +27,8 @@ function install_dependencies()
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
-    apt_pkg_list="curl redis-server ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn easy-rsa python-pip"
+    #apt_pkg_list="curl redis-server ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn easy-rsa python-pip"
+    apt_pkg_list="curl redis-server ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn python-pip"
 
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
