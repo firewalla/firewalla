@@ -2,6 +2,7 @@ language: generic
 
 sudo: required
 
+dist: trusty
+
 script:
-  - "sudo ls /usr/share/easy-rsa"
   - "./buildraw"
