@@ -551,8 +551,8 @@ module.exports = class {
                   __ts: obj.ts,  // this is the first time found 
                     sh: host, // source
                     dh: dst, // dstination
-                    ob: obj.orig_bytes, // transfer bytes
-                    rb: obj.resp_bytes,
+                    ob: Number(obj.orig_bytes), // transfer bytes
+                    rb: Number(obj.resp_bytes),
                     ct: 1, // count
                     fd: flowdir, // flow direction
                     lh: lhost, // this is local ip address
@@ -566,8 +566,8 @@ module.exports = class {
                 this.flowstash[flowspecKey] = flowspec;
                 log.debug("Conn:FlowSpec:Create:", flowspec);
             } else {
-                flowspec.ob += obj.orig_bytes;
-                flowspec.rb += obj.resp_bytes;
+                flowspec.ob += Number(obj.orig_bytes);
+                flowspec.rb += Number(obj.resp_bytes);
                 flowspec.ct += 1;
                 if (flowspec.ts < obj.ts) {
                     flowspec.ts = obj.ts;
@@ -582,8 +582,8 @@ module.exports = class {
                 sh: host, // source
                _ts: now,
                 dh: dst, // dstination
-                ob: obj.orig_bytes, // transfer bytes
-                rb: obj.resp_bytes,
+                ob: Number(obj.orig_bytes), // transfer bytes
+                rb: Number(obj.resp_bytes),
                 ct: 1, // count
                 fd: flowdir, // flow direction
                 lh: lhost, // this is local ip address
@@ -629,19 +629,19 @@ module.exports = class {
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
-                        ob: flowspec.ob,
-                        rb: flowspec.rb,
+                        ob: Number(flowspec.ob),
+                        rb: Number(flowspec.rb),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
-                    port_flow.ob += obj.orig_bytes;
-                    port_flow.rb += obj.resp_bytes;
+                    port_flow.ob += Number(obj.orig_bytes);
+                    port_flow.rb += Number(obj.resp_bytes);
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
-                    ob: obj.orig_bytes,
-                    rb: obj.resp_bytes,
+                    ob: Number(obj.orig_bytes),
+                    rb: Number(obj.resp_bytes),
                     ct: 1
                 };
                 //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);

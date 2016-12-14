@@ -698,8 +698,9 @@ module.exports = class FlowManager {
         let conndb = {};
         async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"limit",0,maxflow], (err, result) => {
-                log.info("### Flow:Summarize",key,from,to,hours,result.length);
+            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
+                if (result.length>0) 
+                    log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                 let interval = 0;
                 let totalInBytes = 0;
                 let totalOutBytes = 0;
@@ -791,6 +792,8 @@ module.exports = class FlowManager {
                     for (let i in conndb) {
                         sorted.push(conndb[i]);
                     }
+                    if (result.length>0) 
+                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
                     cb();
                 } else {
