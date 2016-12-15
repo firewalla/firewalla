@@ -23,17 +23,17 @@ function canonicalizeAndHash(url) {
     if (eCURL.length==0) {
         return null;
     }
-    console.log("eurl0:",eCURL);
+//    console.log("eurl0:",eCURL);
 
     eCURL = eCURL.filter(function(elem, pos) {
         return eCURL.indexOf(elem) == pos;
     })
-    console.log("eurl:",eCURL);
+    // console.log("eurl:",eCURL);
     
     let _hashes= [];
     for (let i in eCURL) {
         let h = Hashes.getHashObject(eCURL[i]);
-        let hstr = [h.prefix.toString('base64'),h.hash.toString('base64')];
+        let hstr = [eCURL[i], h.prefix.toString('base64'),h.hash.toString('base64')];
         _hashes.push(hstr);
     }
     return _hashes;
