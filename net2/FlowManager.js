@@ -168,7 +168,7 @@ module.exports = class FlowManager {
         let indb = {};
         let inbytes = 0;
         let outbytes = 0;
-        let lotsofkeys = 24*60;  
+        let lotsofkeys = 24*30*6;  //half months ... of data 
         console.log("Getting stats:",type,iplist,from,to);
         async.eachLimit(iplist, 1, (ip, cb) => {
             let inkey = "stats:"+type+":in:"+ip;
@@ -190,11 +190,11 @@ module.exports = class FlowManager {
                         }
                         
                         if (indb[clock]) {
-                            indb[clock] += bytes;
+                            indb[clock] += Number(bytes);
                         } else {
-                            indb[clock] = bytes;
+                            indb[clock] = Number(bytes);
                         }
-                        inbytes+=bytes;
+                        inbytes+=Number(bytes);
                     }
                 } 
                 rclient.zscan(outkey,0,'count',lotsofkeys,(err,data)=>{
@@ -211,11 +211,11 @@ module.exports = class FlowManager {
                                 continue;
                             }
                             if (outdb[clock]) {
-                                outdb[clock] += bytes;
+                                outdb[clock] += Number(bytes);
                             } else {
-                                outdb[clock] = bytes;
+                                outdb[clock] = Number(bytes);
                             }
-                            outbytes+=bytes;
+                            outbytes+=Number(bytes);
                         }
                     }
                     cb();
@@ -695,11 +695,12 @@ module.exports = class FlowManager {
 
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
-        let conndb = {};
         async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"limit",0,maxflow], (err, result) => {
-                log.info("### Flow:Summarize",key,from,to,hours,result.length);
+            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
+                let conndb = {};
+                if (result.length>0) 
+                    log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                 let interval = 0;
                 let totalInBytes = 0;
                 let totalOutBytes = 0;
@@ -722,11 +723,11 @@ module.exports = class FlowManager {
                             if (direction == 'in') {
                                 totalInBytes+=Number(o.rb);
                                 totalOutBytes+=Number(o.ob);
-                                this.recordStats(ip,"hour",o.ts,o.rb,o.ob,null);
+                                this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
                             } else {
                                 totalInBytes+=Number(o.ob);
                                 totalOutBytes+=Number(o.rb);
-                                this.recordStats(ip,"hour",o.ts,o.ob,o.rb,null);
+                                this.recordStats(ip,"hour",o.ts,Number(o.ob),Number(o.rb),null);
                             }
                         }
                         let ts = o.ts;
@@ -791,6 +792,8 @@ module.exports = class FlowManager {
                     for (let i in conndb) {
                         sorted.push(conndb[i]);
                     }
+                    if (result.length>0) 
+                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
                     cb();
                 } else {

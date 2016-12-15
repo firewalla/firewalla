@@ -539,8 +539,9 @@ class netBot extends ControllerBot {
 
     deviceHandler(msg, gid, target, listip, callback) {
         console.log("Getting Devices", gid, target, listip);
+        let hosts = [];
         this.hostManager.getHost(target, (err, host) => {
-            if (host == null) {
+            if (host == null && target!="0.0.0.0") {
                 let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'reply',
@@ -551,13 +552,32 @@ class netBot extends ControllerBot {
                 };
                 this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 return;
+            } else if (target=="0.0.0.0") {
+                listip = [];
+                for (let h in this.hostManager.hosts.all) {
+                    let _host =this.hostManager.hosts.all[h];
+                    hosts.push(_host);
+                    listip.push(_host.o.ipv4Addr);
+                    if (_host.ipv6Addr && _host.ipv6Addr.length > 0) {
+                        for (let p in _host['ipv6Addr']) {
+                            listip.push(_host['ipv6Addr'][p]);
+                        }
+                    }
+                }
+            } else {
+                hosts=[host]; 
             }
+
+            console.log("Summarize",target,listip);
 
 
           //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-            flowManager.summarizeBytes2([host], Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
                 console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
-                let jsonobj = host.toJson();
+                let jsonobj = {};
+                if (host) {
+                    jsonobj = host.toJson();
+                }
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
                     console.log("Found alarms");
                     jsonobj.alarms = alarms;
