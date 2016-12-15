@@ -537,6 +537,19 @@ module.exports = class {
                 obj.duration = Number(obj.duration);
             }
 
+            if (obj.orig_bytes >100000000) {
+                log.error("Conn:Debug:Orig_bytes:",obj.orig_bytes,obj);
+            }
+            if (obj.resp_bytes >100000000) {
+                log.error("Conn:Debug:Resp_bytes:",obj.resp_bytes,obj);
+            }
+            if (Number(obj.orig_bytes) >100000000) {
+                log.error("Conn:Debug:Orig_bytes:",obj.orig_bytes,obj);
+            }
+            if (Number(obj.resp_bytes) >100000000) {
+                log.error("Conn:Debug:Resp_bytes:",obj.resp_bytes,obj);
+            }
+
             // Warning for long running tcp flows, the conn structure logs the ts as the
             // first packet.  when this happens, if the flow started a while back, it 
             // will get summarize here
@@ -560,7 +573,7 @@ module.exports = class {
                     bl: this.config.bro.conn.flowstashExpires,
                     pf: {}, //port flow
                     af: {}, //application flows
-                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
+                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
                 _afmap: {}
                 }
                 this.flowstash[flowspecKey] = flowspec;
@@ -574,7 +587,7 @@ module.exports = class {
                 }
                 flowspec._ts = now;
                 flowspec.du += obj.duration;
-                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]);
+                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]);
             }
 
             let tmpspec = {
@@ -591,7 +604,7 @@ module.exports = class {
                 bl: 0,
                 pf: {},
                 af: {},
-             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
+             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
             };
 
             let afobj = this.lookupAppMap(obj.uid);
