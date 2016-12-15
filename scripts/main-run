@@ -9,6 +9,7 @@ cd /tmp
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
   if [[ $branch =~ release.* ]]
     then
+     export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
     else
@@ -61,6 +62,7 @@ function check_upgrade {
 
 check_upgrade external-ip ^0.2.4
 check_upgrade jsonfile ^2.4.0
+check_upgrade lodash ^4.17.2
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git

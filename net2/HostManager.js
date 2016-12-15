@@ -1029,7 +1029,7 @@ module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
         if (instances[name] == null) {
-            log = require("./logger.js")("discovery", loglevel);
+            log = require("./logger.js")("HostManager", loglevel);
             this.instanceName = name;
             this.hosts = {}; // all, active, dead, alarm
             this.hostsdb = {};
@@ -1120,8 +1120,8 @@ module.exports = class {
              json.publicIp = sysManager.publicIp;
         }
      flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-
-         flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
+        flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
+          this.getHosts(()=>{
             json.flowsummary = data;
             if (includeHosts) {
                 let _hosts = [];
@@ -1175,6 +1175,7 @@ module.exports = class {
                         });
                     });
                 });
+              });
             });
         });
      });
@@ -1265,6 +1266,7 @@ module.exports = class {
 
     getHosts(callback) {
         this.execPolicy();
+        log.info("hostmanager:gethost:started");
         rclient.keys("host:mac:*", (err, keys) => {
             let multiarray = [];
             for (let i in keys) {
