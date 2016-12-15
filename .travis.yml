@@ -5,4 +5,4 @@ sudo: required
 dist: trusty
 
 script:
-  - "./buildraw"
+  - "BUILD_ONLY=1 ./buildraw"
