@@ -15,7 +15,7 @@ function hashFlow(_flow) {
             let afe = flow.af[key]; 
             let hashedKey = urlHash.hashBase64(key);
             _af[hashedKey] = afe;
-            afe.uri = urlHash.canonicalizeAndHashExpressions(key+afe.uri);
+            afe.uri = urlHash.canonicalizeAndHashExpressions(key+afe.uri).map(x => x.slice(1,3) ); // remove original url
         }
         delete flow.af;
         flow._af = _af;

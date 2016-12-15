@@ -2,11 +2,11 @@
 
 let hashUrl = require("./UrlHash.js");
 
-console.log(hashUrl('http://yahoo.com'));
-console.log(hashUrl('yahoo.com/news/something'));
-console.log(hashUrl('yahoo.com/news/something?x=1&y=2'));
-console.log(hashUrl('http://a.b.c/1/2.html?param=1'));
-console.log(hashUrl('http://a.b.c.d.e.f.g/1.html'));
+console.log(hashUrl.canonicalizeAndHashExpressions('http://yahoo.com'));
+console.log(hashUrl.canonicalizeAndHashExpressions('yahoo.com/news/something'));
+console.log(hashUrl.canonicalizeAndHashExpressions('yahoo.com/news/something?x=1&y=2'));
+console.log(hashUrl.canonicalizeAndHashExpressions('http://a.b.c/1/2.html?param=1'));
+console.log(hashUrl.canonicalizeAndHashExpressions('http://a.b.c.d.e.f.g/1.html'));
 
 /*
   it('should work with http://a.b.c/1/2.html?param=1', function() {

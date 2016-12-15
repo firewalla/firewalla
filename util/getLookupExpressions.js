@@ -19,7 +19,7 @@ function getHostnameExpressions(hostname) {
     .reverse();
 
   var numExpressions = Math.min(MAX_HOSTNAME_SEGMENTS, baseExpression.length) - 1;
-  var expressions = [];
+  var expressions = [hostname];
 
   for (var i = 0; i < numExpressions; i++) {
     expressions.push(baseExpression.slice(i).join('.'));
@@ -32,7 +32,7 @@ function getPathExpressions(pathname, search) {
   var baseExpression = pathname
     .split(PATH_SEPARATOR)
     .slice(0, MAX_PATH_SEGMENTS);
-  var numExpressions = Math.min(MAX_PATH_SEGMENTS, baseExpression.length) - 1;
+  var numExpressions = Math.min(MAX_PATH_SEGMENTS, baseExpression.length);
   var expressions = [
     pathname + search,
     pathname
@@ -42,7 +42,7 @@ function getPathExpressions(pathname, search) {
     expressions.push(baseExpression.slice(0, i).join('/'));
   }
 
-  return expressions;
+  return expressions.sort();
 }
 
 function getLookupExpressions(canonicalized) {
