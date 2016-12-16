@@ -422,7 +422,7 @@ class netBot extends ControllerBot {
 
           });
         } else if (msg.data.item === "host") {
-            //data.item = "host"
+            //data.item = "host" test
             //data.value = "{ name: " "}"                           
             let data = msg.data;
             console.log("Setting Host", msg);
