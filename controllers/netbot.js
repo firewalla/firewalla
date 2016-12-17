@@ -205,7 +205,33 @@ class netBot extends ControllerBot {
         });
     }
 
+    _shadowsocks(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to apply config on shadowsocks: " + value);
+                }
+            });
+        });
+    }
 
+    _ssh(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("ssh", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to block ip " + ip);
+                }
+            });
+        });
+    }
     constructor(config, fullConfig, eptcloud, groups, gid, debug) {
         super(config, fullConfig, eptcloud, groups, gid, debug);
         this.bot = new builder.TextBot();
@@ -365,46 +391,58 @@ class netBot extends ControllerBot {
         //       console.log("Set: ",gid,msg);
         if (msg.data.item == "policy") {
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
-            if (o=="monitor") {
+            switch(o) {
+              case "monitor":
                 this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
-                    cb(err);
+                  cb(err);
                 });
-            }
-            else if (o=="blockin") {
+                break;
+              case "blockin":
                 this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="acl") {
+                break;
+              case "acl":
                 this._block(msg.target, "acl", msg.data.value.acl, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="family") {
+                break;
+              case "family":
                 this._family(msg.target, msg.data.value.family, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="adblock") {
+                break;
+              case "adblock":
                 this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="vpn") {
+                break;
+              case "vpn":
                 this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="ignore") {
+                break;
+              case "shadowsocks":
+                this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ssh":
+                this._ssh(msg.target, msg.data.value.ssh, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ignore":
                 this._ignore(msg.target, msg.data.value.ignore.reason, (err, obj)=> {
                     cb(err);
                 });
-            }
-            else if (o=="unignore") {
+                break;
+              case "unignore":
                 this._unignore(msg.target, (err, obj) => {
                     cb(err);
                 });
-            } else {
+                break;
+              default:
                 cb();
             }
           }, (err)=> {
