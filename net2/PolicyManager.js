@@ -246,6 +246,31 @@ module.exports = class {
         }
     }
 
+    shadowsocks(host, config, callback) {
+      let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+      let ss = new shadowsocks('info');
+
+      ss.refreshConfig();
+
+      if (config.state == true) {
+        ss.start((err) => {
+          if(err == null) {
+            log.info("Shadowsocks service is started successfully");
+          } else {
+            log.error("Failed to start shadowsocks: " + err);
+          }
+        })
+      } else {
+        ss.stop((err) => {
+          if(err == null) {
+            log.info("Shadowsocks service is stopped successfully");
+          } else {
+            log.error("Failed to stop shadowsocks: " + err);
+          }
+        })
+      }
+    }
+
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
 
