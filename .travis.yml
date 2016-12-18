@@ -1,0 +1,8 @@
+language: generic
+
+sudo: required
+
+dist: trusty
+
+script:
+  - "BUILD_ONLY=1 ./buildraw"

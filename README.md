@@ -1,4 +1,4 @@
-
+[![Build Status](https://travis-ci.org/firewalla/firewalla.svg?branch=master)](https://travis-ci.org/firewalla/firewalla)
 ## Firewalla  (Pre-Alpha)
 ## Install From Image
 ```

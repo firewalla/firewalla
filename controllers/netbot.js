@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -460,7 +460,7 @@ class netBot extends ControllerBot {
 
           });
         } else if (msg.data.item === "host") {
-            //data.item = "host"
+            //data.item = "host" test
             //data.value = "{ name: " "}"                           
             let data = msg.data;
             console.log("Setting Host", msg);
