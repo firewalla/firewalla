@@ -773,6 +773,20 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
 
+        } else if (msg.data.item === "shutdown") {
+            console.log("shutdown firewalla in 60 seconds");
+            let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
+                let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: 200
+                }
+                this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
+            });
+
         }
     }
 
