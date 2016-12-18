@@ -39,6 +39,7 @@ var jsonfile = require('jsonfile');
 var configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
 var ttlExpire = 60*60*12;
+var seed = 11;
 
 module.exports = class {
     constructor(loglevel) {
@@ -197,12 +198,17 @@ module.exports = class {
         });
     }
 
+    function random() {
+        var x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+    }
+
     generatePassword(len) {
         var length = len,
             charset = "0123456789abcdefghijklmnopqrstuvwxyz",
             retVal = "";
         for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(Math.random() * n));
+            retVal += charset.charAt(Math.floor(random() * n));
         }
         return retVal;
     }
@@ -216,7 +222,16 @@ module.exports = class {
     }
     
     readConfig() {
-        return jsonfile.readFileSync(configFileLocation);
+        try {
+          let config = jsonfile.readFileSync(configFileLocation);
+          return config;
+        } catch (err) {
+          return null;
+        }
+    }
+
+    configExists() {
+        return this.readConfig() !== null;
     }
     
     refreshConfig(password) {

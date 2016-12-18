@@ -250,7 +250,10 @@ module.exports = class {
       let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
       let ss = new shadowsocks('info');
 
-      ss.refreshConfig();
+      // ss.refreshConfig();
+      if(!ss.configExists()) {
+        ss.refreshConfig();
+      }
 
       if (config.state == true) {
         ss.start((err) => {

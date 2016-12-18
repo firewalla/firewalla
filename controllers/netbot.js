@@ -571,9 +571,14 @@ class netBot extends ControllerBot {
                     this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
             });
-        } else if (msg.data.item === "shadowsocks") {
+        } else if (msg.data.item === "shadowsocks" || msg.data.item === "shadowsocksResetConfig") {
           let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
           let ss = new shadowsocks('info');
+
+          if(msg.data.item === "shadowsocksResetConfig") {
+            ss.refreshConfig();
+          }
+          
           let config = ss.readConfig();
           let datamodel = {
                         type: 'jsonmsg',
