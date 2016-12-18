@@ -307,6 +307,8 @@ module.exports = class {
                 host.spoof(policy[p]);
             } else if (p == "vpn") {
                 this.vpn(host, policy[p], policy);
+            } else if (p == "shadowsocks") {
+                this.shadowsocks(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {
