@@ -252,6 +252,7 @@ module.exports = class {
 
       // ss.refreshConfig();
       if(!ss.configExists()) {
+        console.log("Generating shadowsocks config");
         ss.refreshConfig();
       }
 

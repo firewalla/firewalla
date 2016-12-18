@@ -198,7 +198,7 @@ module.exports = class {
         });
     }
 
-    function random() {
+    random() {
         var x = Math.sin(seed++) * 10000;
         return x - Math.floor(x);
     }
@@ -208,7 +208,7 @@ module.exports = class {
             charset = "0123456789abcdefghijklmnopqrstuvwxyz",
             retVal = "";
         for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(random() * n));
+            retVal += charset.charAt(Math.floor(this.random() * n));
         }
         return retVal;
     }
