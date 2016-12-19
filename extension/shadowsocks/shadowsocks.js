@@ -39,6 +39,7 @@ var jsonfile = require('jsonfile');
 var configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
 var ttlExpire = 60*60*12;
+var seed = 11;
 
 module.exports = class {
     constructor(loglevel) {
@@ -106,8 +107,8 @@ module.exports = class {
     }
 
     install(callback) {
-	let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
-        this.install = require('child_process').exec(install_cmd, (err, out, code) => {
+      let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
+      require('child_process').exec(install_cmd, (err, out, code) => {
             if (err) {
                 log.error("ShadowSocks:INSTALL:Error", "Unable to install1.sh", err);
             }
@@ -197,12 +198,17 @@ module.exports = class {
         });
     }
 
+    random() {
+        var x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+    }
+
     generatePassword(len) {
         var length = len,
             charset = "0123456789abcdefghijklmnopqrstuvwxyz",
             retVal = "";
         for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(Math.random() * n));
+            retVal += charset.charAt(Math.floor(this.random() * n));
         }
         return retVal;
     }
@@ -216,7 +222,16 @@ module.exports = class {
     }
     
     readConfig() {
-        return jsonfile.readFileSync(configFileLocation);
+        try {
+          let config = jsonfile.readFileSync(configFileLocation);
+          return config;
+        } catch (err) {
+          return null;
+        }
+    }
+
+    configExists() {
+        return this.readConfig() !== null;
     }
     
     refreshConfig(password) {

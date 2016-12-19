@@ -59,6 +59,8 @@
     "minimist": "*",
     "express": "^4.14.0",
     "body-parser": "1.9.x",
-    "lodash":"^4.17.2"
+    "lodash":"^4.17.2",
+    "debug": "~2.2.0"
+
   }
 }

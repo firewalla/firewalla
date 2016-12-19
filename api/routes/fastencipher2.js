@@ -26,7 +26,7 @@ router.post('/message/:gid',
         var gid = req.params.gid;
         let controller = cloudWrapper.getNetBotController(gid);
         console.log("================= request body =================");
-        console.log(req.body);
+        console.log(JSON.stringify(req.body, null, '\t'));
         console.log("================= request body end =================");
         controller.msgHandler(gid, req.body, (err, response) => {
             if(err) {

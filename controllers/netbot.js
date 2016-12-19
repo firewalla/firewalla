@@ -205,6 +205,33 @@ class netBot extends ControllerBot {
         });
     }
 
+    _shadowsocks(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to apply config on shadowsocks: " + value);
+                }
+            });
+        });
+    }
+
+    _ssh(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("ssh", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to block ip " + ip);
+                }
+            });
+        });
+    }
 
     constructor(config, fullConfig, eptcloud, groups, gid, debug) {
         super(config, fullConfig, eptcloud, groups, gid, debug);
@@ -365,46 +392,58 @@ class netBot extends ControllerBot {
         //       console.log("Set: ",gid,msg);
         if (msg.data.item == "policy") {
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
-            if (o=="monitor") {
+            switch(o) {
+              case "monitor":
                 this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
-                    cb(err);
+                  cb(err);
                 });
-            }
-            else if (o=="blockin") {
+                break;
+              case "blockin":
                 this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="acl") {
+                break;
+              case "acl":
                 this._block(msg.target, "acl", msg.data.value.acl, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="family") {
+                break;
+              case "family":
                 this._family(msg.target, msg.data.value.family, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="adblock") {
+                break;
+              case "adblock":
                 this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="vpn") {
+                break;
+              case "vpn":
                 this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="ignore") {
+                break;
+              case "shadowsocks":
+                this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ssh":
+                this._ssh(msg.target, msg.data.value.ssh, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ignore":
                 this._ignore(msg.target, msg.data.value.ignore.reason, (err, obj)=> {
                     cb(err);
                 });
-            }
-            else if (o=="unignore") {
+                break;
+              case "unignore":
                 this._unignore(msg.target, (err, obj) => {
                     cb(err);
                 });
-            } else {
+                break;
+              default:
                 cb();
             }
           }, (err)=> {
@@ -533,6 +572,51 @@ class netBot extends ControllerBot {
                     this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
             });
+        } else if (msg.data.item === "shadowsocks" || msg.data.item === "shadowsocksResetConfig") {
+          let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+          let ss = new shadowsocks('info');
+
+          if(msg.data.item === "shadowsocksResetConfig") {
+            ss.refreshConfig();
+          }
+          
+          let config = ss.readConfig();
+          let datamodel = {
+                        type: 'jsonmsg',
+                        mtype: 'reply',
+                        id: uuid.v4(),
+                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                        replyid: msg.id,
+                        code: 200,
+                        data: {
+                            config: config
+                        }
+                    };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+
+        } else if (msg.data.item === "sshPrivateKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPrivateKey((err, data) => {
+            if(err) {
+              console.log("Got error when loading ssh private key: " + err);
+              data = "";
+            }
+
+            let datamodel = {
+              type: 'jsonmsg',
+              mtype: 'reply',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+              code: 200,
+              data: {
+                key: data
+              }
+            };
+            this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          });
         }
 
     }
@@ -714,6 +798,40 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
 
+        } else if (msg.data.item === "shutdown") {
+            console.log("shutdown firewalla in 60 seconds");
+            let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
+                let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: 200
+                }
+                this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
+            });
+        } else if (msg.data.item === "resetSSHKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.resetPassword((err) => {
+            var code = 200;
+            if(err) {
+              console.log("Got error when resetting ssh key: " + err);
+              code = 500;
+            }
+
+            let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: code
+            }
+            this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+          });
         }
     }
 

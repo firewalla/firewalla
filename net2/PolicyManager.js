@@ -246,6 +246,35 @@ module.exports = class {
         }
     }
 
+    shadowsocks(host, config, callback) {
+      let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+      let ss = new shadowsocks('info');
+
+      // ss.refreshConfig();
+      if(!ss.configExists()) {
+        console.log("Generating shadowsocks config");
+        ss.refreshConfig();
+      }
+
+      if (config.state == true) {
+        ss.start((err) => {
+          if(err == null) {
+            log.info("Shadowsocks service is started successfully");
+          } else {
+            log.error("Failed to start shadowsocks: " + err);
+          }
+        })
+      } else {
+        ss.stop((err) => {
+          if(err == null) {
+            log.info("Shadowsocks service is stopped successfully");
+          } else {
+            log.error("Failed to stop shadowsocks: " + err);
+          }
+        })
+      }
+    }
+
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
 
@@ -282,6 +311,8 @@ module.exports = class {
                 host.spoof(policy[p]);
             } else if (p == "vpn") {
                 this.vpn(host, policy[p], policy);
+            } else if (p == "shadowsocks") {
+                this.shadowsocks(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {

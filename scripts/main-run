@@ -97,6 +97,11 @@ if [[ $branch =~ release.* ]]
     check_upgrade minimist 1.2.x
     check_upgrade express ^4.14.0
     check_upgrade body-parser 1.9.x
+    check_upgrade passport 0.3.2
+    check_upgrade passport-http-bearer 1.0.1
+    check_upgrade debug 2.2.0
+    check_upgrade serve-favicon 2.3.0
+    check_upgrade jade 1.11.0
     echo "Master branch running api"      
     cd api
     #forever start --uid api bin/www
