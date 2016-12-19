@@ -60,9 +60,20 @@ function check_upgrade {
     fi
 }
 
+function check_upgrade2 {
+    PACKAGE_NAME=$1
+    PACKAGE_VERSION=$2
+    if [ ! -f $FIREWALLA_HOME/node_modules/$PACKAGE_NAME/__FW ]; then
+        echo "Updating NPM $PACKAGE_NAME"
+        npm install $PACKAGE_NAME@$PACKAGE_VERSION
+        echo $PACKAGE_VERSION > $FIREWALLA_HOME/node_modules/$PACKAGE_NAME/__FW
+    fi
+}
+
+
 check_upgrade external-ip ^0.2.4
 check_upgrade jsonfile ^2.4.0
-check_upgrade lodash ^4.17.2
+check_upgrade2 lodash ^4.17.2
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
@@ -88,7 +99,7 @@ if [[ $branch =~ release.* ]]
     check_upgrade body-parser 1.9.x
     echo "Master branch running api"      
     cd api
-    forever start --uid api bin/www
+    #forever start --uid api bin/www
     cd ..
 fi
 
