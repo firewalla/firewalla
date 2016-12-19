@@ -811,7 +811,27 @@ class netBot extends ControllerBot {
                 }
                 this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
             });
+        } else if (msg.data.item === "resetSSHKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
 
+          ssh.resetPassword((err) => {
+            var code = 200;
+            if(err) {
+              console.log("Got error when resetting ssh key: " + err);
+              code = 500;
+            }
+
+            let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: code
+            }
+            this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+          });
         }
     }
 
