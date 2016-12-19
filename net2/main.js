@@ -96,7 +96,7 @@ setTimeout(()=>{
 setInterval(()=>{
     sysManager.checkIn((err,data)=>{
     });
-},1000*60*60*12);
+},1000*60*60*1);
 
 
 setTimeout(()=>{

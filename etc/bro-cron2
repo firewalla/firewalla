@@ -1,6 +1,6 @@
 #!/bin/bash
 sync
-/usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
+#/usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
 
@@ -11,9 +11,9 @@ sync
 #/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broct/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
 #/usr/local/bro/bin/bro -i eth0 -U .status -p broctl -p broctl-live -p standalone -p local -p bro local.bro broctl broctl/standalone broctl/auto
 
-mem=$(free -m | awk '/-/{print $4}')
-(( mem <= 80 )) && logger "Memory reboot"+$mem
-(( mem <= 80 )) && sudo reboot
+#mem=$(free -m | awk '/-/{print $4}')
+#(( mem <= 80 )) && logger "Memory reboot"+$mem
+#(( mem <= 80 )) && sudo reboot
     
 bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
 logger "detected bro process count:$bro_process_cnt"  

@@ -149,6 +149,11 @@ module.exports = class FlowManager {
         let inkey = "stats:"+type+":in:"+ip;
         let outkey = "stats:"+type+":out:"+ip;
         let subkey = ts-ts%period;
+
+        if (inBytes == null || outBytes == null) {
+            return;
+        }
+ 
         rclient.zincrby(inkey,Number(inBytes),subkey,(err,data)=>{
             rclient.zincrby(outkey,Number(outBytes),subkey,(err,data)=>{
                 if (callback) {
@@ -163,47 +168,54 @@ module.exports = class FlowManager {
         let indb = {};
         let inbytes = 0;
         let outbytes = 0;
+        let lotsofkeys = 24*30*6;  //half months ... of data 
+        console.log("Getting stats:",type,iplist,from,to);
         async.eachLimit(iplist, 1, (ip, cb) => {
             let inkey = "stats:"+type+":in:"+ip;
             let outkey = "stats:"+type+":out:"+ip;
-            rclient.zscan(inkey,0,(err,data)=>{
+            rclient.zscan(inkey,0,'count',lotsofkeys,(err,data)=>{
+                //console.log("Data:",data);
                 if (data && data.length==2) {
                     let array = data[1];
+                    console.log("array:",array.length);
                     for (let i=0;i<array.length;i++) {
                         let clock = Number(array[i]);
                         let bytes = Number(array[i+1]);
                         i++;
-                        if (clock<from) {
+                        if (clock<Number(from)) {
                             continue;
                         }
-                        if (to!=-1 &&  clock>to) {
+                        if (Number(to)!=-1 &&  clock>to) {
                             continue;
                         }
                         
                         if (indb[clock]) {
-                            indb[clock] += bytes;
+                            indb[clock] += Number(bytes);
                         } else {
-                            indb[clock] = bytes;
+                            indb[clock] = Number(bytes);
                         }
-                        inbytes+=bytes;
+                        inbytes+=Number(bytes);
                     }
                 } 
-                rclient.zscan(outkey,0,(err,data)=>{
+                rclient.zscan(outkey,0,'count',lotsofkeys,(err,data)=>{
                     if (data && data.length==2) {
                         let array = data[1];
                         for (let i=0;i<array.length;i++) {
                             let clock = Number(array[i]);
                             let bytes = Number(array[i+1]);
                             i++;
-                            if (clock<from) {
+                            if (clock<Number(from)) {
+                                continue;
+                            }
+                            if (Number(to)!=-1 &&  clock>to) {
                                 continue;
                             }
                             if (outdb[clock]) {
-                                outdb[clock] += bytes;
+                                outdb[clock] += Number(bytes);
                             } else {
-                                outdb[clock] = bytes;
+                                outdb[clock] = Number(bytes);
                             }
-                            outbytes+=bytes;
+                            outbytes+=Number(bytes);
                         }
                     }
                     cb();
@@ -226,6 +238,7 @@ module.exports = class FlowManager {
                var key = keys[i];
                flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
             }  
+            //console.log("FLOW DATA IS: ",flowdata,outdb,indb);
             callback(err, flowdata);
         });
     }
@@ -634,7 +647,7 @@ module.exports = class FlowManager {
         console.log("--------------activitydb---- ");
         console.log(activitydb);
 */
-        console.log(activitydb);
+        //console.log(activitydb);
  
         let flowobj = {id:0,app:{},activity:{}};
         let hasFlows = false;
@@ -671,6 +684,8 @@ module.exports = class FlowManager {
             return;
         }
 
+        //console.log("### Cleaning",flowobj);
+
         bone.flowgraph("clean", [flowobj],(err,data)=>{
             if (callback) {
                 callback(err,data);
@@ -680,11 +695,12 @@ module.exports = class FlowManager {
 
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
-        let conndb = {};
         async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"limit",0,maxflow], (err, result) => {
-                //log.debug("Flow:Summarize",key,from,to,hours,result.length);
+            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
+                let conndb = {};
+                if (result.length>0) 
+                    log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                 let interval = 0;
                 let totalInBytes = 0;
                 let totalOutBytes = 0;
@@ -696,9 +712,23 @@ module.exports = class FlowManager {
                             log.error("Host:Flows:Sorting:Parsing", result[i]);
                             continue;
                         }
+                        if (o.rb == null || o.ob == null) {
+                            continue;
+                        }
                         if (o.rb == 0 && o.ob ==0) {
                             // ignore zero length flows
                             continue;
+                        }
+                        if (saveStats) {
+                            if (direction == 'in') {
+                                totalInBytes+=Number(o.rb);
+                                totalOutBytes+=Number(o.ob);
+                                this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
+                            } else {
+                                totalInBytes+=Number(o.ob);
+                                totalOutBytes+=Number(o.rb);
+                                this.recordStats(ip,"hour",o.ts,Number(o.ob),Number(o.rb),null);
+                            }
                         }
                         let ts = o.ts;
                         if (o._ts) {
@@ -752,17 +782,6 @@ module.exports = class FlowManager {
                             }
                         }
 
-                        if (saveStats) {
-                            if (direction == 'in') {
-                                totalInBytes+=Number(o.rb);
-                                totalOutBytes+=Number(o.ob);
-                                this.recordStats(ip,"hour",o.ts,o.rb,o.ob,null);
-                            } else {
-                                totalInBytes+=Number(o.ob);
-                                totalOutBytes+=Number(o.rb);
-                                this.recordStats(ip,"hour",o.ts,o.ob,o.rb,null);
-                            }
-                        }
                     }
 
                     if (saveStats) {
@@ -773,6 +792,8 @@ module.exports = class FlowManager {
                     for (let i in conndb) {
                         sorted.push(conndb[i]);
                     }
+                    if (result.length>0) 
+                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
                     cb();
                 } else {
@@ -785,7 +806,7 @@ module.exports = class FlowManager {
                 log.error("Flow Manager Error");
                 callback(null, sorted);
             } else {
-                log.debug("============ Host:Flows:Sorted", sorted.length);
+                log.info("============ Host:Flows:Sorted", sorted.length);
                 if (sortby == "time") {
                     sorted.sort(function (a, b) {
                         return Number(b.ts) - Number(a.ts);
@@ -808,6 +829,7 @@ module.exports = class FlowManager {
                         }
                         log.debug("flows:sorted Query dns manager returnes");
                         this.summarizeActivityFromConnections(sorted,(err,activities)=>{
+                            //console.log("Activities",activities);
                             callback(null, sorted,activities);
                         });
                     });;

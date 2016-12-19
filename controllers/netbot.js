@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -205,6 +205,33 @@ class netBot extends ControllerBot {
         });
     }
 
+    _shadowsocks(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to apply config on shadowsocks: " + value);
+                }
+            });
+        });
+    }
+
+    _ssh(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("ssh", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to block ip " + ip);
+                }
+            });
+        });
+    }
 
     constructor(config, fullConfig, eptcloud, groups, gid, debug) {
         super(config, fullConfig, eptcloud, groups, gid, debug);
@@ -365,46 +392,58 @@ class netBot extends ControllerBot {
         //       console.log("Set: ",gid,msg);
         if (msg.data.item == "policy") {
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
-            if (o=="monitor") {
+            switch(o) {
+              case "monitor":
                 this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
-                    cb(err);
+                  cb(err);
                 });
-            }
-            else if (o=="blockin") {
+                break;
+              case "blockin":
                 this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="acl") {
+                break;
+              case "acl":
                 this._block(msg.target, "acl", msg.data.value.acl, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="family") {
+                break;
+              case "family":
                 this._family(msg.target, msg.data.value.family, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="adblock") {
+                break;
+              case "adblock":
                 this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="vpn") {
+                break;
+              case "vpn":
                 this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
                     cb(err);
                 });
-            }
-            else if (o=="ignore") {
+                break;
+              case "shadowsocks":
+                this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ssh":
+                this._ssh(msg.target, msg.data.value.ssh, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "ignore":
                 this._ignore(msg.target, msg.data.value.ignore.reason, (err, obj)=> {
                     cb(err);
                 });
-            }
-            else if (o=="unignore") {
+                break;
+              case "unignore":
                 this._unignore(msg.target, (err, obj) => {
                     cb(err);
                 });
-            } else {
+                break;
+              default:
                 cb();
             }
           }, (err)=> {
@@ -422,7 +461,7 @@ class netBot extends ControllerBot {
 
           });
         } else if (msg.data.item === "host") {
-            //data.item = "host"
+            //data.item = "host" test
             //data.value = "{ name: " "}"                           
             let data = msg.data;
             console.log("Setting Host", msg);
@@ -533,14 +572,60 @@ class netBot extends ControllerBot {
                     this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
             });
+        } else if (msg.data.item === "shadowsocks" || msg.data.item === "shadowsocksResetConfig") {
+          let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+          let ss = new shadowsocks('info');
+
+          if(msg.data.item === "shadowsocksResetConfig") {
+            ss.refreshConfig();
+          }
+          
+          let config = ss.readConfig();
+          let datamodel = {
+                        type: 'jsonmsg',
+                        mtype: 'reply',
+                        id: uuid.v4(),
+                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                        replyid: msg.id,
+                        code: 200,
+                        data: {
+                            config: config
+                        }
+                    };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+
+        } else if (msg.data.item === "sshPrivateKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPrivateKey((err, data) => {
+            if(err) {
+              console.log("Got error when loading ssh private key: " + err);
+              data = "";
+            }
+
+            let datamodel = {
+              type: 'jsonmsg',
+              mtype: 'reply',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+              code: 200,
+              data: {
+                key: data
+              }
+            };
+            this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          });
         }
 
     }
 
     deviceHandler(msg, gid, target, listip, callback) {
         console.log("Getting Devices", gid, target, listip);
+        let hosts = [];
         this.hostManager.getHost(target, (err, host) => {
-            if (host == null) {
+            if (host == null && target!="0.0.0.0") {
                 let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'reply',
@@ -551,13 +636,32 @@ class netBot extends ControllerBot {
                 };
                 this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 return;
+            } else if (target=="0.0.0.0") {
+                listip = [];
+                for (let h in this.hostManager.hosts.all) {
+                    let _host =this.hostManager.hosts.all[h];
+                    hosts.push(_host);
+                    listip.push(_host.o.ipv4Addr);
+                    if (_host.ipv6Addr && _host.ipv6Addr.length > 0) {
+                        for (let p in _host['ipv6Addr']) {
+                            listip.push(_host['ipv6Addr'][p]);
+                        }
+                    }
+                }
+            } else {
+                hosts=[host]; 
             }
+
+            console.log("Summarize",target,listip);
 
 
           //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-            flowManager.summarizeBytes2([host], Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
                 console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
-                let jsonobj = host.toJson();
+                let jsonobj = {};
+                if (host) {
+                    jsonobj = host.toJson();
+                }
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
                     console.log("Found alarms");
                     jsonobj.alarms = alarms;
@@ -580,7 +684,7 @@ class netBot extends ControllerBot {
                         }
                         flowManager.sort(result, 'rxdata');
                         console.log("-----------Sort by rx------------------------");
-                        max = 10;
+                        max = 15;
                         for (let i in result) {
                             let s = result[i];
                             response.rx.push(s);
@@ -588,9 +692,10 @@ class netBot extends ControllerBot {
                                 break;
                             }
                         }
+                        //console.log(JSON.stringify(response.rx));
                         flowManager.sort(result, 'txdata');
                         console.log("-----------  Sort by tx------------------");
-                        max = 10;
+                        max = 15;
                         for (let i in result) {
                             let s = result[i];
                             response.tx.push(s);
@@ -601,6 +706,7 @@ class netBot extends ControllerBot {
                         jsonobj.flows = response;
                         jsonobj.activities = activities;
 
+                        /*
                         flowManager.sort(result, 'duration');
                         console.log("-----------Sort by rx------------------------");
                         max = 10;
@@ -611,6 +717,7 @@ class netBot extends ControllerBot {
                                 break;
                             }
                         }
+                        */
                         //flowManager.getFlowCharacteristics(result,direction,1000000,2);
                         let datamodel = {
                             type: 'jsonmsg',
@@ -691,6 +798,40 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
 
+        } else if (msg.data.item === "shutdown") {
+            console.log("shutdown firewalla in 60 seconds");
+            let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
+                let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: 200
+                }
+                this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
+            });
+        } else if (msg.data.item === "resetSSHKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.resetPassword((err) => {
+            var code = 200;
+            if(err) {
+              console.log("Got error when resetting ssh key: " + err);
+              code = 500;
+            }
+
+            let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: code
+            }
+            this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+          });
         }
     }
 
@@ -703,7 +844,6 @@ class netBot extends ControllerBot {
                 if (rawmsg.message.obj.mtype === "init") {
                     console.log("Process Init load event");
                     this.hostManager.toJson(true, (err, json) => {
-                        console.log("To Json");
                         let datamodel = {
                             type: 'jsonmsg',
                             mtype: 'init',
@@ -727,11 +867,11 @@ class netBot extends ControllerBot {
                     // data.item = policy
                     // data.value = {'block':1},
                     //
-                    this.setHandler(gid, msg);
+                    this.setHandler(gid, msg, callback);
                 } else if (rawmsg.message.obj.mtype === "get") {
                     this.getHandler(gid, msg, callback);
                 } else if (rawmsg.message.obj.mtype === "cmd") {
-                    this.cmdHandler(gid, msg);
+                    this.cmdHandler(gid, msg, callback);
                 }
             }
         } else {

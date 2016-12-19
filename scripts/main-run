@@ -9,6 +9,7 @@ cd /tmp
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
   if [[ $branch =~ release.* ]]
     then
+     export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
     else
@@ -59,8 +60,20 @@ function check_upgrade {
     fi
 }
 
+function check_upgrade2 {
+    PACKAGE_NAME=$1
+    PACKAGE_VERSION=$2
+    if [ ! -f $FIREWALLA_HOME/node_modules/$PACKAGE_NAME/__FW ]; then
+        echo "Updating NPM $PACKAGE_NAME"
+        npm install $PACKAGE_NAME@$PACKAGE_VERSION
+        echo $PACKAGE_VERSION > $FIREWALLA_HOME/node_modules/$PACKAGE_NAME/__FW
+    fi
+}
+
+
 check_upgrade external-ip ^0.2.4
 check_upgrade jsonfile ^2.4.0
+check_upgrade2 lodash ^4.17.2
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
@@ -84,9 +97,14 @@ if [[ $branch =~ release.* ]]
     check_upgrade minimist 1.2.x
     check_upgrade express ^4.14.0
     check_upgrade body-parser 1.9.x
+    check_upgrade passport 0.3.2
+    check_upgrade passport-http-bearer 1.0.1
+    check_upgrade debug 2.2.0
+    check_upgrade serve-favicon 2.3.0
+    check_upgrade jade 1.11.0
     echo "Master branch running api"      
     cd api
-    forever start --uid api bin/www
+    #forever start --uid api bin/www
     cd ..
 fi
 

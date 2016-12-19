@@ -384,7 +384,8 @@ module.exports = class FlowMonitor {
     detect(listip, period,host,callback) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true, true, (err, result,activities) => {
+        log.info("Detect",listip);
+        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
             if (activities !=null) {
@@ -404,7 +405,7 @@ module.exports = class FlowMonitor {
                 host.activities = activities;
                 host.save("activities",null);
             }
-            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true, true,(err, result,activities2) => {
+            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true,(err, result,activities2) => {
                 this.flowIntel(result);
                 this.summarizeNeighbors(host,result,'out');
             });
@@ -413,15 +414,16 @@ module.exports = class FlowMonitor {
 
 
     flows(listip, period,host, callback) {
+        // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
         let end = Date.now() / 1000;
         let start = end - this.monitorTime; // in seconds
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime, true,false, (err, result,activities) => {
+        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, result,activities) => {
             let inSpec = flowManager.getFlowCharacteristics(result, "in", 1000000, stddev_limit);
             if (activities !=null) {
                 host.activities = activities;
                 host.save("activities",null);
             }
-            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime, true,false, (err, resultout) => {
+            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
                 let outSpec = flowManager.getFlowCharacteristics(resultout, "out", 500000, stddev_limit);
                 callback(null, inSpec, outSpec);
             });
@@ -532,6 +534,7 @@ module.exports = class FlowMonitor {
                         }
                     }
                     if (service == null || service == "dlp") {
+                        log.info("DLP",listip);
                         this.flows(listip, period,host, (err, inSpec, outSpec) => {
                             log.debug("monitor:flow:", host.toShortString());
                             log.debug("inspec", inSpec);
