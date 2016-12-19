@@ -29,41 +29,6 @@ module.exports = class {
         debugging = debug;
     }
 
-    //sudo nmap -sS -O 192.168.2.100-200 -oX - | xml-json host
-    /* 
-                   uid: Sequelize.STRING,
-                name: Sequelize.STRING,
-                lastActiveTimestamp: Sequelize.DOUBLE,
-                firstFoundTimestamp: Sequelize.DOUBLE,
-                ipv4Addr: Sequelize.STRING,
-                ipv6Addr: Sequelize.STRING,
-                mac: Sequelize.STRING,
-                macVendor: Sequelize.STRING,
-                hostname: Sequelize.STRING,
-                hostnameType: Sequelize.STRING,
-                description: Sequelize.STRING,
-                ustate: Sequelize.STRING,
-
-                stats: Sequelize.TEXT,
-                json: Sequelize.TEXT,
-                rawScanJson: Sequelize.TEXT,
-   */
-    /*
-                    hostId: Sequelize.STRING,
-                uid: Sequelize.STRING,
-                protocol: Sequelize.STRING,
-                port: Sequelize.INT,
-                state: Sequelize.STRING,
-                ustate: Sequelize.STRING,
-                serviceName: Sequelize.STRING,
-                lastActiveTimestamp: Sequelize.DOUBLE;
-                firstFoundTimestamp: Sequelize.DOUBLE;
-
-                stats: Sequelize.TEXT,
-                json: Sequelize.TEXT,
-                rawScanJson: Sequelize.TEXT,
- */
-
     parsePort(hostuid, portjson) {
         let port = {};
         log("PARSING: ", portjson);
@@ -82,18 +47,13 @@ module.exports = class {
     }
 
     scan(range, fast, callback) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 --disable-arp-ping ' + range + ' -oX - | xml-json host';
-        // let cmdline = 'sudo nmap -T5 -PO --host-timeout 200s  --disable-arp-ping ' + range + ' -oX - | xml-json host'; 
-        // let    cmdline = 'sudo nmap -sn -PO  --host-timeout 20s --disable-arp-ping '+range+' -oX - | xml-json host';
         if (fast == true) {
             cmdline = 'sudo nmap -sn -PO --host-timeout 20s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
         }
         console.log("Running commandline: ", cmdline);
 
         if (this.process) {
-            //this.process.kill('SIGHUP'); 
-            //this.process = null; 
             console.log("======================= Warning Previous instance running====");
             return;
         }

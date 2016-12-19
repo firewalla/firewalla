@@ -58,6 +58,7 @@
     "swagger-node-express": "~2.0",
     "minimist": "*",
     "express": "^4.14.0",
-    "body-parser": "1.9.x"
+    "body-parser": "1.9.x",
+    "lodash":"^4.17.2"
   }
 }

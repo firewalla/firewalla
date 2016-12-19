@@ -25,6 +25,9 @@ router.post('/message/:gid',
     function(req, res, next) {
         var gid = req.params.gid;
         let controller = cloudWrapper.getNetBotController(gid);
+        console.log("================= request body =================");
+        console.log(req.body);
+        console.log("================= request body end =================");
         controller.msgHandler(gid, req.body, (err, response) => {
             if(err) {
                 res.json({ error: err });
@@ -38,5 +41,30 @@ router.post('/message/:gid',
     encryption.encrypt
 );
 
+router.post('/message/cleartext/:gid', 
+    passport.authenticate('bearer', { session: false }),
+    function(req, res, next) {
+        var gid = req.params.gid;
+        let controller = cloudWrapper.getNetBotController(gid);
+
+        var alreadySent = false;
+
+        controller.msgHandler(gid, req.body, (err, response) => {
+            if(alreadySent) {
+                return;
+            }
+
+            alreadySent = true;
+            
+            if(err) {
+                res.json({ error: err });
+                return;
+            } else {
+                console.log("got response: " + JSON.stringify(response));
+                res.json(response);
+            }
+        });
+    }
+);
 
 module.exports = router;

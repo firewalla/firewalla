@@ -206,7 +206,7 @@ module.exports = class {
             return instances[name];
         } else {
             this.config = config;
-            log = require("./logger.js")("discover", loglevel);
+            log = require("./logger.js")("BroDetect", loglevel);
             this.appmap = {};
             this.apparray = [];
             this.connmap = {};
@@ -495,6 +495,10 @@ module.exports = class {
                 if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
                     return;
                 }
+  
+                if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+                    return;
+                }
             } catch (e) {
                 log.error("Conn:Data:Error checking ulticast", e);
                 return;
@@ -520,10 +524,30 @@ module.exports = class {
                 return;
             }
 
+            if (obj.orig_bytes == null) {
+                obj.orig_bytes = 0;
+            }
+            if (obj.resp_bytes == null) {
+                obj.resp_bytes = 0;
+            }
+
             if (obj.duration == null) {
                 obj.duration = Number(0);
             } else {
                 obj.duration = Number(obj.duration);
+            }
+
+            if (obj.orig_bytes >100000000) {
+                log.error("Conn:Debug:Orig_bytes:",obj.orig_bytes,obj);
+            }
+            if (obj.resp_bytes >100000000) {
+                log.error("Conn:Debug:Resp_bytes:",obj.resp_bytes,obj);
+            }
+            if (Number(obj.orig_bytes) >100000000) {
+                log.error("Conn:Debug:Orig_bytes:",obj.orig_bytes,obj);
+            }
+            if (Number(obj.resp_bytes) >100000000) {
+                log.error("Conn:Debug:Resp_bytes:",obj.resp_bytes,obj);
             }
 
             // Warning for long running tcp flows, the conn structure logs the ts as the
@@ -540,8 +564,8 @@ module.exports = class {
                   __ts: obj.ts,  // this is the first time found 
                     sh: host, // source
                     dh: dst, // dstination
-                    ob: obj.orig_bytes, // transfer bytes
-                    rb: obj.resp_bytes,
+                    ob: Number(obj.orig_bytes), // transfer bytes
+                    rb: Number(obj.resp_bytes),
                     ct: 1, // count
                     fd: flowdir, // flow direction
                     lh: lhost, // this is local ip address
@@ -549,21 +573,21 @@ module.exports = class {
                     bl: this.config.bro.conn.flowstashExpires,
                     pf: {}, //port flow
                     af: {}, //application flows
-                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
+                 flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
                 _afmap: {}
                 }
                 this.flowstash[flowspecKey] = flowspec;
                 log.debug("Conn:FlowSpec:Create:", flowspec);
             } else {
-                flowspec.ob += obj.orig_bytes;
-                flowspec.rb += obj.resp_bytes;
+                flowspec.ob += Number(obj.orig_bytes);
+                flowspec.rb += Number(obj.resp_bytes);
                 flowspec.ct += 1;
                 if (flowspec.ts < obj.ts) {
                     flowspec.ts = obj.ts;
                 }
                 flowspec._ts = now;
                 flowspec.du += obj.duration;
-                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]);
+                flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]);
             }
 
             let tmpspec = {
@@ -571,8 +595,8 @@ module.exports = class {
                 sh: host, // source
                _ts: now,
                 dh: dst, // dstination
-                ob: obj.orig_bytes, // transfer bytes
-                rb: obj.resp_bytes,
+                ob: Number(obj.orig_bytes), // transfer bytes
+                rb: Number(obj.resp_bytes),
                 ct: 1, // count
                 fd: flowdir, // flow direction
                 lh: lhost, // this is local ip address
@@ -580,7 +604,7 @@ module.exports = class {
                 bl: 0,
                 pf: {},
                 af: {},
-             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),obj.orig_bytes,obj.resp_bytes]],
+             flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
             };
 
             let afobj = this.lookupAppMap(obj.uid);
@@ -618,19 +642,19 @@ module.exports = class {
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
-                        ob: flowspec.ob,
-                        rb: flowspec.rb,
+                        ob: Number(flowspec.ob),
+                        rb: Number(flowspec.rb),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
-                    port_flow.ob += obj.orig_bytes;
-                    port_flow.rb += obj.resp_bytes;
+                    port_flow.ob += Number(obj.orig_bytes);
+                    port_flow.rb += Number(obj.resp_bytes);
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
-                    ob: obj.orig_bytes,
-                    rb: obj.resp_bytes,
+                    ob: Number(obj.orig_bytes),
+                    rb: Number(obj.resp_bytes),
                     ct: 1
                 };
                 //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
@@ -743,10 +767,12 @@ module.exports = class {
                         dnsManager.resolveLocalHost(i, (err, data) => {
                             if (data != null && data.lastActiveTimestamp != null) {
                                 if (data.lastActiveTimestamp < hostsChanged[i]) {
+                                    /*
                                     log.debug("Conn:Flow:Resolve:Updated", i, hostsChanged[i]);
                                     rclient.hmset("host:mac:" + data.mac, {
                                         'lastActiveTimestamp': Number(hostsChanged[i])
                                     });
+                                    */
                                 }
                             } else {
                                 log.info("Conn:Flow:Resolve:Host Can not find ", i);

@@ -1,5 +1,13 @@
-
+[![Build Status](https://travis-ci.org/firewalla/firewalla.svg?branch=master)](https://travis-ci.org/firewalla/firewalla)
 ## Firewalla  (Pre-Alpha)
+## Install From Image
+```
+Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
+Prepare a blank microsd card > 8GB size
+Follow the same step as installing a raspberry pi image
+https://www.raspberrypi.org/documentation/installation/installing-images/
+```
+
 ### To Build On Raspberry Pi
 - Download Jessie Lite
 ```
@@ -57,6 +65,33 @@ If anything bad happens, unplug it.
 * release_pi_1:   current released code for pi, will be pulled automatically by all deployed boards.
 * dev_<>: development branchs.
 * Please do a pull request for features
+
+
+### Following Routers are NOT supported
+
+#### ACTIONTEC
+* T3200M 
+
+#### ASUS
+* N600 RT-N56U (NAT Acceleration must be turned off)
+
+#### GOOGLE
+* OnHub TGR-1900 (TP-Link)
+* OnHub SRT-AC1900 (ASUS)
+
+#### LINKSYS
+* N600 EA2500 (Not support guest network)
+* AC1900 EA7500 (Express Forwarding must be disabled)
+* AC2400 EA8350
+* AC2600 Max-Stream EA8500 (Express Forwarding must be disabled)
+
+#### NETGEAR
+* N600 WNDR3400 (Not compatible with guest network)
+* AC1600 R6250
+* AC1750 R6400 
+* AC2350 Nighthawk X4 R7500
+* AC2600 Nighthawk X4S R7800 
+
 
 
 

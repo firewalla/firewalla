@@ -26,12 +26,13 @@ sclient.setMaxListeners(0);
 
 var bone = require("../lib/Bone.js");
 
-
 let DNSServers = {
     "75.75.75.75": true,
     "75.75.75.76": true,
     "8.8.8.8": true
 };
+
+const dns = require('dns');
 
 module.exports = class {
     constructor(loglevel) {
@@ -183,6 +184,21 @@ module.exports = class {
                 ip: this.myIp(),
                 mac: this.myMAC(),
               });
+    }
+
+    // if the ip is part of our cloud, no need to log it, since it might cost space and memory
+    isMyServer(ip) {
+        if (this.serverIps) {
+            return (this.serverIps.indexOf(ip)>-1);
+        } else {
+            dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+                 this.serverIps = addresses;
+            }); 
+            setInterval(()=>{
+                 this.serverIps = null;
+            },1000*60*60*24);
+            return false;
+        }
     }
 
     isMulticastIP4(ip) {
