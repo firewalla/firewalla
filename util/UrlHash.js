@@ -6,8 +6,6 @@ var Hashes = require('./Hashes.js');
 /* take url and Canonicalize it, then has the parts ... */
 
 function canonicalizeAndHash(url) {
-    console.log("curl ",url);
-  
     if (url == null) {
         return null;
     }
@@ -15,7 +13,6 @@ function canonicalizeAndHash(url) {
     if (cURL == null) {
         return null;
     }
-    console.log("curl ",cURL);
     let eCURL = getLookupExpressions(cURL);
     if (eCURL == null) {
         return null;

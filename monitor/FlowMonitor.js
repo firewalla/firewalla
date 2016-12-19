@@ -278,6 +278,9 @@ module.exports = class FlowMonitor {
     //  {host: ...}
     // neighbor:<mac>:host:
     //   {set: host}
+
+    //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
+    //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
     summarizeNeighbors(host,flows,direction) {
         let key = "neighbor:"+host.o.mac;
         log.debug("Summarizing Neighbors ",flows.length,key);

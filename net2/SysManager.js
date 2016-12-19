@@ -179,6 +179,14 @@ module.exports = class {
         return this.monitoringInterface().subnet;
     }
 
+    // hack ... 
+    debugState(component) {
+        if (component == "FW_HASHDEBUG") {
+            return true;
+        }
+        return false;
+    }
+
     getSysInfo(callback) {
               callback(null,{
                 ip: this.myIp(),

@@ -29,7 +29,7 @@ var devDebug = {
    'SysManager':'info',
    'PolicyManager':'info',
    'main':'info',
-   'FlowMonitory':'info'
+   'FlowMonitor':'debug'
 };
   
 var productionDebug = {
@@ -46,7 +46,7 @@ var productionDebug = {
    'SysManager':'error',
    'PolicyManager':'error',
    'main':'error',
-   'FlowMonitory':'error'
+   'FlowMonitor':'error'
 };
   
 

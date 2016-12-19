@@ -264,32 +264,48 @@ module.exports = class DNSManager {
             dnsdata = {};
         }
 
-        console.log("######################### CACHE MISS ON IP",ip,dnsdata);
+        let hashdebug = sysManager.debugState("FW_HASHDEBUG");
+        console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata);
+        let _iplist = [];
+        let _alist = [];
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
             for (let host in flow.af) {
                 iplist.push(host);
+                _iplist = _iplist.concat(flowUtil.hashHost(host));
+                _alist = flowUtil.hashApp(host);
             }
         } else if (dnsdata && dnsdata.host) {
             iplist.push(dnsdata.host);
+            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host));
+            _alist = flowUtil.hashApp(dnsdata.host);
         } 
 
         iplist.push(ip);
+        _iplist = _iplist.concat(flowUtil.hashHost(ip));
 
         if (iplist.indexOf("firewalla.encipher.io") > -1) {
            log.debug("###Intel:DNS:SkipSelf",iplist,flow);
            callback(null,null);
            return; 
         }
+      
 
-        let _flow = flowUtil.hashFlow(flow);
+        let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
-        flowlist.push({iplist:iplist,flow:_flow});
+        //flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+        if (hashdebug == false) {
+            flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+        } else {
+            //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
+            flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
+            console.log("######## DEBUG ",JSON.stringify(flowlist));
+        }
 
         console.log("######## Sending:",JSON.stringify(flowlist));
 
-        bone.intel("*","check",{flowlist:flowlist},(err,data)=> {
+        bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
                //console.log("##### MISS",err,data);
                callback(err,null);

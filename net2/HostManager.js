@@ -56,6 +56,8 @@ var async = require('async');
 
 var MobileDetect = require('mobile-detect');
 
+var flowUtil = require('../net2/FlowUtil.js');
+
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -625,6 +627,25 @@ class Host {
 
     }
 
+//'17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}
+
+
+    hashNeighbors(neighbors) {
+        let _neighbors = JSON.parse(JSON.stringify(neighbors));
+        let debug =  sysManager.debugState("FW_HASHDEBUG");
+        for (let i in _neighbors) {
+            let neighbor = _neighbors[i];
+            neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
+            neighbor._name = flowUtil.hashIp(neighbor.name);
+            if (debug == false) {
+                delete neighbor.neighbor;
+                delete neighbor.name;
+            }
+        }
+        
+        return _neighbors;
+    }
+    
     identifyDevice(force, callback) {
         log.debug("HOST:IDENTIFY",this.o.mac);
         if (force==false  && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
@@ -651,7 +672,7 @@ class Host {
         try {
             this.packageTopNeighbors(60,(err,neighbors)=>{ 
                 if (neighbors) {
-                    obj.neighbors = neighbors; 
+                    obj.neighbors = this.hashNeighbors(neighbors); 
                 }
                 rclient.smembers("host:user_agent:" + this.o.ipv4Addr, (err, results) => {
                     if (results != null) {
