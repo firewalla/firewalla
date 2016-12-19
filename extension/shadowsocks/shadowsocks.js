@@ -107,8 +107,8 @@ module.exports = class {
     }
 
     install(callback) {
-	let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
-        this.install = require('child_process').exec(install_cmd, (err, out, code) => {
+      let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
+      require('child_process').exec(install_cmd, (err, out, code) => {
             if (err) {
                 log.error("ShadowSocks:INSTALL:Error", "Unable to install1.sh", err);
             }

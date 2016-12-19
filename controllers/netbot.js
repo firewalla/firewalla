@@ -232,6 +232,7 @@ class netBot extends ControllerBot {
             });
         });
     }
+
     constructor(config, fullConfig, eptcloud, groups, gid, debug) {
         super(config, fullConfig, eptcloud, groups, gid, debug);
         this.bot = new builder.TextBot();
@@ -592,6 +593,30 @@ class netBot extends ControllerBot {
                         }
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+
+        } else if (msg.data.item === "sshPrivateKey") {
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPrivateKey((err, data) => {
+            if(err) {
+              console.log("Got error when loading ssh private key: " + err);
+              data = "";
+            }
+
+            let datamodel = {
+              type: 'jsonmsg',
+              mtype: 'reply',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+              code: 200,
+              data: {
+                key: data
+              }
+            };
+            this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          });
         }
 
     }
