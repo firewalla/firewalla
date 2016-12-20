@@ -175,9 +175,9 @@ module.exports = class DNSManager {
             } else {
                 let key1 = "dns:ip:" + ip;
                 //rclient.hgetall(key1, (err, data) => {
-                    if (ddata && ddata._intel) { 
-                        ddata.intel = JSON.parse(ddata._intel);
-                    }
+    //                if (ddata && ddata._intel) { 
+                  //      ddata.intel = JSON.parse(ddata._intel);
+                 //   }
                     if (ddata != null) {
                         let d = null;
                         if (O != null) {
@@ -192,6 +192,8 @@ module.exports = class DNSManager {
                                 name: ddata.host
                             };
                         }
+                        callback(null,d,ddata);
+/*
                         rclient.hgetall(ddata.host, (err, data2) => {
                             if (data2 != null) {
                                 if (O != null) {
@@ -211,9 +213,11 @@ module.exports = class DNSManager {
                                 callback(err, d,ddata);
                             }
                         });
+*/
+     
 
                     } else {
-                        callback(null, null);
+                        callback(null, null,null);
                     }
                 //});
             }
@@ -265,7 +269,7 @@ module.exports = class DNSManager {
         }
 
         let hashdebug = sysManager.debugState("FW_HASHDEBUG");
-        console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata);
+        console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
         let iplist = [];
@@ -307,8 +311,17 @@ module.exports = class DNSManager {
 
         bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
-               //console.log("##### MISS",err,data);
-               callback(err,null);
+               console.log("##### MISS",err,data);
+               let intel = {ts:Math.floor(Date.now()/1000)};
+               intel.rcount = iplist.length;
+               let key = "dns:ip:"+ip;
+               //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+               dnsdata.intel = intel;
+               dnsdata._intel = JSON.stringify(intel);
+               rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
+                   rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                   callback(err,null);
+               });
                return;
            }
            let rintel = null;
@@ -331,8 +344,6 @@ module.exports = class DNSManager {
                       cb();
                   });
               } else {
-                  // Inert code to write empty intel ... this will prevent future checks
-                  // this ts field is also useful here if set 
                   let intel = {ts:Math.floor(Date.now()/1000)};
                   intel.rcount = iplist.length;
                   let key = "dns:ip:"+ip;

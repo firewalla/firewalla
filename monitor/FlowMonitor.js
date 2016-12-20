@@ -44,6 +44,8 @@ var alarmManager = new AlarmManager('debug');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+const flowUtil = require('../net2/FlowUtil.js');
+
 function getDomain(ip) {
     if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
         let splited = ip.split(".");
@@ -115,9 +117,9 @@ module.exports = class FlowMonitor {
     flowIntel(flows) {
         for (let i in flows) {
             let flow = flows[i];
-            log.info("FLOW:INTEL:PROCESSING",flow);
+            log.info("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
             if (flow['intel'] && flow['intel']['c']) {
-              log.info("########## flowIntel",flow);
+              log.info("########## flowIntel",JSON.stringify(flow),{});
               let c = flow['intel']['c'];
 
               hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
@@ -126,16 +128,16 @@ module.exports = class FlowMonitor {
                }
               
                if (ignore == false) {
-                log.info("######## flowIntel:Ignored",flow);
+                log.info("######## flowIntel Processing",flow);
                 if (c == "av") {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
-                        let msg = "Watching video "+flow["shname"] +" "+flow["dhname"];
+                        let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Video Watching",
                             actions: ["block","ignore"],
                             src: flow.sh,
                             dst: flow.dh,
-                            dhname: flow["dhname"],
+                            dhname: flowUtil.dhnameFlow(flow),
                             shname: flow["shname"],
                             mac: flow["mac"],
                             appr: flow["appr"],
@@ -155,13 +157,13 @@ module.exports = class FlowMonitor {
                     }
                 } else if (c=="porn") {
                     if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
-                        let msg = "Watching Porn "+flow["shname"] +" "+flow["dhname"];
+                        let msg = "Watching Porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Questionable Action",
                             actions: ["block","ignore"],
                             src: flow.sh,
                             dst: flow.dh,
-                            dhname: flow["dhname"],
+                            dhname: flowUtil.dhnameFlow(flow),
                             shname: flow["shname"],
                             mac: flow["mac"],
                             appr: flow["appr"],
@@ -239,13 +241,13 @@ module.exports = class FlowMonitor {
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
                 } else if (c=="games" && this.flowIntelRecordFlow(flow,3)) {
-                    let msg = "Doing "+c+" "+flow["shname"] +" "+flow["dhname"];
+                    let msg = "Doing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                     let actionobj = {
                         title: "Notify Action",
                         actions: ["block","ignore"],
                         src: flow.sh,
                         dst: flow.dh,
-                        dhname: flow["dhname"],
+                        dhname: flowUtil.dhnameFlow(flow),
                         shname: flow["shname"],
                         mac: flow["mac"],
                         appr: flow["appr"],

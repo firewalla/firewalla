@@ -39,6 +39,25 @@ function hashApp(domain) {
     return hashed;
 }
 
+function shortDomainName(domain) {
+    return urlHash.shortUrl(domain,true)
+}
+
+function dhnameFlow(_flow) {
+    if (_flow.dhname) {
+        return shortDomainName(_flow.dhname);
+    }
+    if (_flow.af!=null && Object.keys(_flow.af).length>0) {
+        for (let key in _flow.af) {
+            return shortDomainName(key);
+        }
+    }
+    if (_flow.lh == _flow.sh) {
+        return _flow.dh;
+    } else{
+        return _flow.sh;
+    }
+}
 
 function hashFlow(_flow, clean) {
     let flow = JSON.parse(JSON.stringify(_flow));
@@ -62,6 +81,9 @@ function hashFlow(_flow, clean) {
 
     if (clean) {
         if (flow.shname) {
+            delete flow.shname;
+        }
+        if (flow.dhname) {
             delete flow.shname;
         }
         if (flow.iplist) {
@@ -111,5 +133,6 @@ module.exports = {
   hashFlow: hashFlow,
   hashHost: hashHost,
   hashIp: hashIp,
-  hashApp: hashApp
+  hashApp: hashApp,
+  dhnameFlow: dhnameFlow
 };
