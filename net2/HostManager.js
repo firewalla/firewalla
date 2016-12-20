@@ -632,7 +632,7 @@ class Host {
 
     hashNeighbors(neighbors) {
         let _neighbors = JSON.parse(JSON.stringify(neighbors));
-        let debug =  sysManager.debugState("FW_HASHDEBUG");
+        let debug =  sysManager.isSystemDebugOn();
         for (let i in _neighbors) {
             let neighbor = _neighbors[i];
             neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
