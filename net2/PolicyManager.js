@@ -83,6 +83,13 @@ module.exports = class {
     defaults(config) {}
 
     block(protocol, src, dst, sport, dport, state, callback) {
+        if (state == true) {
+            if (sysManager.isMyServer(dst) || sysManager.isMyServer(src)) {
+                log.error("PolicyManager:block:blockself",src,dst,state);
+                callback(null);
+                return;
+            }
+        }
         if (ip.isV4Format(src) || ip.isV4Format(dst)) {
             this.block4(protocol,src,dst,sport,dport,state,callback);
         } else {
