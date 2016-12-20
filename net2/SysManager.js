@@ -25,6 +25,7 @@ var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
 var bone = require("../lib/Bone.js");
+var systemDebug = false;
 
 let DNSServers = {
     "75.75.75.75": true,
@@ -89,7 +90,38 @@ module.exports = class {
         }
     }
     
+    debugOn(callback) {
+        rclient.set("system:debug", "1", (err) => {
+            systemDebug = true;
+            callback(err);
+        });
+    }
+
+    debugOff(callback) {
+        rclient.set("system:debug", "0", (err) => {
+            systemDebug = false;
+            callback(err);
+        });
+    }
+
+    isSystemDebugOn() {
+        return systemDebug;
+    }
+
     update(callback) {
+        rclient.get("system:debug", (err, result) => {
+            if(result) {
+                if(result === "1") {
+                    systemDebug = true;
+                } else {
+                    systemDebug = false;
+                }
+            } else {
+                // by default off
+                systemDebug = false;
+            }
+        });
+
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
                 this.sysinfo = results;
