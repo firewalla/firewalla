@@ -825,6 +825,7 @@ class Host {
         }
 
         json.macVendor = this.name();
+
         return json;
     }
 
@@ -1133,6 +1134,7 @@ module.exports = class {
         if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
+        json.systemDebug = sysManager.isSystemDebugOn();
         json.version = sysManager.config.version;
         json.device = "Firewalla (beta)"
         json.publicIp = sysManager.publicIp;

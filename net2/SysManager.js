@@ -44,6 +44,22 @@ module.exports = class {
             this.multicasthigh = iptool.toLong("239.255.255.255");
             this.locals = {};
             instance = this;
+
+            sclient.on("message", function(channel, message) {
+                if(channel === "System:DebugChange") {
+                    if(message === "1") {
+                        systemDebug = true;
+                    } else if(message === "0") {
+                        systemDebug = false;
+                    } else {
+                        log.error("invalid message for channel: " + channel);
+                        return;
+                    }
+                    log.info("[pubsub] System Debug is changed to " + message);
+                }
+            });
+
+            sclient.subscribe("System:DebugChange");
         }
         this.update(null);
         return instance;
@@ -93,6 +109,7 @@ module.exports = class {
     debugOn(callback) {
         rclient.set("system:debug", "1", (err) => {
             systemDebug = true;
+            rclient.publish("System:DebugChange", "1"); 
             callback(err);
         });
     }
@@ -100,6 +117,7 @@ module.exports = class {
     debugOff(callback) {
         rclient.set("system:debug", "0", (err) => {
             systemDebug = false;
+            rclient.publish("System:DebugChange", "0"); 
             callback(err);
         });
     }
