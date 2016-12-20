@@ -816,11 +816,7 @@ class netBot extends ControllerBot {
           let ssh = new SSH('info');
 
           ssh.resetPassword((err) => {
-            var code = 200;
-            if(err) {
-              console.log("Got error when resetting ssh key: " + err);
-              code = 500;
-            }
+            
 
             let datamodel = {
                     type: 'jsonmsg',
@@ -833,8 +829,43 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
           });
         }
+
+        switch(msg.data.item) {
+          case "debugOn":
+            sysmanager.debugOn((err) => {
+              this.simpleTxData(msg, err, callback);
+            });
+            break;
+          case "debugOff":
+            sysmanager.debugOff((err) => {
+              this.simpleTxData(msg, err, callback);
+            });
+            break;
+          default:
+          // do nothing
+        }
     }
 
+    simpleTxData(msg, err, callback) {
+      this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, err), "jsondata", "", null, callback);
+    }
+
+    getDefaultResponseDataModel(msg, err) {
+      var code = 200;
+      if(err) {
+        code = 500;
+      }
+
+      let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: msg.mtype,
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: code
+            };
+      return datamodel;
+    }
 
     msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
