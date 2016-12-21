@@ -466,6 +466,28 @@ module.exports = class {
                 return;
             }
 
+            if (obj.missed_bytes>10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
+                log.error("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
+                return;
+            }
+
+            if (obj.missed_bytes>0) {
+                let adjusted = false;
+                if (obj.orig_bytes - obj.missed_bytes > 0) {
+                    obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
+                    adjusted = true;
+                }
+                if (obj.resp_bytes - obj.missed_bytes > 0) {
+                    obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
+                    adjusted = true;
+                }
+                if (adjusted == false) {
+                    log.error("Conn:Drop:MissedBytes",obj.conn_state,obj);
+                    return;
+                } else {
+                    log.error("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
+                }
+            }
 
             /*
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
