@@ -485,7 +485,7 @@ module.exports = class {
                     log.error("Conn:Drop:MissedBytes",obj.conn_state,obj);
                     return;
                 } else {
-                    log.error("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
+                    log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
                 }
             }
 
