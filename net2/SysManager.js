@@ -18,6 +18,7 @@ var iptool = require('ip');
 var os = require('os');
 var network = require('network');
 var instance = null;
+var fs = require('fs');
 
 var redis = require("redis");
 var rclient = redis.createClient();
@@ -237,11 +238,18 @@ module.exports = class {
         return false;
     }
 
+    // serial may not come back with anything for some platforms 
+
     getSysInfo(callback) {
-              callback(null,{
-                ip: this.myIp(),
-                mac: this.myMAC(),
-              });
+        let serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+        if (serial != null) {
+            serial = serial.trim();
+        }
+        callback(null,{
+           ip: this.myIp(),
+           mac: this.myMAC(),
+           serial: serial
+        });
     }
 
     // if the ip is part of our cloud, no need to log it, since it might cost space and memory
@@ -349,24 +357,31 @@ module.exports = class {
     }
 
     checkIn(callback) {
-        this.getSysInfo((err,data)=>{
-            bone.checkin(this.config,data,(err,data)=>{
-                console.log("CheckedIn:", data);
-                if (data.ddns) {
-                    this.ddns = data.ddns;
-                    rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
-                         if (callback) {
-                             callback(null,null);
-                         }
-                    });
-                }
-                if (data.publicIp) {
-                    this.publicIp = data.publicIp;
-                    rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
-                    });
-                }
+        fs.readFile('/encipher.config/license','utf8',(err,data)=> {
+            let license = null;
+            if (data) {
+                license = JSON.parse(data);
+            } 
+            this.getSysInfo((err,data)=>{
+                log.debug("SysManager:Checkin:", license, data);
+                bone.checkin(this.config,license,data,(err,data)=>{
+                    console.log("CheckedIn:", data);
+                    if (data.ddns) {
+                        this.ddns = data.ddns;
+                        rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
+                             if (callback) {
+                                 callback(null,null);
+                             }
+                        });
+                    }
+                    if (data.publicIp) {
+                        this.publicIp = data.publicIp;
+                        rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
+                        });
+                    }
+                });
             });
-        });
+       });
 
     }
 
