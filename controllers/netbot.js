@@ -617,6 +617,22 @@ class netBot extends ControllerBot {
             };
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           });
+        } else if (msg.data.item === "sshRecentPassword") {
+
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPassword((err, password) => {
+
+            var data = "";
+
+            if(err) {
+              console.log("Got error when reading password: " + err);
+              this.simpleTxData(msg, {}, err, callback);
+            } else {
+              this.simpleTxData(msg, {password: password}, err, callback);
+            }
+          });
         }
 
     }
@@ -815,7 +831,7 @@ class netBot extends ControllerBot {
           let SSH = require('../extension/ssh/ssh.js');
           let ssh = new SSH('info');
 
-          ssh.resetPassword((err) => {
+          ssh.resetRSAPassword((err) => {
             
 
             let datamodel = {
@@ -833,12 +849,19 @@ class netBot extends ControllerBot {
         switch(msg.data.item) {
           case "debugOn":
             sysmanager.debugOn((err) => {
-              this.simpleTxData(msg, err, callback);
+              this.simpleTxData(msg, null, err, callback);
             });
             break;
           case "debugOff":
             sysmanager.debugOff((err) => {
-              this.simpleTxData(msg, err, callback);
+              this.simpleTxData(msg, null, err, callback);
+            });
+            break;
+          case "resetSSHPassword":
+            let SSH = require('../extension/ssh/ssh.js');
+            let ssh = new SSH('info');
+            ssh.resetRandomPassword((err) => {
+              this.simpleTxData(msg, null, err, callback);
             });
             break;
           default:
@@ -846,11 +869,11 @@ class netBot extends ControllerBot {
         }
     }
 
-    simpleTxData(msg, err, callback) {
-      this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, err), "jsondata", "", null, callback);
+    simpleTxData(msg, data, err, callback) {
+      this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, data, err), "jsondata", "", null, callback);
     }
 
-    getDefaultResponseDataModel(msg, err) {
+    getDefaultResponseDataModel(msg, data, err) {
       var code = 200;
       if(err) {
         code = 500;
@@ -862,7 +885,8 @@ class netBot extends ControllerBot {
                     id: uuid.v4(),
                     expires: Math.floor(Date.now() / 1000) + 60 * 5,
                     replyid: msg.id,
-                    code: code
+                    code: code,
+                    data: data
             };
       return datamodel;
     }

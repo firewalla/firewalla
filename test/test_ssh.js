@@ -22,11 +22,11 @@ ssh.generateRSAPair((err) => {
       expect(err).to.not.be.ok;
 
       // a summarized action
-      ssh.resetPassword((err) => {
+      ssh.resetRSAPassword((err) => {
         expect(err).to.not.be.ok;
         ssh.getPrivateKey((err, data) => {
           expect(err).to.not.be.ok;
-          console.log(data);
+          // console.log(data);
         });
       });
     });    
@@ -34,6 +34,18 @@ ssh.generateRSAPair((err) => {
 
 });
 
+
+// test password
+ssh.resetRandomPassword((result) => {
+  expect(result).to.be.null;
+  ssh.getPassword((err, password) => {
+    expect(err).to.be.null;
+    ssh.verifyPassword(password, (err, result) => {
+      expect(err).to.be.null;
+      expect(result).to.be.true;
+    })
+  })
+})
 
 
 setTimeout(function() {
