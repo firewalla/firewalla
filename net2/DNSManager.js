@@ -268,7 +268,7 @@ module.exports = class DNSManager {
             dnsdata = {};
         }
 
-        let hashdebug = sysManager.debugState("FW_HASHDEBUG");
+        let hashdebug = sysManager.isSystemDebugOn();
         console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
