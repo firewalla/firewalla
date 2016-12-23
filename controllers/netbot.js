@@ -857,6 +857,13 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, null, err, callback);
             });
             break;
+          case "resetSSHPassword":
+            let SSH = require('../extension/ssh/ssh.js');
+            let ssh = new SSH('info');
+            ssh.resetRandomPassword((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+            break;
           default:
           // do nothing
         }
