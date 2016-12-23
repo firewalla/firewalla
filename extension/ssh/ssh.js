@@ -47,7 +47,9 @@ module.exports = class {
         timestamp: new Date()
       };
 
-      jsonfile.writeFile(tempSSHPasswordLocation, json, {spaces: 2}, callback);
+      jsonfile.writeFile(tempSSHPasswordLocation, json, {spaces: 2}, (err)=>{
+          callback(err,password); 
+      });
     }
 
     getPassword(callback) {
