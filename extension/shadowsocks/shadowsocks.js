@@ -21,6 +21,7 @@ var sysManager = new SysManager('info');
 var Firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
 var firewalla = new Firewalla('/path/to/config', 'info');
+var key = require('../common/key.js');
 var fHome = firewalla.getFirewallaHome();
 
 var later = require('later');
@@ -39,7 +40,6 @@ var jsonfile = require('jsonfile');
 var configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
 var ttlExpire = 60*60*12;
-var seed = 11;
 
 module.exports = class {
     constructor(loglevel) {
@@ -198,21 +198,6 @@ module.exports = class {
         });
     }
 
-    random() {
-        var x = Math.sin(seed++) * 10000;
-        return x - Math.floor(x);
-    }
-
-    generatePassword(len) {
-        var length = len,
-            charset = "0123456789abcdefghijklmnopqrstuvwxyz",
-            retVal = "";
-        for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(this.random() * n));
-        }
-        return retVal;
-    }
-
     getConfigFileLocation() {
         return configFileLocation;
     }
@@ -236,7 +221,7 @@ module.exports = class {
     
     refreshConfig(password) {
         if(password == null) {
-            password = this.generatePassword(8);
+            password = key.randomPassword(8);
         }
         let config = JSON.parse(fs.readFileSync(fHome + '/extension/shadowsocks/ss.config.json.template', 'utf8'));
         config.server = sysManager.myIp();
