@@ -357,14 +357,14 @@ module.exports = class {
     }
 
     checkIn(callback) {
-        fs.readFile('/encipher.config/license','utf8',(err,data)=> {
+        fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
             let license = null;
-            if (data) {
-                license = JSON.parse(data);
+            if (_data) {
+                license = JSON.parse(_data);
             } 
-            this.getSysInfo((err,data)=>{
-                log.debug("SysManager:Checkin:", license, data);
-                bone.checkin(this.config,license,data,(err,data)=>{
+            this.getSysInfo((err,_sysinfo)=>{
+                log.debug("SysManager:Checkin:", license, _sysinfo);
+                bone.checkin(this.config,license,_sysinfo,(err,data)=>{
                     console.log("CheckedIn:", data);
                     if (data.ddns) {
                         this.ddns = data.ddns;
