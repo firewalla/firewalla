@@ -39,6 +39,17 @@ let bd = new BroDetector("bro_detector", config, "info");
 var Discovery = require("./Discovery.js");
 let d = new Discovery("nmap", config, "info");
 
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('debug');
+
+resetRandomPassword((err) => {
+    if(err) {
+        log.error("Failed to reset ssh password");
+    } else {
+        log.info("A new random SSH password is used!");
+    }
+})
+
 // make sure there is at least one usable enternet
 d.discoverInterfaces(function(err, list) {
     var failure = 1;
