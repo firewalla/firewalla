@@ -42,7 +42,7 @@ let d = new Discovery("nmap", config, "info");
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('debug');
 
-resetRandomPassword((err) => {
+ssh.resetRandomPassword((err) => {
     if(err) {
         log.error("Failed to reset ssh password");
     } else {
