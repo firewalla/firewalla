@@ -1106,26 +1106,40 @@ module.exports = class {
                         if (this.config.bro.notice.expires) {
                             rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
                         }
-                        this.publisher.publish("DiscoveryEvent", "Notice:Detected", obj.src, obj);
-                        if (obj.dst) {
-                            this.publisher.publish("DiscoveryEvent", "Notice:Detected", obj.dst, obj);
-                        }
                     }
                 });
+                let lh = null;
+                if (sysManager.isLocalIP(obj.src)) {
+                    lh = obj.src;
+                } else if (sysManager.isLocalIP(obj.dst)) {
+                    lh = obj.dst;
+                } else {
+                    lh = "0.0.0.0";
+                }
+        
+                let actionobj = {
+                     title: obj.msg,
+                     actions: ["ignore"],
+                     src: obj.src, 
+                     dst: obj.dst,
+                     note: obj.note,
+                     target: lh,
+                     msg: obj.msg,
+                     obj: obj
+                };
 
-                // write this to an alarm
-                        let actionobj = {
-                            title: "Security Notice",
-                            actions: ["ignore"],
-                            src: obj.src,
-                            dst: obj.dst,
-                            target: obj.src,
-                        };
-                        /*
-                        alarmManager.alarm("0.0.0.0","notice", 'info', '0', obj, actionobj, (err,obj,action)=> {
+                dnsManager.resolvehost(obj.src,(err,__src)=>{
+                    dnsManager.resolvehost(obj.dst,(err,__dst)=>{
+                        actionobj.shname =dnsManager.name(__src);
+                        actionobj.dhname =dnsManager.name(__dst);
+                        alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
+                            if (obj != null) {
+                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
+                            }
                         });
-                        */
-                
+                    }); 
+                }); 
+
             } else {
                 log.debug("Notice:Drop", JSON.parse(data));
             }
