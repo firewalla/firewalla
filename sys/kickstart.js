@@ -48,6 +48,7 @@ var utils = require('../lib/utils.js');
 var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
+const license = require('../util/license.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -59,6 +60,7 @@ if (program.config == null) {
     console.log("config file is required");
     process.exit(1);
 }
+let _license = license.getLicense();
 
 var configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
@@ -115,7 +117,12 @@ function pad(value, length) {
 
 
 function generateEncryptionKey() {
-    var cpuid = utils.getCpuId();
+    var cpuid = null;
+    if (_license && _license.SUUID) {
+        cpuid = _license.SUUID;
+    } else {
+        cpuid = utils.getCpuId();
+    }
     if (cpuid) {
         var seed = mathuuid.uuidshort(32 - cpuid.length);
         var key = cpuid + seed;
