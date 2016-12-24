@@ -225,6 +225,9 @@ module.exports = class DNSManager {
     }
 
     resolvehost(ip, callback) {
+        if (ip == null){
+            callback(null,null);
+        }
         if (sysManager.isLocalIP(ip)) {
             this.resolveLocalHost(ip, callback);
         } else {
@@ -393,6 +396,9 @@ module.exports = class DNSManager {
     }
 
     name(o) {
+        if (o==null) {
+            return null;
+        }
         if (o.name) {
             return o.name;
         }

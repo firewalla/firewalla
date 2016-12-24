@@ -59,11 +59,23 @@ module.exports = class {
                     log.info("[pubsub] System Debug is changed to " + message);
                 }
             });
-
             sclient.subscribe("System:DebugChange");
+ 
+            this.delayedActions();
         }
         this.update(null);
         return instance;
+    }
+
+    delayedActions() {
+        setTimeout(()=>{
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPassword((err, password) => {
+              this.sshPassword = password; 
+          });
+        },2000); 
     }
 
     version() {
@@ -228,6 +240,10 @@ module.exports = class {
 
     mySubnet() {
         return this.monitoringInterface().subnet;
+    }
+
+    mySSHPassword() {
+        return this.sshPassword;
     }
 
     // hack ... 

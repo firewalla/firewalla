@@ -42,13 +42,16 @@ let d = new Discovery("nmap", config, "info");
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('debug');
 
-ssh.resetRandomPassword((err) => {
-    if(err) {
-        log.error("Failed to reset ssh password");
-    } else {
-        log.info("A new random SSH password is used!");
-    }
-})
+if (process.env.FWPRODUCTION) {
+    ssh.resetRandomPassword((err,password) => {
+        if(err) {
+            log.error("Failed to reset ssh password");
+        } else {
+            log.info("A new random SSH password is used!");
+            sysManager.sshPassword = password;
+        }
+    })
+}
 
 // make sure there is at least one usable enternet
 d.discoverInterfaces(function(err, list) {
