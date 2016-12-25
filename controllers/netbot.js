@@ -865,7 +865,8 @@ class netBot extends ControllerBot {
           case "resetSSHPassword":
             let SSH = require('../extension/ssh/ssh.js');
             let ssh = new SSH('info');
-            ssh.resetRandomPassword((err) => {
+            ssh.resetRandomPassword((err,password) => {
+              sysManager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
             break;
