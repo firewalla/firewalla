@@ -11,7 +11,7 @@ fi
 rm -r -f /blog/*
 rm -r -f /bspool/*
 umount /bspool
-mount -t tmpfs -o size=70m tmpfs /bspool
+mount -t tmpfs -o size=30m tmpfs /bspool
 cd /home/pi/firewalla
 cd .git
 sudo chown -R pi *
