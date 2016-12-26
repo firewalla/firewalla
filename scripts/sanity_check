@@ -1,0 +1,39 @@
+#!/bin/bash
+
+declare -a FILES_SHOULD_EXISTS=("/encipher.config/netbot.config" 
+	"/sys/block/mmcblk0/device/serial")
+
+declare -a COMMANDS_SHOULD_EXISTS=("/sbin/iptables"
+	"/usr/bin/redis-server")
+
+FAILED=0
+
+for file in "${FILES_SHOULD_EXISTS[@]}"
+do
+	if [[ ! -f $file ]]; then
+		echo "ERROR: $file not exist"
+		FAILED=1
+	else
+		echo "PASS: File $file"
+	fi
+   # or do whatever with individual element of the array
+done
+
+for cmd in "${COMMANDS_SHOULD_EXISTS[@]}"
+do
+	if [[ ! -f $cmd ]]; then
+		echo "ERROR: $cmd not exist"
+		FAILED=1
+	else
+		echo "PASS: Command $cmd"
+	fi
+   # or do whatever with individual element of the array
+done
+
+if [[ $FAILED -eq 1 ]]; then
+	echo "Santity check failed"
+	exit 1
+else
+	echo "Santity check passed"
+	exit 0
+fi

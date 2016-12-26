@@ -3,17 +3,27 @@
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
+export NODE_MODULE_REPO=https://github.com/MelvinTo/firewalla_nodemodules.git
+export NODE_PATH=~/.node_modules:$NODE_PATH
+
+mkdir -p "$HOME/.firewalla"
+sudo rm -r -f /tmp/*
+sudo rm -r -f /home/pi/.forever/*
+cd $FIREWALLA_HOME
+branch=$(git rev-parse --abbrev-ref HEAD)
 
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
       if [[ ! -d $FW_NODE_MODULES_PATH ]]; then
         cd
-        git clone https://github.com/MelvinTo/firewalla_nodemodules.git $FW_NODE_MODULES_PATH
+        # try again if failed, in case network issue
+        git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH || git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         cd - &>/dev/null
       fi
-      if [[ -f $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION ]]; then
+      if [[ -d $FW_NODE_MODULES_PATH && -f $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION ]]; then
         cd $FW_NODE_MODULES_PATH
+        git fetch origin  || git fetch origin
         git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
         git clean -xdf
         cd - &>/dev/null
@@ -21,12 +31,9 @@ function update_node_modules {
   fi
 }
 
-export NODE_PATH=~/.node_modules:$NODE_PATH
-mkdir -p "$HOME/.firewalla"
-sudo rm -r -f /tmp/*
-sudo rm -r -f /home/pi/.forever/*
-cd $FIREWALLA_HOME
-branch=$(git rev-parse --abbrev-ref HEAD)
+# update ~/.node_modules
+update_node_modules
+
 cd /tmp 
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
   if [[ $branch =~ release.* ]]
@@ -83,9 +90,6 @@ check_upgrade passport-http-bearer 1.0.1
 check_upgrade debug 2.2.0
 check_upgrade serve-favicon 2.3.0
 check_upgrade jade 1.11.0
-
-# update ~/.node_modules
-update_node_modules
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git

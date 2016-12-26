@@ -233,8 +233,8 @@ class netBot extends ControllerBot {
         });
     }
 
-    constructor(config, fullConfig, eptcloud, groups, gid, debug) {
-        super(config, fullConfig, eptcloud, groups, gid, debug);
+    constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
+        super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
         this.bot = new builder.TextBot();
         //      this.dialog = new builder.LuisDialog(config.dialog.api);
         this.dialog = new builder.CommandDialog();
@@ -255,6 +255,12 @@ class netBot extends ControllerBot {
 
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
+
+        // no subscription for api mode
+        if(apiMode) {
+          console.log("Skipping event subscription during API mode.");
+          return;
+        }
 
         let c = require('../net2/MessageBus.js');
         this.subscriber = new c('debug');

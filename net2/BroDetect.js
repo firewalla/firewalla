@@ -471,6 +471,17 @@ module.exports = class {
                 return;
             }
 
+            if (obj.proto && obj.proto=="tcp") {
+                if (obj.resp_bytes>1000000 && obj.orig_bytes==0 && obj.conn_state=="SF") {
+                    log.error("Conn:Adjusted:TCPZero",obj.conn_state,obj);
+                    return;
+                }
+                else if (obj.orig_bytes>1000000 && obj.resp_bytes ==0 && obj.conn_state=="SF") {
+                    log.error("Conn:Adjusted:TCPZero",obj.conn_state,obj);
+                    return;
+                }
+            }
+
             if (obj.missed_bytes>0) {
                 let adjusted = false;
                 if (obj.orig_bytes - obj.missed_bytes > 0) {
