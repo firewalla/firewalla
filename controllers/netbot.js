@@ -252,7 +252,9 @@ class netBot extends ControllerBot {
             sysmanager.update((err, data) => {});
         },1000*60*60*10);
 
-
+        setInterval(()=>{
+            global.gc();
+        },1000*60);
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
 

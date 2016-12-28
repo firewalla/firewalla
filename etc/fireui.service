@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla UI
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/controllers
+ExecStart=/bin/sh -c '/usr/bin/nodejs --expose-gc MomBot.js --lconfig /home/pi/.firewalla/ui.conf --config /encipher.config/netbot.config > /home/pi/.forever/ui.log 2>&1'
+
+[Install]
+WantedBy=multi-user.target

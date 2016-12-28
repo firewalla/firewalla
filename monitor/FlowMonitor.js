@@ -20,9 +20,6 @@ var network = require('network');
 var redis = require("redis");
 var rclient = redis.createClient();
 
-var SysManager = require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
-
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
