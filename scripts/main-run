@@ -111,7 +111,7 @@ if [[ $branch =~ release.* ]]
     check_upgrade jade 1.11.0
     echo "Master branch running api"      
     cd api
-       forever start --uid api bin/www
+       sudo systemctl start fireapi
     cd ..
 fi
 
