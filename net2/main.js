@@ -131,7 +131,12 @@ setInterval(()=>{
 
 
 setInterval(()=>{
-    global.gc();
+    try {
+       if (global.gc) {
+           global.gc();
+       }
+    } catch(e) {
+    }
 },1000*60);
 
 

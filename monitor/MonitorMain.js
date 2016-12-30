@@ -28,10 +28,20 @@ console.log("===================================================================
 flowMonitor.run();
 setInterval(() => {
     flowMonitor.run("dlp",tick);
-    global.gc();
+    try {
+      if (global.gc) {
+       global.gc();
+      }
+    } catch(e) {
+    }
 }, tick * 1000);
 
 setInterval(()=>{
     flowMonitor.run("detect",60);
-    global.gc();
+    try {
+      if (global.gc) {
+       global.gc();
+      }
+    } catch(e) {
+    }
 }, 60*1000);

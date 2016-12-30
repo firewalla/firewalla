@@ -253,7 +253,12 @@ class netBot extends ControllerBot {
         },1000*60*60*10);
 
         setInterval(()=>{
-            global.gc();
+            try {
+              if (global.gc) {
+                global.gc();
+              }
+            } catch(e) {
+            }
         },1000*60);
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
