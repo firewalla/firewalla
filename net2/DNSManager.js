@@ -508,22 +508,25 @@ module.exports = class DNSManager {
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
 
-            if (o.du && o.du<0.0001) {
-                 //console.log("### NOT LOOKUP 1:",o);
-                 cb();
-                 return;
+            if (o.fd == "in") {
+                if (o.du && o.du<0.0001) {
+                     //console.log("### NOT LOOKUP 1:",o);
+                     cb();
+                     return;
+                }
+                if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
+                     //console.log("### NOT LOOKUP 2:",o);
+                     cb();
+                     return;
+                }
+                if (o.rb && o.rb <1500) { // used to be 2500
+                     //console.log("### NOT LOOKUP 3:",o);
+                     cb();
+                     return;
+                }
+            } else {
             }
-            if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
-                 //console.log("### NOT LOOKUP 2:",o);
-                 cb();
-                 return;
-            }
-            if (o.rb && o.rb <2500) {
-                 //console.log("### NOT LOOKUP 3:",o);
-                 cb();
-                 return;
-            }
-            
+
             resolve++;
             this.resolveAny(o[ipsrc],o, (err, data, local) => {
                 if (data) {

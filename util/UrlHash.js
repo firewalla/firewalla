@@ -31,6 +31,9 @@ function canonicalizeAndHash(url) {
         let hstr = [eCURL[i], h.prefix.toString('base64'),h.hash.toString('base64')];
         _hashes.push(hstr);
     }
+    _hashes.sort((a,b)=>{
+        return a[0].length-b[0].length;
+    });
     return _hashes;
 }
 
