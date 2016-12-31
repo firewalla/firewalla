@@ -783,7 +783,7 @@ class netBot extends ControllerBot {
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
             console.log("Reseting");
-            let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-data', (err, out, code) => {
+            let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'init',

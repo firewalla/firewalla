@@ -1,8 +1,9 @@
 #!/bin/bash -
 forever stop main
-forever stop monitor
-forever stop ui
-forever stop api
+sudo servcie firemon stop
+sudo servcie fireui stop
+sudo servcie fireapi stop
+sudo servcie firekick stop
 sync
 redis-cli flushall
 sudo rm -r -f /tmp/*
@@ -10,7 +11,10 @@ sudo rm -r -f ~/.forever/*
 sudo rm -r -f /blog/*
 sudo rm -r -f /bspool/*
 sudo rm -r -f ~/ovpns/*
+#sudo rm -r -f ~/.encipher/*
+#sudo rm -r -f ~/.firewalla/*
 sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
+sync
 sync
 sudo reboot
 
