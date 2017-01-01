@@ -48,6 +48,8 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
 fi
+#For testing only
+#export FWPRODUCTION=$branch
 nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
@@ -97,16 +99,20 @@ fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 cd net2
-forever start --uid main main.js
+forever start  --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
 cd sys
-forever start --uid ui kickstart.js --config /encipher.config/netbot.config
+#forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
+#forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
+sudo systemctl start firekick
 cd ..
 cd monitor
-forever start --uid monitor MonitorMain.js 
+#forever start --uid monitor -c "/usr/bin/node --expose-gc" ./MonitorMain.js 
+#forever start --uid monitor MonitorMain.js 
+sudo systemctl start firemon
 cd ..
 cd api
-   forever start --uid api bin/www
+sudo systemctl start fireapi
 cd ..
 
 sudo /usr/local/bro/bin/broctl cron

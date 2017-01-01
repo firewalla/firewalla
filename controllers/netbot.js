@@ -252,7 +252,14 @@ class netBot extends ControllerBot {
             sysmanager.update((err, data) => {});
         },1000*60*60*10);
 
-
+        setInterval(()=>{
+            try {
+              if (global.gc) {
+                global.gc();
+              }
+            } catch(e) {
+            }
+        },1000*60);
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
 
@@ -782,7 +789,7 @@ class netBot extends ControllerBot {
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
             console.log("Reseting");
-            let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-data', (err, out, code) => {
+            let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'init',

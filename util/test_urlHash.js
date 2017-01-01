@@ -21,6 +21,11 @@ console.log(FlowUtil.hashApp("www.wechat.com"));
 console.log(FlowUtil.hashApp("123.www.netflix.com"));
 console.log(FlowUtil.hashIp("10.0.0.1"));
 
+let hash = require("./Hashes.js");
+console.log(hash.getHashObject("abc"));
+console.log(hash.getNormalizedPrefix("abc"));
+
+
 /*
   it('should work with http://a.b.c/1/2.html?param=1', function() {
     expect(_.difference(

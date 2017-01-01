@@ -481,6 +481,22 @@ module.exports = class {
                     return;
                 }
             }
+            if (obj.resp_bytes >100000000) {
+                if (obj.duration<1) {
+                    log.error("Conn:Burst:Drop",obj);
+                    return;
+                }
+                let rate = obj.resp_bytes/obj.duration;
+                if (rate>20000000) {
+                    log.error("Conn:Burst:Drop",rate,obj);
+                    return;
+                } 
+                let packet = obj.resp_bytes/resp_pkts;
+                if (packet >10000000) {
+                    log.error("Conn:Burst:Drop2",packet,obj);
+                    return;
+                }
+            }
 
             if (obj.missed_bytes>0) {
                 let adjusted = false;

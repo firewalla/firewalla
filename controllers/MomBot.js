@@ -29,6 +29,7 @@ var commondialog = require('../lib/commondialog.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration')
+    .option('--lconfig [lconfig]', 'local configuration')
     .option('--name [name]', '(optional) name')
     .option('--endpoint_name [endpoint_name]', '(optional) endpoint')
     .option('--gid [gid]', '(optional) group id')
@@ -67,6 +68,12 @@ if (config.gid != null) {
     gid = config.gid;
 } else if (program.gid != null) {
     gid = program.gid;
+}
+
+if (program.lconfig) {
+    let f = fs.readFileSync(program.lconfig,'utf8');
+    let parsed = JSON.parse(f);
+    gid = parsed.gid;
 }
 
 if (gid == null) {
