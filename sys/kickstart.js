@@ -48,6 +48,7 @@ var utils = require('../lib/utils.js');
 var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
+const license = require('../util/license.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -59,6 +60,7 @@ if (program.config == null) {
     console.log("config file is required");
     process.exit(1);
 }
+let _license = license.getLicense();
 
 var configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
@@ -72,7 +74,6 @@ if (!config.controllers) {
     console.log("Controller missing from configuration file");
     process.exit(1);
 }
-
 
 var eptname = config.endpoint_name;
 if (config.endpoint_name != null) {
@@ -115,7 +116,12 @@ function pad(value, length) {
 
 
 function generateEncryptionKey() {
-    var cpuid = utils.getCpuId();
+    var cpuid = null;
+    if (_license && _license.SUUID) {
+        cpuid = _license.SUUID;
+    } else {
+        cpuid = utils.getCpuId();
+    }
     if (cpuid) {
         var seed = mathuuid.uuidshort(32 - cpuid.length);
         var key = cpuid + seed;
@@ -210,6 +216,9 @@ function openInvite(group,gid,ttl) {
                             clearInterval(timer);
                             intercomm.stop(service);
                             intercomm.bstop();
+                            console.log("EXIT KICKSTART");
+                            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                            });
                         }
                     });
                 }, adminInviteInterval * 1000);
@@ -317,6 +326,15 @@ function launchService(gid, callback) {
 
 }
 
+function launchService2(gid,callback) {
+  // fs.writeFileSync('/home/pi/.firewalla/ui.conf',"Environment=GID="+gid+"\n"+"Environment=CONF="+program.config+"\n",'utf-8');
+   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+  // require('child_process').exec("forever start --uid ui -a -c '/usr/bin/node --expose-gc' ../controllers/MomBot.js --gid "+gid+" --config "+program.config  , (err, out, code) => {
+ //  });
+   require('child_process').exec("sudo systemctl start fireui" , (err, out, code) => {
+   });
+}
+
 eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
     if (err == null) {
         initializeGroup(function (err, gid) {
@@ -326,7 +344,7 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
                     if (status) {
                         intercomm.stop(service);
                         intercomm.bye();
-                        launchService(groupid, null);
+                        launchService2(groupid, null);
                     }
                 });
             } else {

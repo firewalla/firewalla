@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla Monitor
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/monitor
+ExecStart=/bin/sh -c '/usr/bin/node --expose-gc MonitorMain.js  >> /home/pi/.forever/monitor.log  2>&1'
+
+[Install]
+WantedBy=multi-user.target

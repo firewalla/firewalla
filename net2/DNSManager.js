@@ -175,9 +175,9 @@ module.exports = class DNSManager {
             } else {
                 let key1 = "dns:ip:" + ip;
                 //rclient.hgetall(key1, (err, data) => {
-                    if (ddata && ddata._intel) { 
-                        ddata.intel = JSON.parse(ddata._intel);
-                    }
+    //                if (ddata && ddata._intel) { 
+                  //      ddata.intel = JSON.parse(ddata._intel);
+                 //   }
                     if (ddata != null) {
                         let d = null;
                         if (O != null) {
@@ -192,6 +192,8 @@ module.exports = class DNSManager {
                                 name: ddata.host
                             };
                         }
+                        callback(null,d,ddata);
+/*
                         rclient.hgetall(ddata.host, (err, data2) => {
                             if (data2 != null) {
                                 if (O != null) {
@@ -211,9 +213,11 @@ module.exports = class DNSManager {
                                 callback(err, d,ddata);
                             }
                         });
+*/
+     
 
                     } else {
-                        callback(null, null);
+                        callback(null, null,null);
                     }
                 //});
             }
@@ -221,6 +225,9 @@ module.exports = class DNSManager {
     }
 
     resolvehost(ip, callback) {
+        if (ip == null){
+            callback(null,null);
+        }
         if (sysManager.isLocalIP(ip)) {
             this.resolveLocalHost(ip, callback);
         } else {
@@ -264,35 +271,60 @@ module.exports = class DNSManager {
             dnsdata = {};
         }
 
-        console.log("######################### CACHE MISS ON IP",ip,dnsdata);
+        let hashdebug = sysManager.isSystemDebugOn();
+        console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
+        let _iplist = [];
+        let _alist = [];
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
             for (let host in flow.af) {
                 iplist.push(host);
+                _iplist = _iplist.concat(flowUtil.hashHost(host));
+                _alist = flowUtil.hashApp(host);
             }
         } else if (dnsdata && dnsdata.host) {
             iplist.push(dnsdata.host);
+            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host));
+            _alist = flowUtil.hashApp(dnsdata.host);
         } 
 
         iplist.push(ip);
+        _iplist = _iplist.concat(flowUtil.hashHost(ip));
 
         if (iplist.indexOf("firewalla.encipher.io") > -1) {
            log.debug("###Intel:DNS:SkipSelf",iplist,flow);
            callback(null,null);
            return; 
         }
+      
 
-        let _flow = flowUtil.hashFlow(flow);
+        let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
-        flowlist.push({iplist:iplist,flow:_flow});
+        //flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+        if (hashdebug == false) {
+            flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+        } else {
+            //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
+            flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
+            console.log("######## DEBUG ",JSON.stringify(flowlist));
+        }
 
         console.log("######## Sending:",JSON.stringify(flowlist));
 
-        bone.intel("*","check",{flowlist:flowlist},(err,data)=> {
+        bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
-               //console.log("##### MISS",err,data);
-               callback(err,null);
+               console.log("##### MISS",err,data);
+               let intel = {ts:Math.floor(Date.now()/1000)};
+               intel.rcount = iplist.length;
+               let key = "dns:ip:"+ip;
+               //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+               dnsdata.intel = intel;
+               dnsdata._intel = JSON.stringify(intel);
+               rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
+                   rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                   callback(err,null);
+               });
                return;
            }
            let rintel = null;
@@ -315,8 +347,6 @@ module.exports = class DNSManager {
                       cb();
                   });
               } else {
-                  // Inert code to write empty intel ... this will prevent future checks
-                  // this ts field is also useful here if set 
                   let intel = {ts:Math.floor(Date.now()/1000)};
                   intel.rcount = iplist.length;
                   let key = "dns:ip:"+ip;
@@ -366,6 +396,9 @@ module.exports = class DNSManager {
     }
 
     name(o) {
+        if (o==null) {
+            return null;
+        }
         if (o.name) {
             return o.name;
         }
@@ -475,22 +508,25 @@ module.exports = class DNSManager {
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
 
-            if (o.du && o.du<0.0001) {
-                 //console.log("### NOT LOOKUP 1:",o);
-                 cb();
-                 return;
+            if (o.fd == "in") {
+                if (o.du && o.du<0.0001) {
+                     //console.log("### NOT LOOKUP 1:",o);
+                     cb();
+                     return;
+                }
+                if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
+                     //console.log("### NOT LOOKUP 2:",o);
+                     cb();
+                     return;
+                }
+                if (o.rb && o.rb <1500) { // used to be 2500
+                     //console.log("### NOT LOOKUP 3:",o);
+                     cb();
+                     return;
+                }
+            } else {
             }
-            if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
-                 //console.log("### NOT LOOKUP 2:",o);
-                 cb();
-                 return;
-            }
-            if (o.rb && o.rb <2500) {
-                 //console.log("### NOT LOOKUP 3:",o);
-                 cb();
-                 return;
-            }
-            
+
             resolve++;
             this.resolveAny(o[ipsrc],o, (err, data, local) => {
                 if (data) {
