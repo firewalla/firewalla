@@ -261,10 +261,14 @@ module.exports = class {
         if (serial != null) {
             serial = serial.trim();
         }
-        callback(null,{
-           ip: this.myIp(),
-           mac: this.myMAC(),
-           serial: serial
+        let stat = require("../util/Stats.js");
+        stat.sysmemory(null,(err,data)=>{
+            callback(null,{
+               ip: this.myIp(),
+               mac: this.myMAC(),
+               serial: serial,
+               memory: data
+            });
         });
     }
 
