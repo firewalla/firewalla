@@ -51,7 +51,13 @@ var productionDebug = {
   
 
 var debugMapper = devDebug;
+
 if (process.env.FWPRODUCTION) {
+    debugMapper = productionDebug; 
+    console.log("FWDEBUG SET TO PRODUCTION");
+}
+
+if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
     debugMapper = productionDebug; 
     console.log("FWDEBUG SET TO PRODUCTION");
 }

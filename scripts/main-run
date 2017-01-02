@@ -13,15 +13,20 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     cat $FWPRODUCTION > /tmp/FWPRODUCTION
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
 fi
+
 #For testing only
 #export FWPRODUCTION=$branch
+#cat $FWPRODUCTION > /tmp/FWPRODUCTION
+
 nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 cd $FIREWALLA_HOME
