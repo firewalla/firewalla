@@ -19,6 +19,13 @@ function trim_exec(cmd, cb) {
 }
 
 setTimeout(function() {
+    expect(sysManager.isSystemDebugOn()).to.be.false;
+    sysManager.debugOn((err) => {
+        expect(sysManager.isSystemDebugOn()).to.be.true;
+        sysManager.debugOff((err) => {
+            expect(sysManager.isSystemDebugOn()).to.be.false;
+        });
+    });
     let ip_cmd = "/sbin/ifconfig | grep -Eo 'inet (addr:)?([0-9]*\\.){3}[0-9]*' | grep -Eo '([0-9]*\\.){3}[0-9]*' | grep -v '127.0.0.1' | grep -v '10.8.0'"
     trim_exec(ip_cmd, function(err,output) { 
         expect(output).to.equal(sysManager.myIp());   

@@ -2,10 +2,11 @@
 sync
 
 mem=$(free -m | awk '/-/{print $4}')
-(( mem <= 80 )) && logger "Memory reboot"+$mem
-(( mem <= 80 )) && sudo reboot
+(( mem <= 511 )) && logger "Memeory Critical Simulation "+$mem
+(( mem <= 40 )) && logger "Memory reboot"+$mem
+(( mem <= 40 )) && sudo reboot
 
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
-(( disk <= 10000 )) && logger "Disk Delete "+$disk
-(( disk <= 10000 )) && sudo /usr/local/bro/bin/broctl cron
-(( disk <= 10000 )) && sudo rm -r -f /bspool/bro/*-*_*.log
+(( disk <= 5000 )) && logger "Disk Delete "+$disk
+(( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
+(( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log

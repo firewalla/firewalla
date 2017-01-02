@@ -578,6 +578,8 @@ module.exports = class {
     // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
 
     addV6Host(v6addr, mac, callback) {
+        require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
+        });
         log.info("Discovery:AddV6Host:", v6addr, mac);
         mac = mac.toUpperCase();
         let v6key = "host:ip6:" + v6addr;

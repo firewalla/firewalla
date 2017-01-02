@@ -334,6 +334,7 @@ module.exports = class {
     }
 
     //{"ts":1464066236.121734,"uid":"CnCRV73J3F0nhWtBPb","id.orig_h":"192.168.2.221","id.orig_p":5353,"id.resp_h":"224.0.0.251","id.resp_p":5353,"proto":"udp","trans_id":0,"query":"jianyu-chens-iphone-6.local","qclass":32769,"qclass_name":"qclass-32769","qtype":255,"qtype_name":"*","rcode":0,"rcode_name":"NOERROR","AA":true,"TC":false,"RD":false,"RA":false,"Z":0,"answers":["jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local"],"TTLs":[120.0,120.0,120.0,120.0],"rejected":false}
+//{"ts":1482189510.68758,"uid":"Cl7FVE1EnC0fBhL8l7","id.orig_h":"2601:646:9100:74e0:e43e:adc7:6d48:76da","id.orig_p":53559,"id.resp_h":"2001:558:feed::1","id.resp_p":53,"proto":"udp","trans_id":12231,"query":"log-rts01-iad01.devices.nest.com","rcode":0,"rcode_name":"NOERROR","AA":false,"TC":false,"RD":false,"RA":true,"Z":0,"answers":["devices-rts01-production-331095621.us-east-1.elb.amazonaws.com","107.22.178.96","50.16.214.117","184.73.190.206","23.21.51.61"],"TTLs":[2.0,30.0,30.0,30.0,30.0],"rejected":false}
 
     processDnsData(data) {
         try {
@@ -465,6 +466,71 @@ module.exports = class {
                 return;
             }
 
+            if (obj.missed_bytes>10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
+                log.error("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
+                return;
+            }
+
+            if (obj.proto && obj.proto=="tcp") {
+                if (obj.resp_bytes>1000000 && obj.orig_bytes==0 && obj.conn_state=="SF") {
+                    log.error("Conn:Adjusted:TCPZero",obj.conn_state,obj);
+                    return;
+                }
+                else if (obj.orig_bytes>1000000 && obj.resp_bytes ==0 && obj.conn_state=="SF") {
+                    log.error("Conn:Adjusted:TCPZero",obj.conn_state,obj);
+                    return;
+                }
+            }
+            if (obj.resp_bytes >100000000) {
+                if (obj.duration<1) {
+                    log.error("Conn:Burst:Drop",obj);
+                    return;
+                }
+                let rate = obj.resp_bytes/obj.duration;
+                if (rate>20000000) {
+                    log.error("Conn:Burst:Drop",rate,obj);
+                    return;
+                } 
+                let packet = obj.resp_bytes/resp_pkts;
+                if (packet >10000000) {
+                    log.error("Conn:Burst:Drop2",packet,obj);
+                    return;
+                }
+            }
+            if (obj.orig_bytes >100000000) {
+                if (obj.duration<1) {
+                    log.error("Conn:Burst:Drop:Orig",obj);
+                    return;
+                }
+                let rate = obj.orig_bytes/obj.duration;
+                if (rate>20000000) {
+                    log.error("Conn:Burst:Drop:Orig",rate,obj);
+                    return;
+                }
+                let packet = obj.orig_bytes/orig_pkts;
+                if (packet >10000000) {
+                    log.error("Conn:Burst:Drop2:Orig",packet,obj);
+                    return;
+                }
+            }
+
+            if (obj.missed_bytes>0) {
+                let adjusted = false;
+                if (obj.orig_bytes - obj.missed_bytes > 0) {
+                    obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
+                    adjusted = true;
+                }
+                if (obj.resp_bytes - obj.missed_bytes > 0) {
+                    obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
+                    adjusted = true;
+                }
+                if (adjusted == false) {
+                    log.error("Conn:Drop:MissedBytes",obj.conn_state,obj);
+                    return;
+                } else {
+                    log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
+                }
+            }
 
             /*
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
@@ -1083,26 +1149,40 @@ module.exports = class {
                         if (this.config.bro.notice.expires) {
                             rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
                         }
-                        this.publisher.publish("DiscoveryEvent", "Notice:Detected", obj.src, obj);
-                        if (obj.dst) {
-                            this.publisher.publish("DiscoveryEvent", "Notice:Detected", obj.dst, obj);
-                        }
                     }
                 });
+                let lh = null;
+                if (sysManager.isLocalIP(obj.src)) {
+                    lh = obj.src;
+                } else if (sysManager.isLocalIP(obj.dst)) {
+                    lh = obj.dst;
+                } else {
+                    lh = "0.0.0.0";
+                }
+        
+                let actionobj = {
+                     title: obj.msg,
+                     actions: ["ignore"],
+                     src: obj.src, 
+                     dst: obj.dst,
+                     note: obj.note,
+                     target: lh,
+                     msg: obj.msg,
+                     obj: obj
+                };
 
-                // write this to an alarm
-                        let actionobj = {
-                            title: "Security Notice",
-                            actions: ["ignore"],
-                            src: obj.src,
-                            dst: obj.dst,
-                            target: obj.src,
-                        };
-                        /*
-                        alarmManager.alarm("0.0.0.0","notice", 'info', '0', obj, actionobj, (err,obj,action)=> {
+                dnsManager.resolvehost(obj.src,(err,__src)=>{
+                    dnsManager.resolvehost(obj.dst,(err,__dst)=>{
+                        actionobj.shname =dnsManager.name(__src);
+                        actionobj.dhname =dnsManager.name(__dst);
+                        alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
+                            if (obj != null) {
+                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
+                            }
                         });
-                        */
-                
+                    }); 
+                }); 
+
             } else {
                 log.debug("Notice:Drop", JSON.parse(data));
             }

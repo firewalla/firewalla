@@ -14,12 +14,31 @@
  */
 'use strict';
 
+var bone = require("../lib/Bone.js");
+console.log("================================================================================");
+console.log("Monitor Starting");
+console.log("================================================================================");
+
+run0();
+
+function run0() {
+    if (bone.cloudready()==true) {
+        run();
+    } else {
+        setTimeout(()=>{
+            run0();
+        },1000);
+    }
+}
+
+
+function run() {
+
 let tick = 60 * 15; // waking up every 5 min
 let monitorWindow = 60 * 60 * 8; // eight hours window
 
 let FlowMonitor = require('./FlowMonitor.js');
 let flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
-
 
 console.log("================================================================================");
 console.log("Monitor Running ");
@@ -28,8 +47,21 @@ console.log("===================================================================
 flowMonitor.run();
 setInterval(() => {
     flowMonitor.run("dlp",tick);
+    try {
+      if (global.gc) {
+       global.gc();
+      }
+    } catch(e) {
+    }
 }, tick * 1000);
 
 setInterval(()=>{
     flowMonitor.run("detect",60);
+    try {
+      if (global.gc) {
+       global.gc();
+      }
+    } catch(e) {
+    }
 }, 60*1000);
+}

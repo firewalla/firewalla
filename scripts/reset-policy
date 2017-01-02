@@ -3,6 +3,8 @@ forever stop main
 forever stop monitor
 rm ~/.forever/main.log
 rm ~/.forever/monitor.log
+rm ~/.forever/api.log
+rm ~/.forever/ui.log
 redis-cli KEYS "policy:*" | xargs redis-cli DEL
 cd /home/pi/firewalla/net2
 forever start --uid main main.js

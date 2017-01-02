@@ -23,4 +23,12 @@ module.exports = class {
     getFirewallaHome() {
         return firewallaHome;
     }
+
+    getUserHome() {
+      return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
+    }
+
+    getFirewallaConfigFolder() {
+      return this.getUserHome() + "/.firewalla/";
+    }
 };
