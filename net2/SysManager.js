@@ -18,6 +18,7 @@ var iptool = require('ip');
 var os = require('os');
 var network = require('network');
 var instance = null;
+var fs = require('fs');
 
 var redis = require("redis");
 var rclient = redis.createClient();
@@ -25,6 +26,7 @@ var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
 var bone = require("../lib/Bone.js");
+var systemDebug = false;
 
 let DNSServers = {
     "75.75.75.75": true,
@@ -43,9 +45,37 @@ module.exports = class {
             this.multicasthigh = iptool.toLong("239.255.255.255");
             this.locals = {};
             instance = this;
+
+            sclient.on("message", function(channel, message) {
+                if(channel === "System:DebugChange") {
+                    if(message === "1") {
+                        systemDebug = true;
+                    } else if(message === "0") {
+                        systemDebug = false;
+                    } else {
+                        log.error("invalid message for channel: " + channel);
+                        return;
+                    }
+                    log.info("[pubsub] System Debug is changed to " + message);
+                }
+            });
+            sclient.subscribe("System:DebugChange");
+ 
+            this.delayedActions();
         }
         this.update(null);
         return instance;
+    }
+
+    delayedActions() {
+        setTimeout(()=>{
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPassword((err, password) => {
+              this.sshPassword = password; 
+          });
+        },2000); 
     }
 
     version() {
@@ -89,7 +119,40 @@ module.exports = class {
         }
     }
     
+    debugOn(callback) {
+        rclient.set("system:debug", "1", (err) => {
+            systemDebug = true;
+            rclient.publish("System:DebugChange", "1"); 
+            callback(err);
+        });
+    }
+
+    debugOff(callback) {
+        rclient.set("system:debug", "0", (err) => {
+            systemDebug = false;
+            rclient.publish("System:DebugChange", "0"); 
+            callback(err);
+        });
+    }
+
+    isSystemDebugOn() {
+        return systemDebug;
+    }
+
     update(callback) {
+        rclient.get("system:debug", (err, result) => {
+            if(result) {
+                if(result === "1") {
+                    systemDebug = true;
+                } else {
+                    systemDebug = false;
+                }
+            } else {
+                // by default off
+                systemDebug = false;
+            }
+        });
+
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
                 this.sysinfo = results;
@@ -179,11 +242,34 @@ module.exports = class {
         return this.monitoringInterface().subnet;
     }
 
+    mySSHPassword() {
+        return this.sshPassword;
+    }
+
+    // hack ... 
+    debugState(component) {
+        if (component == "FW_HASHDEBUG") {
+            return true;
+        }
+        return false;
+    }
+
+    // serial may not come back with anything for some platforms 
+
     getSysInfo(callback) {
-              callback(null,{
-                ip: this.myIp(),
-                mac: this.myMAC(),
-              });
+        let serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+        if (serial != null) {
+            serial = serial.trim();
+        }
+        let stat = require("../util/Stats.js");
+        stat.sysmemory(null,(err,data)=>{
+            callback(null,{
+               ip: this.myIp(),
+               mac: this.myMAC(),
+               serial: serial,
+               memory: data
+            });
+        });
     }
 
     // if the ip is part of our cloud, no need to log it, since it might cost space and memory
@@ -291,24 +377,31 @@ module.exports = class {
     }
 
     checkIn(callback) {
-        this.getSysInfo((err,data)=>{
-            bone.checkin(this.config,data,(err,data)=>{
-                console.log("CheckedIn:", data);
-                if (data.ddns) {
-                    this.ddns = data.ddns;
-                    rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
-                         if (callback) {
-                             callback(null,null);
-                         }
-                    });
-                }
-                if (data.publicIp) {
-                    this.publicIp = data.publicIp;
-                    rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
-                    });
-                }
+        fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
+            let license = null;
+            if (_data) {
+                license = JSON.parse(_data);
+            } 
+            this.getSysInfo((err,_sysinfo)=>{
+                log.debug("SysManager:Checkin:", license, _sysinfo);
+                bone.checkin(this.config,license,_sysinfo,(err,data)=>{
+                    console.log("CheckedIn:", data);
+                    if (data.ddns) {
+                        this.ddns = data.ddns;
+                        rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
+                             if (callback) {
+                                 callback(null,null);
+                             }
+                        });
+                    }
+                    if (data.publicIp) {
+                        this.publicIp = data.publicIp;
+                        rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
+                        });
+                    }
+                });
             });
-        });
+       });
 
     }
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla UI
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/sys
+ExecStart=/bin/sh -c '/usr/bin/nodejs --expose-gc kickstart.js --config /encipher.config/netbot.config >> /home/pi/.forever/kickui.log 2>&1'
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ var crypto = require('crypto');
 var PREFIX_BYTE_LENGTH = 4;
 
 function getHashObject(expr) {
+//  console.log("Hash of :",expr);
   var sha = crypto.createHash('sha256');
   sha.update(expr);
   var digest = sha.digest();

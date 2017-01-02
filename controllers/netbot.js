@@ -252,7 +252,14 @@ class netBot extends ControllerBot {
             sysmanager.update((err, data) => {});
         },1000*60*60*10);
 
-
+        setInterval(()=>{
+            try {
+              if (global.gc) {
+                global.gc();
+              }
+            } catch(e) {
+            }
+        },1000*60);
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
 
@@ -617,6 +624,22 @@ class netBot extends ControllerBot {
             };
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           });
+        } else if (msg.data.item === "sshRecentPassword") {
+
+          let SSH = require('../extension/ssh/ssh.js');
+          let ssh = new SSH('info');
+
+          ssh.getPassword((err, password) => {
+
+            var data = "";
+
+            if(err) {
+              console.log("Got error when reading password: " + err);
+              this.simpleTxData(msg, {}, err, callback);
+            } else {
+              this.simpleTxData(msg, {password: password}, err, callback);
+            }
+          });
         }
 
     }
@@ -760,7 +783,7 @@ class netBot extends ControllerBot {
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
             console.log("Reseting");
-            let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-data', (err, out, code) => {
+            let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'init',
@@ -815,12 +838,8 @@ class netBot extends ControllerBot {
           let SSH = require('../extension/ssh/ssh.js');
           let ssh = new SSH('info');
 
-          ssh.resetPassword((err) => {
-            var code = 200;
-            if(err) {
-              console.log("Got error when resetting ssh key: " + err);
-              code = 500;
-            }
+          ssh.resetRSAPassword((err) => {
+            
 
             let datamodel = {
                     type: 'jsonmsg',
@@ -833,8 +852,52 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
           });
         }
+
+        switch(msg.data.item) {
+          case "debugOn":
+            sysmanager.debugOn((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+            break;
+          case "debugOff":
+            sysmanager.debugOff((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+            break;
+          case "resetSSHPassword":
+            let SSH = require('../extension/ssh/ssh.js');
+            let ssh = new SSH('info');
+            ssh.resetRandomPassword((err,password) => {
+              sysManager.sshPassword = password;
+              this.simpleTxData(msg, null, err, callback);
+            });
+            break;
+          default:
+          // do nothing
+        }
     }
 
+    simpleTxData(msg, data, err, callback) {
+      this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, data, err), "jsondata", "", null, callback);
+    }
+
+    getDefaultResponseDataModel(msg, data, err) {
+      var code = 200;
+      if(err) {
+        code = 500;
+      }
+
+      let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: msg.mtype,
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
+                    code: code,
+                    data: data
+            };
+      return datamodel;
+    }
 
     msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
