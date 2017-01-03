@@ -90,6 +90,16 @@ if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.js
 fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+
+#reload services
+sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+sudo systemctl daemon-reload
+
 cd net2
 forever start  --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
