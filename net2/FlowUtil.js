@@ -7,7 +7,59 @@ module.exports = {
     hashBase64: hashBase64
 };*/
 
-function hashFlow(_flow) {
+
+// Take host and return hashed
+// [[a,a'],[b,b']]
+function hashHost(_domain) {
+    return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
+}
+
+function hashIp(_ip) {
+    let hashes = urlHash.canonicalizeAndHashExpressions(_ip);
+    console.log("Hashes",hashes);
+    if (hashes && hashes.length>0) {
+        return hashes[0][2];
+    } else {
+        return null;
+    }
+}
+
+function hashApp(domain) {
+    let hashed = [];
+    let d = domain.split(".");
+    if (d.length >= 2) {
+         hashed.push(urlHash.hashBase64("*."+d[d.length - 2] + "." + d[d.length - 1]));
+    }
+    if (d.length >= 3) {
+         hashed.push(urlHash.hashBase64("*."+d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
+    }
+    if (d.length >= 4) {
+         hashed.push(urlHash.hashBase64("*."+d[d.length - 4] + "." + d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
+    }
+    return hashed;
+}
+
+function shortDomainName(domain) {
+    return urlHash.shortUrl(domain,true)
+}
+
+function dhnameFlow(_flow) {
+    if (_flow.dhname) {
+        return shortDomainName(_flow.dhname);
+    }
+    if (_flow.af!=null && Object.keys(_flow.af).length>0) {
+        for (let key in _flow.af) {
+            return shortDomainName(key);
+        }
+    }
+    if (_flow.lh == _flow.sh) {
+        return _flow.dh;
+    } else{
+        return _flow.sh;
+    }
+}
+
+function hashFlow(_flow, clean) {
     let flow = JSON.parse(JSON.stringify(_flow));
     if (flow!=null && flow.af!=null && Object.keys(flow.af).length>0) {
         let _af = {};
@@ -25,13 +77,45 @@ function hashFlow(_flow) {
     if (flow.mac) {
         delete flow.mac;
     }
-    if (flow.shname) {
-        delete flow.shname;
+
+
+    if (clean) {
+        if (flow.shname) {
+            delete flow.shname;
+        }
+        if (flow.dhname) {
+            delete flow.shname;
+        }
+        if (flow.iplist) {
+            delete flow.iplist;
+        }
+        if (flow.lh) {
+            flow.lh = hashIp(flow.lh);
+        }
+        if (flow.sh) {
+            flow.sh = hashIp(flow.sh);
+        }
+        if (flow.dh) {
+            flow.dh = hashIp(flow.dh);
+        }
     }
 
     return flow;
     // Hash other things ...
 }
+
+/*
+[{"iplist":["imap.gmail.com","2607:f8b0:400e:c02::6c"],"_iplist":[[["v8+uoQ==","v8+uoU6tp+G9yBazQa54GpZ17m4FaiTHPgetvjPqFgg="],["YUhHHg==","YUhHHolh1gWizFkn/7n2xXLRKt/yx+HqlL2VHgHmsiE="]],[["/Dzjwg==","/DzjwmTcCYam2jkfB/KVCqrq3r+4wNL0ADtItIFhzA0="]]],"_alist":[["ob0wP2IrbSl/n+54E14YpDTKBZ1csnd9qeJ/fOzBOlo=","eHOL8nmOQNf+oLzLS7SPsyWUeCo5prpe7MC0Q2S8H1E="]],"flow":{"ts":1481892760.964665,"sh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","_ts":1481892768,"dh":"2607:f8b0:400e:c02::6c","ob":0,"rb":68844,"ct":6,"fd":"in","lh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","du":5.080037,"bl":0,"pf":{"tcp.993":{"ob":0,"rb":68844,"ct":6}},"af":{},"flows":[[1481892761,1481892762,0,5086],[1481886462,1481886462,0,5090],[1481877162,1481877163,0,10934],[1481870789,1481870789,0,4996],[1481871399,1481871400,0,5000],[1481865055,1481865057,0,37738]]}}]
+
+[ {
+    "_iplist": [[domain1],[domain2],[ip hash]
+    "_aiplist":[[*.app.com],[*.blah.app.com]]
+    "_dh"
+    "_sh"
+
+*/
+    
+
 
 
 /*
@@ -46,5 +130,9 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 
 
 module.exports = {
-  hashFlow: hashFlow
+  hashFlow: hashFlow,
+  hashHost: hashHost,
+  hashIp: hashIp,
+  hashApp: hashApp,
+  dhnameFlow: dhnameFlow
 };

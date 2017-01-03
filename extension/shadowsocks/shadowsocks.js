@@ -21,6 +21,7 @@ var sysManager = new SysManager('info');
 var Firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
 var firewalla = new Firewalla('/path/to/config', 'info');
+var key = require('../common/key.js');
 var fHome = firewalla.getFirewallaHome();
 
 var later = require('later');
@@ -106,8 +107,8 @@ module.exports = class {
     }
 
     install(callback) {
-	let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
-        this.install = require('child_process').exec(install_cmd, (err, out, code) => {
+      let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
+      require('child_process').exec(install_cmd, (err, out, code) => {
             if (err) {
                 log.error("ShadowSocks:INSTALL:Error", "Unable to install1.sh", err);
             }
@@ -197,16 +198,6 @@ module.exports = class {
         });
     }
 
-    generatePassword(len) {
-        var length = len,
-            charset = "0123456789abcdefghijklmnopqrstuvwxyz",
-            retVal = "";
-        for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(Math.random() * n));
-        }
-        return retVal;
-    }
-
     getConfigFileLocation() {
         return configFileLocation;
     }
@@ -216,12 +207,21 @@ module.exports = class {
     }
     
     readConfig() {
-        return jsonfile.readFileSync(configFileLocation);
+        try {
+          let config = jsonfile.readFileSync(configFileLocation);
+          return config;
+        } catch (err) {
+          return null;
+        }
+    }
+
+    configExists() {
+        return this.readConfig() !== null;
     }
     
     refreshConfig(password) {
         if(password == null) {
-            password = this.generatePassword(8);
+            password = key.randomPassword(8);
         }
         let config = JSON.parse(fs.readFileSync(fHome + '/extension/shadowsocks/ss.config.json.template', 'utf8'));
         config.server = sysManager.myIp();

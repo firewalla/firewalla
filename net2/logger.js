@@ -29,7 +29,7 @@ var devDebug = {
    'SysManager':'info',
    'PolicyManager':'info',
    'main':'info',
-   'FlowMonitory':'info'
+   'FlowMonitor':'debug'
 };
   
 var productionDebug = {
@@ -46,12 +46,18 @@ var productionDebug = {
    'SysManager':'error',
    'PolicyManager':'error',
    'main':'error',
-   'FlowMonitory':'error'
+   'FlowMonitor':'error'
 };
   
 
 var debugMapper = devDebug;
+
 if (process.env.FWPRODUCTION) {
+    debugMapper = productionDebug; 
+    console.log("FWDEBUG SET TO PRODUCTION");
+}
+
+if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
     debugMapper = productionDebug; 
     console.log("FWDEBUG SET TO PRODUCTION");
 }

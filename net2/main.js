@@ -19,10 +19,25 @@
 var log = require("./logger.js")("main", "info");
 
 console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+console.log("Main Starting ");
 console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+var bone = require("../lib/Bone.js");
+
+run0();
+
+function run0() {
+    if (bone.cloudready()==true) {
+        run();
+    } else {
+        setTimeout(()=>{
+            run0();
+        },1000);
+    }
+}
+
+
+function run() {
+
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
@@ -38,6 +53,21 @@ let bd = new BroDetector("bro_detector", config, "info");
 
 var Discovery = require("./Discovery.js");
 let d = new Discovery("nmap", config, "info");
+
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('debug');
+
+
+if (process.env.FWPRODUCTION) {
+    ssh.resetRandomPassword((err,password) => {
+        if(err) {
+            log.error("Failed to reset ssh password");
+        } else {
+            log.info("A new random SSH password is used!");
+            sysManager.sshPassword = password;
+        }
+    })
+}
 
 // make sure there is at least one usable enternet
 d.discoverInterfaces(function(err, list) {
@@ -57,9 +87,9 @@ d.discoverInterfaces(function(err, list) {
 });
 
 let c = require('./MessageBus.js');
-this.publisher = new c('debug');
+let publisher = new c('debug');
 
-this.publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
+publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
 d.start();
 bd.start();
@@ -87,7 +117,6 @@ var alarmManager = new AlarmManager('debug');
 //alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
 },1000*2);
 
-var bone = require("../lib/Bone.js");
 setTimeout(()=>{
     sysManager.checkIn((err,data)=>{
     });
@@ -97,6 +126,16 @@ setInterval(()=>{
     sysManager.checkIn((err,data)=>{
     });
 },1000*60*60*1);
+
+
+setInterval(()=>{
+    try {
+       if (global.gc) {
+           global.gc();
+       }
+    } catch(e) {
+    }
+},1000*60);
 
 
 setTimeout(()=>{
@@ -159,3 +198,4 @@ setInterval(()=>{
         },1000);
     }
 },3000);
+}

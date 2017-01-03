@@ -1,6 +1,11 @@
 #!/bin/bash -
 echo "Going to delete everything ... !"
-sleep 5
+sleep 3
+forever stop main
+sudo servcie firemon stop
+sudo servcie fireui stop
+sudo servcie fireapi stop
+sudo servcie firekick stop
 redis-cli flushall
 sudo rm -r -f ~/.encipher/*
 sudo rm -r -f /tmp/*
@@ -15,5 +20,6 @@ sudo source ./vars
 # Remove any previous keys
 sudo ./clean-all
 sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
-
-
+sync
+sync
+sudo reboot

@@ -1,6 +1,7 @@
 #!/bin/bash -
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+mkdir -p "$HOME/.firewalla"
 sudo rm -r -f /tmp/*
 sudo rm -r -f /home/pi/.forever/*
 cd $FIREWALLA_HOME
@@ -12,13 +13,20 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     cat $FWPRODUCTION > /tmp/FWPRODUCTION
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
 fi
+
+#For testing only
+#export FWPRODUCTION=$branch
+#cat $FWPRODUCTION > /tmp/FWPRODUCTION
+
 nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 cd $FIREWALLA_HOME
@@ -74,6 +82,8 @@ function check_upgrade2 {
 check_upgrade external-ip ^0.2.4
 check_upgrade jsonfile ^2.4.0
 check_upgrade2 lodash ^4.17.2
+check_upgrade2 random-seed 0.3.0
+check_upgrade2 pty.js 0.3.1
 
 if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
@@ -81,13 +91,17 @@ fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 cd net2
-forever start --uid main main.js
+forever start  --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
 cd sys
-forever start --uid ui kickstart.js --config /encipher.config/netbot.config
+#forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
+#forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
+sudo systemctl start firekick
 cd ..
 cd monitor
-forever start --uid monitor MonitorMain.js 
+#forever start --uid monitor -c "/usr/bin/node --expose-gc" ./MonitorMain.js 
+#forever start --uid monitor MonitorMain.js 
+sudo systemctl start firemon
 cd ..
 if [[ $branch =~ release.* ]] 
    then
@@ -97,9 +111,14 @@ if [[ $branch =~ release.* ]]
     check_upgrade minimist 1.2.x
     check_upgrade express ^4.14.0
     check_upgrade body-parser 1.9.x
+    check_upgrade passport 0.3.2
+    check_upgrade passport-http-bearer 1.0.1
+    check_upgrade debug 2.2.0
+    check_upgrade serve-favicon 2.3.0
+    check_upgrade jade 1.11.0
     echo "Master branch running api"      
     cd api
-    #forever start --uid api bin/www
+##       sudo systemctl start fireapi
     cd ..
 fi
 

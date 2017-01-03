@@ -1,8 +1,9 @@
 #!/bin/bash -
 forever stop main
-forever stop ui
-forever stop monitor
-forever stop api
+sudo servcie firemon stop
+sudo servcie fireui stop
+sudo servcie fireapi stop
+sudo servcie firekick stop
 sync
 #cd /home/pi/firewalla/
 #cd .git
