@@ -59,6 +59,7 @@ let ssh = new SSH('debug');
 
 
 if (process.env.FWPRODUCTION) {
+/*
     ssh.resetRandomPassword((err,password) => {
         if(err) {
             log.error("Failed to reset ssh password");
@@ -67,6 +68,7 @@ if (process.env.FWPRODUCTION) {
             sysManager.sshPassword = password;
         }
     })
+*/
 }
 
 // make sure there is at least one usable enternet
