@@ -3,7 +3,7 @@ mkdir /firewalla
 chmod 777 /firewalla
 if [ -f  /bspool/tmp/post-term* ]; then
     echo "bro crashed, reboot"
-    logger 'restart due to bro crashed'
+    logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
     sudo reboot
