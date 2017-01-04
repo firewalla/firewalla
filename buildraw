@@ -27,7 +27,7 @@ function install_dependencies()
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
-    apt_pkg_list="curl redis-server ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn easy-rsa python-pip"
+    apt_pkg_list="curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs libzmq3 libzmq3-dev openvpn easy-rsa python-pip cron"
 
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
@@ -57,8 +57,9 @@ function install_walla()
     sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/package.template.json > $basedir/package.json
     sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/npm-shrinkwrap.template.json > $basedir/npm-shrinkwrap.json
 
-    cd $basedir && $NPM install || echo "[WARNING] There are errors during npm install."
-    cd $basedir/api && $NPM install ||  echo "[WARNING] There are errors during npm install."
+    #no need to install npm any more, they are already provided by .node_modules
+#    cd $basedir && $NPM install || echo "[WARNING] There are errors during npm install."
+#    cd $basedir/api && $NPM install ||  echo "[WARNING] There are errors during npm install."
 
     echo "Installing bro..." 
     cd $basedir/imports && tar -zxf bro.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
