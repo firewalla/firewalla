@@ -12,6 +12,7 @@ sudo rm -r -f /home/pi/.forever/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 
+logger "FIREWALLA: Main-Run Start Update Modules"
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
@@ -33,6 +34,7 @@ function update_node_modules {
 
 # update ~/.node_modules
 update_node_modules
+logger "FIREWALLA: Main-Run Finish Update Modules "
 
 cd /tmp 
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
