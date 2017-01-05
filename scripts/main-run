@@ -23,11 +23,14 @@ function update_node_modules {
       fi
       if [[ -d $FW_NODE_MODULES_PATH && -f $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION ]]; then
         cd $FW_NODE_MODULES_PATH
-        git fetch origin  || git fetch origin
 
         EXPECTED_REVISION=$(cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION)
         CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
+
+        # only reset head when there is new expected revision number
+        # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
+            git fetch origin  || git fetch origin
             git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
             git clean -xdf
         fi
