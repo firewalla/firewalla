@@ -63,7 +63,8 @@ module.exports = class {
                               let NetBotController = require("../../controllers/netbot.js");
                               let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json");
                               nbConfig.controller = config.controllers[0];
-                              let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, true);
+                              // temp use apiMode = false to enable api to act as ui as well
+                              let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
                               if(nbController) {
                                   nbControllers[groupID] = nbController;
                                   console.log("netbot controller for group " + groupID + " is intialized successfully");
