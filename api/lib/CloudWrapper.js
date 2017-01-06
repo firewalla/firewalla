@@ -61,7 +61,7 @@ module.exports = class {
                           groups.forEach(function(group) {
                               let groupID = group.gid;
                               let NetBotController = require("../../controllers/netbot.js");
-                              let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json");
+                              let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
                               nbConfig.controller = config.controllers[0];
                               // temp use apiMode = false to enable api to act as ui as well
                               let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
