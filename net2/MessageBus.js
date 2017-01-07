@@ -42,7 +42,7 @@ module.exports = class {
                 let m = JSON.parse(message);
                 console.log("Reciving Msg:", m);
                 let notified = 0;
-                if (m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
+                if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
                     this.callbacks[channel + "." + m.type + "." + m.ip](channel, m.type, m.ip, m.msg);
                     notified += 1;
                 }
