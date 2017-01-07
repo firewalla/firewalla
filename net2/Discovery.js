@@ -18,6 +18,7 @@ var ip = require('ip');
 var os = require('os');
 var dns = require('dns');
 var network = require('network');
+var linux = require('../util/linux.js');
 var Nmap = require('./Nmap.js');
 var instances = {};
 var bonjour = require('bonjour')();
@@ -347,8 +348,9 @@ module.exports = class {
 
     discoverInterfaces(callback) {
         this.interfaces = {};
-        network.get_interfaces_list((err, list) => {
-            log.debug("Found list of interfaces", list, {});
+        linux.get_network_interfaces_list((err,list)=>{
+     //   network.get_interfaces_list((err, list) => {
+            log.error("Found list of interfaces", list, {});
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
@@ -399,7 +401,7 @@ module.exports = class {
             log.debug("Setting redis", redisobjs, {});
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
-                    log.error("Discovery::Interfaces:Error", redisobjs,error);
+                    log.error("Discovery::Interfaces:Error", redisobjs,list,error);
                 } else {
                     log.debug("Discovery::Interfaces", error, result.length);
                 }
