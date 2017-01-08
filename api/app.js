@@ -13,7 +13,7 @@ var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
 
 // Initialize cloud wrapper here so that token will be generated immediately when api is launched
-let CloudWrapper = require('../lib/CloudWrapper');
+let CloudWrapper = require('./lib/CloudWrapper');
 let cloudWrapper = new CloudWrapper();
 
 passport.use(new Strategy(
