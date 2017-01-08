@@ -8,7 +8,6 @@ export NODE_PATH=~/.node_modules:$NODE_PATH
 
 mkdir -p "$HOME/.firewalla"
 sudo rm -r -f /tmp/*
-sudo rm -r -f /home/pi/.forever/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 
@@ -52,6 +51,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
@@ -124,7 +124,7 @@ sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 
 cd net2
-forever start  --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
+forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
@@ -137,7 +137,8 @@ cd monitor
 sudo systemctl start firemon
 cd ..
 cd api
-sudo systemctl start fireapi
+# no longer need to start api here
+#sudo systemctl start fireapi
 cd ..
 
 sudo /usr/local/bro/bin/broctl cron
