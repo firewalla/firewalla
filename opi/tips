@@ -3,3 +3,21 @@ usermod -a -G sudo pi
 usermod -a -G netdev pi
 
 +%sudo  ALL=(ALL:ALL) NOPASSWD:ALL
+
+Active settings:
+
+cpu       912 mhz allowed, 1200 mhz possible, 4 cores active
+
+dram      408 mhz
+
+hdmi/gpu  off
+
+usb ports off
+
+eth0      100Mb/s/Full, Link: yes
+
+wlan0     IEEE 802.11bgn  ESSID:off/any  
+          Mode:Managed  Access Point: Not-Associated   Tx-Power=20 dBm   
+          Retry  long limit:7   RTS thr:off   Fragment thr:off
+          Encryption key:off
+          Power Management:on
