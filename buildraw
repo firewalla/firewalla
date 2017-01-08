@@ -52,6 +52,18 @@ function install_dependencies()
 
 function install_walla()
 {
+    echo "Installing node modules..."
+
+    FW_NODE_MODULES_PATH=~/.node_modules
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
+
+    git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+    cd $FW_NODE_MODULES_PATH
+    git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
+    cd -
+
+
     echo "Installing npm packages, please be patient..."
     [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
     sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/package.template.json > $basedir/package.json

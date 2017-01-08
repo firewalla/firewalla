@@ -1,3 +1,5 @@
+'use strict';
+
 var express = require('express');
 var path = require('path');
 var favicon = require('serve-favicon');
@@ -9,6 +11,8 @@ var swagger = require("swagger-node-express");
 const passport = require('passport');
 var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
+
+
 
 passport.use(new Strategy(
   function(token, cb) {
