@@ -156,6 +156,11 @@ module.exports = class {
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
                 this.sysinfo = results;
+
+                if(this.sysinfo === null) {
+                    return;
+                }
+
                 for (let r in this.sysinfo) {
                     this.sysinfo[r] = JSON.parse(this.sysinfo[r]);
                 }
