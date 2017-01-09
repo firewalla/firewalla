@@ -29,11 +29,12 @@ function install_dependencies()
 
     apt_pkg_list="curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
 
+    echo "Installing dependencies, please be patient..."
+    sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
+
     sudo pip install --upgrade pip
     sudo pip install setuptools
 
-    echo "Installing dependencies, please be patient..."
-    sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
 
     echo "Installing required npms, please be patient..."
     [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
