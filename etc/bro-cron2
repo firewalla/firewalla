@@ -21,8 +21,11 @@ fi
 
 ui_process_cnt=`sudo systemctl status fireui | grep 'active (running)' | wc -l`
 kickui_process_cnt=`sudo systemctl status firekick |grep 'active (running)' | wc -l`
+api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
 if [[ $ui_process_cnt <1 ]]; then
     if [[ $kickui_process_cnt < 1 ]]; then
-        logger 'FIREWALLA: no ui process'
+        if [[ $api_process_cnt < 1 ]]; then
+            logger 'FIREWALLA: no ui process'
+        fi
     fi
 fi
