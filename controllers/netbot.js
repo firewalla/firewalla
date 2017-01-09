@@ -395,7 +395,7 @@ class netBot extends ControllerBot {
                         msg = reason + " " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
                     }
                     if (obj.intel && obj.intel.summary) {
-                        msg += "\n" + obj.intelurl;
+                        //msg += "\n" + obj.intelurl;
                     }
 
                     console.log("Sending Msg:", msg);

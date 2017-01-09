@@ -1,6 +1,6 @@
 #!/bin/sh
 sync
-logger "brocron clean cron job"
+logger "FIREWALLA: brocron clean cron job"
 sudo /usr/local/bro/bin/broctl cron
 #sudo rm -r -f /bspool/bro/*-*_*.log
 sudo rm -r -f /bspool/tmp/post-terminate*

@@ -8,10 +8,10 @@ export NODE_PATH=~/.node_modules:$NODE_PATH
 
 mkdir -p "$HOME/.firewalla"
 sudo rm -r -f /tmp/*
-sudo rm -r -f /home/pi/.forever/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 
+logger "FIREWALLA: Main-Run Start Update Modules"
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
@@ -41,6 +41,7 @@ function update_node_modules {
 
 # update ~/.node_modules
 update_node_modules
+logger "FIREWALLA: Main-Run Finish Update Modules "
 
 cd /tmp 
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
@@ -49,15 +50,21 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
 fi
+
 #For testing only
 #export FWPRODUCTION=$branch
+#cat $FWPRODUCTION > /tmp/FWPRODUCTION
+
 nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
@@ -106,8 +113,18 @@ if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.js
 fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+
+#reload services
+sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+sudo systemctl daemon-reload
+
 cd net2
-forever start  --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
+forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
@@ -120,7 +137,8 @@ cd monitor
 sudo systemctl start firemon
 cd ..
 cd api
-sudo systemctl start fireapi
+# no longer need to start api here
+#sudo systemctl start fireapi
 cd ..
 
 sudo /usr/local/bro/bin/broctl cron

@@ -141,6 +141,7 @@ module.exports = class FlowMonitor {
                             org: flow["org"],
                             target: flow.lh,
                             fd: flow.fd,
+                            du: flow.du,
                             msg: msg
                         };
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
@@ -154,7 +155,7 @@ module.exports = class FlowMonitor {
                     }
                 } else if (c=="porn") {
                     if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
-                        let msg = "Watching Porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
+                        let msg = "Watching porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Questionable Action",
                             actions: ["block","ignore"],
@@ -167,6 +168,7 @@ module.exports = class FlowMonitor {
                             org: flow["org"],
                             target: flow.lh,
                             fd: flow.fd,
+                            du: flow.du,
                             msg: msg
                         };
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
@@ -238,29 +240,32 @@ module.exports = class FlowMonitor {
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
                 } else if (c=="games" && this.flowIntelRecordFlow(flow,3)) {
-                    let msg = "Doing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
-                    let actionobj = {
-                        title: "Notify Action",
-                        actions: ["block","ignore"],
-                        src: flow.sh,
-                        dst: flow.dh,
-                        dhname: flowUtil.dhnameFlow(flow),
-                        shname: flow["shname"],
-                        mac: flow["mac"],
-                        appr: flow["appr"],
-                        org: flow["org"],
-                        target: flow.lh,
-                        fd: flow.fd,
-                        msg: msg
-                    };
-                    alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
-                        if (obj!=null) {
-                             this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg,
-                                            obj:obj
-                             });
-                        }
-                    });
+                    if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>300000) || this.flowIntelRecordFlow(flow,3)) {
+                        let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
+                        let actionobj = {
+                            title: "Notify Action",
+                            actions: ["block","ignore"],
+                            src: flow.sh,
+                            dst: flow.dh,
+                            dhname: flowUtil.dhnameFlow(flow),
+                            shname: flow["shname"],
+                            mac: flow["mac"],
+                            appr: flow["appr"],
+                            org: flow["org"],
+                            target: flow.lh,
+                            fd: flow.fd,
+                            du: flow.du,
+                            msg: msg
+                        };
+                        alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
+                            if (obj!=null) {
+                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                                                msg:msg,
+                                                obj:obj
+                                 });
+                            }
+                        });
+                  }
                 }
                }
               });

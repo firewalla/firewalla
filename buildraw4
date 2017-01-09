@@ -32,6 +32,10 @@ function install_dependencies()
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
 
+    sudo pip install --upgrade pip
+    sudo pip install setuptools
+
+
     echo "Installing required npms, please be patient..."
     [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
     sudo $NPM install forever -g 
@@ -74,7 +78,8 @@ function install_walla()
 #    cd $basedir/api && $NPM install ||  echo "[WARNING] There are errors during npm install."
 
     echo "Installing bro..." 
-    cd $basedir/imports && tar -zxf bro.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
+    cd $basedir/imports && curl https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz 
+    cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
     cp $basedir/bin/real/bit* $basedir/bin/ 
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."

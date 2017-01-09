@@ -337,12 +337,12 @@ function launchService(gid, callback) {
 }
 
 function launchService2(gid,callback) {
-  // fs.writeFileSync('/home/pi/.firewalla/ui.conf',"Environment=GID="+gid+"\n"+"Environment=CONF="+program.config+"\n",'utf-8');
    fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
-  // require('child_process').exec("forever start --uid ui -a -c '/usr/bin/node --expose-gc' ../controllers/MomBot.js --gid "+gid+" --config "+program.config  , (err, out, code) => {
- //  });
-   //require('child_process').exec("sudo systemctl start fireui");
-   require('child_process').exec("sudo systemctl start fireapi");
+   if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
+       require('child_process').exec("sudo systemctl start fireui");
+   } else {
+       require('child_process').exec("sudo systemctl start fireapi");
+   }
 }
 
 eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {

@@ -59,6 +59,7 @@ let ssh = new SSH('debug');
 
 
 if (process.env.FWPRODUCTION) {
+/*
     ssh.resetRandomPassword((err,password) => {
         if(err) {
             log.error("Failed to reset ssh password");
@@ -67,6 +68,7 @@ if (process.env.FWPRODUCTION) {
             sysManager.sshPassword = password;
         }
     })
+*/
 }
 
 // make sure there is at least one usable enternet
@@ -190,12 +192,4 @@ process.on('uncaughtException',(err)=>{
     },1000*2);
 });
 
-setInterval(()=>{
-    if (os.freemem()<10000000) {
-        bone.log("error",{version:config.version,type:'memoryreboot',free:os.freemem()},null);
-        setTimeout(()=>{
-            require('child_process').exec('sudo reboot', (err,out,code)=> {});
-        },1000);
-    }
-},3000);
 }
