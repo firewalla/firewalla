@@ -192,12 +192,4 @@ process.on('uncaughtException',(err)=>{
     },1000*2);
 });
 
-setInterval(()=>{
-    if (os.freemem()<10000000) {
-        bone.log("error",{version:config.version,type:'memoryreboot',free:os.freemem()},null);
-        setTimeout(()=>{
-            require('child_process').exec('sudo reboot', (err,out,code)=> {});
-        },1000);
-    }
-},3000);
 }
