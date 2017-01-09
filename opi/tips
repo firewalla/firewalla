@@ -1,3 +1,19 @@
+buid
+   36  sudo pip install --upgrade pip
+   37  ls -l ..
+   38  ls -la ..
+   39  ls
+   40  ./buildraw
+   41  sudo apt-get install setuptools
+   42  sudo pip install setuptools
+
+bro
+wget 
+ wget https://www.bro.org/downloads/archive/bro-2.4.tar.gz
+sudo apt-get install cmake make gcc g++ flex bison libpcap-dev libssl-dev python-dev swig zlib1g-dev
+
+
+
 usermod -a -G adm pi
 usermod -a -G sudo pi
 usermod -a -G netdev pi
