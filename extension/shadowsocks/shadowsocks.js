@@ -70,7 +70,7 @@ module.exports = class {
     stop(callback) {
         this.started = false;
 
-        let UPNP = require('../extension/upnp/upnp');
+        let UPNP = require('../../extension/upnp/upnp');
         let upnp = new UPNP();
         upnp.removePortMapping("tcp", localPort, externalPort);
 
@@ -103,7 +103,7 @@ module.exports = class {
             }
             this.started = true;
 
-            let UPNP = require('../extension/upnp/upnp');
+            let UPNP = require('../../extension/upnp/upnp');
             let upnp = new UPNP();
             upnp.addPortMapping("tcp", localPort, externalPort, "shadowsocks", callback);
         });
