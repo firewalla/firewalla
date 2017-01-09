@@ -2,6 +2,7 @@
 sync
 
 mem=$(free -m | awk '/-/{print $4}')
+(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
 (( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
 (( mem <= 40 )) && sudo reboot
