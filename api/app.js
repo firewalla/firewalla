@@ -13,6 +13,44 @@ var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
 
 
+let UPNP = require('../extension/upnp/upnp');
+let upnp = new UPNP();
+let localPort = 8833;
+let externalPort = 8833;
+upnp.addPortMapping("tcp", localPort, externalPort, (err) => {
+    if(err) {
+        console.log("Failed to add port mapping for Firewalla API: " + err);
+    } else {
+        console.log("Portmapping is successfully created for Firewalla API");
+    }
+});
+
+
+process.stdin.resume();//so the program will not close instantly
+
+function exitHandler(options, err) {
+    if (options.cleanup) {
+        upnp.removePortMapping("tcp", localPort, externalPort, (err) => {
+            if(err) {
+                console.log("Failed to remove port mapping for Firewalla API: " + err);
+            } else {
+                console.log("Portmapping is successfully removed for Firewalla API");
+            }
+        })
+    }
+    if (err) console.log(err.stack);
+    if (options.exit) process.exit();
+}
+
+//do something when app is closing
+process.on('exit', exitHandler.bind(null,{cleanup:true}));
+
+//catches ctrl+c event
+process.on('SIGINT', exitHandler.bind(null, {exit:true}));
+
+//catches uncaught exceptions
+process.on('uncaughtException', exitHandler.bind(null, {exit:true}));
+
 
 passport.use(new Strategy(
   function(token, cb) {

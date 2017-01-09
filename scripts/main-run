@@ -32,7 +32,7 @@ function update_node_modules {
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
             git fetch origin  || git fetch origin
             git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
-            git clean -xdf
+            git clean -xdf # clean up all untracking files in node modules repo
         fi
         cd - &>/dev/null
       fi
@@ -126,7 +126,8 @@ cd ..
 sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync
-sudo service ntp stop
+sudo systemctl start ntp
 sudo ntpd -gq
-sudo service ntp start
+sudo ntpdate -s time.nist.gov
+sudo systemctl start ntp
 sync
