@@ -41,6 +41,9 @@ var configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
 var ttlExpire = 60*60*12;
 
+let externalPort = 8388;
+let localPort = 8388;
+
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
@@ -49,61 +52,6 @@ module.exports = class {
             instance = this;
         }
         return instance;
-    }
-
-    punchNat(opts, success, error) {
-        opts = opts || {}
-        opts.timeout = opts.timeout || 5000
-
-        log.info("Shadowsocks:PunchNat",opts);
-      
-        let replied = false;
-        // returns the IP of the gateway that your active network interface is linked to
-        network.get_gateway_ip((err, gateway) => {
-            if (err) return error(err)
-            if (ip.isPublic(gateway))
-                return success(gateway)
-
-            if (this.upnpClient == null) {
-                this.upnpClient = natupnp.createClient();
-            }
-            this.upnpClient.portMapping(opts, (err) => {
-                if (err == null) {
-                    log.info("Shadowsocks:NatUPNP Success");
-                    if (replied == false) {
-                        replied = true;
-                        success(null, "success", null);
-                    }
-                } else {
-                    if (replied == false) {
-                        log.error("Shadowsocks:NatUPNP failed",err);
-                        replied = true;
-                        error(err);
-                    }
-                }
-
-                // Just add protection code to avoid crash upnpClient is null
-                if (this.upnpClient != null) {
-                    this.upnpClient.close();
-                    this.upnpClient = null;
-                }
-            });
-        });
-    }
-
-    unpunchNat(opts, callback) {
-        log.info("Shadowsocks:UnpunchNat", opts);
-        if (this.upnpClient == null) {
-            this.upnpClient = natupnp.createClient();
-        }
-        this.upnpClient.portUnmapping(opts,(err)=>{
-            this.upnpClient.close();
-            this.upnpClient = null;
-            this.portmapped = false;
-            if (callback) {
-                callback(err);
-            }
-        });
     }
 
     install(callback) {
@@ -121,11 +69,11 @@ module.exports = class {
 
     stop(callback) {
         this.started = false;
-        this.unpunchNat({
-            protocol: 'tcp',
-            private: 8388,
-            public: 8388
-        });
+
+        let UPNP = require('../../extension/upnp/upnp');
+        let upnp = new UPNP();
+        upnp.removePortMapping("tcp", localPort, externalPort);
+
         let cmd = require('util').format("ssserver -d stop --pid %s/run/ss.pid", fHome);
         require('child_process').exec(cmd, (err, out, code) => {
             log.info("Stopping ShadowSocket", err);
@@ -135,41 +83,6 @@ module.exports = class {
         });
     }
 
-    setNat(callback) {
-        if (this.started == false) {
-            if (callback)
-                callback(null, null, null);
-            return;
-        }
-        this.punchNat({
-            type: 'tcp',
-            protocol: 'tcp',
-            private: 8388,
-            public: 8388,
-            ttl: 0,
-            description: "Firewalla Shadowsocks"
-        }, (external) => {
-            log.info("Shadowsocks:Start:portMap", external);
-            setTimeout(() => {
-                log.info("Shadowsocks:Restart:portMap");
-                this.setNat(null)
-            }, ttlExpire/3*1000);
-            if (callback) {
-                this.portmapped = true;
-                callback(null, external, 8388);
-            }
-        }, (err) => {
-            log.info("Shadowsocks:Start:portMap:Failed: " + err);
-            setTimeout(() => {
-                log.info("Shadowsocks:Restart:portMap");
-                this.setNat(null)
-            }, ttlExpire/3*1000);
-            if (callback) {
-                callback(null, null, null);
-            }
-        })
-    }
-
     start(callback) {
         if (this.started) {
             log.info("Shadowsocks::StartedAlready");
@@ -177,24 +90,22 @@ module.exports = class {
                  callback(null, this.portmapped, this.portmapped);
             return;
         }
-        this.unpunchNat({
-            protocol: 'tcp',
-            private: 8388,
-            public: 8388
-        },(err)=>{
-            let cmd = require('util').format("ssserver -d start -c %s --pid-file %s/run/ss.pid --log-file %s/log/ss.log", configFileLocation, fHome, fHome);
-            console.log(cmd);
-            require('child_process').exec(cmd, (err, out, code) => {
-                log.info("Shadowsocks:Start", err);
-                if (err && this.started == false) {
-                    if (callback) {
-                        callback(err);
-                    }
-                    return;
+
+        let cmd = require('util').format("ssserver -d start -c %s --pid-file %s/run/ss.pid --log-file %s/log/ss.log", configFileLocation, fHome, fHome);
+        log.info(cmd);
+        require('child_process').exec(cmd, (err, out, code) => {
+            log.info("Shadowsocks:Start", err);
+            if (err && this.started == false) {
+                if (callback) {
+                    callback(err);
                 }
-                this.started = true;
-                this.setNat(callback);
-            });
+                return;
+            }
+            this.started = true;
+
+            let UPNP = require('../../extension/upnp/upnp');
+            let upnp = new UPNP();
+            upnp.addPortMapping("tcp", localPort, externalPort, "shadowsocks", callback);
         });
     }
 

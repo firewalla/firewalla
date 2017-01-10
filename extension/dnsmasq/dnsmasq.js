@@ -28,5 +28,21 @@ module.exports = class {
         return instance;
     }
 
+    install(callback) {
+        // need to check whether dnsmasq has already installed
+
+    }
+
+    uninstall(callback) {
+
+    }
+
+    start(callback) {
+
+    }
+
+    stop(callback) {
+
+    }
 
 }

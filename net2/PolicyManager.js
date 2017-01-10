@@ -282,6 +282,30 @@ module.exports = class {
       }
     }
 
+    directMode(host, config, callback) {
+        let UPNP = require('../extension/upnp/upnp');
+        let upnp = new UPNP();
+        let mappingDescription = "Firewalla API";
+
+        if(config.state == true) {
+            upnp.addPortMapping("tcp", 8833, 8833, mappingDescription, (err) => {
+                if(err) {
+                    log.error("Failed to open port mapping for Firewalla API");
+                } else {
+                    log.info("Port mapping is created successfully for Firewalla API");
+                }
+            })
+        } else {
+            upnp.removePortMapping("tcp", 8833, 8833, (err) => {
+                if(err) {
+                    log.error("Failed to remove port mapping for Firewalla API");
+                } else {
+                    log.info("Port mapping is removed successfully for Firewalla API");
+                }
+            })
+        }
+    }
+
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
 
@@ -320,6 +344,8 @@ module.exports = class {
                 this.vpn(host, policy[p], policy);
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
+            } else if (p == "directMode") {
+                this.directMode(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {

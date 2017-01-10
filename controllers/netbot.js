@@ -219,6 +219,20 @@ class netBot extends ControllerBot {
         });
     }
 
+    _directMode(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("directMode", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to apply config on directMode: " + value);
+                }
+            });
+        });
+    }
+
     _ssh(ip, value, callback) {
         this.hostManager.loadPolicy((err, data) => {
             this.hostManager.setPolicy("ssh", value, (err, data) => {
@@ -439,6 +453,11 @@ class netBot extends ControllerBot {
               case "shadowsocks":
                 this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
                     cb(err);
+                });
+                break;
+              case "directMode":
+                this._directMode(msg.target, msg.data.value.directMode, (err, obj) => {
+                   cb(err);
                 });
                 break;
               case "ssh":
