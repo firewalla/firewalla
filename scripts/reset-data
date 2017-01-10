@@ -1,9 +1,9 @@
 #!/bin/bash -
 forever stop main
-sudo servcie firemon stop
-sudo servcie fireui stop
-sudo servcie fireapi stop
-sudo servcie firekick stop
+sudo systemctl stop firemon
+sudo systemctl stop fireui
+sudo systemctl stop fireapi
+sudo systemctl stop firekick
 sync
 redis-cli flushall
 sudo rm -r -f /tmp/*

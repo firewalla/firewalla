@@ -48,6 +48,8 @@ var utils = require('../lib/utils.js');
 var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
+let network = require('network');
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')
@@ -200,7 +202,11 @@ function openInvite(group,gid,ttl) {
                 displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                network.get_private_ip(function(err, ip) {
+                    txtfield.ipaddress = ip;
+                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                });
+
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {
@@ -261,7 +267,11 @@ function inviteFirstAdmin(gid, callback) {
                     displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                network.get_private_ip(function(err, ip) {
+                    txtfield.ipaddress = ip;
+                    service = intercomm.publish(null, config.endpoint_name + utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                });
+
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {
