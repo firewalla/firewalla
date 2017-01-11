@@ -115,8 +115,8 @@ module.exports = class {
 
     let iptablesRemoveRule = util.format("sudo iptables -t nat -D PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIP);
 
-    require('child_process').exec(iptablesRemoveRule, (err, out, code) => {
-      if(err) {
+    require('child_process').exec(iptablesRemoveRule, (err, out, stderr) => {
+      if(err && stderr.indexOf("No chain/target/match by that name") === -1) { // not contain this substring
         log.error("DNSMASQ:STOP:Error", "Failed to remove iptables rule for dnsmasq: " + err);
         callback(err);
       } else {
