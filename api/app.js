@@ -66,6 +66,7 @@ var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
 var encipher = require('./routes/fastencipher2');
+let dnsmasq = require('./routes/dnsmasq');
 
 var app = express();
 
@@ -91,6 +92,7 @@ subpath_v1.use('/sys', system);
 subpath_v1.use('/message', message);
 subpath_v1.use('/ss', shadowsocks);
 subpath_v1.use('/encipher', encipher);
+subpath_v1.use('/dns', dnsmasq);
 
 var subpath_docs = express();
 app.use("/docs", subpath_docs);
