@@ -94,7 +94,7 @@ module.exports = class {
         let piIP = sysManager.myIp();
         let gatewayIP = sysManager.myGateway();
 
-        let iptables_rule = util.format("sudo iptables -t nat -A PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIp);
+        let iptables_rule = util.format("sudo iptables -t nat -A PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIP);
         require('child_process').exec(iptables_rule, (err, out, code) => {
           if(err) {
             log.error("DNSMASQ:START:Error", "Failed to add iptables rule for dnsmasq: " + err);
@@ -113,7 +113,7 @@ module.exports = class {
     let piIP = sysManager.myIp();
     let gatewayIP = sysManager.myGateway();
 
-    let iptablesRemoveRule = util.format("sudo iptables -t nat -D PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIp);
+    let iptablesRemoveRule = util.format("sudo iptables -t nat -D PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIP);
 
     require('child_process').exec(iptablesRemoveRule, (err, out, code) => {
       if(err) {
