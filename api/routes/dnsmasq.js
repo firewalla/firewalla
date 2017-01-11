@@ -34,25 +34,25 @@ router.post('/:action',
     if (action === "start") {
       d.start(function(err, result) {
         if(err) {
-          res.json(err);
+          res.status(500).send('');
         } else {
-          res.json(result);
+          res.status(200).send('');
         }
       });
     } else if (action === "stop") {
       d.stop(function(err, result) {
         if(err) {
-          res.json(err);
+          res.status(500).send('');
         } else {
-          res.json(result);
+          res.status(200).send('');
         }
       });
     } else if (action === "install") {
       d.install(function(err, result) {
         if(err) {
-          res.json(err);
+          res.status(500).send('');
         } else {
-          res.json(result);
+          res.status(200).send('');
         }
       })
     }
