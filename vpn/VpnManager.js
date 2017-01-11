@@ -33,10 +33,12 @@ var fs = require('fs');
 var network = require('network');
 var natpmp = require('nat-pmp');
 var natupnp = require('nat-upnp');
-var ip = require('ip');
+var ipTool = require('ip');
 var async = require('async');
 
 var util = require('util');
+
+var linux = require('../util/linux');
 
 
 var ttlExpire = 60*60*1;
@@ -59,10 +61,13 @@ module.exports = class {
       
         let replied = false;
         // returns the IP of the gateway that your active network interface is linked to
-        network.get_gateway_ip((err, gateway) => {
+        linux.gateway_ip((err, gateway) => {
             if (err) return error(err)
-            if (ip.isPublic(gateway))
+            log.info("VpnManager:PublicGateway Checking",gateway,gateway.trim(),gateway.length);
+            if (ipTool.isPublic(gateway.trim())==true) {
+                log.info("VpnManager:PublicGateway True",gateway);
                 return success(gateway)
+            }
 
             if (this.upnpClient == null) {
                 this.upnpClient = natupnp.createClient();
@@ -111,7 +116,7 @@ module.exports = class {
             if (err) return error(err)
 
             // use regex to check if ip address is public
-            if (ip.isPublic(gateway))
+            if (ipTool.isPublic(gateway))
                 return success(gateway)
 
             var strategies = {
