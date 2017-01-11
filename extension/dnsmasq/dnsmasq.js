@@ -48,15 +48,11 @@ module.exports = class {
     jsonfile.readFile(domainFilterFile, callback);
   }
 
-  updateFilter() {
+  updateFilter(callback) {
     let domainFilterFile = __dirname + "/filter.json";
     let dnsFilterFile = dnsFilterDir + "/filter.conf";
 
-    let mkdirp = require('mkdirp');
-    mkdirp(dnsFilterDir, function(err) {
-
-      fs.unlinkSync(dnsFilterFile);
-
+    let updateFilter = function() {
       let writer = fs.createWriteStream(dnsFilterFile);
 
       jsonfile.readFile(domainFilterFile, (err, obj) => {
@@ -66,7 +62,20 @@ module.exports = class {
         });
         writer.end();
       });
+    };
 
+    let mkdirp = require('mkdirp');
+    mkdirp(dnsFilterDir, function(err) {
+
+      fs.stat(dnsFilterFile, (err, stats) => {
+        if (!err) {
+          fs.unlink(dnsFilterFile, (err) => {
+            updateFilter();
+          });
+        } else {
+          updateFilter();
+        }
+      });
     });
 
 
@@ -76,24 +85,58 @@ module.exports = class {
     require('child_process').exec("sudo systemctl start dnsmasq", (err, out, code) => {
       if(err) {
         log.error("DNSMASQ:START:Error", "Failed to start dnsmasq: " + err);
+        callback(err);
+      } else {
+
+        // Use iptables to redirect all dns traffic to pi itself
+        let SysManager = require('../../net2/SysManager');
+        let sysManager = new SysManager();
+        let piIP = sysManager.myIp();
+        let gatewayIP = sysManager.myGateway();
+
+        let iptables_rule = util.format("sudo iptables -t nat -A PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIp);
+        require('child_process').exec(iptables_rule, (err, out, code) => {
+          if(err) {
+            log.error("DNSMASQ:START:Error", "Failed to add iptables rule for dnsmasq: " + err);
+            callback(err);
+          } else {
+            callback();
+          }
+        });
       }
-      callback(err);
     });
   }
 
   stop(callback) {
-    require('child_process').exec("sudo systemctl stop dnsmasq", (err, out, code) => {
+    let SysManager = require('../../net2/SysManager');
+    let sysManager = new SysManager();
+    let piIP = sysManager.myIp();
+    let gatewayIP = sysManager.myGateway();
+
+    let iptablesRemoveRule = util.format("sudo iptables -t nat -D PREROUTING -p udp --dport 53 --destination %s -j DNAT --to-destination %s:53", gatewayIP, piIp);
+
+    require('child_process').exec(iptablesRemoveRule, (err, out, code) => {
       if(err) {
-        log.error("DNSMASQ:STOP:Error", "Failed to stop dnsmasq: " + err);
+        log.error("DNSMASQ:STOP:Error", "Failed to remove iptables rule for dnsmasq: " + err);
+        callback(err);
+      } else {
+        require('child_process').exec("sudo systemctl stop dnsmasq", (err, out, code) => {
+          if(err) {
+            log.error("DNSMASQ:STOP:Error", "Failed to stop dnsmasq: " + err);
+          }
+          callback(err);
+        });
       }
-      callback(err);
     });
   }
 
   restart(callback) {
-    this.stop((err) => {
-      this.start(callback);
-    })
+    require('child_process').exec("sudo systemctl restart dnsmasq", (err, out, code) => {
+      if(err) {
+        log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
+      }
+      callback(err);
+    });
   }
 
 };

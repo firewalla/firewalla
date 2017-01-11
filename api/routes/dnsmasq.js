@@ -20,7 +20,7 @@ router.get('/filter',
     });
   });
 
-router.post('/config/renew',
+router.post('/filter/renew',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
     d.updateFilter();
@@ -47,6 +47,14 @@ router.post('/:action',
           res.json(result);
         }
       });
+    } else if (action === "install") {
+      d.install(function(err, result) {
+        if(err) {
+          res.json(err);
+        } else {
+          res.json(result);
+        }
+      })
     }
   });
 

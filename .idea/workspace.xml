@@ -2,14 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/.idea/codeStyleSettings.xml" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/api/routes/dnsmasq.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_dnsmasq.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/dnsmasq.js" afterPath="$PROJECT_DIR$/api/routes/dnsmasq.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" afterPath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" afterPath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/install.sh" afterPath="$PROJECT_DIR$/extension/dnsmasq/install.sh" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/shadowsocks/install.sh" afterPath="$PROJECT_DIR$/extension/shadowsocks/install.sh" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -30,50 +25,40 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file leaf-file-name="dnsmasq.js" pinned="false" current-in-tab="false">
+      <file leaf-file-name="dnsmasq.js" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="327">
-              <caret line="50" column="14" lean-forward="false" selection-start-line="50" selection-start-column="2" selection-end-line="50" selection-end-column="14" />
+            <state relative-caret-position="267">
+              <caret line="109" column="18" lean-forward="false" selection-start-line="109" selection-start-column="18" selection-end-line="109" selection-end-column="18" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="dnsmasq.js" pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/api/routes/dnsmasq.js">
+      <file leaf-file-name="SysManager.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="315">
-              <caret line="25" column="18" lean-forward="false" selection-start-line="25" selection-start-column="18" selection-end-line="25" selection-end-column="18" />
+            <state relative-caret-position="475">
+              <caret line="241" column="13" lean-forward="false" selection-start-line="241" selection-start-column="4" selection-end-line="241" selection-end-column="13" />
               <folding>
-                <element signature="e#0#46#0" expanded="false" />
+                <marker date="1483985359000" expanded="true" signature="7903:7913" ph="{&quot;serial&quot;: serial...}" />
               </folding>
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="shadowsocks.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/api/routes/shadowsocks.js">
+      <file leaf-file-name="test_hash.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_hash.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="360">
-              <caret line="24" column="12" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="53" selection-end-column="0" />
+            <state relative-caret-position="0">
+              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="3" selection-end-column="25" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="Firewalla.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="195">
-              <caret line="26" column="15" lean-forward="false" selection-start-line="26" selection-start-column="4" selection-end-line="26" selection-end-column="15" />
-              <folding />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="dns.xx.conf.sorted" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/extension/dnsmasq/dns.xx.conf.sorted">
+      <file leaf-file-name="test_policy_manager.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_policy_manager.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="0">
               <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
@@ -82,21 +67,31 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="dns.xx.conf.bak" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/extension/dnsmasq/dns.xx.conf.bak">
+      <file leaf-file-name="test_sysmanager.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_sysmanager.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="120">
-              <caret line="8" column="36" lean-forward="false" selection-start-line="8" selection-start-column="23" selection-end-line="8" selection-end-column="36" />
+            <state relative-caret-position="0">
+              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="test_dnsmasq.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/test/test_dnsmasq.js">
+      <file leaf-file-name="test_shadowsocks.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_shadowsocks.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="165">
-              <caret line="13" column="23" lean-forward="false" selection-start-line="13" selection-start-column="23" selection-end-line="13" selection-end-column="23" />
+            <state relative-caret-position="0">
+              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="dnsmasq.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/api/routes/dnsmasq.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="424">
+              <caret line="47" column="9" lean-forward="true" selection-start-line="47" selection-start-column="9" selection-end-line="47" selection-end-column="9" />
               <folding>
                 <element signature="e#0#46#0" expanded="false" />
               </folding>
@@ -104,11 +99,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="test_firewalla.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/test/test_firewalla.js">
+      <file leaf-file-name="fastencipher.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/api/routes/fastencipher.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="0">
-              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="7" selection-end-column="0" />
+              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
               <folding />
             </state>
           </provider>
@@ -145,8 +140,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>installing required</find>
-      <find>Memeory Critical Simulation</find>
       <find>no</find>
       <find>FIREWALLA: no</find>
       <find>no ui process</find>
@@ -175,6 +168,8 @@
       <find>sys:network:info</find>
       <find>openInvite</find>
       <find>ss.</find>
+      <find>iptables</find>
+      <find>myip</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -199,7 +194,6 @@
         <option value="$PROJECT_DIR$/scripts/reset-data" />
         <option value="$PROJECT_DIR$/scripts/reset-policy" />
         <option value="$PROJECT_DIR$/net2/SysManager.js" />
-        <option value="$PROJECT_DIR$/api/app.js" />
         <option value="$PROJECT_DIR$/node_modules/nat-upnp/lib/nat-upnp/ssdp.js" />
         <option value="$PROJECT_DIR$/test/test_upnp.js" />
         <option value="$PROJECT_DIR$/node_modules/nat-upnp/lib/nat-upnp/device.js" />
@@ -214,8 +208,9 @@
         <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" />
         <option value="$PROJECT_DIR$/extension/dnsmasq/install.sh" />
         <option value="$PROJECT_DIR$/test/test_dnsmasq.js" />
-        <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
+        <option value="$PROJECT_DIR$/api/app.js" />
         <option value="$PROJECT_DIR$/api/routes/dnsmasq.js" />
+        <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
       </list>
     </option>
   </component>
@@ -644,12 +639,12 @@
       <updated>1483510377823</updated>
       <workItem from="1483510380086" duration="3996000" />
       <workItem from="1483528229221" duration="16422000" />
-      <workItem from="1483876051862" duration="18302000" />
+      <workItem from="1483876051862" duration="20014000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="38720000" />
+    <option name="totallyTimeSpent" value="40432000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -693,38 +688,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/encipher/lib/encipherio.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="13515">
-          <caret line="914" column="4" lean-forward="false" selection-start-line="914" selection-start-column="4" selection-end-line="914" selection-end-column="4" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/ControllerBot.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="3615">
-          <caret line="241" column="37" lean-forward="false" selection-start-line="241" selection-start-column="22" selection-end-line="241" selection-end-column="37" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/main-run">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="450">
-          <caret line="33" column="68" lean-forward="true" selection-start-line="33" selection-start-column="0" selection-end-line="34" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/buildraw">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="264">
@@ -865,14 +828,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/api/app.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="376">
-          <caret line="36" column="64" lean-forward="false" selection-start-line="36" selection-start-column="64" selection-end-line="36" selection-end-column="64" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/test/test_upnp.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="94">
@@ -931,14 +886,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_hash.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="3" selection-end-column="25" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/test/test_network.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
@@ -952,17 +899,6 @@
         <state relative-caret-position="375">
           <caret line="27" column="12" lean-forward="false" selection-start-line="27" selection-start-column="12" selection-end-line="27" selection-end-column="12" />
           <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="2887">
-          <caret line="503" column="13" lean-forward="false" selection-start-line="503" selection-start-column="13" selection-end-line="503" selection-end-column="13" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-            <marker date="1483985359000" expanded="true" signature="7903:7913" ph="{&quot;serial&quot;: serial...}" />
-          </folding>
         </state>
       </provider>
     </entry>
@@ -1072,11 +1008,37 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/extension/dnsmasq/filter.json">
+    <entry file="file://$PROJECT_DIR$/api/routes/shadowsocks.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-6987">
+        <state relative-caret-position="360">
+          <caret line="24" column="12" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="53" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/app.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-59">
+          <caret line="68" column="42" lean-forward="false" selection-start-line="68" selection-start-column="42" selection-end-line="68" selection-end-column="42" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/dnsmasq.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="424">
+          <caret line="47" column="9" lean-forward="true" selection-start-line="47" selection-start-column="9" selection-end-line="47" selection-end-column="9" />
+          <folding>
+            <element signature="e#0#46#0" expanded="false" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -1088,29 +1050,61 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/shadowsocks.js">
+    <entry file="file://$PROJECT_DIR$/extension/dnsmasq/filter.json">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="360">
-          <caret line="24" column="12" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="53" selection-end-column="0" />
+        <state relative-caret-position="-6987">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_shadowsocks.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_sysmanager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_policy_manager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_hash.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="3" selection-end-column="25" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="475">
+          <caret line="241" column="13" lean-forward="false" selection-start-line="241" selection-start-column="4" selection-end-line="241" selection-end-column="13" />
+          <folding>
+            <marker date="1483985359000" expanded="true" signature="7903:7913" ph="{&quot;serial&quot;: serial...}" />
+          </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="327">
-          <caret line="50" column="14" lean-forward="false" selection-start-line="50" selection-start-column="2" selection-end-line="50" selection-end-column="14" />
+        <state relative-caret-position="267">
+          <caret line="109" column="18" lean-forward="false" selection-start-line="109" selection-start-column="18" selection-end-line="109" selection-end-column="18" />
           <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/dnsmasq.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="315">
-          <caret line="25" column="18" lean-forward="false" selection-start-line="25" selection-start-column="18" selection-end-line="25" selection-end-column="18" />
-          <folding>
-            <element signature="e#0#46#0" expanded="false" />
-          </folding>
         </state>
       </provider>
     </entry>
