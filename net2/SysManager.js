@@ -236,7 +236,14 @@ module.exports = class {
 
 
     myDNS() { // return array
-        return this.monitoringInterface().dns;
+        let _dns = this.monitoringInterface().dns;
+        let v4dns = [];
+        for (let i in _dns) {
+            if (iptool.isV4Format(_dns[i])) {
+                v4dns.push(_dns[i]);
+            }
+        } 
+        return v4dns;
     }
 
     myGateway() {
