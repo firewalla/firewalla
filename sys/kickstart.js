@@ -198,8 +198,8 @@ function openInvite(group,gid,ttl) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
-                if (intercomm.bcapable==false) {
-                    textfield.needqr = true;
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
                 }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
@@ -266,8 +266,8 @@ function inviteFirstAdmin(gid, callback) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
-                if (intercomm.bcapable==false) {
-                    textfield.needqr = true;
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
                 }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
