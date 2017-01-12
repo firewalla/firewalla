@@ -105,7 +105,7 @@ function install_walla()
         sudo bash -c '/bin/echo "FIREWALLA_HOME=$basedir" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
     fi
 
-    sudo cp $FIREWALLA_HOME/etc/10-header /etc/update-motd.d/10-header
+    sudo cp $basedir/etc/10-header /etc/update-motd.d/10-header
 }
 
 basedir=`dirname $0`
