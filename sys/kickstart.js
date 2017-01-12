@@ -266,8 +266,11 @@ function inviteFirstAdmin(gid, callback) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
+                if (intercomm.bcapable==false) {
+                    textfield.needqr = true;
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                    displayKey(symmetrickey.userkey);
+                displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
                 network.get_private_ip(function(err, ip) {
