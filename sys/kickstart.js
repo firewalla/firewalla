@@ -198,6 +198,9 @@ function openInvite(group,gid,ttl) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
+                if (intercomm.bcapable==false) {
+                    textfield.needqr = true;
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
                 displayInvite(obj);
