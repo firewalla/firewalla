@@ -282,6 +282,38 @@ module.exports = class {
       }
     }
 
+  dnsmasq(host, config, callback) {
+    let dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+    let dd = new dnsmasq('info');
+
+    if (config.state == true) {
+      dd.install((err) => {
+        if(err) {
+          log.error("Fail to install dnsmasq: " + err);
+          return;
+        }
+
+        dd.start((err) => {
+          if(err == null) {
+            log.info("dnsmasq service is started successfully");
+          } else {
+            log.error("Failed to start dnsmasq: " + err);
+          }
+        })
+
+      })
+
+    } else {
+      dd.stop((err) => {
+        if(err == null) {
+          log.info("dnsmasq service is stopped successfully");
+        } else {
+          log.error("Failed to stop dnsmasq: " + err);
+        }
+      })
+    }
+  }
+
     directMode(host, config, callback) {
         let UPNP = require('../extension/upnp/upnp');
         let upnp = new UPNP();
