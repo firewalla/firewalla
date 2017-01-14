@@ -49,6 +49,8 @@ var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
 let network = require('network');
+var redis = require("redis");
+var rclient = redis.createClient();
 
 const license = require('../util/license.js');
 
@@ -356,6 +358,14 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
         initializeGroup(function (err, gid) {
             var groupid = gid;
             if (gid) {
+                rclient.hmset("sys:ept", {
+                    eid: eptcloud.eid,
+                    token: eptcloud.token
+                }, (err, data) => {
+                  if (err) {}
+                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token);
+                });
+
                 inviteFirstAdmin(gid, function (err, status) {
                     if (status) {
                         intercomm.stop(service);
