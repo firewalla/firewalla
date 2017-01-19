@@ -59,12 +59,13 @@ function install_walla()
     echo "Installing node modules..."
 
     FW_NODE_MODULES_PATH=~/.node_modules
+    mkdir $FW_NODE_MODULES_PATH
     branch=$(git rev-parse --abbrev-ref HEAD)
     NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
 
     git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
     cd $FW_NODE_MODULES_PATH
-    git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
+    git reset -q --hard `cat $basedir/scripts/NODE_MODULES_REVISION`
     cd -
 
 
@@ -102,6 +103,7 @@ function install_walla()
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
     # Set firewalla global environment variable
     if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
+        echo "FIREWALLA_HOME "+$basedir
         sudo bash -c '/bin/echo "FIREWALLA_HOME=$basedir" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
     fi
 
@@ -110,6 +112,8 @@ function install_walla()
 
 basedir=`dirname $0`
 basedir=`cd $basedir;pwd`
+
+echo "basedir is $basedir"
 
 USE_TAOBAO_NPM=0
 NPM=npm
