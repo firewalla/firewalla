@@ -371,7 +371,19 @@ class netBot extends ControllerBot {
             }
         });
 
+        let SSH = require('../extension/ssh/ssh.js');
+        let ssh = new SSH('debug');
 
+        setTimeout(()=> {
+            ssh.resetRandomPassword((err,password) => {
+                if(err) {
+                    console.log("Failed to reset ssh password");
+                } else {
+                    console.log("A new random SSH password is used!");
+                    sysmanager.sshPassword = password;
+                }
+            });
+        }, 10000);
     }
 
     scanStart(callback) {
