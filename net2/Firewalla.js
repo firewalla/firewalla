@@ -31,4 +31,8 @@ module.exports = class {
     getFirewallaConfigFolder() {
       return this.getUserHome() + "/.firewalla/";
     }
+
+    isProduction() {
+      return process.env.FWPRODUCTION;
+    }
 };

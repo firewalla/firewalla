@@ -34,6 +34,11 @@ function install_dependencies()
 
     echo "Installing required npms, please be patient..."
     [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
+    if [[ -f /.dockerenv ]]; then
+        # a workaround for npm/nodejs bug
+        # https://github.com/npm/npm/issues/4719
+        sudo $NPM config set unsafe-perm true
+    fi
     sudo $NPM install forever -g 
     sudo $NPM install xml-json -g 
 
@@ -88,21 +93,25 @@ function install_walla()
     echo "Setting up brofish and firewalla services..."
     sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.servie."
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
-    
-    if [[ "$BUILD_ONLY" != 1 ]]; then
+
+    # ignore systemctl part in docker enviornment, there is some bug that systemctl doesn't work in Docker
+    if [[ "$BUILD_ONLY" != 1 && ! -f /.dockerenv ]]; then
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
         sudo systemctl enable brofish || perr_and_exit "Failed to enable brofish service."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
     fi
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
+
     # Set firewalla global environment variable
-    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
-        sudo bash -c '/bin/echo "FIREWALLA_HOME=$basedir" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
+    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then
+echo "Adding ENV FIREWALLA_HOME..."
+        FIREWALLA_HOME=$FIREWALLA_HOME sudo -E bash -c '/bin/echo "FIREWALLA_HOME=$FIREWALLA_HOME" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
     fi
 }
 
 basedir=`dirname $0`
 basedir=`cd $basedir;pwd`
+FIREWALLA_HOME=$basedir
 
 USE_TAOBAO_NPM=0
 NPM=npm
