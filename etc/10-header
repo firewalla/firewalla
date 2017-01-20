@@ -1,0 +1,10 @@
+#!/bin/bash
+
+. /etc/os-release
+. /etc/armbian-release
+
+KERNELID=$(uname -r)
+
+TERM=linux toilet -f standard -F metal "FIREWALLA"
+
+printf '\nWelcome to \e[0;91mFIREWALLA\x1B[0m %s %s %s %s\n' "$VERSION $IMAGE_TYPE $PRETTY_NAME $KERNELID"

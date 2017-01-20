@@ -49,6 +49,8 @@ var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
 let network = require('network');
+var redis = require("redis");
+var rclient = redis.createClient();
 
 let redis = require("redis");
 let rclient = redis.createClient();
@@ -204,6 +206,9 @@ function openInvite(group,gid,ttl) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
                 displayInvite(obj);
@@ -269,6 +274,9 @@ function inviteFirstAdmin(gid, callback) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
                 displayInvite(obj);
@@ -362,6 +370,14 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
         initializeGroup(function (err, gid) {
             var groupid = gid;
             if (gid) {
+                rclient.hmset("sys:ept", {
+                    eid: eptcloud.eid,
+                    token: eptcloud.token
+                }, (err, data) => {
+                  if (err) {}
+                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token);
+                });
+
                 inviteFirstAdmin(gid, function (err, status) {
                     if (status) {
                         intercomm.stop(service);

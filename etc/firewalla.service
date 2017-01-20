@@ -1,6 +1,6 @@
 [Unit]
 Description=firewalla
-After=syslog.target network.target brofish.service
+After=brofish.service
 Wants=brofish.service
 
 [Service]

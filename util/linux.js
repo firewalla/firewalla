@@ -39,7 +39,11 @@ exports.mac_address_for = function(nic_name, cb) {
 };
 
 exports.gateway_ip_for = function(nic_name, cb) {
-  trim_exec("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3", cb);
+  trim_exec("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'", cb);
+};
+
+exports.gateway_ip = function(cb) {
+  exports.gateway_ip_for("eth0",cb);
 };
 
 exports.netmask_for = function(nic_name, cb) {
