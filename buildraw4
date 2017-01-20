@@ -111,7 +111,7 @@ function install_walla()
 }
 
 basedir=`dirname $0`
-basedir=`cd $basedir;pwd`
+export basedir=`cd $basedir;pwd`
 
 echo "basedir is $basedir"
 

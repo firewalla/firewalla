@@ -21,8 +21,8 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 sleep 3
 if [[ $branch =~ release.* ]]
   then
-    sudo -u pi git fetch origin release_pi_1_0
-    sudo -u pi git reset --hard origin/release_pi_1_0
+    sudo -u pi git fetch origin $branch
+    sudo -u pi git reset --hard origin/$branch
 #    sudo /opt/vc/bin/tvservice -o
     echo "on release"
   else
