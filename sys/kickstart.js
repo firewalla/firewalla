@@ -50,6 +50,12 @@ var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
 let network = require('network');
 
+let redis = require("redis");
+let rclient = redis.createClient();
+
+let Firewalla = require('../net2/Firewalla.js');
+let f = new Firewalla("config.json", 'info');
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')
@@ -264,7 +270,7 @@ function inviteFirstAdmin(gid, callback) {
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                    displayKey(symmetrickey.userkey);
+                displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
                 network.get_private_ip(function(err, ip) {
@@ -273,6 +279,12 @@ function inviteFirstAdmin(gid, callback) {
                 });
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
+
+                // for development mode, allow pairing directly from API (store temp key in redis)
+                if(! f.isProduction()) {
+                  rclient.set("rid.temp", obj.r);
+                  console.log("WARNING: Running in development mode, RID is stored in redis");
+                }
 
                 var timer = setInterval(function () {
                     console.log("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
