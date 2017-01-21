@@ -104,7 +104,7 @@ function install_walla()
     # Set firewalla global environment variable
     if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
         echo "FIREWALLA_HOME "+$basedir
-        sudo bash -c '/bin/echo "FIREWALLA_HOME=$basedir" >> /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
+        sudo /bin/echo "FIREWALLA_HOME=$basedir" | sudo bash -c 'cat - >>  /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
     fi
 
     sudo cp $basedir/etc/10-header /etc/update-motd.d/10-header
