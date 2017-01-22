@@ -356,7 +356,7 @@ function launchService(gid, callback) {
 function launchService2(gid,callback) {
    fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-       require('child_process').exec("sudo systemctl start fireui");
+       require('child_process').exec("sudo systemctl start fireapi");
    } else {
      if (fs.existsSync("/.dockerenv")) {
        require('child_process').exec("cd api; forever start -a --uid api bin/www");
