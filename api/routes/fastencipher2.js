@@ -11,7 +11,7 @@ var cloudWrapper = new CloudWrapper();
 
 
 
-let Firewalla = require('../net2/Firewalla.js');
+let Firewalla = require('../../net2/Firewalla.js');
 let f = new Firewalla("config.json", 'info');
 
 /* fast encipher api */

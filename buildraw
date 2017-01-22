@@ -9,9 +9,8 @@ function perr_and_exit()
 function usage()
 {
     cat << EOM
-Usage: buildraw [-t] [-n] [-h]"
-    -t      Use npm mirror from taobao.org.
-    -n      Skip apt dependency installations. 
+Usage: buildraw [-n] [-h]"
+    -n      Skip apt dependency installations.
     -h      Show this help.
 EOM
 }
@@ -27,20 +26,20 @@ function install_dependencies()
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
-    apt_pkg_list="curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
+    apt_pkg_list="net-tools curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
 
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
 
-    echo "Installing required npms, please be patient..."
-    [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
     if [[ -f /.dockerenv ]]; then
+        echo "Setting special npm configuration for Docker enviornment..."
         # a workaround for npm/nodejs bug
         # https://github.com/npm/npm/issues/4719
-        sudo $NPM config set unsafe-perm true
+        sudo npm config set unsafe-perm true
     fi
-    sudo $NPM install forever -g 
-    sudo $NPM install xml-json -g 
+    echo "Installing tool forever and xml-json..."
+    sudo npm install forever -g 
+    sudo npm install xml-json -g 
 
     echo "Setting up required folders and configures..."
     sudo mkdir -p /blog || perr_and_exit "Failed to create folder /blog"
@@ -61,25 +60,27 @@ function install_walla()
 
     FW_NODE_MODULES_PATH=~/.node_modules
     branch=$(git rev-parse --abbrev-ref HEAD)
-    NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
-
-    git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
-    cd $FW_NODE_MODULES_PATH
-    git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION`
-    cd -
-
-
-    echo "Installing npm packages, please be patient..."
-    [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
-    sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/package.template.json > $basedir/package.json
-    sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/npm-shrinkwrap.template.json > $basedir/npm-shrinkwrap.json
+    CPU_PLATFORM=$(uname -m)
+    if [[ $CPU_PLATFORM == "x86_64" ]]; then
+        NODE_MODULE_REPO=https://github.com/melvinto/firewalla_nodemodules.x86_64.git
+    elif [[ $CPU_PLATFORM == "armv7l" ]]; then
+        NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
+        git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+        cd $FW_NODE_MODULES_PATH
+        git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM`
+        cd -
+    fi
 
     #no need to install npm any more, they are already provided by .node_modules
-#    cd $basedir && $NPM install || echo "[WARNING] There are errors during npm install."
-#    cd $basedir/api && $NPM install ||  echo "[WARNING] There are errors during npm install."
+#    cd $basedir && npm install || echo "[WARNING] There are errors during npm install."
+#    cd $basedir/api && npm install ||  echo "[WARNING] There are errors during npm install."
 
-    echo "Installing bro..." 
-    cd $basedir/imports && tar -zxf bro.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
+    echo "Installing bro..."
+    BRO_PKG="bro.tar.gz"
+    if [[ $CPU_PLATFORM == "x86_64" ]]; then
+        BRO_PKG="/home/pi/.node_modules/bro.$CPU_PLATFORM.tar.gz"
+    fi
+    cd $basedir/imports && tar -zxf $BRO_PKG && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
     cp $basedir/bin/real/bit* $basedir/bin/ 
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
@@ -113,20 +114,13 @@ basedir=`dirname $0`
 basedir=`cd $basedir;pwd`
 FIREWALLA_HOME=$basedir
 
-USE_TAOBAO_NPM=0
-NPM=npm
-NPM_REGISTRY="registry.npmjs.org"
-
 while getopts "tnh" opt; do
     case $opt in
-        t) USE_TAOBAO_NPM=1;;
         n) NO_DEPS=1;;
         h) usage; exit 0;;
         ?) perr_and_exit "Invalid option.";;
     esac
 done
-
-[[ "$USE_TAOBAO_NPM" == "1" ]] && NPM="npm --registry=https://registry.npm.taobao.org --cache=$HOME/.npm/.cache/cnpm --disturl=https://npm.taobao.org/dist --userconfig=$HOME/.cnpmrc" && NPM_REGISTRY="registry.npm.taobao.org"
 
 [[ "$NO_DEPS" != 1 ]] && install_dependencies || echo "Skipping dependency installation."
 

@@ -52,9 +52,6 @@ let network = require('network');
 var redis = require("redis");
 var rclient = redis.createClient();
 
-let redis = require("redis");
-let rclient = redis.createClient();
-
 let Firewalla = require('../net2/Firewalla.js');
 let f = new Firewalla("config.json", 'info');
 
@@ -361,7 +358,11 @@ function launchService2(gid,callback) {
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
        require('child_process').exec("sudo systemctl start fireui");
    } else {
+     if (fs.existsSync("/.dockerenv")) {
+       require('child_process').exec("cd api; forever start -a --uid api bin/www");
+     } else {
        require('child_process').exec("sudo systemctl start fireapi");
+     }
    }
 }
 
