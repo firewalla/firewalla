@@ -63,6 +63,7 @@ function install_walla()
     CPU_PLATFORM=$(uname -m)
     if [[ $CPU_PLATFORM == "x86_64" ]]; then
         NODE_MODULE_REPO=https://github.com/melvinto/firewalla_nodemodules.x86_64.git
+        git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
     elif [[ $CPU_PLATFORM == "armv7l" ]]; then
         NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
         git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
