@@ -11,7 +11,9 @@ RUN useradd -m pi -s /bin/bash && \
 RUN su - pi -c "git clone https://github.com/MelvinTo/firewalla.git"
 RUN su - pi -c "cd firewalla ; ./buildraw"
 
+EXPOSE 8388
+EXPOSE 8833
 
 # run application
-#CMD ["/bin/bash"]
+CMD service redis-server start; su - pi -c "cd firewalla; scripts/main-run"; su - pi -s /bin/bash
 #ENTRYPOINT ["node-red-pi","-v","--max-old-space-size=128"]
