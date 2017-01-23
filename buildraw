@@ -79,7 +79,7 @@ function install_walla()
     echo "Installing bro..."
     BRO_PKG="bro.tar.gz"
     if [[ $CPU_PLATFORM == "x86_64" ]]; then
-        BRO_PKG="/home/pi/.node_modules/bro.$CPU_PLATFORM.tar.gz"
+        BRO_PKG="/home/$USER/.node_modules/bro.$CPU_PLATFORM.tar.gz"
     fi
     cd $basedir/imports && tar -zxf $BRO_PKG && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
     cp $basedir/bin/real/bit* $basedir/bin/ 
