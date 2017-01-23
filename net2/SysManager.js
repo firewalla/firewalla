@@ -269,7 +269,13 @@ module.exports = class {
     // serial may not come back with anything for some platforms 
 
     getSysInfo(callback) {
-        let serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+      let serial = null;
+      if (fs.existsSync("/.dockerenv")) {
+        serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+      } else {
+        serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+      }
+
         if (serial != null) {
             serial = serial.trim();
         }

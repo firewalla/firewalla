@@ -31,7 +31,6 @@ module.exports = class {
     }
 
     addPortMapping(protocol, localPort, externalPort, description, callback) {
-        console.log("xxxx");
         upnpClient.portMapping({
             type: protocol,
             protocol: protocol,
@@ -40,7 +39,6 @@ module.exports = class {
             ttl: 0,
             description: description
         }, (err) => {
-            console.log("xxxx1");
            if(err) {
                log.error("failed to add port mapping: " + err);
                if(callback) {
