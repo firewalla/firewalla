@@ -33,6 +33,7 @@ module.exports = class {
     }
 
     isProduction() {
-      return process.env.FWPRODUCTION;
+      // if either of condition matches, this is production environment
+      return process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
     }
 };
