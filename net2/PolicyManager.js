@@ -108,10 +108,10 @@ module.exports = class {
             sudo: true,
         };
 
-        if (src) {
+        if (src && src!="0.0.0.0") {
             p.src = src;
         }
-        if (dst) {
+        if (dst && dst!="0.0.0.0") {
             p.dst = dst;
         }
         if (dport) {
