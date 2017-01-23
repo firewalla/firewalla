@@ -47,9 +47,9 @@ module.exports = class {
     }
 
     scan(range, fast, callback) {
-        let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 --disable-arp-ping ' + range + ' -oX - | xml-json host';
+        let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
         if (fast == true) {
-            cmdline = 'sudo nmap -sn -PO --host-timeout 20s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
+            cmdline = 'sudo nmap -sn -PO --host-timeout 30s  ' + range + ' -oX - | xml-json host';
         }
         console.log("Running commandline: ", cmdline);
 
