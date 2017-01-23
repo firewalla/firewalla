@@ -246,6 +246,10 @@ module.exports = class {
         return v4dns;
     }
 
+    myDNSAny() {
+        return this.monitoringInterface().dns;
+    }
+
     myGateway() {
         return this.monitoringInterface().gateway;
     }
