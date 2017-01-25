@@ -94,6 +94,13 @@ subpath_v1.use('/ss', shadowsocks);
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/dns', dnsmasq);
 
+if(require('fs').existsSync("/.dockerenv")) {
+  // enable direct pairing in docker environment, since iphone simulator and docker can't be in same subnet
+  // DO NOT ENABLE THIS IN PRODUCTION -- SECURITY RISK
+  let devicePairing = require('./routes/devicePairing');
+  subpath_v1.use('/device', devicePairing)
+}
+
 var subpath_docs = express();
 app.use("/docs", subpath_docs);
 subpath_docs.use("/", express.static('dist'));

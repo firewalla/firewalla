@@ -16,7 +16,7 @@ function hashHost(_domain) {
 
 function hashIp(_ip) {
     let hashes = urlHash.canonicalizeAndHashExpressions(_ip);
-    console.log("Hashes",hashes);
+    // console.log("Hashes",hashes);
     if (hashes && hashes.length>0) {
         return hashes[0][2];
     } else {
