@@ -373,10 +373,11 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
             if (gid) {
                 rclient.hmset("sys:ept", {
                     eid: eptcloud.eid,
-                    token: eptcloud.token
+                    token: eptcloud.token,
+                    gid: gid
                 }, (err, data) => {
                   if (err) {}
-                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token);
+                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
                 });
 
                 inviteFirstAdmin(gid, function (err, status) {
