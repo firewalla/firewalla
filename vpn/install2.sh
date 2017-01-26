@@ -1,7 +1,9 @@
 #!/bin/bash
 
 if [ -f /etc/openvpn/easy-rsa/keys/ca.key ]; then
-   exit 0;
+   if [ -f /etc/openvpn/easy-rsa/keys/ta.key ]; then
+       exit 0;
+   fi
 fi
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
