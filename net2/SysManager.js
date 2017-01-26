@@ -536,6 +536,24 @@ module.exports = class {
                 });
             }
         });
+        let MAX_AGENT_STORED = 150;
+        rclient.keys("host:user_agent:*",(err,keys)=>{
+            for (let j in keys) {
+                rclient.scard(keys[j],(err,count)=>{
+                    log.info(keys[j]," count ", count);
+                    if (count>MAX_AGENT_STORED) {
+                        log.info(keys[j]," pop count ", count-MAX_AGENT_STORED);
+                        for (let i=0;i<count-MAX_AGENT_STORED;i++) {
+                            rclient.spop(keys[j],(err)=>{
+                                if (err) {
+                                    log.info(keys[j]," count ", count-MAX_AGENT_STORED, err);
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
     }
 
 };
