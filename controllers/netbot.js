@@ -352,7 +352,7 @@ class netBot extends ControllerBot {
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "200", "🔥 Firewalla Awakens!");
+            this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
             this.setupDialog();
         }, 2000);
 
