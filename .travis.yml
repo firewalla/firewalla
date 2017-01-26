@@ -24,7 +24,7 @@ addons:
     notification_email: 1762175@qq.com
     build_command_prepend: ""
     build_command:   "BUILD_ONLY=1 ./buildraw"
-    branch_pattern: master
+    branch_pattern: coverity_scan
 
 script:
   - "BUILD_ONLY=1 ./buildraw"
