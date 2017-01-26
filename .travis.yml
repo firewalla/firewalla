@@ -4,5 +4,24 @@ sudo: required
 
 dist: trusty
 
-script:
-  - "BUILD_ONLY=1 ./buildraw"
+env:
+  global:
+   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
+   #   via the "travis encrypt" command using the project repo's public key
+   - secure: "Qbhmf3pSN9NaqGgt1MNYtm060Mkgvj5qqsDFjX3/vAFRjjikN7r6/u4kuxzSQrGoEsxMK/o9S7Qb4RcpdHmkeQfmjs5fkF/m1LJla84Vr8G3r8dlG2Vw1EKB/pboJPUf5/uRpiJmeJUjdDLwVn0ZPKC1USRfkWu0+LTzr++WGAo/S8ConlxoGs0dhsE9hlUX6zCS2iPlz6/HnepTPmHs0qdIw6OexHMmjXPKn3a2BWxLok2dQOOwa7OK/0ScCaxbEhK9gNnz5VB1mCGacGpvrNh0GcRmUkhoF6ibjFBsQYyfGxut3Dr8tAfIvz4SWbfqlarA8Bizk/4NB8WqH77yNML29CYPW7xP0G5Gbxwk+fpuKYSff5/Ci6s8tBwEN6BOF5FaFfGSssy8UDKRyc0Gou9tanzasp/fOefl8z1anqLWUgm7RPza16/1saHE3kXjo5hjPb79zF374vkEB3F4vnsffHEJwNgaE9u1FIA4evXoSSiyOPd5FVqkdBZ8b8BBXf+TAj3J0mx8qItxTh+WwRr6b0ugNfVSxdjxomoy2fTrXRJUcFVtlsGjBOAoc3R+7upE9l93mL60SQpcezQ3tHkCXiAaMDp45RKupiEjmE5HyJ+szzsiNDtdkyjvas7Dg9f3LaivJfSr14cmA6Y5tHdsah1Ro3nXo1SskdfrVXE="
+
+before_install:
+      - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+
+addons:
+  coverity_scan:
+    project:
+      name: "xuanxuandog/firewalla"
+      description: "Build submitted via Travis CI"
+    notification_email: 1762175@qq.com
+    build_command_prepend: ""
+    build_command:   ./buildraw
+    branch_pattern: coverity_scan
+
+#script:
+#  - "BUILD_ONLY=1 ./buildraw"
