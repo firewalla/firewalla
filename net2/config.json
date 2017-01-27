@@ -18,7 +18,8 @@
          },
          "ignore" : {
             "SSL::Invalid_Server_Cert":"ignore",
-            "PacketFilter::Dropped_Packets":"ignore"
+            "PacketFilter::Dropped_Packets":"ignore",
+            "Scan::Address_Scan":"ignore"
          },
          "path" : "/blog/current/notice.log",
          "expires": 604800
