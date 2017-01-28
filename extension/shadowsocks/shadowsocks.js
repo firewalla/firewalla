@@ -135,7 +135,8 @@ module.exports = class {
             password = key.randomPassword(8);
         }
         let config = JSON.parse(fs.readFileSync(fHome + '/extension/shadowsocks/ss.config.json.template', 'utf8'));
-        config.server = sysManager.myIp();
+        // not necessary to specify local ip address in shadowsocks configuration
+        // config.server = sysManager.myIp();
         config.password = password
         jsonfile.writeFileSync(configFileLocation, config, {spaces: 2})
     }
