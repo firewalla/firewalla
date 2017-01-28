@@ -640,6 +640,7 @@ class Host {
             if (debug == false) {
                 delete neighbor.neighbor;
                 delete neighbor.name;
+                delete neighbor.ip;
             }
         }
         
