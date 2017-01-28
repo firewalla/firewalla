@@ -17,7 +17,7 @@ let UPNP = require('../extension/upnp/upnp');
 let upnp = new UPNP();
 let localPort = 8833;
 let externalPort = 8833;
-upnp.addPortMapping("tcp", localPort, externalPort, (err) => {
+upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API", (err) => {
     if(err) {
         console.log("Failed to add port mapping for Firewalla API: " + err);
     } else {
