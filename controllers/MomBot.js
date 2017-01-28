@@ -111,3 +111,15 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, eptname, function (err, 
         process.exit(1);
     }
 });
+
+process.on('uncaughtException',(err)=>{
+    console.log("################### CRASH #############");
+    console.log("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+        return;
+    }
+    bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+        process.exit(1);
+    },1000*2);
+});
