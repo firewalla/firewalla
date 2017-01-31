@@ -3,13 +3,15 @@ FROM debian
 
 # install required packages, in one command
 RUN apt-get update  && \
-    apt-get install -y git curl vim sudo telnet netcat man
+    apt-get install -y git curl vim sudo telnet netcat man host
 
 RUN useradd -m pi -s /bin/bash && \
     echo "pi ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 RUN su - pi -c "git clone https://github.com/MelvinTo/firewalla.git"
 RUN su - pi -c "cd firewalla ; ./buildraw"
+
+RUN npm install -g nodemon
 
 EXPOSE 8388
 EXPOSE 8833
