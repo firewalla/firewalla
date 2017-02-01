@@ -662,7 +662,7 @@ class Host {
             deviceClass: 'unknown',
             human: this.dtype,
             vendor: this.o.macVendor,
-            ou: this.o.mac.slice(0,8),
+            ou: this.o.mac.slice(0,13),
             uuid: flowUtil.hashMac(this.o.mac),
             _ipv4: flowUtil.hashIp(this.o.ipv4),
             firstFoundTimestamp: this.o.firstFoundTimestamp,
