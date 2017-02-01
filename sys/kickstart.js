@@ -52,6 +52,9 @@ let network = require('network');
 var redis = require("redis");
 var rclient = redis.createClient();
 
+let Firewalla = require('../net2/Firewalla.js');
+let f = new Firewalla("config.json", 'info');
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')
@@ -282,6 +285,12 @@ function inviteFirstAdmin(gid, callback) {
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
+                // for development mode, allow pairing directly from API (store temp key in redis)
+                if(! f.isProduction()) {
+                  rclient.set("rid.temp", obj.r);
+                  console.log("WARNING: Running in development mode, RID is stored in redis");
+                }
+
                 var timer = setInterval(function () {
                     console.log("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
                     eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
@@ -349,7 +358,11 @@ function launchService2(gid,callback) {
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
        require('child_process').exec("sudo systemctl start fireapi");
    } else {
+     if (fs.existsSync("/.dockerenv")) {
+       require('child_process').exec("cd api; forever start -a --uid api bin/www");
+     } else {
        require('child_process').exec("sudo systemctl start fireapi");
+     }
    }
 }
 
@@ -360,10 +373,11 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
             if (gid) {
                 rclient.hmset("sys:ept", {
                     eid: eptcloud.eid,
-                    token: eptcloud.token
+                    token: eptcloud.token,
+                    gid: gid
                 }, (err, data) => {
                   if (err) {}
-                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token);
+                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
                 });
 
                 inviteFirstAdmin(gid, function (err, status) {

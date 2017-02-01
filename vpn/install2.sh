@@ -1,7 +1,9 @@
 #!/bin/bash
 
 if [ -f /etc/openvpn/easy-rsa/keys/ca.key ]; then
-   exit 0;
+   if [ -f /etc/openvpn/easy-rsa/keys/ta.key ]; then
+       exit 0;
+   fi
 fi
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
@@ -15,6 +17,7 @@ ENCRYPT="1024"
 rm -r -f /etc/openvpn
 mkdir /etc/openvpn
 cp -r /usr/share/easy-rsa /etc/openvpn
+sync
 
 # Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
 # And change from default 1024 encryption if desired
@@ -26,6 +29,7 @@ fi
 
 # source the vars file just edited
 source ./vars
+sync
 
 # Remove any previous keys
 ./clean-all
@@ -37,13 +41,12 @@ source ./vars
 #./build-key-server server
 echo "build-key-server"
 ./pkitool --server server
+sync
 
 # Generate Diffie-Hellman key exchange
 echo "build-dh"
 ./build-dh
 
-# Generate static HMAC key to defend against DDoS
-openvpn --genkey --secret keys/ta.key
 
 # Write config file for server using the template .txt file
 sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt > /etc/openvpn/server.conf
@@ -53,13 +56,16 @@ sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
 fi
-
+sync
 
 # Write default file for client .ovpn profiles, to be used by the MakeOVPN script, using template .txt file
 sed 's/PUBLICIP/'$PUBLICIP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt
-
-
+sync
 
 # Make directory under home directory for .ovpn profiles
 mkdir -p ~/ovpns
 chmod 777 -R ~/ovpns
+
+# Generate static HMAC key to defend against DDoS
+openvpn --genkey --secret keys/ta.key
+sync

@@ -442,6 +442,7 @@ module.exports = class {
     }
 
     scan(subnet, fast, callback) {
+        log.info("Start scanning network");
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
         this.nmap.scan(subnet, fast, (err, hosts, ports) => {
             this.hosts = [];
@@ -449,8 +450,8 @@ module.exports = class {
                 let host = hosts[h];
                 this.processHost(host);
             }
-            console.log("Done Processing ++++++++++++++++++++");
-
+            //console.log("Done Processing ++++++++++++++++++++");
+            log.info("Network scanning is completed");
             setTimeout(() => {
                 callback(null, null);
                 this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
@@ -466,7 +467,7 @@ module.exports = class {
 
     processHost(host) {
                 if (host.mac == null) {
-                    log.debug("Discovery:Nmap:HostMacNull:", h, hosts[h]);
+                    log.debug("Discovery:Nmap:HostMacNull:", host);
                     return;
                 }
 

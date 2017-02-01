@@ -86,8 +86,14 @@ module.exports = class {
                         error(err);
                     }
                 }
-                this.upnpClient.close();
-                this.upnpClient = null;
+                setTimeout(() => {
+                    if (this.upnpClient) {
+                        this.upnpClient.close();
+                        this.upnpClient = null;
+                    } else {
+                        log.error("VpnManager:NatUPNP resetupnp client null");
+                    }
+                },1000);
             });
         });
     }
@@ -98,12 +104,18 @@ module.exports = class {
             this.upnpClient = natupnp.createClient();
         }
         this.upnpClient.portUnmapping(opts,(err)=>{
-            this.upnpClient.close();
-            this.upnpClient = null;
             this.portmapped = false;
             if (callback) {
                 callback(err);
             }
+            setTimeout(() => {
+                if (this.upnpClient) {
+                    this.upnpClient.close();
+                    this.upnpClient = null;
+                } else {
+                    log.error("VpnManager:NatUPNP unmap resetupnp client null");
+                }
+            },1000);
         });
     }
 
@@ -278,6 +290,8 @@ module.exports = class {
     getOvpnFile(clientname, password, regenerate, callback) {
         let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
         let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
+
+        log.info("Reading ovpn file", ovpn_file,ovpn_password,regenerate);
         
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
             if (ovpn != null && regenerate == false) {

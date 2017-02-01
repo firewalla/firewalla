@@ -11,7 +11,7 @@ let router = express.Router();
 let dnsmasq = require('../../extension/dnsmasq/dnsmasq.js');
 let d = new dnsmasq('info');
 
-/* shadowsocks api */
+/* dnsmasq api */
 router.get('/filter',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
