@@ -467,7 +467,7 @@ module.exports = class {
 
     processHost(host) {
                 if (host.mac == null) {
-                    log.debug("Discovery:Nmap:HostMacNull:", h, hosts[h]);
+                    log.debug("Discovery:Nmap:HostMacNull:", host);
                     return;
                 }
 

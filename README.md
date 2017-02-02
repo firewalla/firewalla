@@ -4,6 +4,7 @@
        src="https://scan.coverity.com/projects/11583/badge.svg"/>
 </a>
 ## Firewalla  (Pre-Alpha)
+Support (email fire@firewalla.com)
 ## Install From Image
 ```
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz

@@ -63,7 +63,7 @@ module.exports = class DNSManager {
         if (mac == null) {
             callback(null,null)
         } else {
-            rclient.hgetall("host:mac:" + data.mac, (err, data) => {
+            rclient.hgetall("host:mac:" + mac, (err, data) => {
                 if (err == null && data != null) {
                      callback(err, data);
                 } else {

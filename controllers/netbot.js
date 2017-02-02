@@ -900,7 +900,7 @@ class netBot extends ControllerBot {
           let ssh = new SSH('info');
 
           ssh.resetRSAPassword((err) => {
-            
+            let code = 200; 
 
             let datamodel = {
                     type: 'jsonmsg',
@@ -929,7 +929,7 @@ class netBot extends ControllerBot {
             let SSH = require('../extension/ssh/ssh.js');
             let ssh = new SSH('info');
             ssh.resetRandomPassword((err,password) => {
-              sysManager.sshPassword = password;
+              sysmanager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
           break;

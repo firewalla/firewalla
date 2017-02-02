@@ -14,7 +14,19 @@ function hashHost(_domain) {
     return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
 }
 
+function hashMac(_mac) {
+    if (_mac == null) {
+        return null;
+    }
+    let hash = urlHash.hashBase64(_mac);
+    return hash;
+}
+
+// IP always will be append '/'
 function hashIp(_ip) {
+    if (_ip == null) {
+        return null;
+    }
     let hashes = urlHash.canonicalizeAndHashExpressions(_ip);
     // console.log("Hashes",hashes);
     if (hashes && hashes.length>0) {
@@ -132,6 +144,7 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 module.exports = {
   hashFlow: hashFlow,
   hashHost: hashHost,
+  hashMac: hashMac,
   hashIp: hashIp,
   hashApp: hashApp,
   dhnameFlow: dhnameFlow
