@@ -932,7 +932,28 @@ class netBot extends ControllerBot {
               sysManager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
-            break;
+          break;
+
+	  
+	case "ping":
+	  let uptime = process.uptime();
+	  let now = new Date();
+
+          let datamodel = {
+                        type: 'jsonmsg',
+                        mtype: 'reply',
+                        id: uuid.v4(),
+                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                        replyid: msg.id,
+                        code: 200,
+                        data: {
+                          uptime: uptime,
+			  timestamp: now
+                        }
+                    };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+	  break;
+
           default:
           // do nothing
         }
@@ -961,6 +982,7 @@ class netBot extends ControllerBot {
     }
 
     msgHandler(gid, rawmsg, callback) {
+        console.log("xxx9");
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
             console.log("Received jsondata", msg);
@@ -978,6 +1000,11 @@ class netBot extends ControllerBot {
                         if (json != null) {
                             datamodel.code = 200;
                             datamodel.data = json;
+
+                          if(require('fs').existsSync("/.dockerenv")) {
+                              json.docker = true;
+                          }
+
                         } else {
                             datamodel.code = 500;
                         }

@@ -14,13 +14,6 @@ var cloudWrapper = new CloudWrapper();
 let Firewalla = require('../../net2/Firewalla.js');
 let f = new Firewalla("config.json", 'info');
 
-/* fast encipher api */
-router.get('/ping', 
-    passport.authenticate('bearer', { session: false }),
-    function(req, res, next) {
-        res.send("pong!");
-    });
-
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
  * -- message is encrypted already 
@@ -49,26 +42,29 @@ router.post('/message/:gid',
 router.post('/message/cleartext/:gid', 
     passport.authenticate('bearer', { session: false }),
     function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
+      var gid = req.params.gid;
+      let controller = cloudWrapper.getNetBotController(gid);
 
-        var alreadySent = false;
+      if(!controller) {
+	res.status(404).send('');
+	return;
+      }
+      var alreadySent = false;
 
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(alreadySent) {
-                return;
-            }
-
-            alreadySent = true;
-            
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                console.log("got response: " + JSON.stringify(response));
-                res.json(response);
-            }
-        });
+      controller.msgHandler(gid, req.body, (err, response) => {
+        if(alreadySent) {
+          return;
+        }
+        alreadySent = true;
+        
+        if(err) {
+          res.json({ error: err });
+          return;
+        } else {
+          console.log("got response: " + JSON.stringify(response));
+          res.json(response);
+        }
+      });
     }
 );
 

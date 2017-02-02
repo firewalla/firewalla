@@ -111,6 +111,10 @@ echo "Adding ENV FIREWALLA_HOME..."
     fi
 }
 
+function post_installation() {
+    mkdir -p ~/.dns
+}
+
 basedir=`dirname $0`
 basedir=`cd $basedir;pwd`
 FIREWALLA_HOME=$basedir
@@ -126,6 +130,7 @@ done
 [[ "$NO_DEPS" != 1 ]] && install_dependencies || echo "Skipping dependency installation."
 
 install_walla
+post_installation
 
 echo "Installation successful."
 
