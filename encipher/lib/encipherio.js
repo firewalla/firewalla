@@ -92,7 +92,7 @@ var legoEptCloud = class {
                     log("ENCIPHER.IO Unable to read keys, keylength error", this.myprivkeyfile.length, this.mypubkeyfile.length);
                     this.myprivkeyfile = null;
                     this.mypubkeyfile = null;
-                    require('child_process').execSync("sudo rm -r -f "+pathname+"*");
+                    require('child_process').execSync("sudo rm -r -f "+pathname+"/db/*");
                     require('child_process').execSync("sync");
                 }
             } catch (err) {

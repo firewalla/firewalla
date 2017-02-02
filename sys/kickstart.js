@@ -109,13 +109,14 @@ if (!fs.existsSync(dbPath)) {
 
 var symmetrickey = generateEncryptionKey();
 
-storage.initSync({
-    'dir': dbPath
-});
 
 var eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
 var service = null;
+
+storage.initSync({
+    'dir': dbPath
+});
 
 function pad(value, length) {
     return (value.toString().length < length) ? pad("0" + value, length) : value;
