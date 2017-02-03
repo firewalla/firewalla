@@ -42,6 +42,10 @@ router.post('/message/:gid',
 router.post('/message/cleartext/:gid', 
     passport.authenticate('bearer', { session: false }),
     function(req, res, next) {
+      console.log("================= request body =================");
+      console.log(JSON.stringify(req.body, null, '\t'));
+      console.log("================= request body end =================");
+        
       var gid = req.params.gid;
       let controller = cloudWrapper.getNetBotController(gid);
 
