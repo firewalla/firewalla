@@ -12,7 +12,7 @@ RUN echo 'deb http://download.opensuse.org/repositories/network:/bro/Debian_8.0/
 RUN wget -q -O - http://download.opensuse.org/repositories/network:bro/Debian_8.0/Release.key | apt-key add -
 
 RUN apt-get update
-RUN apt-get install bro
+RUN apt-get install bro -y
 
 RUN su - pi -c "git clone https://github.com/MelvinTo/firewalla.git"
 RUN su - pi -c "cd firewalla ; ./buildraw"
