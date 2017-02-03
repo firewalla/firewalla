@@ -36,7 +36,7 @@ module.exports = class {
             protocol: protocol,
             private: localPort,
             public: externalPort,
-            ttl: 0,
+            ttl: 86400, // one day
             description: description
         }, (err) => {
            if(err) {
