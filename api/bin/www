@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
+
+console.log("----------------------");
+console.log("API Launching ", config.version);
+console.log("----------------------");
 
 /**
  * Module dependencies.
@@ -88,3 +93,16 @@ function onListening() {
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
 }
+
+process.on('uncaughtException',(err)=>{
+    console.log("################### CRASH #############");
+    console.log("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+        return;
+    }
+    var bone = require('../lib/Bone.js');
+    bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+        process.exit(1);
+    },1000*2);
+});
