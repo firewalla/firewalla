@@ -15,8 +15,9 @@
 'use strict';
 
 var bone = require("../lib/Bone.js");
+var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 console.log("================================================================================");
-console.log("Monitor Starting");
+console.log("Monitor Starting:",config.version);
 console.log("================================================================================");
 
 run0();
