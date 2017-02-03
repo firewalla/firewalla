@@ -19,7 +19,13 @@ console.log(FlowUtil.hashHost("10.10.2.3"));
 console.log(FlowUtil.hashHost("www.wechat.com"));
 console.log(FlowUtil.hashApp("www.wechat.com"));
 console.log(FlowUtil.hashApp("123.www.netflix.com"));
+console.log("TESTING HASH FLOW HASHIP");
 console.log(FlowUtil.hashIp("10.0.0.1"));
+console.log("TESTING HASH FLOW HASHMAC");
+console.log(FlowUtil.hashMac("10.0.0.1/"));
+console.log("TESTING HASH FLOW HASHMAC2");
+console.log(FlowUtil.hashMac("aa:bb:cc:dd:ee:ff"));
+console.log(FlowUtil.hashMac("aa:bb:cc:dd:ee:fe"));
 
 let hash = require("./Hashes.js");
 console.log(hash.getHashObject("abc"));

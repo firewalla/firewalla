@@ -15,8 +15,9 @@
 'use strict';
 
 var bone = require("../lib/Bone.js");
+var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 console.log("================================================================================");
-console.log("Monitor Starting");
+console.log("Monitor Starting:",config.version);
 console.log("================================================================================");
 
 run0();
@@ -31,6 +32,17 @@ function run0() {
     }
 }
 
+process.on('uncaughtException',(err)=>{
+    console.log("################### CRASH #############");
+    console.log("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+        return;
+    }
+    bone.log("error",{version:config.version,type:'FIREWALLA.MON.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+        process.exit(1);
+    },1000*2);
+});
 
 function run() {
 
@@ -64,4 +76,5 @@ setInterval(()=>{
     } catch(e) {
     }
 }, 60*1000);
+
 }

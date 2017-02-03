@@ -352,7 +352,7 @@ class netBot extends ControllerBot {
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "200", "🔥 Firewalla Awakens!");
+            this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
             this.setupDialog();
         }, 2000);
 
@@ -900,7 +900,7 @@ class netBot extends ControllerBot {
           let ssh = new SSH('info');
 
           ssh.resetRSAPassword((err) => {
-            
+            let code = 200; 
 
             let datamodel = {
                     type: 'jsonmsg',
@@ -929,7 +929,7 @@ class netBot extends ControllerBot {
             let SSH = require('../extension/ssh/ssh.js');
             let ssh = new SSH('info');
             ssh.resetRandomPassword((err,password) => {
-              sysManager.sshPassword = password;
+              sysmanager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
             break;

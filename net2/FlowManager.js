@@ -228,14 +228,14 @@ module.exports = class FlowManager {
 
             let keys = Object.keys(outdb); // or loop over the object to get the array
             keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
-               var key = keys[i];
+            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+               let key = keys[i];
                flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
             }  
             keys = Object.keys(indb); // or loop over the object to get the array
             keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
-               var key = keys[i];
+            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+               let key = keys[i];
                flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
             }  
             //console.log("FLOW DATA IS: ",flowdata,outdb,indb);
