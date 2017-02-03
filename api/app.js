@@ -72,6 +72,18 @@ if(!firewalla.isProduction()) {
   });
 
   swagger.configureSwaggerPaths('', '/docs/api-docs', '');
+  swagger.configure(applicationUrl, '1.0.0');
+
+  swagger.setApiInfo({
+    title: "Firewalla API",
+    description: "API to do something, manage something...",
+    termsOfServiceUrl: "",
+    contact: "tt@firewalla.com",
+    license: "",
+    licenseUrl: ""
+  });
+
+
 }
 
 if(require('fs').existsSync("/.dockerenv")) {
@@ -115,14 +127,6 @@ app.use(function(err, req, res, next) {
 
 module.exports = app;
 
-swagger.setApiInfo({
-    title: "Firewalla API",
-    description: "API to do something, manage something...",
-    termsOfServiceUrl: "",
-    contact: "tt@firewalla.com",
-    license: "",
-    licenseUrl: ""
-});
 
 
 
@@ -133,5 +137,4 @@ if(argv.domain !== undefined)
 else
     console.log('No --domain=xxx specified, taking default hostname "localhost".');
 var applicationUrl = 'http://' + domain;
-swagger.configure(applicationUrl, '1.0.0');
 
