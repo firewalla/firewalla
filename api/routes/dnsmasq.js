@@ -27,6 +27,30 @@ router.post('/filter/renew',
     res.status(200).send('');
   });
 
+router.post('/iptables/add',
+  passport.authenticate('bearer', { session: false }),
+  function(req, res, next) {
+    d.add_iptables_rules((err, result) => {
+      if(err) {
+        res.status(500).send('');
+      } else {
+        res.status(200).send('');
+      }
+    });
+  });
+
+router.post('/iptables/remove',
+  passport.authenticate('bearer', { session: false }),
+  function(req, res, next) {
+    d.remove_iptables_rules((err, result) => {
+      if(err) {
+        res.status(500).send('');
+      } else {
+        res.status(200).send('');
+      }
+    });
+  });
+
 router.post('/:action',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {

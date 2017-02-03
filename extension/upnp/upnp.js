@@ -30,7 +30,9 @@ module.exports = class {
         return instance;
     }
 
-    addPortMapping(protocol, localPort, externalPort, description, callback) {
+  addPortMapping(protocol, localPort, externalPort, description, callback) {
+    callback = callback || function() {};
+    
         upnpClient.portMapping({
             type: protocol,
             protocol: protocol,
@@ -40,7 +42,7 @@ module.exports = class {
             description: description
         }, (err) => {
            if(err) {
-               log.error("failed to add port mapping: " + err);
+             log.error("Failed to add port mapping ", description, " :", err);
                if(callback) {
                    callback(err);
                }
@@ -56,7 +58,9 @@ module.exports = class {
         });
     }
 
-    removePortMapping(protocol, localPort, externalPort, callback) {
+  removePortMapping(protocol, localPort, externalPort, callback) {
+    callback = callback || function() {};
+    
         upnpClient.portUnmapping({
             protocol: protocol,
             private: localPort,

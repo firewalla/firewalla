@@ -233,15 +233,15 @@ class netBot extends ControllerBot {
     });
   }
 
-    _directMode(ip, value, callback) {
+    _externalAccess(ip, value, callback) {
         this.hostManager.loadPolicy((err, data) => {
-            this.hostManager.setPolicy("directMode", value, (err, data) => {
+            this.hostManager.setPolicy("externalAccess", value, (err, data) => {
                 if (err == null) {
                     if (callback != null)
                         callback(null, "Success");
                 } else {
                     if (callback != null)
-                        callback(err, "Unable to apply config on directMode: " + value);
+                        callback(err, "Unable to apply config on externalAccess: " + value);
                 }
             });
         });
@@ -491,8 +491,8 @@ class netBot extends ControllerBot {
                   cb(err);
                 });
                 break;
-              case "directMode":
-                this._directMode(msg.target, msg.data.value.directMode, (err, obj) => {
+              case "externalAccess":
+                this._externalAccess(msg.target, msg.data.value.externalAccess, (err, obj) => {
                    cb(err);
                 });
                 break;
@@ -934,12 +934,11 @@ class netBot extends ControllerBot {
             });
           break;
 
-	  
-	case "ping":
-	  let uptime = process.uptime();
-	  let now = new Date();
-
-          let datamodel = {
+        case "ping":
+            let uptime = process.uptime();
+            let now = new Date();
+          
+            let datamodel = {
                         type: 'jsonmsg',
                         mtype: 'reply',
                         id: uuid.v4(),
@@ -948,11 +947,11 @@ class netBot extends ControllerBot {
                         code: 200,
                         data: {
                           uptime: uptime,
-			  timestamp: now
+                          timestamp: now
                         }
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-	  break;
+          break;
 
           default:
           // do nothing
@@ -982,10 +981,9 @@ class netBot extends ControllerBot {
     }
 
     msgHandler(gid, rawmsg, callback) {
-        console.log("xxx9");
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
-            console.log("Received jsondata", msg);
+//            console.log("Received jsondata", msg);
             if (rawmsg.message.obj.type === "jsonmsg") {
                 if (rawmsg.message.obj.mtype === "init") {
                     console.log("Process Init load event");

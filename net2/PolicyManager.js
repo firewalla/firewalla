@@ -32,6 +32,15 @@ var async = require('async');
 var VpnManager = require('../vpn/VpnManager.js');
 var vpnManager = new VpnManager('info');
 
+let UPNP = require('../extension/upnp/upnp');
+let upnp = new UPNP();
+
+let externalAccessFlag = false;
+
+let localPort = 8833;
+let externalPort = 8833;
+let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
+
 var ip = require('ip');
 
 /*
@@ -314,29 +323,43 @@ module.exports = class {
     }
   }
 
-    directMode(host, config, callback) {
-        let UPNP = require('../extension/upnp/upnp');
-        let upnp = new UPNP();
-        let mappingDescription = "Firewalla API";
+  addAPIPortMapping(time) {
+    time = time || 1;
+    setTimeout(() => {
+      if(!externalAccessFlag) {
+        log.info("Cancel addAPIPortMapping scheduler since externalAccessFlag is now off");
+        return; // exit if the flag is still off
+      }
+      
+      upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
+      this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
+    }, time)
+  }
 
-        if(config.state == true) {
-            upnp.addPortMapping("tcp", 8833, 8833, mappingDescription, (err) => {
-                if(err) {
-                    log.error("Failed to open port mapping for Firewalla API");
-                } else {
-                    log.info("Port mapping is created successfully for Firewalla API");
-                }
-            })
-        } else {
-            upnp.removePortMapping("tcp", 8833, 8833, (err) => {
-                if(err) {
-                    log.error("Failed to remove port mapping for Firewalla API");
-                } else {
-                    log.info("Port mapping is removed successfully for Firewalla API");
-                }
-            })
-        }
+  removeAPIPortMapping(time) {
+    time = time || 1;
+
+    setTimeout(() => {
+      if(externalAccessFlag) {
+        log.info("Cancel removeAPIPortMapping scheduler since externalAccessFlag is now on");
+        return; // exit if the flag is still on
+      }
+      
+      upnp.removePortMapping("tcp", localPort, externalPort);
+      this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
+    }, time)
+
+  }
+
+  externalAccess(host, config, callback) {
+    if(config.state == true) {
+      externalAccessFlag = true;
+      this.addAPIPortMapping();
+    } else {
+      externalAccessFlag = false;
+      this.removeAPIPortMapping();
     }
+  }
 
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
@@ -376,8 +399,8 @@ module.exports = class {
                 this.vpn(host, policy[p], policy);
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
-            } else if (p == "directMode") {
-                this.directMode(host, policy[p]);
+            } else if (p == "externalAccess") {
+                this.externalAccess(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {
