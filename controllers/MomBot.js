@@ -81,7 +81,9 @@ if (gid == null) {
     process.exit(1);
 }
 
+console.log("---------------------------------");
 console.log("Initializing Service ", config.service, config.version, "end point ", eptname);
+console.log("---------------------------------");
 
 var eptcloud = new cloud(eptname, config.eptdir);
 
@@ -111,3 +113,4 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, eptname, function (err, 
         process.exit(1);
     }
 });
+

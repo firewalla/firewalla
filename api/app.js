@@ -17,7 +17,7 @@ let UPNP = require('../extension/upnp/upnp');
 let upnp = new UPNP();
 let localPort = 8833;
 let externalPort = 8833;
-upnp.addPortMapping("tcp", localPort, externalPort, (err) => {
+upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API", (err) => {
     if(err) {
         console.log("Failed to add port mapping for Firewalla API: " + err);
     } else {
@@ -93,6 +93,13 @@ subpath_v1.use('/message', message);
 subpath_v1.use('/ss', shadowsocks);
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/dns', dnsmasq);
+
+if(require('fs').existsSync("/.dockerenv")) {
+  // enable direct pairing in docker environment, since iphone simulator and docker can't be in same subnet
+  // DO NOT ENABLE THIS IN PRODUCTION -- SECURITY RISK
+  let devicePairing = require('./routes/devicePairing');
+  subpath_v1.use('/device', devicePairing)
+}
 
 var subpath_docs = express();
 app.use("/docs", subpath_docs);

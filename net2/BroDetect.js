@@ -491,7 +491,7 @@ module.exports = class {
                     log.error("Conn:Burst:Drop",rate,obj);
                     return;
                 } 
-                let packet = obj.resp_bytes/resp_pkts;
+                let packet = obj.resp_bytes/obj.resp_pkts;
                 if (packet >10000000) {
                     log.error("Conn:Burst:Drop2",packet,obj);
                     return;
@@ -507,7 +507,7 @@ module.exports = class {
                     log.error("Conn:Burst:Drop:Orig",rate,obj);
                     return;
                 }
-                let packet = obj.orig_bytes/orig_pkts;
+                let packet = obj.orig_bytes/obj.orig_pkts;
                 if (packet >10000000) {
                     log.error("Conn:Burst:Drop2:Orig",packet,obj);
                     return;
