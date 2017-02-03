@@ -81,7 +81,9 @@ if (gid == null) {
     process.exit(1);
 }
 
+console.log("---------------------------------");
 console.log("Initializing Service ", config.service, config.version, "end point ", eptname);
+console.log("---------------------------------");
 
 var eptcloud = new cloud(eptname, config.eptdir);
 
@@ -112,14 +114,3 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, eptname, function (err, 
     }
 });
 
-process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
-    if (err && err.message && err.message.includes("Redis connection")) {
-        return;
-    }
-    bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
-    setTimeout(()=>{
-        process.exit(1);
-    },1000*2);
-});
