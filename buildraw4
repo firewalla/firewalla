@@ -26,7 +26,7 @@ function install_dependencies()
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
-    apt_pkg_list="net-tools curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
+    apt_pkg_list="wget net-tools curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
 
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
@@ -65,21 +65,24 @@ function install_walla()
     FW_NODE_MODULES_PATH=~/.node_modules
     branch=$(git rev-parse --abbrev-ref HEAD)
     CPU_PLATFORM=$(uname -m)
-    if [[ $CPU_PLATFORM == "x86_64" ]]; then
-        NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.x86_64.git
-        git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
-    elif [[ $CPU_PLATFORM == "armv7l" ]]; then
-        NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
-        git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
-        cd $FW_NODE_MODULES_PATH
-        git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM`
-        cd -
+
+    if [[ ! -e $FW_NODE_MODULES_PATH ]]; then
+        if [[ $CPU_PLATFORM == "x86_64" ]]; then
+            NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.x86_64.git
+            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+        elif [[ $CPU_PLATFORM == "armv7l" ]]; then
+            NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
+            git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+            cd $FW_NODE_MODULES_PATH
+            git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM`
+            cd -
+        fi
     fi
 
     # Skip bro installation if in docker environment, bro in apt repo will be used in Docker
     if [[ ! -f /.dockerenv ]]; then
         echo "Installing bro..." 
-        cd $basedir/imports && curl https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz 
+        cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz -q
         cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
         cp $basedir/bin/real/bit* $basedir/bin/ 
     fi
