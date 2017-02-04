@@ -688,6 +688,12 @@ class Host {
                                 for (let field in data) {
                                     this.o[field] = data[field];
                                 }
+                                if (data._vendor!=null && this.o.macVendor == null) {
+                                    this.o.macVendor = data._vendor;
+                                }
+                                if (data._name!=null) {
+                                    this.o.pname = data._name;
+                                }
                                 this.save();
                             }
                         });
