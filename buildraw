@@ -37,7 +37,7 @@ function install_dependencies()
         # https://github.com/npm/npm/issues/4719
         sudo npm config set unsafe-perm true
     fi
-    echo "Installing tool forever and xml-json..."
+    echo "Installing tools: forever and xml-json..."
     sudo npm install forever -g 
     sudo npm install xml-json -g 
 
