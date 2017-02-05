@@ -400,7 +400,9 @@ module.exports = class {
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
             } else if (p == "externalAccess") {
-                this.externalAccess(host, policy[p]);
+              this.externalAccess(host, policy[p]);
+            } else if (p == "dnsmasq") {
+              this.dnsmasq(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {
