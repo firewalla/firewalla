@@ -1,3 +1,5 @@
+'use strict';
+
 var express = require('express');
 var path = require('path');
 var favicon = require('serve-favicon');
@@ -9,6 +11,46 @@ var swagger = require("swagger-node-express");
 const passport = require('passport');
 var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
+
+
+let UPNP = require('../extension/upnp/upnp');
+let upnp = new UPNP();
+let localPort = 8833;
+let externalPort = 8833;
+upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API", (err) => {
+    if(err) {
+        console.log("Failed to add port mapping for Firewalla API: " + err);
+    } else {
+        console.log("Portmapping is successfully created for Firewalla API");
+    }
+});
+
+
+process.stdin.resume();//so the program will not close instantly
+
+function exitHandler(options, err) {
+    if (options.cleanup) {
+        upnp.removePortMapping("tcp", localPort, externalPort, (err) => {
+            if(err) {
+                console.log("Failed to remove port mapping for Firewalla API: " + err);
+            } else {
+                console.log("Portmapping is successfully removed for Firewalla API");
+            }
+        })
+    }
+    if (err) console.log(err.stack);
+    if (options.exit) process.exit();
+}
+
+//do something when app is closing
+process.on('exit', exitHandler.bind(null,{cleanup:true}));
+
+//catches ctrl+c event
+process.on('SIGINT', exitHandler.bind(null, {exit:true}));
+
+//catches uncaught exceptions
+process.on('uncaughtException', exitHandler.bind(null, {exit:true}));
+
 
 passport.use(new Strategy(
   function(token, cb) {
@@ -24,6 +66,7 @@ var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
 var encipher = require('./routes/fastencipher2');
+let dnsmasq = require('./routes/dnsmasq');
 
 var app = express();
 
@@ -49,6 +92,14 @@ subpath_v1.use('/sys', system);
 subpath_v1.use('/message', message);
 subpath_v1.use('/ss', shadowsocks);
 subpath_v1.use('/encipher', encipher);
+subpath_v1.use('/dns', dnsmasq);
+
+if(require('fs').existsSync("/.dockerenv")) {
+  // enable direct pairing in docker environment, since iphone simulator and docker can't be in same subnet
+  // DO NOT ENABLE THIS IN PRODUCTION -- SECURITY RISK
+  let devicePairing = require('./routes/devicePairing');
+  subpath_v1.use('/device', devicePairing)
+}
 
 var subpath_docs = express();
 app.use("/docs", subpath_docs);

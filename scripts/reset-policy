@@ -1,6 +1,6 @@
 #!/bin/bash -
 forever stop main
-forever stop monitor
+sudo systemctl stop firemon
 rm ~/.forever/main.log
 rm ~/.forever/monitor.log
 rm ~/.forever/api.log

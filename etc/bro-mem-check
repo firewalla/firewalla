@@ -2,11 +2,12 @@
 sync
 
 mem=$(free -m | awk '/-/{print $4}')
-(( mem <= 511 )) && logger "Memeory Critical Simulation "+$mem
-(( mem <= 40 )) && logger "Memory reboot"+$mem
+(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+(( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
+(( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
 (( mem <= 40 )) && sudo reboot
 
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
-(( disk <= 5000 )) && logger "Disk Delete "+$disk
+(( disk <= 5000 )) && logger "FIREWALLA: Disk Delete "+$disk
 (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log

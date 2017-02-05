@@ -219,6 +219,34 @@ class netBot extends ControllerBot {
         });
     }
 
+  _dnsmasq(ip, value, callback) {
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on dnsmasq: " + value);
+        }
+      });
+    });
+  }
+
+    _directMode(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("directMode", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to apply config on directMode: " + value);
+                }
+            });
+        });
+    }
+
     _ssh(ip, value, callback) {
         this.hostManager.loadPolicy((err, data) => {
             this.hostManager.setPolicy("ssh", value, (err, data) => {
@@ -233,8 +261,8 @@ class netBot extends ControllerBot {
         });
     }
 
-    constructor(config, fullConfig, eptcloud, groups, gid, debug) {
-        super(config, fullConfig, eptcloud, groups, gid, debug);
+    constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
+        super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
         this.bot = new builder.TextBot();
         //      this.dialog = new builder.LuisDialog(config.dialog.api);
         this.dialog = new builder.CommandDialog();
@@ -262,6 +290,12 @@ class netBot extends ControllerBot {
         },1000*60);
 
         this.hostManager = new HostManager("cli", 'client', 'debug');
+
+        // no subscription for api mode
+        if(apiMode) {
+          console.log("Skipping event subscription during API mode.");
+          return;
+        }
 
         let c = require('../net2/MessageBus.js');
         this.subscriber = new c('debug');
@@ -318,7 +352,7 @@ class netBot extends ControllerBot {
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "200", "Firewalla Awakens!");
+            this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
             this.setupDialog();
         }, 2000);
 
@@ -337,7 +371,24 @@ class netBot extends ControllerBot {
             }
         });
 
+        let SSH = require('../extension/ssh/ssh.js');
+        let ssh = new SSH('debug');
 
+        // only do this in production and always do after 15 seconds ...
+        // the 15 seconds wait is for the process to wake up
+       
+        if (require('fs').existsSync("/tmp/FWPRODUCTION")==true) {
+            setTimeout(()=> {
+                ssh.resetRandomPassword((err,password) => {
+                    if(err) {
+                        console.log("Failed to reset ssh password");
+                    } else {
+                        console.log("A new random SSH password is used!");
+                        sysmanager.sshPassword = password;
+                    }
+                });
+            }, 15000);
+        }
     }
 
     scanStart(callback) {
@@ -375,7 +426,7 @@ class netBot extends ControllerBot {
                         msg = reason + " " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
                     }
                     if (obj.intel && obj.intel.summary) {
-                        msg += "\n" + obj.intelurl;
+                        //msg += "\n" + obj.intelurl;
                     }
 
                     console.log("Sending Msg:", msg);
@@ -433,6 +484,16 @@ class netBot extends ControllerBot {
               case "shadowsocks":
                 this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
                     cb(err);
+                });
+                break;
+              case "dnsmasq":
+                this._dnsmasq(msg.target, msg.data.value.dnsmasq, (err, obj) => {
+                  cb(err);
+                });
+                break;
+              case "directMode":
+                this._directMode(msg.target, msg.data.value.directMode, (err, obj) => {
+                   cb(err);
                 });
                 break;
               case "ssh":
@@ -839,7 +900,7 @@ class netBot extends ControllerBot {
           let ssh = new SSH('info');
 
           ssh.resetRSAPassword((err) => {
-            
+            let code = 200; 
 
             let datamodel = {
                     type: 'jsonmsg',
@@ -868,7 +929,7 @@ class netBot extends ControllerBot {
             let SSH = require('../extension/ssh/ssh.js');
             let ssh = new SSH('info');
             ssh.resetRandomPassword((err,password) => {
-              sysManager.sshPassword = password;
+              sysmanager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
             break;

@@ -18,6 +18,7 @@ var ip = require('ip');
 var os = require('os');
 var dns = require('dns');
 var network = require('network');
+var linux = require('../util/linux.js');
 var Nmap = require('./Nmap.js');
 var instances = {};
 var bonjour = require('bonjour')();
@@ -347,8 +348,9 @@ module.exports = class {
 
     discoverInterfaces(callback) {
         this.interfaces = {};
-        network.get_interfaces_list((err, list) => {
-            log.debug("Found list of interfaces", list, {});
+        linux.get_network_interfaces_list((err,list)=>{
+     //   network.get_interfaces_list((err, list) => {
+            log.error("Found list of interfaces", list, {});
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
@@ -399,7 +401,7 @@ module.exports = class {
             log.debug("Setting redis", redisobjs, {});
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
-                    log.error("Discovery::Interfaces:Error", redisobjs,error);
+                    log.error("Discovery::Interfaces:Error", redisobjs,list,error);
                 } else {
                     log.debug("Discovery::Interfaces", error, result.length);
                 }
@@ -440,6 +442,7 @@ module.exports = class {
     }
 
     scan(subnet, fast, callback) {
+        log.info("Start scanning network");
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
         this.nmap.scan(subnet, fast, (err, hosts, ports) => {
             this.hosts = [];
@@ -447,8 +450,8 @@ module.exports = class {
                 let host = hosts[h];
                 this.processHost(host);
             }
-            console.log("Done Processing ++++++++++++++++++++");
-
+            //console.log("Done Processing ++++++++++++++++++++");
+            log.info("Network scanning is completed");
             setTimeout(() => {
                 callback(null, null);
                 this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
@@ -464,7 +467,7 @@ module.exports = class {
 
     processHost(host) {
                 if (host.mac == null) {
-                    log.debug("Discovery:Nmap:HostMacNull:", h, hosts[h]);
+                    log.debug("Discovery:Nmap:HostMacNull:", host);
                     return;
                 }
 

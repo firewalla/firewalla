@@ -2,10 +2,10 @@
 echo "Going to delete everything ... !"
 sleep 3
 forever stop main
-sudo servcie firemon stop
-sudo servcie fireui stop
-sudo servcie fireapi stop
-sudo servcie firekick stop
+sudo service firemon stop
+sudo service fireui stop
+sudo service fireapi stop
+sudo service firekick stop
 redis-cli flushall
 sudo rm -r -f ~/.encipher/*
 sudo rm -r -f /tmp/*

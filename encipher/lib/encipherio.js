@@ -69,9 +69,13 @@ var legoEptCloud = class {
             this.notifyGids = [];
             
         }
-        this.keypair(name, pathname);
-
-        return instance[name];
+        if (true == this.keypair(name, pathname)) {
+            return instance[name];
+        } else {
+            log("ENCIPHER.IO Failed to create keys");
+            instance[name] = null;
+            return null;
+        }
     }
 
     debug(state) {
@@ -79,18 +83,36 @@ var legoEptCloud = class {
     }
 
     keypair(name, pathname) {
-        try {
-            log("Reading pem from ", pathname + name + ".privkey.pem");
-            this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
-            this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
-        } catch (err) {}
-        if (this.myprivkeyfile == null && this.mypubkeyfile == null) {
+        log("Reading pem from ", pathname + name + ".privkey.pem");
+        if (fs.existsSync(pathname + name + ".privkey.pem") && fs.existsSync(pathname + name + ".pubkey.pem")) {
+            try {
+                this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
+                this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
+                if (this.myprivkeyfile.length<10 || this.mypubkeyfile.length<10) {
+                    log("ENCIPHER.IO Unable to read keys, keylength error", this.myprivkeyfile.length, this.mypubkeyfile.length);
+                    this.myprivkeyfile = null;
+                    this.mypubkeyfile = null;
+                    require('child_process').execSync("sudo rm -f "+pathname+"/db/groupId");
+                    require('child_process').execSync("sync");
+                }
+            } catch (err) {
+                log("ENCIPHER.IO Unable to read keys");
+                return false;
+            }
+        }
+        if (this.myprivkeyfile == null || this.mypubkeyfile == null) {
             var key = ursa.generatePrivateKey(2048, 65537);
             var privateKeyPem = key.toPrivatePem();
             var pubKeyPem = key.toPublicPem();
 
-            fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
-            fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
+            try {
+                fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
+                fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
+                require('child_process').execSync("sync");
+            } catch (err) {
+                log("ENCIPHER.IO Unable to write keys");
+                return false;
+            }
 
             this.myPublicKey = ursa.createPublicKey(pubKeyPem);
             this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
@@ -98,6 +120,7 @@ var legoEptCloud = class {
             this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
             this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
         }
+        return true;
     }
 
     addPeer(publicKey, pid) {

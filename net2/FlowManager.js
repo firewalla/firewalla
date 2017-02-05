@@ -228,14 +228,14 @@ module.exports = class FlowManager {
 
             let keys = Object.keys(outdb); // or loop over the object to get the array
             keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
-               var key = keys[i];
+            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+               let key = keys[i];
                flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
             }  
             keys = Object.keys(indb); // or loop over the object to get the array
             keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (var i=0; i<keys.length; i++) { // now lets iterate in sort order
-               var key = keys[i];
+            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+               let key = keys[i];
                flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
             }  
             //console.log("FLOW DATA IS: ",flowdata,outdb,indb);
@@ -879,14 +879,14 @@ module.exports = class FlowManager {
             return name + "min : rx " + obj.rb + ", tx " + obj.ob;
         } else if (type == "rxdata" || type == "in") {
             if (interest == 'txdata') {
-                return sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+                return sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.rb + type;
+            return sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         } else if (type == "txdata" || type == "out") {
             if (interest == 'txdata') {
-                return sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+                return sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min. debug: " + obj.ob + type;
+            return sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         }
     }
 

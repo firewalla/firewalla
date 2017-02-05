@@ -108,10 +108,10 @@ module.exports = class {
             sudo: true,
         };
 
-        if (src) {
+        if (src && src!="0.0.0.0") {
             p.src = src;
         }
-        if (dst) {
+        if (dst && dst!="0.0.0.0") {
             p.dst = dst;
         }
         if (dport) {
@@ -282,6 +282,62 @@ module.exports = class {
       }
     }
 
+  dnsmasq(host, config, callback) {
+    let dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+    let dd = new dnsmasq('info');
+
+    if (config.state == true) {
+      dd.install((err) => {
+        if(err) {
+          log.error("Fail to install dnsmasq: " + err);
+          return;
+        }
+
+        dd.start((err) => {
+          if(err == null) {
+            log.info("dnsmasq service is started successfully");
+          } else {
+            log.error("Failed to start dnsmasq: " + err);
+          }
+        })
+
+      })
+
+    } else {
+      dd.stop((err) => {
+        if(err == null) {
+          log.info("dnsmasq service is stopped successfully");
+        } else {
+          log.error("Failed to stop dnsmasq: " + err);
+        }
+      })
+    }
+  }
+
+    directMode(host, config, callback) {
+        let UPNP = require('../extension/upnp/upnp');
+        let upnp = new UPNP();
+        let mappingDescription = "Firewalla API";
+
+        if(config.state == true) {
+            upnp.addPortMapping("tcp", 8833, 8833, mappingDescription, (err) => {
+                if(err) {
+                    log.error("Failed to open port mapping for Firewalla API");
+                } else {
+                    log.info("Port mapping is created successfully for Firewalla API");
+                }
+            })
+        } else {
+            upnp.removePortMapping("tcp", 8833, 8833, (err) => {
+                if(err) {
+                    log.error("Failed to remove port mapping for Firewalla API");
+                } else {
+                    log.info("Port mapping is removed successfully for Firewalla API");
+                }
+            })
+        }
+    }
+
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
 
@@ -320,6 +376,8 @@ module.exports = class {
                 this.vpn(host, policy[p], policy);
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
+            } else if (p == "directMode") {
+                this.directMode(host, policy[p]);
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {

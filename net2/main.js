@@ -35,6 +35,17 @@ function run0() {
     }
 }
 
+process.on('uncaughtException',(err)=>{
+    console.log("################### CRASH #############");
+    console.log("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+        return; 
+    }
+    bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+        process.exit(1);
+    },1000*2);
+});
 
 function run() {
 
@@ -180,24 +191,5 @@ setTimeout(()=>{
 
 },30000);
 
-process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
-    if (err && err.message && err.message.includes("Redis connection")) {
-        return; 
-    }
-    bone.log("error",{version:config.version,type:'exception',msg:err.message,stack:err.stack},null);
-    setTimeout(()=>{
-        process.exit(1);
-    },1000*2);
-});
 
-setInterval(()=>{
-    if (os.freemem()<10000000) {
-        bone.log("error",{version:config.version,type:'memoryreboot',free:os.freemem()},null);
-        setTimeout(()=>{
-            require('child_process').exec('sudo reboot', (err,out,code)=> {});
-        },1000);
-    }
-},3000);
 }

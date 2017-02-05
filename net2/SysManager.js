@@ -34,6 +34,8 @@ let DNSServers = {
     "8.8.8.8": true
 };
 
+const MAX_CONNS_PER_FLOW = 70000;
+
 const dns = require('dns');
 
 module.exports = class {
@@ -156,6 +158,11 @@ module.exports = class {
         rclient.hgetall("sys:network:info", (err, results) => {
             if (err == null) {
                 this.sysinfo = results;
+
+                if(this.sysinfo === null) {
+                    return;
+                }
+
                 for (let r in this.sysinfo) {
                     this.sysinfo[r] = JSON.parse(this.sysinfo[r]);
                 }
@@ -231,6 +238,17 @@ module.exports = class {
 
 
     myDNS() { // return array
+        let _dns = this.monitoringInterface().dns;
+        let v4dns = [];
+        for (let i in _dns) {
+            if (iptool.isV4Format(_dns[i])) {
+                v4dns.push(_dns[i]);
+            }
+        } 
+        return v4dns;
+    }
+
+    myDNSAny() {
         return this.monitoringInterface().dns;
     }
 
@@ -257,7 +275,13 @@ module.exports = class {
     // serial may not come back with anything for some platforms 
 
     getSysInfo(callback) {
-        let serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+      let serial = null;
+      if (fs.existsSync("/.dockerenv")) {
+        serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+      } else {
+        serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+      }
+
         if (serial != null) {
             serial = serial.trim();
         }
@@ -357,7 +381,7 @@ module.exports = class {
             }
             return false;
         } else {
-            log.error("SysManager:ERROR:isLocalIP", ip);
+            log.debug("SysManager:ERROR:isLocalIP", ip);
             return true;
         }
     }
@@ -414,8 +438,17 @@ module.exports = class {
             for (let k in keys) {
                 //console.log("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
+
+                  // drop old flows to avoid explosion due to p2p connections
+                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped for self protection")
+                    }
+                  })
                     //    log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
                 });
+
+
                 rclient.zcount(keys[k],'-inf','+inf',(err,data) => {
                      log.info("REDISCLEAN: flow:conn ",keys[k],data);
                 });
@@ -510,6 +543,24 @@ module.exports = class {
                            }
                            i += Number(1);
                        }
+                    }
+                });
+            }
+        });
+        let MAX_AGENT_STORED = 150;
+        rclient.keys("host:user_agent:*",(err,keys)=>{
+            for (let j in keys) {
+                rclient.scard(keys[j],(err,count)=>{
+                    log.info(keys[j]," count ", count);
+                    if (count>MAX_AGENT_STORED) {
+                        log.info(keys[j]," pop count ", count-MAX_AGENT_STORED);
+                        for (let i=0;i<count-MAX_AGENT_STORED;i++) {
+                            rclient.spop(keys[j],(err)=>{
+                                if (err) {
+                                    log.info(keys[j]," count ", count-MAX_AGENT_STORED, err);
+                                }
+                            });
+                        }
                     }
                 });
             }

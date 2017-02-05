@@ -1,0 +1,139 @@
+#!/bin/bash
+
+function perr_and_exit()
+{
+    echo "$1" >&2
+    exit 1
+}
+
+function usage()
+{
+    cat << EOM
+Usage: buildraw [-t] [-n] [-h]"
+    -t      Use npm mirror from taobao.org.
+    -n      Skip apt dependency installations. 
+    -h      Show this help.
+EOM
+}
+
+function install_dependencies() 
+{
+    git pull || perr_and_exit "Failed to pull latest firewalla code."
+
+    # TODO: check local apt mirror
+    echo "Installing node source repository..."
+    sudo  curl -sL https://deb.nodesource.com/setup_4.x | sudo -E bash -   || perr_and_exit "Failed to install node source repo"
+
+    echo "Executing apt-get update, please be patient..."
+    sudo apt-get update   || perr_and_exit "apt-get update failed."
+
+    apt_pkg_list="curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron"
+
+    echo "Installing dependencies, please be patient..."
+    sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
+
+    sudo pip install --upgrade pip
+    sudo pip install setuptools
+
+
+    echo "Installing required npms, please be patient..."
+    [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
+    sudo $NPM install forever -g 
+    sudo $NPM install xml-json -g 
+
+    echo "Setting up required folders and configures..."
+    sudo mkdir -p /blog || perr_and_exit "Failed to create folder /blog"
+    sudo mkdir -p /bspool || perr_and_exit "Failed to create folder /bspool"
+
+    echo "Setting up openvpn..."
+    sudo rm -r -f /etc/openvpn || perr_and_exit "Failed to delete existing openvpn configure folder."
+    sudo mkdir -p /etc/openvpn || perr_and_exit "Failed to create new openvpn configure folder."
+    sudo cp -r /usr/share/easy-rsa /etc/openvpn || perr_and_exit "Failed to copy easy_rsa."
+
+    echo "Installing shadowsocks..."
+    sudo pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
+}
+
+function install_walla()
+{
+    echo "Installing node modules..."
+
+    FW_NODE_MODULES_PATH=~/.node_modules
+    mkdir $FW_NODE_MODULES_PATH
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
+
+    git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+    cd $FW_NODE_MODULES_PATH
+    git reset -q --hard `cat $basedir/scripts/NODE_MODULES_REVISION`
+    cd -
+
+
+    echo "Installing npm packages, please be patient..."
+    [[ "$USE_TAOBAO_NPM" == 1 ]] && echo "Using taobao npm mirror."
+    sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/package.template.json > $basedir/package.json
+    sed -s "s/%%NPM_REGISTRY%%/$NPM_REGISTRY/g" $basedir/npm-shrinkwrap.template.json > $basedir/npm-shrinkwrap.json
+
+    #no need to install npm any more, they are already provided by .node_modules
+#    cd $basedir && $NPM install || echo "[WARNING] There are errors during npm install."
+#    cd $basedir/api && $NPM install ||  echo "[WARNING] There are errors during npm install."
+
+    echo "Installing bro..." 
+    cd $basedir/imports && curl https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz 
+    cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
+    cp $basedir/bin/real/bit* $basedir/bin/ 
+    sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
+    sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
+    crontab $basedir/etc/brotab || perr_and_exit "Failed to install user bro cronjobs."
+
+    echo "Setting up encipher..."
+    sudo mkdir -p /encipher.config || perr_and_exit "Failed to create /encipher.config/"
+    sudo cp $basedir/config/netbot.config /encipher.config/ || perr_and_exit "Failed top copy encipher config."
+    sudo mkdir -p /firewalla && sudo chmod 777 /firewalla || perr_and_exit "Failed to create /firewalla."
+
+    echo "Setting up brofish and firewalla services..."
+    sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.servie."
+    sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
+    
+    if [[ "$BUILD_ONLY" != 1 ]]; then
+        sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
+        sudo systemctl enable brofish || perr_and_exit "Failed to enable brofish service."
+        sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
+    fi
+    sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
+    # Set firewalla global environment variable
+    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
+        echo "FIREWALLA_HOME "+$basedir
+        sudo /bin/echo "FIREWALLA_HOME=$basedir" | sudo bash -c 'cat - >>  /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
+    fi
+
+    sudo cp $basedir/etc/10-header /etc/update-motd.d/10-header
+}
+
+basedir=`dirname $0`
+export basedir=`cd $basedir;pwd`
+
+echo "basedir is $basedir"
+
+USE_TAOBAO_NPM=0
+NPM=npm
+NPM_REGISTRY="registry.npmjs.org"
+
+while getopts "tnh" opt; do
+    case $opt in
+        t) USE_TAOBAO_NPM=1;;
+        n) NO_DEPS=1;;
+        h) usage; exit 0;;
+        ?) perr_and_exit "Invalid option.";;
+    esac
+done
+
+[[ "$USE_TAOBAO_NPM" == "1" ]] && NPM="npm --registry=https://registry.npm.taobao.org --cache=$HOME/.npm/.cache/cnpm --disturl=https://npm.taobao.org/dist --userconfig=$HOME/.cnpmrc" && NPM_REGISTRY="registry.npm.taobao.org"
+
+[[ "$NO_DEPS" != 1 ]] && install_dependencies || echo "Skipping dependency installation."
+
+install_walla
+
+echo "Installation successful."
+
+exit 0

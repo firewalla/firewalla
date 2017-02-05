@@ -1,5 +1,10 @@
 [![Build Status](https://travis-ci.org/firewalla/firewalla.svg?branch=master)](https://travis-ci.org/firewalla/firewalla)
+<a href="https://scan.coverity.com/projects/firewalla-firewalla">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/11583/badge.svg"/>
+</a>
 ## Firewalla  (Pre-Alpha)
+Support (email fire@firewalla.com)
 ## Install From Image
 ```
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz

@@ -48,6 +48,13 @@ var utils = require('../lib/utils.js');
 var uuid = require("uuid");
 var forever = require('forever-monitor');
 var intercomm = require('../lib/intercomm.js');
+let network = require('network');
+var redis = require("redis");
+var rclient = redis.createClient();
+
+let Firewalla = require('../net2/Firewalla.js');
+let f = new Firewalla("config.json", 'info');
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')
@@ -102,13 +109,14 @@ if (!fs.existsSync(dbPath)) {
 
 var symmetrickey = generateEncryptionKey();
 
-storage.initSync({
-    'dir': dbPath
-});
 
 var eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
 var service = null;
+
+storage.initSync({
+    'dir': dbPath
+});
 
 function pad(value, length) {
     return (value.toString().length < length) ? pad("0" + value, length) : value;
@@ -196,11 +204,18 @@ function openInvite(group,gid,ttl) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminInviteInterval*ttl,
                 };
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
                 displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                network.get_private_ip(function(err, ip) {
+                    txtfield.ipaddress = ip;
+                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                });
+
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {
@@ -257,12 +272,25 @@ function inviteFirstAdmin(gid, callback) {
                     'mid': uuid.v4(),
                     'exp': Date.now() / 1000 + adminTotalInterval,
                 };
+                if (intercomm.bcapable()==false) {
+                    txtfield.verifymode = "qr";
+                }
                 txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                    displayKey(symmetrickey.userkey);
+                displayKey(symmetrickey.userkey);
                 displayInvite(obj);
 
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                network.get_private_ip(function(err, ip) {
+                    txtfield.ipaddress = ip;
+                    service = intercomm.publish(null, config.endpoint_name + utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                });
+
                 intercomm.bpublish(gid, obj.r, config.serviceType);
+
+                // for development mode, allow pairing directly from API (store temp key in redis)
+                if(! f.isProduction()) {
+                  rclient.set("rid.temp", obj.r);
+                  console.log("WARNING: Running in development mode, RID is stored in redis");
+                }
 
                 var timer = setInterval(function () {
                     console.log("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
@@ -327,12 +355,16 @@ function launchService(gid, callback) {
 }
 
 function launchService2(gid,callback) {
-  // fs.writeFileSync('/home/pi/.firewalla/ui.conf',"Environment=GID="+gid+"\n"+"Environment=CONF="+program.config+"\n",'utf-8');
    fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
-  // require('child_process').exec("forever start --uid ui -a -c '/usr/bin/node --expose-gc' ../controllers/MomBot.js --gid "+gid+" --config "+program.config  , (err, out, code) => {
- //  });
-   require('child_process').exec("sudo systemctl start fireui" , (err, out, code) => {
-   });
+   if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
+       require('child_process').exec("sudo systemctl start fireapi");
+   } else {
+     if (fs.existsSync("/.dockerenv")) {
+       require('child_process').exec("cd api; forever start -a --uid api bin/www");
+     } else {
+       require('child_process').exec("sudo systemctl start fireapi");
+     }
+   }
 }
 
 eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
@@ -340,6 +372,15 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
         initializeGroup(function (err, gid) {
             var groupid = gid;
             if (gid) {
+                rclient.hmset("sys:ept", {
+                    eid: eptcloud.eid,
+                    token: eptcloud.token,
+                    gid: gid
+                }, (err, data) => {
+                  if (err) {}
+                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
+                });
+
                 inviteFirstAdmin(gid, function (err, status) {
                     if (status) {
                         intercomm.stop(service);
