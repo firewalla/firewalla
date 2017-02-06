@@ -35,6 +35,10 @@ function run0() {
     }
 }
 
+var fs = require('fs');
+var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+
+
 process.on('uncaughtException',(err)=>{
     console.log("################### CRASH #############");
     console.log("+-+-+-",err.message,err.stack);
@@ -52,8 +56,6 @@ function run() {
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var fs = require('fs');
-var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 sysManager.setConfig(config);
 
