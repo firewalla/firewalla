@@ -93,7 +93,7 @@ module.exports = class {
     let domainFilterFile = __dirname + "/filter.json";
     let dnsFilterFile = dnsFilterDir + "/filter.conf";
 
-    let updateFilterX = function() {
+    let updateFilterX = function(callback) {
       let writer = fs.createWriteStream(dnsFilterFile);
 
       jsonfile.readFile(domainFilterFile, (err, obj) => {
@@ -101,11 +101,16 @@ module.exports = class {
           callback(err);
           return;
         }
+
+	  // FIXME: Need some performance optimization here
         obj.basic.forEach((hostname) => { // FIXME: Support multiple cateogires in filter json file
           let entry = util.format("address=/%s/198.51.100.99\n", hostname);
           writer.write(entry);
         });
-        writer.end();
+          writer.end((err) => {
+	      log.info("Latest filters have been flushed to ", dnsFilterFile, err);
+	      callback(err);
+	  });
       });
     };
 
@@ -120,12 +125,10 @@ module.exports = class {
       fs.stat(dnsFilterFile, (err, stats) => {
         if (!err) {
           fs.unlink(dnsFilterFile, (err) => {
-            updateFilterX();
-            callback(err);
+            updateFilterX(callback);
           });
         } else {
-          updateFilterX();
-          callback(err);
+          updateFilterX(callback);
         }
       });
     });
