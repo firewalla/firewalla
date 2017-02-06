@@ -58,6 +58,7 @@ module.exports = class {
     let localIP = sysManager.myIp();
 
     let rule = util.format("GATEWAY_IP=%s LOCAL_IP=%s bash %s", gatewayIP, localIP, require('path').resolve(__dirname, "add_iptables.template.sh"));
+    log.debug("Command to add iptables rules: ", rule);
 
     require('child_process').exec(rule, (err, out, code) => {
       if(err) {
@@ -135,10 +136,11 @@ module.exports = class {
   rawStart(callback) {
     callback = callback || function() {}
 
-    let cmd = "sudo systemctl start dnsmasq";
+    // use restart to ensure the latest configuration is loaded
+    let cmd = "sudo systemctl restart dnsmasq";
 
     if(require('fs').existsSync("/.dockerenv")) {
-      cmd = "sudo service dnsmasq start";
+      cmd = "sudo service dnsmasq restart";
     }
 
     require('child_process').exec(cmd, (err, out, code) => {
