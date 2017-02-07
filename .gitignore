@@ -37,3 +37,5 @@ jspm_packages
 .node_repl_history
 /etc/shadowsocks.config.json
 /extension/shadowsocks/ss.config.json
+/bin/bitbridge6
+/bin/bitbridge4
