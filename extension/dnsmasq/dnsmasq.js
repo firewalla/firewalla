@@ -49,7 +49,7 @@ module.exports = class {
   }
 
   readFilter(callback)  {
-    let domainFilterFile = __dirname + "/filter.json";
+    let domainFilterFile = __dirname + "/.temp.json";
     jsonfile.readFile(domainFilterFile, callback);
   }
 
