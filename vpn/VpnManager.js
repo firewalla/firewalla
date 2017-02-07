@@ -41,7 +41,7 @@ var util = require('util');
 var linux = require('../util/linux');
 
 
-var ttlExpire = 60*60*1;
+var ttlExpire = 12*60*60;
 
 module.exports = class {
     constructor(path, loglevel) {
@@ -227,7 +227,7 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: 0,
+            ttl: ttlExpire,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);

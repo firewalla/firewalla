@@ -699,13 +699,12 @@ module.exports = class FlowManager {
             let key = "flow:conn:" + direction + ":" + ip;
             rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
                 let conndb = {};
-                if (result.length>0) 
-                    log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                 let interval = 0;
                 let totalInBytes = 0;
                 let totalOutBytes = 0;
                 if (err == null) {
-                    // group together
+                    if (result!=null && result.length>0) 
+                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                     for (let i in result) {
                         let o = JSON.parse(result[i]);
                         if (o == null) {
@@ -739,8 +738,8 @@ module.exports = class FlowManager {
                                 interval = Date.now() / 1000;
                             }
                             interval = interval - hours * 60 * 60;
-                            for (let i in conndb) {
-                                sorted.push(conndb[i]);
+                            for (let j in conndb) {
+                                sorted.push(conndb[j]);
                             }
                             conndb = {};
                         }
@@ -763,13 +762,13 @@ module.exports = class FlowManager {
                                 flow.ts = o.ts;
                             }
                             if (o.pf) {
-                                for (let i in o.pf) {
-                                    if (flow.pf[i] != null) {
-                                        flow.pf[i].rb += o.pf[i].rb;
-                                        flow.pf[i].ob += o.pf[i].ob;
-                                        flow.pf[i].ct += o.pf[i].ct;
+                                for (let k in o.pf) {
+                                    if (flow.pf[k] != null) {
+                                        flow.pf[k].rb += o.pf[k].rb;
+                                        flow.pf[k].ob += o.pf[k].ob;
+                                        flow.pf[k].ct += o.pf[k].ct;
                                     } else {
-                                        flow.pf[i] = o.pf[i]
+                                        flow.pf[k] = o.pf[k]
                                     }
                                 }
                             }
@@ -785,12 +784,12 @@ module.exports = class FlowManager {
                     }
 
                     if (saveStats) {
-                        let ts = Math.ceil(Date.now() / 1000);
-                        this.recordStats("0.0.0.0","hour",ts,totalInBytes,totalOutBytes,null);
+                        let _ts = Math.ceil(Date.now() / 1000);
+                        this.recordStats("0.0.0.0","hour",_ts,totalInBytes,totalOutBytes,null);
                     }
 
-                    for (let i in conndb) {
-                        sorted.push(conndb[i]);
+                    for (let m in conndb) {
+                        sorted.push(conndb[m]);
                     }
                     if (result.length>0) 
                         log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
@@ -873,20 +872,26 @@ module.exports = class FlowManager {
             name = obj.dhname;
         }
 
+        //let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
         let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+        let dtime = "";
+
+        if (time>5) {
+            dtime = time+" min ago, ";
+        }
 
         if (type == null) {
             return name + "min : rx " + obj.rb + ", tx " + obj.ob;
         } else if (type == "rxdata" || type == "in") {
             if (interest == 'txdata') {
-                return sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+                return dtime+sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            return dtime+sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         } else if (type == "txdata" || type == "out") {
             if (interest == 'txdata') {
-                return sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+                return dtime+sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            return dtime+sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         }
     }
 
