@@ -11,8 +11,7 @@ let log = null;
 let fs = require('fs');
 let util = require('util');
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 
 let natpmp = require('nat-pmp');
 let natupnp = require('nat-upnp');

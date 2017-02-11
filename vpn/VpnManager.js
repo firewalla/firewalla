@@ -18,9 +18,7 @@ var instance = null;
 var log = null;
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
-var Firewalla = require('../net2/Firewalla.js');
-//TODO: support real config file for Firewalla class
-var firewalla = new Firewalla('/path/to/config', 'info');
+var firewalla = require('../net2/Firewalla.js');
 var fHome = firewalla.getFirewallaHome();
 
 var redis = require("redis");

@@ -302,7 +302,8 @@ module.exports = class {
           return;
         }
 
-        dd.start((err) => {
+        // no force update
+        dd.start(false, (err) => {
           if(err == null) {
             log.info("dnsmasq service is started successfully");
           } else {

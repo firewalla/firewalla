@@ -116,7 +116,8 @@ echo "Adding ENV FIREWALLA_HOME..."
 }
 
 function post_installation() {
-    mkdir -p ~/.dns
+    source $FIREWALLA_HOME/scripts/utils.sh
+    setup_folders
 }
 
 basedir=`dirname $0`

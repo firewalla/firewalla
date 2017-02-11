@@ -7,8 +7,7 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-let Firewalla = require('../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../net2/Firewalla.js');
 
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq');
 let dnsmasq = new DNSMASQ();

@@ -17,26 +17,52 @@ var log;
 var config;
 
 // TODO: Read this from config file
-var firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
+let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
+var _isProduction = null;
 
-module.exports = class {
-    getFirewallaHome() {
-        return firewallaHome;
-    }
+function getFirewallaHome() {
+  return firewallaHome;
+}
 
-    getUserHome() {
-      return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
-    }
+function getUserID() {
+  return process.env.USER;
+}
 
-    getFirewallaConfigFolder() {
-      return this.getUserHome() + "/.firewalla/";
-    }
+function getUserHome() {
+  return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
+}
 
-    isProduction() {
-      // if either of condition matches, this is production environment
-      if (this._isProduction==null) {
-        this._isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
-      }
-      return this._isProduction;
-    }
+function getLogFolder() {
+  return getUserHome() + "/.forever";
+}
+
+function getHiddenFolder() {
+  return getUserHome() + "/.firewalla";
+}
+
+function isProduction() {
+  // if either of condition matches, this is production environment
+  if (_isProduction==null) {
+    _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
+  }
+  return _isProduction;
+}
+
+function getRuntimeInfoFolder() {
+  return getHiddenFolder() + "/run";
+}
+
+function getUserConfigFolder() {
+  return getHiddenFolder() + "/config";
+}
+
+module.exports = {
+  getFirewallaHome: getFirewallaHome,
+  getUserHome: getUserHome,
+  getHiddenFolder: getHiddenFolder,
+  isProduction: isProduction,
+  getLogFolder: getLogFolder,
+  getRuntimeInfoFolder: getRuntimeInfoFolder,
+  getUserConfigFolder: getUserConfigFolder,
+  getUserID: getUserID
 };

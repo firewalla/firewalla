@@ -12,19 +12,19 @@ let dnsmasq = require('../../extension/dnsmasq/dnsmasq.js');
 let d = new dnsmasq('info');
 
 /* dnsmasq api */
-router.get('/filter',
-  passport.authenticate('bearer', { session: false }),
-  function(req, res, next) {
-    d.readFilter((err, obj) => {
-      res.json(obj);
-    });
-  });
 
 router.post('/filter/renew',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.updateFilter();
-    res.status(200).send('');
+    d.updateFilter(true, (err) => {
+      if(err) {
+        console.log(err);
+        res.status(500).send('');
+      } else {
+        res.status(200).send('');
+      }      
+    });
+
   });
 
 router.post('/iptables/add',
@@ -51,29 +51,55 @@ router.post('/iptables/remove',
     });
   });
 
+router.get('/detail_status',
+           passport.authenticate('bearer', { session: false } ),
+           function(req, res, next) {
+             d.checkStatus((err) => {
+               if(err) {
+                 console.log("Got error when checking dnsmasq status: ", err);
+                 res.status(500).send('');
+               } else {
+                 res.status(200).send('');
+               }               
+             });
+           }
+          );
+
+router.get('/status',
+           passport.authenticate('bearer', { session: false } ),
+           function(req, res, next) {
+             d.isUp((result) => {
+               res.json({ status: result });
+             });
+           }
+          );
+
 router.post('/:action',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
     var action = req.params.action;
     if (action === "start") {
-      d.start(function(err, result) {
+      d.start(true, (err, result) => {
         if(err) {
+          console.log(err);
           res.status(500).send('');
         } else {
           res.status(200).send('');
         }
       });
     } else if (action === "stop") {
-      d.stop(function(err, result) {
+      d.stop((err, result) => {
         if(err) {
+          console.log(err);
           res.status(500).send('');
         } else {
           res.status(200).send('');
         }
       });
     } else if (action === "install") {
-      d.install(function(err, result) {
+      d.install((err, result) => {
         if(err) {
+          console.log(err);
           res.status(500).send('');
         } else {
           res.status(200).send('');

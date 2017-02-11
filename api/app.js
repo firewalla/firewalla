@@ -12,8 +12,7 @@ const passport = require('passport');
 var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
 
-let Firewalla = require('../net2/Firewalla.js');
-let firewalla = new Firewalla();
+let firewalla = require('../net2/Firewalla.js');
 
 passport.use(new Strategy(
   function(token, cb) {

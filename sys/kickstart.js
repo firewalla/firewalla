@@ -52,8 +52,7 @@ let network = require('network');
 var redis = require("redis");
 var rclient = redis.createClient();
 
-let Firewalla = require('../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../net2/Firewalla.js');
 
 const license = require('../util/license.js');
 

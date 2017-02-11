@@ -34,7 +34,7 @@ let DNSServers = {
     "8.8.8.8": true
 };
 
-const MAX_CONNS_PER_FLOW = 70000;
+const MAX_CONNS_PER_FLOW = 35000;
 
 const dns = require('dns');
 

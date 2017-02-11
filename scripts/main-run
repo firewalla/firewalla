@@ -24,6 +24,11 @@ fi
 CPU_PLATFORM=$(uname -m)
 
 
+function pre_main() {
+    source $FIREWALLA_HOME/scripts/utils.sh
+    setup_folders
+}
+
 logger "FIREWALLA: Main-Run Start Update Modules"
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
@@ -87,6 +92,8 @@ nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
+
+pre_main
 
 if [[ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json && ! -f ~/.node_modules/bleno/package.json ]]; then
     echo "Updating NPM BLENO"
