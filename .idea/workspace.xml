@@ -2,11 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/db/token.json" afterPath="$PROJECT_DIR$/api/db/token.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" afterPath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/lib/bonetest.js" afterPath="$PROJECT_DIR$/lib/bonetest.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_hash.js" afterPath="$PROJECT_DIR$/test/test_hash.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/install.sh" afterPath="$PROJECT_DIR$/extension/dnsmasq/install.sh" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/scripts/NODE_MODULES_REVISION" afterPath="$PROJECT_DIR$/scripts/NODE_MODULES_REVISION" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_upnp.js" afterPath="$PROJECT_DIR$/test/test_upnp.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
@@ -74,7 +72,7 @@
         <entry file="file://$PROJECT_DIR$/lib/Bone.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="256">
-              <caret line="350" column="25" lean-forward="true" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
+              <caret line="350" column="25" lean-forward="false" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
               <folding />
             </state>
           </provider>
@@ -94,7 +92,7 @@
         <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="373">
-              <caret line="155" column="31" lean-forward="true" selection-start-line="155" selection-start-column="21" selection-end-line="155" selection-end-column="31" />
+              <caret line="154" column="31" lean-forward="false" selection-start-line="154" selection-start-column="21" selection-end-line="154" selection-end-column="31" />
               <folding />
             </state>
           </provider>
@@ -114,9 +112,9 @@
         <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="316">
-              <caret line="359" column="58" lean-forward="false" selection-start-line="359" selection-start-column="58" selection-end-line="359" selection-end-column="58" />
+              <caret line="358" column="58" lean-forward="false" selection-start-line="358" selection-start-column="58" selection-end-line="358" selection-end-column="58" />
               <folding>
-                <marker date="1486049037000" expanded="true" signature="12989:13287" ph="{...}" />
+                <marker date="1486815083000" expanded="true" signature="12935:13233" ph="{...}" />
               </folding>
             </state>
           </provider>
@@ -126,7 +124,7 @@
         <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="335">
-              <caret line="336" column="3" lean-forward="false" selection-start-line="336" selection-start-column="3" selection-end-line="336" selection-end-column="3" />
+              <caret line="337" column="3" lean-forward="false" selection-start-line="337" selection-start-column="3" selection-end-line="337" selection-end-column="3" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -145,7 +143,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>update</find>
       <find>gethandler</find>
       <find>cmdhandler</find>
       <find>debugon</find>
@@ -175,6 +172,7 @@
       <find>_externalAccess</find>
       <find>hashset</find>
       <find>json</find>
+      <find>IPTABLE:DNS:Error</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -581,12 +579,12 @@
       <workItem from="1484997022072" duration="16334000" />
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
-      <workItem from="1486021488065" duration="23214000" />
+      <workItem from="1486021488065" duration="23455000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="116985000" />
+    <option name="totallyTimeSpent" value="117226000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -599,12 +597,12 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="0" y="22" width="1680" height="979" extended-state="6" />
-    <editor active="true" />
+    <editor active="false" />
     <layout>
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.20833333" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
-      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.3967033" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Find" active="true" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.3967033" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
@@ -882,16 +880,16 @@
         <state relative-caret-position="-220">
           <caret line="56" column="0" lean-forward="true" selection-start-line="56" selection-start-column="0" selection-end-line="56" selection-end-column="0" />
           <folding>
-            <marker date="1486456867000" expanded="true" signature="1352:2128" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="1683:1728" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="1823:2120" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="1849:1878" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="1932:1997" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="2003:2112" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="2156:2674" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="2281:2670" ph="{...}" />
-            <marker date="1486456867000" expanded="true" signature="2287:2462" ph="//..." />
-            <marker date="1486456867000" expanded="true" signature="2468:2599" ph="//..." />
+            <marker date="1486815036000" expanded="true" signature="1298:2074" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1629:1674" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1769:2066" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1795:1824" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1878:1943" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1949:2058" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2102:2620" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2227:2616" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2233:2408" ph="//..." />
+            <marker date="1486815036000" expanded="true" signature="2414:2545" ph="//..." />
           </folding>
         </state>
       </provider>
@@ -1215,9 +1213,9 @@
     <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="316">
-          <caret line="359" column="58" lean-forward="false" selection-start-line="359" selection-start-column="58" selection-end-line="359" selection-end-column="58" />
+          <caret line="358" column="58" lean-forward="false" selection-start-line="358" selection-start-column="58" selection-end-line="358" selection-end-column="58" />
           <folding>
-            <marker date="1486049037000" expanded="true" signature="12989:13287" ph="{...}" />
+            <marker date="1486815083000" expanded="true" signature="12935:13233" ph="{...}" />
           </folding>
         </state>
       </provider>
@@ -1225,7 +1223,7 @@
     <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="335">
-          <caret line="336" column="3" lean-forward="false" selection-start-line="336" selection-start-column="3" selection-end-line="336" selection-end-column="3" />
+          <caret line="337" column="3" lean-forward="false" selection-start-line="337" selection-start-column="3" selection-end-line="337" selection-end-column="3" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>
@@ -1261,7 +1259,7 @@
     <entry file="file://$PROJECT_DIR$/lib/Bone.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="256">
-          <caret line="350" column="25" lean-forward="true" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
+          <caret line="350" column="25" lean-forward="false" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
           <folding />
         </state>
       </provider>
@@ -1269,7 +1267,7 @@
     <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="373">
-          <caret line="155" column="31" lean-forward="true" selection-start-line="155" selection-start-column="21" selection-end-line="155" selection-end-column="31" />
+          <caret line="154" column="31" lean-forward="false" selection-start-line="154" selection-start-column="21" selection-end-line="154" selection-end-column="31" />
           <folding />
         </state>
       </provider>

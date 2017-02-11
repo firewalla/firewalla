@@ -70,9 +70,10 @@ module.exports = class {
         // need update
         console.log("filterFile is ", filterFile);
         console.log("tmpFilterFile is ", tmpFilterFile);
-        fs.rename(tmpFilterFile, filterFile, callback);
+        fs.rename(tmpFilterFile, filterFile, callback);      
       } else {
         // no need to update
+        callback(null);
       }
     });
   }
@@ -203,35 +204,6 @@ module.exports = class {
   
 
   checkStatus(callback) {
-    callback = callback || function() {}
-
-    if(this.started) {
-      let cmd = util.format("pgrep -a -F %s | grep %s | grep -v grep", dnsmasqPIDFile, dnsmasqBinary);
-
-      log.info("Command to check dnsmasq: ", cmd);
-
-      require('child_process').exec(cmd, (err, stdout, stderr) => {
-        if(err) {
-          log.error("dnsmasq is not up: ", stderr);
-        }
-        callback(err);
-      });
-    } else {
-      let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
-      log.info("Command to check dnsmasq: ", cmd);
-
-      require('child_process').exec(cmd, (err, stdout, stderr) => {
-        if(stdout !== "") {
-          log.error("dnsmasq is up but should be stopped: ", stdout);
-          callback(new Error("dnsmasq is up but should be stopped"));
-        } else {
-          callback(null);
-        }
-      });
-    }
-  }
-
-  isUp(callback) {
     callback = callback || function() {}
 
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);

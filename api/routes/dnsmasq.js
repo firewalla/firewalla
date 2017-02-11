@@ -68,7 +68,7 @@ router.get('/detail_status',
 router.get('/status',
            passport.authenticate('bearer', { session: false } ),
            function(req, res, next) {
-             d.isUp((result) => {
+             d.checkStatus((result) => {
                res.json({ status: result });
              });
            }
