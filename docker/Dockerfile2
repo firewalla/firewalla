@@ -3,7 +3,7 @@ FROM debian
 
 # install required packages, in one command
 RUN apt-get update  && \
-    apt-get install -y git curl vim sudo telnet netcat man host emacs wget
+    apt-get install -y git curl vim sudo telnet netcat man host emacs wget netcat
 
 RUN useradd -m pi -s /bin/bash && \
     echo "pi ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers

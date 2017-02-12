@@ -30,6 +30,10 @@ let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
 
+let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+
+let defaultNameServers = null;
+
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
 module.exports = class {
@@ -43,6 +47,8 @@ module.exports = class {
   }
 
   install(callback) {
+    callback = callback || function() {}
+
     let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
     require('child_process').exec(install_cmd, (err, out, code) => {
       if (err) {
@@ -59,7 +65,26 @@ module.exports = class {
     // TODO
   }
 
+  updateResolvConf(callback) {
+    callback = callback || function() {}
+    
+    var nameservers = defaultNameServers;
+    if(!nameservers) {
+      nameservers = sysManager.myDNS();
+    }
+
+    if(!nameservers) {
+      nameservers = ["8.8.8.8"];  // use google dns by default, should not reach this code
+    }
+    
+    let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
+    let config = entries.join('\n');
+    fs.writeFile(dnsmasqResolvFile, config, callback);
+  }
+  
   updateFilter(force, callback) {
+    callback = callback || function() {}
+
     this.updateTmpFilter(force, (err, result) => {
       if(err) {
         callback(err);
@@ -77,8 +102,14 @@ module.exports = class {
       }
     });
   }
+
+  setDefaultNameServers(nameservers) {
+    defaultNameServers = nameservers;
+  }
   
   updateTmpFilter(force, callback) {
+    callback = callback || function() {}
+
     let mkdirp = require('mkdirp');
     mkdirp(dnsFilterDir, (err) => {
       
@@ -140,6 +171,8 @@ module.exports = class {
   }
   
   loadFilterFromBone(callback) {
+    callback = callback || function() {}
+
     bone.hashset("ad_cn",(err,data)=>{
       if(err) {
         callback(err);
@@ -151,6 +184,8 @@ module.exports = class {
   }
   
   add_iptables_rules(callback) {
+    callback = callback || function() {}
+
     let dnses = sysManager.myDNS();
     let dnsString = dnses.join(" ");
     let localIP = sysManager.myIp();
@@ -171,6 +206,8 @@ module.exports = class {
 
 
   remove_iptables_rules(callback) {
+    callback = callback || function() {}
+
     let dnses = sysManager.myDNS();
     let dnsString = dnses.join(" ");
     let localIP = sysManager.myIp();
@@ -189,6 +226,8 @@ module.exports = class {
   }
 
   writeHashFilterFile(hashes, file, callback) {
+    callback = callback || function() {}
+    
   
     let writer = fs.createWriteStream(file);
 
@@ -222,7 +261,7 @@ module.exports = class {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = util.format("sudo %s.$(uname -m) -x %s -u %s -C %s --local-service", dnsmasqBinary, dnsmasqPIDFile, userID, dnsmasqConfigFile);
+    let cmd = util.format("sudo %s.$(uname -m) -x %s -u %s -C %s -r %s --local-service", dnsmasqBinary, dnsmasqPIDFile, userID, dnsmasqConfigFile, dnsmasqResolvFile);
 
     log.info("Command to start dnsmasq: ", cmd);
 
@@ -272,32 +311,44 @@ module.exports = class {
   }
 
   start(force, callback) {
+    // 0. update resolv.conf
     // 1. update filter
     // 2. start dnsmasq service
     // 3. update iptables rule
 
-    this.updateFilter(force, (err) => {
+    this.updateResolvConf((err) => {
       if(err) {
         callback(err);
         return;
       }
-
-      this.rawStart((err) => {
+      
+      this.updateFilter(force, (err) => {
         if(err) {
-          this.rawStop();
           callback(err);
           return;
         }
 
-        this.add_iptables_rules((err) => {
-          if(err) {
-            this.rawStop();
-            this.remove_iptables_rules();
-          }
-          callback(err);
-        })
-      })
-    })
+        this.rawStop((err) => {
+          this.rawStart((err) => {
+            if(err) {
+              this.rawStop();
+              callback(err);
+              return;
+            }
+            
+            this.add_iptables_rules((err) => {
+              if(err) {
+                this.rawStop();
+                this.remove_iptables_rules();
+              }
+              callback(err);
+            });
+          });
+        });
+                     
+      });
+      
+    });
   }
 
   stop(callback) {

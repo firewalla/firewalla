@@ -40,15 +40,15 @@ var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 
 process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
+  console.warn("################### CRASH #############");
+    console.warn("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
         return; 
     }
     bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
         process.exit(1);
-    },1000*2);
+    },1000*5);
 });
 
 function run() {

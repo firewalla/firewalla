@@ -3,7 +3,7 @@
 for protocol in tcp udp; do
     for dns in $DNS_IPS; do
         RULE="-t nat -p $protocol --destination $dns --destination-port 53 -j DNAT --to-destination $LOCAL_IP:53"
-        sudo iptables -C PREROUTING $RULE &>/dev/null || sudo iptables -A PREROUTING $RULE
+        sudo iptables -C PREROUTING $RULE &>/dev/null || sudo iptables -I PREROUTING 1 $RULE
     done
 done
 
