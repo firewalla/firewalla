@@ -350,7 +350,7 @@ module.exports = class {
         this.interfaces = {};
         linux.get_network_interfaces_list((err,list)=>{
      //   network.get_interfaces_list((err, list) => {
-            log.error("Found list of interfaces", list, {});
+            log.info("Found list of interfaces", list, {});
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");

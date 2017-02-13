@@ -2,19 +2,14 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/app.js" afterPath="$PROJECT_DIR$/api/app.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/db/token.json" afterPath="$PROJECT_DIR$/api/db/token.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/dnsmasq.js" afterPath="$PROJECT_DIR$/api/routes/dnsmasq.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/fastencipher2.js" afterPath="$PROJECT_DIR$/api/routes/fastencipher2.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/controllers/netbot.js" afterPath="$PROJECT_DIR$/controllers/netbot.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/docker/Dockerfile2" afterPath="$PROJECT_DIR$/docker/Dockerfile2" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/add_iptables.template.sh" afterPath="$PROJECT_DIR$/extension/dnsmasq/add_iptables.template.sh" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" afterPath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" afterPath="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/dnsmasq/filter.json" afterPath="$PROJECT_DIR$/extension/dnsmasq/filter.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/upnp/upnp.js" afterPath="$PROJECT_DIR$/extension/upnp/upnp.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/Discovery.js" afterPath="$PROJECT_DIR$/net2/Discovery.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/HostManager.js" afterPath="$PROJECT_DIR$/net2/HostManager.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/PolicyManager.js" afterPath="$PROJECT_DIR$/net2/PolicyManager.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/config.json" afterPath="$PROJECT_DIR$/net2/config.json" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/main.js" afterPath="$PROJECT_DIR$/net2/main.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_upnp.js" afterPath="$PROJECT_DIR$/test/test_upnp.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
@@ -36,21 +31,11 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file leaf-file-name="app.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/api/app.js">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="247">
-              <caret line="17" column="15" lean-forward="false" selection-start-line="17" selection-start-column="15" selection-end-line="17" selection-end-column="15" />
-              <folding />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="netbot.js" pinned="false" current-in-tab="true">
+      <file leaf-file-name="netbot.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="231">
-              <caret line="494" column="36" lean-forward="false" selection-start-line="494" selection-start-column="21" selection-end-line="494" selection-end-column="36" />
+            <state relative-caret-position="174">
+              <caret line="155" column="33" lean-forward="true" selection-start-line="155" selection-start-column="33" selection-end-line="155" selection-end-column="33" />
               <folding />
             </state>
           </provider>
@@ -59,21 +44,52 @@
       <file leaf-file-name="main.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/net2/main.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="164">
-              <caret line="173" column="19" lean-forward="true" selection-start-line="173" selection-start-column="19" selection-end-line="173" selection-end-column="19" />
+            <state relative-caret-position="287">
+              <caret line="101" column="3" lean-forward="true" selection-start-line="101" selection-start-column="3" selection-end-line="101" selection-end-column="3" />
+              <folding>
+                <marker date="1486928353000" expanded="true" signature="2966:3004" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="2966:3006" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="2966:5573" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="3459:3919" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="3589:3677" ph="//..." />
+                <marker date="1486928353000" expanded="true" signature="3945:3993" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4018:4066" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4100:4193" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4110:4174" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4134:4168" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4221:4804" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4298:4800" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4323:4450" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4456:4794" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4494:4782" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4528:4679" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4685:4768" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4829:5561" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4870:5556" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="4927:5550" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="5039:5240" ph="{...}" />
+                <marker date="1486928353000" expanded="true" signature="5300:5501" ph="{...}" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="Discovery.js" pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/net2/Discovery.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="173">
+              <caret line="352" column="20" lean-forward="false" selection-start-line="352" selection-start-column="20" selection-end-line="352" selection-end-column="20" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="PolicyManager.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
+      <file leaf-file-name="Hashes.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/util/Hashes.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="342">
-              <caret line="355" column="42" lean-forward="false" selection-start-line="355" selection-start-column="42" selection-end-line="355" selection-end-column="42" />
-              <folding>
-                <element signature="n#!!doc" expanded="true" />
-              </folding>
+            <state relative-caret-position="380">
+              <caret line="20" column="14" lean-forward="true" selection-start-line="20" selection-start-column="14" selection-end-line="20" selection-end-column="14" />
+              <folding />
             </state>
           </provider>
         </entry>
@@ -82,27 +98,37 @@
         <entry file="file://$PROJECT_DIR$/net2/HostManager.js">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="164">
-              <caret line="1517" column="9" lean-forward="false" selection-start-line="1517" selection-start-column="7" selection-end-line="1517" selection-end-column="9" />
+              <caret line="221" column="34" lean-forward="false" selection-start-line="221" selection-start-column="28" selection-end-line="221" selection-end-column="34" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="SysManager.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
+      <file leaf-file-name="test_hash.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_hash.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="278">
-              <caret line="197" column="13" lean-forward="true" selection-start-line="197" selection-start-column="13" selection-end-line="197" selection-end-column="13" />
+            <state relative-caret-position="407">
+              <caret line="102" column="49" lean-forward="false" selection-start-line="102" selection-start-column="49" selection-end-line="102" selection-end-column="49" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="config.json" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/net2/config.json">
+      <file leaf-file-name="Bone.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/lib/Bone.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="19">
-              <caret line="1" column="19" lean-forward="false" selection-start-line="1" selection-start-column="19" selection-end-line="1" selection-end-column="19" />
+            <state relative-caret-position="256">
+              <caret line="350" column="25" lean-forward="false" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="bonetest.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/lib/bonetest.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="350">
+              <caret line="30" column="24" lean-forward="false" selection-start-line="30" selection-start-column="24" selection-end-line="30" selection-end-column="24" />
               <folding />
             </state>
           </provider>
@@ -111,41 +137,18 @@
       <file leaf-file-name="shadowsocks.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="269">
-              <caret line="119" column="29" lean-forward="false" selection-start-line="119" selection-start-column="29" selection-end-line="119" selection-end-column="29" />
-              <folding>
-                <marker date="1486048686000" expanded="true" signature="1546:5452" ph="{...}" />
-              </folding>
+            <state relative-caret-position="373">
+              <caret line="154" column="31" lean-forward="false" selection-start-line="154" selection-start-column="21" selection-end-line="154" selection-end-column="31" />
+              <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="fastencipher2.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
+      <file leaf-file-name="UrlHash.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/util/UrlHash.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-220">
-              <caret line="56" column="0" lean-forward="true" selection-start-line="56" selection-start-column="0" selection-end-line="56" selection-end-column="0" />
-              <folding>
-                <marker date="1486141851000" expanded="true" signature="1352:2128" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="1683:1728" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="1823:2120" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="1849:1878" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="1932:1997" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="2003:2112" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="2156:2674" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="2281:2670" ph="{...}" />
-                <marker date="1486141851000" expanded="true" signature="2287:2462" ph="//..." />
-                <marker date="1486141851000" expanded="true" signature="2468:2599" ph="//..." />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="Dockerfile2" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/docker/Dockerfile2">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="209">
-              <caret line="11" column="34" lean-forward="false" selection-start-line="11" selection-start-column="34" selection-end-line="11" selection-end-column="34" />
+            <state relative-caret-position="274">
+              <caret line="30" column="55" lean-forward="false" selection-start-line="30" selection-start-column="49" selection-end-line="30" selection-end-column="55" />
               <folding />
             </state>
           </provider>
@@ -162,36 +165,36 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>rawStop</find>
-      <find>pong</find>
-      <find>bon</find>
-      <find>bonjour</find>
-      <find>bonjour.publish</find>
-      <find>dockerenv</find>
-      <find>find</find>
-      <find>ping</find>
-      <find>&quot;ping&quot;</find>
-      <find>8388</find>
-      <find>externalPort</find>
-      <find>console.log</find>
-      <find>1.69</find>
-      <find>&quot;init&quot;</find>
-      <find>update</find>
-      <find>gethandler</find>
-      <find>cmdhandler</find>
-      <find>debugon</find>
-      <find>flush</find>
-      <find>applyPolicy</find>
-      <find>execPolicy</find>
-      <find>getHosts</find>
-      <find>version</find>
-      <find>policyManager</find>
-      <find>execute</find>
-      <find>direct</find>
       <find>directMode</find>
       <find>externalaccess</find>
-      <find>_externalAccess</find>
       <find>encipher</find>
+      <find>firewalla.js</find>
+      <find>apphandler</find>
+      <find>docker</find>
+      <find>dockeren</find>
+      <find>dns</find>
+      <find>8388</find>
+      <find>8833</find>
+      <find>launchService2</find>
+      <find>shadowsocks</find>
+      <find>settimeout</find>
+      <find>shadowsocksresetconfig</find>
+      <find>hash</find>
+      <find>hashset</find>
+      <find>json</find>
+      <find>IPTABLE:DNS:Error</find>
+      <find>SystemPolicy:Changed</find>
+      <find>Changed</find>
+      <find>SystemPolicy</find>
+      <find>_externalAccess</find>
+      <find>loadPolicy</find>
+      <find>savePolicy</find>
+      <find>setPolicy</find>
+      <find>family</find>
+      <find>sethandler</find>
+      <find>process.exit</find>
+      <find>_adblock</find>
+      <find>Found list of interfaces</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -234,7 +237,6 @@
         <option value="$PROJECT_DIR$/net2/FlowUtil.js" />
         <option value="$PROJECT_DIR$/net2/Firewalla.js" />
         <option value="$PROJECT_DIR$/etc/brotab" />
-        <option value="$PROJECT_DIR$/net2/Discovery.js" />
         <option value="$PROJECT_DIR$/net2/SysManager.js" />
         <option value="$PROJECT_DIR$/lib/ControllerBot.js" />
         <option value="$PROJECT_DIR$/extension/shadowsocks/ss.config.json.template" />
@@ -244,17 +246,21 @@
         <option value="$PROJECT_DIR$/api/routes/dnsmasq.js" />
         <option value="$PROJECT_DIR$/extension/dnsmasq/remove_iptables.template.sh" />
         <option value="$PROJECT_DIR$/extension/upnp/upnp.js" />
-        <option value="$PROJECT_DIR$/api/app.js" />
         <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
         <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" />
-        <option value="$PROJECT_DIR$/buildraw" />
         <option value="$PROJECT_DIR$/api/routes/fastencipher2.js" />
         <option value="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" />
         <option value="$PROJECT_DIR$/docker/Dockerfile2" />
         <option value="$PROJECT_DIR$/net2/config.json" />
-        <option value="$PROJECT_DIR$/net2/HostManager.js" />
         <option value="$PROJECT_DIR$/net2/PolicyManager.js" />
         <option value="$PROJECT_DIR$/controllers/netbot.js" />
+        <option value="$PROJECT_DIR$/api/app.js" />
+        <option value="$PROJECT_DIR$/buildraw" />
+        <option value="$PROJECT_DIR$/buildraw4" />
+        <option value="$PROJECT_DIR$/test/test_hash.js" />
+        <option value="$PROJECT_DIR$/lib/bonetest.js" />
+        <option value="$PROJECT_DIR$/net2/HostManager.js" />
+        <option value="$PROJECT_DIR$/net2/Discovery.js" />
       </list>
     </option>
   </component>
@@ -273,9 +279,6 @@
   <component name="JsGulpfileManager">
     <detection-done>true</detection-done>
     <sorting>DEFINITION_ORDER</sorting>
-  </component>
-  <component name="NodeModulesDirectoryManager">
-    <handled-path value="$PROJECT_DIR$/node_modules" />
   </component>
   <component name="ProjectFrameBounds">
     <option name="y" value="22" />
@@ -326,6 +329,34 @@
             </PATH_ELEMENT>
             <PATH_ELEMENT>
               <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="util" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="test" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -570,12 +601,12 @@
       <workItem from="1484997022072" duration="16334000" />
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
-      <workItem from="1486021488065" duration="14325000" />
+      <workItem from="1486021488065" duration="25379000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="108096000" />
+    <option name="totallyTimeSpent" value="119150000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -588,12 +619,12 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="0" y="22" width="1680" height="979" extended-state="6" />
-    <editor active="false" />
+    <editor active="true" />
     <layout>
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.20833333" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
-      <window_info id="Find" active="true" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.3967033" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.3967033" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
@@ -619,52 +650,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/npm-shrinkwrap.template.json" />
-    <entry file="file://$PROJECT_DIR$/package.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="266">
-          <caret line="54" column="21" lean-forward="true" selection-start-line="54" selection-start-column="21" selection-end-line="54" selection-end-column="21" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/encipher/lib/encipherio.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="266">
-          <caret line="385" column="30" lean-forward="false" selection-start-line="385" selection-start-column="30" selection-end-line="385" selection-end-column="30" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/sanity_check">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="6" column="9" lean-forward="false" selection-start-line="6" selection-start-column="9" selection-end-line="6" selection-end-column="9" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/utils.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="36" column="64" lean-forward="false" selection-start-line="36" selection-start-column="0" selection-end-line="37" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/Spoofer.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="32" column="25" lean-forward="false" selection-start-line="32" selection-start-column="25" selection-end-line="32" selection-end-column="25" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/net2/FlowUtil.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="382">
@@ -702,18 +687,11 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/net2/Discovery.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="7847">
-          <caret line="452" column="66" lean-forward="true" selection-start-line="452" selection-start-column="66" selection-end-line="452" selection-end-column="66" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/scripts/bro-run">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="513">
           <caret line="27" column="6" lean-forward="true" selection-start-line="27" selection-start-column="6" selection-end-line="27" selection-end-column="6" />
+          <folding />
         </state>
       </provider>
     </entry>
@@ -744,14 +722,6 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="4636">
           <caret line="244" column="21" lean-forward="false" selection-start-line="244" selection-start-column="21" selection-end-line="244" selection-end-column="21" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/Bone.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="171">
-          <caret line="25" column="17" lean-forward="true" selection-start-line="25" selection-start-column="17" selection-end-line="25" selection-end-column="17" />
           <folding />
         </state>
       </provider>
@@ -869,14 +839,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/buildraw">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="2185">
-          <caret line="115" column="0" lean-forward="false" selection-start-line="115" selection-start-column="0" selection-end-line="115" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/api/lib/CloudWrapper.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="950">
@@ -890,7 +852,7 @@
         <state relative-caret-position="0">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding>
-            <element signature="n#!!doc" expanded="true" />
+            <element signature="n#!!doc" expanded="false" />
           </folding>
         </state>
       </provider>
@@ -903,31 +865,11 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="494">
-          <caret line="36" column="36" lean-forward="false" selection-start-line="36" selection-start-column="36" selection-end-line="36" selection-end-column="36" />
-          <folding>
-            <marker date="1486049037000" expanded="true" signature="12989:13287" ph="{...}" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/lib/intercomm.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="316">
           <caret line="164" column="33" lean-forward="false" selection-start-line="164" selection-start-column="33" selection-end-line="164" selection-end-column="33" />
           <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="269">
-          <caret line="119" column="29" lean-forward="false" selection-start-line="119" selection-start-column="29" selection-end-line="119" selection-end-column="29" />
-          <folding>
-            <marker date="1486048686000" expanded="true" signature="1546:5452" ph="{...}" />
-          </folding>
         </state>
       </provider>
     </entry>
@@ -947,6 +889,49 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-220">
+          <caret line="56" column="0" lean-forward="true" selection-start-line="56" selection-start-column="0" selection-end-line="56" selection-end-column="0" />
+          <folding>
+            <marker date="1486815036000" expanded="true" signature="1298:2074" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1629:1674" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1769:2066" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1795:1824" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1878:1943" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="1949:2058" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2102:2620" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2227:2616" ph="{...}" />
+            <marker date="1486815036000" expanded="true" signature="2233:2408" ph="//..." />
+            <marker date="1486815036000" expanded="true" signature="2414:2545" ph="//..." />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/app.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1596">
+          <caret line="84" column="0" lean-forward="false" selection-start-line="84" selection-start-column="0" selection-end-line="84" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/buildraw4">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1558">
+          <caret line="82" column="2" lean-forward="false" selection-start-line="82" selection-start-column="2" selection-end-line="82" selection-end-column="2" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/docker/Dockerfile">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/docker/Dockerfile2">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="209">
@@ -955,37 +940,111 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/api/app.js">
+    <entry file="file://$PROJECT_DIR$/buildraw">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="247">
-          <caret line="17" column="15" lean-forward="false" selection-start-line="17" selection-start-column="15" selection-end-line="17" selection-end-column="15" />
+        <state relative-caret-position="-513">
+          <caret line="25" column="12" lean-forward="false" selection-start-line="25" selection-start-column="12" selection-end-line="25" selection-end-column="12" />
           <folding />
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
+    <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-220">
-          <caret line="56" column="0" lean-forward="true" selection-start-line="56" selection-start-column="0" selection-end-line="56" selection-end-column="0" />
+        <state relative-caret-position="316">
+          <caret line="358" column="58" lean-forward="false" selection-start-line="358" selection-start-column="58" selection-end-line="358" selection-end-column="58" />
           <folding>
-            <marker date="1486141851000" expanded="true" signature="1352:2128" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="1683:1728" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="1823:2120" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="1849:1878" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="1932:1997" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="2003:2112" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="2156:2674" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="2281:2670" ph="{...}" />
-            <marker date="1486141851000" expanded="true" signature="2287:2462" ph="//..." />
-            <marker date="1486141851000" expanded="true" signature="2468:2599" ph="//..." />
+            <marker date="1486815083000" expanded="true" signature="12935:13233" ph="{...}" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/net2/main.js">
+    <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="164">
-          <caret line="173" column="19" lean-forward="true" selection-start-line="173" selection-start-column="19" selection-end-line="173" selection-end-column="19" />
+        <state relative-caret-position="943">
+          <caret line="369" column="3" lean-forward="false" selection-start-line="369" selection-start-column="3" selection-end-line="369" selection-end-column="3" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+            <marker date="1486928311000" expanded="true" signature="15755:18391" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="15781:16091" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="15822:16028" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16204:18389" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16234:16265" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16359:16404" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16456:18010" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16518:16555" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16561:18000" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16629:17935" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16750:16901" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="16999:17052" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17058:17917" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17184:17836" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17231:17417" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17294:17387" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17488:17735" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17623:17703" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17741:17810" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="17941:17986" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="18021:18381" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="18113:18287" ph="{...}" />
+            <marker date="1486928311000" expanded="true" signature="18177:18273" ph="{...}" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$APPLICATION_CONFIG_DIR$/javascript/nodejs/7.3.0/core-modules/crypto.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/util/UrlHash.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="274">
+          <caret line="30" column="55" lean-forward="false" selection-start-line="30" selection-start-column="49" selection-end-line="30" selection-end-column="55" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/lib/Bone.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="256">
+          <caret line="350" column="25" lean-forward="false" selection-start-line="350" selection-start-column="25" selection-end-line="350" selection-end-column="25" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="373">
+          <caret line="154" column="31" lean-forward="false" selection-start-line="154" selection-start-column="21" selection-end-line="154" selection-end-column="31" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_hash.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="407">
+          <caret line="102" column="49" lean-forward="false" selection-start-line="102" selection-start-column="49" selection-end-line="102" selection-end-column="49" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/lib/bonetest.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="350">
+          <caret line="30" column="24" lean-forward="false" selection-start-line="30" selection-start-column="24" selection-end-line="30" selection-end-column="24" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/util/Hashes.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="380">
+          <caret line="20" column="14" lean-forward="true" selection-start-line="20" selection-start-column="14" selection-end-line="20" selection-end-column="14" />
           <folding />
         </state>
       </provider>
@@ -993,25 +1052,54 @@
     <entry file="file://$PROJECT_DIR$/net2/HostManager.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="164">
-          <caret line="1517" column="9" lean-forward="false" selection-start-line="1517" selection-start-column="7" selection-end-line="1517" selection-end-column="9" />
+          <caret line="221" column="34" lean-forward="false" selection-start-line="221" selection-start-column="28" selection-end-line="221" selection-end-column="34" />
           <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="342">
-          <caret line="355" column="42" lean-forward="false" selection-start-line="355" selection-start-column="42" selection-end-line="355" selection-end-column="42" />
-          <folding>
-            <element signature="n#!!doc" expanded="true" />
-          </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="231">
-          <caret line="494" column="36" lean-forward="false" selection-start-line="494" selection-start-column="21" selection-end-line="494" selection-end-column="36" />
+        <state relative-caret-position="174">
+          <caret line="155" column="33" lean-forward="true" selection-start-line="155" selection-start-column="33" selection-end-line="155" selection-end-column="33" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/main.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="287">
+          <caret line="101" column="3" lean-forward="true" selection-start-line="101" selection-start-column="3" selection-end-line="101" selection-end-column="3" />
+          <folding>
+            <marker date="1486928353000" expanded="true" signature="2966:3004" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="2966:3006" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="2966:5573" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="3459:3919" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="3589:3677" ph="//..." />
+            <marker date="1486928353000" expanded="true" signature="3945:3993" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4018:4066" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4100:4193" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4110:4174" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4134:4168" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4221:4804" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4298:4800" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4323:4450" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4456:4794" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4494:4782" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4528:4679" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4685:4768" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4829:5561" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4870:5556" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="4927:5550" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="5039:5240" ph="{...}" />
+            <marker date="1486928353000" expanded="true" signature="5300:5501" ph="{...}" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/Discovery.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="173">
+          <caret line="352" column="20" lean-forward="false" selection-start-line="352" selection-start-column="20" selection-end-line="352" selection-end-column="20" />
           <folding />
         </state>
       </provider>

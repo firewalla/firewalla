@@ -11,8 +11,7 @@ var cloudWrapper = new CloudWrapper();
 
 
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 

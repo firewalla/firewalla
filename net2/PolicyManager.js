@@ -35,11 +35,17 @@ var vpnManager = new VpnManager('info');
 let UPNP = require('../extension/upnp/upnp');
 let upnp = new UPNP();
 
+let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ();
+
 let externalAccessFlag = false;
 
 let localPort = 8833;
 let externalPort = 8833;
 let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
+
+let FAMILY_DNS = "208.67.222.123";
+let ADBLOCK_DNS = "198.101.242.72";
 
 var ip = require('ip');
 
@@ -189,25 +195,52 @@ module.exports = class {
     }
 
 
-    family(ip, state, callback) {
+  family(ip, state, callback) {
+        callback = callback || function() {}
+
         log.info("PolicyManager:Family:IPTABLE", ip, state);
         if (state == true) {
-            iptable.dnsChange(ip, "208.67.222.123:53", false, (err, data) => {
-                iptable.dnsChange(ip, "208.67.222.123:53", true, callback);
+            iptable.dnsChange(ip, FAMILY_DNS + ":53", false, (err, data) => {
+              iptable.dnsChange(ip, FAMILY_DNS + ":53", true, (err, data) => {
+                if(err) {
+                  callback(err);
+                } else {
+                  dnsmasq.setDefaultNameServers([FAMILY_DNS]);
+                  dnsmasq.updateResolvConf(callback);
+                }
+              });
             });
+
         } else {
-            iptable.dnsChange(ip, "208.67.222.123:53", state, callback);
+          iptable.dnsChange(ip, FAMILY_DNS + ":53", state, (err, data) => {
+            dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+            dnsmasq.updateResolvConf();
+            callback(err, data);
+          });
         }
     }
 
-    adblock(ip, state, callback) {
+  adblock(ip, state, callback) {
+        callback = callback || function() {}
+
         log.info("PolicyManager:Adblock:IPTABLE", ip, state);
         if (state == true) {
-            iptable.dnsChange(ip, "198.101.242.72:53", false, (err, data) => {
-                iptable.dnsChange(ip, "198.101.242.72:53", true, callback);
+            iptable.dnsChange(ip, ADBLOCK_DNS + ":53", false, (err, data) => {
+              iptable.dnsChange(ip, ADBLOCK_DNS + ":53", true, (err, data) => {
+                if(err) {
+                  callback(err);
+                } else {
+                  dnsmasq.setDefaultNameServers([ADBLOCK_DNS]);
+                  dnsmasq.updateResolvConf(callback);
+                }
+              });
             });
         } else {
-            iptable.dnsChange(ip, "198.101.242.72:53", state, callback);
+          iptable.dnsChange(ip, ADBLOCK_DNS + ":53", state, (err, data) => {
+            dnsmasq.setDefaultNameServers(null);
+            dnsmasq.updateResolvConf();
+            callback(err, data);
+          });
         }
     }
 
@@ -302,7 +335,8 @@ module.exports = class {
           return;
         }
 
-        dd.start((err) => {
+        // no force update
+        dd.start(false, (err) => {
           if(err == null) {
             log.info("dnsmasq service is started successfully");
           } else {
@@ -400,7 +434,9 @@ module.exports = class {
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
             } else if (p == "externalAccess") {
-                this.externalAccess(host, policy[p]);
+              this.externalAccess(host, policy[p]);
+            } else if (p == "dnsmasq") {
+              // do nothing here, already handled dnsmasq above
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {
@@ -447,8 +483,24 @@ module.exports = class {
                     block.timeZone /* Time zone of this job. */
                 );
             }
+
+          if(p !== "dnsmasq") {
             host.oper[p] = policy[p];
+          }
+
         }
+
+      // put dnsmasq logic at the end, as it is foundation feature
+      // e.g. adblock/family feature might configure something in dnsmasq
+    
+      if(policy["dnsmasq"]) {        
+        if(host.oper["dnsmasq"] != null &&
+           JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+        } else {
+          this.dnsmasq(host, policy["dnsmasq"]);
+          host.oper["dnsmasq"] = policy["dnsmasq"];
+        }
+      }      
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);

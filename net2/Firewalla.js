@@ -17,35 +17,50 @@ var log;
 var config;
 var redis = require("redis");
 var rclient = redis.createClient();
-
-// TODO: Read this from config file
-var firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
-const MAX_CONNS_PER_FLOW = 70000
-
 log = require("../net2/logger.js")("SysManager", "info");
 
-module.exports = class {
-    getFirewallaHome() {
-        return firewallaHome;
-    }
+// TODO: Read this from config file
+let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
+var _isProduction = null;
 
-    getUserHome() {
-      return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
-    }
+function getFirewallaHome() {
+  return firewallaHome;
+}
 
-    getFirewallaConfigFolder() {
-      return this.getUserHome() + "/.firewalla/";
-    }
+function getUserID() {
+  return process.env.USER;
+}
 
-    isProduction() {
-      // if either of condition matches, this is production environment
-      if (this._isProduction==null) {
-        this._isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
-      }
-      return this._isProduction;
-    }
+function getUserHome() {
+  return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
+}
 
-    redisclean(config) {
+function getLogFolder() {
+  return getUserHome() + "/.forever";
+}
+
+function getHiddenFolder() {
+  return getUserHome() + "/.firewalla";
+}
+
+function isProduction() {
+  // if either of condition matches, this is production environment
+  if (_isProduction==null) {
+    _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
+  }
+  return _isProduction;
+}
+
+function getRuntimeInfoFolder() {
+  return getHiddenFolder() + "/run";
+}
+
+function getUserConfigFolder() {
+  return getHiddenFolder() + "/config";
+}
+
+function redisclean(config) {
+  const MAX_CONNS_PER_FLOW = 70000
         this.config = config;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
@@ -182,5 +197,17 @@ module.exports = class {
                 });
             }
         });
-    }
-};
+}
+
+module.exports = {
+  getFirewallaHome: getFirewallaHome,
+  getUserHome: getUserHome,
+  getHiddenFolder: getHiddenFolder,
+  isProduction: isProduction,
+  getLogFolder: getLogFolder,
+  getRuntimeInfoFolder: getRuntimeInfoFolder,
+  getUserConfigFolder: getUserConfigFolder,
+  getUserID: getUserID,
+  redisclean: redisclean
+}
+
