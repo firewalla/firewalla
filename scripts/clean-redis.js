@@ -3,11 +3,9 @@ var sysManager = new SysManager('info');
 
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('../net2/config.json', 'utf8'));
-
-var Firewalla = require('../net2/Firewalla.js');
-var f = new Firewalla("config.json", 'info');
-f.redisclean(config);
+var firewalla = require('../net2/Firewalla.js');
+firewalla.redisclean(config);
 setTimeout(()=> {
-   console.log("Redis Clean done in 10 Seconds");
+   console.log("Redis Clean done in 20 Seconds");
    process.exit(0);
 },1000*20);
