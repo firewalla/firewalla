@@ -352,7 +352,9 @@ class netBot extends ControllerBot {
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            if (sysmanager.systemRebootedDueToIssue(true)==false) {
+                this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            }
             this.setupDialog();
         }, 2000);
 

@@ -34,6 +34,9 @@ let DNSServers = {
     "8.8.8.8": true
 };
 
+let Firewalla = require('../net2/Firewalla.js');
+let f = new Firewalla("config.json", 'info');
+
 const MAX_CONNS_PER_FLOW = 70000;
 
 const dns = require('dns');
@@ -139,6 +142,21 @@ module.exports = class {
 
     isSystemDebugOn() {
         return systemDebug;
+    }
+
+    systemRebootedDueToIssue(reset) {
+       try {
+           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
+               console.log("SysManager:RebootDueToIssue");
+               if (reset == true) { 
+                   require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+               }
+               return true;
+           }
+       } catch(e) {
+           return false;
+       }
+       return false;
     }
 
     update(callback) {
@@ -430,6 +448,9 @@ module.exports = class {
     }
 
     redisclean() {
+        log.info("Redis Cleaning SysManager");
+        f.redisclean(this.config);
+        return;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
             if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {

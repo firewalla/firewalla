@@ -1,0 +1,4 @@
+#!/bin/bash -
+logger "FIREWALLA: REDIS CLEAN"
+node /home/pi/firewalla/scripts/clean-redis.js &
+sync
