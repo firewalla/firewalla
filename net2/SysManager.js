@@ -141,6 +141,21 @@ module.exports = class {
         return systemDebug;
     }
 
+    systemRebootedDueToIssue(reset) {
+       try {
+           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
+               console.log("SysManager:RebootDueToIssue");
+               if (reset == true) { 
+                   require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+               }
+               return true;
+           }
+       } catch(e) {
+           return false;
+       }
+       return false;
+    }
+
     update(callback) {
         rclient.get("system:debug", (err, result) => {
             if(result) {
@@ -430,6 +445,9 @@ module.exports = class {
     }
 
     redisclean() {
+        log.info("Redis Cleaning SysManager");
+        f.redisclean(this.config);
+        return;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
             if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
