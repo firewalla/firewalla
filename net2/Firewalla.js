@@ -59,6 +59,17 @@ function getUserConfigFolder() {
   return getHiddenFolder() + "/config";
 }
 
+// Get config data from fishbone
+function getBoneInfo(callback) {
+    rclient.get("sys:bone:info",(err,data)=>{
+        if (data) {
+            callback(null, JSON.parse(data));
+        } else {
+            callback(null,null);
+        }
+    });
+}
+
 function redisclean(config) {
   const MAX_CONNS_PER_FLOW = 70000
         this.config = config;
@@ -208,6 +219,7 @@ module.exports = {
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
   getUserID: getUserID,
+  getBoneInfo: getBoneInfo,
   redisclean: redisclean
 }
 
