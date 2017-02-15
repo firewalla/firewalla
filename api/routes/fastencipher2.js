@@ -20,20 +20,29 @@ let f = require('../../net2/Firewalla.js');
 router.post('/message/:gid', 
     encryption.decrypt,
     function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
-        console.log("================= request body =================");
-        console.log(JSON.stringify(req.body, null, '\t'));
-        console.log("================= request body end =================");
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                res.body = JSON.stringify(response);
-                next();
-            }
-        });
+      var gid = req.params.gid;
+      let controller = cloudWrapper.getNetBotController(gid);
+      console.log("================= request body =================");
+      console.log(JSON.stringify(req.body, null, '\t'));
+      console.log("================= request body end =================");
+      
+      var alreadySent = false;
+      
+      controller.msgHandler(gid, req.body, (err, response) => {
+        if(alreadySent) {
+          return;
+        }
+
+        alreadySent = true;
+        
+        if(err) {
+          res.json({ error: err });
+          return;
+        } else {
+          res.body = JSON.stringify(response);
+          next();
+        }
+      });
     },
     encryption.encrypt
 );
@@ -55,9 +64,11 @@ router.post('/message/cleartext/:gid',
       var alreadySent = false;
 
       controller.msgHandler(gid, req.body, (err, response) => {
+        console.log("XXXXXXXXXXXXXXXXXXXFFFFFFFFFFFFFFFFFFFFF", err, response);
         if(alreadySent) {
           return;
         }
+        
         alreadySent = true;
         
         if(err) {
