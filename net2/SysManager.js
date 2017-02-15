@@ -66,6 +66,14 @@ module.exports = class {
             sclient.subscribe("System:DebugChange");
  
             this.delayedActions();
+
+            fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
+                let license = null;
+                if (_data) {
+                    license = JSON.parse(_data);
+                } 
+                this.license = license;
+            });
         }
         this.update(null);
         return instance;
