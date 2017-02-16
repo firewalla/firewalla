@@ -1080,7 +1080,9 @@ module.exports = class {
             this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
-                sysManager.redisclean();
+                if (this.type == 'server') {
+                    sysManager.redisclean();
+                }
                 this.getHosts((err, result) => {
                     if (this.type == 'server') {
                         for (let i in result) {
