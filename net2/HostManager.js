@@ -1383,64 +1383,92 @@ module.exports = class {
         });
     }
 
-    setPolicy(name, data, callback) {
-        this.loadPolicy((err, __data) => {
-            if (name == "acl") {
-                if (this.policy.acl == null) {
-                    this.policy.acl = [data];
-                } else {
-                    let acls = this.policy.acl;
-                    let found = false;
-                    if (acls) {
-                        for (let i in acls) {
-                            let acl = acls[i];
-                            log.debug("comparing ", acl, data);
-                            if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
-                                if (acl.state == data.state) {
-                                    log.debug("System:setPolicy:Nochange", name, data);
-                                    callback(null,null);
-                                    return;
-                                } else {
-                                    acl.state = data.state;
-                                    found = true;
-                                    log.debug("System:setPolicy:Changed", name, data);
-                                }
-                            }
-                        }
-                    }
-                    if (found == false) {
-                        acls.push(data);
-                    }
-                    this.policy.acl = acls;
-                }
+  appendACL(name, data) {
+    if (this.policy.acl == null) {
+      this.policy.acl = [data];
+    } else {
+      let acls = this.policy.acl;
+      let found = false;
+      if (acls) {
+        for (let i in acls) {
+          let acl = acls[i];
+          log.debug("comparing ", acl, data);
+          if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
+            if (acl.state == data.state) {
+              log.debug("System:setPolicy:Nochange", name, data);
+              callback(null,null);
+              return;
             } else {
-                if (this.policy[name] != null && this.policy[name] == data) {
-                    if (callback) {
-                        callback(null, null);
-                    }
-                    log.debug("System:setPolicy:Nochange", name, data);
-                    return;
-                }
-                this.policy[name] = data;
-                log.debug("System:setPolicy:Changed", name, data);
+              acl.state = data.state;
+              found = true;
+              log.debug("System:setPolicy:Changed", name, data);
             }
-            this.savePolicy((err, data) => {
-                if (err == null) {
-                    let obj = {};
-                    obj[name] = data;
-                    this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
-                    if (callback) {
-                        callback(null, obj);
-                    }
-                } else {
-                    if (callback) {
-                        callback(null, null);
-                    }
-
-                }
-            });
-        });
+          }
+        }
+      }
+      if (found == false) {
+        acls.push(data);
+      }
+      this.policy.acl = acls;
     }
+  }
+
+  setPolicy(name, data, callback) {
+
+    let savePolicyWrapper = (name, data, callback) => {
+      this.savePolicy((err, data) => {
+        if (err == null) {
+          let obj = {};
+          obj[name] = data;
+          this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+          if (callback) {
+            callback(null, obj);
+          }
+        } else {
+          if (callback) {
+            callback(null, null);
+          }
+        }
+      });
+    }
+
+    this.loadPolicy((err, __data) => {
+      if (name == "acl") {
+
+        
+        // when adding acl, enrich acl policy with source IP => MAC address mapping.
+        // so that iptables can block with MAC Address, which is more accurate
+
+        let srcIP = data.src;
+        if(sysManager.isLocalIP(srcIP)) {
+          this.getHost(srcIP, (err, host) => {
+            if(!err) {
+              data.mac = host.o.mac; // may add more attributes in the future                  
+            }
+            this.appendACL(name, data);
+            savePolicyWrapper(name, data, callback);            
+          });
+        } else {
+          this.appendACL(name, data);
+          savePolicyWrapper(name, data, callback);
+        }
+        
+      } else {
+        if (this.policy[name] != null && this.policy[name] == data) {
+          if (callback) {
+            callback(null, null);
+          }
+          log.debug("System:setPolicy:Nochange", name, data);
+          return;
+        }
+        this.policy[name] = data;
+        log.debug("System:setPolicy:Changed", name, data);
+
+        savePolicyWrapper(name, data, callback);
+      }
+      
+    });
+  }
 
     spoof(state) {
         log.debug("System:Spoof:", state, this.spoofing);
