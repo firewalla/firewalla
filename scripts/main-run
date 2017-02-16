@@ -155,7 +155,7 @@ fi
 cd net2
 
 # this config is necessary for forwarding DNS requests to dnsmasq
-sysctl -w net.ipv4.conf.all.route_localnet=1
+sudo sysctl -w net.ipv4.conf.all.route_localnet=1
 forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 cd ..
 cd sys
