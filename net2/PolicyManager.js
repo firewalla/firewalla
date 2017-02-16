@@ -51,6 +51,8 @@ let ADBLOCK_DNS = "198.101.242.72";
 
 var ip = require('ip');
 
+let b = require('./Block.js');
+
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
 1) "blockin"
@@ -560,21 +562,35 @@ module.exports = class {
                     if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
                         cb();
                     } else {
+
+                      // if src is local ip, then use mac instead of ip to enforce the block
+                      let src = block['src'];
+                      if(sysManager.isLocalIP(src) &&
+                         block['mac'] &&
+                         require('ip').isV4Format(src)
+                        ) {
+                        let mac = block['mac'];
+                        let destIP = block['dst'];
+                        
+                        b.blockOutgoing(mac, destIP, cb);
+                      } else {
+                      
                         this.block(block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
-                            if (err == null) {
-                                if (block['state'] == false) {
-                                    block['done'] = true;
-                                }
+                          if (err == null) {
+                            if (block['state'] == false) {
+                              block['done'] = true;
                             }
-                            if (block.duplex && block.duplex == true) {
-                                 this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
-                                      cb();
-                                 });
-                            } else {
-                                cb();
-                            }
+                          }
+                          if (block.duplex && block.duplex == true) {
+                            this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                              cb();
+                            });
+                          } else {
+                            cb();
+                          }
                         });
-                        host.appliedAcl[aclkey] = block;
+                      }
+                      host.appliedAcl[aclkey] = block;
                     }
                 } else {
                     cb();
