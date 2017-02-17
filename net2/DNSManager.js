@@ -419,12 +419,33 @@ module.exports = class DNSManager {
     }
 
 
+/*
+> [ { address: '104.20.23.46', family: 4 },
+  { address: '104.20.22.46', family: 4 },
+  { address: '2400:cb00:2048:1::6814:162e', family: 6 },
+  { address: '2400:cb00:2048:1::6814:172e', family: 6 } ]
+
+*/
+
+
     dnsLookup(host,callback) {
         if (host == null) {
             callback(null,null);
         } else {
-            dns.lookup(host, (err, addresses, family) => {
-                callback(err, addresses);
+            dns.lookup(host, {all:true},(err, addresses, family) => {
+                let v4=[];
+                let v6=[];
+                let all = [];
+                for (let i in addresses) {
+                    if (addresses[i].family==4) {
+                        v4.push(addresses[i].address);
+                    }
+                    if (addresses[i].family==6) {
+                        v6.push(addresses[i].address);
+                    }
+                    all.push(addresses[i].address);
+                }
+                callback(err, all,v4,v6);
             });
         }
     }
@@ -434,6 +455,7 @@ module.exports = class DNSManager {
             callback(null,list);
             return;
         }
+        let ipchanged = false;
         async.eachLimit(list,10, (o, cb) => {
             o.srcs = [];
             o.dsts = [];
@@ -447,6 +469,10 @@ module.exports = class DNSManager {
                             ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
                             o.srcs = o.srcs.concat(ipv6); 
                          }  
+                         if (o.src != data.ipv4) {
+                             o._src = data.ipv4;
+                             ipchanged = true;
+                         }
                      } else {
                          o.srcs = [o.src];
                      }
@@ -480,6 +506,10 @@ module.exports = class DNSManager {
                                 ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
                                 o.dsts = o.dsts.concat(ipv6); 
                              }  
+                             if (o.dst != data.ipv4) {
+                                o._dst = data.ipv4;
+                                ipchanged = true;
+                             }
                              cb();
                          } else {
                              o.dsts = [o.dst];
@@ -490,7 +520,7 @@ module.exports = class DNSManager {
             } 
         },(err)=> {
             log.info("DNS:QueryACL:",list,{});
-            callback(err,list);
+            callback(err,list,ipchanged);
         });    
      
     }

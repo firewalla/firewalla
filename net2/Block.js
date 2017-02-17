@@ -23,21 +23,49 @@ let log = require("./logger.js")(path.basename(__filename));
 // =============== block @ connection level ==============
 
 // Block every connection initiated from one local machine to a remote ip address
-function blockOutgoing(macAddress, destination, callback) {
-  let checkCMD = util.format("sudo iptables -C FORWARD --protocol all --destination %s -m mac --mac-source %s -j REJECT", destination, macAddress);
-  let addCMD = util.format("sudo iptables -A FORWARD --protocol all --destination %s -m mac --mac-source %s -j REJECT", destination, macAddress);
+function blockOutgoing(macAddress, destination, state, v6, callback) {
+  let destinationStr = ""
+  let cmd = "iptables";
 
-  cp.exec(checkCMD, (err, stdout, stderr) => {
-    if(err) {
-      log.info("BLOCK:OUTGOING==> ", addCMD);
-      cp.exec(addCMD, (err, stdout, stderr) => {
+  if (destination) {
+     let destinationStr = " --destination "+destination;
+  }
+
+  if (v6) {
+     cmd = "ip6tables";
+  }
+
+  if (state == true) {
+      let checkCMD = util.format("sudo %s -C FORWARD --protocol all %s  -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
+      let addCMD = util.format("sudo %s -A FORWARD --protocol all %s  -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
+
+      cp.exec(checkCMD, (err, stdout, stderr) => {
+        if(err) {
+          log.info("BLOCK:OUTGOING==> ", addCMD);
+          cp.exec(addCMD, (err, stdout, stderr) => {
+            console.log(err, stdout, stderr);
+            callback(err);        
+          });
+        }
+      });
+  } else {
+      let delCMD = util.format("sudo %s -D FORWARD --protocol all  %s -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
+      cp.exec(delCMD, (err, stdout, stderr) => {
         console.log(err, stdout, stderr);
         callback(err);        
       });
-    }
-  });
+  }
+}
+
+function blockMac(macAddress,state,callback) {
+    blockOutgoing(macAddress,null,state,false, (err)=>{
+        blockOutgoing(macAddress,null,state,true, (err)=>{
+           callback(err);
+        });
+    });
 }
 
 module.exports = {
-  blockOutgoing : blockOutgoing
+  blockOutgoing : blockOutgoing,
+  blockMac: blockMac
 }

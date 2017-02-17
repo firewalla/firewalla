@@ -1437,14 +1437,20 @@ module.exports = class {
 
     this.loadPolicy((err, __data) => {
       if (name == "acl") {
-
-        
         // when adding acl, enrich acl policy with source IP => MAC address mapping.
         // so that iptables can block with MAC Address, which is more accurate
-
-        let srcIP = data.src;
-        if(sysManager.isLocalIP(srcIP)) {
-          this.getHost(srcIP, (err, host) => {
+        // 
+        // will always associate a mac with the 
+        let localIP = null;
+        if (sysManager.isLocalIP(data.src)) {
+            localIP = data.src; 
+        }
+        if (sysManager.isLocalIP(data.dst)) {
+            localIP = data.dst;
+        }
+ 
+        if(localIP) {
+          this.getHost(localIP, (err, host) => {
             if(!err) {
               data.mac = host.o.mac; // may add more attributes in the future                  
             }
@@ -1537,9 +1543,9 @@ module.exports = class {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
-                    dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                    dnsManager.queryAcl(this.policy.acl,(err,acls,ipchanged)=> {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
-                            if (changed == true && err == null) {
+                            if (ipchanged || (changed == true && err == null)) {
                                 this.savePolicy(null);
                             }
                             for (let i in this.hosts.all) {

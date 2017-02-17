@@ -9,7 +9,11 @@ let destination = "159.153.186.70";
 
 let b = require('../net2/Block.js');
 
-b.blockOutgoing(macAddress, destination, (err) => {
+b.blockOutgoing(macAddress, destination,true,false, (err) => {
+  
+});
+
+b.blockMac(macAddress,true,(err)=>{
   
 });
 

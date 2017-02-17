@@ -101,7 +101,7 @@ module.exports = class {
 
     defaults(config) {}
 
-    block(protocol, src, dst, sport, dport, state, callback) {
+    block(mac,protocol, src, dst, sport, dport, state, callback) {
         if (state == true) {
             if (sysManager.isMyServer(dst) || sysManager.isMyServer(src)) {
                 log.error("PolicyManager:block:blockself",src,dst,state);
@@ -110,13 +110,13 @@ module.exports = class {
             }
         }
         if (ip.isV4Format(src) || ip.isV4Format(dst)) {
-            this.block4(protocol,src,dst,sport,dport,state,callback);
+            this.block4(mac, protocol,src,dst,sport,dport,state,callback);
         } else {
-            this.block6(protocol,src,dst,sport,dport,state,callback);
+            this.block6(mac, protocol,src,dst,sport,dport,state,callback);
         }
     }
 
-    block4(protocol, src, dst, sport, dport, state, callback) {
+    block4(mac, protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -128,7 +128,11 @@ module.exports = class {
         };
 
         if (src && src!="0.0.0.0") {
-            p.src = src;
+            if(sysManager.isLocalIP(src) && mac) {
+                p.mac = mac;
+            } else {
+                p.src = src;
+            }
         }
         if (dst && dst!="0.0.0.0") {
             p.dst = dst;
@@ -156,7 +160,7 @@ module.exports = class {
 
     }
 
-    block6(protocol, src, dst, sport, dport, state, callback) {
+    block6(mac, protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -168,7 +172,11 @@ module.exports = class {
         };
 
         if (src) {
-            p.src = src;
+            if (sysManager.isLocalIP(src) && mac) {
+                p.mac = mac;
+            } else {
+                p.src = src;
+            }
         }
         if (dst) {
             p.dst = dst;
@@ -271,6 +279,10 @@ module.exports = class {
 
     hblock(host, state) {
         log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
+        b.blockMac(host.o.mac,state,(err)=>{
+        });
+ /* 
+        
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
            this.block(null,host.o.ipv4Addr, null, null, null, state, (err, data) => {
             for (let i in host.ipv6Addr) {
@@ -281,6 +293,7 @@ module.exports = class {
             }
           });
         });
+*/
     }
 
     hfamily(host, state, callback) {
@@ -444,7 +457,7 @@ module.exports = class {
             if (p == "acl") {
                 continue;
             } else if (p == "blockout") {
-                this.block(null,ip, null, null, null, policy[p]);
+                this.block(null,null,ip, null, null, null, policy[p]);
             } else if (p == "blockin") {
                 this.hblock(host, policy[p]);
                 //    this.block(null,ip,null,null,policy[p]); 
@@ -492,17 +505,17 @@ module.exports = class {
                 log.info("PolicyManager:Cron:Install", block);
                 host.policyJobs[id] = new CronJob(block.cron, () => {
                         log.info("PolicyManager:Cron:On=====", block);
-                        this.block(null, ip, null, null, null, true);
+                        this.block(null,null, ip, null, null, null, true);
                         if (block.duration) {
                             setTimeout(() => {
                                 log.info("PolicyManager:Cron:Done=====", block);
-                                this.block(null,ip, null, null, null, false);
+                                this.block(null,null,ip, null, null, null, false);
                             }, block.duration * 1000 * 60);
                         }
                     }, () => {
                         /* This function is executed when the job stops */
                         log.info("PolicyManager:Cron:Off=====", block);
-                        this.block(null,ip, null, null, null, false);
+                        this.block(null,null,ip, null, null, null, false);
                     },
                     true, /* Start the job right now */
                     block.timeZone /* Time zone of this job. */
@@ -550,6 +563,27 @@ module.exports = class {
             host.appliedAcl = {};
         }
 
+        /* iterate policies and see if anything need to be modified */
+        for (let p in policy) {
+            let block = policy[p];
+            if (block._src || block._dst) {
+                let newblock = JSON.parse(JSON.stringify(block));
+                block.state = false;
+                if (block._src) {
+                    newblock.src = block._src; 
+                    delete block._src;
+                    delete newblock._src;
+                } 
+                if (block._dst) {
+                    newblock.dst = block._dst; 
+                    delete block._dst;
+                    delete newblock._dst;
+                }
+                policy.push(newblock);
+                log.info("PolicyManager:ModifiedACL",block,newblock,{});
+            }
+        }
+
         async.eachLimit(policy, 1, (block, cb) => {
             if (policy.done != null && policy.done == true) {
                 cb();
@@ -562,34 +596,20 @@ module.exports = class {
                     if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
                         cb();
                     } else {
-
-                      // if src is local ip, then use mac instead of ip to enforce the block
-                      let src = block['src'];
-                      if(sysManager.isLocalIP(src) &&
-                         block['mac'] &&
-                         require('ip').isV4Format(src)
-                        ) {
-                        let mac = block['mac'];
-                        let destIP = block['dst'];
-                        
-                        b.blockOutgoing(mac, destIP, cb);
-                      } else {
-                      
-                        this.block(block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
+                        this.block(block.mac, block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
                           if (err == null) {
                             if (block['state'] == false) {
                               block['done'] = true;
                             }
                           }
                           if (block.duplex && block.duplex == true) {
-                            this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                            this.block(block.mac,block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
                               cb();
                             });
                           } else {
                             cb();
                           }
                         });
-                      }
                       host.appliedAcl[aclkey] = block;
                     }
                 } else {
