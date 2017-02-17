@@ -36,8 +36,8 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   }
 
   if (state == true) {
-      let checkCMD = util.format("sudo %s -C FORWARD --protocol all %s  -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
-      let addCMD = util.format("sudo %s -A FORWARD --protocol all %s  -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
+      let checkCMD = util.format("sudo %s -C FORWARD --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
+      let addCMD = util.format("sudo %s -A FORWARD --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
 
       cp.exec(checkCMD, (err, stdout, stderr) => {
         if(err) {
@@ -49,7 +49,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
         }
       });
   } else {
-      let delCMD = util.format("sudo %s -D FORWARD --protocol all  %s -m mac --mac-source %s -j REJECT", cmd, destinationStr, macAddress);
+      let delCMD = util.format("sudo %s -D FORWARD --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
         console.log(err, stdout, stderr);
         callback(err);        
