@@ -13,6 +13,14 @@ function trim_exec(cmd, cb) {
   })
 }
 
+function trim_exec_sync(cmd) {
+   let r = require('child_process').execSync(cmd);
+   if (r) {
+       return r.toString().trim();
+   } 
+   return null;
+}
+
 // If no wifi, then there is no error but cbed get's a null in second param.
 exports.get_active_network_interface_name = function(cb) {
   var cmd = "netstat -rn | grep UG | awk '{print $NF}'";
@@ -49,6 +57,16 @@ exports.gateway_ip = function(cb) {
 exports.netmask_for = function(nic_name, cb) {
   var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
   trim_exec(cmd, cb);
+};
+
+exports.gateway_ip6 = function(cb) {
+  var cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }'"
+  trim_exec(cmd, cb);
+};
+
+exports.gateway_ip6_sync = function() {
+  var cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }'"
+  return trim_exec_sync(cmd);
 };
 
 exports.get_network_interfaces_list = function(cb) {
