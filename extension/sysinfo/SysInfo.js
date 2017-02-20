@@ -89,7 +89,7 @@ function getTemp() {
     } else {
       curTemp = parseInt(data);
       log.info("Current Temp: ", curTemp);
-      highTemp = highTemp > curTemp ? highTemp : curTemp;
+      peakTemp = peakTemp > curTemp ? peakTemp : curTemp;
     }
   });
 }
