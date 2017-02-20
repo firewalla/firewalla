@@ -32,10 +32,11 @@ let curTemp = 0;
 let peakTemp = 0;
 
 let conn = 0;
+let peakConn = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 15 * 1000; // every 5 seconds
+let updateInterval = 30 * 1000; // every 30 seconds
 
 function update() {
   os.cpuUsage((v) => {
@@ -103,7 +104,23 @@ function getTimestamp() {
 }
 
 function getConns() {
-  
+  // get conns in last 24 hours
+  rclient.keys('flow:conn:*', (err, keys) => {
+    if(err) {
+      conn = -1;
+      return;
+    }
+
+    let countConns = function(key, callback) {
+      rclient.zcount(key, '-inf', '+inf', callback);
+    }
+    
+    async.map(keys, countConns, (err, results) => {
+      conn = results.reduce((a,b) => (a+b));
+      peakConn = peakConn > conn ? peakConn : conn;
+    });
+
+  });
 }
 
 function getSysInfo() {
@@ -117,7 +134,9 @@ function getSysInfo() {
     curTemp: curTemp,
     peakTemp: peakTemp,
     timestamp: getTimestamp(),
-    uptime: getUptime()
+    uptime: getUptime(),
+    conn: conn,
+    peakConn: peakConn
   }
 
   return sysinfo;
