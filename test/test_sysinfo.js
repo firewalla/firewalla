@@ -11,4 +11,4 @@ si.startUpdating();
 setTimeout(() => {
   console.log(si.getSysInfo());
   process.exit(0);
-}, 30000);
+}, 3000);

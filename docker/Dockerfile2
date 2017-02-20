@@ -4,7 +4,7 @@ FROM ubuntu
 # install required packages, in one command
 RUN apt-get update
 RUN apt-get install -y git curl vim sudo telnet netcat man host
-RUN apt-get install -y emacs wget netcat
+RUN apt-get install -y emacs wget netcat inetutils-ping
 
 RUN useradd -m pi -s /bin/bash && \
     echo "pi ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers

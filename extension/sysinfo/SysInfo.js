@@ -72,8 +72,8 @@ function getRealMemoryUsage() {
       lines[i] = lines[i].split(/\s+/);
     }
 
-    usedMem = parseInt(lines[2][2]);
-    allMem = parseInt(lines[2][1]);
+    usedMem = parseInt(lines[1][2]);
+    allMem = parseInt(lines[1][1]);
     realMemUsage = 1.0 * usedMem / allMem;
     log.info("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
     
@@ -102,6 +102,7 @@ function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     mem: 1 - os.freememPercentage(),
+    realMem: realMemUsage,
     load1: os.loadavg(1),
     load5: os.loadavg(5),
     load15: os.loadavg(15),
