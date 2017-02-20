@@ -94,6 +94,14 @@ function getTemp() {
   });
 }
 
+function getUptime() {
+  return process.uptime();
+}
+
+function getTimestamp() {
+  return new Date();
+}
+
 function getConns() {
   
 }
@@ -107,7 +115,9 @@ function getSysInfo() {
     load5: os.loadavg(5),
     load15: os.loadavg(15),
     curTemp: curTemp,
-    peakTemp: peakTemp
+    peakTemp: peakTemp,
+    timestamp: getTimestamp(),
+    uptime: getUptime()
   }
 
   return sysinfo;
