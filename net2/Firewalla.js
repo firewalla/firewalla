@@ -17,7 +17,7 @@ var log;
 var config;
 var redis = require("redis");
 var rclient = redis.createClient();
-log = require("../net2/logger.js")("SysManager", "info");
+log = require("../net2/logger.js")("Firewalla", "info");
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
