@@ -35,7 +35,7 @@ let conn = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 10 * 1000; // every 5 seconds
+let updateInterval = 15 * 1000; // every 5 seconds
 
 function update() {
   os.cpuUsage((v) => {
