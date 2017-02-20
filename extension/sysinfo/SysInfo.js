@@ -46,6 +46,7 @@ function update() {
 
   getRealMemoryUsage();
   getTemp();
+  getConns();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
