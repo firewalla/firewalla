@@ -22,6 +22,7 @@ let os  = require('os-utils');
 
 let redis = require('redis');
 let rclient = redis.createClient();
+let async = require('async');
 
 var cpuUsage = 0;
 let memUsage = 0;
@@ -33,6 +34,8 @@ let peakTemp = 0;
 
 let conn = 0;
 let peakConn = 0;
+
+let redisMemory = 0;
 
 let updateFlag = 0;
 
@@ -47,6 +50,7 @@ function update() {
   getRealMemoryUsage();
   getTemp();
   getConns();
+  getRedisMemoryUsage();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -117,10 +121,21 @@ function getConns() {
     }
     
     async.map(keys, countConns, (err, results) => {
-      conn = results.reduce((a,b) => (a+b));
-      peakConn = peakConn > conn ? peakConn : conn;
+      if(results.length > 0) {
+        conn = results.reduce((a,b) => (a+b));
+        peakConn = peakConn > conn ? peakConn : conn;
+      }
     });
 
+  });
+}
+
+function getRedisMemoryUsage() {
+  let cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
+  require('child_process').exec(cmd, (err, stdout, stderr) => {
+    if(!err) {
+      redisMemory = stdout.replace(/\r?\n$/,'');
+    }
   });
 }
 
@@ -137,7 +152,8 @@ function getSysInfo() {
     timestamp: getTimestamp(),
     uptime: getUptime(),
     conn: conn,
-    peakConn: peakConn
+    peakConn: peakConn,
+    redisMem: redisMemory
   }
 
   return sysinfo;
