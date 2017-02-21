@@ -845,7 +845,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
-            console.log("Reseting");
+            console.log("Reseting System");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -858,7 +858,7 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetpolicy") {
-            console.log("Reseting");
+            console.log("Reseting Policy");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
