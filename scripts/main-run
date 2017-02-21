@@ -88,7 +88,7 @@ fi
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
-nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
+#nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
