@@ -30,6 +30,10 @@ var shadowsocks = require('./routes/shadowsocks');
 var encipher = require('./routes/fastencipher2');
 let dnsmasq = require('./routes/dnsmasq');
 
+// periodically update cpu usage, so that latest info can be pulled at any time
+let si = require('../extension/sysinfo/SysInfo.js');
+si.startUpdating();
+
 var app = express();
 
 // view engine setup

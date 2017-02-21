@@ -38,6 +38,10 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('info');
+
+
 var builder = require('botbuilder');
 var uuid = require('uuid');
 
@@ -373,9 +377,6 @@ class netBot extends ControllerBot {
             }
         });
 
-        let SSH = require('../extension/ssh/ssh.js');
-        let ssh = new SSH('debug');
-
         // only do this in production and always do after 15 seconds ...
         // the 15 seconds wait is for the process to wake up
        
@@ -609,102 +610,109 @@ class netBot extends ControllerBot {
     }
 
     getHandler(gid, msg, callback) {
-        // mtype: get
-        // target = ip address
-        // data.item = [app, alarms, host]
-        if (msg.data.item === "host" && msg.target) {
-            this.getAllIPForHost(msg.target, (err, ips) => {
-                this.deviceHandler(msg, gid, msg.target, ips, callback);
-            });
-        } else if (msg.data.item === "vpn" || msg.data.item === "vpnreset") {
-            let regenerate = true;
-            if (msg.data.item === "vpnreset") {
-                regenerate = true;
-            }
-            this.hostManager.loadPolicy(() => {
-                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-                    let datamodel = {
-                        type: 'jsonmsg',
-                        mtype: 'reply',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                        code: 404,
-                    };
-                    if (err == null) {
-                        datamodel.code = 200;
-                        datamodel.data = {
-                            ovpnfile: ovpnfile,
-                            password: password,
-                            portmapped: this.hostManager.policy['vpnPortmapped']
-                        }
-                    }
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-                });
-            });
-        } else if (msg.data.item === "shadowsocks" || msg.data.item === "shadowsocksResetConfig") {
-          let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
-          let ss = new shadowsocks('info');
+      // mtype: get
+      // target = ip address
+      // data.item = [app, alarms, host]
 
-          if(msg.data.item === "shadowsocksResetConfig") {
-            ss.refreshConfig();
-          }
-          
-          let config = ss.readConfig();
-          let datamodel = {
-                        type: 'jsonmsg',
-                        mtype: 'reply',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                        code: 200,
-                        data: {
-                            config: config
-                        }
-                    };
-          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-
-        } else if (msg.data.item === "sshPrivateKey") {
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
-          ssh.getPrivateKey((err, data) => {
-            if(err) {
-              console.log("Got error when loading ssh private key: " + err);
-              data = "";
-            }
-
+      switch(msg.data.item) {
+      case "host":
+        if(msg.target) {
+          this.getAllIPForHost(msg.target, (err, ips) => {
+            this.deviceHandler(msg, gid, msg.target, ips, callback);
+          });          
+        }
+        break;
+      case "vpn":
+      case "vpnreset":
+        let regenerate = true;
+        if (msg.data.item === "vpnreset") {
+          regenerate = true;
+        }
+        
+        this.hostManager.loadPolicy(() => {
+          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
             let datamodel = {
               type: 'jsonmsg',
               mtype: 'reply',
               id: uuid.v4(),
               expires: Math.floor(Date.now() / 1000) + 60 * 5,
               replyid: msg.id,
-              code: 200,
-              data: {
-                key: data
-              }
+              code: 404,
             };
+            if (err == null) {
+              datamodel.code = 200;
+              datamodel.data = {
+                ovpnfile: ovpnfile,
+                password: password,
+                portmapped: this.hostManager.policy['vpnPortmapped']
+              }
+            }
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           });
-        } else if (msg.data.item === "sshRecentPassword") {
-
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
-          ssh.getPassword((err, password) => {
-
-            var data = "";
-
-            if(err) {
-              console.log("Got error when reading password: " + err);
-              this.simpleTxData(msg, {}, err, callback);
-            } else {
-              this.simpleTxData(msg, {password: password}, err, callback);
-            }
-          });
+        });
+        break;
+      case "shadowsocks":
+      case "shadowsocksResetConfig":
+        let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+        let ss = new shadowsocks('info');
+        
+        if(msg.data.item === "shadowsocksResetConfig") {
+          ss.refreshConfig();
         }
-
+        
+        let config = ss.readConfig();
+        let datamodel = {
+          type: 'jsonmsg',
+          mtype: 'reply',
+          id: uuid.v4(),
+          expires: Math.floor(Date.now() / 1000) + 60 * 5,
+          replyid: msg.id,
+          code: 200,
+          data: {
+            config: config
+          }
+        };
+        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        break;
+      case "sshPrivateKey":
+        
+        ssh.getPrivateKey((err, data) => {
+          if(err) {
+            console.log("Got error when loading ssh private key: " + err);
+            data = "";
+          }
+          
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 200,
+            data: {
+              key: data
+            }
+          };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        });
+        break;
+      case "sshRecentPassword":
+        ssh.getPassword((err, password) => {
+          
+          var data = "";
+          
+          if(err) {
+            console.log("Got error when reading password: " + err);
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            this.simpleTxData(msg, {password: password}, err, callback);
+          }
+        });
+        break;
+      case "sysInfo":
+        let si = require('../extension/sysinfo/SysInfo.js');
+        this.simpleTxData(msg, si.getSysInfo(), null, callback);
+      }
     }
 
     deviceHandler(msg, gid, target, listip, callback) {
@@ -898,9 +906,6 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetSSHKey") {
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
           ssh.resetRSAPassword((err) => {
             let code = 200; 
 
@@ -928,8 +933,6 @@ class netBot extends ControllerBot {
             });
             break;
           case "resetSSHPassword":
-            let SSH = require('../extension/ssh/ssh.js');
-            let ssh = new SSH('info');
             ssh.resetRandomPassword((err,password) => {
               sysmanager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
