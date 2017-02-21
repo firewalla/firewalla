@@ -70,6 +70,14 @@ function getBoneInfo(callback) {
     });
 }
 
+var __constants = {
+  "MAX_V6_PERHOST":6
+};
+
+function constants(name) {
+    return __constants[name] 
+}
+
 function redisclean(config) {
   const MAX_CONNS_PER_FLOW = 70000
         this.config = config;
@@ -220,6 +228,7 @@ module.exports = {
   getUserConfigFolder: getUserConfigFolder,
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
-  redisclean: redisclean
+  redisclean: redisclean,
+  constants: constants
 }
 
