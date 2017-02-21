@@ -864,12 +864,20 @@ module.exports = class FlowManager {
             sname = obj.shname;
         }
         let name = obj.dh;
-        if (obj.appr && obj.appr.length > 2) {
-            name = obj.appr;
-        } else if (obj.org && obj.org.length > 2) {
-            name = obj.org;
-        } else if (obj.dhname && obj.dhname.length > 2) {
-            name = obj.dhname;
+        if (type == 'txdata' || type =='out') {
+            if (obj.appr && obj.appr.length > 2) {
+                name = obj.appr;
+            } else if (obj.dhname && obj.dhname.length > 2) {
+                name = obj.dhname;
+            }
+        } else {
+            if (obj.appr && obj.appr.length > 2) {
+                name = obj.appr;
+            } else if (obj.org && obj.org.length > 2) {
+                name = obj.org;
+            } else if (obj.dhname && obj.dhname.length > 2) {
+                name = obj.dhname;
+            }
         }
 
         //let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
@@ -884,14 +892,14 @@ module.exports = class FlowManager {
             return name + "min : rx " + obj.rb + ", tx " + obj.ob;
         } else if (type == "rxdata" || type == "in") {
             if (interest == 'txdata') {
-                return dtime+sname + " transfered to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+                return dtime+sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return dtime+sname + " transfered to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            return dtime+sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         } else if (type == "txdata" || type == "out") {
             if (interest == 'txdata') {
-                return dtime+sname + " transfered to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+                return dtime+sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
             }
-            return dtime+sname + " transfered to " + name + " : " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            return dtime+sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
         }
     }
 

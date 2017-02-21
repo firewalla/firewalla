@@ -41,6 +41,7 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 
 function iptables(rule, callback) {
+    console.log("IPTABLE6: rule:",rule);
     running = true;
     var args = iptablesArgs(rule);
 
@@ -159,14 +160,19 @@ function flush6(callback) {
 }
 
 function run(listofcmds, callback) {
-    for (var i in listofcmds) {
-        this.process = require('child_process').exec(listofcmds[i], (err, out, code) => {
+    async.eachLimit(listofcmds, 1, (cmd, cb) => {
+        console.log("IPTABLE:RUNCOMMAND", cmd);
+        this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
                 console.log("IPTABLE:DNS:Error unable to set", err);
             }
             if (callback) {
                 callback(err, null);
             }
+            cb();
         });
-    }
+    }, (err) => {
+        if (callback)
+            callback(err, null);
+    });
 }

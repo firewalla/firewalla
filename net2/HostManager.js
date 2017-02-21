@@ -367,13 +367,16 @@ class Host {
         }
         log.debug("Host:Spoof:", state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
-        if (state == true && this.spoofing == false) {
-            log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway);
-            spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac);
+        let gateway6 = sysManager.monitoringInterface().gateway6;
+   //     if (state == true && this.spoofing == false) {
+        if (state == true) {
+            log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+            spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
             this.spoofing = true;
-        } else if (state == false && this.spoofing == true) {
-            log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway);
-            spoofer.unspoof(this.o.ipv4Addr, gateway, true);
+   //     } else if (state == false && this.spoofing == true) {
+        } else if (state == false) {
+            log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+            spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6, true);
             this.spoofing = false;
         }
     }
@@ -1285,6 +1288,8 @@ module.exports = class {
                     }
                 }
 
+                sysManager.setNeighbor(host.o.ipv4Addr);
+
                 for (let j in host.ipv6Addr) {
                     sysManager.setNeighbor(host.ipv6Addr[j]);
                 }
@@ -1399,7 +1404,6 @@ module.exports = class {
           if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
             if (acl.state == data.state) {
               log.debug("System:setPolicy:Nochange", name, data);
-              callback(null,null);
               return;
             } else {
               acl.state = data.state;

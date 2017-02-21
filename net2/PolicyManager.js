@@ -109,9 +109,16 @@ module.exports = class {
                 return;
             }
         }
-        if (ip.isV4Format(src) || ip.isV4Format(dst)) {
+        if (ip.isV4Format(src) && ip.isV4Format(dst)) {
             this.block4(mac, protocol,src,dst,sport,dport,state,callback);
         } else {
+            // there is a problem with these kind of block.  Ipv6 blocking is not
+            // supported for incoming (dst is home and src is some where in 
+            // internet
+            if (ip.isV4Format(dst)) {
+                callback(null,null);
+                return;
+            }
             this.block6(mac, protocol,src,dst,sport,dport,state,callback);
         }
     }

@@ -289,6 +289,24 @@ module.exports = class {
         return this.sshPassword;
     }
 
+    inMySubnet6(ip6) {
+        let ip6_masks = this.monitoringInterface().ip6_masks;
+        let ip6_addresses = this.monitoringInterface().ip6_addresses;
+
+        if (ip6_masks == null) {
+            return false;
+        }
+
+        for (let m in ip6_masks) {
+            let mask = iptool.mask(ip6_addresses[m],ip6_masks[m]);
+            if (mask == iptool.mask(ip6,ip6_masks[m])) {
+                console.log("SysManager:FoundSubnet", ip6,mask);
+                return true;
+            }
+        }
+        return false;
+    }
+
     // hack ... 
     debugState(component) {
         if (component == "FW_HASHDEBUG") {
@@ -404,10 +422,18 @@ module.exports = class {
             if (this.locals[ip]) {
                 return true;
             }
-            return false;
+            return this.inMySubnet6(ip);
         } else {
             log.debug("SysManager:ERROR:isLocalIP", ip);
             return true;
+        }
+    }
+
+    ipLearned(ip) {
+        if (this.locals[ip]) {
+            return true;
+        } else {
+            return false;
         }
     }
 

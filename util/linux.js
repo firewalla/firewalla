@@ -1,6 +1,7 @@
 "use strict";
 
 var os    = require('os'),
+    ip    = require('ip'),
     exec  = require('child_process').exec,
     async = require('async');
     
@@ -12,6 +13,16 @@ function trim_exec(cmd, cb) {
       cb(err)
   })
 }
+
+exports.ping6= function(intf, ipv6addr,cb) {
+  let pcmd = "ping6 -c 2 "+ipv6addr;
+  console.log("LINUX: ",pcmd)
+  require('child_process').exec(pcmd,(err)=>{
+      console.log("LINUX:",err);
+      if (cb)
+         cb();
+  });
+};
 
 function trim_exec_sync(cmd) {
    let r = require('child_process').execSync(cmd);
@@ -109,6 +120,17 @@ exports.get_network_interfaces_list = function(cb) {
       nics[key].forEach(function(type) {
         if (type.family == 'IPv4') {
           obj.ip_address = type.address;
+        }
+        if (type.family == 'IPv6') {
+          if (obj.ip6_addresses) {
+            obj.ip6_addresses.push(type.address);
+            if (type.netmask) {
+                obj.ip6_masks.push(type.netmask);
+            }
+          } else {
+            obj.ip6_addresses=[type.address];
+            obj.ip6_masks=[type.netmask];
+          }
         }
         if (type.mac) {
           obj.mac_address = type.mac;
