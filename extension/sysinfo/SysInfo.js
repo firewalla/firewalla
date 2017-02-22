@@ -147,12 +147,12 @@ function getSysInfo() {
     load1: os.loadavg(1),
     load5: os.loadavg(5),
     load15: os.loadavg(15),
-    curTemp: curTemp,
-    peakTemp: peakTemp,
+    curTemp: curTemp + "",
+    peakTemp: peakTemp + "",
     timestamp: getTimestamp(),
     uptime: getUptime(),
-    conn: conn,
-    peakConn: peakConn,
+    conn: conn + "",
+    peakConn: peakConn + "",
     redisMem: redisMemory
   }
 

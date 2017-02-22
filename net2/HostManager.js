@@ -38,6 +38,8 @@ var intelManager = new IntelManager('debug');
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
+let f = require('./Firewalla.js');
+
 var alarmManager = null;
 
 var uuid = require('uuid');
@@ -1154,7 +1156,8 @@ module.exports = class {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
         json.systemDebug = sysManager.isSystemDebugOn();
-        json.version = sysManager.config.version;
+      json.version = sysManager.config.version;
+      json.longVersion = f.getVersion();
         json.device = "Firewalla (beta)"
         json.publicIp = sysManager.publicIp;
         json.ddns = sysManager.ddns;
