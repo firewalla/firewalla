@@ -333,10 +333,13 @@ class netBot extends ControllerBot {
                     n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
                 }
             }
-            if (m)
+            if (m) {
+                console.log("MonitorEvent:Flow:Out", m,msg);
                 this.tx2(this.primarygid, m, n, {id:msg.id});
+            }
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
+/*
             let m = null;
             let n = null;
             console.log("Monitor:Flow:In", channel, ip, msg, "=====");
@@ -352,6 +355,7 @@ class netBot extends ControllerBot {
             }
             if (m)
                 this.tx2(this.primarygid, m, n, {id:msg.id});
+*/
         });
 
         setTimeout(() => {
