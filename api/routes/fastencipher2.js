@@ -13,6 +13,8 @@ var cloudWrapper = new CloudWrapper();
 
 let f = require('../../net2/Firewalla.js');
 
+let log = require('../../net2/logger.js')(require('path').basename(__filename), "info");
+
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
  * -- message is encrypted already 
@@ -50,9 +52,10 @@ router.post('/message/:gid',
 router.post('/message/cleartext/:gid', 
     passport.authenticate('bearer', { session: false }),
     function(req, res, next) {
-      console.log("================= request body =================");
-      console.log(JSON.stringify(req.body, null, '\t'));
-      console.log("================= request body end =================");
+      log.info("A new request");
+      log.info("================= request body =================");
+      log.info(JSON.stringify(req.body, null, '\t'));
+      log.info("================= request body end =================");
         
       var gid = req.params.gid;
       let controller = cloudWrapper.getNetBotController(gid);
@@ -64,7 +67,6 @@ router.post('/message/cleartext/:gid',
       var alreadySent = false;
 
       controller.msgHandler(gid, req.body, (err, response) => {
-        console.log("XXXXXXXXXXXXXXXXXXXFFFFFFFFFFFFFFFFFFFFF", err, response);
         if(alreadySent) {
           return;
         }
@@ -75,7 +77,7 @@ router.post('/message/cleartext/:gid',
           res.json({ error: err });
           return;
         } else {
-          console.log("got response: " + JSON.stringify(response));
+          log.info("Got response, length: ", JSON.stringify(response).length);
           res.json(response);
         }
       });
