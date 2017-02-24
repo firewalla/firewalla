@@ -73,14 +73,17 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
+     mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
 fi
 
@@ -156,7 +159,12 @@ cd net2
 
 # this config is necessary for forwarding DNS requests to dnsmasq
 sudo sysctl -w net.ipv4.conf.all.route_localnet=1
-forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
+
+if [[ -f /.dockerenv ]]; then
+    forever start  -a --uid firemain  -c "/usr/bin/node --expose-gc"  ./main.js
+else
+    sudo systemctl start firemain 
+fi
 cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
