@@ -826,7 +826,7 @@ class netBot extends ControllerBot {
                             code: 200,
                             data: jsonobj
                         };
-                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
+//                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
                         this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null, callback);
                     });
                 });

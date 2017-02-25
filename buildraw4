@@ -100,9 +100,10 @@ function install_walla()
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
     
     # ignore systemctl part in docker enviornment, there is some bug that systemctl doesn't work in Docker
-    if [[ "$BUILD_ONLY" != 1 && ! -f /.dockerenv ]]; then
+    if [[ ! -f /.dockerenv ]]; then
+
+	# systemd will bring up firewalla service, which will bring up all the rest firewalla services
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
-        sudo systemctl enable brofish || perr_and_exit "Failed to enable brofish service."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
     fi
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
