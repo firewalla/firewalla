@@ -38,7 +38,7 @@
  * query every x min until group is none empty, or first invite
  */
 
-let log = require("./logger.js")(__filename);
+let log = require("../net2/logger.js")(__filename);
 
 var fs = require('fs');
 var cloud = require('../encipher');
