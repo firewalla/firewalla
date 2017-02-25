@@ -33,6 +33,7 @@ sudo cp etc/bro-cron /etc/cron.hourly/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 sudo systemctl reenable firewalla
+sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.

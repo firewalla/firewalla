@@ -1,7 +1,7 @@
 #!/bin/bash -
 echo "Going to delete everything ... !"
 sleep 3
-forever stop main
+sudo service firemain stop
 sudo service firemon stop
 sudo service fireui stop
 sudo service fireapi stop

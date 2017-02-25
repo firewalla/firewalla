@@ -1,5 +1,5 @@
 #!/bin/bash -
-forever stop main
+sudo service firemain stop
 sudo servcie firemon stop
 sudo servcie fireui stop
 sudo servcie fireapi stop
