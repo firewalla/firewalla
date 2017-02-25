@@ -253,7 +253,11 @@ function inviteFirstAdmin(gid, callback) {
             return;
         }
 
-        if (group.symmetricKeys) {
+      if (group.symmetricKeys) {
+	// number of key sym keys equals to number of members in this group
+	// set this number to redis so that other js processes get this info
+	rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
+	
             if (group.symmetricKeys.length === 1) {
 //            if (group.symmetricKeys.length > 0) { //uncomment to add more users
                 var obj = eptcloud.eptGenerateInvite(gid);
@@ -354,7 +358,13 @@ function launchService(gid, callback) {
 }
 
 function launchService2(gid,callback) {
-   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+  fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+
+  // start bro service
+  require('child_process').exec("sudo systemctl start brofish");
+  
+
+  // start fire api
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
        require('child_process').exec("sudo systemctl start fireapi");
    } else {

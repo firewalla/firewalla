@@ -15,6 +15,12 @@
  */
 var winston = require('winston');
 
+let path = require('path');
+
+String.prototype.capitalizeFirstLetter = function() {
+    return this.charAt(0).toUpperCase() + this.slice(1);
+}
+
 var devDebug = {
    'BroDetect': 'info',
    'HostManager': 'info',
@@ -63,6 +69,12 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
 }
 
 module.exports = function (component, loglevel) {
+  component = path.basename(component).split(".")[0].capitalizeFirstLetter();
+  
+  if(!loglevel) {
+    loglevel = "info"; // default level info
+  }
+  
     let _loglevel = debugMapper[component];
     if (_loglevel==null) {
         _loglevel = loglevel;
@@ -70,8 +82,19 @@ module.exports = function (component, loglevel) {
     var logger = new(winston.Logger)({
         transports: [
             new(winston.transports.Console)({
-                level: _loglevel,
-                'timestamp': true
+              level: _loglevel,
+	      timestamp: function() {
+		let d = new Date();
+		return d.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+	      },
+	      formatter: function(options) {
+		let format = require('util').format("%s %s %s: %s",
+						    options.level.toUpperCase(),
+						    options.timestamp(),
+						    component,
+						    options.message);
+		return format;
+	      }
             }),
             /*
             new (winston.transports.File)({level:fileloglevel,
