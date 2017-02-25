@@ -87,6 +87,10 @@ else
      rm /tmp/FWPRODUCTION
 fi
 
+# Setup permissions
+sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
+sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
+
 #For testing only
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
@@ -159,6 +163,7 @@ cd net2
 
 # this config is necessary for forwarding DNS requests to dnsmasq
 sudo sysctl -w net.ipv4.conf.all.route_localnet=1
+
 
 if [[ -f /.dockerenv ]]; then
     forever start  -a --uid firemain  -c "/usr/bin/node --expose-gc"  ./main.js

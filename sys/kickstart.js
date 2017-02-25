@@ -225,6 +225,10 @@ function openInvite(group,gid,ttl) {
                         if (!e) {
                             clearInterval(timer);
                             intercomm.stop(service);
+                            intercomm.bstop();
+                            console.log("EXIT KICKSTART AFTER JOIN");
+                            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                            });
                         }
                         if (ttl <= 0) {
                             clearInterval(timer);
