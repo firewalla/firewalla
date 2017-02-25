@@ -831,6 +831,9 @@ class netBot extends ControllerBot {
         });
     }
 
+  enrichCountryInfo(flow) {
+  }
+
     /*
     Received jsondata { mtype: 'cmd',
       id: '6C998946-ECC6-4535-90C5-E9525D4BB5B6',
