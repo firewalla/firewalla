@@ -41,6 +41,7 @@ var intelManager = new IntelManager('debug');
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
 
+let country = require('../extension/country/country.js');
 
 var builder = require('botbuilder');
 var uuid = require('uuid');
@@ -816,6 +817,10 @@ class netBot extends ControllerBot {
                             }
                         }
                         */
+
+		      // enrich flow info with country
+		      this.enrichCountryInfo(jsonobj.flows);
+		      
                         //flowManager.getFlowCharacteristics(result,direction,1000000,2);
                         let datamodel = {
                             type: 'jsonmsg',
@@ -826,7 +831,7 @@ class netBot extends ControllerBot {
                             code: 200,
                             data: jsonobj
                         };
-                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
+//                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
                         this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null, callback);
                     });
                 });
@@ -834,6 +839,22 @@ class netBot extends ControllerBot {
 
         });
     }
+
+  enrichCountryInfo(flows) {
+    // support time flow first
+    let timeFlows = flows.time;
+    timeFlows.forEach((flow) => {     
+      let sh = flow.sh;
+      let dh = flow.dh;
+      let lh = flow.lh;
+
+      if(sh === lh) {
+	flow.country = country.getCountry(dh);
+      } else {
+	flow.country = country.getCountry(sh);
+      }
+    });
+  }
 
     /*
     Received jsondata { mtype: 'cmd',

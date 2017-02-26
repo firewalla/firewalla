@@ -15,6 +15,21 @@ Usage: buildraw [-n] [-h]"
 EOM
 }
 
+function setup_sys_env()
+{
+    # Set firewalla global environment variable
+    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
+        echo "FIREWALLA_HOME "+$basedir
+        sudo /bin/echo "FIREWALLA_HOME=$basedir" | sudo bash -c 'cat - >>  /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
+    fi
+
+    # Set NODE_PATH
+    if ! grep "^NODE_PATH=" /etc/environment &>/dev/null; then
+	sudo echo "NODE_PATH=/home/pi/.node_modules" >> /etc/environment || perr_and_exit "Failed to add NODE_PATH env"
+    fi
+    
+}
+
 function install_dependencies() 
 {
     git pull || perr_and_exit "Failed to pull latest firewalla code."
@@ -66,14 +81,18 @@ function install_walla()
     branch=$(git rev-parse --abbrev-ref HEAD)
     CPU_PLATFORM=$(uname -m)
 
+    
+
     if [[ ! -e $FW_NODE_MODULES_PATH ]]; then
         if [[ $CPU_PLATFORM == "x86_64" ]]; then
             NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.x86_64.git
             git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         elif [[ $CPU_PLATFORM == "armv7l" ]]; then
             NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
-            git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
+            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH	    
             cd $FW_NODE_MODULES_PATH
+	    git fetch
+	    git checkout $branch
             git reset -q --hard `cat $FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM`
             cd -
         fi
@@ -100,17 +119,13 @@ function install_walla()
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
     
     # ignore systemctl part in docker enviornment, there is some bug that systemctl doesn't work in Docker
-    if [[ "$BUILD_ONLY" != 1 && ! -f /.dockerenv ]]; then
+    if [[ ! -f /.dockerenv ]]; then
+
+	# systemd will bring up firewalla service, which will bring up all the rest firewalla services
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
-        sudo systemctl enable brofish || perr_and_exit "Failed to enable brofish service."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
     fi
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
-    # Set firewalla global environment variable
-    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
-        echo "FIREWALLA_HOME "+$basedir
-        sudo /bin/echo "FIREWALLA_HOME=$basedir" | sudo bash -c 'cat - >>  /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
-    fi
 
     sudo cp $basedir/etc/10-header /etc/update-motd.d/10-header
 }
@@ -138,6 +153,7 @@ done
 
 [[ "$NO_DEPS" != 1 ]] && install_dependencies || echo "Skipping dependency installation."
 
+setup_sys_env
 install_walla
 post_installation
 

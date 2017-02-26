@@ -38,6 +38,8 @@
  * query every x min until group is none empty, or first invite
  */
 
+let log = require("../net2/logger.js")(__filename);
+
 var fs = require('fs');
 var cloud = require('../encipher');
 var program = require('commander');
@@ -63,21 +65,21 @@ program.version('0.0.2')
 program.parse(process.argv);
 
 if (program.config == null) {
-    console.log("config file is required");
+    log.info("config file is required");
     process.exit(1);
 }
 let _license = license.getLicense();
 
 var configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
-    console.log("Unable to read config file");
+    log.info("Unable to read config file");
 }
 var config = JSON.parse(configfile);
 if (!config) {
-    console.log("Error processing configuration information");
+    log.info("Error processing configuration information");
 }
 if (!config.controllers) {
-    console.log("Controller missing from configuration file");
+    log.info("Controller missing from configuration file");
     process.exit(1);
 }
 
@@ -88,9 +90,9 @@ if (config.endpoint_name != null) {
     eptname = program.endpoint_name;
 }
 
-var adminInviteInterval = 5; // default 15 min
+var adminInviteInterval = 3; // default 3 seconds, make it sooner
 var adminTotalInterval = 60*60;
-var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 15 min
+var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 1 hour
 
 function getUserHome() {
     return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -146,18 +148,18 @@ function initializeGroup(callback) {
 
     let groupId = storage.getItemSync('groupId');
     if (groupId != null) {
-        console.log("Found stored group x", groupId);
+        log.info("Found stored group x", groupId);
         callback(null, groupId);
         return;
     }
 
-    console.log("Creating new group ", config.service, config.endpoint_name);
+    log.info("Creating new group ", config.service, config.endpoint_name);
     var meta = JSON.stringify({
         'type': config.serviceType,
         'member': config.memberType,
     });
     eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
-        console.log(r);
+        log.info(r);
         if (e == null && r != null) {
             storage.setItemSync('groupId', r);
         }
@@ -166,11 +168,11 @@ function initializeGroup(callback) {
 }
 
 function displayKey(key) {
-    console.log("\n\n-------------------------------\n");
-    console.log("If asked by APP type in this key: ", key);
-    console.log("\n-------------------------------");
-    console.log("\n\nOr Scan this");
-    console.log("\n");
+    log.info("\n\n-------------------------------\n");
+    log.info("If asked by APP type in this key: ", key);
+    log.info("\n-------------------------------");
+    log.info("\n\nOr Scan this");
+    log.info("\n");
 
     var qrcode = require('qrcode-terminal');
     qrcode.generate(key);
@@ -185,9 +187,9 @@ function displayKey(key) {
  */
 
 function displayInvite(obj) {
-    console.log("\n\n-------------------------------\n");
-    console.log("Please scan this to get the invite directly.\n\n");
-    console.log("\n\n-------------------------------\n");
+    log.info("\n\n-------------------------------\n");
+    log.info("Please scan this to get the invite directly.\n\n");
+    log.info("\n\n-------------------------------\n");
     var str = JSON.stringify(obj);
     qrcode.generate(str);
 }
@@ -218,15 +220,16 @@ function openInvite(group,gid,ttl) {
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
                 var timer = setInterval(function () {
-                    console.log("Open Invite Start Interal", ttl , "Inviting rid", obj.r);
+                    log.info("Open Invite Start Interal", ttl , "Inviting rid", obj.r);
                     eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        console.log("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
+                        log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
                         ttl--;
                         if (!e) {
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                            intercomm.bstop();
-                            console.log("EXIT KICKSTART AFTER JOIN");
+                          clearInterval(timer);
+                          intercomm.stop(service);
+                          intercomm.bstop();
+
+			  log.info("EXIT KICKSTART AFTER JOIN");
                             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                             });
                         }
@@ -234,7 +237,7 @@ function openInvite(group,gid,ttl) {
                             clearInterval(timer);
                             intercomm.stop(service);
                             intercomm.bstop();
-                            console.log("EXIT KICKSTART");
+                            log.info("EXIT KICKSTART");
                             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                             });
                         }
@@ -244,10 +247,10 @@ function openInvite(group,gid,ttl) {
 }
 
 function inviteFirstAdmin(gid, callback) {
-    console.log("Initializing first admin");
+    log.info("Initializing first admin");
     eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
-            console.log("Error lookiong up group", err);
+            log.info("Error lookiong up group", err);
             callback(err, false);
             return;
         }
@@ -257,13 +260,17 @@ function inviteFirstAdmin(gid, callback) {
             return;
         }
 
-        if (group.symmetricKeys) {
+      if (group.symmetricKeys) {
+	// number of key sym keys equals to number of members in this group
+	// set this number to redis so that other js processes get this info
+	rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
+	
             if (group.symmetricKeys.length === 1) {
 //            if (group.symmetricKeys.length > 0) { //uncomment to add more users
                 var obj = eptcloud.eptGenerateInvite(gid);
                 /*
                 eptcloud.eptinviteGroupByRid(gid, obj.r,function(e,r) {
-                    console.log("Inviting rid",rid,e,r);
+                    log.info("Inviting rid",rid,e,r);
                 });  
                 */
                 var txtfield = {
@@ -292,32 +299,33 @@ function inviteFirstAdmin(gid, callback) {
                 // for development mode, allow pairing directly from API (store temp key in redis)
                 if(! f.isProduction()) {
                   rclient.set("rid.temp", obj.r);
-                  console.log("WARNING: Running in development mode, RID is stored in redis");
+                  log.info("WARNING: Running in development mode, RID is stored in redis");
                 }
 
                 var timer = setInterval(function () {
-                    console.log("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
+                    log.info("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
                     eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        console.log("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
+                        log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
                         adminInviteTtl--;
-                        if (!e) {
-                            callback(null, true);
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                        }
-                        if (adminInviteTtl <= 0) {
-                            callback("404", false);
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                            intercomm.bstop();
-                        }
+                      if (!e) {
+			rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
+                        callback(null, true);
+                        clearInterval(timer);
+                        intercomm.stop(service);
+                      }
+                      if (adminInviteTtl <= 0) {
+                        callback("404", false);
+                        clearInterval(timer);
+                        intercomm.stop(service);
+                        intercomm.bstop();
+                      }
                     });
                 }, adminInviteInterval * 1000);
 
 
             } else {
                 openInvite(group,gid,60);
-                console.log("Found Group ", gid, "with", group.symmetricKeys.length, "members");
+                log.info("Found Group ", gid, "with", group.symmetricKeys.length, "members");
                 callback(null, true);
             }
         }
@@ -328,7 +336,7 @@ function inviteFirstAdmin(gid, callback) {
 //t fbb05afa-9145-41f1-8076-9de8be56f104 --endpoint_name "raspberry3 monitor" --path /tmp/image2.jpg --beepmsg 'rasbot got image'
 function launchService(gid, callback) {
     var args = ['--gid', gid, '--config', program.config];
-    console.log("Launching Service", gid, config.appId, config.appSecret, config.endpoint_name, 'args', args);
+    log.info("Launching Service", gid, config.appId, config.appSecret, config.endpoint_name, 'args', args);
 
     var child = new(forever.Monitor)('../controllers/MomBot.js', {
         max: 30,
@@ -358,7 +366,13 @@ function launchService(gid, callback) {
 }
 
 function launchService2(gid,callback) {
-   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+  fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+
+  // start bro service
+  require('child_process').exec("sudo systemctl start brofish");
+  
+
+  // start fire api
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
        require('child_process').exec("sudo systemctl start fireapi");
    } else {
@@ -381,7 +395,7 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
                     gid: gid
                 }, (err, data) => {
                   if (err) {}
-                  console.log("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
+                  log.info("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
                 });
 
                 inviteFirstAdmin(gid, function (err, status) {
@@ -396,7 +410,7 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
             }
         });
     } else {
-        console.log("Unable to login", err);
+        log.info("Unable to login", err);
         process.exit();
     }
 });
@@ -404,8 +418,8 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
 process.stdin.resume();
 
 intercomm.discover(null, ['devhi', 'devinfo'], function (type, name, txt) {
-    console.log("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
-    console.log(type, name, txt);
+    log.info("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
+    log.info(type, name, txt);
     if (type == 'devinfo') {
         if ('sensor' in txt) {}
     }
@@ -413,7 +427,7 @@ intercomm.discover(null, ['devhi', 'devinfo'], function (type, name, txt) {
 
 function exitHandler(options, err) {
     intercomm.stop(service);
-    if (err) console.log(err.stack);
+    if (err) log.info(err.stack);
     if (options.exit) process.exit();
 }
 

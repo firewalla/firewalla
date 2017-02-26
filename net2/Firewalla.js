@@ -19,9 +19,13 @@ var redis = require("redis");
 var rclient = redis.createClient();
 log = require("../net2/logger.js")("Firewalla", "info");
 
+let util = require('util');
+
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
 var _isProduction = null;
+
+let version = null;
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -68,6 +72,22 @@ function getBoneInfo(callback) {
             callback(null,null);
         }
     });
+}
+
+function getVersion() {
+  if(!version) {
+    let cmd = "git describe --tags";
+    let versionElements = require('child_process').execSync(cmd).toString('utf-8')
+        .replace(/\n$/, '').split("-");
+
+    if(versionElements.length === 3) {
+      version = util.format("%s.%s (%s)", versionElements[0], versionElements[1], versionElements[2]);
+    } else {
+      version = "";
+    }
+  }
+
+  return version;
 }
 
 var __constants = {
@@ -229,6 +249,7 @@ module.exports = {
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
   redisclean: redisclean,
-  constants: constants
+  constants: constants,
+  getVersion: getVersion
 }
 
