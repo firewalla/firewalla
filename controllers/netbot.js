@@ -845,12 +845,12 @@ class netBot extends ControllerBot {
     let timeFlows = flows.time;
     timeFlows.forEach((flow) => {
       let sh = flow.sh;
-      if(!sysManager.isLocalIP(sh)) {
+      if(!sysmanager.isLocalIP(sh)) {
 	flow.shcountry = country.getCountry(sh);
       }
 
       let dh = flow.dh;
-      if(!sysManager.isLocalIP(dh)) {
+      if(!sysmanager.isLocalIP(dh)) {
 	flow.dhcountry = country.getCountry(dh);
       }      
     });
