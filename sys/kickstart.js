@@ -90,9 +90,9 @@ if (config.endpoint_name != null) {
     eptname = program.endpoint_name;
 }
 
-var adminInviteInterval = 5; // default 15 min
+var adminInviteInterval = 3; // default 3 seconds, make it sooner
 var adminTotalInterval = 60*60;
-var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 15 min
+var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 1 hour
 
 function getUserHome() {
     return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
