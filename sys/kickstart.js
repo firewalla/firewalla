@@ -324,7 +324,7 @@ function inviteFirstAdmin(gid, callback) {
 
 
             } else {
-                openInvite(group,gid,60);
+                openInvite(group,gid,90);
                 log.info("Found Group ", gid, "with", group.symmetricKeys.length, "members");
                 callback(null, true);
             }
