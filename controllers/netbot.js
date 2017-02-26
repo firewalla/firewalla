@@ -843,16 +843,16 @@ class netBot extends ControllerBot {
   enrichCountryInfo(flows) {
     // support time flow first
     let timeFlows = flows.time;
-    timeFlows.forEach((flow) => {
+    timeFlows.forEach((flow) => {     
       let sh = flow.sh;
-      if(!sysmanager.isLocalIP(sh)) {
-	flow.shcountry = country.getCountry(sh);
-      }
-
       let dh = flow.dh;
-      if(!sysmanager.isLocalIP(dh)) {
-	flow.dhcountry = country.getCountry(dh);
-      }      
+      let lh = flow.lh;
+
+      if(sh === lh) {
+	flow.country = country.getCountry(dh);
+      } else {
+	flow.country = country.getCountry(sh);
+      }
     });
   }
 
