@@ -842,17 +842,21 @@ class netBot extends ControllerBot {
 
   enrichCountryInfo(flows) {
     // support time flow first
-    let timeFlows = flows.time;
-    timeFlows.forEach((flow) => {     
-      let sh = flow.sh;
-      let dh = flow.dh;
-      let lh = flow.lh;
+    let flowsSet = [flows.time, flows.rx, flows.tx];
 
-      if(sh === lh) {
-	flow.country = country.getCountry(dh);
-      } else {
-	flow.country = country.getCountry(sh);
-      }
+    flowsSet.forEach((eachFlows) => {
+      eachFlows.forEach((flow) => {     
+        let sh = flow.sh;
+        let dh = flow.dh;
+        let lh = flow.lh;
+        
+        if(sh === lh) {
+          flow.country = country.getCountry(dh);
+        } else {
+          flow.country = country.getCountry(sh);
+        }
+      });
+      
     });
   }
 
