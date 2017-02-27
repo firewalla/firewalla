@@ -1152,7 +1152,7 @@ module.exports = class {
 
       json.cpuid = utils.getCpuId()
         if (sysManager.sshPassword) {           
-          json.ssh = sshPassword;
+          json.ssh = sysManager.sshPassword;
         }
         if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
