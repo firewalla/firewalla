@@ -1149,8 +1149,11 @@ module.exports = class {
             network: networkinfo,
             cpuid: utils.getCpuId(),
         };
-        if (sysManager.sshPassword) { 
-            json.cpuid = utils.getCpuId()+" ["+sysManager.sshPassword+"]";
+
+      json.cpuid = utils.getCpuId()
+      json.updateTime = Date.now();
+        if (sysManager.sshPassword) {           
+          json.ssh = sysManager.sshPassword;
         }
         if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
