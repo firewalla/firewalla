@@ -1151,6 +1151,7 @@ module.exports = class {
         };
 
       json.cpuid = utils.getCpuId()
+      json.updateTime = Date.now();
         if (sysManager.sshPassword) {           
           json.ssh = sysManager.sshPassword;
         }
