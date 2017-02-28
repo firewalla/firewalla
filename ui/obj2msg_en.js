@@ -40,35 +40,96 @@ function noticeMsg(host, obj) {
 }
 
 function intelMsg(host, obj) {
-   let msg = null;
-   let reason = "";
-   if (obj.intel != null && obj.intel['reason'] != null) {
-       reason = obj.intel.reason;
-   }
-   if (obj['seen.indicator_type'] == "Intel::DOMAIN") {
-       msg = reason + ". Device " + host.name() + ": " + obj['id.orig_h'] + " talking to " + obj['seen.indicator'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
-   } else {
-       msg = reason + " " + host.name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
-   }
-   return msg;
-/*
-        if (obj.tags != null && obj.tags.length > 0) {
-            let reason = "Possible: ";
+    let msg = null;
+    let reason = "";
+    if (obj.intel) {
+        if (obj.intel.tags != null && obj.intel.tags.length > 0) {
+            reason = "Possible: ";
             let first = true;
-            for (let i in obj.tags) {
+            for (let i in obj.intel.tags) {
                 if (first) {
-                    reason += obj.tags[i].tag;
+                    reason += obj.intel.tags[i].tag;
                     first = false;
                 } else {
-                    reason += " or " + obj.tags[i].tag;
+                    reason += " or " + obj.intel.tags[i].tag;
                 }
             }
-            obj.reason = reason;
         }
-*/
+    }
+
+    if (obj['seen.indicator_type'] == "Intel::DOMAIN") {
+        msg = reason + ". Device " + host.name() + ": " + obj['id.orig_h'] + " talking to " + obj['seen.indicator'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
+    } else {
+        msg = reason + " " + host.name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
+    }
+   return msg;
 }
 
+function FlowToStringShortShort2(obj, type, interest) {
+        let sname = obj.sh;
+        if (obj.shname) {
+            sname = obj.shname;
+        }
+        let name = obj.dh;
+        if (type == 'txdata' || type =='out') {
+            if (obj.appr && obj.appr.length > 2) {
+                name = obj.appr;
+            } else if (obj.dhname && obj.dhname.length > 2) {
+                name = obj.dhname;
+            }
+        } else {
+            if (obj.appr && obj.appr.length > 2) {
+                name = obj.appr;
+            } else if (obj.org && obj.org.length > 2) {
+                name = obj.org;
+            } else if (obj.dhname && obj.dhname.length > 2) {
+                name = obj.dhname;
+            }
+        }
+
+        //let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+        let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+        let dtime = "";
+
+        if (time>5) {
+            dtime = time+" min ago, ";
+        }
+
+        if (type == null) {
+            return name + "min : rx " + obj.rb + ", tx " + obj.ob;
+        } else if (type == "rxdata" || type == "in") {
+            if (interest == 'txdata') {
+                return dtime+sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            }
+            return dtime+sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+        } else if (type == "txdata" || type == "out") {
+            if (interest == 'txdata') {
+                return dtime+sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+            }
+            return dtime+sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+        }
+    }
+
+
+
 function flowMsg(host,type, obj) {
+            let m = null;
+            let n = null;
+            console.log("Monitor:Flow:Out", channel, ip, obj, "=====");
+            if (ip && obj) {
+                if (obj['txRatioRanked'] && obj['txRatioRanked'].length > 0) {
+                    let flow = obj['txRatioRanked'][0];
+                    if (flow.rank > 0) {
+                        return;
+                    }
+                    m = "Warning: \n\n" + FlowToStringShortShort2(obj['txRatioRanked'][0], obj.direction, 'txdata') + "\n";
+                    n = flowManager.toStringShortShort2(obj['txRatioRanked'][0], obj.direction);
+                }
+            }
+            if (m) {
+                console.log("MonitorEvent:Flow:Out", m,obj);
+                this.tx2(this.primarygid, m, n, {id:obj.id});
+            }
    
 }
 

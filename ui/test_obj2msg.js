@@ -16,6 +16,8 @@ hostManager.getHost("192.168.2.186",(err,host)=>{
         ts: 1488037299.313 } 
      let msg = nm.obj2msg(host, pornobj.alarmtype, pornobj);
      console.log(msg);
+
+     
 });
 
 
