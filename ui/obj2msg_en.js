@@ -12,12 +12,22 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
 var log;
 var config;
 
+/*
+ * type:
+ *   intel
+ *   flowin
+ *   flowout
+ *   av
+ *   porn
+ *   gaming ..
+ */
 
-function intelNotice(host, obj) {
+function noticeMsg(host, obj) {
    let msg = null;
    if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
       msg = host.name() + ": " + obj.msg;
@@ -40,13 +50,34 @@ function intelMsg(host, obj) {
    } else {
        msg = reason + " " + host.name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
    }
-   if (obj.intel && obj.intel.summary) {
-        //msg += "\n" + obj.intelurl;
-   }
-   return msgl
+   return msg;
+/*
+        if (obj.tags != null && obj.tags.length > 0) {
+            let reason = "Possible: ";
+            let first = true;
+            for (let i in obj.tags) {
+                if (first) {
+                    reason += obj.tags[i].tag;
+                    first = false;
+                } else {
+                    reason += " or " + obj.tags[i].tag;
+                }
+            }
+            obj.reason = reason;
+        }
+*/
 }
 
-function flowMsg(host, obj) {
+function flowMsg(host,type, obj) {
+   
+}
+
+function eventMsg(host,type,obj) {
+    if (type == "games") {
+         return host.name()+" is likly playing games at "+obj.actionobj.dhname;
+    } else if (type=="porn") {
+         return host.name()+" is likely watching Porn at "+obj.actionobj.dhname;
+    }
 }
 
 function obj2msg(host, type, obj) {
@@ -54,8 +85,10 @@ function obj2msg(host, type, obj) {
         return intelNotice(host, obj);
     } else if (type == 'intel') {
         return intelMsg(host, obj);
-    } else if (type == 'flow') {
-        return flowMsg(host, obj);
+    } else if (type == 'flowin' || type == 'flowout') {
+        return flowMsg(host, type, obj);
+    } else  {
+        return eventMsg(host,type,obj);
     }
 }
 

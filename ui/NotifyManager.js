@@ -7,7 +7,7 @@ sclient.setMaxListeners(0);
 let instance = null;
 
 
-class NotifyManager {
+module.exports = class NotifyManager {
  
     constructor() {
         if (instance == null) {
@@ -16,10 +16,10 @@ class NotifyManager {
                 this.config = result;
             });
 
-            this.obj2msg={};
-            this.obj2msg['en'] = require('./obj2msg_en.js');
+            this._obj2msg={};
+            this._obj2msg['en'] = require('./obj2msg_en.js');
         }
-        instance = self;
+        instance = this;
     }
 
     saveConfig(callback) {
@@ -40,7 +40,7 @@ class NotifyManager {
     }
 
     obj2msg(host, msgtype, obj) {
-        this.obj2msg['en'].obj2msg(host,msgtype,obj); 
+        return this._obj2msg['en'].obj2msg(host,msgtype,obj); 
     }
 
 }    
