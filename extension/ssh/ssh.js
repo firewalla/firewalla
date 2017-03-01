@@ -8,14 +8,13 @@ var util = require('util');
 var key = require('../common/key.js');
 var jsonfile = require('jsonfile');
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 
 var fileAuthorizedKeys = f.getUserHome() + "/.ssh/authorized_keys";
 var fileRSAKey = f.getUserHome() + "/.ssh/id_rsa.firewalla";
 var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
-var tempSSHPasswordLocation = f.getFirewallaConfigFolder() + ".sshpasswd"
+var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
 
 

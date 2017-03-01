@@ -122,6 +122,7 @@ function iptablesArgs(rule) {
     if (rule.out) args = args.concat(["-o", rule.out]);
     if (rule.target) args = args.concat(["-j", rule.target]);
     if (rule.list) args = args.concat(["-n", "-v"]);
+    if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
 
     return args;
 }

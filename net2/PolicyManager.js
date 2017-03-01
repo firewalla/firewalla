@@ -32,7 +32,26 @@ var async = require('async');
 var VpnManager = require('../vpn/VpnManager.js');
 var vpnManager = new VpnManager('info');
 
+let UPNP = require('../extension/upnp/upnp');
+let upnp = new UPNP();
+
+let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ();
+
+var firewalla = require('../net2/Firewalla.js');
+
+let externalAccessFlag = false;
+
+let localPort = 8833;
+let externalPort = 8833;
+let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
+
+let FAMILY_DNS = "208.67.222.123";
+let ADBLOCK_DNS = "198.101.242.72";
+
 var ip = require('ip');
+
+let b = require('./Block.js');
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -82,7 +101,7 @@ module.exports = class {
 
     defaults(config) {}
 
-    block(protocol, src, dst, sport, dport, state, callback) {
+    block(mac,protocol, src, dst, sport, dport, state, callback) {
         if (state == true) {
             if (sysManager.isMyServer(dst) || sysManager.isMyServer(src)) {
                 log.error("PolicyManager:block:blockself",src,dst,state);
@@ -90,14 +109,21 @@ module.exports = class {
                 return;
             }
         }
-        if (ip.isV4Format(src) || ip.isV4Format(dst)) {
-            this.block4(protocol,src,dst,sport,dport,state,callback);
+        if (ip.isV4Format(src) && ip.isV4Format(dst)) {
+            this.block4(mac, protocol,src,dst,sport,dport,state,callback);
         } else {
-            this.block6(protocol,src,dst,sport,dport,state,callback);
+            // there is a problem with these kind of block.  Ipv6 blocking is not
+            // supported for incoming (dst is home and src is some where in 
+            // internet
+            if (ip.isV4Format(dst)) {
+                callback(null,null);
+                return;
+            }
+            this.block6(mac, protocol,src,dst,sport,dport,state,callback);
         }
     }
 
-    block4(protocol, src, dst, sport, dport, state, callback) {
+    block4(mac, protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -109,7 +135,11 @@ module.exports = class {
         };
 
         if (src && src!="0.0.0.0") {
-            p.src = src;
+            if(sysManager.isLocalIP(src) && mac) {
+                p.mac = mac;
+            } else {
+                p.src = src;
+            }
         }
         if (dst && dst!="0.0.0.0") {
             p.dst = dst;
@@ -137,7 +167,7 @@ module.exports = class {
 
     }
 
-    block6(protocol, src, dst, sport, dport, state, callback) {
+    block6(mac, protocol, src, dst, sport, dport, state, callback) {
         let action = '-A';
         if (state == false || state == null) {
             action = "-D";
@@ -149,7 +179,11 @@ module.exports = class {
         };
 
         if (src) {
-            p.src = src;
+            if (sysManager.isLocalIP(src) && mac) {
+                p.mac = mac;
+            } else {
+                p.src = src;
+            }
         }
         if (dst) {
             p.dst = dst;
@@ -179,31 +213,83 @@ module.exports = class {
 
     }
 
+  familyDnsAddr(callback) {
+      firewalla.getBoneInfo((err,data)=>{
+          if (data && data.config && data.config.dns && data.config.dns.familymode) {
+              callback(null, data.config.dns.familymode[0]);
+          } else {
+              callback(null, FAMILY_DNS);
+          }
+      }); 
+  }
 
-    family(ip, state, callback) {
-        log.info("PolicyManager:Family:IPTABLE", ip, state);
+  adblockDnsAddr(callback) {
+      firewalla.getBoneInfo((err,data)=>{
+          if (data && data.config && data.config.dns && data.config.dns.adblock) {
+              callback(null, data.config.dns.adblock[0]);
+          } else {
+              callback(null, ADBLOCK_DNS);
+          }
+      }); 
+  }
+
+  family(ip, state, callback) {
+    callback = callback || function() {}
+    this.familyDnsAddr((err,dnsaddr)=>{
+        log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddr);
         if (state == true) {
-            iptable.dnsChange(ip, "208.67.222.123:53", false, (err, data) => {
-                iptable.dnsChange(ip, "208.67.222.123:53", true, callback);
+            iptable.dnsChange(ip, dnsaddr + ":53", false, (err, data) => {
+              iptable.dnsChange(ip, dnsaddr+ ":53", true, (err, data) => {
+                if(err) {
+                  callback(err);
+                } else {
+                  dnsmasq.setDefaultNameServers([dnsaddr]);
+                  dnsmasq.updateResolvConf(callback);
+                }
+              });
+            });
+
+        } else {
+          iptable.dnsChange(ip, dnsaddr+ ":53", state, (err, data) => {
+            dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+            dnsmasq.updateResolvConf();
+            callback(err, data);
+          });
+        }
+     });
+   }
+
+  adblock(ip, state, callback) {
+    callback = callback || function() {}
+    this.adblockDnsAddr((err,dnsaddr)=>{
+        log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddr);
+        if (state == true) {
+            iptable.dnsChange(ip, dnsaddr+ ":53", false, (err, data) => {
+              iptable.dnsChange(ip, dnsaddr+ ":53", true, (err, data) => {
+                if(err) {
+                  callback(err);
+                } else {
+                  dnsmasq.setDefaultNameServers([dnsaddr]);
+                  dnsmasq.updateResolvConf(callback);
+                }
+              });
             });
         } else {
-            iptable.dnsChange(ip, "208.67.222.123:53", state, callback);
+          iptable.dnsChange(ip, dnsaddr+ ":53", state, (err, data) => {
+            dnsmasq.setDefaultNameServers(null);
+            dnsmasq.updateResolvConf();
+            callback(err, data);
+          });
         }
-    }
-
-    adblock(ip, state, callback) {
-        log.info("PolicyManager:Adblock:IPTABLE", ip, state);
-        if (state == true) {
-            iptable.dnsChange(ip, "198.101.242.72:53", false, (err, data) => {
-                iptable.dnsChange(ip, "198.101.242.72:53", true, callback);
-            });
-        } else {
-            iptable.dnsChange(ip, "198.101.242.72:53", state, callback);
-        }
-    }
+    });
+  }
 
     hblock(host, state) {
         log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
+        b.blockMac(host.o.mac,state,(err)=>{
+        });
+ /* 
+        
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
            this.block(null,host.o.ipv4Addr, null, null, null, state, (err, data) => {
             for (let i in host.ipv6Addr) {
@@ -214,6 +300,7 @@ module.exports = class {
             }
           });
         });
+*/
     }
 
     hfamily(host, state, callback) {
@@ -293,7 +380,8 @@ module.exports = class {
           return;
         }
 
-        dd.start((err) => {
+        // no force update
+        dd.start(false, (err) => {
           if(err == null) {
             log.info("dnsmasq service is started successfully");
           } else {
@@ -314,29 +402,43 @@ module.exports = class {
     }
   }
 
-    directMode(host, config, callback) {
-        let UPNP = require('../extension/upnp/upnp');
-        let upnp = new UPNP();
-        let mappingDescription = "Firewalla API";
+  addAPIPortMapping(time) {
+    time = time || 1;
+    setTimeout(() => {
+      if(!externalAccessFlag) {
+        log.info("Cancel addAPIPortMapping scheduler since externalAccessFlag is now off");
+        return; // exit if the flag is still off
+      }
+      
+      upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
+      this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
+    }, time)
+  }
 
-        if(config.state == true) {
-            upnp.addPortMapping("tcp", 8833, 8833, mappingDescription, (err) => {
-                if(err) {
-                    log.error("Failed to open port mapping for Firewalla API");
-                } else {
-                    log.info("Port mapping is created successfully for Firewalla API");
-                }
-            })
-        } else {
-            upnp.removePortMapping("tcp", 8833, 8833, (err) => {
-                if(err) {
-                    log.error("Failed to remove port mapping for Firewalla API");
-                } else {
-                    log.info("Port mapping is removed successfully for Firewalla API");
-                }
-            })
-        }
+  removeAPIPortMapping(time) {
+    time = time || 1;
+
+    setTimeout(() => {
+      if(externalAccessFlag) {
+        log.info("Cancel removeAPIPortMapping scheduler since externalAccessFlag is now on");
+        return; // exit if the flag is still on
+      }
+      
+      upnp.removePortMapping("tcp", localPort, externalPort);
+      this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
+    }, time)
+
+  }
+
+  externalAccess(host, config, callback) {
+    if(config.state == true) {
+      externalAccessFlag = true;
+      this.addAPIPortMapping();
+    } else {
+      externalAccessFlag = false;
+      this.removeAPIPortMapping();
     }
+  }
 
     execute(host, ip, policy, callback) {
         log.info("PolicyManager:Execute:", ip, policy);
@@ -362,7 +464,7 @@ module.exports = class {
             if (p == "acl") {
                 continue;
             } else if (p == "blockout") {
-                this.block(null,ip, null, null, null, policy[p]);
+                this.block(null,null,ip, null, null, null, policy[p]);
             } else if (p == "blockin") {
                 this.hblock(host, policy[p]);
                 //    this.block(null,ip,null,null,policy[p]); 
@@ -376,8 +478,10 @@ module.exports = class {
                 this.vpn(host, policy[p], policy);
             } else if (p == "shadowsocks") {
                 this.shadowsocks(host, policy[p]);
-            } else if (p == "directMode") {
-                this.directMode(host, policy[p]);
+            } else if (p == "externalAccess") {
+              this.externalAccess(host, policy[p]);
+            } else if (p == "dnsmasq") {
+              // do nothing here, already handled dnsmasq above
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {
@@ -408,24 +512,40 @@ module.exports = class {
                 log.info("PolicyManager:Cron:Install", block);
                 host.policyJobs[id] = new CronJob(block.cron, () => {
                         log.info("PolicyManager:Cron:On=====", block);
-                        this.block(null, ip, null, null, null, true);
+                        this.block(null,null, ip, null, null, null, true);
                         if (block.duration) {
                             setTimeout(() => {
                                 log.info("PolicyManager:Cron:Done=====", block);
-                                this.block(null,ip, null, null, null, false);
+                                this.block(null,null,ip, null, null, null, false);
                             }, block.duration * 1000 * 60);
                         }
                     }, () => {
                         /* This function is executed when the job stops */
                         log.info("PolicyManager:Cron:Off=====", block);
-                        this.block(null,ip, null, null, null, false);
+                        this.block(null,null,ip, null, null, null, false);
                     },
                     true, /* Start the job right now */
                     block.timeZone /* Time zone of this job. */
                 );
             }
+
+          if(p !== "dnsmasq") {
             host.oper[p] = policy[p];
+          }
+
         }
+
+      // put dnsmasq logic at the end, as it is foundation feature
+      // e.g. adblock/family feature might configure something in dnsmasq
+    
+      if(policy["dnsmasq"]) {        
+        if(host.oper["dnsmasq"] != null &&
+           JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+        } else {
+          this.dnsmasq(host, policy["dnsmasq"]);
+          host.oper["dnsmasq"] = policy["dnsmasq"];
+        }
+      }      
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);
@@ -450,6 +570,27 @@ module.exports = class {
             host.appliedAcl = {};
         }
 
+        /* iterate policies and see if anything need to be modified */
+        for (let p in policy) {
+            let block = policy[p];
+            if (block._src || block._dst) {
+                let newblock = JSON.parse(JSON.stringify(block));
+                block.state = false;
+                if (block._src) {
+                    newblock.src = block._src; 
+                    delete block._src;
+                    delete newblock._src;
+                } 
+                if (block._dst) {
+                    newblock.dst = block._dst; 
+                    delete block._dst;
+                    delete newblock._dst;
+                }
+                policy.push(newblock);
+                log.info("PolicyManager:ModifiedACL",block,newblock,{});
+            }
+        }
+
         async.eachLimit(policy, 1, (block, cb) => {
             if (policy.done != null && policy.done == true) {
                 cb();
@@ -462,21 +603,21 @@ module.exports = class {
                     if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
                         cb();
                     } else {
-                        this.block(block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
-                            if (err == null) {
-                                if (block['state'] == false) {
-                                    block['done'] = true;
-                                }
+                        this.block(block.mac, block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
+                          if (err == null) {
+                            if (block['state'] == false) {
+                              block['done'] = true;
                             }
-                            if (block.duplex && block.duplex == true) {
-                                 this.block(block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
-                                      cb();
-                                 });
-                            } else {
-                                cb();
-                            }
+                          }
+                          if (block.duplex && block.duplex == true) {
+                            this.block(block.mac,block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                              cb();
+                            });
+                          } else {
+                            cb();
+                          }
                         });
-                        host.appliedAcl[aclkey] = block;
+                      host.appliedAcl[aclkey] = block;
                     }
                 } else {
                     cb();

@@ -11,15 +11,9 @@ var cloudWrapper = new CloudWrapper();
 
 
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 
-/* fast encipher api */
-router.get('/ping', 
-    passport.authenticate('bearer', { session: false }),
-    function(req, res, next) {
-        res.send("pong!");
-    });
+let log = require('../../net2/logger.js')(require('path').basename(__filename), "info");
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -28,20 +22,29 @@ router.get('/ping',
 router.post('/message/:gid', 
     encryption.decrypt,
     function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
-        console.log("================= request body =================");
-        console.log(JSON.stringify(req.body, null, '\t'));
-        console.log("================= request body end =================");
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                res.body = JSON.stringify(response);
-                next();
-            }
-        });
+      var gid = req.params.gid;
+      let controller = cloudWrapper.getNetBotController(gid);
+      console.log("================= request body =================");
+      console.log(JSON.stringify(req.body, null, '\t'));
+      console.log("================= request body end =================");
+      
+      var alreadySent = false;
+      
+      controller.msgHandler(gid, req.body, (err, response) => {
+        if(alreadySent) {
+          return;
+        }
+
+        alreadySent = true;
+        
+        if(err) {
+          res.json({ error: err });
+          return;
+        } else {
+          res.body = JSON.stringify(response);
+          next();
+        }
+      });
     },
     encryption.encrypt
 );
@@ -49,26 +52,35 @@ router.post('/message/:gid',
 router.post('/message/cleartext/:gid', 
     passport.authenticate('bearer', { session: false }),
     function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
+      log.info("A new request");
+      log.info("================= request body =================");
+      log.info(JSON.stringify(req.body, null, '\t'));
+      log.info("================= request body end =================");
+        
+      var gid = req.params.gid;
+      let controller = cloudWrapper.getNetBotController(gid);
 
-        var alreadySent = false;
+      if(!controller) {
+	res.status(404).send('');
+	return;
+      }
+      var alreadySent = false;
 
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(alreadySent) {
-                return;
-            }
-
-            alreadySent = true;
-            
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                console.log("got response: " + JSON.stringify(response));
-                res.json(response);
-            }
-        });
+      controller.msgHandler(gid, req.body, (err, response) => {
+        if(alreadySent) {
+          return;
+        }
+        
+        alreadySent = true;
+        
+        if(err) {
+          res.json({ error: err });
+          return;
+        } else {
+          log.info("Got response, length: ", JSON.stringify(response).length);
+          res.json(response);
+        }
+      });
     }
 );
 

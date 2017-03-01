@@ -11,8 +11,7 @@ let log = null;
 let fs = require('fs');
 let util = require('util');
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 
 let natpmp = require('nat-pmp');
 let natupnp = require('nat-upnp');
@@ -30,17 +29,19 @@ module.exports = class {
         return instance;
     }
 
-    addPortMapping(protocol, localPort, externalPort, description, callback) {
+  addPortMapping(protocol, localPort, externalPort, description, callback) {
+    callback = callback || function() {};
+    
         upnpClient.portMapping({
             type: protocol,
             protocol: protocol,
             private: localPort,
             public: externalPort,
-            ttl: 0,
+            ttl: 86400, // one day
             description: description
         }, (err) => {
            if(err) {
-               log.error("failed to add port mapping: " + err);
+             log.error("Failed to add port mapping ", description, " :", err);
                if(callback) {
                    callback(err);
                }
@@ -56,7 +57,9 @@ module.exports = class {
         });
     }
 
-    removePortMapping(protocol, localPort, externalPort, callback) {
+  removePortMapping(protocol, localPort, externalPort, callback) {
+    callback = callback || function() {};
+    
         upnpClient.portUnmapping({
             protocol: protocol,
             private: localPort,

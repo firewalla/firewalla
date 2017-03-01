@@ -31,6 +31,8 @@ var dnsManager = new DNSManager();
 var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('info');
 
+var linux = require('../util/linux.js');
+
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
 });
@@ -424,6 +426,26 @@ module.exports = class {
         }
     }
 
+ 
+    // We now seen a new flow coming ... which might have a new ip getting discovered, lets take care of this
+    indicateNewFlowSpec(flowspec) {
+        let ip = flowspec.lh;
+        if (this.pingedIp==null) {
+            this.pingedIp = {};
+            setTimeout(()=>{
+              this.pingedIp = null;
+            },1000*60*60*24);
+        }
+        if (sysManager.ipLearned(ip)==false && this.pingedIp[ip]==null) {
+           //log.info("Conn:Learned:Ip",ip,flowspec);
+           if (!iptool.isV4Format(ip)) {
+              log.info("Conn:Learned:Ip","ping ",ip,flowspec);
+              linux.ping6(sysManager.monitoringInterface().name,ip)    
+              this.pingedIp[ip]=true;
+           }
+        }
+    }
+
     /*
      * {"ts":1464303791.790091,"uid":"CosE7p2gSFbxvdRig2","id.orig_h":"fe80::6a5b:35ff:fec9:b9cb","id.orig_p":143,"id.resp_h":"ff02::16","id.resp_p":0,"proto":"icmp","conn_state":"OTH","local_orig":false,"local_resp":false,"missed_bytes":0,"orig_pkts":1,"orig_ip_bytes":196,"resp_pkts":0,"resp_ip_bytes":0,"tunnel_parents":[]}
 
@@ -644,6 +666,7 @@ module.exports = class {
                 }
                 this.flowstash[flowspecKey] = flowspec;
                 log.debug("Conn:FlowSpec:Create:", flowspec);
+                this.indicateNewFlowSpec(flowspec);
             } else {
                 flowspec.ob += Number(obj.orig_bytes);
                 flowspec.rb += Number(obj.resp_bytes);
