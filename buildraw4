@@ -25,7 +25,7 @@ function setup_sys_env()
 
     # Set NODE_PATH
     if ! grep "^NODE_PATH=" /etc/environment &>/dev/null; then
-	sudo echo "NODE_PATH=/home/pi/.node_modules" >> /etc/environment || perr_and_exit "Failed to add NODE_PATH env"
+	sudo echo "NODE_PATH=/home/pi/.node_modules" | sudo bash -c 'cat - >> /etc/environment' || perr_and_exit "Failed to add NODE_PATH env"
     fi
     
 }
