@@ -91,6 +91,9 @@ fi
 sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
 sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
 
+#fix network
+sudo cp $FIREWALLA_HOME/etc/duplex_patch /etc/network/if-pre-up.d/.
+
 #For testing only
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
