@@ -1,19 +1,13 @@
 #!/bin/bash -
-echo "Going to delete everything ... !"
-sleep 3
 sudo service firemain stop
 sudo service firemon stop
-sudo service fireui stop
-sudo service fireapi stop
-sudo service firekick stop
-redis-cli flushall
+/usr/bin/redis-cli flushall
 sudo rm -r -f ~/.encipher/*
 sudo rm -r -f /tmp/*
 sudo rm -r -f ~/.forever/*
 sudo rm -r -f /blog/*
 sudo rm -r -f /bspool/*
 sudo rm -r -f ~/ovpns/*
-sudo cd /etc/openvpn/easy-rsa
 # source the vars file just edited
 sudo source ./vars
 
@@ -23,3 +17,4 @@ sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
 sync
 sync
 sudo reboot
+

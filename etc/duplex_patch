@@ -1,0 +1,5 @@
+#!/bin/sh
+/sbin/ifconfig eth0 down
+/sbin/ifconfig eth0 up
+/sbin/ifconfig eth0 down
+
