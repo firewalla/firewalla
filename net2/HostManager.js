@@ -1346,17 +1346,21 @@ module.exports = class {
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             this.hostsdb['host:mac:' + o.mac] = hostbymac;
                         } else {
+                            if (o.ipv4!=hostbymac.o.ipv4) {
+                                // the physical host get a new ipv4 address 
+                                //  
+                                this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+                            }
+                            this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
                             hostbymac.update(o);
                         }
                         // two mac have the same IP,  pick the latest, until the otherone update itself 
-                        /*
                         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
                             log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
                             if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
                                 this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }
                         }
-                        */
                         this.syncHost(hostbymac, true, (err) => {
                             if (this.type == "server") {
                                 hostbymac.applyPolicy((err)=>{
