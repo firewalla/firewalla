@@ -98,8 +98,12 @@ function constants(name) {
     return __constants[name] 
 }
 
-function redisclean(config) {
-  const MAX_CONNS_PER_FLOW = 70000
+function redisclean(config,count) {
+        let  MAX_CONNS_PER_FLOW = 30000
+        if (count!=null && count >0) {
+             MAX_CONNS_PER_FLOW = count;
+        }
+        console.log("Cleaning entries MAX_CONN", MAX_CONNS_PER_FLOW);
         this.config = config;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
