@@ -13,6 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+let log = require("../net2/logger.js")(__filename, "info");
 
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
@@ -20,16 +21,22 @@ console.log("===================================================================
 console.log("Monitor Starting:",config.version);
 console.log("================================================================================");
 
+if(!bone.isAppConnected()) {
+  log.info("Waiting for pairing from first app...");
+}
+
+
 run0();
 
 function run0() {
-    if (bone.cloudready()==true) {
-        run();
-    } else {
-        setTimeout(()=>{
-            run0();
-        },1000);
-    }
+  if (bone.cloudready()==true &&
+      bone.isAppConnected()) {
+    run();
+  } else {
+    setTimeout(()=>{
+      run0();
+    },1000);
+  }
 }
 
 process.on('uncaughtException',(err)=>{
@@ -47,7 +54,7 @@ process.on('uncaughtException',(err)=>{
 function run() {
 
 let tick = 60 * 15; // waking up every 5 min
-let monitorWindow = 60 * 60 * 8; // eight hours window
+let monitorWindow = 60 * 60 * 4; // eight hours window
 
 let FlowMonitor = require('./FlowMonitor.js');
 let flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');

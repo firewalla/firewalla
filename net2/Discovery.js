@@ -104,7 +104,7 @@ module.exports = class {
 
     startDiscover(fast) {
         this.discoverInterfaces((err, list) => {
-            log.debug("Discovery::Scan", this.config.discovery.networkInterfaces, list);
+            log.info("Discovery::Scan", this.config.discovery.networkInterfaces, list);
             for (let i in this.config.discovery.networkInterfaces) {
                 let intf = this.interfaces[this.config.discovery.networkInterfaces[i]];
                 if (intf != null) {
@@ -114,7 +114,7 @@ module.exports = class {
                     }
                     this.scan(intf.subnet, fast, (err, result) => {
                         this.bonjourWatch();
-                        this.neighborDiscoveryV6(intf.name);
+                        this.neighborDiscoveryV6(intf.name,intf);
                     });
                 }
             }
@@ -350,7 +350,7 @@ module.exports = class {
         this.interfaces = {};
         linux.get_network_interfaces_list((err,list)=>{
      //   network.get_interfaces_list((err, list) => {
-            log.error("Found list of interfaces", list, {});
+            log.info("Found list of interfaces", list, {});
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
@@ -372,6 +372,7 @@ module.exports = class {
                 redisobjs.push(list[i].name);
                 list[i].gateway = require('netroute').getGateway(list[i].name);
                 list[i].subnet = this.getSubnet(list[i].name, 'IPv4');
+                list[i].gateway6 = linux.gateway_ip6_sync();
                 if (list[i].subnet.length > 0) {
                     list[i].subnet = list[i].subnet[0];
                 }
@@ -386,6 +387,7 @@ module.exports = class {
                         uid:list[i].ip_address,
                         mac:list[i].mac_address.toUpperCase(),
                         ipv4Addr:list[i].ip_address,
+                        ipv6Addr:list[i].ip6_addresses,
                     };
                     this.processHost(host);
                 }
@@ -613,11 +615,12 @@ module.exports = class {
                                 }
 
                                 // only keep around 5 ipv6 around
-                                ipv6array = ipv6array.slice(Math.max(ipv6array.length - 5))
-
-                                if (ipv6array.indexOf(v6addr) == -1) {
-                                    ipv6array.push(v6addr);
+                                ipv6array = ipv6array.slice(0,8)
+                                let oldindex = ipv6array.indexOf(v6addr);
+                                if (oldindex != -1) {
+                                    ipv6array.splice(oldindex,1);
                                 }
+                                ipv6array.unshift(v6addr);
                                 
                                 data.mac = mac.toUpperCase();
                                 data.ipv6 = JSON.stringify(ipv6array);
@@ -651,8 +654,26 @@ module.exports = class {
         });
     }
 
-    neighborDiscoveryV6(intf) {
+    ping6ForDiscovery(intf,obj,callback) {
         this.process = require('child_process').exec("ping6 -c2 -I eth0 ff02::1", (err, out, code) => {
+            async.eachLimit(obj.ip6_addresses, 5, (o, cb) => {
+               let pcmd = "ping6 -B -c 2 -I eth0 -I "+o+"  ff02::1";
+               log.info("Discovery:v6Neighbor:Ping6",pcmd);
+               require('child_process').exec(pcmd,(err)=>{
+                  cb();
+               }); 
+            }, (err)=>{
+                callback(err); 
+            }); 
+        });
+    }
+
+    neighborDiscoveryV6(intf,obj) {
+        if (obj.ip6_addresses==null || obj.ip6_addresses.length<=1) {
+            log.info("Discovery:v6Neighbor:NoV6",intf,obj);
+            return;
+        }
+        this.ping6ForDiscovery(intf,obj,(err) => {
             let cmdline = 'ip -6 neighbor show';
             console.log("Running commandline: ", cmdline);
 

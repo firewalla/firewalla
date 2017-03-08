@@ -38,6 +38,8 @@ var intelManager = new IntelManager('debug');
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
+let f = require('./Firewalla.js');
+
 var alarmManager = null;
 
 var uuid = require('uuid');
@@ -367,13 +369,16 @@ class Host {
         }
         log.debug("Host:Spoof:", state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
+        let gateway6 = sysManager.monitoringInterface().gateway6;
         if (state == true && this.spoofing == false) {
-            log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway);
-            spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac);
+  //      if (state == true) {
+            log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+            spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
             this.spoofing = true;
         } else if (state == false && this.spoofing == true) {
-            log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway);
-            spoofer.unspoof(this.o.ipv4Addr, gateway, true);
+   //     } else if (state == false) {
+            log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+            spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6, true);
             this.spoofing = false;
         }
     }
@@ -687,6 +692,12 @@ class Host {
                                 log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
                                 for (let field in data) {
                                     this.o[field] = data[field];
+                                }
+                                if (data._vendor!=null && this.o.macVendor == null) {
+                                    this.o.macVendor = data._vendor;
+                                }
+                                if (data._name!=null) {
+                                    this.o.pname = data._name;
                                 }
                                 this.save();
                             }
@@ -1074,7 +1085,9 @@ module.exports = class {
             this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
-                sysManager.redisclean();
+                if (this.type == 'server') {
+                    sysManager.redisclean();
+                }
                 this.getHosts((err, result) => {
                     if (this.type == 'server') {
                         for (let i in result) {
@@ -1136,17 +1149,22 @@ module.exports = class {
             network: networkinfo,
             cpuid: utils.getCpuId(),
         };
-        if (sysManager.sshPassword) { 
-            json.cpuid = utils.getCpuId()+" ["+sysManager.sshPassword+"]";
+
+      json.cpuid = utils.getCpuId()
+      json.updateTime = Date.now();
+        if (sysManager.sshPassword) {           
+          json.ssh = sysManager.sshPassword;
         }
         if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
             json.lastscan = sysManager.sysinfo.oper.LastScan;
         }
         json.systemDebug = sysManager.isSystemDebugOn();
-        json.version = sysManager.config.version;
+      json.version = sysManager.config.version;
+      json.longVersion = f.getVersion();
         json.device = "Firewalla (beta)"
         json.publicIp = sysManager.publicIp;
         json.ddns = sysManager.ddns;
+        json.license = sysManager.license;
         if (sysManager.publicIp) {
              json.publicIp = sysManager.publicIp;
         }
@@ -1276,6 +1294,8 @@ module.exports = class {
                     }
                 }
 
+                sysManager.setNeighbor(host.o.ipv4Addr);
+
                 for (let j in host.ipv6Addr) {
                     sysManager.setNeighbor(host.ipv6Addr[j]);
                 }
@@ -1326,17 +1346,21 @@ module.exports = class {
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             this.hostsdb['host:mac:' + o.mac] = hostbymac;
                         } else {
+                            if (o.ipv4!=hostbymac.o.ipv4) {
+                                // the physical host get a new ipv4 address 
+                                //  
+                                this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+                            }
+                            this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
                             hostbymac.update(o);
                         }
                         // two mac have the same IP,  pick the latest, until the otherone update itself 
-                        /*
                         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
                             log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
                             if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
                                 this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }
                         }
-                        */
                         this.syncHost(hostbymac, true, (err) => {
                             if (this.type == "server") {
                                 hostbymac.applyPolicy((err)=>{
@@ -1377,64 +1401,97 @@ module.exports = class {
         });
     }
 
-    setPolicy(name, data, callback) {
-        this.loadPolicy((err, __data) => {
-            if (name == "acl") {
-                if (this.policy.acl == null) {
-                    this.policy.acl = [data];
-                } else {
-                    let acls = this.policy.acl;
-                    let found = false;
-                    if (acls) {
-                        for (let i in acls) {
-                            let acl = acls[i];
-                            log.debug("comparing ", acl, data);
-                            if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
-                                if (acl.state == data.state) {
-                                    log.debug("System:setPolicy:Nochange", name, data);
-                                    callback(null,null);
-                                    return;
-                                } else {
-                                    acl.state = data.state;
-                                    found = true;
-                                    log.debug("System:setPolicy:Changed", name, data);
-                                }
-                            }
-                        }
-                    }
-                    if (found == false) {
-                        acls.push(data);
-                    }
-                    this.policy.acl = acls;
-                }
+  appendACL(name, data) {
+    if (this.policy.acl == null) {
+      this.policy.acl = [data];
+    } else {
+      let acls = this.policy.acl;
+      let found = false;
+      if (acls) {
+        for (let i in acls) {
+          let acl = acls[i];
+          log.debug("comparing ", acl, data);
+          if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
+            if (acl.state == data.state) {
+              log.debug("System:setPolicy:Nochange", name, data);
+              return;
             } else {
-                if (this.policy[name] != null && this.policy[name] == data) {
-                    if (callback) {
-                        callback(null, null);
-                    }
-                    log.debug("System:setPolicy:Nochange", name, data);
-                    return;
-                }
-                this.policy[name] = data;
-                log.debug("System:setPolicy:Changed", name, data);
+              acl.state = data.state;
+              found = true;
+              log.debug("System:setPolicy:Changed", name, data);
             }
-            this.savePolicy((err, data) => {
-                if (err == null) {
-                    let obj = {};
-                    obj[name] = data;
-                    this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
-                    if (callback) {
-                        callback(null, obj);
-                    }
-                } else {
-                    if (callback) {
-                        callback(null, null);
-                    }
-
-                }
-            });
-        });
+          }
+        }
+      }
+      if (found == false) {
+        acls.push(data);
+      }
+      this.policy.acl = acls;
     }
+  }
+
+  setPolicy(name, data, callback) {
+
+    let savePolicyWrapper = (name, data, callback) => {
+      this.savePolicy((err, data) => {
+        if (err == null) {
+          let obj = {};
+          obj[name] = data;
+          this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+          if (callback) {
+            callback(null, obj);
+          }
+        } else {
+          if (callback) {
+            callback(null, null);
+          }
+        }
+      });
+    }
+
+    this.loadPolicy((err, __data) => {
+      if (name == "acl") {
+        // when adding acl, enrich acl policy with source IP => MAC address mapping.
+        // so that iptables can block with MAC Address, which is more accurate
+        // 
+        // will always associate a mac with the 
+        let localIP = null;
+        if (sysManager.isLocalIP(data.src)) {
+            localIP = data.src; 
+        }
+        if (sysManager.isLocalIP(data.dst)) {
+            localIP = data.dst;
+        }
+ 
+        if(localIP) {
+          this.getHost(localIP, (err, host) => {
+            if(!err) {
+              data.mac = host.o.mac; // may add more attributes in the future                  
+            }
+            this.appendACL(name, data);
+            savePolicyWrapper(name, data, callback);            
+          });
+        } else {
+          this.appendACL(name, data);
+          savePolicyWrapper(name, data, callback);
+        }
+        
+      } else {
+        if (this.policy[name] != null && this.policy[name] == data) {
+          if (callback) {
+            callback(null, null);
+          }
+          log.debug("System:setPolicy:Nochange", name, data);
+          return;
+        }
+        this.policy[name] = data;
+        log.debug("System:setPolicy:Changed", name, data);
+
+        savePolicyWrapper(name, data, callback);
+      }
+      
+    });
+  }
 
     spoof(state) {
         log.debug("System:Spoof:", state, this.spoofing);
@@ -1500,9 +1557,9 @@ module.exports = class {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
-                    dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
+                    dnsManager.queryAcl(this.policy.acl,(err,acls,ipchanged)=> {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
-                            if (changed == true && err == null) {
+                            if (ipchanged || (changed == true && err == null)) {
                                 this.savePolicy(null);
                             }
                             for (let i in this.hosts.all) {

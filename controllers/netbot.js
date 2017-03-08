@@ -38,6 +38,11 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('info');
+
+let country = require('../extension/country/country.js');
+
 var builder = require('botbuilder');
 var uuid = require('uuid');
 
@@ -233,15 +238,15 @@ class netBot extends ControllerBot {
     });
   }
 
-    _directMode(ip, value, callback) {
+    _externalAccess(ip, value, callback) {
         this.hostManager.loadPolicy((err, data) => {
-            this.hostManager.setPolicy("directMode", value, (err, data) => {
+            this.hostManager.setPolicy("externalAccess", value, (err, data) => {
                 if (err == null) {
                     if (callback != null)
                         callback(null, "Success");
                 } else {
                     if (callback != null)
-                        callback(err, "Unable to apply config on directMode: " + value);
+                        callback(err, "Unable to apply config on externalAccess: " + value);
                 }
             });
         });
@@ -329,10 +334,13 @@ class netBot extends ControllerBot {
                     n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
                 }
             }
-            if (m)
+            if (m) {
+                console.log("MonitorEvent:Flow:Out", m,msg);
                 this.tx2(this.primarygid, m, n, {id:msg.id});
+            }
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
+/*
             let m = null;
             let n = null;
             console.log("Monitor:Flow:In", channel, ip, msg, "=====");
@@ -348,11 +356,14 @@ class netBot extends ControllerBot {
             }
             if (m)
                 this.tx2(this.primarygid, m, n, {id:msg.id});
+*/
         });
 
         setTimeout(() => {
             this.scanStart();
-            this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            if (sysmanager.systemRebootedDueToIssue(true)==false) {
+                this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            }
             this.setupDialog();
         }, 2000);
 
@@ -370,9 +381,6 @@ class netBot extends ControllerBot {
                 this.scanning = true;
             }
         });
-
-        let SSH = require('../extension/ssh/ssh.js');
-        let ssh = new SSH('debug');
 
         // only do this in production and always do after 15 seconds ...
         // the 15 seconds wait is for the process to wake up
@@ -491,8 +499,8 @@ class netBot extends ControllerBot {
                   cb(err);
                 });
                 break;
-              case "directMode":
-                this._directMode(msg.target, msg.data.value.directMode, (err, obj) => {
+              case "externalAccess":
+                this._externalAccess(msg.target, msg.data.value.externalAccess, (err, obj) => {
                    cb(err);
                 });
                 break;
@@ -607,102 +615,109 @@ class netBot extends ControllerBot {
     }
 
     getHandler(gid, msg, callback) {
-        // mtype: get
-        // target = ip address
-        // data.item = [app, alarms, host]
-        if (msg.data.item === "host" && msg.target) {
-            this.getAllIPForHost(msg.target, (err, ips) => {
-                this.deviceHandler(msg, gid, msg.target, ips, callback);
-            });
-        } else if (msg.data.item === "vpn" || msg.data.item === "vpnreset") {
-            let regenerate = true;
-            if (msg.data.item === "vpnreset") {
-                regenerate = true;
-            }
-            this.hostManager.loadPolicy(() => {
-                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-                    let datamodel = {
-                        type: 'jsonmsg',
-                        mtype: 'reply',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                        code: 404,
-                    };
-                    if (err == null) {
-                        datamodel.code = 200;
-                        datamodel.data = {
-                            ovpnfile: ovpnfile,
-                            password: password,
-                            portmapped: this.hostManager.policy['vpnPortmapped']
-                        }
-                    }
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-                });
-            });
-        } else if (msg.data.item === "shadowsocks" || msg.data.item === "shadowsocksResetConfig") {
-          let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
-          let ss = new shadowsocks('info');
+      // mtype: get
+      // target = ip address
+      // data.item = [app, alarms, host]
 
-          if(msg.data.item === "shadowsocksResetConfig") {
-            ss.refreshConfig();
-          }
-          
-          let config = ss.readConfig();
-          let datamodel = {
-                        type: 'jsonmsg',
-                        mtype: 'reply',
-                        id: uuid.v4(),
-                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                        replyid: msg.id,
-                        code: 200,
-                        data: {
-                            config: config
-                        }
-                    };
-          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-
-        } else if (msg.data.item === "sshPrivateKey") {
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
-          ssh.getPrivateKey((err, data) => {
-            if(err) {
-              console.log("Got error when loading ssh private key: " + err);
-              data = "";
-            }
-
+      switch(msg.data.item) {
+      case "host":
+        if(msg.target) {
+          this.getAllIPForHost(msg.target, (err, ips) => {
+            this.deviceHandler(msg, gid, msg.target, ips, callback);
+          });          
+        }
+        break;
+      case "vpn":
+      case "vpnreset":
+        let regenerate = true;
+        if (msg.data.item === "vpnreset") {
+          regenerate = true;
+        }
+        
+        this.hostManager.loadPolicy(() => {
+          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
             let datamodel = {
               type: 'jsonmsg',
               mtype: 'reply',
               id: uuid.v4(),
               expires: Math.floor(Date.now() / 1000) + 60 * 5,
               replyid: msg.id,
-              code: 200,
-              data: {
-                key: data
-              }
+              code: 404,
             };
+            if (err == null) {
+              datamodel.code = 200;
+              datamodel.data = {
+                ovpnfile: ovpnfile,
+                password: password,
+                portmapped: this.hostManager.policy['vpnPortmapped']
+              }
+            }
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           });
-        } else if (msg.data.item === "sshRecentPassword") {
-
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
-          ssh.getPassword((err, password) => {
-
-            var data = "";
-
-            if(err) {
-              console.log("Got error when reading password: " + err);
-              this.simpleTxData(msg, {}, err, callback);
-            } else {
-              this.simpleTxData(msg, {password: password}, err, callback);
-            }
-          });
+        });
+        break;
+      case "shadowsocks":
+      case "shadowsocksResetConfig":
+        let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
+        let ss = new shadowsocks('info');
+        
+        if(msg.data.item === "shadowsocksResetConfig") {
+          ss.refreshConfig();
         }
-
+        
+        let config = ss.readConfig();
+        let datamodel = {
+          type: 'jsonmsg',
+          mtype: 'reply',
+          id: uuid.v4(),
+          expires: Math.floor(Date.now() / 1000) + 60 * 5,
+          replyid: msg.id,
+          code: 200,
+          data: {
+            config: config
+          }
+        };
+        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        break;
+      case "sshPrivateKey":
+        
+        ssh.getPrivateKey((err, data) => {
+          if(err) {
+            console.log("Got error when loading ssh private key: " + err);
+            data = "";
+          }
+          
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 200,
+            data: {
+              key: data
+            }
+          };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        });
+        break;
+      case "sshRecentPassword":
+        ssh.getPassword((err, password) => {
+          
+          var data = "";
+          
+          if(err) {
+            console.log("Got error when reading password: " + err);
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            this.simpleTxData(msg, {password: password}, err, callback);
+          }
+        });
+        break;
+      case "sysInfo":
+        let si = require('../extension/sysinfo/SysInfo.js');
+        this.simpleTxData(msg, si.getSysInfo(), null, callback);
+      }
     }
 
     deviceHandler(msg, gid, target, listip, callback) {
@@ -802,6 +817,10 @@ class netBot extends ControllerBot {
                             }
                         }
                         */
+
+		      // enrich flow info with country
+		      this.enrichCountryInfo(jsonobj.flows);
+		      
                         //flowManager.getFlowCharacteristics(result,direction,1000000,2);
                         let datamodel = {
                             type: 'jsonmsg',
@@ -812,7 +831,7 @@ class netBot extends ControllerBot {
                             code: 200,
                             data: jsonobj
                         };
-                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
+//                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
                         this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null, callback);
                     });
                 });
@@ -820,6 +839,26 @@ class netBot extends ControllerBot {
 
         });
     }
+
+  enrichCountryInfo(flows) {
+    // support time flow first
+    let flowsSet = [flows.time, flows.rx, flows.tx];
+
+    flowsSet.forEach((eachFlows) => {
+      eachFlows.forEach((flow) => {     
+        let sh = flow.sh;
+        let dh = flow.dh;
+        let lh = flow.lh;
+        
+        if(sh === lh) {
+          flow.country = country.getCountry(dh);
+        } else {
+          flow.country = country.getCountry(sh);
+        }
+      });
+      
+    });
+  }
 
     /*
     Received jsondata { mtype: 'cmd',
@@ -843,7 +882,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
-            console.log("Reseting");
+            console.log("Reseting System");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -856,7 +895,7 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetpolicy") {
-            console.log("Reseting");
+            console.log("Reseting Policy");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -896,9 +935,6 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetSSHKey") {
-          let SSH = require('../extension/ssh/ssh.js');
-          let ssh = new SSH('info');
-
           ssh.resetRSAPassword((err) => {
             let code = 200; 
 
@@ -926,13 +962,31 @@ class netBot extends ControllerBot {
             });
             break;
           case "resetSSHPassword":
-            let SSH = require('../extension/ssh/ssh.js');
-            let ssh = new SSH('info');
             ssh.resetRandomPassword((err,password) => {
               sysmanager.sshPassword = password;
               this.simpleTxData(msg, null, err, callback);
             });
-            break;
+          break;
+
+        case "ping":
+            let uptime = process.uptime();
+            let now = new Date();
+          
+            let datamodel = {
+                        type: 'jsonmsg',
+                        mtype: 'reply',
+                        id: uuid.v4(),
+                        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                        replyid: msg.id,
+                        code: 200,
+                        data: {
+                          uptime: uptime,
+                          timestamp: now
+                        }
+                    };
+          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          break;
+
           default:
           // do nothing
         }
@@ -963,7 +1017,7 @@ class netBot extends ControllerBot {
     msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
-            console.log("Received jsondata", msg);
+//            console.log("Received jsondata", msg);
             if (rawmsg.message.obj.type === "jsonmsg") {
                 if (rawmsg.message.obj.mtype === "init") {
                     console.log("Process Init load event");
@@ -978,6 +1032,11 @@ class netBot extends ControllerBot {
                         if (json != null) {
                             datamodel.code = 200;
                             datamodel.data = json;
+
+                          if(require('fs').existsSync("/.dockerenv")) {
+                              json.docker = true;
+                          }
+
                         } else {
                             datamodel.code = 500;
                         }

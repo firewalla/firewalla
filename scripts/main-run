@@ -24,6 +24,11 @@ fi
 CPU_PLATFORM=$(uname -m)
 
 
+function pre_main() {
+    source $FIREWALLA_HOME/scripts/utils.sh
+    setup_folders
+}
+
 logger "FIREWALLA: Main-Run Start Update Modules"
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
@@ -66,27 +71,39 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
     then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
-     cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
-     cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge6a $FIREWALLA_HOME/bin/.
+     mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
+     mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
 fi
+
+# Setup permissions
+sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
+sudo setcap cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
+
+#fix network
+sudo cp $FIREWALLA_HOME/etc/duplex_patch /etc/network/if-pre-up.d/.
 
 #For testing only
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
-nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
+#nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
+
+pre_main
 
 if [[ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json && ! -f ~/.node_modules/bleno/package.json ]]; then
     echo "Updating NPM BLENO"
@@ -142,11 +159,21 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo systemctl daemon-reload
 fi
 
 cd net2
-forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
+
+# this config is necessary for forwarding DNS requests to dnsmasq
+sudo sysctl -w net.ipv4.conf.all.route_localnet=1
+
+
+if [[ -f /.dockerenv ]]; then
+    forever start  -a --uid firemain  -c "/usr/bin/node --expose-gc"  ./main.js
+else
+    sudo systemctl start firemain 
+fi
 cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config

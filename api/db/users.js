@@ -2,8 +2,7 @@
 
 var fs = require('fs');
 
-var Firewalla = require('../../net2/Firewalla.js');
-var firewalla = new Firewalla('/path/to/config', 'info');
+let firewalla = require('../../net2/Firewalla.js');
 var fHome = firewalla.getFirewallaHome();
 
 let tokens = JSON.parse(fs.readFileSync(fHome + '/api/db/token.json', 'utf8'));

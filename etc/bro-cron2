@@ -12,12 +12,12 @@ if [[ $bro_process_cnt < 3 ]]; then
     sudo service brofish start
 fi
 
-forever_process_cnt=`forever list | grep "STOPPED" | grep -v grep | wc -l`
-if [[ $forever_process_cnt > 0 ]]; then
-    logger 'FIREWALLA: forever process STOPPED'
-    forever list | logger
-    forever restartall
-fi
+#forever_process_cnt=`forever list | grep "STOPPED" | grep -v grep | wc -l`
+#if [[ $forever_process_cnt > 0 ]]; then
+#    logger 'FIREWALLA: forever process STOPPED'
+#    forever list | logger
+#    forever restartall
+#fi
 
 ui_process_cnt=`sudo systemctl status fireui | grep 'active (running)' | wc -l`
 kickui_process_cnt=`sudo systemctl status firekick |grep 'active (running)' | wc -l`

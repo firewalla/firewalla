@@ -1,38 +1,61 @@
 #!/usr/bin/env node
-var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
+'use strict'
 
-console.log("----------------------");
-console.log("API Launching ", config.version);
-console.log("----------------------");
+let log = require("../../net2/logger.js")(__filename);
+
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.info("API Starting ");
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+let bone = require("../../lib/Bone.js");
+
+if(!bone.isAppConnected()) {
+  log.info("Waiting for pairing from first app...");
+}
+
+run0();
+
+function run0() {
+  if (bone.cloudready()==true &&
+      bone.isAppConnected()) {
+    run();
+  } else {
+    setTimeout(()=>{
+      run0();
+    },1000);
+  }
+}
 
 /**
  * Module dependencies.
  */
 
-var app = require('../app');
-var debug = require('debug')('api:server');
-var http = require('http');
+let config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
+let debug = require('debug')('api:server');
+let http = require('http');
 
-/**
- * Get port from environment and store in Express.
- */
+var server;
 
-var port = normalizePort(process.env.PORT || '8833');
-app.set('port', port);
+function run() {
 
-/**
- * Create HTTP server.
- */
+  let app = require('../app');
+  let port = normalizePort(process.env.PORT || '8833');
+  app.set('port', port);
 
-var server = http.createServer(app);
+  /**
+   * Create HTTP server.
+   */
 
-/**
- * Listen on provided port, on all network interfaces.
- */
+  server = http.createServer(app);
 
-server.listen(port);
-server.on('error', onError);
-server.on('listening', onListening);
+  /**
+   * Listen on provided port, on all network interfaces.
+   */
+
+  server.listen(port);
+  server.on('error', onError);
+  server.on('listening', onListening);
+}
 
 /**
  * Normalize a port into a number, string, or false.
@@ -100,7 +123,6 @@ process.on('uncaughtException',(err)=>{
     if (err && err.message && err.message.includes("Redis connection")) {
         return;
     }
-    var bone = require('../lib/Bone.js');
     bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
         process.exit(1);

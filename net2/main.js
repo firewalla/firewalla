@@ -16,180 +16,188 @@
 
 // config.discovery.networkInterface
 
-var log = require("./logger.js")("main", "info");
+let log = require("./logger.js")(__filename);
 
-console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-console.log("Main Starting ");
-console.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-var bone = require("../lib/Bone.js");
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.info("Main Starting ");
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+let bone = require("../lib/Bone.js");
+
+if(!bone.isAppConnected()) {
+  log.info("Waiting for pairing from first app...");
+}
 
 run0();
 
 function run0() {
-    if (bone.cloudready()==true) {
-        run();
-    } else {
-        setTimeout(()=>{
-            run0();
-        },1000);
-    }
-}
-
-process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
-    if (err && err.message && err.message.includes("Redis connection")) {
-        return; 
-    }
-    bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+  if (bone.cloudready()==true &&
+      bone.isAppConnected()) {
+    run();
+  } else {
     setTimeout(()=>{
-        process.exit(1);
-    },1000*2);
-});
-
-function run() {
-
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+      run0();
+    },1000);
+  }
+}
 
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
-sysManager.setConfig(config);
 
-var VpnManager = require('../vpn/VpnManager.js');
+process.on('uncaughtException',(err)=>{
+  console.warn("################### CRASH #############");
+  console.warn("+-+-+-",err.message,err.stack);
+  if (err && err.message && err.message.includes("Redis connection")) {
+    return; 
+  }
+  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+  setTimeout(()=>{
+    process.exit(1);
+  },1000*5);
+});
 
-var BroDetector = require("./BroDetect.js");
-let bd = new BroDetector("bro_detector", config, "info");
+function run() {
 
-var Discovery = require("./Discovery.js");
-let d = new Discovery("nmap", config, "info");
-
-let SSH = require('../extension/ssh/ssh.js');
-let ssh = new SSH('debug');
+  var SysManager = require('./SysManager.js');
+  var sysManager = new SysManager('info');
 
 
-if (process.env.FWPRODUCTION) {
-/*
-    ssh.resetRandomPassword((err,password) => {
-        if(err) {
-            log.error("Failed to reset ssh password");
-        } else {
-            log.info("A new random SSH password is used!");
-            sysManager.sshPassword = password;
-        }
-    })
-*/
-}
+  sysManager.setConfig(config);
 
-// make sure there is at least one usable enternet
-d.discoverInterfaces(function(err, list) {
+  var VpnManager = require('../vpn/VpnManager.js');
+
+  var BroDetector = require("./BroDetect.js");
+  let bd = new BroDetector("bro_detector", config, "info");
+
+  var Discovery = require("./Discovery.js");
+  let d = new Discovery("nmap", config, "info");
+
+  let SSH = require('../extension/ssh/ssh.js');
+  let ssh = new SSH('debug');
+
+
+  if (process.env.FWPRODUCTION) {
+    /*
+      ssh.resetRandomPassword((err,password) => {
+      if(err) {
+      log.error("Failed to reset ssh password");
+      } else {
+      log.info("A new random SSH password is used!");
+      sysManager.sshPassword = password;
+      }
+      })
+    */
+  }
+
+  // make sure there is at least one usable enternet
+  d.discoverInterfaces(function(err, list) {
     var failure = 1;
     if (list.length > 0) {
-        for(var i in list) {
-            var interf = list[i];
-            log.info("Active ethernet is found: " + interf.name + " (" + interf.ip_address + ")");
-            failure = 0;
-        }
+      for(var i in list) {
+        var interf = list[i];
+        log.info("Active ethernet is found: " + interf.name + " (" + interf.ip_address + ")");
+        failure = 0;
+      }
     }
 
     if(failure) {
-        log.error("Failed to find any alive ethernets, taking down the entire main.js")
-        process.exit(1);        
+      log.error("Failed to find any alive ethernets, taking down the entire main.js")
+      process.exit(1);        
     }
-});
+  });
 
-let c = require('./MessageBus.js');
-let publisher = new c('debug');
+  let c = require('./MessageBus.js');
+  let publisher = new c('debug');
 
-publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
+  publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-d.start();
-bd.start();
+  d.start();
+  bd.start();
 
-var HostManager = require('./HostManager.js');
-var hostManager= new HostManager("cli",'server','debug');
-var os = require('os');
+  var HostManager = require('./HostManager.js');
+  var hostManager= new HostManager("cli",'server','debug');
+  var os = require('os');
 
-console.log("LANCHING NETBOT SERVER");
+  console.log("LANCHING NETBOT SERVER");
 
-var Spoofer = require('./Spoofer.js');
-let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+  var Spoofer = require('./Spoofer.js');
+  let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
 
-setTimeout(()=> {
-var PolicyManager = require('./PolicyManager.js');
-var policyManager = new PolicyManager('info');
+  setTimeout(()=> {
+    var PolicyManager = require('./PolicyManager.js');
+    var policyManager = new PolicyManager('info');
 
-policyManager.flush(config);
-//policyManager.defaults(config);
-//TODO need to write something install automatic rules
+    policyManager.flush(config);
+    //policyManager.defaults(config);
+    //TODO need to write something install automatic rules
 
-// for each new host  ... need to apply policy
-var AlarmManager = require("./AlarmManager.js");
-var alarmManager = new AlarmManager('debug');
-//alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
-},1000*2);
+    // for each new host  ... need to apply policy
+    var AlarmManager = require("./AlarmManager.js");
+    var alarmManager = new AlarmManager('debug');
+    //alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
+  },1000*2);
 
-setTimeout(()=>{
+  setTimeout(()=>{
     sysManager.checkIn((err,data)=>{
     });
-},5000);
+  },5000);
 
-setInterval(()=>{
+  setInterval(()=>{
     sysManager.checkIn((err,data)=>{
     });
-},1000*60*60*1);
+  },1000*60*60*1);
 
 
-setInterval(()=>{
+  setInterval(()=>{
     try {
-       if (global.gc) {
-           global.gc();
-       }
+      if (global.gc) {
+        global.gc();
+      }
     } catch(e) {
     }
-},1000*60);
+  },1000*60);
 
 
-setTimeout(()=>{
+  setTimeout(()=>{
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
-        if (err!=null) {
+      if (err!=null) {
+        console.log("VpnManager:Unable to start vpn");
+        hostManager.setPolicy("vpnAvaliable",false);
+      } else {
+        vpnManager.start((err)=>{ 
+          if (err!=null) {
             console.log("VpnManager:Unable to start vpn");
             hostManager.setPolicy("vpnAvaliable",false);
-        } else {
-            vpnManager.start((err)=>{ 
-                if (err!=null) {
-                    console.log("VpnManager:Unable to start vpn");
-                    hostManager.setPolicy("vpnAvaliable",false);
-                } else {
-                    hostManager.setPolicy("vpnAvaliable",true);
-                }
-            });
-        }
+          } else {
+            hostManager.setPolicy("vpnAvaliable",true);
+          }
+        });
+      }
     });
-},10000);
+  },10000);
 
-setTimeout(()=>{
+  setTimeout(()=>{
     hostManager.getHosts((err,result)=>{
-        let listip = [];
-        for (let i in result) {
-            console.log(result[i].toShortString());
-            result[i].on("Notice:Detected",(type,ip,obj)=>{
-                console.log("=================================");
-                console.log("Notice :", type,ip,obj);
-                console.log("=================================");
-            });
-            result[i].on("Intel:Detected",(type,ip,obj)=>{
-                console.log("=================================");
-                console.log("Notice :", type,ip,obj);
-                console.log("=================================");
-            });
-//            result[i].spoof(true);
-        }
+      let listip = [];
+      for (let i in result) {
+        console.log(result[i].toShortString());
+        result[i].on("Notice:Detected",(type,ip,obj)=>{
+          console.log("=================================");
+          console.log("Notice :", type,ip,obj);
+          console.log("=================================");
+        });
+        result[i].on("Intel:Detected",(type,ip,obj)=>{
+          console.log("=================================");
+          console.log("Notice :", type,ip,obj);
+          console.log("=================================");
+        });
+	//            result[i].spoof(true);
+      }
     });
 
-},30000);
+  },30000);
 
 
 }

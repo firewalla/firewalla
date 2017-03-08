@@ -235,7 +235,7 @@ module.exports = class DNSManager {
         }
     }
 
-    getIntel(ip, flow, dnsdata,  callback) {
+  getIntel(ip, flow, dnsdata, now, callback) {
         log.debug("Get Intel:",ip);
         if (dnsdata) {
             if (dnsdata._intel) {
@@ -243,7 +243,7 @@ module.exports = class DNSManager {
                 // rcount == 1, if we only got intel of the ip address ... 
                 // in order to use the cache, 
                 log.debug("Intel:Cached", ip, dnsdata,intel);
-                if (intel && intel.ts && intel.ts>(Date.now()/1000-48*60*60)) { // otherwise expired
+                if (intel && intel.ts && intel.ts>(now/1000-48*60*60)) { // otherwise expired
                     if (intel.c!=null || intel.apps!=null) {
                         callback(null, JSON.parse(dnsdata._intel));
                         return;
@@ -307,24 +307,27 @@ module.exports = class DNSManager {
         } else {
             //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
             flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
-            console.log("######## DEBUG ",JSON.stringify(flowlist));
+//            console.log("######## DEBUG ",JSON.stringify(flowlist));
         }
 
         console.log("######## Sending:",JSON.stringify(flowlist));
 
         bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
-               console.log("##### MISS",err,data);
-               let intel = {ts:Math.floor(Date.now()/1000)};
-               intel.rcount = iplist.length;
-               let key = "dns:ip:"+ip;
-               //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
-               dnsdata.intel = intel;
-               dnsdata._intel = JSON.stringify(intel);
-               rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
-                   rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
-                   callback(err,null);
-               });
+               log.debug("##### MISS",err,data);
+               if (data && data.length == 0) {
+                   let intel = {ts:Math.floor(Date.now()/1000)};
+                   intel.rcount = iplist.length;
+                   let key = "dns:ip:"+ip;
+                   //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+                   dnsdata.intel = intel;
+                   dnsdata._intel = JSON.stringify(intel);
+                   rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
+                       rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                       callback(err,null);
+                   });
+               }
+
                return;
            }
            let rintel = null;
@@ -363,7 +366,7 @@ module.exports = class DNSManager {
            });
         }); 
     }
-    resolveAny(ip,flow, callback) {
+  resolveAny(ip,flow, now, callback) {
         this.resolveLocalHost(ip, (err, data) => {
             if (data) {
                 callback(null, data, true);
@@ -372,7 +375,7 @@ module.exports = class DNSManager {
                     if (data2 == null) {
                         data2 = {};
                     }
-                      this.getIntel(ip,flow, dnsdata,(err,intel)=> {
+                  this.getIntel(ip,flow, dnsdata,now, (err,intel)=> {
                         if (intel) {
                             data2['intel']=intel;
                             if (intel.s) {
@@ -419,12 +422,33 @@ module.exports = class DNSManager {
     }
 
 
+/*
+> [ { address: '104.20.23.46', family: 4 },
+  { address: '104.20.22.46', family: 4 },
+  { address: '2400:cb00:2048:1::6814:162e', family: 6 },
+  { address: '2400:cb00:2048:1::6814:172e', family: 6 } ]
+
+*/
+
+
     dnsLookup(host,callback) {
         if (host == null) {
             callback(null,null);
         } else {
-            dns.lookup(host, (err, addresses, family) => {
-                callback(err, addresses);
+            dns.lookup(host, {all:true},(err, addresses, family) => {
+                let v4=[];
+                let v6=[];
+                let all = [];
+                for (let i in addresses) {
+                    if (addresses[i].family==4) {
+                        v4.push(addresses[i].address);
+                    }
+                    if (addresses[i].family==6) {
+                        v6.push(addresses[i].address);
+                    }
+                    all.push(addresses[i].address);
+                }
+                callback(err, all,v4,v6);
             });
         }
     }
@@ -434,6 +458,7 @@ module.exports = class DNSManager {
             callback(null,list);
             return;
         }
+        let ipchanged = false;
         async.eachLimit(list,10, (o, cb) => {
             o.srcs = [];
             o.dsts = [];
@@ -447,6 +472,10 @@ module.exports = class DNSManager {
                             ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
                             o.srcs = o.srcs.concat(ipv6); 
                          }  
+                         if (o.src != data.ipv4) {
+                             o._src = data.ipv4;
+                             ipchanged = true;
+                         }
                      } else {
                          o.srcs = [o.src];
                      }
@@ -480,6 +509,10 @@ module.exports = class DNSManager {
                                 ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
                                 o.dsts = o.dsts.concat(ipv6); 
                              }  
+                             if (o.dst != data.ipv4) {
+                                o._dst = data.ipv4;
+                                ipchanged = true;
+                             }
                              cb();
                          } else {
                              o.dsts = [o.dst];
@@ -490,7 +523,7 @@ module.exports = class DNSManager {
             } 
         },(err)=> {
             log.info("DNS:QueryACL:",list,{});
-            callback(err,list);
+            callback(err,list,ipchanged);
         });    
      
     }
@@ -498,12 +531,17 @@ module.exports = class DNSManager {
     // Need to write code to drop the noise before calling this function.
     // this is a bit expensive due to the lookup part
 
-    query(list, ipsrc, ipdst, callback) {
+  query(list, ipsrc, ipdst, callback) {
+
+    // use this as cache to calculate how much intel expires
+    // no need to call Date.now() too many times.
+    let now = Date.now(); 
+    
         if (list == null || list.length == 0) {
             callback(null);
         }
         let resolve = 0;
-        let now = Math.ceil(Date.now()/1000);
+        let start = Math.ceil(Date.now()/1000);
         console.log("Resoving list",list.length);
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
@@ -528,9 +566,9 @@ module.exports = class DNSManager {
             }
 
             resolve++;
-            this.resolveAny(o[ipsrc],o, (err, data, local) => {
-                if (data) {
-                    o['shname'] = this.name(data);
+          this.resolveAny(o[ipsrc],o, now, (err, data, local) => {
+            if (data) {
+              o['shname'] = this.name(data);
                     o['org'] = data.org;
                     o['appr'] = data.appr;
                     if (data.intel && data.intel.c) {
@@ -542,7 +580,7 @@ module.exports = class DNSManager {
                     }
                    
                 }
-                this.resolveAny(o[ipdst],o, (err, data,local) => {
+            this.resolveAny(o[ipdst],o, now, (err, data,local) => {
                     if (data) {
                         o['dhname'] = this.name(data);
                         if (data.org) {
@@ -563,7 +601,7 @@ module.exports = class DNSManager {
                 });
             });
         }, (err) => {
-            log.info("DNS:QUERY:RESOLVED:COUNT",resolve,list.length,Math.ceil(Date.now()/1000)-now);
+            log.info("DNS:QUERY:RESOLVED:COUNT",resolve,list.length,Math.ceil(Date.now()/1000)-start);
             callback(err);
         });
     }
