@@ -34,7 +34,9 @@ let DNSServers = {
     "8.8.8.8": true
 };
 
-const MAX_CONNS_PER_FLOW = 70000;
+let f = require('../net2/Firewalla.js');
+
+const MAX_CONNS_PER_FLOW = 35000;
 
 const dns = require('dns');
 
@@ -64,6 +66,14 @@ module.exports = class {
             sclient.subscribe("System:DebugChange");
  
             this.delayedActions();
+
+            fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
+                let license = null;
+                if (_data) {
+                    license = JSON.parse(_data);
+                } 
+                this.license = license;
+            });
         }
         this.update(null);
         return instance;
@@ -139,6 +149,21 @@ module.exports = class {
 
     isSystemDebugOn() {
         return systemDebug;
+    }
+
+    systemRebootedDueToIssue(reset) {
+       try {
+           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
+               console.log("SysManager:RebootDueToIssue");
+               if (reset == true) { 
+                   require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+               }
+               return true;
+           }
+       } catch(e) {
+           return false;
+       }
+       return false;
     }
 
     update(callback) {
@@ -264,6 +289,24 @@ module.exports = class {
         return this.sshPassword;
     }
 
+    inMySubnet6(ip6) {
+        let ip6_masks = this.monitoringInterface().ip6_masks;
+        let ip6_addresses = this.monitoringInterface().ip6_addresses;
+
+        if (ip6_masks == null) {
+            return false;
+        }
+
+        for (let m in ip6_masks) {
+            let mask = iptool.mask(ip6_addresses[m],ip6_masks[m]);
+            if (mask == iptool.mask(ip6,ip6_masks[m])) {
+                console.log("SysManager:FoundSubnet", ip6,mask);
+                return true;
+            }
+        }
+        return false;
+    }
+
     // hack ... 
     debugState(component) {
         if (component == "FW_HASHDEBUG") {
@@ -379,10 +422,18 @@ module.exports = class {
             if (this.locals[ip]) {
                 return true;
             }
-            return false;
+            return this.inMySubnet6(ip);
         } else {
             log.debug("SysManager:ERROR:isLocalIP", ip);
             return true;
+        }
+    }
+
+    ipLearned(ip) {
+        if (this.locals[ip]) {
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -407,22 +458,24 @@ module.exports = class {
                 license = JSON.parse(_data);
             } 
             this.getSysInfo((err,_sysinfo)=>{
-                log.debug("SysManager:Checkin:", license, _sysinfo);
+                log.info("SysManager:Checkin:", license, _sysinfo);
                 bone.checkin(this.config,license,_sysinfo,(err,data)=>{
-                    console.log("CheckedIn:", data);
-                    if (data.ddns) {
-                        this.ddns = data.ddns;
-                        rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
-                             if (callback) {
-                                 callback(null,null);
-                             }
-                        });
-                    }
-                    if (data.publicIp) {
-                        this.publicIp = data.publicIp;
-                        rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
-                        });
-                    }
+                    console.log("CheckedIn:", JSON.stringify(data));
+                    rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
+                        if (data.ddns) {
+                            this.ddns = data.ddns;
+                            rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
+                                 if (callback) {
+                                     callback(null,null);
+                                 }
+                            });
+                        }
+                        if (data.publicIp) {
+                            this.publicIp = data.publicIp;
+                            rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
+                            });
+                        }
+                    });
                 });
             });
        });
@@ -430,6 +483,9 @@ module.exports = class {
     }
 
     redisclean() {
+        log.info("Redis Cleaning SysManager");
+        f.redisclean(this.config);
+        return;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
             if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {

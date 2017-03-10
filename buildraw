@@ -37,7 +37,7 @@ function install_dependencies()
         # https://github.com/npm/npm/issues/4719
         sudo npm config set unsafe-perm true
     fi
-    echo "Installing tool forever and xml-json..."
+    echo "Installing tools: forever and xml-json..."
     sudo npm install forever -g 
     sudo npm install xml-json -g 
 
@@ -76,13 +76,17 @@ function install_walla()
 #    cd $basedir && npm install || echo "[WARNING] There are errors during npm install."
 #    cd $basedir/api && npm install ||  echo "[WARNING] There are errors during npm install."
 
-    echo "Installing bro..."
-    BRO_PKG="bro.tar.gz"
-    if [[ $CPU_PLATFORM == "x86_64" ]]; then
-        BRO_PKG="/home/$USER/.node_modules/bro.$CPU_PLATFORM.tar.gz"
+    # Skip bro installation if in docker environment, bro in apt repo will be used in Docker
+    if [[ ! -f /.dockerenv ]]; then
+	echo "Installing bro..."
+	BRO_PKG="bro.tar.gz"
+	if [[ $CPU_PLATFORM == "x86_64" ]]; then
+            BRO_PKG="/home/$USER/.node_modules/bro.$CPU_PLATFORM.tar.gz"
+	fi
+	cd $basedir/imports && tar -zxf $BRO_PKG && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
+	cp $basedir/bin/real/bit* $basedir/bin/ 
     fi
-    cd $basedir/imports && tar -zxf $BRO_PKG && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
-    cp $basedir/bin/real/bit* $basedir/bin/ 
+    
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
     crontab $basedir/etc/brotab || perr_and_exit "Failed to install user bro cronjobs."
@@ -111,6 +115,11 @@ echo "Adding ENV FIREWALLA_HOME..."
     fi
 }
 
+function post_installation() {
+    source $FIREWALLA_HOME/scripts/utils.sh
+    setup_folders
+}
+
 basedir=`dirname $0`
 basedir=`cd $basedir;pwd`
 FIREWALLA_HOME=$basedir
@@ -126,6 +135,7 @@ done
 [[ "$NO_DEPS" != 1 ]] && install_dependencies || echo "Skipping dependency installation."
 
 install_walla
+post_installation
 
 echo "Installation successful."
 

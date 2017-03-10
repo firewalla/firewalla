@@ -16,8 +16,7 @@
 
 var Config = require('../../lib/Config.js');
 
-let Firewalla = require('../../net2/Firewalla.js');
-let f = new Firewalla("config.json", 'info');
+let f = require('../../net2/Firewalla.js');
 let fHome = f.getFirewallaHome();
 
 var jsonfile = require('jsonfile');

@@ -18,9 +18,7 @@ var instance = null;
 var log = null;
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
-var Firewalla = require('../net2/Firewalla.js');
-//TODO: support real config file for Firewalla class
-var firewalla = new Firewalla('/path/to/config', 'info');
+var firewalla = require('../net2/Firewalla.js');
 var fHome = firewalla.getFirewallaHome();
 
 var redis = require("redis");
@@ -41,7 +39,7 @@ var util = require('util');
 var linux = require('../util/linux');
 
 
-var ttlExpire = 60*60*1;
+var ttlExpire = 12*60*60;
 
 module.exports = class {
     constructor(path, loglevel) {
@@ -227,7 +225,7 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: 0,
+            ttl: ttlExpire,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);

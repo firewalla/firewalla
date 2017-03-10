@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla Main Process
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/net2
+ExecStart=/bin/sh -c '/usr/bin/node --expose-gc main.js >> /home/pi/.forever/main.log  2>&1'
+
+[Install]
+WantedBy=multi-user.target

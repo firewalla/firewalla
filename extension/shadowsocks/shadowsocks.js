@@ -18,9 +18,8 @@ var instance = null;
 var log = null;
 var SysManager = require('../../net2/SysManager.js');
 var sysManager = new SysManager('info');
-var Firewalla = require('../../net2/Firewalla.js');
+let firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
-var firewalla = new Firewalla('/path/to/config', 'info');
 var key = require('../common/key.js');
 var fHome = firewalla.getFirewallaHome();
 
@@ -103,11 +102,30 @@ module.exports = class {
             }
             this.started = true;
 
-            let UPNP = require('../../extension/upnp/upnp');
-            let upnp = new UPNP();
-            upnp.addPortMapping("tcp", localPort, externalPort, "shadowsocks", callback);
+
+            this.addPortMapping(1000);
         });
     }
+
+  addPortMapping(time) {
+    log.debug("addPortMapping is called");
+    if(!this.started) {
+        return;
+    }
+
+    setTimeout(() => {
+      let upnp = require('../../extension/upnp/upnp');
+      let u = new upnp();
+      u.addPortMapping("tcp", localPort, externalPort, "Shadowsocks Proxy Port", (err) => {
+        if(err) {
+          log.error("Failed to add port mapping for Shadowsocks Proxy Port: " + err);
+        } else {
+          log.debug("Portmapping is successfully created for Shadowsocks Proxy Port");
+        }
+      });
+      this.addPortMapping(3600 * 1000); // add port every hour
+    }, time)
+  }
 
     getConfigFileLocation() {
         return configFileLocation;

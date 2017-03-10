@@ -31,7 +31,9 @@ let expectedHashResults = [ [ 'a.b.c/',
     'm32Fuw==',
     'm32Fu9+jyLoXlqluqRCUcwNQyLEqlVICgSOxzBkYzFY=' ] ];
 
-expect(hashResults).deep.equal(expectedHashResults);
+expect(hashResults).deep.equal(expectedHashResults.sort((a,b)=>{
+  return a[0].length-b[0].length;
+}));
 // for (let h in hashResults) {
 //   let x = hashResults[h]
 //   console.log(x[0]);
@@ -70,7 +72,9 @@ let expectedHashResults2 = [ [ 'a.b.c.d.e.f.g/',
     '5C2Z7w==',
     '5C2Z79gg7rb613EJU0pq8bXLa9d1WVj+rZHgeQhQowM=' ] ];
 
-expect(hashResults2).deep.equal(expectedHashResults2);
+expect(hashResults2).deep.equal(expectedHashResults2.sort((a,b)=>{
+  return a[0].length-b[0].length;
+}));
 
 let hashResults3 = hashUrl.canonicalizeAndHashExpressions('http://1.2.3.4/1');
 let expectedHashResults3 = [ [ '1.2.3.4/',
@@ -81,7 +85,9 @@ let expectedHashResults3 = [ [ '1.2.3.4/',
     'K4TZHiwzmLgrRvfCheg/Z5gKg0ZoHMbGIgh4toNi87A=' ] ];
 
 
-expect(hashResults3).deep.equal(expectedHashResults3);
+expect(hashResults3).deep.equal(expectedHashResults3.sort((a,b)=>{
+  return a[0].length-b[0].length;
+}));
 
 console.log(hashResults2.map(x => x.slice(1,3) ));
 
@@ -90,3 +96,8 @@ console.log(hashResults2.map(x => x.slice(1,3) ));
 // console.log(hashUrl.canonicalizeAndHashExpressions('yahoo.com/news/something?x=1&y=2'));
 // console.log(hashUrl.canonicalizeAndHashExpressions('http://a.b.c/1/2.html?param=1'));
 // console.log(hashUrl.canonicalizeAndHashExpressions('http://a.b.c.d.e.f.g/1.html'));
+
+let text = "ffwap.com";
+let hashes = require('../util/Hashes.js');
+let hash = hashes.getHashObject(text);
+console.log(text, "-", hash.hash.toString('base64'));
