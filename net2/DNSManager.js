@@ -314,17 +314,20 @@ module.exports = class DNSManager {
 
         bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
-               console.log("##### MISS",err,data);
-               let intel = {ts:Math.floor(Date.now()/1000)};
-               intel.rcount = iplist.length;
-               let key = "dns:ip:"+ip;
-               //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
-               dnsdata.intel = intel;
-               dnsdata._intel = JSON.stringify(intel);
-               rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
-                   rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
-                   callback(err,null);
-               });
+               log.debug("##### MISS",err,data);
+               if (data && data.length == 0) {
+                   let intel = {ts:Math.floor(Date.now()/1000)};
+                   intel.rcount = iplist.length;
+                   let key = "dns:ip:"+ip;
+                   //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+                   dnsdata.intel = intel;
+                   dnsdata._intel = JSON.stringify(intel);
+                   rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
+                       rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                       callback(err,null);
+                   });
+               }
+
                return;
            }
            let rintel = null;
