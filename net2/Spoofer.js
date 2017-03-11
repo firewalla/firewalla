@@ -212,7 +212,7 @@ module.exports = class {
             return;
         }
 
-        let cmdline = " ../bin/bitbridge4 " + ipAddr + " -t " + tellIpAddr + " -r";
+        let cmdline = "../bin/bitbridge4 " + ipAddr + " -t " + tellIpAddr + " -r";
 
         log("Executing cmdline ", cmdline);
 
