@@ -88,7 +88,6 @@ class Host {
             this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
         }
         this.spoofing = false;
-        this._mark = false;
         this.parse();
         /*
         if (this.o.ipv6Addr) {
@@ -1319,26 +1318,12 @@ module.exports = class {
     getHosts(callback) {
         this.execPolicy();
         log.info("hostmanager:gethost:started");
-        // ready mark and sweep
-        if (this.getHostsActive == true) {
-            log.info("hostmanager:gethost:mutx");
-            setTimeout(() => {
-                this.getHosts(callback);
-            },1000);
-            return;
-        }
-        this.getHostsActive = true;
-        for (let h in this.hostsdb) {
-            if (this.hostsdb[h]) {
-                this.hostsdb[h]._mark = false;
-            }
-        }
         rclient.keys("host:mac:*", (err, keys) => {
             let multiarray = [];
             for (let i in keys) {
                 multiarray.push(['hgetall', keys[i]]);
             }
-            let since = Date.now()/1000-60*60*24*7; // one week
+            let since = Date.now()/1000-60*60*24*7; // two weeks
             rclient.multi(multiarray).exec((err, replies) => {
                 async.each(replies, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
@@ -1369,10 +1354,6 @@ module.exports = class {
                             this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
                             hostbymac.update(o);
                         }
-                        hostbymac._mark = true;
-                        if (hostbyip) {
-                            hostbyip._mark = true;
-                        }
                         // two mac have the same IP,  pick the latest, until the otherone update itself 
                         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
                             log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
@@ -1383,11 +1364,9 @@ module.exports = class {
                         this.syncHost(hostbymac, true, (err) => {
                             if (this.type == "server") {
                                 hostbymac.applyPolicy((err)=>{
-                                    hostbymac._mark = true;
                                     cb();
                                 });
                             } else {
-                               hostbymac._mark = true;
                                cb();
                             }
                         });
@@ -1413,40 +1392,9 @@ module.exports = class {
                         cb();
                     }
                 }, (err) => {
-                    let removedHosts = [];
-/*
-                    for (let h in this.hostsdb) {
-                        let hostbymac = this.hostsdb[h];
-                        if (hostbymac) {
-                            console.log("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
-                        }
-                    }
-*/
-                    for (let h in this.hostsdb) {
-                        let hostbymac = this.hostsdb[h];
-                        if (hostbymac) {
-                        }
-                        if (this.hostsdb[h] && this.hostsdb[h]._mark == false) { 
-                            let index = this.hosts.all.indexOf(this.hostsdb[h]);
-                            if (index!=-1) {
-                                this.hosts.all.splice(index,1);
-                                log.info("Removing host due to sweeping");
-                            }
-                            removedHosts.push(h);
-                        }  else {
-                           if (this.hostsdb[h]) {
-                               //this.hostsdb[h]._mark = false;
-                           }
-                        }
-                    }
-                    for (let h in removedHosts) {
-                        delete this.hostsdb[h];
-                    }
-                    log.debug("hostmanager:removing:hosts", removedHosts);
                     this.hosts.all.sort(function (a, b) {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
-                    this.getHostsActive = false;
                     callback(err, this.hosts.all);
                 });
             });
