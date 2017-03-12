@@ -563,6 +563,9 @@ module.exports = class {
 
     executeAcl(host, ip, policy, callback) {
         if (policy == null) {
+            if (callback) {
+               callback(null,null);
+            }
             return;
         }
         log.debug("PolicyManager:ApplyingAcl", policy);
