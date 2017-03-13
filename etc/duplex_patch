@@ -1,5 +1,6 @@
 #!/bin/sh
 /sbin/ifconfig eth0 down
 /sbin/ifconfig eth0 up
+/sbin/ethtool -K eth0 rx off tx off
 /sbin/ifconfig eth0 down
 
