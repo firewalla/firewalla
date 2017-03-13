@@ -1,6 +1,9 @@
 #!/bin/bash
 /sbin/ifconfig eth0 down
 /sbin/ifconfig eth0 up
+
+# only enable this hack for kernel 3.4 which may have performance issue
+# if checksum feature is not turned off
 [[ `uname -r` == "3.4."* ]] && /sbin/ethtool -K eth0 rx off tx off
 /sbin/ifconfig eth0 down
 
