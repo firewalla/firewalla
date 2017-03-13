@@ -562,6 +562,10 @@ class Host {
                     policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
                         if (err == null && changed == true) {
                             this.savePolicy(callback);
+                        } else {
+                            if (callback) {
+                               callback(null,null);
+                            }
                         }
                     });
                 });
@@ -1317,17 +1321,19 @@ module.exports = class {
 
 
     getHosts(callback) {
-        this.execPolicy();
         log.info("hostmanager:gethost:started");
         // ready mark and sweep
         if (this.getHostsActive == true) {
             log.info("hostmanager:gethost:mutx");
+            var stack = new Error().stack
+            console.log("hostmanager:gethost:mutx:stack:", stack )
             setTimeout(() => {
                 this.getHosts(callback);
             },1000);
             return;
         }
         this.getHostsActive = true;
+        this.execPolicy();
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
                 this.hostsdb[h]._mark = false;
