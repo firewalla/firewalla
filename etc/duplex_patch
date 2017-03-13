@@ -1,5 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 /sbin/ifconfig eth0 down
 /sbin/ifconfig eth0 up
+[[ `uname -r` == "3.4."* ]] && /sbin/ethtool -K eth0 rx off tx off
 /sbin/ifconfig eth0 down
 
