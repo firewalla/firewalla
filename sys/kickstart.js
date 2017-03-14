@@ -368,9 +368,9 @@ function launchService(gid, callback) {
 function launchService2(gid,callback) {
   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
 
-  // start bro service
+  // don't start bro until app is linked
   require('child_process').exec("sudo systemctl start brofish");
-  
+  require('child_process').exec("sudo systemctl enable brofish"); // even auto-start for future reboots
 
   // start fire api
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
