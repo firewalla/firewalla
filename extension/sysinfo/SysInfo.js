@@ -41,6 +41,8 @@ let updateFlag = 0;
 
 let updateInterval = 30 * 1000; // every 30 seconds
 
+let releaseBranch = null;
+
 function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
@@ -139,6 +141,23 @@ function getRedisMemoryUsage() {
   });
 }
 
+function getReleaseType() {
+  if(!releaseBranch) {
+    releaseBranch = require('child_process').execSync('git rev-parse --abbrev-ref HEAD').toString('utf-8');
+  }
+
+  if(releaseBranch.includes("master")) {
+    return "dev";
+  } else if(releaseBranch.includes("release")) {
+    return "prod";
+  } else if(releaseBranch.includes("staging")) {
+    return "beta";
+  } else {
+    return "unknown";
+  }
+
+}
+
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -153,10 +172,15 @@ function getSysInfo() {
     uptime: getUptime(),
     conn: conn + "",
     peakConn: peakConn + "",
-    redisMem: redisMemory
+    redisMem: redisMemory,
+    releaseType: getReleaseType()
   }
 
   return sysinfo;
+}
+
+function getRecentLogs(callback) {
+  
 }
 
 module.exports = {

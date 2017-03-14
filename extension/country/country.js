@@ -5,7 +5,7 @@
 'use strict';
 
 let instance = null;
-let log = require("../../net2/logger.js")("SysInfo", "info");
+let log = require("../../net2/logger.js")(__filename, "info");
 
 let geoip = require('geoip-country-only');
 
