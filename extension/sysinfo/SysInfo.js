@@ -4,15 +4,17 @@
 
 'use strict';
 
-let instance = null;
-let log = require("../../net2/logger.js")("SysInfo", "info");
+let log = require("../../net2/logger.js")(__filename, "info");
 
 let fs = require('fs');
 let util = require('util');
 
 let f = require('../../net2/Firewalla.js');
 let fHome = f.getFirewallaHome();
+let logFolder = f.getLogFolder();
 
+let config = require("../../net2/config.js").getConfig();
+    
 let userID = f.getUserID();
 
 //let SysManager = require('../../net2/SysManager');
@@ -180,12 +182,28 @@ function getSysInfo() {
 }
 
 function getRecentLogs(callback) {
+  let logFiles = ["api.log", "kickui.log", "main.log", "monitor.log", "dns.log"].map((name) => logFolder + "/" + name);
+
+  let tailNum = config.sysInfo.tailNum || 100; // default 100
+  let tailFunction = function(file, callback) {
+    let cmd = util.format('tail -n %d %s', tailNum, file);
+    require('child_process').exec(cmd, (code, stdout, stderr) => {
+      if(code) {
+        log.warn("error when reading file " + file + ": " + stderr);
+        callback(null, { file: file, content: "" });
+      } else {
+        callback(null, { file: file, content: stdout } );
+      }
+    });
+  }
   
+  async.map(logFiles, tailFunction, callback);
 }
 
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
-  getRealMemoryUsage:getRealMemoryUsage
+  getRealMemoryUsage:getRealMemoryUsage,
+  getRecentLogs: getRecentLogs
 };
