@@ -1,4 +1,7 @@
-#!/bin/bash -
+#!/bin/bash
+
+# This script should only handle upgrade, nothing else
+
 cd /home/pi/firewalla
 cd .git
 sudo chown -R pi *
@@ -9,12 +12,12 @@ GITHUB_STATUS_API=https://status.github.com/api.json
 
 GITHUB_LIVE=0
 
-while true; do
+for i in `seq 1 5`; do
     HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break;
     fi
-    sleep 3
+    sleep 1
 done
 
 # continue to try upgrade even github api is not successfully.
