@@ -17,6 +17,9 @@ while true; do
     sleep 3
 done
 
+# continue to try upgrade even github api is not successfully.
+# very likely to fail
+
 if [[ $branch =~ release.* ]]; then
   sudo -u pi git fetch origin $branch
   sudo -u pi git reset --hard origin/$branch
