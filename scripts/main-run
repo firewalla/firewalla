@@ -197,8 +197,11 @@ else
 fi
 cd ..
 cd api
-# no longer need to start api here
-#sudo systemctl start fireapi
+if [[ -f /.dockerenv ]]; then
+    forever start -a --uid api bin/www
+else
+    sudo systemctl start fireapi
+fi
 cd ..
 
 sudo /usr/local/bro/bin/broctl cron
