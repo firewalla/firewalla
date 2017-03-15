@@ -20,7 +20,6 @@ for i in `seq 1 5`; do
     sleep 1
 done
 
-
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
 
