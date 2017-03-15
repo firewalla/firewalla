@@ -33,6 +33,7 @@ rclient.on("error", function (err) {
 });
 
 var async = require('async');
+var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
 var maxflow = 10000;
@@ -829,7 +830,15 @@ module.exports = class FlowManager {
                         log.debug("flows:sorted Query dns manager returnes");
                         this.summarizeActivityFromConnections(sorted,(err,activities)=>{
                             //console.log("Activities",activities);
-                            callback(null, sorted,activities);
+                            let _sorted = [];
+                            for (let i in sorted) {
+                                if (flowUtil.checkFlag(sorted[i],'x')) {
+                                    //console.log("DroppingFlow",sorted[i]); 
+                                } else {
+                                    _sorted.push(sorted[i]);
+                                }
+                            }
+                            callback(null, _sorted,activities);
                         });
                     });;
                 } else {
