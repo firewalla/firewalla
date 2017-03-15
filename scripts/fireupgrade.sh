@@ -28,6 +28,7 @@ if [[ $branch =~ release.* ]]; then
   # in case there is some upgrade change on firewalla.service
   # all the rest services will be updated (in case) via firewalla.service
   sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+  sudo cp /home/pi/firewalla/etc/fireuprade.service /etc/systemd/system/.
   sudo systemctl daemon-reload
   sudo systemctl reenable firewalla
 else
@@ -41,6 +42,7 @@ else
       # in case there is some upgrade change on firewalla.service
       # all the rest services will be updated (in case) via firewalla.service
       sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+      sudo cp /home/pi/firewalla/etc/fireuprade.service /etc/systemd/system/.
       sudo systemctl daemon-reload
       sudo systemctl reenable firewalla
     fi
