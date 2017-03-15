@@ -79,7 +79,8 @@ module.exports = class {
     
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
-    fs.writeFile(dnsmasqResolvFile, config, callback);
+    fs.writeFileSync(dnsmasqResolvFile, config);
+    callback(null);
   }
   
   updateFilter(force, callback) {
