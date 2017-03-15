@@ -31,6 +31,7 @@ if [[ $branch =~ release.* ]]; then
   sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
   sudo systemctl daemon-reload
   sudo systemctl reenable firewalla
+  sudo systemctl reenable fireupgrade
 else
     # even on dev/beta branch, it will also upgrade unless there is a no upgrade flag
     # this might be changed if there is an official beta release branch
@@ -45,6 +46,7 @@ else
       sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
       sudo systemctl daemon-reload
       sudo systemctl reenable firewalla
+      sudo systemctl reenable fireupgrade
     fi
 fi
 

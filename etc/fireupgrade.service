@@ -6,11 +6,8 @@ Before=firewalla.service
 
 [Service]
 User=pi
-#Type=forking
+Type=oneshot
 ExecStart=/home/pi/firewalla/scripts/fireupgrade.sh
-Restart=always
-RestartSec=10
-TimeoutStartSec=250
 
 [Install]
 WantedBy=multi-user.target
