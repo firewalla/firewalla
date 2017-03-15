@@ -24,8 +24,7 @@ done
 # very likely to fail
 
 if [[ $branch =~ release.* ]]; then
-  sudo -u pi git fetch origin $branch
-  sudo -u pi git reset --hard origin/$branch
+  sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD
   echo "on release"
 
   # in case there is some upgrade change on firewalla.service
@@ -40,8 +39,7 @@ else
     # this might be changed if there is an official beta release branch
     if [[ ! -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
       echo "on devbranch"
-      sudo -u pi git fetch origin $branch
-      sudo -u pi git reset --hard $branch
+      sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD
 
       # in case there is some upgrade change on firewalla.service
       # all the rest services will be updated (in case) via firewalla.service
