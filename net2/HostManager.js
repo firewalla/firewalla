@@ -1065,6 +1065,13 @@ class Host {
             }
         });
     }
+
+    isFlowAllowed(flow) {
+        if (this.policy && this.policy.blockin == true) {
+            return false;
+        }
+        return true;
+    }
 }
 
 
@@ -1234,6 +1241,14 @@ module.exports = class {
         });
      });
    }
+
+    getHostFast(ip) {
+        if (ip == null) {
+           return null;
+        } 
+
+        return this.hostsdb["host:ip4:"+ip];
+    }
 
     getHost(ip, callback) {
         dnsManager.resolveLocalHost(ip, (err, o) => {

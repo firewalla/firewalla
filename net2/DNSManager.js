@@ -35,6 +35,8 @@ var instance = null;
 var bone = require('../lib/Bone.js');
 var flowUtil = require('../net2/FlowUtil.js');
 
+var hostManager = null;
+
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -544,6 +546,10 @@ module.exports = class DNSManager {
 
     // use this as cache to calculate how much intel expires
     // no need to call Date.now() too many times.
+    if (hostManager == null) {
+        let HostManager = require("../net2/HostManager.js");
+        hostManager = new HostManager("cli", 'client', 'info');
+    }
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {
@@ -554,6 +560,16 @@ module.exports = class DNSManager {
         console.log("Resoving list",list.length);
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
+            let lhost = hostManager.getHostFast(o.lh);
+            if (lhost) {
+                if (lhost.isFlowAllowed(o) == false) {
+                     console.log("### NOT LOOKUP6 ==:",o);
+                     flowUtil.addFlag(o,'l'); // 
+                     //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
+                     // cb();
+                     // return;
+                }
+            }
 
             if (o.fd == "in") {
                 if (o.du && o.du<0.0001) {
