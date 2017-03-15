@@ -28,7 +28,7 @@ if [[ $branch =~ release.* ]]; then
   # in case there is some upgrade change on firewalla.service
   # all the rest services will be updated (in case) via firewalla.service
   sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
-  sudo cp /home/pi/firewalla/etc/fireuprade.service /etc/systemd/system/.
+  sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
   sudo systemctl daemon-reload
   sudo systemctl reenable firewalla
 else
@@ -37,12 +37,12 @@ else
     if [[ ! -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
       echo "on devbranch"
       sudo -u pi git fetch origin $branch
-      sudo -u pi git reset --hard origin/$branch
+      sudo -u pi git reset --hard $branch
 
       # in case there is some upgrade change on firewalla.service
       # all the rest services will be updated (in case) via firewalla.service
       sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
-      sudo cp /home/pi/firewalla/etc/fireuprade.service /etc/systemd/system/.
+      sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
       sudo systemctl daemon-reload
       sudo systemctl reenable firewalla
     fi
