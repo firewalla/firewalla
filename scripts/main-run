@@ -160,6 +160,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
     sudo systemctl daemon-reload
 fi
 
