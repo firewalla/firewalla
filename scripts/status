@@ -1,5 +1,5 @@
 sudo service firemain status
-sudo service fireui status
 sudo service firemon status
 sudo service firekick status
 sudo service fireapi status
+sudo service fireupgrade status
