@@ -554,17 +554,17 @@ module.exports = class {
                 }
             }
 
-            /*
+            let flag = null;
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
                 if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
                         log.error("Conn:Drop:State",obj.conn_state,obj);
+                        flag = 's';
                //         return;
                 }
             }
-            */
 
 
             let host = obj["id.orig_h"];
@@ -661,6 +661,8 @@ module.exports = class {
                     bl: this.config.bro.conn.flowstashExpires,
                     pf: {}, //port flow
                     af: {}, //application flows
+                    pr: obj.proto,
+                    f: flag,
                  flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
                 _afmap: {}
                 }
@@ -693,6 +695,8 @@ module.exports = class {
                 bl: 0,
                 pf: {},
                 af: {},
+                pr: obj.proto,
+                f: flag,
              flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
             };
 

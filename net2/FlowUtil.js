@@ -116,6 +116,33 @@ function hashFlow(_flow, clean) {
     // Hash other things ...
 }
 
+// x: not a valid flow, only need to record length
+//    not to be presented to user or do security lookup.  
+
+function addFlag(flow,flag) {
+    if (flow == null || flag == null) {
+        return flow.f;
+    }
+    if (checkFlag(flow,flag)==false) {
+        if (flow.f == null) {
+            flow.f = flag;
+        } else {
+            flow.f = flow.f+flag;
+        }
+    } 
+    return flow.f;
+}
+
+function checkFlag(flow,flag) {
+    if (flow.f == null) {
+        return false;
+    }
+    if (flag == null) {
+        return true;
+    }
+    return (flow.f.indexOf(flag)>=0);
+}
+
 /*
 [{"iplist":["imap.gmail.com","2607:f8b0:400e:c02::6c"],"_iplist":[[["v8+uoQ==","v8+uoU6tp+G9yBazQa54GpZ17m4FaiTHPgetvjPqFgg="],["YUhHHg==","YUhHHolh1gWizFkn/7n2xXLRKt/yx+HqlL2VHgHmsiE="]],[["/Dzjwg==","/DzjwmTcCYam2jkfB/KVCqrq3r+4wNL0ADtItIFhzA0="]]],"_alist":[["ob0wP2IrbSl/n+54E14YpDTKBZ1csnd9qeJ/fOzBOlo=","eHOL8nmOQNf+oLzLS7SPsyWUeCo5prpe7MC0Q2S8H1E="]],"flow":{"ts":1481892760.964665,"sh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","_ts":1481892768,"dh":"2607:f8b0:400e:c02::6c","ob":0,"rb":68844,"ct":6,"fd":"in","lh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","du":5.080037,"bl":0,"pf":{"tcp.993":{"ob":0,"rb":68844,"ct":6}},"af":{},"flows":[[1481892761,1481892762,0,5086],[1481886462,1481886462,0,5090],[1481877162,1481877163,0,10934],[1481870789,1481870789,0,4996],[1481871399,1481871400,0,5000],[1481865055,1481865057,0,37738]]}}]
 
@@ -142,6 +169,8 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 
 
 module.exports = {
+  addFlag: addFlag,
+  checkFlag: checkFlag,
   hashFlow: hashFlow,
   hashHost: hashHost,
   hashMac: hashMac,

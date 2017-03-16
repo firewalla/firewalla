@@ -35,6 +35,8 @@ var instance = null;
 var bone = require('../lib/Bone.js');
 var flowUtil = require('../net2/FlowUtil.js');
 
+var hostManager = null;
+
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -531,10 +533,23 @@ module.exports = class DNSManager {
     // Need to write code to drop the noise before calling this function.
     // this is a bit expensive due to the lookup part
 
+  // will place an x over flag or f if the flow is not really valid ...
+  // such as half tcp session
+  // 
+  // incase packets leaked via bitbridge, need to see how much they are and
+  // consult the blocked list ...  
+  // 
+  // if x is there, the flow should not be used or presented.  It only be used
+  // for purpose of accounting
+
   query(list, ipsrc, ipdst, callback) {
 
     // use this as cache to calculate how much intel expires
     // no need to call Date.now() too many times.
+    if (hostManager == null) {
+        let HostManager = require("../net2/HostManager.js");
+        hostManager = new HostManager("cli", 'client', 'info');
+    }
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {
@@ -545,24 +560,49 @@ module.exports = class DNSManager {
         console.log("Resoving list",list.length);
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
+            let lhost = hostManager.getHostFast(o.lh);
+            if (lhost) {
+                if (lhost.isFlowAllowed(o) == false) {
+                     console.log("### NOT LOOKUP6 ==:",o);
+                     flowUtil.addFlag(o,'l'); // 
+                     //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
+                     // cb();
+                     // return;
+                }
+            }
 
             if (o.fd == "in") {
                 if (o.du && o.du<0.0001) {
                      //console.log("### NOT LOOKUP 1:",o);
+                     flowUtil.addFlag(o,'x');
                      cb();
                      return;
                 }
                 if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
                      //console.log("### NOT LOOKUP 2:",o);
+                     flowUtil.addFlag(o,'x');
                      cb();
                      return;
                 }
                 if (o.rb && o.rb <1500) { // used to be 2500
                      //console.log("### NOT LOOKUP 3:",o);
+                     flowUtil.addFlag(o,'x');
+                     cb();
+                     return;
+                }
+                if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0)) {
+                     flowUtil.addFlag(o,'x');
+                     console.log("### NOT LOOKUP 4:",o);
                      cb();
                      return;
                 }
             } else {
+                if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0)) {
+                     flowUtil.addFlag(o,'x');
+                     console.log("### NOT LOOKUP 5:",o);
+                     cb();
+                     return;
+                }
             }
 
             resolve++;

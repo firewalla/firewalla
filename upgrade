@@ -1,6 +1,7 @@
 #!/bin/bash -
 sudo service firemain stop
 sudo service firemon stop
+sudo service fireui stop
 sudo service firekick stop
 sync
 branch=$(git rev-parse --abbrev-ref HEAD)
