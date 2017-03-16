@@ -2,7 +2,7 @@
 Description=BroFish
 After=dhcpcd.service 
 Requires=network-online.target 
-Before=firewalla.service
+#Before=firewalla.service
 
 [Service]
 Type=forking

@@ -1,7 +1,9 @@
 [Unit]
 Description=firewalla
-After=brofish.service
-Wants=brofish.service
+After=dhcpcd.service
+Requires=network-online.target
+#After=brofish.service
+#Wants=brofish.service
 
 [Service]
 User=pi

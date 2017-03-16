@@ -11,7 +11,10 @@
           "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
        ]
     },
-    "monitoringInterface": "eth0",
+  "monitoringInterface": "eth0",
+  "sysInfo": {
+    "tailNum": 100
+  },
     "bro": {
       "notice" : {
          "monitor" : {

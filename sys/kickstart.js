@@ -90,7 +90,7 @@ if (config.endpoint_name != null) {
     eptname = program.endpoint_name;
 }
 
-var adminInviteInterval = 3; // default 3 seconds, make it sooner
+var adminInviteInterval = 2; // default 3 seconds, make it sooner
 var adminTotalInterval = 60*60;
 var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 1 hour
 
@@ -214,7 +214,7 @@ function openInvite(group,gid,ttl) {
 
                 network.get_private_ip(function(err, ip) {
                     txtfield.ipaddress = ip;
-                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
                 });
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
@@ -229,9 +229,9 @@ function openInvite(group,gid,ttl) {
                           intercomm.stop(service);
                           intercomm.bstop();
 
-			  log.info("EXIT KICKSTART AFTER JOIN");
-                            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
-                            });
+			                    log.info("EXIT KICKSTART AFTER JOIN");
+                          require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                          });
                         }
                         if (ttl <= 0) {
                             clearInterval(timer);
@@ -291,7 +291,7 @@ function inviteFirstAdmin(gid, callback) {
 
                 network.get_private_ip(function(err, ip) {
                     txtfield.ipaddress = ip;
-                    service = intercomm.publish(null, config.endpoint_name + utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
+                    service = intercomm.publish(null, config.endpoint_name + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
                 });
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
@@ -368,9 +368,9 @@ function launchService(gid, callback) {
 function launchService2(gid,callback) {
   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
 
-  // start bro service
+  // don't start bro until app is linked
   require('child_process').exec("sudo systemctl start brofish");
-  
+  require('child_process').exec("sudo systemctl enable brofish"); // even auto-start for future reboots
 
   // start fire api
    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
