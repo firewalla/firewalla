@@ -231,7 +231,7 @@ function openInvite(group,gid,ttl) {
                           intercomm.stop(service);
                           intercomm.bstop();
 
-			                    log.info("EXIT KICKSTART AFTER JOIN");
+                          log.info("EXIT KICKSTART AFTER JOIN");
                           require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                           });
                         }
@@ -286,10 +286,10 @@ function inviteFirstAdmin(gid, callback) {
         }
 
       if (group.symmetricKeys) {
-	      // number of key sym keys equals to number of members in this group
-	      // set this number to redis so that other js processes get this info
-	      rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
-	      
+        // number of key sym keys equals to number of members in this group
+        // set this number to redis so that other js processes get this info
+        rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
+        
             if (group.symmetricKeys.length === 1) {
 //            if (group.symmetricKeys.length > 0) { //uncomment to add more users
                 var obj = eptcloud.eptGenerateInvite(gid);
@@ -328,7 +328,7 @@ function inviteFirstAdmin(gid, callback) {
                       adminInviteTtl--;
                       if (!e) {
                         postAppLinked(); // a new member (app) joined
-			                  rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
+                        rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
                         callback(null, true);
                         clearInterval(timer);
                         intercomm.stop(service);
