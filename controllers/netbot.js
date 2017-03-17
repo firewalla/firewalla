@@ -717,6 +717,13 @@ class netBot extends ControllerBot {
       case "sysInfo":
         let si = require('../extension/sysinfo/SysInfo.js');
         this.simpleTxData(msg, si.getSysInfo(), null, callback);
+        break;
+      case "logFiles":
+        let si2 = require('../extension/sysinfo/SysInfo.js');
+        si2.getRecentLogs((err, results) => {
+          this.simpleTxData(msg, results, null, callback);
+        });
+        break;
       }
     }
 

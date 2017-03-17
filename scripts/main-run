@@ -1,5 +1,27 @@
 #!/bin/bash -
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+logger `date`
+
+GITHUB_STATUS_API=https://status.github.com/api.json
+
+for i in `seq 1 5`; do
+    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+    if [[ $HTTP_STATUS_CODE == "200" ]]; then
+      break
+    fi
+    /usr/bin/logger "FIREWALLA.MAINRUN NO Network"
+    sleep 1
+done
+
+if [[ ! -f /.dockerenv ]]; then
+    sudo ntpdate -s time.nist.gov
+    logger "FIREWALLA.DATE.SYNC"
+    sudo systemctl start ntp
+    sudo ntpd -gq
+    sudo systemctl start ntp
+    sync
+fi
+logger `date`
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -160,6 +182,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
     sudo systemctl daemon-reload
 fi
 
@@ -196,8 +219,11 @@ else
 fi
 cd ..
 cd api
-# no longer need to start api here
-#sudo systemctl start fireapi
+if [[ -f /.dockerenv ]]; then
+    forever start -a --uid api bin/www
+else
+    sudo systemctl start fireapi
+fi
 cd ..
 
 sudo /usr/local/bro/bin/broctl cron

@@ -115,7 +115,7 @@ module.exports = class FlowMonitor {
         for (let i in flows) {
             let flow = flows[i];
             log.info("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
-            if (flow['intel'] && flow['intel']['c']) {
+            if (flow['intel'] && flow['intel']['c'] && flowUtil.checkFlag(flow,'l')==false) {
               log.info("########## flowIntel",JSON.stringify(flow),{});
               let c = flow['intel']['c'];
 
