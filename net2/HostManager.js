@@ -1106,13 +1106,13 @@ module.exports = class {
                             //result[i].spoof(true);
                         }
                     }
+                    if (this.callbacks[type]) {
+                        this.callbacks[type](channel, type, ip, obj);
+                    }
                 });
                 //this.hosts = {};
                 //this.getHosts((err,hosts)=> {
                 //});
-                if (this.callbacks[type]) {
-                    this.callbacks[type](channel, type, ip, obj);
-                }
             });
             this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
                 if (this.type != "server") {
@@ -1336,15 +1336,15 @@ module.exports = class {
 
 
     getHosts(callback) {
-        log.info("hostmanager:gethost:started");
+        log.info("hostmanager:gethosts:started");
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethost:mutx");
+            log.info("hostmanager:gethosts:mutx");
             var stack = new Error().stack
-            console.log("hostmanager:gethost:mutx:stack:", stack )
+            log.info("hostmanager:gethosts:mutx:stack:", stack )
             setTimeout(() => {
                 this.getHosts(callback);
-            },1000);
+            },3000);
             return;
         }
         this.getHostsActive = true;
@@ -1468,6 +1468,7 @@ module.exports = class {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
                     this.getHostsActive = false;
+                    log.info("hostmanager:gethosts:done");
                     callback(err, this.hosts.all);
                 });
             });
