@@ -381,22 +381,6 @@ class netBot extends ControllerBot {
                 this.scanning = true;
             }
         });
-
-        // only do this in production and always do after 15 seconds ...
-        // the 15 seconds wait is for the process to wake up
-       
-        if (require('fs').existsSync("/tmp/FWPRODUCTION")==true) {
-            setTimeout(()=> {
-                ssh.resetRandomPassword((err,password) => {
-                    if(err) {
-                        console.log("Failed to reset ssh password");
-                    } else {
-                        console.log("A new random SSH password is used!");
-                        sysmanager.sshPassword = password;
-                    }
-                });
-            }, 15000);
-        }
     }
 
     scanStart(callback) {

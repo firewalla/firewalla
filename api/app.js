@@ -91,13 +91,6 @@ if(!firewalla.isProduction()) {
 
 }
 
-if(require('fs').existsSync("/.dockerenv")) {
-  // enable direct pairing in docker environment, since iphone simulator and docker can't be in same subnet
-  // DO NOT ENABLE THIS IN PRODUCTION -- SECURITY RISK
-  let devicePairing = require('./routes/devicePairing');
-  subpath_v1.use('/device', devicePairing)
-}
-
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
   var err = new Error('Not Found');
