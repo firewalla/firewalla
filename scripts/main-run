@@ -1,5 +1,15 @@
 #!/bin/bash -
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+logger `date`
+if [[ ! -f /.dockerenv ]]; then
+    sudo ntpdate -s time.nist.gov
+    logger "FIREWALLA.DATE.SYNC"
+    sudo systemctl start ntp
+    sudo ntpd -gq
+    sudo systemctl start ntp
+    sync
+fi
+logger `date`
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
