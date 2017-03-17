@@ -53,6 +53,8 @@ var intercomm = require('../lib/intercomm.js');
 let network = require('network');
 var redis = require("redis");
 var rclient = redis.createClient();
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('info');
 
 let f = require('../net2/Firewalla.js');
 
@@ -246,6 +248,29 @@ function openInvite(group,gid,ttl) {
 
 }
 
+function postAppLinked() {
+  // When app is linked, to secure device, ssh password will be
+  // automatically reset when boot up every time
+  
+  // only do this in production and always do after 15 seconds ...
+  // the 15 seconds wait is for the process to wake up
+
+  if(f.isProduction()) {
+    setTimeout(()=> {
+      ssh.resetRandomPassword((err,password) => {
+        if(err) {
+          console.log("Failed to reset ssh password");
+        } else {
+          console.log("A new random SSH password is used!");
+          let SysManager = require('../net2/SysManager.js');
+          let sysmanager = new SysManager();
+          sysmanager.sshPassword = password;
+        }
+      });
+    }, 15000);
+  }
+}
+
 function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin");
     eptcloud.groupFind(gid, (err, group)=> {
@@ -261,10 +286,10 @@ function inviteFirstAdmin(gid, callback) {
         }
 
       if (group.symmetricKeys) {
-	// number of key sym keys equals to number of members in this group
-	// set this number to redis so that other js processes get this info
-	rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
-	
+	      // number of key sym keys equals to number of members in this group
+	      // set this number to redis so that other js processes get this info
+	      rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
+	      
             if (group.symmetricKeys.length === 1) {
 //            if (group.symmetricKeys.length > 0) { //uncomment to add more users
                 var obj = eptcloud.eptGenerateInvite(gid);
@@ -296,19 +321,14 @@ function inviteFirstAdmin(gid, callback) {
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
 
-                // for development mode, allow pairing directly from API (store temp key in redis)
-                if(! f.isProduction()) {
-                  rclient.set("rid.temp", obj.r);
-                  log.info("WARNING: Running in development mode, RID is stored in redis");
-                }
-
                 var timer = setInterval(function () {
                     log.info("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
                     eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
-                        adminInviteTtl--;
+                      log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
+                      adminInviteTtl--;
                       if (!e) {
-			rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
+                        postAppLinked(); // a new member (app) joined
+			                  rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
                         callback(null, true);
                         clearInterval(timer);
                         intercomm.stop(service);
@@ -324,9 +344,10 @@ function inviteFirstAdmin(gid, callback) {
 
 
             } else {
-                openInvite(group,gid,90);
-                log.info("Found Group ", gid, "with", group.symmetricKeys.length, "members");
-                callback(null, true);
+              postAppLinked(); // already linked
+              openInvite(group,gid,90);
+              log.info("Found Group ", gid, "with", group.symmetricKeys.length, "members");
+              callback(null, true);
             }
         }
     });
