@@ -3,6 +3,7 @@
 # This script should only handle upgrade, nothing else
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /usr/bin/logger "FIREWALLA.UPGRADE NO UPGRADE"
   exit 0
 fi
 
@@ -19,6 +20,7 @@ for i in `seq 1 5`; do
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
+    /usr/bin/logger "FIREWALLA.UPGRADE NO Network"
     sleep 1
 done
 
@@ -29,6 +31,7 @@ done
 echo "upgrade on branch $branch"
 
 (sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
+/usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
