@@ -30,6 +30,8 @@ var log = function () {
     }
 };
 
+let log2 = require('../../net2/logger.js')(__filename, 'info');
+
 let instance = {};
 
 function getUserHome() {
@@ -651,22 +653,24 @@ var legoEptCloud = class {
     // Direct one-to-one message handling
     receiveMessage(gid, msg, callback) {
         let logMessage = require('util').format("Got encrytped message from group %s", gid);
-        console.log(logMessage);
+      log2.info(logMessage);
 
         this.getKey(gid, (err, key, cacheGroup) => {
-            if (err != null && key == null) {
-                callback(err, null);
-                return;
-            }
-
-            if(key == null) {
-                callback("key not found, invalid group?", null);
-                return;
-            }
-
-            let decryptedMsg = this.decrypt(msg, key);
-            let msgJson = JSON.parse(decryptedMsg);
-            callback(null, msgJson);
+          if (err != null && key == null) {
+            log2.error("Got error when fetching key: ", key);
+            callback(err, null);
+            return;
+          }
+          
+          if(key == null) {
+            log2.error("encryption key is not found for group: ", gid);
+            callback("key not found, invalid group?", null);
+            return;
+          }
+          
+          let decryptedMsg = this.decrypt(msg, key);
+          let msgJson = JSON.parse(decryptedMsg);
+          callback(null, msgJson);
         });
     }
     

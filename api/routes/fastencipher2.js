@@ -13,7 +13,7 @@ var cloudWrapper = new CloudWrapper();
 
 let f = require('../../net2/Firewalla.js');
 
-let log = require('../../net2/logger.js')(require('path').basename(__filename), "info");
+let log = require('../../net2/logger.js')(__filename, "info");
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -24,7 +24,7 @@ router.post('/message/:gid',
     function(req, res, next) {
       var gid = req.params.gid;
       let controller = cloudWrapper.getNetBotController(gid);
-      console.log("================= request from ", request.connection.remoteAddress, " =================");
+      console.log("================= request from ", req.connection.remoteAddress, " =================");
       console.log(JSON.stringify(req.body, null, '\t'));
       console.log("================= request body end =================");
       
