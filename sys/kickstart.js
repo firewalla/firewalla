@@ -59,7 +59,7 @@ let ssh = new SSH('info');
 let f = require('../net2/Firewalla.js');
 
 let SysManager = require('../net2/SysManager.js');
-let sysmanager = new SysManager();
+let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
 sysManager.setConfig(firewallaConfig);
 
@@ -267,7 +267,7 @@ function postAppLinked() {
           console.log("Failed to reset ssh password");
         } else {
           console.log("A new random SSH password is used!");
-          sysmanager.sshPassword = password;
+          sysManager.sshPassword = password;
         }
       });
     }, 15000);
