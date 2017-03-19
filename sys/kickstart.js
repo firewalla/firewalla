@@ -63,6 +63,18 @@ let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
 sysManager.setConfig(firewallaConfig);
 
+let Discovery = require('../net2/Discovery.js');
+let discovery = new Discovery("Discovery", firewallaConfig, 'info');
+
+// This is required to start early so that all other components can use
+// the discovered information as soon as possible
+discovery.discoverInterfaces((err, list) => {
+  if(err) {
+    log.error("Fail to get network interface list of this device: " + err);
+  }
+});
+
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')

@@ -79,8 +79,9 @@ module.exports = class {
         return instance;
     }
 
+  // config loaded && interface discovered
   isConfigInitialized() {
-    return this.config !== null;
+    return this.config !== null && this.config[this.config.monitoringInterface] !== null;
   }
   
     delayedActions() {

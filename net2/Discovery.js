@@ -363,7 +363,10 @@ module.exports = class {
 	    // ignore any invalid interfaces
             let self = this;
 
-             console.log("Got Interface",list);
+          list.forEach((i) => {
+            log.info("Found interface %s %s", i.name, i.ip_address);
+          });
+          
 	    list = list.filter(function(x) { return self.is_interface_valid(x) });
 
             for (let i in list) {
