@@ -467,6 +467,27 @@ module.exports = class {
        host.ipv4Addr 
     */
 
+    // mac ip changed, need to wipe out the old 
+    
+    ipChanged(mac,ip,newmac,callback) {
+       let key = "host:mac:" + mac.toUpperCase();;
+       log.info("Discovery:Mac:Scan:IpChanged", key, ip,newmac);
+       rclient.hgetall(key, (err, data) => {
+          log.info("Discovery:Mac:Scan:IpChanged2", key, ip,,newmac,JSON.stringify(data));
+          if (err == null && data.ipv4 == ip) {
+              rclient.hdel(key,'name');
+              rclient.hdel(key,'bname');
+              rclient.hdel(key,'ipv4');
+              rclient.hdel(key,'ipv4Addr');
+              rclient.hdel(key,'host');
+              log.info("Discovery:Mac:Scan:IpChanged3", key, ip,,newmac,JSON.stringify(data));
+          }
+          if (callback) {
+              callback(err,null);
+          }
+       });
+    }
+
     processHost(host) {
                 if (host.mac == null) {
                     log.debug("Discovery:Nmap:HostMacNull:", host);
@@ -490,11 +511,16 @@ module.exports = class {
                             }
                             changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
+                            if (data.mac!=host.mac) {
+                                this.ipChanged(data.mac,host.uid,host.mac);
+                            }
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
                                     log.error("Discovery:Nmap:Update:Error", err);
                                 }
                             });
+                            // old mac based on this ip does not match the mac
+                            // tell the old mac, that it should have the new ip, if not change it
                         } else {
                             let c = this.hostCache[host.uid];
                             if (c && Date.now() / 1000 < c.expires) {
