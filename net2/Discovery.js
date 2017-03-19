@@ -456,6 +456,7 @@ module.exports = class {
             log.info("Network scanning is completed");
             setTimeout(() => {
                 callback(null, null);
+                log.info("Discovery:Scan:Done");
                 this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
                 sysManager.setOperationalState("LastScan", Date.now() / 1000);
             }, 2000);
