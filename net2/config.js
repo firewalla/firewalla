@@ -19,7 +19,6 @@ function getConfig() {
     // user config will override system default config file
     config = Object.assign({}, defaultConfig, userConfig);
   }
-  console.log(config);
   return config;
 }
 

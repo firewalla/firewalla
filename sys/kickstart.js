@@ -58,6 +58,25 @@ let ssh = new SSH('info');
 
 let f = require('../net2/Firewalla.js');
 
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager();
+let firewallaConfig = require('../net2/config.js').getConfig();
+sysManager.setConfig(firewallaConfig);
+
+let Discovery = require('../net2/Discovery.js');
+let discovery = new Discovery("Discovery", firewallaConfig, 'info', true);
+
+// This is required to start early so that all other components can use
+// the discovered information as soon as possible
+discovery.discoverInterfaces((err, list) => {
+  if(err) {
+    log.error("Fail to get network interface list of this device: " + err);
+    process.exit(1);
+  }
+  discovery = null;
+});
+
+
 const license = require('../util/license.js');
 
 program.version('0.0.2')
@@ -262,9 +281,7 @@ function postAppLinked() {
           console.log("Failed to reset ssh password");
         } else {
           console.log("A new random SSH password is used!");
-          let SysManager = require('../net2/SysManager.js');
-          let sysmanager = new SysManager();
-          sysmanager.sshPassword = password;
+          sysManager.sshPassword = password;
         }
       });
     }, 15000);

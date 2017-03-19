@@ -73,7 +73,7 @@ var natUpnp = require('nat-upnp');
 */
 
 module.exports = class {
-    constructor(name, config, loglevel) {
+  constructor(name, config, loglevel, noScan) {
         if (instances[name] == null) {
             log = require("./logger.js")("Discovery", loglevel);
 
@@ -82,7 +82,9 @@ module.exports = class {
             this.config = config;
             //  this.networks = this.getSubnet(networkInterface,family);
 //            console.log("Scanning Address:", this.networks);
-            instances[name] = this;
+          instances[name] = this;
+
+          if(!noScan || noScan === false) {
             let p = require('./MessageBus.js');
             this.publisher = new p(loglevel);
             //this.scan((err,response)=> {
@@ -93,6 +95,7 @@ module.exports = class {
                     this.scan(ip, true, (err, result) => {});
                 }
             });
+          }
 
             this.upnpClient = natUpnp.createClient();
 
@@ -363,7 +366,10 @@ module.exports = class {
 	    // ignore any invalid interfaces
             let self = this;
 
-             console.log("Got Interface",list);
+          list.forEach((i) => {
+            log.info("Found interface %s %s", i.name, i.ip_address);
+          });
+          
 	    list = list.filter(function(x) { return self.is_interface_valid(x) });
 
             for (let i in list) {
@@ -443,7 +449,12 @@ module.exports = class {
         });
     }
 
-    scan(subnet, fast, callback) {
+  scan(subnet, fast, callback) {
+    if(this.nmap == null) {
+      log.error("nmap object is null when trying to scan");
+      callback(null, null);
+      return;
+    }
         log.info("Start scanning network");
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
         this.nmap.scan(subnet, fast, (err, hosts, ports) => {

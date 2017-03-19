@@ -8,6 +8,8 @@ sudo rm -r -f ~/.forever/*
 sudo rm -r -f /blog/*
 sudo rm -r -f /bspool/*
 sudo rm -r -f ~/ovpns/*
+sudo rm -r -f ~/.firewalla/
+sudo usermod --password $(echo firewalla | openssl passwd -1 -stdin) pi
 # source the vars file just edited
 sudo source ./vars
 
