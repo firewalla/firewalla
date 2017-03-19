@@ -105,7 +105,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("Got error when handling request: ", err);
+    log.error("Got error when handling request: %j", err);
     res.status(err.status || 500);
     res.render('error', {
       message: err.message,
@@ -117,7 +117,7 @@ if (app.get('env') === 'development') {
 // production error handler
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
-  log.error("Got error when handling request: ", err);
+  log.error("Got error when handling request: %j", err);
   res.status(err.status || 500);
   res.render('error', {
     message: err.message,
@@ -136,6 +136,6 @@ var domain = 'localhost';
 if(argv.domain !== undefined)
     domain = argv.domain;
 else
-    console.log('No --domain=xxx specified, taking default hostname "localhost".');
+    log.info('No --domain=xxx specified, taking default hostname "localhost".');
 var applicationUrl = 'http://' + domain;
 

@@ -43,7 +43,7 @@ const dns = require('dns');
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")("SysManager", loglevel);
+            log = require("./logger.js")(__filename, loglevel);
             rclient.hdel("sys:network:info", "oper");
             this.multicastlow = iptool.toLong("224.0.0.0");
             this.multicasthigh = iptool.toLong("239.255.255.255");
@@ -79,6 +79,10 @@ module.exports = class {
         return instance;
     }
 
+  isConfigInitialized() {
+    return this.config !== null;
+  }
+  
     delayedActions() {
         setTimeout(()=>{
           let SSH = require('../extension/ssh/ssh.js');
@@ -110,7 +114,7 @@ module.exports = class {
     release() {
         rclient.quit();
         sclient.quit();
-        console.log("Calling release function of SysManager");
+        log.info("Calling release function of SysManager");
     }
 
     getPublicIP(callback) {
@@ -300,7 +304,7 @@ module.exports = class {
         for (let m in ip6_masks) {
             let mask = iptool.mask(ip6_addresses[m],ip6_masks[m]);
             if (mask == iptool.mask(ip6,ip6_masks[m])) {
-                console.log("SysManager:FoundSubnet", ip6,mask);
+                log.info("SysManager:FoundSubnet", ip6,mask);
                 return true;
             }
         }

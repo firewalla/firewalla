@@ -657,13 +657,13 @@ var legoEptCloud = class {
 
         this.getKey(gid, (err, key, cacheGroup) => {
           if (err != null && key == null) {
-            log2.error("Got error when fetching key: ", key);
+            log2.error("Got error when fetching key: %s", key);
             callback(err, null);
             return;
           }
           
           if(key == null) {
-            log2.error("encryption key is not found for group: ", gid);
+            log2.error("encryption key is not found for group: %s", gid);
             callback("key not found, invalid group?", null);
             return;
           }
@@ -694,7 +694,7 @@ var legoEptCloud = class {
 
             request(options, (err2, httpResponse, body) => {
                 if (err2 != null) {
-                    let stack = new Error().stack;
+                  let stack = new Error().stack;
                     console.log("Error while requesting ", err2, stack);
                     callback(err2, null);
                     return;

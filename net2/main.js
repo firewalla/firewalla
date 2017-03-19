@@ -24,18 +24,24 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 let bone = require("../lib/Bone.js");
 
+// api/main/monitor all depends on sysManager configuration
+var SysManager = require('./SysManager.js');
+var sysManager = new SysManager('info');
+
 if(!bone.isAppConnected()) {
-  log.info("Waiting for pairing from first app...");
+  log.info("Waiting for cloud token created by kickstart job...");
 }
 
 run0();
 
 function run0() {
   if (bone.cloudready()==true &&
-      bone.isAppConnected()) {
+      bone.isAppConnected() &&
+      sysManager.isConfigInitialized()) {
     run();
   } else {
     setTimeout(()=>{
+      sysManager.update(null);
       run0();
     },1000);
   }
@@ -46,8 +52,8 @@ var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 
 process.on('uncaughtException',(err)=>{
-  console.warn("################### CRASH #############");
-  console.warn("+-+-+-",err.message,err.stack);
+  log.warn("################### CRASH #############");
+  log.warn("+-+-+-",err.message,err.stack);
   if (err && err.message && err.message.includes("Redis connection")) {
     return; 
   }
@@ -59,11 +65,6 @@ process.on('uncaughtException',(err)=>{
 
 function run() {
 
-  var SysManager = require('./SysManager.js');
-  var sysManager = new SysManager('info');
-
-
-  sysManager.setConfig(config);
 
   var VpnManager = require('../vpn/VpnManager.js');
 

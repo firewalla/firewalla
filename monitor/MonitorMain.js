@@ -21,6 +21,10 @@ console.log("===================================================================
 console.log("Monitor Starting:",config.version);
 console.log("================================================================================");
 
+// api/main/monitor all depends on sysManager configuration
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager('info');
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
@@ -30,10 +34,13 @@ run0();
 
 function run0() {
   if (bone.cloudready()==true &&
-      bone.isAppConnected()) {
+      bone.isAppConnected() &&
+   // this is to ensure sysManager is already initliazed when called in API code
+      sysManager.isConfigInitialized()) {
     run();
   } else {
     setTimeout(()=>{
+      sysManager.update(null);
       run0();
     },1000);
   }

@@ -24,9 +24,9 @@ router.post('/message/:gid',
     function(req, res, next) {
       var gid = req.params.gid;
       let controller = cloudWrapper.getNetBotController(gid);
-      console.log("================= request from ", req.connection.remoteAddress, " =================");
-      console.log(JSON.stringify(req.body, null, '\t'));
-      console.log("================= request body end =================");
+      log.info("================= request from ", req.connection.remoteAddress, " =================");
+      log.info(JSON.stringify(req.body, null, '\t'));
+      log.info("================= request body end =================");
       
       var alreadySent = false;
       
