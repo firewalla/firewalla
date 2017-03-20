@@ -73,7 +73,7 @@ var natUpnp = require('nat-upnp');
 */
 
 module.exports = class {
-    constructor(name, config, loglevel) {
+  constructor(name, config, loglevel, noScan) {
         if (instances[name] == null) {
             log = require("./logger.js")("Discovery", loglevel);
 
@@ -82,7 +82,9 @@ module.exports = class {
             this.config = config;
             //  this.networks = this.getSubnet(networkInterface,family);
 //            console.log("Scanning Address:", this.networks);
-            instances[name] = this;
+          instances[name] = this;
+
+          if(!noScan || noScan === false) {
             let p = require('./MessageBus.js');
             this.publisher = new p(loglevel);
             //this.scan((err,response)=> {
@@ -93,6 +95,7 @@ module.exports = class {
                     this.scan(ip, true, (err, result) => {});
                 }
             });
+          }
 
             this.upnpClient = natUpnp.createClient();
 
@@ -363,7 +366,10 @@ module.exports = class {
 	    // ignore any invalid interfaces
             let self = this;
 
-             console.log("Got Interface",list);
+          list.forEach((i) => {
+            log.info("Found interface %s %s", i.name, i.ip_address);
+          });
+          
 	    list = list.filter(function(x) { return self.is_interface_valid(x) });
 
             for (let i in list) {
@@ -443,7 +449,12 @@ module.exports = class {
         });
     }
 
-    scan(subnet, fast, callback) {
+  scan(subnet, fast, callback) {
+    if(this.nmap == null) {
+      log.error("nmap object is null when trying to scan");
+      callback(null, null);
+      return;
+    }
         log.info("Start scanning network");
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
         this.nmap.scan(subnet, fast, (err, hosts, ports) => {
@@ -456,6 +467,7 @@ module.exports = class {
             log.info("Network scanning is completed");
             setTimeout(() => {
                 callback(null, null);
+                log.info("Discovery:Scan:Done");
                 this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
                 sysManager.setOperationalState("LastScan", Date.now() / 1000);
             }, 2000);
@@ -466,6 +478,27 @@ module.exports = class {
        host.mac = mac address
        host.ipv4Addr 
     */
+
+    // mac ip changed, need to wipe out the old 
+    
+    ipChanged(mac,ip,newmac,callback) {
+       let key = "host:mac:" + mac.toUpperCase();;
+       log.info("Discovery:Mac:Scan:IpChanged", key, ip,newmac);
+       rclient.hgetall(key, (err, data) => {
+          log.info("Discovery:Mac:Scan:IpChanged2", key, ip,newmac,JSON.stringify(data));
+          if (err == null && data.ipv4 == ip) {
+              rclient.hdel(key,'name');
+              rclient.hdel(key,'bname');
+              rclient.hdel(key,'ipv4');
+              rclient.hdel(key,'ipv4Addr');
+              rclient.hdel(key,'host');
+              log.info("Discovery:Mac:Scan:IpChanged3", key, ip,newmac,JSON.stringify(data));
+          }
+          if (callback) {
+              callback(err,null);
+          }
+       });
+    }
 
     processHost(host) {
                 if (host.mac == null) {
@@ -490,11 +523,16 @@ module.exports = class {
                             }
                             changeset['mac'] = host.mac;
                             log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
+                            if (data.mac!=host.mac) {
+                                this.ipChanged(data.mac,host.uid,host.mac);
+                            }
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
                                     log.error("Discovery:Nmap:Update:Error", err);
                                 }
                             });
+                            // old mac based on this ip does not match the mac
+                            // tell the old mac, that it should have the new ip, if not change it
                         } else {
                             let c = this.hostCache[host.uid];
                             if (c && Date.now() / 1000 < c.expires) {

@@ -16,6 +16,8 @@
 
 'use strict'
 
+let log = require('../net2/logger.js')(__filename, "info");
+
 const util = require('util');
 var fs = require('fs');
 var cloud = require('../encipher');
@@ -71,7 +73,7 @@ class netBot extends ControllerBot {
     }
 
     _block(ip, blocktype, value, callback) {
-        console.log("_block", ip, blocktype, value);
+        log.info("_block", ip, blocktype, value);
         if (ip === "0.0.0.0") {
             this.hostManager.loadPolicy((err, data) => {
                 this.hostManager.setPolicy(blocktype, value, (err, data) => {
@@ -298,7 +300,7 @@ class netBot extends ControllerBot {
 
         // no subscription for api mode
         if(apiMode) {
-          console.log("Skipping event subscription during API mode.");
+          log.info("Skipping event subscription during API mode.");
           return;
         }
 
@@ -309,7 +311,7 @@ class netBot extends ControllerBot {
             //this.tx(this.primarygid, "Discovery started","message");  
         });
         this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
-            console.log("Found new host ", channel, type, ip, o);
+            log.info("Found new host ", channel, type, ip, o);
             if (o) {
                 let name = o.ipv4Addr;
                 if (o.name != null) {
@@ -323,7 +325,7 @@ class netBot extends ControllerBot {
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
             let m = null;
             let n = null;
-            console.log("Monitor:Flow:Out", channel, ip, msg, "=====");
+            log.info("Monitor:Flow:Out", channel, ip, msg, "=====");
             if (ip && msg) {
                 if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
                     let flow = msg['txRatioRanked'][0];
@@ -335,7 +337,7 @@ class netBot extends ControllerBot {
                 }
             }
             if (m) {
-                console.log("MonitorEvent:Flow:Out", m,msg);
+                log.info("MonitorEvent:Flow:Out", m,msg);
                 this.tx2(this.primarygid, m, n, {id:msg.id});
             }
         });
@@ -343,7 +345,7 @@ class netBot extends ControllerBot {
 /*
             let m = null;
             let n = null;
-            console.log("Monitor:Flow:In", channel, ip, msg, "=====");
+            log.info("Monitor:Flow:In", channel, ip, msg, "=====");
             if (ip && msg) {
                 if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
                     let flow = msg['txRatioRanked'][0];
@@ -388,25 +390,25 @@ class netBot extends ControllerBot {
             let listip = [];
             this.hosts = result;
             for (let i in result) {
-                console.log(result[i].toShortString());
+                log.info(result[i].toShortString());
                 result[i].on("Notice:Detected", (channel, type, ip, obj) => {
-                    console.log("=================================");
-                    console.log("Netbot:Notice:", type, ip);
-                    console.log("=================================");
+                    log.info("=================================");
+                    log.info("Netbot:Notice:", type, ip);
+                    log.info("=================================");
                     if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
                         let msg = result[i].name() + ": " + obj.msg;
                         this.tx(this.primarygid, msg, obj.msg);
                     } else if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == true) {
-                        console.log("Netbot:Notice:Skip due to scanning", obj);
+                        log.info("Netbot:Notice:Skip due to scanning", obj);
                     } else {
                         let msg = result[i].name() + ": " + obj.msg;
                         this.tx(this.primarygid, msg, obj.msg);
                     }
                 });
                 result[i].on("Intel:Detected", (channel, type, ip, obj) => {
-                    console.log("=================================");
-                    console.log("NetBot:Intel:", type, ip, obj);
-                    console.log("=================================");
+                    log.info("=================================");
+                    log.info("NetBot:Intel:", type, ip, obj);
+                    log.info("=================================");
                     let msg = null;
                     let reason = "";
                     if (obj.intel != null && obj.intel['reason'] != null) {
@@ -421,7 +423,7 @@ class netBot extends ControllerBot {
                         //msg += "\n" + obj.intelurl;
                     }
 
-                    console.log("Sending Msg:", msg);
+                    log.info("Sending Msg:", msg);
 
                     this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
                 });
@@ -439,7 +441,7 @@ class netBot extends ControllerBot {
         // data.item = policy
         // data.value = {'block':1},
         //
-        //       console.log("Set: ",gid,msg);
+        //       log.info("Set: ",gid,msg);
         if (msg.data.item == "policy") {
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
             switch(o) {
@@ -516,7 +518,7 @@ class netBot extends ControllerBot {
                     };
                     reply.code = 200;
                     reply.data = msg.data.value;
-                    console.log("Repling ", reply.code, reply.data);
+                    log.info("Repling ", reply.code, reply.data);
                     this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
 
           });
@@ -524,7 +526,7 @@ class netBot extends ControllerBot {
             //data.item = "host" test
             //data.value = "{ name: " "}"                           
             let data = msg.data;
-            console.log("Setting Host", msg);
+            log.info("Setting Host", msg);
             let reply = {
                 type: 'jsonmsg',
                 mtype: 'init',
@@ -536,21 +538,21 @@ class netBot extends ControllerBot {
 
             this.hostManager.getHost(msg.target, (err, host) => {
                 if (host == null) {
-                    console.log("Host not found");
+                    log.info("Host not found");
                     reply.code = 404;
                     this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     return;
                 }
 
                 if (data.value.name == host.o.name) {
-                    console.log("Host not changed", data.value.name, host.o.name);
+                    log.info("Host not changed", data.value.name, host.o.name);
                     reply.code = 200;
                     this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
                     return;
                 }
 
                 host.o.name = data.value.name;
-                console.log("Changing names", host.o.name, host);
+                log.info("Changing names", host.o.name, host);
                 host.save(null, (err) => {
                     if (err) {
                         reply.code = 500;
@@ -667,7 +669,7 @@ class netBot extends ControllerBot {
         
         ssh.getPrivateKey((err, data) => {
           if(err) {
-            console.log("Got error when loading ssh private key: " + err);
+            log.error("Got error when loading ssh private key: " + err);
             data = "";
           }
           
@@ -691,7 +693,7 @@ class netBot extends ControllerBot {
           var data = "";
           
           if(err) {
-            console.log("Got error when reading password: " + err);
+            log.error("Got error when reading password: " + err);
             this.simpleTxData(msg, {}, err, callback);
           } else {
             this.simpleTxData(msg, {password: password}, err, callback);
@@ -712,7 +714,7 @@ class netBot extends ControllerBot {
     }
 
     deviceHandler(msg, gid, target, listip, callback) {
-        console.log("Getting Devices", gid, target, listip);
+        log.info("Getting Devices", gid, target, listip);
         let hosts = [];
         this.hostManager.getHost(target, (err, host) => {
             if (host == null && target!="0.0.0.0") {
@@ -742,22 +744,22 @@ class netBot extends ControllerBot {
                 hosts=[host]; 
             }
 
-            console.log("Summarize",target,listip);
+            log.info("Summarize",target,listip);
 
 
           //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
             flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-                console.log("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
+                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = {};
                 if (host) {
                     jsonobj = host.toJson();
                 }
                 alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
-                    console.log("Found alarms");
+                    log.info("Found alarms");
                     jsonobj.alarms = alarms;
                     // hour block = summarize into blocks of hours ...
                     flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true,false, (err, result,activities) => {
-                        console.log("--- Connectionby most recent ---", result.length);
+                        log.info("--- Connectionby most recent ---", result.length);
                         let response = {
                             time: [],
                             rx: [],
@@ -773,7 +775,7 @@ class netBot extends ControllerBot {
                             }
                         }
                         flowManager.sort(result, 'rxdata');
-                        console.log("-----------Sort by rx------------------------");
+                        log.info("-----------Sort by rx------------------------");
                         max = 15;
                         for (let i in result) {
                             let s = result[i];
@@ -782,9 +784,9 @@ class netBot extends ControllerBot {
                                 break;
                             }
                         }
-                        //console.log(JSON.stringify(response.rx));
+                        //log.info(JSON.stringify(response.rx));
                         flowManager.sort(result, 'txdata');
-                        console.log("-----------  Sort by tx------------------");
+                        log.info("-----------  Sort by tx------------------");
                         max = 15;
                         for (let i in result) {
                             let s = result[i];
@@ -798,7 +800,7 @@ class netBot extends ControllerBot {
 
                         /*
                         flowManager.sort(result, 'duration');
-                        console.log("-----------Sort by rx------------------------");
+                        log.info("-----------Sort by rx------------------------");
                         max = 10;
                         for (let i in result) {
                             let s = result[i];
@@ -822,7 +824,7 @@ class netBot extends ControllerBot {
                             code: 200,
                             data: jsonobj
                         };
-//                        console.log("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
+//                        log.info("Device Summary", JSON.stringify(jsonobj).length, jsonobj);
                         this.txData(this.primarygid, "flow", datamodel, "jsondata", "", null, callback);
                     });
                 });
@@ -861,7 +863,7 @@ class netBot extends ControllerBot {
 
     cmdHandler(gid, msg, callback) {
         if (msg.data.item === "reboot") {
-            console.log("Rebooting");
+            log.info("Rebooting");
             let datamodel = {
                 type: 'jsonmsg',
                 mtype: 'init',
@@ -873,7 +875,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
             require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
-            console.log("Reseting System");
+            log.info("Reseting System");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -886,7 +888,7 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "resetpolicy") {
-            console.log("Reseting Policy");
+            log.info("Reseting Policy");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -899,7 +901,7 @@ class netBot extends ControllerBot {
                 this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
             });
         } else if (msg.data.item === "upgrade") {
-            console.log("upgrading");
+            log.info("upgrading");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/upgrade', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -913,7 +915,7 @@ class netBot extends ControllerBot {
             });
 
         } else if (msg.data.item === "shutdown") {
-            console.log("shutdown firewalla in 60 seconds");
+            log.info("shutdown firewalla in 60 seconds");
             let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
                 let datamodel = {
                     type: 'jsonmsg',
@@ -990,6 +992,7 @@ class netBot extends ControllerBot {
     getDefaultResponseDataModel(msg, data, err) {
       var code = 200;
       if(err) {
+        log.error("Got error before simpleTxData: ", err);
         code = 500;
       }
 
@@ -1008,10 +1011,10 @@ class netBot extends ControllerBot {
     msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
-//            console.log("Received jsondata", msg);
+//            log.info("Received jsondata", msg);
             if (rawmsg.message.obj.type === "jsonmsg") {
                 if (rawmsg.message.obj.mtype === "init") {
-                    console.log("Process Init load event");
+                    log.info("Process Init load event");
                     this.hostManager.toJson(true, (err, json) => {
                         let datamodel = {
                             type: 'jsonmsg',
@@ -1029,9 +1032,10 @@ class netBot extends ControllerBot {
                           }
 
                         } else {
+                          log.error("json is null when calling init")
                             datamodel.code = 500;
                         }
-                        console.log("Sending data", datamodel.replyid, datamodel.id);
+                        log.info("Sending data", datamodel.replyid, datamodel.id);
                         this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
 
                     });
@@ -1082,12 +1086,12 @@ class netBot extends ControllerBot {
 }
 
 process.on("unhandledRejection", function (r, e) {
-    console.log("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
+    log.info("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
 });
 
 var bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
-    console.log("+-+-+-", err.message, err.stack);
+    log.info("+-+-+-", err.message, err.stack);
     bone.log("error", {
         program: 'ui',
         version: sysmanager.version(),
