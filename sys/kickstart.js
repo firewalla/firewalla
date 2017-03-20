@@ -68,13 +68,10 @@ let discovery = new Discovery("Discovery", firewallaConfig, 'info', true);
 
 // This is required to start early so that all other components can use
 // the discovered information as soon as possible
-discovery.discoverInterfaces((err, list) => {
-  if(err) {
-    log.error("Fail to get network interface list of this device: " + err);
-    process.exit(1);
-  }
-  discovery = null;
+discovery.startDiscover(true, () => {
+  discovery = null; // invalidate discovery after one-time scan
 });
+
 
 
 const license = require('../util/license.js');
