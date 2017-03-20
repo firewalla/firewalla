@@ -72,6 +72,9 @@ discovery.startDiscover(true, () => {
   discovery = null; // invalidate discovery after one-time scan
 });
 
+setTimeout(() => {
+  discovery = null; // code to ensure discovery is set to null finally
+}, 30000);
 
 
 const license = require('../util/license.js');
