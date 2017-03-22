@@ -64,14 +64,24 @@ function getUserConfigFolder() {
 }
 
 // Get config data from fishbone
+var _boneInfo = null;
 function getBoneInfo(callback) {
     rclient.get("sys:bone:info",(err,data)=>{
         if (data) {
-            callback(null, JSON.parse(data));
+            _boneInfo = JSON.parse(data);
+            if (callback) {
+                callback(null, JSON.parse(data));
+            }
         } else {
-            callback(null,null);
+            if (callback) {
+                callback(null,null);
+            }
         }
     });
+}
+
+function getBoneInfoSync() {
+    return _boneInfo;
 }
 
 function getVersion() {
@@ -252,6 +262,7 @@ module.exports = {
   getUserConfigFolder: getUserConfigFolder,
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
+  getBoneInfoSync: getBoneInfoSync,
   redisclean: redisclean,
   constants: constants,
   getVersion: getVersion

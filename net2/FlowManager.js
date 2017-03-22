@@ -27,6 +27,7 @@ var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('info');
 var bone = require("../lib/Bone.js");
+var firewalla = require("../net2/Firewalla.js");
 
 rclient.on("error", function (err) {
     console.log("Redis(alarm) Error " + err);
@@ -38,6 +39,13 @@ var instance = null;
 
 var maxflow = 10000;
 
+var bconfig;
+// Will use bconfig.config.flow.activitymin/activitymax
+var flowconfig = {
+    activityDetectMin : 10,
+    activityDetectMax : 60*60*5,
+}; 
+
 class FlowGraph {
     constructor(name,flowarray) {
          if (flowarray) {
@@ -46,6 +54,12 @@ class FlowGraph {
              this.flowarray = [];
          }
          this.name = name;
+         firewalla.getBoneInfo((err,config)=>{
+             bconfig = config;
+             if (bconfig.config.flow && bconfig.config.flow.activityDetectMin) {
+                 flowconfig = bconfig.config.flowManager;
+             }
+         });
     }
 
 
@@ -612,6 +626,12 @@ module.exports = class FlowManager {
 
         for (let i in flows) {
             let flow = flows[i];
+            if (flow.du<flowconfig.activityDetectMin) {
+                continue;
+            }
+            if (flow.du>flowconfig.activityDetectMax) {
+                continue;
+            }
             if (flow.flows) {
                  let fg = new FlowGraph("raw");
                  //console.log("$$$ Before",flow.flows);
@@ -632,8 +652,7 @@ module.exports = class FlowManager {
                 } else {
                     appdb[flow.appr] = [flow];
                 }
-            }
-            if (flow.intel && flow.intel.c && flow.intel.c!="intel") {
+            } else if (flow.intel && flow.intel.c && flow.intel.c!="intel") {
                 if (activitydb[flow.intel.c]) {
                     activitydb[flow.intel.c].push(flow);
                 } else {
