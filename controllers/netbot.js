@@ -262,12 +262,35 @@ class netBot extends ControllerBot {
                         callback(null, "Success");
                 } else {
                     if (callback != null)
-                        callback(err, "Unable to block ip " + ip);
+                        callback(err, "Unable to ssh " + ip);
                 }
             });
         });
     }
 
+    /*
+     *  
+     *   {
+     *      state: on/off
+     *      intel: <major/minor>
+     *      porn: <major/minor>
+     *      gaming: <major/minor>
+     *      flow: <major/minor>
+     *   }
+     */
+    _notify(ip, value, callback) {
+        this.hostManager.loadPolicy((err, data) => {
+            this.hostManager.setPolicy("notify", value, (err, data) => {
+                if (err == null) {
+                    if (callback != null)
+                        callback(null, "Success");
+                } else {
+                    if (callback != null)
+                        callback(err, "Unable to setNotify " + ip);
+                }
+            });
+        });
+    }
     constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
         super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
         this.bot = new builder.TextBot();
@@ -502,6 +525,11 @@ class netBot extends ControllerBot {
                 break;
               case "unignore":
                 this._unignore(msg.target, (err, obj) => {
+                    cb(err);
+                });
+                break;
+              case "notify":
+                this._notify(msg.target, msg.data.value.notify, (err,obj)=> {
                     cb(err);
                 });
                 break;
