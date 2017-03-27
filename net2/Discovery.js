@@ -529,6 +529,8 @@ module.exports = class {
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
                                     log.error("Discovery:Nmap:Update:Error", err);
+                                } else {
+                                    rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
                                 }
                             });
                             // old mac based on this ip does not match the mac
@@ -544,6 +546,7 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
+                                    rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
                                     //this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                 }
                             });
@@ -593,6 +596,7 @@ module.exports = class {
                                     log.debug("Discovery:Nmap:HostCache:LookMac", c);
                                 }
                             }
+                            rclient.expireat(key, parseInt((+new Date) / 1000) + 60*60*24*365);
                             rclient.hmset(key, data, (err, result) => {
                                 if (newhost == true) {
                                     let d = JSON.parse(JSON.stringify(data));
@@ -643,6 +647,7 @@ module.exports = class {
                 rclient.hmset(v6key, data, (err, result) => {
                     log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
                     let mackey = "host:mac:" + mac;
+                    rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
                     rclient.hgetall(mackey, (err, data) => {
                         log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
                         if (err == null) {

@@ -11,15 +11,32 @@ module.exports = class NotifyManager {
  
     constructor() {
         if (instance == null) {
-            this.config = null;
-            rclient.hgetall("sys:notify",(err,result)=>{
-                this.config = result;
-            });
+            this.config = {
+                'state':true
+            };
+            this.loadConfig();
+            setInterval(()=>{
+                this.loadConfig();
+            }, 1000*60*60*1);
 
             this._obj2msg={};
             this._obj2msg['en'] = require('./obj2msg_en.js');
         }
         instance = this;
+    }
+
+    loadConfig() {
+            rclient.hgetall("policy:system",(err,result)=>{
+                if (result && result.notify != null) {
+                    this.config = JSON.parse(result.notify);
+                }
+                console.log("DEBUGNM:", result, this.config);
+            });
+    }
+    
+    canNotify() {
+       console.log("DEBUGNM2:", this.config);
+       return this.config.state;
     }
 
     saveConfig(callback) {

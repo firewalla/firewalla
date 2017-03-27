@@ -50,6 +50,9 @@ var uuid = require('uuid');
 
 var async = require('async');
 
+let NM = require('../ui/NotifyManager.js');
+let nm = new NM();
+
 
 class netBot extends ControllerBot {
 
@@ -288,6 +291,7 @@ class netBot extends ControllerBot {
                     if (callback != null)
                         callback(err, "Unable to setNotify " + ip);
                 }
+                nm.loadConfig();
             });
         });
     }
@@ -361,7 +365,9 @@ class netBot extends ControllerBot {
             }
             if (m) {
                 log.info("MonitorEvent:Flow:Out", m,msg);
-                this.tx2(this.primarygid, m, n, {id:msg.id});
+                if (nm.canNotify()==true) {
+                    this.tx2(this.primarygid, m, n, {id:msg.id});
+                }
             }
         });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
@@ -387,7 +393,9 @@ class netBot extends ControllerBot {
         setTimeout(() => {
             this.scanStart();
             if (sysmanager.systemRebootedDueToIssue(true)==false) {
-                this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+                if (nm.canNotify()==true) {
+                    this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+                }
             }
             this.setupDialog();
         }, 2000);
@@ -420,12 +428,16 @@ class netBot extends ControllerBot {
                     log.info("=================================");
                     if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
                         let msg = result[i].name() + ": " + obj.msg;
-                        this.tx(this.primarygid, msg, obj.msg);
+                        if (nm.canNotify()==true) {
+                            this.tx(this.primarygid, msg, obj.msg);
+                        }
                     } else if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == true) {
                         log.info("Netbot:Notice:Skip due to scanning", obj);
                     } else {
                         let msg = result[i].name() + ": " + obj.msg;
-                        this.tx(this.primarygid, msg, obj.msg);
+                        if (nm.canNotify()==true) {
+                            this.tx(this.primarygid, msg, obj.msg);
+                        }
                     }
                 });
                 result[i].on("Intel:Detected", (channel, type, ip, obj) => {
@@ -448,7 +460,9 @@ class netBot extends ControllerBot {
 
                     log.info("Sending Msg:", msg);
 
-                    this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
+                    if (nm.canNotify()==true) {
+                        this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
+                    }
                 });
             }
             if (callback)
