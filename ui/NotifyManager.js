@@ -30,12 +30,10 @@ module.exports = class NotifyManager {
                 if (result && result.notify != null) {
                     this.config = JSON.parse(result.notify);
                 }
-                console.log("DEBUGNM:", result, this.config);
             });
     }
     
     canNotify() {
-       console.log("DEBUGNM2:", this.config);
        return this.config.state;
     }
 
