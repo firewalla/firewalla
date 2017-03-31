@@ -108,6 +108,10 @@ function getUptime() {
   return process.uptime();
 }
 
+function getOSUptime() {
+  return require('os').uptime();
+}
+
 function getTimestamp() {
   return new Date();
 }
@@ -172,6 +176,7 @@ function getSysInfo() {
     peakTemp: peakTemp + "",
     timestamp: getTimestamp(),
     uptime: getUptime(),
+    osUptime: getOSUptime(),
     conn: conn + "",
     peakConn: peakConn + "",
     redisMem: redisMemory,
