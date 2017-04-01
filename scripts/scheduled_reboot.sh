@@ -1,4 +1,11 @@
 #!/bin/bash
+
+
+if [[ -e "/home/pi/.firewalla/config/.no_scheduled_reboot" ]]; then
+  /usr/bin/logger "FIREWALLA.REBOOT SCHEDULED REBOOT IS DISABLED"
+  exit 0
+fi
+
 NEXT_REBOOT=$(( $RANDOM%1440+5 ))
 logger "FIREWALLA: scheduled reboot in $NEXT_REBOOT minutes"
 branch=$(git rev-parse --abbrev-ref HEAD)
