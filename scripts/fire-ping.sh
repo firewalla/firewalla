@@ -1,9 +1,19 @@
 #!/bin/bash -
+
+# Check Memory as well here, if memory is low don't write ...
+#
+# this should deal with /dev/watchdog
+mem=$(free -m | awk '/-/{print $4}')
+(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+(( mem <= 20 )) &&  exit 0
+
 DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 
 for i in `seq 1 3`; do
     if ping -c 1 $DEFAULT_ROUTE &> /dev/null
     then
+       # set /dev/watchdog
+       /usr/bin/logger "FIREWALLA PING WRITE"
        exit 0
     else
        echo "Ping Failed"
@@ -20,7 +30,7 @@ if [[ $api_process_cnt > 0 ]]; then
    /usr/bin/logger "FIREWALLA PING NO Local Network REBOOT "
    sync
    echo "SHOULD REBOOT"
-   #/home/pi/firewalla/scripts/fire-reboot 
+   /home/pi/firewalla/scripts/fire-reboot 
 fi
 
 
