@@ -4,12 +4,12 @@ logger `date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
-for i in `seq 1 5`; do
+for i in `seq 1 12`; do
     HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
-    /usr/bin/logger "FIREWALLA.MAINRUN NO Network"
+    /usr/bin/logger "FIREWALLA.MAINRUN NO Network $HTTP_STATUS_CODE"
     sleep 1
 done
 

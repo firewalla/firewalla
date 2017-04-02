@@ -15,7 +15,7 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
-for i in `seq 1 5`; do
+for i in `seq 1 10`; do
     HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
@@ -23,6 +23,16 @@ for i in `seq 1 5`; do
     /usr/bin/logger "FIREWALLA.UPGRADE NO Network"
     sleep 1
 done
+
+if [[ ! -f /.dockerenv ]]; then
+    sudo ntpdate -s time.nist.gov
+    logger "FIREWALLA.UPGRADE.DATE.SYNC"
+    sudo systemctl start ntp
+    sudo ntpd -gq
+    sudo systemctl start ntp
+    sync
+fi
+logger `date`
 
 
 # continue to try upgrade even github api is not successfully.
