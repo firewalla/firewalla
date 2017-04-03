@@ -7,7 +7,8 @@ mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 20 )) &&  exit 0
 
-DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
+#DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
+DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 for i in `seq 1 3`; do
     if ping -c 1 $DEFAULT_ROUTE &> /dev/null
