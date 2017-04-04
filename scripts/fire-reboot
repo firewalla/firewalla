@@ -5,5 +5,5 @@ if [[ $branch =~ release.* ]]; then
     sync
 fi
 sync
-echo 'V' > /dev/watchdog
+sudo sh -c 'echo V > /dev/watchdog'
 sudo reboot
