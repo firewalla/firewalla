@@ -184,7 +184,7 @@ module.exports = class FlowManager {
         let inbytes = 0;
         let outbytes = 0;
         let lotsofkeys = 24*30*6;  //half months ... of data 
-        console.log("Getting stats:",type,iplist,from,to);
+        log.debug("Getting stats:",type,iplist,from,to);
         async.eachLimit(iplist, 1, (ip, cb) => {
             let inkey = "stats:"+type+":in:"+ip;
             let outkey = "stats:"+type+":out:"+ip;
@@ -192,7 +192,7 @@ module.exports = class FlowManager {
                 //console.log("Data:",data);
                 if (data && data.length==2) {
                     let array = data[1];
-                    console.log("array:",array.length);
+                    log.debug("array:",array.length);
                     for (let i=0;i<array.length;i++) {
                         let clock = Number(array[i]);
                         let bytes = Number(array[i+1]);
@@ -662,7 +662,7 @@ module.exports = class FlowManager {
         }
 
 /*
-        console.log("--------------appsdb ---- ");
+        onsole.log("--------------appsdb ---- ");
         console.log(appdb);
         console.log("--------------activitydb---- ");
         console.log(activitydb);

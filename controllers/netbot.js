@@ -16,6 +16,7 @@
 
 'use strict'
 
+process.title = "FireApi";
 let log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');

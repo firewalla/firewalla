@@ -16,6 +16,7 @@
 
 // config.discovery.networkInterface
 
+process.title = "FireMain";
 let log = require("./logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");

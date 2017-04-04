@@ -590,7 +590,7 @@ module.exports = class DNSManager {
                      cb();
                      return;
                 }
-                if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0)) {
+                if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0) && o.ct && o.ct<=1) {
                      flowUtil.addFlag(o,'x');
                      console.log("### NOT LOOKUP 4:",o);
                      cb();
