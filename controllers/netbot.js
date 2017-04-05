@@ -916,7 +916,7 @@ class netBot extends ControllerBot {
                 code: 200
             }
             this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
-            require('child_process').exec('sync & sudo reboot', (err, out, code) => {});
+            require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {});
         } else if (msg.data.item === "reset") {
             log.info("Reseting System");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {

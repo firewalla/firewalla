@@ -1,0 +1,7 @@
+#!/bin/bash -
+logger "FIREWALLA REBOOT NORMAL"
+crontab -r
+sudo sh -c 'echo V > /dev/watchdog'
+sudo sh -c 'echo V > /dev/watchdog'
+sync
+sudo reboot

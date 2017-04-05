@@ -4,6 +4,9 @@ if [[ $branch =~ release.* ]]; then
     touch /home/pi/.firewalla/managed_reboot
     sync
 fi
-sync
+logger "FIREWALLA REBOOT"
+crontab -r
 sudo sh -c 'echo V > /dev/watchdog'
+sudo sh -c 'echo V > /dev/watchdog'
+sync
 sudo reboot
