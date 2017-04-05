@@ -8,6 +8,23 @@ if [ -f  /bspool/tmp/post-term* ]; then
     sync
     sudo reboot
 fi
+GITHUB_STATUS_API=https://status.github.com/api.json
+for i in `seq 1 10`; do
+    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+    if [[ $HTTP_STATUS_CODE == "200" ]]; then
+      break
+    fi
+    /usr/bin/logger "FIREWALLA.BRO NO Network"
+    sleep 1
+done
+if [[ ! -f /.dockerenv ]]; then
+    sudo ntpdate -s time.nist.gov
+    logger "FIREWALLA.BRO.DATE.SYNC"
+    sudo systemctl start ntp
+    sudo ntpd -gq
+    sudo systemctl start ntp
+    sync
+fi
 rm -r -f /blog/*
 rm -r -f /bspool/*
 umount /bspool

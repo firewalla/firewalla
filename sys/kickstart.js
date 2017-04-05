@@ -38,6 +38,7 @@
  * query every x min until group is none empty, or first invite
  */
 
+process.title = "FireKick";
 let log = require("../net2/logger.js")(__filename);
 
 var fs = require('fs');
