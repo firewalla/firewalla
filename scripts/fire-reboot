@@ -5,10 +5,4 @@ if [[ $branch =~ release.* ]]; then
     sync
 fi
 logger "FIREWALLA REBOOT"
-crontab -r
-sudo sh -c 'echo V > /dev/watchdog'
-sudo sh -c 'echo V > /dev/watchdog'
-pkill *fire-ping*
-sudo sh -c 'echo V > /dev/watchdog'
-sync
-sudo reboot
+./fire-reboot-normal
