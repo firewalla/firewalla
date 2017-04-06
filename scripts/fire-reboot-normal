@@ -1,0 +1,13 @@
+#!/bin/bash -
+logger "FIREWALLA REBOOT NORMAL"
+crontab -r
+sudo sh -c 'echo V > /dev/watchdog'
+sudo sh -c 'echo V > /dev/watchdog'
+pkill bitbridge*
+pkill fire-ping*
+pkill sleep*
+sleep 2
+sudo sh -c 'echo V > /dev/watchdog'
+sync
+sync
+sudo reboot -f

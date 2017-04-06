@@ -13,6 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+process.title = 'FireMon';
 let log = require("../net2/logger.js")(__filename, "info");
 
 var bone = require("../lib/Bone.js");

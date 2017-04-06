@@ -16,5 +16,5 @@ sudo rm -r -f ~/ovpns/*
 sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
 sync
 sync
-sudo reboot
+/home/pi/firewalla/scripts/fire-reboot-normal
 

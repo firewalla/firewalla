@@ -313,6 +313,7 @@ module.exports = class {
 
     vpn(host, config, policies) {
         if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
+            vpnManager.stop();
             log.error("PolicyManager:VPN", "VPN Not avaliable");
             return;
         }
