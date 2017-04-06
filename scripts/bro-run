@@ -6,7 +6,7 @@ if [ -f  /bspool/tmp/post-term* ]; then
     logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
-    sudo reboot
+    /home/pi/firewalla/scripts/fire-reboot-normal
 fi
 GITHUB_STATUS_API=https://status.github.com/api.json
 for i in `seq 1 10`; do

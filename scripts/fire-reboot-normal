@@ -4,7 +4,7 @@ crontab -r
 sudo sh -c 'echo V > /dev/watchdog'
 sudo sh -c 'echo V > /dev/watchdog'
 pkill bitbridge*
-pkill *fire-ping*
+pkill fire-ping*
 pkill sleep*
 sleep 2
 sudo sh -c 'echo V > /dev/watchdog'
