@@ -10,4 +10,4 @@ sudo sysctl stop fireapi
 sudo sysctl stop firemon
 redis-cli KEYS "policy:*" | xargs redis-cli DEL
 sync
-sudo reboot
+/home/pi/firewalla/scripts/fire-reboot-normal
