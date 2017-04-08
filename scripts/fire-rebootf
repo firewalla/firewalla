@@ -5,4 +5,4 @@ if [[ $branch =~ release.* ]]; then
     sync
 fi
 logger "FIREWALLA REBOOT"
-/home/pi/firewalla/scripts/fire-reboot-normal
+/home/pi/firewalla/scripts/fire-reboot-normalf
