@@ -16,6 +16,7 @@
 
 // config.discovery.networkInterface
 
+process.title = "FireMain";
 let log = require("./logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -160,6 +161,12 @@ function run() {
   },1000*60);
 
 
+/*
+  Bug: when two firewalla's are on the same network, this will change the upnp
+  setting.  Need to fix this later.
+  
+  this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
+*/
   setTimeout(()=>{
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{

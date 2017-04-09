@@ -75,20 +75,18 @@ var natUpnp = require('nat-upnp');
 module.exports = class {
   constructor(name, config, loglevel, noScan) {
         if (instances[name] == null) {
-            log = require("./logger.js")("Discovery", loglevel);
-
-            this.hosts = [];
-            this.name = name;
-            this.config = config;
-            //  this.networks = this.getSubnet(networkInterface,family);
-//            console.log("Scanning Address:", this.networks);
+          log = require("./logger.js")("Discovery", loglevel);
+          
+          this.hosts = [];
+          this.name = name;
+          this.config = config;
+          
           instances[name] = this;
 
+          let p = require('./MessageBus.js');
+          this.publisher = new p(loglevel);
+
           if(!noScan || noScan === false) {
-            let p = require('./MessageBus.js');
-            this.publisher = new p(loglevel);
-            //this.scan((err,response)=> {
-            //});
             this.publisher.subscribe("DiscoveryEvent", "Host:Detected", null, (channel, type, ip, obj) => {
                 if (type == "Host:Detected") {
                     log.info("Dynamic scanning found over Host:Detected", ip);
@@ -97,15 +95,16 @@ module.exports = class {
             });
           }
 
-            this.upnpClient = natUpnp.createClient();
-
-            this.hostCache = {};
-
+          this.upnpClient = natUpnp.createClient();
+          this.hostCache = {};
         }
+    
         return instances[name];
-    }
+  }
 
-    startDiscover(fast) {
+  startDiscover(fast, callback) {
+        callback = callback || function() {}
+
         this.discoverInterfaces((err, list) => {
             log.info("Discovery::Scan", this.config.discovery.networkInterfaces, list);
             for (let i in this.config.discovery.networkInterfaces) {
@@ -116,8 +115,9 @@ module.exports = class {
                         this.nmap = new Nmap(intf.subnet,false);
                     }
                     this.scan(intf.subnet, fast, (err, result) => {
-                        this.bonjourWatch();
-                        this.neighborDiscoveryV6(intf.name,intf);
+                      this.bonjourWatch();
+                      this.neighborDiscoveryV6(intf.name,intf);
+                      callback();
                     });
                 }
             }
@@ -529,6 +529,8 @@ module.exports = class {
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
                                     log.error("Discovery:Nmap:Update:Error", err);
+                                } else {
+                                    rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
                                 }
                             });
                             // old mac based on this ip does not match the mac
@@ -544,6 +546,7 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
+                                    rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
                                     //this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
                                 }
                             });
@@ -593,6 +596,7 @@ module.exports = class {
                                     log.debug("Discovery:Nmap:HostCache:LookMac", c);
                                 }
                             }
+                            rclient.expireat(key, parseInt((+new Date) / 1000) + 60*60*24*365);
                             rclient.hmset(key, data, (err, result) => {
                                 if (newhost == true) {
                                     let d = JSON.parse(JSON.stringify(data));
@@ -643,6 +647,7 @@ module.exports = class {
                 rclient.hmset(v6key, data, (err, result) => {
                     log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
                     let mackey = "host:mac:" + mac;
+                    rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
                     rclient.hgetall(mackey, (err, data) => {
                         log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
                         if (err == null) {

@@ -64,14 +64,24 @@ function getUserConfigFolder() {
 }
 
 // Get config data from fishbone
+var _boneInfo = null;
 function getBoneInfo(callback) {
     rclient.get("sys:bone:info",(err,data)=>{
         if (data) {
-            callback(null, JSON.parse(data));
+            _boneInfo = JSON.parse(data);
+            if (callback) {
+                callback(null, JSON.parse(data));
+            }
         } else {
-            callback(null,null);
+            if (callback) {
+                callback(null,null);
+            }
         }
     });
+}
+
+function getBoneInfoSync() {
+    return _boneInfo;
 }
 
 function getVersion() {
@@ -240,6 +250,45 @@ function redisclean(config,count) {
                 });
             }
         });
+        rclient.keys("host:ip4:*", (err, keys) => {
+            let expireDate = Date.now() / 1000 - 60*60*24*30;
+            for (let k in keys) {
+                rclient.hgetall(keys[k],(err,data)=>{
+                    if (data &&  data.lastActiveTimestamp) {
+                         if (data.lastActiveTimestamp < expireDate) {
+                             log.info(keys[k],"Deleting due to timeout ", expireDate, data);
+                             rclient.del(keys[k]);
+                         }
+                    }
+                });
+            }
+        });
+        rclient.keys("host:ip6:*", (err, keys) => {
+            let expireDate = Date.now() / 1000 - 60*60*24*30;
+            for (let k in keys) {
+                rclient.hgetall(keys[k],(err,data)=>{
+                    if (data &&  data.lastActiveTimestamp) {
+                         if (data.lastActiveTimestamp < expireDate) {
+                             log.info(keys[k],"Deleting due to timeout ", expireDate, data);
+                             rclient.del(keys[k]);
+                         }
+                    }
+                });
+            }
+        });
+        rclient.keys("host:mac:*", (err, keys) => {
+            let expireDate = Date.now() / 1000 - 60*60*24*365;
+            for (let k in keys) {
+                rclient.hgetall(keys[k],(err,data)=>{
+                    if (data &&  data.lastActiveTimestamp) {
+                         if (data.lastActiveTimestamp < expireDate) {
+                             log.info(keys[k],"Deleting due to timeout ", expireDate, data);
+                             rclient.del(keys[k]);
+                         }
+                    }
+                });
+            }
+        });
 }
 
 module.exports = {
@@ -252,6 +301,7 @@ module.exports = {
   getUserConfigFolder: getUserConfigFolder,
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
+  getBoneInfoSync: getBoneInfoSync,
   redisclean: redisclean,
   constants: constants,
   getVersion: getVersion

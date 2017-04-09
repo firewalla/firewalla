@@ -7,4 +7,4 @@ git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 git fetch origin
 git checkout -
 sync
-reboot
+/home/pi/firewalla/scripts/fire-reboot-normal

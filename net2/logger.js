@@ -54,18 +54,21 @@ var productionDebug = {
    'main':'error',
    'FlowMonitor':'error'
 };
-  
 
 var debugMapper = devDebug;
+var production = false;
+var debugMap = {};
 
 if (process.env.FWPRODUCTION) {
     debugMapper = productionDebug; 
     console.log("FWDEBUG SET TO PRODUCTION");
+    production = true;
 }
 
 if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
     debugMapper = productionDebug; 
     console.log("FWDEBUG SET TO PRODUCTION");
+    production = true;
 }
 
 module.exports = function (component, loglevel) {
@@ -74,40 +77,65 @@ module.exports = function (component, loglevel) {
   if(!loglevel) {
     loglevel = "info"; // default level info
   }
+
+  if (debugMap[component]!=null) {
+    return debugMap[component];
+  }
   
     let _loglevel = debugMapper[component];
     if (_loglevel==null) {
         _loglevel = loglevel;
     }
-    var logger = new(winston.Logger)({
-        transports: [
-            new(winston.transports.Console)({
-              level: _loglevel,
-	      timestamp: function() {
-		let d = new Date();
-		return d.toISOString().replace(/T/, ' ').replace(/\..+/, '');
-	      },
-	      formatter: function(options) {
-		let format = require('util').format("%s %s %s: %s",
-						    options.level.toUpperCase(),
-						    options.timestamp(),
-						    component,
-						    options.message);
-		return format;
-	      }
-            }),
-            /*
-            new (winston.transports.File)({level:fileloglevel,
+    let consoleLogLevel = _loglevel;
+    let fileLogLevel = _loglevel;
+   
+    if (production){
+       consoleLogLevel = 'error';
+    }
+    var consoleTransport = new(winston.transports.Console)({
+              level: consoleLogLevel,
+              timestamp: function() {
+                let d = new Date();
+                return d.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+              },
+              formatter: function(options) {
+                let format = require('util').format("%s %s %s: %s",
+                                                    options.level.toUpperCase(),
+                                                    options.timestamp(),
+                                                    component,
+                                                    options.message);
+                return format;
+              }
+            });
+    var fileTransport =             new (winston.transports.File)({level:_loglevel,
                                        name:'log-file',
-                                       filename: 'net.log',
-                                       dirname: ".",
-                                       maxsize: 1000,
-                                       maxFiles: 10,
-                                       timestamp:true })
-*/
-        ]
+                                       filename: process.title+".log",
+                                       dirname: "/home/pi/logs",
+                                       maxsize: 100000,
+                                       maxFiles: 3,
+                                       timestamp:true });
+
+    let transports = [fileTransport];
+ 
+    if (production == false) {
+        console.log("Adding Console Transports",component);
+        transports.push(consoleTransport);
+    } 
+
+
+    var logger = new(winston.Logger)({
+        transports: transports
     });
 
-    logger.transports.console.level = _loglevel;
+    if (production == false) {
+        logger.transports.console.level = _loglevel;
+    }
+
+    if (production == true) {
+        for (key in winston.loggers.loggers) {
+            winston.loggers.loggers[key].remove(winston.transports.Console);
+        }
+    }
+    debugMap[component]=logger;
     return logger;
 };

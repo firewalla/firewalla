@@ -541,7 +541,7 @@ module.exports = class FlowMonitor {
                         }
                     }
                     if (service == null || service == "dlp") {
-                        log.info("DLP",listip);
+                        log.debug("DLP",listip);
                         this.flows(listip, period,host, (err, inSpec, outSpec) => {
                             log.debug("monitor:flow:", host.toShortString());
                             log.debug("inspec", inSpec);

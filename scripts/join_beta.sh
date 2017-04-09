@@ -8,4 +8,4 @@ git fetch origin
 # master should be changed to beta branch in the future
 git checkout master
 sync
-reboot
+/home/pi/firewalla/scripts/fire-reboot-normal

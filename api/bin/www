@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict'
 
+process.title = "FireApi";
+
 let log = require("../../net2/logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -37,13 +39,13 @@ function run0() {
 let config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 let debug = require('debug')('api:server');
 let http = require('http');
+let port = normalizePort(process.env.PORT || '8833');
 
 var server;
 
 function run() {
 
   let app = require('../app');
-  let port = normalizePort(process.env.PORT || '8833');
   app.set('port', port);
 
   /**
