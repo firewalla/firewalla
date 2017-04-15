@@ -2,6 +2,11 @@
 sync
 
 mem=$(free -m | awk '/-/{print $4}')
+firemon_mem=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+(( firemon_mem >= 80000)) && logger "FIREWALLA: Firemon Critical Memory"+firemon_mem
+(( firemon_mem >= 100000)) && logger "FIREWALLA: Firemon Critical Memory Restart"+firemon_mem
+(( firemon_mem >= 100000)) && sudo service firemon restart
+
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
 (( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
