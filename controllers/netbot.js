@@ -230,6 +230,20 @@ class netBot extends ControllerBot {
         });
     }
 
+  _scisurf(ip, value, callback) {
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("scisurf", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on scisurf: " + value);
+        }
+      });
+    });
+  }
+
   _dnsmasq(ip, value, callback) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
@@ -517,7 +531,12 @@ class netBot extends ControllerBot {
                 this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
                     cb(err);
                 });
-                break;
+              break;
+            case "scisurf":
+              this._scisurf(msg.target, msg.data.value.scisurf, (err, obj) => {
+                cb(err);
+              });
+              break;
               case "dnsmasq":
                 this._dnsmasq(msg.target, msg.data.value.dnsmasq, (err, obj) => {
                   cb(err);

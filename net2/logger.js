@@ -113,7 +113,7 @@ module.exports = function (component, loglevel) {
     let transports = [fileTransport];
  
     if (production == false) {
-        console.log("Adding Console Transports");
+//        console.log("Adding Console Transports");
         transports.push(consoleTransport);
     } 
 

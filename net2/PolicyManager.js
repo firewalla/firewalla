@@ -38,6 +38,8 @@ let upnp = new UPNP();
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
+let ss_client = require('../extension/ss_client/ss_client.js');
+
 var firewalla = require('../net2/Firewalla.js');
 
 let externalAccessFlag = false;
@@ -341,6 +343,39 @@ module.exports = class {
         }
     }
 
+  scisurf(host, config) {
+    if(config.state == true) {
+
+      if(!ss_client.configExists() || ! config.config) {
+        log.error("init config is required from app side for first start");
+      }
+
+      if(config.config) {
+        ss_client.setConfig(config.config);
+      }
+      
+      ss_client.start((err) => {
+        if(err) {
+          log.error("Failed to enable SciSurf feature");
+        } else {
+          log.info("SciSurf feature is enabled successfully");
+          log.info("chinadns:", ss_client.getChinaDNS());
+          dnsmasq.setUpstreamDNS(ss_client.getChinaDNS());
+          log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
+        }
+      });
+    } else {
+      ss_client.stop((err) => {
+        if(err) {
+          log.error("Failed to disable SciSurf feature");
+        } else {
+          log.info("SciSurf feature is disabled successfully");          
+        }
+        dnsmasq.setUpstreamDNS(null);
+      });
+    }
+  }
+
     shadowsocks(host, config, callback) {
       let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
       let ss = new shadowsocks('info');
@@ -478,11 +513,13 @@ module.exports = class {
             } else if (p == "vpn") {
                 this.vpn(host, policy[p], policy);
             } else if (p == "shadowsocks") {
-                this.shadowsocks(host, policy[p]);
+              this.shadowsocks(host, policy[p]);
+            } else if (p == "scisurf") {
+              this.scisurf(host, policy[p]);
             } else if (p == "externalAccess") {
               this.externalAccess(host, policy[p]);
             } else if (p == "dnsmasq") {
-              // do nothing here, already handled dnsmasq above
+              // do nothing here, will handle dnsmasq at the end
             } else if (p == "block") {
                 if (host.policyJobs != null) {
                     for (let key in host.policyJobs) {

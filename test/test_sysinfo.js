@@ -8,11 +8,11 @@ let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 //si.getRealMemoryUsage();
 
-si.getRecentLogs((err, results) => {
-  console.log(results);
-});
+//si.getRecentLogs((err, results) => {
+//  console.log(results);
+//});
 
 setTimeout(() => {
   console.log(si.getSysInfo());
   process.exit(0);
-}, 3000);
+}, 1000);
