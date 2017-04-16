@@ -1,9 +1,7 @@
 /*
- * This app will provide API for external calls
+ * This app will provide API for local calls, to apify all internal services
  */
 'use strict';
-
-
 
 var express = require('express');
 var path = require('path');
@@ -20,16 +18,10 @@ var db = require('./db');
 let firewalla = require('../net2/Firewalla.js');
 let log = require('../net2/logger.js')(__filename, 'info')
 
-passport.use(new Strategy(
-  function(token, cb) {
-    db.users.findByToken(token, function(err, user) {
-      if (err) { return cb(err); }
-      if (!user) { return cb(null, false); }
-      return cb(null, user);
-    });
-  }));
-
-var encipher = require('./routes/fastencipher2');
+var system = require('./routes/system');
+var message = require('./routes/message');
+var shadowsocks = require('./routes/shadowsocks');
+let dnsmasq = require('./routes/dnsmasq');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -56,7 +48,37 @@ subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
-subpath_v1.use('/encipher', encipher);
+if(!firewalla.isProduction()) {
+  // apis for development purpose only, do NOT enable them in production
+  subpath_v1.use('/sys', system);
+  subpath_v1.use('/message', message);
+  subpath_v1.use('/ss', shadowsocks);
+  subpath_v1.use('/dns', dnsmasq);
+
+  let subpath_docs = express();
+  app.use("/docs", subpath_docs);
+  subpath_docs.use("/", express.static('dist'));
+
+  swagger.setAppHandler(subpath_docs);
+
+  subpath_docs.get('/', function (req, res) {
+    res.sendfile(__dirname + '/dist/index.html');
+  });
+
+  swagger.configureSwaggerPaths('', '/docs/api-docs', '');
+  swagger.configure(applicationUrl, '1.0.0');
+
+  swagger.setApiInfo({
+    title: "Firewalla API",
+    description: "API to do something, manage something...",
+    termsOfServiceUrl: "",
+    contact: "tt@firewalla.com",
+    license: "",
+    licenseUrl: ""
+  });
+
+
+}
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -71,7 +93,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("Got error when handling request: " + err);
+    log.error("Got error when handling request: %j", err);
     res.status(err.status || 500);
     res.render('error', {
       message: err.message,
@@ -83,7 +105,7 @@ if (app.get('env') === 'development') {
 // production error handler
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
-  log.error("Got error when handling request: " + err);
+  log.error("Got error when handling request: %j", err);
   res.status(err.status || 500);
   res.render('error', {
     message: err.message,

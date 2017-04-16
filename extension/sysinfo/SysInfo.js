@@ -14,7 +14,7 @@ let fHome = f.getFirewallaHome();
 let logFolder = f.getLogFolder();
 
 let config = require("../../net2/config.js").getConfig();
-    
+
 let userID = f.getUserID();
 
 //let SysManager = require('../../net2/SysManager');
@@ -205,10 +205,48 @@ function getRecentLogs(callback) {
   async.map(logFiles, tailFunction, callback);
 }
 
+function getTopStats() {
+  return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8');
+}
+
+function getTop5Flows(callback) {
+  rclient.keys("flow:conn:*", (err, results) => {
+    if(err) {
+      callback(err);
+      return;
+    }
+    
+    async.map(results, (flow, callback) => {
+      rclient.zcount(flow, "-inf", "+inf", (err, count) => {
+        if(err) {
+          callback(err);
+          return;
+        }
+        callback(null, {name: flow, count: count});
+      });
+    }, (err, results) => {
+      async.sortBy(results, (x, callback) => callback(null, x.count * -1), (err, results) => {
+        callback(null, results.slice(0, 5));
+      });
+    });
+  });
+}
+
+function getPerfStats(callback) {
+  getTop5Flows((err, results) => {
+    callback(err, {
+      top: getTopStats(),
+      sys: getSysInfo(),
+      perf: results
+    });
+  });
+}
+
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
-  getRecentLogs: getRecentLogs
+  getRecentLogs: getRecentLogs,
+  getPerfStats: getPerfStats
 };

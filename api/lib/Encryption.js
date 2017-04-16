@@ -32,15 +32,25 @@ module.exports = class {
     decrypt(req, res, next) {
       var gid = req.params.gid;
       if(gid == null) {
+        res.status(400);
         res.json({"error" : "Invalid group id"});
         return;
       }
 
-      var message = req.body.message;
-      if(message == null) {
-        res.json({"error" : "Invalid request"});
+      let controller = cloudWrapper.getNetBotController(gid);
+      if(!controller) {
+        // netbot controller is not ready yet, waiting for init complete
+        res.status(503);
+        res.json({error: 'Initializing Firewalla Device, please try later'});
         return;
       }
+      
+      var message = req.body.message;
+      if(message == null) {
+        res.status(400);
+        res.json({"error" : "Invalid request"});
+        return;
+      }      
 
       cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
         if(err) {

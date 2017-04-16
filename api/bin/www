@@ -23,7 +23,7 @@ function run0() {
   if (bone.cloudready()==true &&
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
-    run();
+    runLocalAPI();
   } else {
     setTimeout(()=>{
       sysManager.update(null);
@@ -42,6 +42,9 @@ let http = require('http');
 let port = normalizePort(process.env.PORT || '8833');
 
 var server;
+var serverForLocalAPI;
+
+let portForLocalAPI = normalizePort('8834');
 
 function run() {
 
@@ -61,6 +64,28 @@ function run() {
   server.listen(port);
   server.on('error', onError);
   server.on('listening', onListening);
+}
+
+run();
+
+
+function runLocalAPI() {
+  let app2 = require('../app-local.js');
+  app2.set('port', portForLocalAPI);
+
+  /**
+   * Create HTTP server.
+   */
+
+  serverForLocalAPI = http.createServer(app2);
+
+  /**
+   * Listen on provided port, on all network interfaces.
+   */
+
+  serverForLocalAPI.listen(portForLocalAPI, 'localhost')
+  serverForLocalAPI.on('error', onError);
+  serverForLocalAPI.on('listening', onListening);
 }
 
 /**
