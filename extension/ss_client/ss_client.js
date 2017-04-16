@@ -363,5 +363,6 @@ module.exports = {
   setConfig:setConfig,
   isStarted:isStarted,
   configExists:configExists,
-  getChinaDNS:getChinaDNS
+  getChinaDNS:getChinaDNS,
+  loadConfig:loadConfig
 };
