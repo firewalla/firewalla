@@ -353,7 +353,7 @@ class netBot extends ControllerBot {
             //this.tx(this.primarygid, "Discovery started","message");  
         });
         this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
-            log.info("Found new host ", channel, type, ip, o);
+            log.info("Found new host ", channel, type, ip);
             if (o) {
                 let name = o.ipv4Addr;
                 if (o.name != null) {
@@ -614,7 +614,7 @@ class netBot extends ControllerBot {
                 }
 
                 host.o.name = data.value.name;
-                log.info("Changing names", host.o.name, host);
+                log.info("Changing names", host.o.name);
                 host.save(null, (err) => {
                     if (err) {
                         reply.code = 500;

@@ -12,4 +12,4 @@ sync
 sync
 sync
 sync
-sudo reboot 
+sudo reboot -f 

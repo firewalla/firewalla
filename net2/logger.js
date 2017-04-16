@@ -57,6 +57,7 @@ var productionDebug = {
 
 var debugMapper = devDebug;
 var production = false;
+var debugMap = {};
 
 if (process.env.FWPRODUCTION) {
     debugMapper = productionDebug; 
@@ -75,6 +76,10 @@ module.exports = function (component, loglevel) {
   
   if(!loglevel) {
     loglevel = "info"; // default level info
+  }
+
+  if (debugMap[component]!=null) {
+    return debugMap[component];
   }
   
     let _loglevel = debugMapper[component];
@@ -113,7 +118,7 @@ module.exports = function (component, loglevel) {
     let transports = [fileTransport];
  
     if (production == false) {
-//        console.log("Adding Console Transports");
+        console.log("Adding Console Transports",component);
         transports.push(consoleTransport);
     } 
 
@@ -131,5 +136,6 @@ module.exports = function (component, loglevel) {
             winston.loggers.loggers[key].remove(winston.transports.Console);
         }
     }
+    debugMap[component]=logger;
     return logger;
 };
