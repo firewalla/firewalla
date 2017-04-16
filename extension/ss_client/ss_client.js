@@ -73,6 +73,12 @@ function start(callback) {
   callback = callback || function() {}
 
   _install((err) => {
+    if(err) {
+      log.error("Fail to install ipset");
+      callback(err);
+      return;
+    }
+    
     _enableIpset((err) => {
       if(err) {
         _disableIpset();
@@ -132,7 +138,7 @@ function stop(callback) {
 function _install(callback) {
   callback = callback || function() {}
 
-  p.exec("sudo which ipset &>/dev/null || sudo apt-get install -y ipset", callback);
+  p.exec("bash -c 'sudo which ipset &>/dev/null || sudo apt-get install -y ipset'", callback);
 }
 
 function uninstall(callback) {
@@ -163,7 +169,7 @@ function _startTunnel(callback) {
   // ss_tunnel will put itself to background mode
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
-      log.error("Fail to start tunnel");
+      log.error("Fail to start tunnel: " + err);
     } else {
       log.info("tunnel is started successfully");
     }
@@ -202,7 +208,7 @@ function _startRedirection(callback) {
   // ss_redirection will put itself to background mode
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
-      log.error("Failed to start redirection");
+      log.error("Failed to start redirection: " + err);
     } else {
       log.info("Redirection is started successfully");
     }
