@@ -20,4 +20,4 @@ if [[ $branch =~ release.* ]]
   fi
 sync
 sync
-sudo reboot
+/home/pi/firewalla/scripts/fire-reboot-normal
