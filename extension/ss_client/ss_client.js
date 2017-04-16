@@ -37,7 +37,7 @@ let chnrouteFile = extensionFolder + "/chnroute";
 let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
 
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
-let ssConfig = jsonfile.readFileSync(ssConfigPath);
+var ssConfig = null;
 
 let localTunnelPort = 8855;
 let localTunnelAddress = "127.0.0.1";
@@ -50,6 +50,15 @@ let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid"
 let dnsServerWithPort = "8.8.8.8:53";
 
 
+function loadConfig() {
+  try {
+    ssConfig = jsonfile.readFileSync(ssConfigPath);
+  } catch (e) {
+    log.error("Failed to load ssconfig: " + e);
+  }
+}
+
+loadConfig();
 
 /*
  * 1. install
