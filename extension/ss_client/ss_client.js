@@ -16,6 +16,9 @@ let jsonfile = require('jsonfile');
 let p = require('child_process');
 let async = require('async');
 
+let r = require('redis');
+let rclient = r.createClient();
+
 let f = require('../../net2/Firewalla.js');
 let fHome = f.getFirewallaHome();
 
@@ -36,6 +39,7 @@ let chinaDNSBinary = extensionFolder + "/chinadns";
 let chnrouteFile = extensionFolder + "/chnroute";
 let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
 
+let ssConfigKey = "scisurf.config";
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
 var ssConfig = null;
 
@@ -50,12 +54,43 @@ let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid"
 let dnsServerWithPort = "8.8.8.8:53";
 
 
-function loadConfig() {
-  try {
-    ssConfig = jsonfile.readFileSync(ssConfigPath);
-  } catch (e) {
-    log.error("Failed to load ssconfig: " + e);
-  }
+function loadConfig(callback) {
+  callback = callback || function() {}
+  
+  rclient.get(ssConfigKey, (err, result) => {
+    if(err) {
+      log.error("Failed to load ssconfig from redis: " + err);
+      callback(err);
+      return;
+    }
+    try {
+      if(result) {
+        ssConfig = JSON.parse(result);
+        callback(null, ssConfig);
+      } else {
+        callback(null, {}); // by default, {} => config not initliazed
+      }
+    } catch (e) {
+      log.error("Failed to parse json: " + e);
+      callback(e);
+    }
+  });
+}
+
+function clearConfig(callback) {
+  callback = callback || function() {}
+
+  rclient.del(ssConfigKey, (err) => {
+    if(err) {
+      log.error("Failed to clear ssconfig: " + err);
+      callback(err);
+      return;
+    }
+
+    ssConfig = null;
+    fs.unlinkSync(ssConfigPath);
+    callback(null);
+  });
 }
 
 loadConfig();
@@ -72,10 +107,16 @@ loadConfig();
 function start(callback) {
   callback = callback || function() {}
 
+  if(!ssConfig) {
+    callback(new Error("scisurf config is not ready yet"));
+    return;
+  }
+
   _install((err) => {
     if(err) {
       log.error("Fail to install ipset");
       callback(err);
+      stop(); // stop everything if anything wrong.
       return;
     }
     
@@ -83,29 +124,34 @@ function start(callback) {
       if(err) {
         _disableIpset();
         callback(err);
+        stop(); // stop everything if anything wrong.
         return;
       }
 
       _startTunnel((err) => {
         if(err) {
           callback(err);
+          stop(); // stop everything if anything wrong.
           return;
         }
 
         _startRedirection((err) => {
           if(err) {
             callback(err);
+            stop(); // stop everything if anything wrong.
             return;
           }
 
           _enableChinaDNS((err) => {
             if(err) {
               callback(err);
+              stop(); // stop everything if anything wrong.
               return;
             }
 
             _enableIptablesRule((err) => {
               if(err) {
+                stop(); // stop everything if anything wrong.
               } else {
                 started = true;
               }
@@ -145,9 +191,18 @@ function uninstall(callback) {
   // TODO
 }
 
-function setConfig(config) {
-  ssConfig = config;
-  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
+function saveConfig(config, callback) {
+  rclient.set(ssConfigKey, JSON.stringify(config), (err) => {
+    if(err) {
+      callback(err);
+      return;
+    }
+    
+    ssConfig = config;
+    jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
+
+    callback(null);
+  });
 }
 
 function validateConfig(config) {
@@ -366,9 +421,10 @@ function getChinaDNS() {
 module.exports = {
   start:start,
   stop:stop,
-  setConfig:setConfig,
+  saveConfig:saveConfig,
   isStarted:isStarted,
   configExists:configExists,
   getChinaDNS:getChinaDNS,
-  loadConfig:loadConfig
+  loadConfig:loadConfig,
+  clearConfig:clearConfig
 };
