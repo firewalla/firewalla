@@ -180,7 +180,7 @@ module.exports = class {
     }
 
     bonjourParse(service) {
-        log.info("Discover:Bonjour:Parsing:Received", service, {});
+        log.debug("Discover:Bonjour:Parsing:Received", service, {});
         if (service == null) {
             return;
         }
@@ -211,7 +211,7 @@ module.exports = class {
             //     ipv4addr = service.referer.address;
         }
 
-        log.info("Discover:Bonjour:Parsing:Parsing", ipv4addr, ipv6addr, service, {});
+        log.debug("Discover:Bonjour:Parsing:Parsing", ipv4addr, ipv6addr, service, {});
 
 
         // Future need to scan software as well ... the adverisement from bonsjour also say something about ssh ...
