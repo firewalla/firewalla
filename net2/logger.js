@@ -71,7 +71,7 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
     production = true;
 }
 
-module.exports = function (component, loglevel) {
+module.exports = function (component, loglevel, filename) {
   component = path.basename(component).split(".")[0].capitalizeFirstLetter();
   
   if(!loglevel) {
@@ -80,6 +80,10 @@ module.exports = function (component, loglevel) {
 
   if (debugMap[component]!=null) {
     return debugMap[component];
+  }
+
+  if(!filename) {
+    filename = process.title+".log";
   }
   
     let _loglevel = debugMapper[component];
@@ -108,13 +112,13 @@ module.exports = function (component, loglevel) {
               }
             });
     var fileTransport =             new (winston.transports.File)({level:_loglevel,
-                                       name:'log-file',
-                                       filename: process.title+".log",
-                                       dirname: "/home/pi/logs",
-                                       maxsize: 100000,
-                                       maxFiles: 3,
-                                       timestamp:true });
-
+                                                                   name:'log-file',
+                                                                   filename: filename,
+                                                                   dirname: "/home/pi/logs",
+                                                                   maxsize: 100000,
+                                                                   maxFiles: 3,
+                                                                   timestamp:true });
+  
     let transports = [fileTransport];
  
     if (production == false) {
@@ -132,9 +136,9 @@ module.exports = function (component, loglevel) {
     }
 
     if (production == true) {
-        for (key in winston.loggers.loggers) {
-            winston.loggers.loggers[key].remove(winston.transports.Console);
-        }
+      for (key in winston.loggers.loggers) {
+        winston.loggers.loggers[key].remove(winston.transports.Console);
+      }
     }
     debugMap[component]=logger;
     return logger;

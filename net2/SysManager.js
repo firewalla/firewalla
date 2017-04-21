@@ -50,20 +50,27 @@ module.exports = class {
             this.locals = {};
             instance = this;
 
-            sclient.on("message", function(channel, message) {
-                if(channel === "System:DebugChange") {
-                    if(message === "1") {
-                        systemDebug = true;
-                    } else if(message === "0") {
-                        systemDebug = false;
-                    } else {
-                        log.error("invalid message for channel: " + channel);
-                        return;
-                    }
-                    log.info("[pubsub] System Debug is changed to " + message);
-                }
-            });
-            sclient.subscribe("System:DebugChange");
+          sclient.on("message", function(channel, message) {
+            switch(channel) {
+            case "System:DebugChange":
+              if(message === "1") {
+                systemDebug = true;
+              } else if(message === "0") {
+                systemDebug = false;
+              } else {
+                log.error("invalid message for channel: " + channel);
+                return;
+              }
+              log.info("[pubsub] System Debug is changed to " + message);
+              break;
+            case "System:LanguageChange":
+              this.language = message;
+              break;
+            case "System:TimezoneChange":
+              this.timezone = message;
+            }
+          });
+          sclient.subscribe("System:DebugChange");
  
             this.delayedActions();
 
@@ -171,7 +178,43 @@ module.exports = class {
        return false;
     }
 
-    update(callback) {
+  setLanguage(language, callback) {
+    callback = callback || function() {}
+
+    this.language = language;
+    rclient.hset("sys:config", "language", language, (err) => {
+      if(err) {
+        log.error("Failed to set language " + language + ", err: " + err);
+      }
+      rclient.publish("System:LanguageChange", language);
+      callback(err);
+    });
+  }
+  
+  setTimezone(timezone, callback) {
+    callback = callback || function() {}
+
+    this.timezone = timezone;
+    rclient.hset("sys:config", "timezone", timezone, (err) => {
+      if(err) {
+        log.error("Failed to set timezone " + timezone + ", err: " + err);
+      }
+      rclient.publish("System:TimezoneChange", timezone);
+      callback(err);
+    });
+  }
+  
+  update(callback) {
+    rclient.hgetall("sys:config", (err, results) => {
+      if(results && results.language) {
+        this.language = results.language;
+      }
+
+      if(results && results.timezone) {
+        this.timezone = results.timezone;
+      }
+    });
+    
         rclient.get("system:debug", (err, result) => {
             if(result) {
                 if(result === "1") {

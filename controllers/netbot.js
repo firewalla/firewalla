@@ -661,6 +661,25 @@ class netBot extends ControllerBot {
         }
         
         break;
+      case "language":
+        let v2 = msg.data.value;
+
+        // TODO validate input?
+        if(v2.language) {
+          sysmanager.setLanguage(v2.language, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
+      case "timezone":
+        let v3 = msg.data.value;
+
+        if(v3.timezone) {
+          sysmanager.setTimezone(v3, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
       }
     }
 
@@ -795,6 +814,12 @@ class netBot extends ControllerBot {
         ssc.loadConfig((err, result) => {
           this.simpleTxData(msg, result, err, callback);
         });
+        break;
+      case "language":
+        this.simpleTxData(msg, {language: sysManager.language}, null, callback);
+        break;
+      case "timezone":
+        this.simpleTxData(msg, {timezone: sysManager.timezone}, null, callback);
         break;
       }
     }
