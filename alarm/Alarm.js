@@ -99,5 +99,6 @@ class PornAlarm extends OutboundAlarm {
 module.exports = {
   Alarm: Alarm,
   VideoAlarm: VideoAlarm,
-  GameAlarm: GameAlarm
+  GameAlarm: GameAlarm,
+  PornAlarm: PornAlarm
 }
