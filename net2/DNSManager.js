@@ -554,6 +554,7 @@ module.exports = class DNSManager {
     
         if (list == null || list.length == 0) {
             callback(null);
+            return;
         }
         let resolve = 0;
         let start = Math.ceil(Date.now()/1000);
