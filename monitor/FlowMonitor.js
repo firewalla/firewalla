@@ -23,6 +23,12 @@ var rclient = redis.createClient();
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
+let Alarm = require('../alarm/Alarm.js');
+let AlarmManager2 = require('../alarm/AlarmManager2.js');
+let alarmManager2 = new AlarmManager2();
+
+let audit = require('../util/audit.js');
+
 var uuid = require('uuid');
 
 rclient.on("error", function (err) {
@@ -110,7 +116,6 @@ module.exports = class FlowMonitor {
         return false;
     }
 
-
     flowIntel(flows) {
         for (let i in flows) {
             let flow = flows[i];
@@ -154,7 +159,13 @@ module.exports = class FlowMonitor {
                         });
                     }
                 } else if (c=="porn") {
-                    if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
+                  if ((flow.du && Number(flow.du)>60) &&
+                      (flow.rb && Number(flow.rb)>3000000) ||
+                      this.flowIntelRecordFlow(flow,3)) {
+
+                    // there should be a unique ID between pi and cloud on websites
+                    
+
                         let msg = "Watching porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Questionable Action",
@@ -171,6 +182,15 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+
+                    let alarm = new PornAlarm(flow.ts, flow["shnname"], flowUtil.dhnameFlow(flow), actionobj);
+                    alarmManager2.checkAndSave(alarm, (err) => {
+                      if(!err) {
+                        audit.trace("Alarm", alarm.aid, "is saved");
+                      }
+                    });
+                    
+                    
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj!=null) {
                                   this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {

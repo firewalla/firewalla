@@ -356,7 +356,7 @@ module.exports = class {
       
       ss_client.start((err) => {
         if(err) {
-          log.error("Failed to enable SciSurf feature");
+          log.error("Failed to enable SciSurf feature: " + err);
         } else {
           log.info("SciSurf feature is enabled successfully");
           log.info("chinadns:", ss_client.getChinaDNS());
@@ -367,7 +367,7 @@ module.exports = class {
     } else {
       ss_client.stop((err) => {
         if(err) {
-          log.error("Failed to disable SciSurf feature");
+          log.error("Failed to disable SciSurf feature: " + err);
         } else {
           log.info("SciSurf feature is disabled successfully");          
         }

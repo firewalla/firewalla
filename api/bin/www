@@ -148,14 +148,20 @@ function onListening() {
   debug('Listening on ' + bind);
 }
 
-process.on('uncaughtException',(err)=>{
+let f = require('../../net2/Firewalla.js');
+
+// for non production, just print on console
+if(f.isProduction()) {
+  process.on('uncaughtException',(err)=>{
     console.log("################### CRASH #############");
     console.log("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
-        return;
+      return;
     }
     bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
-        process.exit(1);
+      process.exit(1);
     },1000*2);
-});
+  });
+}
+
