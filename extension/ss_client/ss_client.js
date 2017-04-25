@@ -107,55 +107,66 @@ loadConfig();
 function start(callback) {
   callback = callback || function() {}
 
-  if(!ssConfig) {
-    callback(new Error("scisurf config is not ready yet"));
-    return;
-  }
-
-  _install((err) => {
+  loadConfig((err, config) => {
     if(err) {
-      log.error("Fail to install ipset");
+      log.error("Failed to load config or config does NOT exist");
       callback(err);
-      stop(); // stop everything if anything wrong.
       return;
     }
-    
-    _enableIpset((err) => {
-      if(err) {
-        _disableIpset();
-        callback(err);
-        stop(); // stop everything if anything wrong.
-        return;
-      }
 
-      _startTunnel((err) => {
+
+    // always stop before start
+
+    stop((err) => {
+
+      // ignore stop error
+      
+      _install((err) => {
         if(err) {
+          log.error("Fail to install ipset");
           callback(err);
           stop(); // stop everything if anything wrong.
           return;
         }
-
-        _startRedirection((err) => {
+        
+        _enableIpset((err) => {
           if(err) {
+            _disableIpset();
             callback(err);
             stop(); // stop everything if anything wrong.
             return;
           }
 
-          _enableChinaDNS((err) => {
+          _startTunnel((err) => {
             if(err) {
               callback(err);
               stop(); // stop everything if anything wrong.
               return;
             }
 
-            _enableIptablesRule((err) => {
+            _startRedirection((err) => {
               if(err) {
+                callback(err);
                 stop(); // stop everything if anything wrong.
-              } else {
-                started = true;
+                return;
               }
-              callback(err);
+
+              _enableChinaDNS((err) => {
+                if(err) {
+                  callback(err);
+                  stop(); // stop everything if anything wrong.
+                  return;
+                }
+
+                _enableIptablesRule((err) => {
+                  if(err) {
+                    stop(); // stop everything if anything wrong.
+                  } else {
+                    started = true;
+                  }
+                  callback(err);
+                });
+              });
             });
           });
         });
@@ -288,7 +299,7 @@ function _stopRedirection(callback) {
 
 function _enableIpset(callback) {
   callback = callback || function() {}
-
+  
   let cmd = "sudo ipset restore -file " + chnrouteRestoreForIpset;
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {
