@@ -1369,7 +1369,7 @@ module.exports = class {
             }
             let since = Date.now()/1000-60*60*24*7; // one week
             rclient.multi(multiarray).exec((err, replies) => {
-                async.each(replies, (o, cb) => {
+                async.eachLimit(replies,2, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
                         //console.log("Processing GetHosts ",o);
                         if (o.ipv4) {
@@ -1410,6 +1410,7 @@ module.exports = class {
                             }
                         }
                         this.syncHost(hostbymac, true, (err) => {
+      
                             if (this.type == "server") {
                                 hostbymac.applyPolicy((err)=>{
                                     hostbymac._mark = true;

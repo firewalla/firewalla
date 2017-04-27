@@ -13,6 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+var ip = require('ip');
 
 var debugging = false;
 var log = function () {
@@ -47,6 +48,19 @@ module.exports = class {
     }
 
     scan(range, fast, callback) {
+        if (false == ip.isV4Format(range)) {
+            try {
+               let ip_info = ip.cidrSubnet(range);
+               if (ip_info) {
+                   if(ip_info.subnetMaskLength<24) {
+                       callback(null,null); 
+                       return;
+                   }
+               }
+            } catch(e) {
+               log.error("Nmap:Scan:Error",range,fast,e);
+            }
+        }
         let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
         if (fast == true) {
             cmdline = 'sudo nmap -sn -PO --host-timeout 30s  ' + range + ' -oX - | xml-json host';

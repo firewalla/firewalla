@@ -166,9 +166,16 @@ module.exports = class {
             if (err == null) {
                 publicIp.v4((err, ip) => {
                     if (err != null) {
-                        if (callback) 
-                            callback(err, null);
-                        return;
+                        log.error("VPNManager:INSTALL:Error IP",ip,err);
+                        ip = sysManager.myDDNS();
+                        if (ip == null) {
+                             ip = sysManager.publicIp;
+                        }
+                        if (ip == null) {
+                            if (callback) 
+                                callback(err, null);
+                            return;
+                        }
                     }
 
                     // !! Pay attention to the parameter "-E" which is used to preserve the

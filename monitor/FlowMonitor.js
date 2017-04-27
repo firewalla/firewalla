@@ -116,6 +116,15 @@ module.exports = class FlowMonitor {
         return false;
     }
 
+    garbagecollect() {
+      try {
+        if (global.gc) {
+          global.gc();
+        }
+      } catch(e) {
+      }
+    }
+
     flowIntel(flows) {
         for (let i in flows) {
             let flow = flows[i];
@@ -440,6 +449,8 @@ module.exports = class FlowMonitor {
             flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true,(err, result,activities2) => {
                 this.flowIntel(result);
                 this.summarizeNeighbors(host,result,'out');
+                if (callback) 
+                    callback();
             });
         });
     }
@@ -554,10 +565,10 @@ module.exports = class FlowMonitor {
     */
 
     run(service,period) {
+            log.info("FlowMonitor Running Process :", service);
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
-                for (let j in result) {
-                    let host = result[j];
+                async.eachLimit(result,2, (host, cb) => {
                     let listip = [];
                     listip.push(host.o.ipv4Addr);
                     if (host.ipv6Addr && host.ipv6Addr.length > 0) {
@@ -654,12 +665,17 @@ module.exports = class FlowMonitor {
                                 }
                             }
                         });
+                        cb();
                     } else if (service == "detect") {
                         log.info("Running Detect");
                         this.detect(listip, period, host, (err) => {
+                            cb();
                         });
                     }
-                }
+                }, (err)=> {
+                    log.info("FlowMonitor Running Process End :", service);
+                    this.garbagecollect();
+                });
             });
         }
         // Reslve v6 or v4 address into a local host
