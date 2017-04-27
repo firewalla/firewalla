@@ -101,7 +101,9 @@ function install_walla()
     # Skip bro installation if in docker environment, bro in apt repo will be used in Docker
     if [[ ! -f /.dockerenv ]]; then
         echo "Installing bro..." 
-        cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz -q
+        if [[ ! -f $basedir/imports/bro49.tar.gz ]]; then
+            cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz 
+        fi
         cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
         cp $basedir/bin/real/bit* $basedir/bin/ 
     fi
@@ -125,10 +127,11 @@ function install_walla()
 	# systemd will bring up firewalla service, which will bring up all the rest firewalla services
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."
-        sudo systemctl enable fireuprade || perr_and_exit "Failed to enable firewalla service."
+        sudo systemctl enable fireupgrade || perr_and_exit "Failed to enable firewalla service."
     fi
     sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`) || perr_and_exit "Failed setup capabilities for nodejs."
 
+    sudo mkdir /etc/update-motd.d >/dev/null 2>&1
     sudo cp $basedir/etc/10-header /etc/update-motd.d/10-header
 }
 

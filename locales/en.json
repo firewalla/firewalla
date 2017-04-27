@@ -1,4 +1,4 @@
 {
 	"hello": "hello",
-	"ALARM_PORN": "Device {{device_name}} visited porn website {{destination_domain}}."
+	"ALARM_PORN": "Device {{device_name}} visited porn website {{destinationID}}."
 }

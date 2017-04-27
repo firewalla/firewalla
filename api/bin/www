@@ -32,6 +32,26 @@ function run0() {
   }
 }
 
+let i18n = require('i18n');
+let rclient = require('redis').createClient();
+
+let language = 'en';
+
+rclient.hget("sys:config", "language", (err, result) => {
+  if(!err && result) {
+    language = result;
+  }
+
+  log.info("Process is running in language " + language);
+  
+  i18n.configure({
+    directory: __dirname + "/../../locales",
+    defaultLocale: language
+  });
+});
+
+
+
 /**
  * Module dependencies.
  */

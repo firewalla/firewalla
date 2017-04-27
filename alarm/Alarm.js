@@ -19,11 +19,11 @@ var uuid = require('uuid');
 
 class Alarm {
   constructor(type, timestamp, device, payloads) {
-    this.aid = uuid.v4();
+    this.aid = 0;
     this.type = type;
     this.device = device;
     this.payloads = payloads;
-    this.alarmTimestamp = new Date();
+    this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
 
     // check schema, minimal required key/value pairs in payloads

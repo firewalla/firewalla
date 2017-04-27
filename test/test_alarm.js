@@ -16,7 +16,7 @@ i18n.configure({
 });
 
 let error = null;
-let date = new Date();
+let date = new Date() / 1000;
 let a = new Alarm.VideoAlarm(date, "10.0.1.25", "VIDEO-1", {device_name: "My Macbook"});
 //let a = alarmManager2.createVideoAlarm(date, "10.0.1.25", {destination_domain: "pornhub.com", device_name: "My Macbook"});
 alarmManager2.saveAlarm(a, (err) => {
@@ -28,6 +28,15 @@ log.info(a.localizedMessage());
 
 let a2 = new Alarm.GameAlarm(date, "10.0.1.25", "SuperCell", {device_name: "My Macbook2"});
 log.info(a2.localizedMessage());
+
+let a3 = new Alarm.PornAlarm(date, "10.0.1.26", "Pornhub.com", {device_name: "My Macbook3"});
+log.info(a3.localizedMessage());
+
+let a4 = new Alarm.VideoAlarm(date, "10.0.1.27", "VIDEO-1", {device_name: "My Macbook"});
+
+alarmManager2.checkAndSave(a3, (err) => {
+  expect(err).to.be.null;
+})
 
 var b;
 
@@ -57,10 +66,20 @@ exceptionManager.saveException(e1, (err) => {
     exceptionManager.match(a, (err, result) => {
       expect(result).to.be.true;
     });
+    exceptionManager.match(a4, (err, result) => {
+      expect(result).to.be.true;
+    });
+
   });
 });
 
 expect(e1.match(a)).to.be.true;
+expect(e1.match(a4)).to.be.true;
 expect(e1.match(a2)).to.be.false;
+
+alarmManager2.loadActiveAlarms((err, alarms) => {
+  expect(err).to.be.null;
+  alarms.forEach((x) => console.log(x.aid + ">>>" + x.localizedMessage()));
+});
 
 setTimeout(() => process.exit(0), 3000);
