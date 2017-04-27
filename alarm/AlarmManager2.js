@@ -11,6 +11,11 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
+let Promise = require('promise');
+
+let IM = require('../net2/IntelManager.js')
+let im = new IM('info');
+
 let instance = null;
 
 let alarmActiveKey = "alarm_active";
@@ -177,6 +182,30 @@ module.exports = class {
   allowFromAlarm(alarmID, callback) {
     log.info("allow alarm " + alarmID);
     callback(null);
+  }
+
+  enrichOutboundAlarm(alarm) {
+    if(! alarm instanceof Alarm.OutboundAlarm) {
+      return Promise.reject(new Error("invalid alarm type"));
+    }
+
+    let destIP = alarm.getDestinationIPAddress();
+    let payloads = alarm.payloads;
+
+    return new Promise((resolve, reject) => {
+      im._location(destIP, (err, loc) => {
+        if(err)
+          reject(err);
+        let location = loc.loc;
+        let ll = location.split(",");
+        if(ll.length === 2) {
+          payloads.destinationLatitude = parseFloat(ll[0]);
+          payloads.destinationLongitude = parseFloat(ll[1]);        
+        }
+        payloads.destionationLocation = loc.country; // FIXME: need complete location info
+        resolve(alarm);
+      });
+    });
   }
 }
 

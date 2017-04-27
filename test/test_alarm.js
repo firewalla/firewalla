@@ -82,4 +82,16 @@ alarmManager2.loadActiveAlarms((err, alarms) => {
   alarms.forEach((x) => console.log(x.aid + ">>>" + x.localizedMessage()));
 });
 
+expect(a instanceof Alarm.OutboundAlarm).to.be.true;
+
+let a5 = new Alarm.VideoAlarm(date, "10.0.1.25", "VIDEO-1", {device_name: "My Macbook"});
+a5.setDestinationHostname("youtube.com");
+a5.setDestinationName("youtube.com");
+a5.setDestinationIPAddress("78.16.49.15");
+
+let promise = alarmManager2.enrichOutboundAlarm(a5);
+promise.then((alarm) => {
+  log.info(alarm.toString());
+});
+
 setTimeout(() => process.exit(0), 3000);
