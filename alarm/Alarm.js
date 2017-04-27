@@ -61,6 +61,11 @@ class Alarm {
 var extend = require('util')._extend
 
 class OutboundAlarm extends Alarm {
+  // payloads
+  //   destinationID
+  //   destinationName
+  //   destinationHostname
+  
   constructor(type, timestamp, device, destinationID, payloads) {
     payloads.destinationID = destinationID;
     if(profile[destinationID]) {
@@ -71,6 +76,30 @@ class OutboundAlarm extends Alarm {
 
   requiredKeys() {
     return super.requiredKeys().concat(["destinationID"]);
+  }
+
+  getDestinationHostname() {
+    return this.payloads.destinationHostname;
+  }
+
+  setDestinationHostname(hostname) {
+    this.payloads.destinationHostname = hostname;
+  }
+
+  getDestinationName() {
+    return this.payloads.destinationName;
+  }
+
+  setDestinationName(name) {
+    this.payloads.destinationName = name;
+  }
+
+  setDestinationIPAddress(ip) {
+    this.payloads.destinationIPAddress = ip;
+  }
+
+  getDestinationIPAddress() {
+    return this.payloads.destinationIPAddress;
   }
 }
 
@@ -98,6 +127,7 @@ class PornAlarm extends OutboundAlarm {
 
 module.exports = {
   Alarm: Alarm,
+  OutboundAlarm: OutboundAlarm,
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm

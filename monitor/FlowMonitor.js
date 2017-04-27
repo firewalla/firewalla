@@ -159,11 +159,20 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
-                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFLow(flow), actionobj);
-                      alarmManager2.checkAndSave(alarm, (err) => {
-                        if(!err) {
-                        }
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                      // ideally each destination should have a unique ID, now just use hostname as a workaround
+                      // so destionationName, destionationHostname, destionationID are the same for now
+                      alarm.setDestinationName(actionobj.dhname);
+                      alarm.setDestinationHostname(actionobj.dhname);
+                      alarm.setDestinationIPAddress(actionobj.dst);
+
+                      alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
+                          if(!err) {
+                          }
+                        });
                       });
+                      
                       
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
@@ -199,10 +208,17 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
+
                     let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
-                    alarmManager2.checkAndSave(alarm, (err) => {
-                      if(!err) {
-                      }
+                    alarm.setDestinationName(actionobj.dhname);
+                    alarm.setDestinationHostname(actionobj.dhname);
+                    alarm.setDestinationIPAddress(actionobj.dst);
+                    
+                    alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                      alarmManager2.checkAndSave(alarm, (err) => {
+                        if(!err) {
+                        }
+                      });
                     });
                     
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
