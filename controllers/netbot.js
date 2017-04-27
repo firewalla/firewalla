@@ -41,6 +41,13 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM2();
+
+let EM = require('../alarm/ExceptionManager.js');
+let em = new EM();
+
+
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
 
@@ -821,6 +828,15 @@ class netBot extends ControllerBot {
       case "timezone":
         this.simpleTxData(msg, {timezone: sysManager.timezone}, null, callback);
         break;
+      case "alarms":
+        am2.loadActiveAlarms((err, alarms) => {
+          this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
+        });
+        break;
+      case "exceptions":
+        em.loadExceptions((err, exceptions) => {
+          this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
+        });
       }
     }
 
@@ -1104,8 +1120,19 @@ class netBot extends ControllerBot {
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
-
-          default:
+        case "blockFromAlarm":
+          let alarmID = msg.data.value.alarmID;
+          am2.blockFromAlarm(alarmID, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        case "allowFromAlarm":
+          let alarmID2 = msg.data.value.alarmID;
+          am2.allowFromAlarm(alarmID2, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        default:
           // do nothing
         }
     }

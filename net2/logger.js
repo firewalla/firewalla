@@ -111,13 +111,13 @@ module.exports = function (component, loglevel, filename) {
                 return format;
               }
             });
-    var fileTransport =             new (winston.transports.File)({level:_loglevel,
-                                                                   name:'log-file',
-                                                                   filename: filename,
-                                                                   dirname: "/home/pi/logs",
-                                                                   maxsize: 100000,
-                                                                   maxFiles: 3,
-                                                                   timestamp:true });
+    var fileTransport = new (winston.transports.File)({level:_loglevel,
+                                                       name:'log-file',
+                                                       filename: filename,
+                                                       dirname: "/home/pi/logs",
+                                                       maxsize: 100000,
+                                                       maxFiles: 3,
+                                                       timestamp:true });
   
     let transports = [fileTransport];
  

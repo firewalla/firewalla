@@ -149,6 +149,13 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFLow(flow), actionobj);
+                      alarmManager2.checkAndSave(alarm, (err) => {
+                        if(!err) {
+                        }
+                      });
+                      
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
@@ -183,13 +190,11 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
-                    let alarm = new PornAlarm(flow.ts, flow["shnname"], flowUtil.dhnameFlow(flow), actionobj);
+                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
                     alarmManager2.checkAndSave(alarm, (err) => {
                       if(!err) {
-                        audit.trace("Alarm", alarm.aid, "is saved");
                       }
                     });
-                    
                     
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj!=null) {
