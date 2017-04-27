@@ -1,0 +1,6 @@
+{
+	"hello": "你好",
+	"ALARM_PORN": "设备{{device_name}}访问了色情网站{{destinationID}}.",
+	"ALARM_VIDEO": "设备{{device_name}}访问了视频网站{{videoName}}.",
+	"ALARM_GAME": "设备{{device_name}}玩了游戏{{gameName}}."
+}

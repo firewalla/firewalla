@@ -41,6 +41,13 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM2();
+
+let EM = require('../alarm/ExceptionManager.js');
+let em = new EM();
+
+
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
 
@@ -229,6 +236,20 @@ class netBot extends ControllerBot {
             });
         });
     }
+
+  _scisurf(ip, value, callback) {
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("scisurf", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on scisurf: " + value);
+        }
+      });
+    });
+  }
 
   _dnsmasq(ip, value, callback) {
     this.hostManager.loadPolicy((err, data) => {
@@ -479,8 +500,10 @@ class netBot extends ControllerBot {
         // data.item = policy
         // data.value = {'block':1},
         //
-        //       log.info("Set: ",gid,msg);
-        if (msg.data.item == "policy") {
+      //       log.info("Set: ",gid,msg);
+
+      switch(msg.data.item) {
+      case "policy":
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
             switch(o) {
               case "monitor":
@@ -517,7 +540,12 @@ class netBot extends ControllerBot {
                 this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
                     cb(err);
                 });
-                break;
+              break;
+            case "scisurf":
+              this._scisurf(msg.target, msg.data.value.scisurf, (err, obj) => {
+                cb(err);
+              });
+              break;
               case "dnsmasq":
                 this._dnsmasq(msg.target, msg.data.value.dnsmasq, (err, obj) => {
                   cb(err);
@@ -565,8 +593,9 @@ class netBot extends ControllerBot {
                     this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
 
           });
-        } else if (msg.data.item === "host") {
-            //data.item = "host" test
+        break;
+      case "host":
+        //data.item = "host" test
             //data.value = "{ name: " "}"                           
             let data = msg.data;
             log.info("Setting Host", msg);
@@ -607,8 +636,9 @@ class netBot extends ControllerBot {
                     }
                 });
             });
-        } else if (msg.data.item === "intel") {
-            // intel actions
+        break;
+      case "intel":
+         // intel actions
             //   - ignore / unignore
             //   - report 
             //   - block / unblockj
@@ -623,8 +653,41 @@ class netBot extends ControllerBot {
                 reply.code = 200;
                 this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
             });
+        break;
+      case "scisurfconfig":
+        let v = msg.data.value;
+        
+        // TODO validate input ??
+        if(v.from && v.from === "firewalla") {
+          let scisurf = require('../extension/ss_client/ss_client.js');
+          scisurf.saveConfig(v, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        } else {
+          this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
         }
+        
+        break;
+      case "language":
+        let v2 = msg.data.value;
 
+        // TODO validate input?
+        if(v2.language) {
+          sysmanager.setLanguage(v2.language, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
+      case "timezone":
+        let v3 = msg.data.value;
+
+        if(v3.timezone) {
+          sysmanager.setTimezone(v3, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
+      }
     }
 
 
@@ -753,6 +816,27 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, results, null, callback);
         });
         break;
+      case "scisurfconfig":
+        let ssc = require('../extension/ss_client/ss_client.js');
+        ssc.loadConfig((err, result) => {
+          this.simpleTxData(msg, result, err, callback);
+        });
+        break;
+      case "language":
+        this.simpleTxData(msg, {language: sysManager.language}, null, callback);
+        break;
+      case "timezone":
+        this.simpleTxData(msg, {timezone: sysManager.timezone}, null, callback);
+        break;
+      case "alarms":
+        am2.loadActiveAlarms((err, alarms) => {
+          this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
+        });
+        break;
+      case "exceptions":
+        em.loadExceptions((err, exceptions) => {
+          this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
+        });
       }
     }
 
@@ -1004,6 +1088,20 @@ class netBot extends ControllerBot {
             });
           break;
 
+        case "resetSciSurfConfig":
+          let ssc = require('../extension/ss_client/ss_client.js');
+          ssc.stop((err) => {
+            // stop should always succeed
+            if(err) {
+              // stop again if failed
+              ssc.stop((err) => {});
+            }
+            ssc.clearConfig((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+          });
+          break;
+
         case "ping":
             let uptime = process.uptime();
             let now = new Date();
@@ -1022,8 +1120,19 @@ class netBot extends ControllerBot {
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
-
-          default:
+        case "blockFromAlarm":
+          let alarmID = msg.data.value.alarmID;
+          am2.blockFromAlarm(alarmID, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        case "allowFromAlarm":
+          let alarmID2 = msg.data.value.alarmID;
+          am2.allowFromAlarm(alarmID2, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        default:
           // do nothing
         }
     }
@@ -1034,9 +1143,11 @@ class netBot extends ControllerBot {
 
     getDefaultResponseDataModel(msg, data, err) {
       var code = 200;
+      var message = "";
       if(err) {
-        log.error("Got error before simpleTxData: ", err);
+        log.error("Got error before simpleTxData: " + err);
         code = 500;
+        message = err + "";
       }
 
       let datamodel = {
@@ -1046,7 +1157,8 @@ class netBot extends ControllerBot {
                     expires: Math.floor(Date.now() / 1000) + 60 * 5,
                     replyid: msg.id,
                     code: code,
-                    data: data
+        data: data,
+        message: message
             };
       return datamodel;
     }

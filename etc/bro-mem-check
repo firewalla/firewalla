@@ -8,7 +8,7 @@ mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
 (( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
-(( mem <= 40 )) && top -b -n 1 -o %MEM | head -n 40 >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 40 )) && curl http://localhost:8834/v1/sys/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 40 )) &&  /home/pi/firewalla/scripts/fire-reboot
 (( mem <= 65 )) && /home/pi/firewalla/scripts/free-memory
 

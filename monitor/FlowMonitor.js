@@ -23,6 +23,12 @@ var rclient = redis.createClient();
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
+let Alarm = require('../alarm/Alarm.js');
+let AlarmManager2 = require('../alarm/AlarmManager2.js');
+let alarmManager2 = new AlarmManager2();
+
+let audit = require('../util/audit.js');
+
 var uuid = require('uuid');
 
 rclient.on("error", function (err) {
@@ -112,11 +118,11 @@ module.exports = class FlowMonitor {
 
     garbagecollect() {
       try {
-      if (global.gc) {
-       global.gc();
+        if (global.gc) {
+          global.gc();
+        }
+      } catch(e) {
       }
-    } catch(e) {
-    }
     }
 
     flowIntel(flows) {
@@ -152,6 +158,22 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                      // ideally each destination should have a unique ID, now just use hostname as a workaround
+                      // so destionationName, destionationHostname, destionationID are the same for now
+                      alarm.setDestinationName(actionobj.dhname);
+                      alarm.setDestinationHostname(actionobj.dhname);
+                      alarm.setDestinationIPAddress(actionobj.dst);
+
+                      alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
+                          if(!err) {
+                          }
+                        });
+                      });
+                      
+                      
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
@@ -162,7 +184,13 @@ module.exports = class FlowMonitor {
                         });
                     }
                 } else if (c=="porn") {
-                    if ((flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>3000000) || this.flowIntelRecordFlow(flow,3)) {
+                  if ((flow.du && Number(flow.du)>60) &&
+                      (flow.rb && Number(flow.rb)>3000000) ||
+                      this.flowIntelRecordFlow(flow,3)) {
+
+                    // there should be a unique ID between pi and cloud on websites
+                    
+
                         let msg = "Watching porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Questionable Action",
@@ -179,6 +207,20 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+
+
+                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                    alarm.setDestinationName(actionobj.dhname);
+                    alarm.setDestinationHostname(actionobj.dhname);
+                    alarm.setDestinationIPAddress(actionobj.dst);
+                    
+                    alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                      alarmManager2.checkAndSave(alarm, (err) => {
+                        if(!err) {
+                        }
+                      });
+                    });
+                    
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj!=null) {
                                   this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {

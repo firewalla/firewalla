@@ -33,6 +33,7 @@ let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
 let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = null;
+let upstreamDNS = null;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
@@ -65,6 +66,31 @@ module.exports = class {
     // TODO
   }
 
+  // in format 127.0.0.1#5353
+  setUpstreamDNS(dns) {
+    if(dns === upstreamDNS) {
+      log.info("upstreamdns is same as dns, ignored. (" + dns + ")");
+      return;
+    }
+    
+    log.info("upstream dns is set to", dns);
+    upstreamDNS = dns;
+
+    this.checkStatus((enabled) => {
+      if(enabled) {
+        this.start(false, (err) => {
+          if(err) {
+            log.error("Failed to restart dnsmasq to apply new upstream dns");
+          } else {
+            log.info("dnsmasq is restarted to apply new upstream dns");
+          }
+        });
+      } else {
+        // do nothing if it is not enabled
+      }
+    });
+  }
+  
   updateResolvConf(callback) {
     callback = callback || function() {}
     
@@ -263,6 +289,11 @@ module.exports = class {
 
     // use restart to ensure the latest configuration is loaded
     let cmd = util.format("sudo %s.$(uname -m) -x %s -u %s -C %s -r %s --local-service", dnsmasqBinary, dnsmasqPIDFile, userID, dnsmasqConfigFile, dnsmasqResolvFile);
+
+    if(upstreamDNS) {
+      log.info("upstream server", upstreamDNS, "is specified");
+      cmd = util.format("%s --server=%s", cmd, upstreamDNS);
+    }
 
     log.info("Command to start dnsmasq: ", cmd);
 
