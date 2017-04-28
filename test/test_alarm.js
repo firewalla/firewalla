@@ -20,6 +20,7 @@ i18n.configure({
 let error = null;
 let date = new Date() / 1000;
 let a = new Alarm.VideoAlarm(date, "10.0.1.25", "VIDEO-1", {"p.device.name": "My Macbook"});
+a["p.device.id"] = "1";
 //let a = alarmManager2.createVideoAlarm(date, "10.0.1.25", {destination_domain: "pornhub.com", device_name: "My Macbook"});
 alarmManager2.saveAlarm(a, (err) => {
   expect(err).to.be.null;
@@ -30,12 +31,15 @@ log.info(a.localizedMessage());
 expect(alarmManager2.validateAlarm(a)).to.be.true;
 
 let a2 = new Alarm.GameAlarm(date, "10.0.1.25", "SuperCell", {"p.device.name": "My Macbook2"});
+a2["p.device.id"] = "1";
 log.info(a2.localizedMessage());
 
 let a3 = new Alarm.PornAlarm(date, "10.0.1.26", "Pornhub.com", {"p.device.name": "My Macbook3"});
+a3["p.device.id"] = "1";
 log.info(a3.localizedMessage());
 
 let a4 = new Alarm.VideoAlarm(date, "10.0.1.27", "VIDEO-1", {"p.device.name": "My Macbook"});
+a4["p.device.id"] = "1";
 
 alarmManager2.checkAndSave(a3, (err) => {
   if(err) {
@@ -88,6 +92,7 @@ let a5 = new Alarm.VideoAlarm(date, "10.0.1.25", "VIDEO-1", {"p.device.name": "M
 a5.setDestinationHostname("youtube.com");
 a5.setDestinationName("youtube.com");
 a5.setDestinationIPAddress("78.16.49.15");
+a5["p.device.id"] = "1";
 
 let promise = alarmManager2.enrichOutboundAlarm(a5);
 promise.then((alarm) => {

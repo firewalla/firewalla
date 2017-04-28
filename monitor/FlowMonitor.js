@@ -159,7 +159,11 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
-                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow));
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                        "p.device.id" : actionobj.shname,
+                        "p.device.name" : actionobj.shname
+                      });
+                      
                       // ideally each destination should have a unique ID, now just use hostname as a workaround
                       // so destionationName, destionationHostname, destionationID are the same for now
                       alarm.setDestinationName(actionobj.dhname);
@@ -209,7 +213,11 @@ module.exports = class FlowMonitor {
                         };
 
 
-                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow));
+                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                      "p.device.id" : actionobj.shname,
+                      "p.device.name" : actionobj.shname
+                    });
+                    
                     alarm.setDestinationName(actionobj.dhname);
                     alarm.setDestinationHostname(actionobj.dhname);
                     alarm.setDestinationIPAddress(actionobj.dst);
@@ -307,6 +315,25 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+                      
+                      let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                        "p.device.id" : actionobj.shname,
+                        "p.device.name" : actionobj.shname
+                      });
+                      
+                      // ideally each destination should have a unique ID, now just use hostname as a workaround
+                      // so destionationName, destionationHostname, destionationID are the same for now
+                      alarm.setDestinationName(actionobj.dhname);
+                      alarm.setDestinationHostname(actionobj.dhname);
+                      alarm.setDestinationIPAddress(actionobj.dst);
+
+                      alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
+                          if(!err) {
+                          }
+                        });
+                      });
+
                         alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
                             if (obj!=null) {
                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {

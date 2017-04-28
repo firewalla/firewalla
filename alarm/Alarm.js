@@ -46,7 +46,7 @@ class Alarm {
   }
 
   requiredKeys() {
-    return [];
+    return ["p.device.name", "p.device.id"];
   }
 
   // check schema, minimal required key/value pairs in payloads
@@ -110,10 +110,6 @@ class OutboundAlarm extends Alarm {
 class VideoAlarm extends OutboundAlarm {
   constructor(timestamp, device, videoID, info) {
     super("ALARM_VIDEO", timestamp, device, videoID, info);
-  }
-
-  requiredKeys() {
-    return super.requiredKeys().concat(["p.device.name"]);
   }
 }
 
