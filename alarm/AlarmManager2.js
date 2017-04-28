@@ -154,10 +154,17 @@ module.exports = class {
     });
   }
 
-  loadActiveAlarms(callback) {
+  // top 20 only by default
+  loadActiveAlarms(number, callback) {
+
+    if(typeof(number) == 'function') {
+      callback = number;
+      number = 20;
+    }
+    
     callback = callback || function() {}
 
-    rclient.zrange(alarmActiveKey, 0, -1, (err, results) => {
+    rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
       if(err) {
         log.error("Failed to load active alarms: " + err);
         callback(err);
