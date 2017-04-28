@@ -1,4 +1,6 @@
 {
-	"hello": "hello",
-	"ALARM_PORN": "Device {{p.device.name}} visited porn website {{p.dest.name}}."
+  "hello": "hello",
+  "ALARM_PORN": "Device {{p.device.name}} visited porn website {{p.dest.name}}.",
+  "ALARM_VIDEO": "Device {{p.device.name}} visited video website {{p.dest.name}}.",
+  "ALARM_GAME": "Device {{p.device.name}} visited game website {{p.dest.name}}."
 }
