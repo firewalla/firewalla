@@ -86,6 +86,18 @@ module.exports = class {
       callback(err);
     });
   }
+
+  validateAlarm(alarm) {
+    let keys = alarm.requiredKeys();
+    for(var i = 0; i < keys.length; i++) {
+      let k = keys[i];
+      if(!alarm[k]) {
+        log.error("Invalid payload for " + this.type + ", missing " + k);
+        return false;
+      }
+    }
+    return true;
+  }
   
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
@@ -110,7 +122,7 @@ module.exports = class {
 
         this.addToActiveQueue(alarm, (err) => {
           if(!err) {
-            audit.trace("Created alarm", alarm.type, "on", alarm.device, ":", util.inspect(alarm.payloads));
+            audit.trace("Created alarm", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
             this.publisher.publish("ALARM", "ALARM:CREATED", alarm.aid);
           }
           
@@ -123,13 +135,16 @@ module.exports = class {
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
 
-    exceptionManager.match(alarm, (err, result) => {
+    exceptionManager.match(alarm, (err, result, matches) => {
       if(err) {
         callback(err);
         return;
       }
 
       if(result) {
+        matches.forEach((e) => {
+          log.info("Matched Exception: " + e.rules);
+        });
         callback(new Error("exception covered"));
         return;
       }
@@ -163,8 +178,8 @@ module.exports = class {
         }
 
         let processResult = function(result) {
-          let unflatten = flat.unflatten(result);
-          let obj = Object.assign(Object.create(Alarm.Alarm.prototype), unflatten);
+//          let unflatten = flat.unflatten(result);
+          let obj = Object.assign(Object.create(Alarm.Alarm.prototype), result);
           obj.message = obj.localizedMessage();
           return obj;
         }
@@ -190,7 +205,6 @@ module.exports = class {
     }
 
     let destIP = alarm.getDestinationIPAddress();
-    let payloads = alarm.payloads;
 
     return new Promise((resolve, reject) => {
       im._location(destIP, (err, loc) => {
@@ -199,10 +213,10 @@ module.exports = class {
         let location = loc.loc;
         let ll = location.split(",");
         if(ll.length === 2) {
-          payloads.destinationLatitude = parseFloat(ll[0]);
-          payloads.destinationLongitude = parseFloat(ll[1]);        
+          alarm["p.dest.latitude"] = parseFloat(ll[0]);
+          alarm["p.dest.longitude"] = parseFloat(ll[1]);        
         }
-        payloads.destionationLocation = loc.country; // FIXME: need complete location info
+        alarm["p.dest.location"] = loc.country; // FIXME: need complete location info
         resolve(alarm);
       });
     });

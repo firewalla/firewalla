@@ -159,7 +159,7 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
-                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow));
                       // ideally each destination should have a unique ID, now just use hostname as a workaround
                       // so destionationName, destionationHostname, destionationID are the same for now
                       alarm.setDestinationName(actionobj.dhname);
@@ -209,7 +209,7 @@ module.exports = class FlowMonitor {
                         };
 
 
-                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow));
                     alarm.setDestinationName(actionobj.dhname);
                     alarm.setDestinationHostname(actionobj.dhname);
                     alarm.setDestinationIPAddress(actionobj.dst);

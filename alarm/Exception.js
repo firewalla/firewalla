@@ -5,23 +5,36 @@ let jsonfile = require('jsonfile');
 let util = require('util');
 let Alarm = require('./Alarm.js')
 
+var extend = require('util')._extend
+
 module.exports = class {
   constructor(rules) {
-    this.rules = rules;
+    // FIXME: ignore any rules not begin with prefix "p"
+    extend(this, rules);
   }
 
   match(alarm) {
-    let payloads = alarm.payloads;
+
+    let matched = false;
     
     // FIXME: exact match only for now, and only supports String
-    for(var key in this.rules) {
-      var val = this.rules[key];
-      if(!payloads[key]) return false;
+    for (var key in this) {
+      
+      if(!key.startsWith("p.")) {
+        continue;
+      }
+      
+      var val = this[key];
+      console.log(val);
+      if(!alarm[key]) return false;
 
-      let val2 = payloads[key];
+      let val2 = alarm[key];
+      console.log(val2);
       if(val2 !== val) return false;
-    }
 
-    return true;
+      matched = true;
+    }
+    
+    return matched;
   }
 }
