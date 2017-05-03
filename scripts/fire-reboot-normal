@@ -5,9 +5,10 @@ logger "FIREWALLA REBOOT NORMAL"
 sudo pkill bitbridge
 sudo pkill fire-ping
 sudo pkill sleep
-sleep 2
+sleep 4
 crontab -r
 #sudo sh -c 'echo V > /dev/watchdog'
+sudo /home/pi/firewalla/scripts/fake-hwclock
 sync
 sync
 sync
