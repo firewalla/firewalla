@@ -8,6 +8,9 @@ sudo pkill sleep
 sleep 2
 crontab -r
 #sudo sh -c 'echo V > /dev/watchdog'
+
+# Save fake hwclock before force reboot
+sudo fake-hwclock
 sync
 sync
 sync
