@@ -12,7 +12,7 @@ crontab -r
 # Save fake hwclock before force reboot
 sudo fake-hwclock
 # flush syslog
-/etc/cron.hourly/log2ram
+sudo /etc/cron.hourly/log2ram
 sync
 sync
 sync
