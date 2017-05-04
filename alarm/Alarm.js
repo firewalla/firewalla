@@ -12,6 +12,8 @@ var uuid = require('uuid');
 
 var extend = require('util')._extend
 
+
+
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
 //   device (each alarm should have a related device)
@@ -151,11 +153,19 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+let classMapping = {
+  ALARM_PORN: PornAlarm.prototype,
+  ALARM_VIDEO: VideoAlarm.prototype,
+  ALARM_GAME: GameAlarm.prototype,
+  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype
+}
+
 module.exports = {
   Alarm: Alarm,
   OutboundAlarm: OutboundAlarm,
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
-  LargeTransferAlarm: LargeTransferAlarm
+  LargeTransferAlarm: LargeTransferAlarm,
+  mapping: classMapping
 }

@@ -11,7 +11,8 @@ let defaultLocale = "en";
 console.log(f.getLocalesDirectory());
 i18n.configure({
   directory: f.getLocalesDirectory(),
-  defaultLocale: defaultLocale
+  defaultLocale: defaultLocale,
+  updateFiles: false
 });
 
 function m(msgTemplate, info) {

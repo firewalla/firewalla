@@ -186,7 +186,7 @@ module.exports = class {
 
         let processResult = function(result) {
 //          let unflatten = flat.unflatten(result);
-          let obj = Object.assign(Object.create(Alarm.Alarm.prototype), result);
+          let obj = Object.assign(Object.create(Alarm.mapping[result.type]), result);
           obj.message = obj.localizedMessage();
           return obj;
         }
