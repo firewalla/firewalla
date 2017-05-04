@@ -223,7 +223,7 @@ module.exports = class {
           alarm["p.dest.latitude"] = parseFloat(ll[0]);
           alarm["p.dest.longitude"] = parseFloat(ll[1]);        
         }
-        alarm["p.dest.location"] = loc.country; // FIXME: need complete location info
+        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
         resolve(alarm);
       });
     });

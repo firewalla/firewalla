@@ -6,7 +6,7 @@ let util = require('util');
 
 // FIXME: this profile should be loaded from cloud
 let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
-let i18n = require('i18n');
+let i18n = require('../util/i18n.js');
 
 var uuid = require('uuid');
 
@@ -37,12 +37,24 @@ class Alarm {
     return;
   }
 
+  getI18NCategory() {
+    return this.type;
+  }
+  
   localizedMessage() {
-    return i18n.__(this.type, this);
+    return i18n.__(this.getI18NCategory(), this.toJsonObject());
   }
 
   toString() {
     return util.inspect(this);
+  }
+
+  toJsonObject() {
+    let obj = {};
+    for(var p in this) {
+      obj[p] = this[p];
+    }
+    return obj;
   }
 
   requiredKeys() {
@@ -107,6 +119,20 @@ class OutboundAlarm extends Alarm {
   }
 }
 
+class LargeTransferAlarm extends OutboundAlarm {
+  constructor(timestamp, device, destID, info) {
+    super("ALARM_LARGE_UPLOAD", timestamp, device, destID, info);
+  }
+
+  getI18NCategory() {
+    if(this["p.local_is_client"] === 1) {
+      return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
+    } else {
+      return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
+    }
+  }
+}
+
 class VideoAlarm extends OutboundAlarm {
   constructor(timestamp, device, videoID, info) {
     super("ALARM_VIDEO", timestamp, device, videoID, info);
@@ -130,5 +156,6 @@ module.exports = {
   OutboundAlarm: OutboundAlarm,
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
-  PornAlarm: PornAlarm
+  PornAlarm: PornAlarm,
+  LargeTransferAlarm: LargeTransferAlarm
 }

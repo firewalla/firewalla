@@ -11,11 +11,7 @@ let alarmManager2 = new AlarmManager2();
 
 let util = require('util');
 
-let i18n = require('i18n');
-i18n.configure({
-  directory: __dirname + "/../locales",
-  defaultLocale: 'zh'
-});
+let i18n = require('../util/i18n.js');
 
 let error = null;
 let date = new Date() / 1000;
@@ -101,6 +97,25 @@ promise.then((alarm) => {
 
 alarmManager2.loadActiveAlarms((err, results) => {
   results.forEach((x) => console.log(x));
+});
+
+let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
+  "p.device.id" : "m1",
+  "p.device.name" : "Macbook Pro",
+  "p.device.ip" : "10.0.1.28",
+  "p.device.port" : 8848,
+  "p.dest.ip": "140.206.133.90",
+  "p.dest.port" : 443,
+  "p.transfer.outbound.size" : 12345,
+  "p.transfer.inbound.size" : 54321,
+  "p.local_is_client": 1
+});
+
+alarmManager2.enrichOutboundAlarm(a6).then((alarm) => {
+  alarmManager2.checkAndSave(alarm, (err) => {
+    if(!err) {
+    }
+  });
 });
 
 setTimeout(() => process.exit(0), 3000);

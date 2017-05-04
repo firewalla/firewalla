@@ -653,7 +653,33 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
-                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
+
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.sh), {
+                                                "p.device.id" : flow.dhname,
+                                                "p.device.name" : flow.dhname,
+                                                "p.device.ip" : flow.dh,
+                                                "p.device.port" : flow.dp,
+                                                "p.dest.ip": flow.sh,
+                                                "p.dest.port" : flow.sp,
+                                                "p.transfer.outbound.size" : flow.rb,
+                                                "p.transfer.inbound.size" : flow.ob,
+                                                "p.local_is_client": 0 // connection is initiated from local
+                                              });
+                                              
+                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                              // so destionationName, destionationHostname, destionationID are the same for now
+                                              alarm.setDestinationName(actionobj.dhname);
+                                              alarm.setDestinationHostname(actionobj.dhname);
+                                              alarm.setDestinationIPAddress(actionobj.dst);
+                                              
+                                              alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                                                alarmManager2.checkAndSave(alarm, (err) => {
+                                                  if(!err) {
+                                                  }
+                                                });
+                                              });
+                                              
+                                              alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
                                                   if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "out",
@@ -693,6 +719,31 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
+
+                                              // flow in means connection initiated from inside
+                                              // flow out means connection initiated from outside (more dangerous)
+                                              
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname, {
+                                                "p.device.id" : flow.shname,
+                                                "p.device.name" : flow.shname,
+                                                "p.device.ip" : flow.sh,
+                                                "p.device.port" : flow.sp,
+                                                "p.dest.ip": flow.dh,
+                                                "p.dest.port" : flow.dp,
+                                                "p.transfer.outbound.size" : flow.ob,
+                                                "p.transfer.inbound.size" : flow.rb,
+                                                "p.local_is_client": 1 // connection is initiated from local
+                                              });
+                                              
+                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                              // so destionationName, destionationHostname, destionationID are the same for now
+                                              alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                                                alarmManager2.checkAndSave(alarm, (err) => {
+                                                  if(!err) {
+                                                  }
+                                                });
+                                              });
+
                                                 alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
                                                   if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {

@@ -1,6 +1,9 @@
 {
-	"hello": "你好",
-	"ALARM_PORN": "设备{{p.device.name}}访问了色情网站{{p.dest.id}}.",
-	"ALARM_VIDEO": "设备{{p.device.name}}访问了视频网站{{p.dest.name}}.",
-	"ALARM_GAME": "设备{{p.device.name}}玩了游戏{{p.dest.name}}."
+  "hello": "你好",
+  "ALARM_PORN": "设备{{p.device.name}}访问了色情网站{{p.dest.id}}.",
+  "ALARM_PORN2": "设备{{p.device.name}}访问了色情网站{{pdevice}}.",
+  "ALARM_VIDEO": "设备{{p.device.name}}访问了视频网站{{p.dest.name}}.",
+  "ALARM_GAME": "设备{{p.device.name}}玩了游戏{{p.dest.name}}.",
+  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "上传了{{p.transfer.outbound.size}}字节数据到{{p.dest.ip}}",
+  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "上传了{{p.transfer.outbound.size}}字节数据到{{p.dest.ip}}"
 }
