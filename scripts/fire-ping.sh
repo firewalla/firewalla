@@ -5,6 +5,7 @@
 # this should deal with /dev/watchdog
 mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+(( mem <= 20 )) && logger "REBOOT: Memory less than 20 $mem"
 (( mem <= 20 )) && /home/pi/firewalla/scripts/fire-rebootf
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
@@ -28,7 +29,7 @@ done
 
 api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
 if [[ $api_process_cnt > 0 ]]; then
-   /usr/bin/logger "FIREWALLA PING NO Local Network REBOOT "
+   /usr/bin/logger "REBOOT: FIREWALLA PING NO Local Network REBOOT "
    /home/pi/firewalla/scripts/fire-rebootf 
    exit 0
 fi

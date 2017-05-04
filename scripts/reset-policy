@@ -10,4 +10,5 @@ sudo sysctl stop fireapi
 sudo sysctl stop firemon
 redis-cli KEYS "policy:*" | xargs redis-cli DEL
 sync
+logger "REBOOT: User Reset Policy"
 /home/pi/firewalla/scripts/fire-reboot-normal

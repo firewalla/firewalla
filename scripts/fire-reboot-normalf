@@ -1,5 +1,5 @@
 #!/bin/bash -
-logger "FIREWALLA REBOOT NORMAL"
+logger "FIREWALLA REBOOT NORMAL FORCED"
 #sudo sh -c 'echo V > /dev/watchdog'
 #sudo sh -c 'echo V > /dev/watchdog'
 sudo pkill bitbridge
