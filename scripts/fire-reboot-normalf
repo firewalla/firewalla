@@ -11,6 +11,8 @@ crontab -r
 
 # Save fake hwclock before force reboot
 sudo fake-hwclock
+#copy syslog backup
+sudo cp /var/log/syslog{,.last_reboot_snapshot}
 sync
 sync
 sync
