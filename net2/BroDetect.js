@@ -730,7 +730,10 @@ module.exports = class {
                 }
             }
 
-            if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
+          if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
+            tmpspec.sp = obj['id.orig_p'];
+            tmpspec.dp = obj['id.resp_p'];
+            
                 let portflowkey = obj.proto+"."+obj['id.resp_p'];
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
