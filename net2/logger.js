@@ -35,7 +35,7 @@ var devDebug = {
    'SysManager':'info',
    'PolicyManager':'info',
    'main':'info',
-   'FlowMonitor':'debug'
+   'FlowMonitor':'info'
 };
   
 var productionDebug = {
