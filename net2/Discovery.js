@@ -41,7 +41,7 @@ var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
 
 let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM();
+let am2 = new AM2();
 
 var async = require('async');
 
