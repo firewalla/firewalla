@@ -25,8 +25,6 @@ var bonjour = require('bonjour')();
 
 let l2 = require('../util/Layer2.js');
 
-let mac = require('mac-lookup')
-
 var redis = require("redis");
 var rclient = redis.createClient();
 
@@ -40,6 +38,7 @@ var sysManager = new SysManager('info');
 var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
 
+let Alarm = require('../alarm/Alarm.js');
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
 
@@ -113,11 +112,12 @@ module.exports = class {
         callback = callback || function() {}
 
         this.discoverInterfaces((err, list) => {
-            log.info("Discovery::Scan", this.config.discovery.networkInterfaces, list);
-            for (let i in this.config.discovery.networkInterfaces) {
+          log.info("Discovery::Scan", this.config.discovery.networkInterfaces, list);
+          for (let i in this.config.discovery.networkInterfaces) {
+
                 let intf = this.interfaces[this.config.discovery.networkInterfaces[i]];
                 if (intf != null) {
-                    log.debug("Prepare to scan subnet", intf);
+                  log.debug("Prepare to scan subnet", intf, {});
                     if (this.nmap == null) {
                         this.nmap = new Nmap(intf.subnet,false);
                     }
@@ -288,8 +288,8 @@ module.exports = class {
 
                                   l2.getMACAndVendor(host.ipv4Addr, (err, result) => {
                                     
-                                    let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, name, {
-                                      "p.device.name": name,
+                                    let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, name || host.ipv4Addr, {
+                                      "p.device.name": name || host.ipv4Addr,
                                       "p.device.ip": host.ipv4Addr,
                                       "p.device.mac": result.mac_address,
                                       "p.device.vendor": result.mac_address_vendor
@@ -561,6 +561,8 @@ module.exports = class {
                             // old mac based on this ip does not match the mac
                             // tell the old mac, that it should have the new ip, if not change it
                         } else {
+                          log.info("A new host is found: " + host.uid);
+                          
                             let c = this.hostCache[host.uid];
                             if (c && Date.now() / 1000 < c.expires) {
                                 host.name = c.name;
@@ -582,7 +584,6 @@ module.exports = class {
                 });
                 if (host.mac != null) {
                     let key = "host:mac:" + host.mac.toUpperCase();;
-                    log.debug("Discovery:Mac:Scan:Found", key, host.mac);
                     let newhost = false;
                     rclient.hgetall(key, (err, data) => {
                         if (err == null) {
@@ -627,8 +628,8 @@ module.exports = class {
                                 
                                 l2.getMACAndVendor(host.ipv4Addr, (err, result) => {
                                   
-                                  let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, data.bname || data.name, {
-                                    "p.device.name": data.bname || data.name,
+                                  let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, data.bname || data.name || host.ipv4Addr, {
+                                    "p.device.name": data.bname || data.name || host.ipv4Addr,
                                     "p.device.ip": host.ipv4Addr,
                                     "p.device.mac": result.mac_address,
                                     "p.device.vendor": result.mac_address_vendor
