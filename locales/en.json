@@ -3,6 +3,7 @@
   "ALARM_PORN": "Device {{p.device.name}} visited porn website {{p.dest.name}}.",
   "ALARM_VIDEO": "Device {{p.device.name}} visited video website {{p.dest.name}}.",
   "ALARM_GAME": "Device {{p.device.name}} visited game website {{p.dest.name}}.",
-  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "Uploaded {{p.transfer.outbound.size}} bytes data to {{p.dest.ip}}",
-  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "Uploaded {{p.transfer.outbound.size}} bytes data to {{p.dest.ip}}"
+  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "{{p.device.name}} uploaded {{p.transfer.outbound.humansize}} data to {{p.dest.name}}",
+  "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "{{p.device.name}} uploaded {{p.transfer.outbound.humansize}} data to {{p.dest.name}}"
+  "ALARM_NEW_DEVICE": "Found new device: {{p.device.name}}"
 }

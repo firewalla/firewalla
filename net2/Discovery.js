@@ -23,6 +23,10 @@ var Nmap = require('./Nmap.js');
 var instances = {};
 var bonjour = require('bonjour')();
 
+let l2 = require('../util/Layer2.js');
+
+let mac = require('mac-lookup')
+
 var redis = require("redis");
 var rclient = redis.createClient();
 
@@ -35,6 +39,9 @@ var sysManager = new SysManager('info');
 
 var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('debug');
+
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM();
 
 var async = require('async');
 
@@ -277,15 +284,33 @@ module.exports = class {
                                 if (err) {
                                     log.error("Discovery:Nmap:Create:Error", err);
                                 } else {
-                                    let d = JSON.parse(JSON.stringify(host));
-                                    let actionobj = {
-                                         title: "New Host",
-                                         actions: ["hblock","ignore"],
-                                         target: host.ipv4Addr,
-                                    }
-                                    alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
-                                        this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                  // Found a new host via Bonjour Scan
+
+                                  l2.getMACAndVendor(host.ipv4Addr, (err, result) => {
+                                    
+                                    let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, name, {
+                                      "p.device.name": name,
+                                      "p.device.ip": host.ipv4Addr,
+                                      "p.device.mac": result.mac_address,
+                                      "p.device.vendor": result.mac_address_vendor
                                     });
+                                    
+                                    am2.checkAndSave(alarm, (err) => {
+                                      if(err) {
+                                        log.error("Failed to save new alarm: " + err);
+                                      }                                       
+                                    });   
+                                  });
+                                  
+                                  let d = JSON.parse(JSON.stringify(host));
+                                  let actionobj = {
+                                    title: "New Host",
+                                    actions: ["hblock","ignore"],
+                                    target: host.ipv4Addr,
+                                  }
+                                  alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
+                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                  });
                                 }
                             });
                         }
@@ -598,18 +623,35 @@ module.exports = class {
                             }
                             rclient.expireat(key, parseInt((+new Date) / 1000) + 60*60*24*365);
                             rclient.hmset(key, data, (err, result) => {
-                                if (newhost == true) {
-                                    let d = JSON.parse(JSON.stringify(data));
-                                    let actionobj = {
-                                         title: "New Host",
-                                         actions: ["hblock","ignore"],
-                                         target: data.ipv4Addr,
-                                         mac: data.mac, 
-                                    }
-                                    alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
-                                         this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
-                                    });
+                              if (newhost == true) {
+                                
+                                l2.getMACAndVendor(host.ipv4Addr, (err, result) => {
+                                  
+                                  let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000, data.bname || data.name, {
+                                    "p.device.name": data.bname || data.name,
+                                    "p.device.ip": host.ipv4Addr,
+                                    "p.device.mac": result.mac_address,
+                                    "p.device.vendor": result.mac_address_vendor
+                                  });
+                                  
+                                  am2.checkAndSave(alarm, (err) => {
+                                    if(err) {
+                                      log.error("Failed to save new alarm: " + err);
+                                    }                                       
+                                    });   
+                                  });
+                                
+                                let d = JSON.parse(JSON.stringify(data));
+                                let actionobj = {
+                                  title: "New Host",
+                                  actions: ["hblock","ignore"],
+                                  target: data.ipv4Addr,
+                                  mac: data.mac, 
                                 }
+                                alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
+                                  this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+                                });
+                              }
                             });
                         } else {
 
