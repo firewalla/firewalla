@@ -14,6 +14,7 @@ var extend = require('util')._extend
 
 
 
+
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
 //   device (each alarm should have a related device)
@@ -44,20 +45,20 @@ class Alarm {
   }
   
   localizedMessage() {
-    return i18n.__(this.getI18NCategory(), this.toJsonObject());
+    return i18n.__(this.getI18NCategory(), this);
   }
 
   toString() {
     return util.inspect(this);
   }
 
-  toJsonObject() {
-    let obj = {};
-    for(var p in this) {
-      obj[p] = this[p];
-    }
-    return obj;
-  }
+  // toJsonObject() {
+  //   let obj = {};
+  //   for(var p in this) {
+  //     obj[p] = this[p];
+  //   }
+  //   return obj;
+  // }
 
   requiredKeys() {
     return ["p.device.name", "p.device.id"];
@@ -77,6 +78,12 @@ class Alarm {
   }
 };
 
+
+class NewDeviceAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+}
 
 class OutboundAlarm extends Alarm {
   // p
@@ -119,6 +126,11 @@ class OutboundAlarm extends Alarm {
   getDestinationIPAddress() {
     return this["p.dest.ip"];
   }
+
+  getSimpleOutboundTrafficSize() {
+    console.log("xxxx");
+    return formatBytes(this["p.transfer.outbound.size"]);
+  }
 }
 
 class LargeTransferAlarm extends OutboundAlarm {
@@ -157,7 +169,8 @@ let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
-  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype
+  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
+  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype
 }
 
 module.exports = {
@@ -167,5 +180,6 @@ module.exports = {
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
+  NewDeviceAlarm: NewDeviceAlarm,
   mapping: classMapping
 }

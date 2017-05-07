@@ -13,7 +13,8 @@ sudo /home/pi/firewalla/scripts/fake-hwclock
 # Save fake hwclock before force reboot
 sudo fake-hwclock
 # flush syslog
-sudo /etc/cron.hourly/log2ram
+# sudo /etc/cron.hourly/log2ram
+sudo /usr/local/sbin/log2ram write
 sync
 sync
 sync

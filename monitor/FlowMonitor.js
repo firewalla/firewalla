@@ -663,6 +663,7 @@ module.exports = class FlowMonitor {
                                                 "p.dest.port" : flow.sp,
                                                 "p.transfer.outbound.size" : flow.rb,
                                                 "p.transfer.inbound.size" : flow.ob,
+                                                "p.transfer.duration" : flow.du,
                                                 "p.local_is_client": 0 // connection is initiated from local
                                               });
                                               
@@ -732,6 +733,7 @@ module.exports = class FlowMonitor {
                                                 "p.dest.port" : flow.dp,
                                                 "p.transfer.outbound.size" : flow.ob,
                                                 "p.transfer.inbound.size" : flow.rb,
+                                                "p.transfer.duration" : flow.du,
                                                 "p.local_is_client": 1 // connection is initiated from local
                                               });
                                               

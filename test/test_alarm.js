@@ -106,13 +106,16 @@ let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
   "p.device.port" : 8848,
   "p.dest.ip": "140.206.133.90",
   "p.dest.port" : 443,
+  "p.dest.name" : "www.xyzxyzxyz.com",
   "p.transfer.outbound.size" : 12345,
   "p.transfer.inbound.size" : 54321,
+  "p.transfer.duration" : 16.86,
   "p.local_is_client": 1
 });
 
 alarmManager2.enrichOutboundAlarm(a6).then((alarm) => {
   alarmManager2.checkAndSave(alarm, (err) => {
+    console.log(util.inspect(alarm));
     if(!err) {
     }
   });
