@@ -370,9 +370,10 @@ function _enableChinaDNS(callback) {
 
 
   let localDNSServers = sysManager.myDNS();
-//  if(localDNSServers == null || localDNSServers.length == 0) {
+  if(localDNSServers == null || localDNSServers.length == 0) {
+    // only use 114 dns server if local dns server is not available (NOT LIKELY)
     localDNSServers = ["114.114.114.114"];
-//  }
+  }
 
   let dnsConfig = util.format("%s,%s:%d",
                               localDNSServers[0],
