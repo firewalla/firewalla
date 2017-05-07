@@ -6,7 +6,7 @@
 mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 20 )) && logger "REBOOT: Memory less than 20 $mem"
-(( mem <= 20 )) && /home/pi/firewalla/scripts/fire-rebootf
+(( mem <= 20 )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
