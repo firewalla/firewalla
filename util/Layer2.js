@@ -15,12 +15,15 @@
 
 'use strict'
 
+let spawn = require('child_process').spawn;
+let mac = require('mac-lookup')
+
 function getMACAndVendor(ipaddress, cb) {
   
   // get MAC Address first
   let mac_address = null;
   let mac_address_vendor = null;
-  l2.getMAC(host.ipv4Addr, (err, result) => {
+  getMAC(ipaddress, (err, result) => {
     if(err) {
       log.error("Failed to get MAC Address for IP " + host.ipv4Addr + ", err: " + err);
     } else {
@@ -73,7 +76,7 @@ function getMAC(ipaddress, cb) {
 	
 	if (l == 0) continue;
 	
-	if (table[l].indexOf(ipaddress) == 0) {
+	if (table[l].indexOf(ipaddress + " ") == 0) {
 	  var mac = table[l].substring(41, 58);
 	  cb(false, mac);
 	  return;
