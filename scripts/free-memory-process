@@ -2,7 +2,10 @@
 firemon_mem=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 fireapi_mem=$(pidof FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 firemain_mem=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+firebro_mem=$(pidof bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 
+(( firebro_mem >= 150000)) && logger "FIREWALLA: Bro Critical Memory Restarting"+$firebro_mem
+(( firebro_mem >= 150000)) && sudo /usr/local/bro/bin/broctl restart
 (( firemon_mem <= 120000)) && exit 1
 
 logger "FIREWALLA: Free Memory Process Countdown"+$firemon_mem

@@ -31,6 +31,10 @@ function getFirewallaHome() {
   return firewallaHome;
 }
 
+function getLocalesDirectory() {
+  return firewallaHome + "/locales";
+}
+
 function getUserID() {
   return process.env.USER;
 }
@@ -293,6 +297,7 @@ function redisclean(config,count) {
 
 module.exports = {
   getFirewallaHome: getFirewallaHome,
+  getLocalesDirectory: getLocalesDirectory,
   getUserHome: getUserHome,
   getHiddenFolder: getHiddenFolder,
   isProduction: isProduction,

@@ -1162,6 +1162,14 @@ module.exports = class {
             cpuid: utils.getCpuId(),
         };
 
+      if(sysManager.language) {
+        json.language = sysManager.language;
+      }
+
+      if(sysManager.timezone) {
+        json.timezone = sysManager.timezone;
+      }
+      
       json.cpuid = utils.getCpuId()
       json.updateTime = Date.now();
         if (sysManager.sshPassword) {           

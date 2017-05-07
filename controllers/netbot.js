@@ -41,6 +41,13 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM2();
+
+let EM = require('../alarm/ExceptionManager.js');
+let em = new EM();
+
+
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
 
@@ -661,6 +668,25 @@ class netBot extends ControllerBot {
         }
         
         break;
+      case "language":
+        let v2 = msg.data.value;
+
+        // TODO validate input?
+        if(v2.language) {
+          sysmanager.setLanguage(v2.language, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
+      case "timezone":
+        let v3 = msg.data.value;
+
+        if(v3.timezone) {
+          sysmanager.setTimezone(v3, (err) => {
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        }
+        break;
       }
     }
 
@@ -796,6 +822,21 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, result, err, callback);
         });
         break;
+      case "language":
+        this.simpleTxData(msg, {language: sysManager.language}, null, callback);
+        break;
+      case "timezone":
+        this.simpleTxData(msg, {timezone: sysManager.timezone}, null, callback);
+        break;
+      case "alarms":
+        am2.loadActiveAlarms((err, alarms) => {
+          this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
+        });
+        break;
+      case "exceptions":
+        em.loadExceptions((err, exceptions) => {
+          this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
+        });
       }
     }
 
@@ -1079,8 +1120,19 @@ class netBot extends ControllerBot {
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
-
-          default:
+        case "blockFromAlarm":
+          let alarmID = msg.data.value.alarmID;
+          am2.blockFromAlarm(alarmID, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        case "allowFromAlarm":
+          let alarmID2 = msg.data.value.alarmID;
+          am2.allowFromAlarm(alarmID2, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        default:
           // do nothing
         }
     }
