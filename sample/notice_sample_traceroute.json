@@ -1,0 +1,1 @@
+{"ts":1494240304.871433,"note":"Traceroute::Detected","msg":"172.17.0.3 seems to be running traceroute using udp","src":"172.17.0.3","peer_descr":"bro","actions":["Notice::ACTION_LOG"],"suppress_for":3600,"dropped":false}

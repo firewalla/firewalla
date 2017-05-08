@@ -1,0 +1,23 @@
+{
+  "type":"ALARM_LARGE_UPLOAD",
+  "device": "10.0.1.28",
+  "alarmTimestamp": 1494225354.693,
+  "timestamp": 1494225354.608,
+  "p.local_is_client": 1,
+  "p.transfer.duration": 16.86,
+  "p.transfer.inbound.size": 54321,
+  "p.transfer.outbound.size": 12345,
+  "p.dest.name": "www.xyzxyzxyz.com",
+  "p.dest.port": 443,
+  "p.dest.ip": "140.206.133.90",
+  "p.device.port": 8848,
+  "p.device.ip": "10.0.1.28",
+  "p.device.name": "Macbook Pro",
+  "p.device.id": "m1",
+  "p.dest.id": "140.206.133.90",
+  "p.transfer.outbound.humansize": "12.35 KB",
+  "p.transfer.inbound.humansize": "54.32 KB",
+  "p.dest.latitude": 31.0456,
+  "p.dest.longitude": 121.3997,
+  "p.dest.country": "CN"
+}
