@@ -1232,7 +1232,7 @@ class netBot extends ControllerBot {
             this.tx(this.primarygid, "performing reset of everything", "system resetting");
             let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
                 this.tx(this.primarygid, "Done, will reboot now and the system will reincarnated, this group is no longer useful, you can delete it.", "system resetting");
-                require('child_process').exec('sudo reboot', (err, out, code) => {});
+                require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {});
             });
 
         });

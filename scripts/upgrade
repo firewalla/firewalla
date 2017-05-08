@@ -20,4 +20,5 @@ if [[ $branch =~ release.* ]]
   fi
 sync
 sync
+logger "REBOOT: Upgrade"
 /home/pi/firewalla/scripts/fire-reboot-normal
