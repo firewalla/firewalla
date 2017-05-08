@@ -36,6 +36,8 @@ let DNSServers = {
 
 let f = require('../net2/Firewalla.js');
 
+let i18n = require('../util/i18n.js');
+
 const MAX_CONNS_PER_FLOW = 35000;
 
 const dns = require('dns');
@@ -65,6 +67,7 @@ module.exports = class {
               break;
             case "System:LanguageChange":
               this.language = message;
+              i18n.setLocale(this.language);
               break;
             case "System:TimezoneChange":
               this.timezone = message;
@@ -182,6 +185,7 @@ module.exports = class {
     callback = callback || function() {}
 
     this.language = language;
+    i18n.setLocale(this.language);
     rclient.hset("sys:config", "language", language, (err) => {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
@@ -208,6 +212,7 @@ module.exports = class {
     rclient.hgetall("sys:config", (err, results) => {
       if(results && results.language) {
         this.language = results.language;
+        i18n.setLocale(this.language);
       }
 
       if(results && results.timezone) {

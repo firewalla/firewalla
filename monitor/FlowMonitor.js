@@ -159,7 +159,11 @@ module.exports = class FlowMonitor {
                             msg: msg
                         };
 
-                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                      let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                        "p.device.id" : actionobj.shname,
+                        "p.device.name" : actionobj.shname
+                      });
+                      
                       // ideally each destination should have a unique ID, now just use hostname as a workaround
                       // so destionationName, destionationHostname, destionationID are the same for now
                       alarm.setDestinationName(actionobj.dhname);
@@ -209,7 +213,11 @@ module.exports = class FlowMonitor {
                         };
 
 
-                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), actionobj);
+                    let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                      "p.device.id" : actionobj.shname,
+                      "p.device.name" : actionobj.shname
+                    });
+                    
                     alarm.setDestinationName(actionobj.dhname);
                     alarm.setDestinationHostname(actionobj.dhname);
                     alarm.setDestinationIPAddress(actionobj.dst);
@@ -307,6 +315,25 @@ module.exports = class FlowMonitor {
                             du: flow.du,
                             msg: msg
                         };
+                      
+                      let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
+                        "p.device.id" : actionobj.shname,
+                        "p.device.name" : actionobj.shname
+                      });
+                      
+                      // ideally each destination should have a unique ID, now just use hostname as a workaround
+                      // so destionationName, destionationHostname, destionationID are the same for now
+                      alarm.setDestinationName(actionobj.dhname);
+                      alarm.setDestinationHostname(actionobj.dhname);
+                      alarm.setDestinationIPAddress(actionobj.dst);
+
+                      alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
+                          if(!err) {
+                          }
+                        });
+                      });
+
                         alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
                             if (obj!=null) {
                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
@@ -626,7 +653,35 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
-                                                alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
+
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.sh, {
+                                                "p.device.id" : flow.dhname,
+                                                "p.device.name" : flow.dhname,
+                                                "p.device.ip" : flow.dh,
+                                                "p.device.port" : flow.dp || 0,
+                                                "p.dest.name": flow.shname || flow.sh,
+                                                "p.dest.ip": flow.sh,
+                                                "p.dest.port" : flow.sp,
+                                                "p.transfer.outbound.size" : flow.rb,
+                                                "p.transfer.inbound.size" : flow.ob,
+                                                "p.transfer.duration" : flow.du,
+                                                "p.local_is_client": 0 // connection is initiated from local
+                                              });
+                                              
+                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                              // so destionationName, destionationHostname, destionationID are the same for now
+                                              alarm.setDestinationName(actionobj.dhname);
+                                              alarm.setDestinationHostname(actionobj.dhname);
+                                              alarm.setDestinationIPAddress(actionobj.dst);
+                                              
+                                              alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                                                alarmManager2.checkAndSave(alarm, (err) => {
+                                                  if(!err) {
+                                                  }
+                                                });
+                                              });
+                                              
+                                              alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
                                                   if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
                                                         direction: "out",
@@ -666,6 +721,33 @@ module.exports = class FlowMonitor {
                                                 if (loc) {
                                                     copy.lobj = loc;
                                                 }
+
+                                              // flow in means connection initiated from inside
+                                              // flow out means connection initiated from outside (more dangerous)
+                                              
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname, {
+                                                "p.device.id" : flow.shname,
+                                                "p.device.name" : flow.shname,
+                                                "p.device.ip" : flow.sh,
+                                                "p.device.port" : flow.sp || 0,
+                                                "p.dest.name": flow.dhname || flow.dh,
+                                                "p.dest.ip": flow.dh,
+                                                "p.dest.port" : flow.dp,
+                                                "p.transfer.outbound.size" : flow.ob,
+                                                "p.transfer.inbound.size" : flow.rb,
+                                                "p.transfer.duration" : flow.du,
+                                                "p.local_is_client": 1 // connection is initiated from local
+                                              });
+                                              
+                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                              // so destionationName, destionationHostname, destionationID are the same for now
+                                              alarmManager2.enrichOutboundAlarm(alarm).then((alarm) => {
+                                                alarmManager2.checkAndSave(alarm, (err) => {
+                                                  if(!err) {
+                                                  }
+                                                });
+                                              });
+
                                                 alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
                                                   if (data!=null) {
                                                     this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {

@@ -28,6 +28,15 @@ let initID = 1;
 
 let c = require('../net2/MessageBus.js');
 
+function formatBytes(bytes,decimals) {
+   if(bytes == 0) return '0 Bytes';
+   var k = 1000,
+       dm = decimals || 2,
+       sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
+       i = Math.floor(Math.log(bytes) / Math.log(k));
+   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
 module.exports = class {
   constructor() {
     if (instance == null) {
@@ -50,11 +59,11 @@ module.exports = class {
       }
 
       if(result) {
-        rclient.incr(alarmIDKey, (err) => {
+        rclient.incr(alarmIDKey, (err, newID) => {
           if(err) {
             log.error("Failed to incr alarmIDKey: " + err);
           }
-          callback(null, result);
+          callback(null, newID);
         });
       } else {
         this.createAlarmIDKey((err) => {
@@ -86,6 +95,18 @@ module.exports = class {
       callback(err);
     });
   }
+
+  validateAlarm(alarm) {
+    let keys = alarm.requiredKeys();
+    for(var i = 0; i < keys.length; i++) {
+      let k = keys[i];
+      if(!alarm[k]) {
+        log.error("Invalid payload for " + this.type + ", missing " + k);
+        return false;
+      }
+    }
+    return true;
+  }
   
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
@@ -110,7 +131,7 @@ module.exports = class {
 
         this.addToActiveQueue(alarm, (err) => {
           if(!err) {
-            audit.trace("Created alarm", alarm.type, "on", alarm.device, ":", util.inspect(alarm.payloads));
+            audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
             this.publisher.publish("ALARM", "ALARM:CREATED", alarm.aid);
           }
           
@@ -123,13 +144,16 @@ module.exports = class {
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
 
-    exceptionManager.match(alarm, (err, result) => {
+    exceptionManager.match(alarm, (err, result, matches) => {
       if(err) {
         callback(err);
         return;
       }
 
       if(result) {
+        matches.forEach((e) => {
+          log.info("Matched Exception: " + e.rules);
+        });
         callback(new Error("exception covered"));
         return;
       }
@@ -139,10 +163,17 @@ module.exports = class {
     });
   }
 
-  loadActiveAlarms(callback) {
+  // top 20 only by default
+  loadActiveAlarms(number, callback) {
+
+    if(typeof(number) == 'function') {
+      callback = number;
+      number = 20;
+    }
+    
     callback = callback || function() {}
 
-    rclient.zrange(alarmActiveKey, 0, -1, (err, results) => {
+    rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
       if(err) {
         log.error("Failed to load active alarms: " + err);
         callback(err);
@@ -163,13 +194,21 @@ module.exports = class {
         }
 
         let processResult = function(result) {
-          let unflatten = flat.unflatten(result);
-          let obj = Object.assign(Object.create(Alarm.Alarm.prototype), unflatten);
-          obj.message = obj.localizedMessage();
-          return obj;
+          //          let unflatten = flat.unflatten(result);
+
+          // class prototype
+          let proto = Alarm.mapping[result.type];
+          if(proto) {
+            let obj = Object.assign(Object.create(proto), result);
+            obj.message = obj.localizedMessage(); // append locaized message info
+            return obj;
+          } else {
+            log.error("Unsupported alarm type: " + result.type);
+            return null;
+          }
         }
 
-        callback(null, results.map((r) => processResult(r)));
+        callback(null, results.map((r) => processResult(r)).filter((r) => r != null));
       });
     });
   }
@@ -189,8 +228,10 @@ module.exports = class {
       return Promise.reject(new Error("invalid alarm type"));
     }
 
+    alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
+    alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
+    
     let destIP = alarm.getDestinationIPAddress();
-    let payloads = alarm.payloads;
 
     return new Promise((resolve, reject) => {
       im._location(destIP, (err, loc) => {
@@ -199,10 +240,10 @@ module.exports = class {
         let location = loc.loc;
         let ll = location.split(",");
         if(ll.length === 2) {
-          payloads.destinationLatitude = parseFloat(ll[0]);
-          payloads.destinationLongitude = parseFloat(ll[1]);        
+          alarm["p.dest.latitude"] = parseFloat(ll[0]);
+          alarm["p.dest.longitude"] = parseFloat(ll[1]);        
         }
-        payloads.destionationLocation = loc.country; // FIXME: need complete location info
+        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info        
         resolve(alarm);
       });
     });
