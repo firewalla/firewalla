@@ -228,7 +228,8 @@ module.exports = class DNSManager {
 
     resolvehost(ip, callback) {
         if (ip == null){
-            callback(null,null);
+          callback(null,null);
+          return;
         }
         if (sysManager.isLocalIP(ip)) {
             this.resolveLocalHost(ip, callback);

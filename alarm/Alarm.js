@@ -64,6 +64,10 @@ class Alarm {
     return ["p.device.name", "p.device.id"];
   }
 
+  isNumber(n) {
+    return Number(n) === n;
+  }
+  
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
     
@@ -74,6 +78,14 @@ class Alarm {
       }
     });
 
+    if(!this.isNumber(this.timestamp)) {
+      throw new Error("Invalid timestamp, expect number");
+    }
+
+    if(!this.isNumber(this.alarmTimestamp)) {
+      throw new Error("Invalid alarm timestamp, expect number");
+    }
+    
     return true;
   }
 };
@@ -82,6 +94,14 @@ class Alarm {
 class NewDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+}
+
+class BroNoticeAlarm extends Alarm {
+  constructor(timestamp, device, notice, message, info) {
+    super("ALARM_BRO_NOTICE", timestamp, device, info);
+    this["p.noticeType"] = notice;
+    this["p.message"] = message;
   }
 }
 
@@ -128,7 +148,6 @@ class OutboundAlarm extends Alarm {
   }
 
   getSimpleOutboundTrafficSize() {
-    console.log("xxxx");
     return formatBytes(this["p.transfer.outbound.size"]);
   }
 }
@@ -170,7 +189,8 @@ let classMapping = {
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
-  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype
+  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_BRO_NOTICE: BroNoticeAlarm.prototype
 }
 
 module.exports = {
@@ -181,5 +201,6 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
+  BroNoticeAlarm: BroNoticeAlarm,  
   mapping: classMapping
 }

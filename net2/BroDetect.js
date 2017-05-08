@@ -31,6 +31,10 @@ var dnsManager = new DNSManager();
 var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('info');
 
+let Alarm = require('../alarm/Alarm.js');
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM2();
+
 var linux = require('../util/linux.js');
 
 rclient.on("error", function (err) {
@@ -1203,8 +1207,35 @@ module.exports = class {
 
                 dnsManager.resolvehost(obj.src,(err,__src)=>{
                     dnsManager.resolvehost(obj.dst,(err,__dst)=>{
-                        actionobj.shname =dnsManager.name(__src);
-                        actionobj.dhname =dnsManager.name(__dst);
+                      actionobj.shname =dnsManager.name(__src);
+                      actionobj.dhname =dnsManager.name(__dst);
+
+                      let localIP = lh;
+                      dnsManager.resolveLocalHost(lh, (err, result) => {
+                        if(err || result == null) {
+                          log.error("Failed to find host " + lh + " in database: " + err);
+                          return;                          
+                        }
+
+                        let deviceName = dnsManager.name(result);
+                        let deviceID = result.mac;
+                        let message = obj.msg;
+                        let noticeType = obj.note;
+                        let timestamp = parseFloat(obj.ts);
+                        
+                        let alarm = new Alarm.BroNoticeAlarm(timestamp, deviceID, noticeType, message, {
+                          "p.device.ip": localIP,
+                          "p.device.name": deviceName,
+                          "p.device.id": deviceID,
+                        });
+
+                        am2.checkAndSave(alarm, (err) => {
+                          if(err) {
+                            log.error("Failed to save alarm: " + err);
+                          }
+                        });
+                      });                   
+                      
                         alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);

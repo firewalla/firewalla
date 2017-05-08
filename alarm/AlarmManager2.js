@@ -37,6 +37,8 @@ function formatBytes(bytes,decimals) {
    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+// TODO: Support suppres alarm for a while
+
 module.exports = class {
   constructor() {
     if (instance == null) {
@@ -86,6 +88,9 @@ module.exports = class {
 
   addToActiveQueue(alarm, callback) {
     //TODO
+
+    console.log(alarm.timestamp / 1000);
+    
     let score = alarm.timestamp / 1000;
     let id = alarm.aid;
     rclient.zadd(alarmActiveKey, score, id, (err) => {
@@ -96,6 +101,10 @@ module.exports = class {
     });
   }
 
+  isNumber(n) {
+    return Number(n) === n;
+  }
+  
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
@@ -105,7 +114,23 @@ module.exports = class {
         return false;
       }
     }
+
+    if(!this.isNumber(alarm.timestamp) || alarm.timestamp === NaN) {
+      log.error("Invalid timestamp, expect number");
+      return false;
+    }
+
+    if(!this.isNumber(alarm.alarmTimestamp)) {
+      log.error("Invalid alarm timestamp, expect number");
+      return false;
+    }
     return true;
+  }
+
+  createAlarmFromJson(json, callback) {
+    callback = callback || function() {}
+
+    callback(null, this.jsonToAlarm(json));
   }
   
   saveAlarm(alarm, callback) {
@@ -135,14 +160,24 @@ module.exports = class {
             this.publisher.publish("ALARM", "ALARM:CREATED", alarm.aid);
           }
           
-          callback(err);
+          callback(err, alarm.aid);
         });
       });
     });
   }
 
+  dedup(alarm, callback) {
+    //TODO enable dedup of alarms so that no dup alarms will be sent to users
+  }
+
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
+
+    let verifyResult = this.validateAlarm(alarm);
+    if(!verifyResult) {
+      callback(new Error("invalid alarm, failed to pass verification"));
+      return;
+    }
 
     exceptionManager.match(alarm, (err, result, matches) => {
       if(err) {
@@ -154,13 +189,25 @@ module.exports = class {
         matches.forEach((e) => {
           log.info("Matched Exception: " + e.rules);
         });
-        callback(new Error("exception covered"));
+        callback(new Error("alarm is covered by exceptions"));
         return;
       }
 
       this.saveAlarm(alarm, callback);
 
     });
+  }
+
+  jsonToAlarm(json) {
+    let proto = Alarm.mapping[json.type];
+    if(proto) {
+      let obj = Object.assign(Object.create(proto), json);
+      obj.message = obj.localizedMessage(); // append locaized message info
+      return obj;
+    } else {
+      log.error("Unsupported alarm type: " + json.type);
+      return null;
+    }
   }
 
   // top 20 only by default
@@ -193,22 +240,7 @@ module.exports = class {
           return;          
         }
 
-        let processResult = function(result) {
-          //          let unflatten = flat.unflatten(result);
-
-          // class prototype
-          let proto = Alarm.mapping[result.type];
-          if(proto) {
-            let obj = Object.assign(Object.create(proto), result);
-            obj.message = obj.localizedMessage(); // append locaized message info
-            return obj;
-          } else {
-            log.error("Unsupported alarm type: " + result.type);
-            return null;
-          }
-        }
-
-        callback(null, results.map((r) => processResult(r)).filter((r) => r != null));
+        callback(null, results.map((r) => this.jsonToAlarm(r)).filter((r) => r != null));
       });
     });
   }
