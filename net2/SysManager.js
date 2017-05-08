@@ -441,6 +441,24 @@ module.exports = class {
         return false;
     }
 
+
+    isLocalIP4(intf, ip) {
+        if (this.sysinfo[intf]==null) {
+           return false;
+        }
+
+        let subnet = this.sysinfo[intf].subnet;
+        if (subnet == null) {
+            return false;
+        }
+
+        if (this.isMulticastIP(ip)) {
+            return true;
+        }
+
+        return iptool.cidrSubnet(subnet).contains(ip);
+    }
+
     isLocalIP(ip) {
         if (iptool.isV4Format(ip)) {
 
@@ -456,7 +474,7 @@ module.exports = class {
                 return true;
             }
 
-            return iptool.cidrSubnet(this.subnet).contains(ip);
+            return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
         } else if (iptool.isV6Format(ip)) {
             if (ip.startsWith('::')) {
                 return true;
