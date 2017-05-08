@@ -51,7 +51,7 @@ module.exports = class {
           callback(err);
         }
         
-        callback(null, results.map((r) => flat.unflatten(r)).map((r) => Object.assign(Object.create(Exception.prototype), r)));
+        callback(null, results.map((r) => Object.assign(Object.create(Exception.prototype), r)));
       });
       
     });
@@ -148,7 +148,7 @@ module.exports = class {
       let matches = results.filter((e) => e.match(alarm));
       if(matches.length > 0) {
         log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.aid).join(","));
-        callback(null, true);
+        callback(null, true, matches);
       } else {
         callback(null, false);
       }

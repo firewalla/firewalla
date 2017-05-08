@@ -18,6 +18,8 @@ var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
 var ip = require('ip');
 
+let l2 = require('../util/Layer2.js');
+
 var instance = null;
 
 var debugging = false;
@@ -29,38 +31,7 @@ var log = function () {
 
 module.exports = class {
 
-    getMAC(ipaddress, cb) {
-        var arp = spawn("/usr/sbin/arp", ["-n", ipaddress]);
-        var buffer = '';
-        var errstream = '';
-        arp.stdout.on('data', (data) => {
-            buffer += data;
-        });
-        arp.stderr.on('data', (data) => {
-            errstream += data;
-        });
-
-        arp.on('close', (code) => {
-            if (code !== 0) {
-                log("Error running arp " + code + " " + errstream);
-                spawn('/bin/ping', [ipaddress, '-c', 2]);
-                cb(true, code);
-                return;
-            }
-            var table = buffer.split('\n');
-            if (table.length >= 2 && table[1].length > 10) {
-                var parts = table[1].split(' ').filter(String);
-                log("GETMAC:PARTS:",table,parts);
-                cb(false, parts[2]);
-                if (parts[2] == null) {}
-                return;
-            }
-            //log("Could not find ip in arp table"+ipaddress);
-            cb(true, "Could not find ip in arp table: " + ipaddress);
-            spawn('/bin/ping', [ipaddress, '-c', 2]);
-        });
-
-    }
+    
 
     spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
       log("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
@@ -76,7 +47,7 @@ module.exports = class {
             return;
         }
 
-        this.getMAC(ipAddr, (err, _mac) => {
+        l2.getMAC(ipAddr, (err, _mac) => {
             if (_mac) {
                 _mac = _mac.toUpperCase();
             }

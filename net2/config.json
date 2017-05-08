@@ -29,9 +29,11 @@
          "monitor" : {
          },
          "ignore" : {
-            "SSL::Invalid_Server_Cert":"ignore",
-            "PacketFilter::Dropped_Packets":"ignore",
-            "Scan::Address_Scan":"ignore"
+           "SSL::Invalid_Server_Cert":"ignore",
+           "PacketFilter::Dropped_Packets":"ignore",
+           "Scan::Address_Scan":"ignore",
+           "Traceroute::Detected":"ignore",
+           "Weird::Activity":"ignore"
          },
          "path" : "/blog/current/notice.log",
          "expires": 604800
