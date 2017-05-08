@@ -28,10 +28,24 @@ let bone = require("../lib/Bone.js");
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
+var fs = require('fs');
+var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
+
+
+/*
+ * Create the secondary interface 
+ */
+
+var secondaryInterface = require("./SecondaryInterface.js");
+secondaryInterface.create(config,(err)=>{
+    if (err == null) {
+        log.info("Successful Created Secondary Interface");
+    }
+});
 
 run0();
 
@@ -48,8 +62,6 @@ function run0() {
   }
 }
 
-var fs = require('fs');
-var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 
 process.on('uncaughtException',(err)=>{
