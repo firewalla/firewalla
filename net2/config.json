@@ -5,6 +5,7 @@
     },
     "iptables": {
        "defaults": [
+          "sudo sudo iptables -t nat -A POSTROUTING  '!' -s LOCALSUBNET -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
@@ -12,6 +13,14 @@
        ]
     },
   "monitoringInterface": "eth0",
+  "monitoringInterface2": "eth0:0",
+  "secondaryInterface": {
+     "intf":"eth0:0",
+     "ip":"192.168.218.1/24",
+     "ipsubnet":"192.168.218.0/24",
+     "ip2":"192.168.168.1/24",
+     "ipsubnet2":"192.168.218.0/24"
+  },
   "sysInfo": {
     "tailNum": 100
   },
