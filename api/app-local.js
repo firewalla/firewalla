@@ -22,6 +22,7 @@ var system = require('./routes/system');
 var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
 let dnsmasq = require('./routes/dnsmasq');
+let alarm = require('./routes/alarm');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -54,6 +55,7 @@ if(!firewalla.isProduction()) {
   subpath_v1.use('/message', message);
   subpath_v1.use('/ss', shadowsocks);
   subpath_v1.use('/dns', dnsmasq);
+  subpath_v1.use('/alarm', alarm);
 
   let subpath_docs = express();
   app.use("/docs", subpath_docs);
