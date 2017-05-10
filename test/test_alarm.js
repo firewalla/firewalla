@@ -90,7 +90,7 @@ a5.setDestinationName("youtube.com");
 a5.setDestinationIPAddress("78.16.49.15");
 a5["p.device.id"] = "1";
 
-let promise = alarmManager2.enrichOutboundAlarm(a5);
+let promise = alarmManager2.enrichDestInfo(a5);
 promise.then((alarm) => {
   log.info(alarm.toString());
 });
@@ -113,7 +113,7 @@ let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
   "p.local_is_client": 1
 });
 
-alarmManager2.enrichOutboundAlarm(a6).then((alarm) => {
+alarmManager2.enrichDestInfo(a6).then((alarm) => {
   alarmManager2.checkAndSave(alarm, (err) => {
     console.log(util.inspect(alarm));
     if(!err) {

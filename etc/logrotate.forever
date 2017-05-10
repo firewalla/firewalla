@@ -1,0 +1,12 @@
+su pi pi
+
+/home/pi/.forever/*.log
+{
+	rotate 4
+	daily
+	missingok
+	notifempty
+	delaycompress
+	compress
+        size 5000k
+}

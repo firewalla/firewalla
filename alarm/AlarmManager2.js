@@ -16,6 +16,9 @@ let Promise = require('promise');
 let IM = require('../net2/IntelManager.js')
 let im = new IM('info');
 
+var DNSManager = require('../net2/DNSManager.js');
+var dnsManager = new DNSManager('info');
+
 let instance = null;
 
 let alarmActiveKey = "alarm_active";
@@ -27,6 +30,8 @@ let alarmPrefix = "_alarm:";
 let initID = 1;
 
 let c = require('../net2/MessageBus.js');
+
+let extend = require('util')._extend;
 
 function formatBytes(bytes,decimals) {
    if(bytes == 0) return '0 Bytes';
@@ -88,10 +93,7 @@ module.exports = class {
 
   addToActiveQueue(alarm, callback) {
     //TODO
-
-    console.log(alarm.timestamp / 1000);
-    
-    let score = alarm.timestamp / 1000;
+    let score = parseFloat(alarm.timestamp);
     let id = alarm.aid;
     rclient.zadd(alarmActiveKey, score, id, (err) => {
       if(err) {
@@ -101,11 +103,7 @@ module.exports = class {
     });
   }
 
-  isNumber(n) {
-    return Number(n) === n;
-  }
-  
-  validateAlarm(alarm) {
+  validateAlarm(alarm) {    
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
       let k = keys[i];
@@ -115,15 +113,6 @@ module.exports = class {
       }
     }
 
-    if(!this.isNumber(alarm.timestamp) || alarm.timestamp === NaN) {
-      log.error("Invalid timestamp, expect number");
-      return false;
-    }
-
-    if(!this.isNumber(alarm.alarmTimestamp)) {
-      log.error("Invalid alarm timestamp, expect number");
-      return false;
-    }
     return true;
   }
 
@@ -172,7 +161,7 @@ module.exports = class {
 
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
-
+    
     let verifyResult = this.validateAlarm(alarm);
     if(!verifyResult) {
       callback(new Error("invalid alarm, failed to pass verification"));
@@ -255,15 +244,52 @@ module.exports = class {
     callback(null);
   }
 
-  enrichOutboundAlarm(alarm) {
-    if(! alarm instanceof Alarm.OutboundAlarm) {
-      return Promise.reject(new Error("invalid alarm type"));
+  
+  enrichDeviceInfo(alarm) {
+    let deviceIP = alarm["p.device.ip"];
+    if(!deviceIP) {
+      return Promise.reject(new Error("requiring p.device.ip"));
     }
 
-    alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
-    alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
-    
-    let destIP = alarm.getDestinationIPAddress();
+    return new Promise((resolve, reject) => {
+      dnsManager.resolveLocalHost(deviceIP, (err, result) => {
+        
+        if(err || result == null) {
+          log.error("Failed to find host " + lh + " in database: " + err);
+          if(err)
+            reject(err);
+          reject(new Error("host " + deviceIP + " not found"));
+          return;                          
+        }
+        
+        let deviceName = dnsManager.name(result);
+        let deviceID = result.mac;
+
+        extend(alarm, {
+          "p.device.name": deviceName,
+          "p.device.id": deviceID,
+          "p.device.mac": deviceID,
+          "p.device.macVendor": result.macVendor
+        });
+
+        resolve(alarm);
+      });
+    });
+  }
+  
+  enrichDestInfo(alarm) {
+    if(alarm["p.transfer.outbound.size"]) {
+      alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
+    }
+
+    if(alarm["p.transfer.inbound.size"]) {
+      alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
+    }
+
+    let destIP = alarm["p.dest.ip"];
+
+    if(!destIP)
+      return Promise.reject(new Error("Requiring p.dest.ip"));
 
     return new Promise((resolve, reject) => {
       im._location(destIP, (err, loc) => {
@@ -275,7 +301,8 @@ module.exports = class {
           alarm["p.dest.latitude"] = parseFloat(ll[0]);
           alarm["p.dest.longitude"] = parseFloat(ll[1]);        
         }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info        
+        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+
         resolve(alarm);
       });
     });
