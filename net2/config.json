@@ -1,7 +1,7 @@
 {
     "version": 1.70,
     "discovery": {
-      "networkInterfaces": ["eth0","wlan0"]
+      "networkInterfaces": ["eth0","eth0:0","wlan0"]
     },
     "iptables": {
        "defaults": [
@@ -19,7 +19,7 @@
      "ip":"192.168.218.1/24",
      "ipsubnet":"192.168.218.0/24",
      "ip2":"192.168.168.1/24",
-     "ipsubnet2":"192.168.218.0/24"
+     "ipsubnet2":"192.168.168.0/24"
   },
   "sysInfo": {
     "tailNum": 100
