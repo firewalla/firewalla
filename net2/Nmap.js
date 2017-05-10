@@ -27,6 +27,7 @@ module.exports = class {
     // ID can be port
     constructor(range, debug) {
         this.range = range;
+        this.scanQ = [];
         debugging = debug;
     }
 
@@ -45,6 +46,16 @@ module.exports = class {
             port.state = portjson['state']['state'];
         }
         return port;
+    }
+
+    scanQueue(obj) {
+        if (obj) {
+            this.nmapScan(obj.cmdline,true,(err,hosts,ports)=>{
+                obj.callback(err,hosts,ports);
+                console.log("NMAP:ScanQUEUE",this.scanQ); 
+                this.scanQueue(this.scanQ.pop()); 
+            });
+        }
     }
 
     scan(range, fast, callback) {
@@ -67,12 +78,16 @@ module.exports = class {
         }
         console.log("Running commandline: ", cmdline);
 
-        if (this.process) {
+        if (this.scanQ.length>3) {
+            callback("Queuefull", null,null);
             console.log("======================= Warning Previous instance running====");
             return;
         }
 
-        this.nmapScan(cmdline,true,callback);
+        this.scanQ.push({"cmdline":cmdline,"fast":fast,"callback":callback});
+
+        let obj = this.scanQ.pop();
+        this.scanQueue(obj);
      }
 
      nmapScan(cmdline,requiremac,callback) {
