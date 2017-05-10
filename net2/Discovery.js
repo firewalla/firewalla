@@ -480,7 +480,7 @@ module.exports = class {
       callback(null, null);
       return;
     }
-        log.info("Start scanning network");
+        log.info("Start scanning network:",subnet,fast);
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
         this.nmap.scan(subnet, fast, (err, hosts, ports) => {
             this.hosts = [];
@@ -489,7 +489,7 @@ module.exports = class {
                 this.processHost(host);
             }
             //console.log("Done Processing ++++++++++++++++++++");
-            log.info("Network scanning is completed");
+            log.info("Network scanning is completed:",subnet,hosts.length);
             setTimeout(() => {
                 callback(null, null);
                 log.info("Discovery:Scan:Done");
@@ -534,7 +534,7 @@ module.exports = class {
                 let nname = host.nname;
 
                 let key = "host:ip4:" + host.uid;
-                log.debug("Discovery:Nmap:Scan:Found", key, host.mac, host.uid);
+                log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid,host.ipv4Addr);
                 rclient.hgetall(key, (err, data) => {
                     log.debug("Discovery:Nmap:Redis:Search", key, data, {});
                     if (err == null) {
@@ -598,6 +598,7 @@ module.exports = class {
                                 if (data.bname == null && nname!=null) {
                                     data.bname = nname;
                                 }
+                                console.log("Discovery:Nmap:Update",key, data);
                             } else {
                                 data = {};
                                 data.ipv4 = host.ipv4Addr;
@@ -624,6 +625,10 @@ module.exports = class {
                             }
                             rclient.expireat(key, parseInt((+new Date) / 1000) + 60*60*24*365);
                             rclient.hmset(key, data, (err, result) => {
+                              if (err!=null) {
+                                  log.error("Failed update ", key,err,result);
+                                  return;
+                              }
                               if (newhost == true) {
                                 
                                 l2.getMACAndVendor(host.ipv4Addr, (err, result) => {
