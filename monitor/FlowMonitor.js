@@ -682,12 +682,6 @@ module.exports = class FlowMonitor {
                                                 "p.flow": JSON.stringify(flow)
                                               });
                                               
-                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
-                                              // so destionationName, destionationHostname, destionationID are the same for now
-                                              alarm.setDestinationName(actionobj.dhname);
-                                              alarm.setDestinationHostname(actionobj.dhname);
-                                              alarm.setDestinationIPAddress(actionobj.dst);
-                                              
                                               alarmManager2.enrichDestInfo(alarm).then((alarm) => {
                                                 alarmManager2.checkAndSave(alarm, (err) => {
                                                   if(!err) {
