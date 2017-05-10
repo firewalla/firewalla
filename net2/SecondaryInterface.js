@@ -50,7 +50,7 @@ exports.create = function (config, callback) {
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
                     log.error("SecondaryInterface: Already Created Secondary Interface",list[i]);
-                    callback(null);
+                    callback(null,_secondaryIp, _secondaryIpSubnet);
                     return; 
                 }
                 let subnet = getSubnet(list[i].name, 'IPv4');
@@ -64,7 +64,7 @@ exports.create = function (config, callback) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }
                 if (callback) {
-                    callback(err);
+                    callback(err,_secondaryIp, _secondaryIpSubnet);
                 }
             });
          });

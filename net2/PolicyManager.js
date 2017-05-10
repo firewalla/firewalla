@@ -93,11 +93,14 @@ module.exports = class {
             let defaultTable = config['iptables']['defaults'];
             let myip = sysManager.myIp();
             let mysubnet = sysManager.mySubnet();
+            let secondarySubnet = sysManager.secondarySubnet;
             for (let i in defaultTable) {
                 defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
             }
-            for (let i in defaultTable) {
-                defaultTable[i] = defaultTable[i].replace("LOCALSUBNET", mysubnet);
+            if (secondarySubnet) {
+                for (let i in defaultTable) {
+                    defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
+                }
             }
             log.info("PolicyManager:flush", defaultTable, {});
             iptable.run(defaultTable);
