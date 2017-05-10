@@ -1211,41 +1211,32 @@ module.exports = class {
                       actionobj.dhname =dnsManager.name(__dst);
 
                       let localIP = lh;
-                      dnsManager.resolveLocalHost(lh, (err, result) => {
-                        if(err || result == null) {
-                          log.error("Failed to find host " + lh + " in database: " + err);
-                          return;                          
-                        }
+                      let message = obj.msg;
+                      let noticeType = obj.note;
+                      let timestamp = parseFloat(obj.ts);
+                      
+                      let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
+                        "p.device.ip": localIP,
+                      });
 
-                        let deviceName = dnsManager.name(result);
-                        let deviceID = result.mac;
-                        let message = obj.msg;
-                        let noticeType = obj.note;
-                        let timestamp = parseFloat(obj.ts);
-                        
-                        let alarm = new Alarm.BroNoticeAlarm(timestamp, deviceID, noticeType, message, {
-                          "p.device.ip": localIP,
-                          "p.device.name": deviceName,
-                          "p.device.id": deviceID,
-                        });
-
+                      am2.enrichDeviceInfo(alarm).then((alarm) => {
                         am2.checkAndSave(alarm, (err) => {
                           if(err) {
                             log.error("Failed to save alarm: " + err);
                           }
                         });
-                      });                   
+                      });
                       
-                        alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
-                            if (obj != null) {
+                      alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
+                        if (obj != null) {
                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
-                            }
-                        });
+                        }
+                      });
                     }); 
                 }); 
 
             } else {
-                log.debug("Notice:Drop", JSON.parse(data));
+              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
             log.error("Notice:Error Unable to save", e,data);

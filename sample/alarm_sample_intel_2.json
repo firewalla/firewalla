@@ -1,0 +1,16 @@
+{
+  "type":"ALARM_INTEL",
+  "device": "10.0.1.30",
+  "alarmTimestamp": "1494317059.693",
+  "timestamp": "1494317059.608",
+  "p.device.ip": "10.0.1.30",
+  "p.device.name": "Macbook Pro3",
+  "p.device.id": "m1",
+  "p.device.port": "8888",
+  "p.dest.id": "8.8.8.8",
+  "p.dest.name": "xx.yy.zz",
+  "p.dest.port": "443",
+  "p.security.reason": "a bad ip address",
+  "p.security.numOfReportSources": "6",
+  "p.local_is_client": "0"
+}

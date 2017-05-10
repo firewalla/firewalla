@@ -22,7 +22,7 @@ let bodyParser = require('body-parser')
 let AM2 = require('../../alarm/AlarmManager2.js');
 let am2 = new AM2();
 
-router.get('/list', function(req, res, next) {
+router.get('/list', (req, res, next) => {
   am2.loadActiveAlarms((err, list) => {
     if(err) {
       res.status(500).send('');
@@ -37,7 +37,7 @@ let jsonParser = bodyParser.json()
 
 router.post('/create',
             jsonParser,
-            function (req, res, next) {
+            (req, res, next) => {
               am2.createAlarmFromJson(req.body, (err, alarm) => {
                 if(err) {
                   res.status(400).send("Invalid alarm data");

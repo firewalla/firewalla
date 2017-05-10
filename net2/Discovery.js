@@ -412,7 +412,7 @@ module.exports = class {
                 redisobjs.push(JSON.stringify(list[i]));
 
                 // "{\"name\":\"eth0\",\"ip_address\":\"192.168.2.225\",\"mac_address\":\"b8:27:eb:bd:54:da\",\"type\":\"Wired\",\"gateway\":\"192.168.2.1\",\"subnet\":\"192.168.2.0/24\"}"
-                if (list[i].type=="Wired") {
+                if (list[i].type=="Wired" && list[i].name!="eth0:0") {
                     let host = {
                         name:"Firewalla",
                         uid:list[i].ip_address,
