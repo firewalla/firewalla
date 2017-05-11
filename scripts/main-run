@@ -94,12 +94,14 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
     then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge3 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge3 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6a $FIREWALLA_HOME/bin/.
      mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
@@ -238,3 +240,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo systemctl start ntp
     sync
 fi
+
+DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
+sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
+

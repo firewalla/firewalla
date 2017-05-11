@@ -112,7 +112,7 @@ module.exports = class {
         callback = callback || function() {}
 
         this.discoverInterfaces((err, list) => {
-          log.info("Discovery::Scan", this.config.discovery.networkInterfaces, list);
+          log.info("Discovery::Scan", this.config.discovery.networkInterfaces, {});
           for (let i in this.config.discovery.networkInterfaces) {
 
                 let intf = this.interfaces[this.config.discovery.networkInterfaces[i]];
@@ -598,7 +598,7 @@ module.exports = class {
                                 if (data.bname == null && nname!=null) {
                                     data.bname = nname;
                                 }
-                                console.log("Discovery:Nmap:Update",key, data);
+                                //console.log("Discovery:Nmap:Update",key, data);
                             } else {
                                 data = {};
                                 data.ipv4 = host.ipv4Addr;

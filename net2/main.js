@@ -43,9 +43,11 @@ if(!bone.isAppConnected()) {
  */
 
 var secondaryInterface = require("./SecondaryInterface.js");
-secondaryInterface.create(config,(err)=>{
+secondaryInterface.create(config,(err,ip,subnet)=>{
     if (err == null) {
         log.info("Successful Created Secondary Interface");
+        sysManager.secondaryIp = ip;
+        sysManager.secondarySubnet = subnet; 
     }
 });
 
