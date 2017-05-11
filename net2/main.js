@@ -25,6 +25,8 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 let bone = require("../lib/Bone.js");
 
+let firewalla = require("./Firewalla.js");
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
@@ -63,18 +65,19 @@ function run0() {
 }
 
 
-
-process.on('uncaughtException',(err)=>{
-  log.warn("################### CRASH #############");
-  log.warn("+-+-+-",err.message,err.stack);
-  if (err && err.message && err.message.includes("Redis connection")) {
-    return; 
-  }
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
-  setTimeout(()=>{
-    process.exit(1);
-  },1000*5);
-});
+if(firewalla.isProduction()) {
+  process.on('uncaughtException',(err)=>{
+    log.warn("################### CRASH #############");
+    log.warn("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+      return; 
+    }
+    bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+      process.exit(1);
+    },1000*5);
+  });
+}
 
 function run() {
 
