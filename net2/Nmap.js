@@ -16,11 +16,13 @@
 var ip = require('ip');
 
 var debugging = false;
-var log = function () {
-    if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
-    }
-};
+// var log = function () {
+//     if (debugging) {
+//         console.log(Array.prototype.slice.call(arguments));
+//     }
+// };
+
+let log = require('./logger.js')(__filename, 'info');
 
 module.exports = class {
 
