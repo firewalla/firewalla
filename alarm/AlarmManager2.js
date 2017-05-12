@@ -269,7 +269,20 @@ module.exports = class {
         this.idsToAlarms(alarmIDs, callback);
       });
     }
-    
+
+  numberOfAlarms(callback) {
+    callback = callback || function() {}
+
+    rclient.zcount(alarmActiveKey, "-inf", "+inf", (err, result) => {
+      if(err) {
+        callback(err);
+        return;
+      }
+
+      // TODO: support more than 20 in the future
+      callback(null, result > 20 ? 20 : result);
+    });
+  }
     // top 20 only by default
     loadActiveAlarms(number, callback) {
 
