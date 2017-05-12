@@ -41,6 +41,9 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let redis = require('redis');
+let rclient = redis.createClient();
+
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
 
@@ -61,6 +64,7 @@ var async = require('async');
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
 
+let f = require('../net2/Firewalla.js');
 
 class netBot extends ControllerBot {
 
@@ -502,6 +506,10 @@ class netBot extends ControllerBot {
         //
       //       log.info("Set: ",gid,msg);
 
+      // invalidate cache
+      this.invalidateCache();
+      
+      
       switch(msg.data.item) {
       case "policy":
           async.eachLimit(Object.keys(msg.data.value),1,(o,cb)=>{
@@ -1151,25 +1159,72 @@ class netBot extends ControllerBot {
       }
 
       let datamodel = {
-                    type: 'jsonmsg',
-                    mtype: msg.mtype,
-                    id: uuid.v4(),
-                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                    replyid: msg.id,
-                    code: code,
+        type: 'jsonmsg',
+        mtype: msg.mtype,
+        id: uuid.v4(),
+        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+        replyid: msg.id,
+        code: code,
         data: data,
         message: message
-            };
+      };
       return datamodel;
     }
 
+  invalidateCache(callback) {
+    callback = callback || function() {}
+
+    rclient.del("init.cache", callback);
+  }
+
+  loadInitCache(callback) {
+    callback = callback || function() {}
+
+    rclient.get("init.cache", callback);
+  }
+  
+  cacheInitData(json, callback) {
+    callback = callback || function() {}
+    
+    let jsonString = JSON.stringify(json);
+    let expireTime = 60; // cache for 1 min
+    rclient.set("init.cache", jsonString, (err) => {
+      if(err) {
+        log.error("Failed to set init cache: " + err);
+        callback(err);
+        return;
+      }
+
+      rclient.expire("init.cache", expireTime, (err) => {
+        if(err) {
+          log.error("Failed to set expire time on init cache: " + err);
+          callback(err);
+          return;
+        }
+
+        callback(null);
+      });
+
+    });    
+  }
+  
     msgHandler(gid, rawmsg, callback) {
         if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
             let msg = rawmsg.message.obj;
 //            log.info("Received jsondata", msg);
             if (rawmsg.message.obj.type === "jsonmsg") {
-                if (rawmsg.message.obj.mtype === "init") {
-                    log.info("Process Init load event");
+              if (rawmsg.message.obj.mtype === "init") {
+
+                log.info("Process Init load event");
+                
+                this.loadInitCache((err, cachedJson) => {
+                  if(err || ! cachedJson) {
+                    if(err) 
+                      log.error("Failed to load init cache: " + err);
+
+                    // regenerate init data
+                    log.info("Re-generate init data");
+
                     this.hostManager.toJson(true, (err, json) => {
                         let datamodel = {
                             type: 'jsonmsg',
@@ -1179,22 +1234,48 @@ class netBot extends ControllerBot {
                             replyid: msg.id,
                         }
                         if (json != null) {
-                            datamodel.code = 200;
-                            datamodel.data = json;
-
-                          if(require('fs').existsSync("/.dockerenv")) {
+                          datamodel.code = 200;
+                          datamodel.data = json;
+                          
+                          if(f.isDocker()) {
                               json.docker = true;
                           }
 
+                          this.cacheInitData(json);
+
                         } else {
                           log.error("json is null when calling init")
-                            datamodel.code = 500;
+                          datamodel.code = 500;
                         }
                         log.info("Sending data", datamodel.replyid, datamodel.id);
                         this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
 
                     });
-                } else if (rawmsg.message.obj.mtype === "set") {
+                  } else {
+
+                    log.info("Using init cache");
+                   
+                    let json = JSON.parse(cachedJson);
+                    
+                    let datamodel = {
+                      type: 'jsonmsg',
+                      mtype: 'init',
+                      id: uuid.v4(),
+                      expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                      replyid: msg.id,
+                      code: 200,
+                      data: json
+                    }
+
+                    log.info("Sending data", datamodel.replyid, datamodel.id);
+                    this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
+                    
+                  }
+                });
+
+
+                    
+              } else if (rawmsg.message.obj.mtype === "set") {
                     // mtype: set
                     // target = "ip address" 0.0.0.0 is self
                     // data.item = policy

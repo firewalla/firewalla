@@ -11,6 +11,8 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 let bone = require("../../lib/Bone.js");
 
+let f = require("../../net2/Firewalla.js");
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('../../net2/SysManager.js');
 var sysManager = new SysManager('info');
@@ -103,7 +105,12 @@ function runLocalAPI() {
    * Listen on provided port, on all network interfaces.
    */
 
-  serverForLocalAPI.listen(portForLocalAPI, 'localhost')
+  if(f.isProduction()) {
+    serverForLocalAPI.listen(portForLocalAPI, 'localhost')
+  } else {
+    serverForLocalAPI.listen(portForLocalAPI)
+  }
+
   serverForLocalAPI.on('error', onError);
   serverForLocalAPI.on('listening', onListening);
 }
@@ -167,8 +174,6 @@ function onListening() {
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
 }
-
-let f = require('../../net2/Firewalla.js');
 
 // for non production, just print on console
 if(f.isProduction()) {

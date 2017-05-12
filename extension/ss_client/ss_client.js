@@ -27,6 +27,8 @@ let sysManager = new SysManager();
 
 let userID = f.getUserID();
 
+var extend = require('util')._extend;
+
 let extensionFolder = fHome + "/extension/ss_client";
 
 // Files
@@ -35,14 +37,19 @@ let redirectionBinary = extensionFolder + "/fw_ss_redir";
 let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
 let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 let chinaDNSBinary = extensionFolder + "/chinadns";
+let kcpBinary = extensionFolder + "/kcp_client";
 
 let chnrouteFile = extensionFolder + "/chnroute";
 let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
 
 let ssConfigKey = "scisurf.config";
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
+let ssForKCPConfigPath = f.getUserConfigFolder() + "/ss_client.kcp.config.json";
 var ssConfig = null;
 
+let localKCPTunnelPort = 8856;
+let localKCPTunnelAddress = "127.0.0.1";
+let kcpParameters = "-mtu 1400 -sndwnd 256 -rcvwnd 2048 -mode fast2 -dscp 46";
 let localTunnelPort = 8855;
 let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;
@@ -53,6 +60,11 @@ let tunnelPidPath = f.getRuntimeInfoFolder() + "/ss_client.tunnel.pid";
 let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid";
 let dnsServerWithPort = "8.8.8.8:53";
 
+let kcpLog = f.getLogFolder() + "/kcp.log";
+
+function isKCPEnabled() {
+  return ssConfig && ssConfig.kcp_enabled != null;
+}
 
 function loadConfig(callback) {
   callback = callback || function() {}
@@ -93,8 +105,6 @@ function clearConfig(callback) {
   });
 }
 
-loadConfig();
-
 /*
  * 1. install
  * 2. prepare ipset
@@ -114,7 +124,8 @@ function start(callback) {
       return;
     }
 
-
+    saveConfigToFile();
+    
     // always stop before start
 
     stop((err) => {
@@ -144,33 +155,67 @@ function start(callback) {
               return;
             }
 
-            _startRedirection((err) => {
-              if(err) {
-                callback(err);
-                stop(); // stop everything if anything wrong.
-                return;
-              }
-
-              _enableChinaDNS((err) => {
+            if(isKCPEnabled()) {
+              _startKCP((err) => {
+                if(err) {
+                  callback(err);
+                  stop(); // stop everything if anything wrong
+                  return;
+                }                
+                _startRedirectionForKCP((err) => {
+                  if(err) {
+                    callback(err);
+                    stop(); // stop everything if anything wrong.
+                    return;
+                  }
+                  
+                  _enableChinaDNS((err) => {
+                    if(err) {
+                      callback(err);
+                      stop(); // stop everything if anything wrong.
+                      return;
+                    }
+                    
+                    _enableIptablesRule((err) => {
+                      if(err) {
+                        stop(); // stop everything if anything wrong.
+                      } else {
+                        started = true;
+                      }
+                      callback(err);
+                    });
+                  });
+                });
+              });
+            } else {
+              _startRedirection((err) => {
                 if(err) {
                   callback(err);
                   stop(); // stop everything if anything wrong.
                   return;
                 }
-
-                _enableIptablesRule((err) => {
+                
+                _enableChinaDNS((err) => {
                   if(err) {
+                    callback(err);
                     stop(); // stop everything if anything wrong.
-                  } else {
-                    started = true;
+                    return;
                   }
-                  callback(err);
+                  
+                  _enableIptablesRule((err) => {
+                    if(err) {
+                      stop(); // stop everything if anything wrong.
+                    } else {
+                      started = true;
+                    }
+                    callback(err);
+                  });
                 });
               });
-            });
+            }  
           });
         });
-      });
+      });      
     });
   });
 }
@@ -181,6 +226,7 @@ function stop(callback) {
   async.applyEachSeries([ _disableIptablesRule,
                           _disableChinaDNS,
                           _stopRedirection,
+                          _stopKCP,
                           _stopTunnel,
                           _disableIpset],
                         (err) => {
@@ -202,6 +248,17 @@ function uninstall(callback) {
   // TODO
 }
 
+function saveConfigToFile() {
+  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
+  
+  if(ssConfig.kcp_server && ssConfig.kcp_server_port) {
+    let ssKCPConfig = extend({}, ssConfig);
+    ssKCPConfig.server = localKCPTunnelAddress;
+    ssKCPConfig.server_port = localKCPTunnelPort;
+    jsonfile.writeFileSync(ssForKCPConfigPath, ssKCPConfig, {spaces: 2});
+  }   
+}
+
 function saveConfig(config, callback) {
   rclient.set(ssConfigKey, JSON.stringify(config), (err) => {
     if(err) {
@@ -210,8 +267,7 @@ function saveConfig(config, callback) {
     }
     
     ssConfig = config;
-    jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
-
+    saveConfigToFile();
     callback(null);
   });
 }
@@ -282,6 +338,28 @@ function _startRedirection(callback) {
   });
 }
 
+function _startRedirectionForKCP(callback) {
+  callback = callback || function() {}
+
+  let cmd = util.format("%s -c %s -l %d -f %s -b %s",
+                        redirectionBinary,
+                        ssForKCPConfigPath,
+                        localRedirectionPort,
+                        redirectionPidPath,
+                        localRedirectionAddress);
+
+  log.info("Running cmd:", cmd);
+  // ss_redirection will put itself to background mode
+  p.exec(cmd, (err, stdout, stderr) => {
+    if(err) {
+      log.error("Failed to start redirection for kcp: " + err);
+    } else {
+      log.info("Redirection for kcp is started successfully");
+    }
+    callback(err);
+  });
+}
+
 function _stopRedirection(callback) {
   callback = callback || function() {}
 
@@ -295,6 +373,65 @@ function _stopRedirection(callback) {
     }
   });
   callback(null);
+}
+
+function _startKCP(callback) {
+  callback = callback || function() {}
+
+  let remoteKCPServer = ssConfig.kcp_server;
+  let remoteKCPPort = ssConfig.kcp_server_port;
+
+  if(!remoteKCPServer || !remoteKCPPort) {
+    callback(new Error("KCP server and port configuration is required"));
+    return;
+  }
+
+  let args = util.format("%s --remoteaddr %s:%d --localaddr %s:%d --log %s",
+                         kcpParameters,
+                         remoteKCPServer,
+                         remoteKCPPort,
+                         localKCPTunnelAddress,
+                         localKCPTunnelPort,
+                         kcpLog
+                        );
+  
+  log.info("Running cmd:", kcpBinary, args);
+
+  let kcp = p.spawn(kcpBinary, args.split(" "), {detached: true});
+
+  let callbacked = false;
+  
+  kcp.on('close', (code) => {
+    if(!callbacked && code !== 0) {
+      callback(new Error("kcp exited with code " + code));
+      callbacked = true;
+    }
+    log.info("kcp exited with code", code);
+  });
+
+  setTimeout(() => {
+    if(!callbacked) {
+      callback(null);
+      callbacked = true;
+    }
+  }, 1000);
+}
+
+function _stopKCP(callback) {
+  callback = callback || function() {}
+
+  let cmd = "pkill kcp_client";
+  log.info("Running cmd:", cmd);
+
+  p.exec(cmd, (err, stdout, stderr) => {
+    if(err) {
+      log.error("Failed to stop KCP");
+    } else {
+      log.info("KCP is stopped successfully");
+    }
+    callback(null);
+  });
+
 }
 
 function _enableIpset(callback) {

@@ -15,7 +15,8 @@
 
 'use strict';
 
-var log;
+let log = require('./logger.js')(__filename);
+
 var Tail = require('always-tail');
 var redis = require("redis");
 var rclient = redis.createClient();
@@ -31,10 +32,14 @@ var dnsManager = new DNSManager();
 var AlarmManager = require('./AlarmManager.js');
 var alarmManager = new AlarmManager('info');
 
+let Alarm = require('../alarm/Alarm.js');
+let AM2 = require('../alarm/AlarmManager2.js');
+let am2 = new AM2();
+
 var linux = require('../util/linux.js');
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 /*
@@ -776,7 +781,7 @@ module.exports = class {
 
             if (now > this.flowstashExpires) {
                 let stashed={};
-                console.log("Processing Flow Stash");
+                log.info("Processing Flow Stash");
                 for (let i in this.flowstash) {
                     let spec = this.flowstash[i];
                     try {
@@ -838,7 +843,7 @@ module.exports = class {
                         let stash = stashed[key];
                         log.info("Conn:Save:Summary:Wipe",key, "Resoved To: ", stash.length);
                         rclient.zremrangebyscore(key,sstart,send, (err, data) => {
-                            console.log("Conn:Info:Removed",key,err,data);
+                            log.info("Conn:Info:Removed",key,err,data);
                             for (let i in stash) {
                                 rclient.zadd(stash[i], (err, response) => {
                                     if (err == null) {
@@ -1203,18 +1208,36 @@ module.exports = class {
 
                 dnsManager.resolvehost(obj.src,(err,__src)=>{
                     dnsManager.resolvehost(obj.dst,(err,__dst)=>{
-                        actionobj.shname =dnsManager.name(__src);
-                        actionobj.dhname =dnsManager.name(__dst);
-                        alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
-                            if (obj != null) {
-                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
-                            }
+                      actionobj.shname =dnsManager.name(__src);
+                      actionobj.dhname =dnsManager.name(__dst);
+
+                      let localIP = lh;
+                      let message = obj.msg;
+                      let noticeType = obj.note;
+                      let timestamp = parseFloat(obj.ts);
+                      
+                      let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
+                        "p.device.ip": localIP,
+                      });
+
+                      am2.enrichDeviceInfo(alarm).then((alarm) => {
+                        am2.checkAndSave(alarm, (err) => {
+                          if(err) {
+                            log.error("Failed to save alarm: " + err);
+                          }
                         });
+                      });
+                      
+                      alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
+                        if (obj != null) {
+                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
+                        }
+                      });
                     }); 
                 }); 
 
             } else {
-                log.debug("Notice:Drop", JSON.parse(data));
+              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
             log.error("Notice:Error Unable to save", e,data);

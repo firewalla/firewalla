@@ -13,7 +13,9 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+
+let log = require('./logger.js')(__filename);
+
 var redis = require("redis");
 var rclient = redis.createClient();
 var sclient = redis.createClient();
@@ -35,12 +37,11 @@ var instance = null;
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")("MessageBus", loglevel);
             instance = this;
             this.callbacks = {};
             sclient.on("message", (channel, message) => {
                 let m = JSON.parse(message);
-                console.log("Reciving Msg:", m);
+                log.info("Reciving Msg:", m);
                 let notified = 0;
                 if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
                     this.callbacks[channel + "." + m.type + "." + m.ip](channel, m.type, m.ip, m.msg);
@@ -50,7 +51,7 @@ module.exports = class {
                     this.callbacks[channel + "." + m.type](channel, m.type, m.ip, m.msg);
                     notified += 1;
                 }
-                console.log("Notified ", notified);
+                log.info("Notified ", notified);
             });
         }
         return instance;

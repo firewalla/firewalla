@@ -64,6 +64,8 @@ class Alarm {
     return ["p.device.name", "p.device.id"];
   }
 
+
+  
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
     
@@ -82,6 +84,29 @@ class Alarm {
 class NewDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+}
+
+class BroNoticeAlarm extends Alarm {
+  constructor(timestamp, device, notice, message, info) {
+    super("ALARM_BRO_NOTICE", timestamp, device, info);
+    this["p.noticeType"] = notice;
+    this["p.message"] = message;
+  }
+}
+
+class IntelAlarm extends Alarm {
+  constructor(timestamp, device, severity, info) {
+    super("ALARM_INTEL", timestamp, device, info);
+    this["p.severity"] = severity;
+  }
+
+  getI18NCategory() {
+    if(this["p.local_is_client"] === "1") {
+      return "ALARM_INTEL_FROM_INSIDE";
+    } else {
+      return "ALARM_INTEL_FROM_OUTSIDE";
+    }
   }
 }
 
@@ -128,10 +153,10 @@ class OutboundAlarm extends Alarm {
   }
 
   getSimpleOutboundTrafficSize() {
-    console.log("xxxx");
     return formatBytes(this["p.transfer.outbound.size"]);
   }
 }
+
 
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
@@ -139,7 +164,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getI18NCategory() {
-    if(this["p.local_is_client"] === 1) {
+    if(this["p.local_is_client"] === "1") {
       return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
     } else {
       return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
@@ -170,7 +195,9 @@ let classMapping = {
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
-  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype
+  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
+  ALARM_INTEL: IntelAlarm.prototype
 }
 
 module.exports = {
@@ -181,5 +208,7 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
+  BroNoticeAlarm: BroNoticeAlarm,
+  IntelAlarm: IntelAlarm,
   mapping: classMapping
 }
