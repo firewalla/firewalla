@@ -91,7 +91,7 @@ module.exports = class {
             }  else {
                 for (let i in alarms) {
                     let alarm = JSON.parse(alarms[i]);
-                    console.log("alarm:check:iterating",alarm.actionobj.src,alarmObj.actionobj.src, alarm.actionobj.dst,alarmObj.actionobj.dst, alarm.alarmtype,alarmObj.alarmtype); 
+//                    console.log("alarm:check:iterating",alarm.actionobj.src,alarmObj.actionobj.src, alarm.actionobj.dst,alarmObj.actionobj.dst, alarm.alarmtype,alarmObj.alarmtype); 
                     if (alarm.actionobj && alarmObj.actionobj) {
                         if (alarm.actionobj.src == alarmObj.actionobj.src &&
                             alarm.actionobj.dst == alarmObj.actionobj.dst &&

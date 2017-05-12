@@ -15,7 +15,8 @@
 
 'use strict';
 
-var log;
+let log = require('./logger.js')(__filename);
+
 var Tail = require('always-tail');
 var redis = require("redis");
 var rclient = redis.createClient();
@@ -38,7 +39,7 @@ let am2 = new AM2();
 var linux = require('../util/linux.js');
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 /*
@@ -780,7 +781,7 @@ module.exports = class {
 
             if (now > this.flowstashExpires) {
                 let stashed={};
-                console.log("Processing Flow Stash");
+                log.info("Processing Flow Stash");
                 for (let i in this.flowstash) {
                     let spec = this.flowstash[i];
                     try {
@@ -842,7 +843,7 @@ module.exports = class {
                         let stash = stashed[key];
                         log.info("Conn:Save:Summary:Wipe",key, "Resoved To: ", stash.length);
                         rclient.zremrangebyscore(key,sstart,send, (err, data) => {
-                            console.log("Conn:Info:Removed",key,err,data);
+                            log.info("Conn:Info:Removed",key,err,data);
                             for (let i in stash) {
                                 rclient.zadd(stash[i], (err, response) => {
                                     if (err == null) {

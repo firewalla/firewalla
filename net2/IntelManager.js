@@ -15,7 +15,9 @@
 'use strict';
 
 var instance = null;
-var log = null;
+
+let log = require('./logger.js')(__filename);
+
 var request = require('request');
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
@@ -28,7 +30,6 @@ var bone = require("../lib/Bone.js");
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")("intel", loglevel);
             instance = this;
         }
         return instance;
@@ -106,7 +107,7 @@ module.exports = class {
 
     _packageCymon(ip, obj) {
         let weburl = "https://cymon.io/" + ip;
-        console.log("INFO:------ Intel Information", obj.count);
+        log.info("INFO:------ Intel Information", obj.count);
         let summary = obj.count + " reported this IP.\n";
         let max = 4;
         let severity = 0;
@@ -200,19 +201,19 @@ module.exports = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.info("Error while requesting ", err, stack);
                 callback(err, null, null);
                 return;
             }
             if (httpResponse == null) {
                 let stack = new Error().stack;
-                console.log("Error while response ", err, stack);
+                log.info("Error while response ", err, stack);
                 callback(500, null, null);
                 return;
             }
             if (httpResponse.statusCode < 200 ||
                 httpResponse.statusCode > 299) {
-                console.log("**** Error while response HTTP ", httpResponse.statusCode);
+                log.info("**** Error while response HTTP ", httpResponse.statusCode);
                 callback(httpResponse.statusCode, null, null);
                 return;
             }
@@ -242,19 +243,19 @@ module.exports = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.info("Error while requesting ", err, stack);
                 callback(err, null, null);
                 return;
             }
             if (httpResponse == null) {
                 let stack = new Error().stack;
-                console.log("Error while response ", err, stack);
+                log.info("Error while response ", err, stack);
                 callback(500, null, null);
                 return;
             }
             if (httpResponse.statusCode < 200 ||
                 httpResponse.statusCode > 299) {
-                console.log("**** Error while response HTTP ", httpResponse.statusCode);
+                log.info("**** Error while response HTTP ", httpResponse.statusCode);
                 callback(httpResponse.statusCode, null, null);
                 return;
             }
@@ -263,7 +264,7 @@ module.exports = class {
                 let obj = JSON.parse(body);
                 if (obj != null) {
                     if (obj.count == 0) {
-                        console.log("INFO:====== No Intel Information!!", ip);
+                        log.info("INFO:====== No Intel Information!!", ip);
                         callback(null, null, null);
                     } else {
                         this._location(ip,(err,lobj)=>{ 

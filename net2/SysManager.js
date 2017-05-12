@@ -13,7 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
+
 var iptool = require('ip');
 var os = require('os');
 var network = require('network');
@@ -45,7 +46,6 @@ const dns = require('dns');
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")(__filename, loglevel);
             rclient.hdel("sys:network:info", "oper");
             this.multicastlow = iptool.toLong("224.0.0.0");
             this.multicasthigh = iptool.toLong("239.255.255.255");
@@ -169,7 +169,7 @@ module.exports = class {
     systemRebootedDueToIssue(reset) {
        try {
            if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
-               console.log("SysManager:RebootDueToIssue");
+               log.info("SysManager:RebootDueToIssue");
                if (reset == true) { 
                    require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
                }
@@ -260,7 +260,7 @@ module.exports = class {
                         self.publicIp = ip;
                     }
                 });
-                //         console.log("System Manager Initialized with Config", this.sysinfo);
+                //         log.info("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
                 callback(err);
@@ -531,7 +531,7 @@ module.exports = class {
             this.getSysInfo((err,_sysinfo)=>{
                 log.info("SysManager:Checkin:", license, _sysinfo);
                 bone.checkin(this.config,license,_sysinfo,(err,data)=>{
-                    console.log("CheckedIn:", JSON.stringify(data));
+                    log.info("CheckedIn:", JSON.stringify(data));
                     rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
                         if (data.ddns) {
                             this.ddns = data.ddns;
@@ -563,7 +563,7 @@ module.exports = class {
                 expireDate = Date.now() / 1000 - 8 * 60 * 60;
             }
             for (let k in keys) {
-                //console.log("Expring for ",keys[k],expireDate);
+                //log.info("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
 
                   // drop old flows to avoid explosion due to p2p connections

@@ -117,7 +117,7 @@ function redisclean(config,count) {
         if (count!=null && count >0) {
              MAX_CONNS_PER_FLOW = count;
         }
-        console.log("Cleaning entries MAX_CONN", MAX_CONNS_PER_FLOW);
+        log.info("Cleaning entries MAX_CONN", MAX_CONNS_PER_FLOW);
         this.config = config;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
@@ -125,7 +125,7 @@ function redisclean(config,count) {
                 expireDate = Date.now() / 1000 - 8 * 60 * 60;
             }
             for (let k in keys) {
-                //console.log("Expring for ",keys[k],expireDate);
+                //log.info("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
 
                   // drop old flows to avoid explosion due to p2p connections
