@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
 var ip = require('ip');
 var os = require('os');
 var dns = require('dns');
@@ -29,7 +29,7 @@ var redis = require("redis");
 var rclient = redis.createClient();
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var SysManager = require('./SysManager.js');
@@ -81,7 +81,6 @@ var natUpnp = require('nat-upnp');
 module.exports = class {
   constructor(name, config, loglevel, noScan) {
         if (instances[name] == null) {
-          log = require("./logger.js")("Discovery", loglevel);
           
           this.hosts = [];
           this.name = name;
@@ -378,7 +377,7 @@ module.exports = class {
         this.interfaces = {};
         linux.get_network_interfaces_list((err,list)=>{
      //   network.get_interfaces_list((err, list) => {
-            log.info("Found list of interfaces", list, {});
+//            log.info("Found list of interfaces", list, {});
             let redisobjs = ['sys:network:info'];
             if (list == null || list.length <= 0) {
                 log.error("Discovery::Interfaces", "No interfaces found");
@@ -488,7 +487,7 @@ module.exports = class {
                 let host = hosts[h];
                 this.processHost(host);
             }
-            //console.log("Done Processing ++++++++++++++++++++");
+            //log.info("Done Processing ++++++++++++++++++++");
             log.info("Network scanning is completed:",subnet,hosts.length);
             setTimeout(() => {
                 callback(null, null);
@@ -598,7 +597,7 @@ module.exports = class {
                                 if (data.bname == null && nname!=null) {
                                     data.bname = nname;
                                 }
-                                //console.log("Discovery:Nmap:Update",key, data);
+                                //log.info("Discovery:Nmap:Update",key, data);
                             } else {
                                 data = {};
                                 data.ipv4 = host.ipv4Addr;
@@ -766,7 +765,7 @@ module.exports = class {
         }
         this.ping6ForDiscovery(intf,obj,(err) => {
             let cmdline = 'ip -6 neighbor show';
-            console.log("Running commandline: ", cmdline);
+            log.info("Running commandline: ", cmdline);
 
             this.process = require('child_process').exec(cmdline, (err, out, code) => {
                 let lines = out.split("\n");

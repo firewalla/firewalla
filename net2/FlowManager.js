@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
 var ip = require('ip');
 var os = require('os');
 var network = require('network');
@@ -30,7 +30,7 @@ var bone = require("../lib/Bone.js");
 var firewalla = require("../net2/Firewalla.js");
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var async = require('async');
@@ -91,12 +91,12 @@ class FlowGraph {
                 
              this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
          } else {
-             //console.log("$$$ before ",flow.flows);
+             //log.info("$$$ before ",flow.flows);
              for (let i in flow.flows) {
                  let f = flow.flows[i];
                  this.addRawFlow(f[0],f[1],f[2],f[3],1);
              }
-             //console.log("$$$ after",this.flowarray);
+             //log.info("$$$ after",this.flowarray);
          }
     }
 
@@ -135,7 +135,7 @@ class FlowGraph {
          }
 
          this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
-    //     console.log("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
+    //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
 
     }
 
@@ -146,7 +146,6 @@ module.exports = class FlowManager {
         if (instance == null) {
             let cache = {};
             instance = this;
-            log = require("./logger.js")("FlowManager", loglevel);
         }
         return instance;
     }
@@ -189,7 +188,7 @@ module.exports = class FlowManager {
             let inkey = "stats:"+type+":in:"+ip;
             let outkey = "stats:"+type+":out:"+ip;
             rclient.zscan(inkey,0,'count',lotsofkeys,(err,data)=>{
-                //console.log("Data:",data);
+                //log.info("Data:",data);
                 if (data && data.length==2) {
                     let array = data[1];
                     log.debug("array:",array.length);
@@ -253,7 +252,7 @@ module.exports = class FlowManager {
                let key = keys[i];
                flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
             }  
-            //console.log("FLOW DATA IS: ",flowdata,outdb,indb);
+            //log.info("FLOW DATA IS: ",flowdata,outdb,indb);
             callback(err, flowdata);
         });
     }
@@ -444,7 +443,7 @@ module.exports = class FlowManager {
 
         return flowspec;
 
-        //     console.log("ShostSummary", shostSummary, "DhostSummary", dhostSummary);
+        //     log.info("ShostSummary", shostSummary, "DhostSummary", dhostSummary);
 
     }
 
@@ -614,7 +613,7 @@ module.exports = class FlowManager {
                 cb();
             });
         }, (err) => {
-            console.log(sys);
+            log.info(sys);
             callback(err, sys);
         });
     }
@@ -634,7 +633,7 @@ module.exports = class FlowManager {
             }
             if (flow.flows) {
                  let fg = new FlowGraph("raw");
-                 //console.log("$$$ Before",flow.flows);
+                 //log.info("$$$ Before",flow.flows);
                  for (let i in flow.flows) {
                        let f = flow.flows[i];
                        let count = f[4];
@@ -644,7 +643,7 @@ module.exports = class FlowManager {
                        fg.addRawFlow(f[0],f[1],f[2],f[3],count);
                  }
                  flow.flows = fg.flowarray;
-                 //console.log("$$$ After",flow.flows);
+                 //log.info("$$$ After",flow.flows);
             }
             if (flow.appr) {
                 if (appdb[flow.appr]) {
@@ -663,11 +662,11 @@ module.exports = class FlowManager {
 
 /*
         onsole.log("--------------appsdb ---- ");
-        console.log(appdb);
-        console.log("--------------activitydb---- ");
-        console.log(activitydb);
+        log.info(appdb);
+        log.info("--------------activitydb---- ");
+        log.info(activitydb);
 */
-        //console.log(activitydb);
+        //log.info(activitydb);
  
         let flowobj = {id:0,app:{},activity:{}};
         let hasFlows = false;
@@ -704,7 +703,7 @@ module.exports = class FlowManager {
             return;
         }
 
-        //console.log("### Cleaning",flowobj);
+        //log.info("### Cleaning",flowobj);
 
         bone.flowgraph("clean", [flowobj],(err,data)=>{
             if (callback) {
@@ -848,11 +847,11 @@ module.exports = class FlowManager {
                         }
                         log.debug("flows:sorted Query dns manager returnes");
                         this.summarizeActivityFromConnections(sorted,(err,activities)=>{
-                            //console.log("Activities",activities);
+                            //log.info("Activities",activities);
                             let _sorted = [];
                             for (let i in sorted) {
                                 if (flowUtil.checkFlag(sorted[i],'x')) {
-                                    //console.log("DroppingFlow",sorted[i]); 
+                                    //log.info("DroppingFlow",sorted[i]); 
                                 } else {
                                     _sorted.push(sorted[i]);
                                 }

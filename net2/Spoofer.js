@@ -23,21 +23,17 @@ let l2 = require('../util/Layer2.js');
 var instance = null;
 
 var debugging = false;
-var log = function () {
-    if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
-    }
-};
+let log = require("./logger.js")(__filename, 'info');
 
 module.exports = class {
 
     
 
     spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
-      log("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
+      log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
-            log("Can't spoof self to self", ipAddr, tellIpAddr);
+            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }
@@ -52,16 +48,16 @@ module.exports = class {
                 _mac = _mac.toUpperCase();
             }
             if (err == false && _mac != null && _mac.match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$") != null && _mac == mac) {
-                //log("Got mac ipAddr",ipAddr," with mac ", mac);
-                log("Spoof:Spoof", ipAddr + " " + tellIpAddr + " " + mac + " " + _mac);
+                //log.info("Got mac ipAddr",ipAddr," with mac ", mac);
+                log.info("Spoof:Spoof", ipAddr + " " + tellIpAddr + " " + mac + " " + _mac);
                 this._spoof(ipAddr, tellIpAddr, mac, callback);
             } else {
                 // this will be better to tie up with nmap,
                 // scans.  then msg through a channel 
                 // 
-                //log("Host not there exist, waiting", ipAddr,err,mac);
+                //log.info("Host not there exist, waiting", ipAddr,err,mac);
                 if (_mac != mac) {
-                    log("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
+                    log.info("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
                 }
                 setTimeout(() => {
                     this.spoof(ipAddr, tellIpAddr, mac, null,null,callback);
@@ -101,7 +97,7 @@ module.exports = class {
             ipv6db[ipv6Addrs[i]]=1; 
             if (null == this._spoofersFind(mac,ipv6Addrs[i],'v6',gateway)) {
                 newips.push(ipv6Addrs[i]);
-                console.log("Spoof:AddNew",ipv6Addrs[i]);
+                log.info("Spoof:AddNew",ipv6Addrs[i]);
             }
         }
 
@@ -109,12 +105,12 @@ module.exports = class {
             for (let j in this.spoofers[mac]['v6']) {
                 if (ipv6db[j]==null) {
                    removals.push(j);
-                   console.log("Spoof:Remove",j);
+                   log.info("Spoof:Remove",j);
                 }
             }
         }
 
-        console.log("Spoof:Spoof:new",newips,"removals", removals);
+        log.info("Spoof:Spoof:new",newips,"removals", removals);
 
         if (removals.length>0) {
             this.unspoof(null,null,mac,removals,gateway);
@@ -138,10 +134,10 @@ module.exports = class {
     }
 
     _spoof6(ip6Addr, tellIpAddr, mac,callback) {
-        console.log("Spoof:Spoof6",ip6Addr,tellIpAddr);
+        log.info("Spoof:Spoof6",ip6Addr,tellIpAddr);
       //  if (ip6Addr == tellIpAddr || ip6Addr.startsWith("fe80") ) {
         if (ip6Addr == tellIpAddr ) {
-            log("Can't spoof self to self", ip6Addr, tellIpAddr);
+            log.info("Can't spoof self to self", ip6Addr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }         
@@ -161,7 +157,7 @@ module.exports = class {
             let taskr = require('child_process').exec(cmdline2, (err, out, code) => {
             });
         }
-        log(cmdline,cmdline2);
+        log.info(cmdline,cmdline2);
         this._spoofersAdd(mac,ip6Addr,'v6',tellIpAddr, {
             ip6: ip6Addr,
             tellIpAddr: tellIpAddr,
@@ -173,7 +169,7 @@ module.exports = class {
 
     _spoof(ipAddr, tellIpAddr, mac, callback) {
         if (ipAddr == tellIpAddr) {
-            log("Can't spoof self to self", ipAddr, tellIpAddr);
+            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }
@@ -185,7 +181,7 @@ module.exports = class {
 
         let cmdline = "../bin/bitbridge4 " + ipAddr + " -t " + tellIpAddr + " -r";
 
-        log("Executing cmdline ", cmdline);
+        log.info("Executing cmdline ", cmdline);
 
         let task = require('child_process').exec(cmdline, (err, out, code) => {
             if (callback)
@@ -214,12 +210,12 @@ module.exports = class {
             this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
         });
 
-        //log("Spoof:Spoof:",ipAddr,tellIpAddr);
+        //log.info("Spoof:Spoof:",ipAddr,tellIpAddr);
     }
 
     _unspoof6(ipAddr, tellIpAddr,mac) {
         let task = this._spoofersFind(mac,ipAddr,'v6',tellIpAddr);
-        log("Spoof:Unspoof6", ipAddr, tellIpAddr,task);
+        log.info("Spoof:Unspoof6", ipAddr, tellIpAddr,task);
         if (task && task.task) {
            task.task.kill('SIGHUP');
         }
@@ -232,7 +228,7 @@ module.exports = class {
 
     _unspoof(ipAddr, tellIpAddr,mac) {
         let task = this._spoofersFind(mac,ipAddr,'v4',tellIpAddr);
-        log("Spoof:Unspoof", ipAddr, tellIpAddr);
+        log.info("Spoof:Unspoof", ipAddr, tellIpAddr);
         if (task != null && task.task != null) {
             task.task.kill('SIGHUP');
             this.clean(task.ip);
@@ -243,7 +239,7 @@ module.exports = class {
         }
     }
     unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6) {
-        log("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
+        log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
         if (ipAddr && tellIpAddr) {
            this._unspoof(ipAddr,tellIpAddr,mac);
         }
@@ -261,22 +257,30 @@ module.exports = class {
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
         }
-        console.log("Spoof:Clean:Running commandline: ", cmdline);
+        log.info("Spoof:Clean:Running commandline: ", cmdline);
 
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
+      let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+      });
     }
 
     clean6byIp(ip6Addr,tellIpAddr) {
         let cmdline = "sudo pkill -f 'bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr+"'";
         let cmdline2 = "sudo pkill -f 'bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr+"'";
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
-        let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
+      let p = require('child_process').exec(cmdline, (err, out, code) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+        
+      });
+      let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+        
+      });
     }
 
     clean6(ip) {
@@ -285,10 +289,10 @@ module.exports = class {
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";
         }
-        console.log("Spoof:Clean:Running commandline: ", cmdline);
+        log.info("Spoof:Clean:Running commandline: ", cmdline);
 
         let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
+            log.info("Spoof:Clean up spoofing army", cmdline, err, out);
         });
     }
 

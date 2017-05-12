@@ -18,7 +18,7 @@ var ip = require('ip');
 var debugging = false;
 // var log = function () {
 //     if (debugging) {
-//         console.log(Array.prototype.slice.call(arguments));
+//         log.info(Array.prototype.slice.call(arguments));
 //     }
 // };
 
@@ -54,7 +54,7 @@ module.exports = class {
         if (obj) {
             this.nmapScan(obj.cmdline,true,(err,hosts,ports)=>{
                 obj.callback(err,hosts,ports);
-                console.log("NMAP:ScanQUEUE",this.scanQ); 
+                log.info("NMAP:ScanQUEUE",this.scanQ); 
                 this.scanQueue(this.scanQ.pop()); 
             });
         }
@@ -78,11 +78,11 @@ module.exports = class {
         if (fast == true) {
             cmdline = 'sudo nmap -sn -PO --host-timeout 30s  ' + range + ' -oX - | xml-json host';
         }
-        console.log("Running commandline: ", cmdline);
+        log.info("Running commandline: ", cmdline);
 
         if (this.scanQ.length>3) {
             callback("Queuefull", null,null);
-            console.log("======================= Warning Previous instance running====");
+            log.info("======================= Warning Previous instance running====");
             return;
         }
 
@@ -107,7 +107,7 @@ module.exports = class {
                         host.hostnameType = hostjson.hostnames.hostname.type;
                     }
                     /*
-                    console.log(hostjson.hostnames);
+                    log.info(hostjson.hostnames);
                     if (hostjson.hostnames && Array.isArray(hostjson.hostname) && hostjson.hostname.length>0) {
                         host.hostname = hostjson.hostnames[0].hostname.name;
                         host.hostnameType = hostjson.hostnames[0].hostname.type;
@@ -129,7 +129,7 @@ module.exports = class {
                     }
 
                     if (host.mac == null && requiremac == true) {
-                        console.log("skipping host, no mac address", host);
+                        log.info("skipping host, no mac address", host);
                         continue;
                     }
 
@@ -182,7 +182,7 @@ module.exports = class {
                             }
                         }
                     } catch(e) {
-                        console.log("Discovery:Nmap:Netbios:Error",e,host);
+                        log.info("Discovery:Nmap:Netbios:Error",e,host);
                     }
 
                     hosts.push(host);
@@ -191,7 +191,7 @@ module.exports = class {
             callback(null, hosts, ports);
         });
         this.process.on('close', (code, signal) => {
-            console.log("NMAP Closed");
+            log.info("NMAP Closed");
             this.process = null;
         });
     }

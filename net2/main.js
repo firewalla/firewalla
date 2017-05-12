@@ -138,8 +138,6 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  console.log("LANCHING NETBOT SERVER");
-
   var Spoofer = require('./Spoofer.js');
   let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
 
@@ -188,12 +186,12 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        console.log("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn");
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{ 
           if (err!=null) {
-            console.log("VpnManager:Unable to start vpn");
+            log.info("VpnManager:Unable to start vpn");
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
             hostManager.setPolicy("vpnAvaliable",true);
@@ -207,16 +205,16 @@ function run() {
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
-        console.log(result[i].toShortString());
+        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
-          console.log("=================================");
-          console.log("Notice :", type,ip,obj);
-          console.log("=================================");
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
         });
         result[i].on("Intel:Detected",(type,ip,obj)=>{
-          console.log("=================================");
-          console.log("Notice :", type,ip,obj);
-          console.log("=================================");
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
         });
 	//            result[i].spoof(true);
       }
