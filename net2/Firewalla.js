@@ -24,6 +24,7 @@ let util = require('util');
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
 var _isProduction = null;
+let _isDocker = null;
 
 let version = null;
 
@@ -57,6 +58,14 @@ function isProduction() {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
   }
   return _isProduction;
+}
+
+function isDocker() {
+  if(_isDocker == null) {
+    _isDocker = require('fs').existsSync("/.dockerenv");
+  }
+
+  return _isDocker;
 }
 
 function getRuntimeInfoFolder() {
@@ -309,6 +318,7 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   redisclean: redisclean,
   constants: constants,
-  getVersion: getVersion
+  getVersion: getVersion,
+  isDocker:isDocker
 }
 

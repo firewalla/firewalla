@@ -1155,40 +1155,46 @@ module.exports = class {
         
     */
 
+  basicDataForInit(json) {
+    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    json.network = networkinfo;
+    json.cpuid = utils.getCpuId();
+    
+    if(sysManager.language) {
+      json.language = sysManager.language;
+    }
+    
+    if(sysManager.timezone) {
+      json.timezone = sysManager.timezone;
+    }
+    
+    json.cpuid = utils.getCpuId()
+    json.updateTime = Date.now();
+    if (sysManager.sshPassword) {           
+      json.ssh = sysManager.sshPassword;
+    }
+    if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
+      json.lastscan = sysManager.sysinfo.oper.LastScan;
+    }
+    json.systemDebug = sysManager.isSystemDebugOn();
+    json.version = sysManager.config.version;
+    json.longVersion = f.getVersion();
+    json.device = "Firewalla (beta)"
+    json.publicIp = sysManager.publicIp;
+    json.ddns = sysManager.ddns;
+    json.license = sysManager.license;
+    if (sysManager.publicIp) {
+      json.publicIp = sysManager.publicIp;
+    }
+  }
+  
     toJson(includeHosts, callback) {
-        let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
-        let json = {
-            network: networkinfo,
-            cpuid: utils.getCpuId(),
-        };
 
-      if(sysManager.language) {
-        json.language = sysManager.language;
-      }
+      let json = {};
 
-      if(sysManager.timezone) {
-        json.timezone = sysManager.timezone;
-      }
-      
-      json.cpuid = utils.getCpuId()
-      json.updateTime = Date.now();
-        if (sysManager.sshPassword) {           
-          json.ssh = sysManager.sshPassword;
-        }
-        if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
-            json.lastscan = sysManager.sysinfo.oper.LastScan;
-        }
-        json.systemDebug = sysManager.isSystemDebugOn();
-      json.version = sysManager.config.version;
-      json.longVersion = f.getVersion();
-        json.device = "Firewalla (beta)"
-        json.publicIp = sysManager.publicIp;
-        json.ddns = sysManager.ddns;
-        json.license = sysManager.license;
-        if (sysManager.publicIp) {
-             json.publicIp = sysManager.publicIp;
-        }
-     flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+      this.basicDataForInit(json);
+
+      flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
         flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
           this.getHosts(()=>{
             json.flowsummary = data;
