@@ -121,4 +121,61 @@ alarmManager2.enrichDestInfo(a6).then((alarm) => {
   });
 });
 
+// Test isDup
+
+expect(alarmManager2.isDup(a5, a6)).to.be.false;
+
+let c1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+let c2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+let c3 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "YYY"
+});
+
+let c4 = new Alarm.VideoAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+expect(alarmManager2.isDup(c1, c2)).to.be.true;
+expect(alarmManager2.isDup(c1, c3)).to.be.false;
+expect(alarmManager2.isDup(c1, c4)).to.be.false;
+
+// Test dedup
+
+let random = Math.random();
+
+let d1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+  "p.device.mac": "XXX",
+  "p.device.name": "YYY",
+  "p.device.id": "YYY"
+});
+
+alarmManager2.dedup(d1).then((dedupResult) => {
+  expect(dedupResult).to.be.false;
+
+  alarmManager2.checkAndSave(d1, (err) => {
+    expect(err).to.be.null;
+    
+    let d2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+      "p.device.mac": "XXX",
+      "p.device.name": "YYY",
+      "p.device.id": "YYY"
+    });
+    
+    alarmManager2.dedup(d2).then((dedupResult2) => {
+      expect(dedupResult2).to.be.true;
+
+      alarmManager2.checkAndSave(d2, (err) => {
+        expect(err).not.to.be.null;
+      });
+    });
+  });
+  
+});
+
 setTimeout(() => process.exit(0), 3000);
