@@ -167,22 +167,23 @@ module.exports = class FlowMonitor {
 
                       let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
                         "p.device.id" : actionobj.shname,
-                        "p.device.name" : actionobj.shname
+                        "p.device.name" : actionobj.shname,
+                        "p.device.ip": flow.sh,
+                        "p.dest.name": actionobj.dhname,
+                        "p.dest.ip": actionobj.dst
                       });
-                      
-                      // ideally each destination should have a unique ID, now just use hostname as a workaround
-                      // so destionationName, destionationHostname, destionationID are the same for now
-                      alarm.setDestinationName(actionobj.dhname);
-                      alarm.setDestinationHostname(actionobj.dhname);
-                      alarm.setDestinationIPAddress(actionobj.dst);
 
-                      alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                        alarmManager2.checkAndSave(alarm, (err) => {
-                          if(!err) {
-                          }
-                        });
-                      });
-                      
+                      alarmManager2.enrichDeviceInfo(alarm)
+                        .then(alarmManager2.enrichDestInfo)
+                        .then((alarm) => {
+                          alert();armManager2.checkAndSave(alarm, (err) => {
+                            if(!err) {
+                            }
+                          });
+                        }).catch((err) => {
+                          if(err)
+                            log.error("Failed to create alarm: " + err);
+                        });;
                       
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj != null) {
@@ -221,19 +222,23 @@ module.exports = class FlowMonitor {
 
                     let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
                       "p.device.id" : actionobj.shname,
-                      "p.device.name" : actionobj.shname
+                      "p.device.name" : actionobj.shname,
+                      "p.device.ip": flow.sh,
+                      "p.dest.name": actionobj.dhname,
+                      "p.dest.ip": actionobj.dst
                     });
-                    
-                    alarm.setDestinationName(actionobj.dhname);
-                    alarm.setDestinationHostname(actionobj.dhname);
-                    alarm.setDestinationIPAddress(actionobj.dst);
-                    
-                    alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                      alarmManager2.checkAndSave(alarm, (err) => {
-                        if(!err) {
-                        }
+
+                    alarmManager2.enrichDeviceInfo(alarm)
+                      .then(alarmManager2.enrichDestInfo)
+                      .then((alarm) => {
+                        alert();armManager2.checkAndSave(alarm, (err) => {
+                          if(!err) {
+                          }
+                        })
+                      }).catch((err) => {
+                        if(err)
+                          log.error("Failed to create alarm: " + err);
                       });
-                    });
                     
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
                             if (obj!=null) {
@@ -331,21 +336,24 @@ module.exports = class FlowMonitor {
                       
                       let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
                         "p.device.id" : actionobj.shname,
-                        "p.device.name" : actionobj.shname
+                        "p.device.name" : actionobj.shname,
+                        "p.device.ip": flow.sh,
+                        "p.dest.name": actionobj.dhname,
+                        "p.dest.ip": actionobj.dst
                       });
                       
-                      // ideally each destination should have a unique ID, now just use hostname as a workaround
-                      // so destionationName, destionationHostname, destionationID are the same for now
-                      alarm.setDestinationName(actionobj.dhname);
-                      alarm.setDestinationHostname(actionobj.dhname);
-                      alarm.setDestinationIPAddress(actionobj.dst);
 
-                      alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                        alarmManager2.checkAndSave(alarm, (err) => {
-                          if(!err) {
-                          }
+                      alarmManager2.enrichDeviceInfo(alarm)
+                        .then(alarmManager2.enrichDestInfo)
+                        .then((alarm) => {
+                          alarmManager2.checkAndSave(alarm, (err) => {
+                            if(!err) {
+                            }
+                          });
+                        }).catch((err) => {
+                          if(err)
+                            log.error("Failed to create alarm: " + err);
                         });
-                      });
 
                         alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
                             if (obj!=null) {
@@ -355,14 +363,14 @@ module.exports = class FlowMonitor {
                                  });
                             }
                         });
-                  }
+                    }
                 }
                }
               });
             } 
         }
     }
-
+  
     // summarize will 
     // neighbor:<mac>:ip:
     //  {ip: { 
@@ -819,6 +827,18 @@ module.exports = class FlowMonitor {
     }
   }
 
+  processPornFlow(flow) {
+    
+  }
+  
+  processVideoFlow(flow) {
+    
+  }
+  
+  processGameFlow(flow) {
+    //TODO
+  }
+  
   processIntelFlow(flowObj) {    
     let deviceIP = this.getDeviceIP(flowObj);
     let remoteIP = this.getRemoteIP(flowObj);
