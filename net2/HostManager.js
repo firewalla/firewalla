@@ -13,7 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
+
 var iptool = require('ip');
 var os = require('os');
 var network = require('network');
@@ -48,10 +49,10 @@ var bone = require("../lib/Bone.js");
 var utils = require('../lib/utils.js');
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 sclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var async = require('async');
@@ -131,7 +132,7 @@ class Host {
                         if (r.ua) {
                             let md = new MobileDetect(r.ua);
                             if (md == null) {
-                                console.log("MD Null");
+                                log.info("MD Null");
                                 continue;
                             }
                             let name = null;
@@ -227,7 +228,7 @@ class Host {
                     } else if (bestOS!=null) {
                         this.hostname = "(?)"+bestOS;
                     }
-                    console.log(this.o.name,this.hostname);
+                    log.info(this.o.name,this.hostname);
                     if (this.hostname!=null && this.o.name!=this.hostname) {
                         //this.o.name = this.hostname;
                         this.save("name",null);
@@ -257,7 +258,7 @@ class Host {
                                 } else if (bestOS!=null) {
                                     this.hostname = "(?)"+bestOS;
                                 }
-                                console.log(this.o.name,this.hostname);
+                                log.info(this.o.name,this.hostname);
                                 if (this.hostname!=null && this.o.name!=this.hostname) {
                                     //this.o.name = this.hostname;
                                     this.save("name",null);
@@ -1079,7 +1080,6 @@ module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
         if (instances[name] == null) {
-            log = require("./logger.js")("HostManager", loglevel);
             this.instanceName = name;
             this.hosts = {}; // all, active, dead, alarm
             this.hostsdb = {};
@@ -1155,40 +1155,46 @@ module.exports = class {
         
     */
 
+  basicDataForInit(json) {
+    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    json.network = networkinfo;
+    json.cpuid = utils.getCpuId();
+    
+    if(sysManager.language) {
+      json.language = sysManager.language;
+    }
+    
+    if(sysManager.timezone) {
+      json.timezone = sysManager.timezone;
+    }
+    
+    json.cpuid = utils.getCpuId()
+    json.updateTime = Date.now();
+    if (sysManager.sshPassword) {           
+      json.ssh = sysManager.sshPassword;
+    }
+    if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
+      json.lastscan = sysManager.sysinfo.oper.LastScan;
+    }
+    json.systemDebug = sysManager.isSystemDebugOn();
+    json.version = sysManager.config.version;
+    json.longVersion = f.getVersion();
+    json.device = "Firewalla (beta)"
+    json.publicIp = sysManager.publicIp;
+    json.ddns = sysManager.ddns;
+    json.license = sysManager.license;
+    if (sysManager.publicIp) {
+      json.publicIp = sysManager.publicIp;
+    }
+  }
+  
     toJson(includeHosts, callback) {
-        let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
-        let json = {
-            network: networkinfo,
-            cpuid: utils.getCpuId(),
-        };
 
-      if(sysManager.language) {
-        json.language = sysManager.language;
-      }
+      let json = {};
 
-      if(sysManager.timezone) {
-        json.timezone = sysManager.timezone;
-      }
-      
-      json.cpuid = utils.getCpuId()
-      json.updateTime = Date.now();
-        if (sysManager.sshPassword) {           
-          json.ssh = sysManager.sshPassword;
-        }
-        if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
-            json.lastscan = sysManager.sysinfo.oper.LastScan;
-        }
-        json.systemDebug = sysManager.isSystemDebugOn();
-      json.version = sysManager.config.version;
-      json.longVersion = f.getVersion();
-        json.device = "Firewalla (beta)"
-        json.publicIp = sysManager.publicIp;
-        json.ddns = sysManager.ddns;
-        json.license = sysManager.license;
-        if (sysManager.publicIp) {
-             json.publicIp = sysManager.publicIp;
-        }
-     flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+      this.basicDataForInit(json);
+
+      flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
         flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
           this.getHosts(()=>{
             json.flowsummary = data;
@@ -1371,7 +1377,7 @@ module.exports = class {
             rclient.multi(multiarray).exec((err, replies) => {
                 async.eachLimit(replies,2, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
-                        //console.log("Processing GetHosts ",o);
+                        //log.info("Processing GetHosts ",o);
                         if (o.ipv4) {
                             o.ipv4Addr = o.ipv4;
                         }
@@ -1448,7 +1454,7 @@ module.exports = class {
                     for (let h in this.hostsdb) {
                         let hostbymac = this.hostsdb[h];
                         if (hostbymac) {
-                            console.log("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
+                            log.info("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
                         }
                     }
 */

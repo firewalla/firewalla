@@ -1,0 +1,11 @@
+{
+  "type":"ALARM_BRO_NOTICE",
+  "device": "10.0.1.30",
+  "alarmTimestamp": 1494225354.693,
+  "timestamp": 1494225354.608,
+  "p.device.ip": "10.0.1.30",
+  "p.device.name": "Macbook Pro2",
+  "p.device.id": "m1",
+  "p.message": "10.0.1.30 seems to be running traceroute using udp",
+  "p.noticeType": "Traceroute::Detected"
+}

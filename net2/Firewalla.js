@@ -24,6 +24,7 @@ let util = require('util');
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
 var _isProduction = null;
+let _isDocker = null;
 
 let version = null;
 
@@ -57,6 +58,14 @@ function isProduction() {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
   }
   return _isProduction;
+}
+
+function isDocker() {
+  if(_isDocker == null) {
+    _isDocker = require('fs').existsSync("/.dockerenv");
+  }
+
+  return _isDocker;
 }
 
 function getRuntimeInfoFolder() {
@@ -117,7 +126,7 @@ function redisclean(config,count) {
         if (count!=null && count >0) {
              MAX_CONNS_PER_FLOW = count;
         }
-        console.log("Cleaning entries MAX_CONN", MAX_CONNS_PER_FLOW);
+        log.info("Cleaning entries MAX_CONN", MAX_CONNS_PER_FLOW);
         this.config = config;
         rclient.keys("flow:conn:*", (err, keys) => {
             var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
@@ -125,7 +134,7 @@ function redisclean(config,count) {
                 expireDate = Date.now() / 1000 - 8 * 60 * 60;
             }
             for (let k in keys) {
-                //console.log("Expring for ",keys[k],expireDate);
+                //log.info("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
 
                   // drop old flows to avoid explosion due to p2p connections
@@ -309,6 +318,7 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   redisclean: redisclean,
   constants: constants,
-  getVersion: getVersion
+  getVersion: getVersion,
+  isDocker:isDocker
 }
 

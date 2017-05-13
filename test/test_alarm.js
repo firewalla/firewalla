@@ -90,7 +90,7 @@ a5.setDestinationName("youtube.com");
 a5.setDestinationIPAddress("78.16.49.15");
 a5["p.device.id"] = "1";
 
-let promise = alarmManager2.enrichOutboundAlarm(a5);
+let promise = alarmManager2.enrichDestInfo(a5);
 promise.then((alarm) => {
   log.info(alarm.toString());
 });
@@ -113,12 +113,69 @@ let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
   "p.local_is_client": 1
 });
 
-alarmManager2.enrichOutboundAlarm(a6).then((alarm) => {
+alarmManager2.enrichDestInfo(a6).then((alarm) => {
   alarmManager2.checkAndSave(alarm, (err) => {
     console.log(util.inspect(alarm));
     if(!err) {
     }
   });
+});
+
+// Test isDup
+
+expect(alarmManager2.isDup(a5, a6)).to.be.false;
+
+let c1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+let c2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+let c3 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "YYY"
+});
+
+let c4 = new Alarm.VideoAlarm(date, "10.0.1.22", "DEST-1", {
+  "p.device.mac": "XXX"
+});
+
+expect(alarmManager2.isDup(c1, c2)).to.be.true;
+expect(alarmManager2.isDup(c1, c3)).to.be.false;
+expect(alarmManager2.isDup(c1, c4)).to.be.false;
+
+// Test dedup
+
+let random = Math.random();
+
+let d1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+  "p.device.mac": "XXX",
+  "p.device.name": "YYY",
+  "p.device.id": "YYY"
+});
+
+alarmManager2.dedup(d1).then((dedupResult) => {
+  expect(dedupResult).to.be.false;
+
+  alarmManager2.checkAndSave(d1, (err) => {
+    expect(err).to.be.null;
+    
+    let d2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+      "p.device.mac": "XXX",
+      "p.device.name": "YYY",
+      "p.device.id": "YYY"
+    });
+    
+    alarmManager2.dedup(d2).then((dedupResult2) => {
+      expect(dedupResult2).to.be.true;
+
+      alarmManager2.checkAndSave(d2, (err) => {
+        expect(err).not.to.be.null;
+      });
+    });
+  });
+  
 });
 
 setTimeout(() => process.exit(0), 3000);
