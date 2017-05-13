@@ -449,9 +449,7 @@ class netBot extends ControllerBot {
             for (let i in result) {
                 log.info(result[i].toShortString());
                 result[i].on("Notice:Detected", (channel, type, ip, obj) => {
-                    log.info("=================================");
-                    log.info("Netbot:Notice:", type, ip);
-                    log.info("=================================");
+                    log.info("Found new notice", type, ip);
                     if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
                         let msg = result[i].name() + ": " + obj.msg;
                         if (nm.canNotify()==true) {
@@ -467,9 +465,7 @@ class netBot extends ControllerBot {
                     }
                 });
                 result[i].on("Intel:Detected", (channel, type, ip, obj) => {
-                    log.info("=================================");
-                    log.info("NetBot:Intel:", type, ip, obj);
-                    log.info("=================================");
+                    log.info("Found new intel", type, ip, obj);
                     let msg = null;
                     let reason = "";
                     if (obj.intel != null && obj.intel['reason'] != null) {

@@ -824,7 +824,7 @@ module.exports = class FlowManager {
                 log.error("Flow Manager Error");
                 callback(null, sorted);
             } else {
-                log.info("============ Host:Flows:Sorted", sorted.length);
+                log.debug("============ Host:Flows:Sorted", sorted.length);
                 if (sortby == "time") {
                     sorted.sort(function (a, b) {
                         return Number(b.ts) - Number(a.ts);
