@@ -837,7 +837,7 @@ module.exports = class FlowMonitor {
       intelManager.lookup(remoteIP, (err, iobj, url) => {
 
         if (err != null || iobj == null) {
-          log.error("Host:Subscriber:Intel:NOTVERIFIED", hip);
+          log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
           return;
         }
         
