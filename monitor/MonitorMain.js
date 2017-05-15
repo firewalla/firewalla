@@ -18,9 +18,9 @@ let log = require("../net2/logger.js")(__filename, "info");
 
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
-console.log("================================================================================");
-console.log("Monitor Starting:",config.version);
-console.log("================================================================================");
+log.info("================================================================================");
+log.info("Monitor Starting:",config.version);
+log.info("================================================================================");
 
 // api/main/monitor all depends on sysManager configuration
 let SysManager = require('../net2/SysManager.js');
@@ -48,8 +48,8 @@ function run0() {
 }
 
 process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
+    log.info("################### CRASH #############");
+    log.info("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
         return;
     }
@@ -67,9 +67,9 @@ let monitorWindow = 60 * 60 * 4; // eight hours window
 let FlowMonitor = require('./FlowMonitor.js');
 let flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
 
-console.log("================================================================================");
-console.log("Monitor Running ");
-console.log("================================================================================");
+log.info("================================================================================");
+log.info("Monitor Running ");
+log.info("================================================================================");
 
 flowMonitor.run();
 setInterval(() => {
