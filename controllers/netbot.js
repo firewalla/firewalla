@@ -349,6 +349,12 @@ class netBot extends ControllerBot {
             }
         },1000*60);
 
+      setTimeout(() => {
+        setInterval(() => {
+          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
+        }, 50*1000);
+      }, 30*1000)
+
         this.hostManager = new HostManager("cli", 'client', 'debug');
 
         // no subscription for api mode
@@ -1181,7 +1187,7 @@ class netBot extends ControllerBot {
   
   cacheInitData(json, callback) {
     callback = callback || function() {}
-    
+
     let jsonString = JSON.stringify(json);
     let expireTime = 60; // cache for 1 min
     rclient.set("init.cache", jsonString, (err) => {
@@ -1198,10 +1204,25 @@ class netBot extends ControllerBot {
           return;
         }
 
+        log.info("init cache is refreshed, auto-expiring in ", expireTime, "seconds");
+        
         callback(null);
       });
 
     });    
+  }
+
+  refreshCache() {
+    if(this.hostManager) {
+      this.hostManager.toJson(true, (err, json) => {
+        if(err) {
+          log.error("Failed to generate init data");
+          return;
+        }
+
+        this.cacheInitData(json);
+      });
+    }
   }
   
     msgHandler(gid, rawmsg, callback) {
