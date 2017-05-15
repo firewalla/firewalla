@@ -85,8 +85,7 @@ function getRealMemoryUsage() {
     usedMem = parseInt(lines[1][2]);
     allMem = parseInt(lines[1][1]);
     realMemUsage = 1.0 * usedMem / allMem;
-    log.info("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
-    
+    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);    
   });
 }
 
@@ -94,7 +93,7 @@ function getTemp() {
   let tempFile = "/sys/class/thermal/thermal_zone0/temp";
   fs.readFile(tempFile, (err, data) => {
     if(err) {
-      log.error("Temperature is not supported");
+      log.debug("Temperature is not supported");
       curTemp = -1;
     } else {
       curTemp = parseInt(data);

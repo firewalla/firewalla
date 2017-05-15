@@ -1253,15 +1253,15 @@ class netBot extends ControllerBot {
                         if (json != null) {
                           datamodel.code = 200;
                           datamodel.data = json;
-                          
-                          if(f.isDocker()) {
-                              json.docker = true;
-                          }
 
                           this.cacheInitData(json);
 
                         } else {
-                          log.error("json is null when calling init")
+                          if(err) {
+                            log.error("got error when calling hostManager.toJson: " + err);
+                          } else {
+                            log.error("json is null when calling init")
+                          }
                           datamodel.code = 500;
                         }
                         log.info("Sending data", datamodel.replyid, datamodel.id);

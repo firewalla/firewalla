@@ -287,7 +287,9 @@ module.exports = class FlowManager {
       }); 
     }
 
-  parseGetStatsResult(result, db, bytes, from, to) {
+  parseGetStatsResult(result, db, from, to) {
+    let bytes = 0;
+    
     if (result && result.length==2) {
       let array = result[1];
       log.debug("array:",array.length);
@@ -309,7 +311,9 @@ module.exports = class FlowManager {
         }
         bytes+=Number(bytes);
       }
-    } 
+    }
+
+    return bytes;
   }
                       
     getStats(iplist,type,from,to,callback) {
@@ -342,9 +346,9 @@ module.exports = class FlowManager {
         
         for(var i = 0; i < results.length; i++) {
           if(i%2 === 0) {
-            this.parseGetStatsResult(results[i], indb, inbytes, from);
+            inbytes += this.parseGetStatsResult(results[i], indb, from);
           } else {
-            this.parseGetStatsResult(results[i], outdb, outbytes, to);
+            outbytes += this.parseGetStatsResult(results[i], outdb, to);
           }
         }
 
