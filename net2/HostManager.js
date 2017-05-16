@@ -1259,6 +1259,10 @@ module.exports = class {
           json.alarms = [];
           for (let i in results) {
             let alarm = JSON.parse(results[i]);
+            if(alarm.alarmtype === "intel") {
+              delete alarm.intel.results; // trim intel details
+            }
+            
             if (alarm["id.orig_h"]) {
               let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
               let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
