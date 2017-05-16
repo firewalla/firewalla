@@ -368,6 +368,17 @@ class Host {
         });
     }
 
+  getAllIPs() {
+    let list = [];
+    list.push(this.o.ipv4Addr);
+    if (this.ipv6Addr && this.ipv6Addr.length > 0) {
+      for (let j in this['ipv6Addr']) {
+        list.push(this['ipv6Addr'][j]);
+      }
+    }
+    return list;
+  }
+  
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
@@ -1320,39 +1331,64 @@ module.exports = class {
       });
     });
   }
+
+  legacyStats(json) {
+    log.debug("Reading legacy stats");
+    return flowManager.getSystemStats()
+      .then((flowsummary) => {
+        json.flowsummary = flowsummary;
+      });;
+  }
+
+  legacyHostsStats(json) {
+    log.debug("Reading host legacy stats");
+
+    let promises = this.hosts.all.map((host) => flowManager.getStats2(host))
+    return Promise.all(promises)
+      .then(() => {
+        this.hostsInfoForInit(json);
+        return json;
+      });
+  }
+
+  migrateStats() {
+    let ipList = [];
+    for(let index in this.hosts.all) {
+      ipList.push.apply(ipList, this.hosts.all[index].getAllIPs());
+    }
+
+    ipList.push("0.0.0.0"); // system one
+
+    // total ip list to migrate
+    return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));          
+  }
   
     toJson(includeHosts, callback) {
 
       let json = {};
 
-      this.basicDataForInit(json);
-
-      Promise.all([
-        this.last24StatsForInit(json),
-        this.policyDataForInit(json),
-        this.alarmDataForInit(json),
-        this.newAlarmDataForInit(json),
-        this.natDataForInit(json),
-        this.ignoredIPDataForInit(json)
-      ]).then(() => {
-        flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-          flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
-            this.getHosts(()=>{
-              json.flowsummary = data;
-              if (includeHosts)
-                this.hostsInfoForInit(json);
-              callback(null, json);
-            });
-          });
+      this.getHosts(() => {
+        
+        this.basicDataForInit(json);
+        
+        Promise.all([
+          this.last24StatsForInit(json),
+          this.policyDataForInit(json),
+          this.alarmDataForInit(json),
+          this.newAlarmDataForInit(json),
+          this.natDataForInit(json),
+          this.ignoredIPDataForInit(json),
+          this.legacyStats(json),
+          this.legacyHostsStats(json)
+        ]).then(() => {
+          callback(null, json);
+        }).catch((err) => {
+          log.error("Caught error when preparing init data: " + err);
+          log.error(err.stack);
+          //          throw err;
+          callback(err);
         });
-      }).catch((err) => {
-        log.error("Caught error when preparing init data: " + err);
-        log.error(err.stack);
-        //          throw err;
-        callback(err);
       });
-
-
     }
 
     getHostFast(ip) {
