@@ -200,9 +200,13 @@ module.exports = class FlowManager {
    *   
    */
   getOrderedStats(stats) {
+    let orderedStats = {};
+
+    if(stats === null)
+      return orderedStats;
+    
     let keys = Object.keys(stats);
 
-    let orderedStats = {};
     
     for(let key in keys) {
       let v = stats[keys[key]];
@@ -214,7 +218,11 @@ module.exports = class FlowManager {
 
     return orderedStats;
   }
-    
+
+  last24HourDatabaseExists() {
+    return rclient.keysAsync("stats:last24:download");
+  }
+  
   getLast24HoursDownloadsStats(ip) {
     let key = 'stats:last24';
     
@@ -237,6 +245,45 @@ module.exports = class FlowManager {
 
     return rclient.hgetallAsync(uploadKey)
       .then((stats) => this.getOrderedStats(stats));
+  }
+
+  list24HoursTicks() {
+    let list = [];
+    
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+
+    for(let i = 0; i<24; i++) {
+      list.push(tsnow - i * 3600);
+    }
+
+    return list;
+  }
+
+  // stats:type:in:ip => stats:last24
+  migrateFromOldTableForHost(ip) {
+    let downloadKey = "stats:"+type+":in:"+ip;
+    let uploadKey = "stats:"+type+":out:"+ip;
+
+    let ticks = this.list24HoursTicks();
+
+    let downloadPromises = ticks.map((tick) => rclient.zscoreAsync(downloadKey, tick));
+    let uploadPromises = ticks.map((tick) => rclient.zscoreAsync(uploadKey, tick));
+
+    return Promise.all(downloadPromises)
+      .then((downloadBytesList) => {
+        Promise.all(uploadPromises)
+          .then((uploadBytesList) => {
+            let pList = [];
+            for(let i in ticks) {
+              let ip2 = ip;
+              if(ip2 === "0.0.0.0")
+                ip2 = null;
+              pList.push(this.recordLast24HoursStats(ticks[i], downloadBytesList[i], uploadBytesList[i], ip2));
+            }
+            return Promise.all(pList);
+          });
+      });
   }
   
     // stats are 'hour', 'day'
@@ -315,7 +362,101 @@ module.exports = class FlowManager {
 
     return bytes;
   }
-                      
+
+  sumFlows(flows) {
+    let result = {};
+
+    if(flows.length === 0) {
+      return result;
+    }
+
+    let flow1 = flows[0];
+
+    Object.keys(flow1).map((k) => {
+      let sum = flows.reduce((total, flow) => {
+        return total + flow[k];
+      }, 0);
+      result[k] = sum;
+    });
+
+    return result;
+  }
+
+  sumBytes(flow) {
+    return Object.keys(flow).reduce((total, key) => {
+      return total + flow[key];
+    }, 0);
+  }
+
+  flowToLegacyFormat(flow) {
+    let result = [];
+    
+    Object.keys(flow)
+      .sort((a,b) => b-a)
+      .forEach((key) => {
+        result.push({size: flow[key], ts: key + ""});
+      });
+
+    return result;
+  }
+
+  // no parameters accepted
+  getSystemStats() {
+    let flowsummary = {};
+    flowsummary.inbytes = 0;
+    flowsummary.outbytes = 0;
+    flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+    flowsummary.tophour = tsnow;
+
+    let download = this.getLast24HoursDownloadsStats();
+    let upload = this.getLast24HoursDownloadsStats();
+    
+    return Promise.join(download, upload, (d, u) => {
+      flowsummary.flowinbytes = this.flowToLegacyFormat(d);
+      flowsummary.inbytes = this.sumBytes(d);
+      flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
+      flowsummary.outbytes = this.sumBytes(u);
+      return new Promise((resolve) => resolve(flowsummary));
+    });   
+  }
+
+  // no parameters accepted
+  getStats2(host) {
+    host.flowsummary = {};
+    host.flowsummary.inbytes = 0;
+    host.flowsummary.outbytes = 0;
+    host.flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+    
+    host.flowsummary.tophour = tsnow;
+
+    let ipList = host.getAllIPs();
+    let downloadPromiseList = ipList.map((ip) => this.getLast24HoursDownloadsStats(ip));
+
+    return Promise.all(downloadPromiseList)
+      .then((results) => {
+        let sum = this.sumFlows(results);
+        let legacyFormat = this.flowToLegacyFormat(sum);
+        host.flowsummary.flowinbytes = legacyFormat;
+        host.flowsummary.inbytes = this.sumBytes(sum);
+
+        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadStats(ip));
+
+        return Promise.all(uploadPromiseList)
+          .then((results) => {
+            let sum2 = this.sumFlows(results);
+            let legacyFormat2 = this.flowToLegacyFormat(sum);
+            host.flowsummary.flowoutbytes = legacyFormat2;
+            host.flowsummary.outbytes = this.sumBytes(sum);
+          });
+      });  
+  }
+  
     getStats(iplist,type,from,to,callback) {
       let outdb = {};
       let indb = {};
