@@ -372,9 +372,16 @@ module.exports = class FlowManager {
 
     let flow1 = flows[0];
 
+    if(!flow1)
+      return result;
+
     Object.keys(flow1).map((k) => {
       let sum = flows.reduce((total, flow) => {
-        return total + flow[k];
+        if(flow[k] && parseInt(flow[k]) !== NaN) {
+          return total + parseInt(flow[k]);
+        } else {
+          return total;
+        }
       }, 0);
       result[k] = sum;
     });
@@ -384,20 +391,21 @@ module.exports = class FlowManager {
 
   sumBytes(flow) {
     return Object.keys(flow).reduce((total, key) => {
-      return total + flow[key];
+      if(flow[key] && parseInt(flow[key]) !== NaN) {
+        return total + parseInt(flow[key]);
+      }
+      return total;
     }, 0);
   }
 
   flowToLegacyFormat(flow) {
     let result = [];
     
-    Object.keys(flow)
+    return Object.keys(flow)
       .sort((a,b) => b-a)
-      .forEach((key) => {
-        result.push({size: flow[key], ts: key + ""});
+      .map((key) => {
+        return {size: flow[key], ts: key + ""};
       });
-
-    return result;
   }
 
   // no parameters accepted
