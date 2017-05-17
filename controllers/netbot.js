@@ -428,7 +428,10 @@ class netBot extends ControllerBot {
           let aid = msg.aid;
           if(notifMsg && aid) {
             log.info("Sending notification: " + notifMsg);
-            this.tx2(this.primarygid, "test", notifMsg, {aid: aid});
+            this.tx2(this.primarygid, "test", notifMsg, {
+              aid: aid,
+              gid: this.primarygid
+            });
           }
         }
       });
