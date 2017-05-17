@@ -1,5 +1,6 @@
 {
-    "version": 1.70,
+  "version": 1.70,
+  "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
     },

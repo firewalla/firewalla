@@ -349,6 +349,12 @@ class netBot extends ControllerBot {
             }
         },1000*60);
 
+      setTimeout(() => {
+        setInterval(() => {
+          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
+        }, 50*1000);
+      }, 30*1000)
+
         this.hostManager = new HostManager("cli", 'client', 'debug');
 
         // no subscription for api mode
@@ -449,9 +455,7 @@ class netBot extends ControllerBot {
             for (let i in result) {
                 log.info(result[i].toShortString());
                 result[i].on("Notice:Detected", (channel, type, ip, obj) => {
-                    log.info("=================================");
-                    log.info("Netbot:Notice:", type, ip);
-                    log.info("=================================");
+                    log.info("Found new notice", type, ip);
                     if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
                         let msg = result[i].name() + ": " + obj.msg;
                         if (nm.canNotify()==true) {
@@ -467,9 +471,7 @@ class netBot extends ControllerBot {
                     }
                 });
                 result[i].on("Intel:Detected", (channel, type, ip, obj) => {
-                    log.info("=================================");
-                    log.info("NetBot:Intel:", type, ip, obj);
-                    log.info("=================================");
+                    log.info("Found new intel", type, ip, obj);
                     let msg = null;
                     let reason = "";
                     if (obj.intel != null && obj.intel['reason'] != null) {
@@ -1185,7 +1187,7 @@ class netBot extends ControllerBot {
   
   cacheInitData(json, callback) {
     callback = callback || function() {}
-    
+
     let jsonString = JSON.stringify(json);
     let expireTime = 60; // cache for 1 min
     rclient.set("init.cache", jsonString, (err) => {
@@ -1202,10 +1204,25 @@ class netBot extends ControllerBot {
           return;
         }
 
+        log.info("init cache is refreshed, auto-expiring in ", expireTime, "seconds");
+        
         callback(null);
       });
 
     });    
+  }
+
+  refreshCache() {
+    if(this.hostManager) {
+      this.hostManager.toJson(true, (err, json) => {
+        if(err) {
+          log.error("Failed to generate init data");
+          return;
+        }
+
+        this.cacheInitData(json);
+      });
+    }
   }
   
     msgHandler(gid, rawmsg, callback) {
@@ -1236,15 +1253,15 @@ class netBot extends ControllerBot {
                         if (json != null) {
                           datamodel.code = 200;
                           datamodel.data = json;
-                          
-                          if(f.isDocker()) {
-                              json.docker = true;
-                          }
 
                           this.cacheInitData(json);
 
                         } else {
-                          log.error("json is null when calling init")
+                          if(err) {
+                            log.error("got error when calling hostManager.toJson: " + err);
+                          } else {
+                            log.error("json is null when calling init")
+                          }
                           datamodel.code = 500;
                         }
                         log.info("Sending data", datamodel.replyid, datamodel.id);

@@ -23,6 +23,8 @@ var message = require('./routes/message');
 var shadowsocks = require('./routes/shadowsocks');
 let dnsmasq = require('./routes/dnsmasq');
 let alarm = require('./routes/alarm');
+let flow = require('./routes/flow');
+let host = require('./routes/host');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -33,6 +35,7 @@ var app = express();
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
+app.set('json spaces', 2);
 
 // uncomment after placing your favicon in /public
 //app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
@@ -56,6 +59,8 @@ if(!firewalla.isProduction()) {
   subpath_v1.use('/ss', shadowsocks);
   subpath_v1.use('/dns', dnsmasq);
   subpath_v1.use('/alarm', alarm);
+  subpath_v1.use('/flow', flow);
+  subpath_v1.use('/host', host);
 
   let subpath_docs = express();
   app.use("/docs", subpath_docs);

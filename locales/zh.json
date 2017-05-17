@@ -1,13 +1,13 @@
 {
   "hello": "你好",
-  "ALARM_PORN": "设备{{p.device.name}}访问了色情网站{{p.dest.id}}.",
-  "ALARM_PORN2": "设备{{p.device.name}}访问了色情网站{{pdevice}}.",
-  "ALARM_VIDEO": "设备{{p.device.name}}访问了视频网站{{p.dest.name}}.",
-  "ALARM_GAME": "设备{{p.device.name}}玩了游戏{{p.dest.name}}.",
+  "ALARM_PORN": "此设备访问了色情网站{{p.dest.id}}.",
+  "ALARM_PORN2": "此设备访问了色情网站{{pdevice}}.",
+  "ALARM_VIDEO": "此设备访问了视频网站{{p.dest.name}}.",
+  "ALARM_GAME": "此设备玩了游戏{{p.dest.name}}.",
   "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "此设备上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
   "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "此设备上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
-  "ALARM_NEW_DEVICE": "发现新设备{{p.device.name}}接入网络",
+  "ALARM_NEW_DEVICE": "发现新设备{{p.device.name}}接入您的网络",
   "ALARM_BRO_NOTICE": "{{p.message}}",
-  "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问此设备的{{p.device.port}}端口。{{p.dest.name}}已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。",
+  "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问此设备的{{p.device.port}}端口, 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。",
   "ALARM_INTEL_FROM_INSIDE": "此设备正在访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。"
 }
