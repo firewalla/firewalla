@@ -422,6 +422,17 @@ class netBot extends ControllerBot {
 */
         });
 
+      this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
+        if(msg) {
+          let notifMsg = msg.notif;
+          let aid = msg.aid;
+          if(notifMsg && aid) {
+            log.info("Sending notification: " + notifMsg);
+            this.tx2(this.primarygid, "test", notifMsg, {aid: aid});
+          }
+        }
+      });
+
         setTimeout(() => {
             this.scanStart();
             if (sysmanager.systemRebootedDueToIssue(true)==false) {
@@ -470,28 +481,28 @@ class netBot extends ControllerBot {
                         }
                     }
                 });
-                result[i].on("Intel:Detected", (channel, type, ip, obj) => {
-                    log.info("Found new intel", type, ip, obj);
-                    let msg = null;
-                    let reason = "";
-                    if (obj.intel != null && obj.intel['reason'] != null) {
-                        reason = obj.intel.reason;
-                    }
-                    if (obj['seen.indicator_type'] == "Intel::DOMAIN") {
-                        msg = reason + ". Device " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['seen.indicator'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
-                    } else {
-                        msg = reason + " " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
-                    }
-                    if (obj.intel && obj.intel.summary) {
-                        //msg += "\n" + obj.intelurl;
-                    }
+                // result[i].on("Intel:Detected", (channel, type, ip, obj) => {
+                //     log.info("Found new intel", type, ip, obj);
+                //     let msg = null;
+                //     let reason = "";
+                //     if (obj.intel != null && obj.intel['reason'] != null) {
+                //         reason = obj.intel.reason;
+                //     }
+                //     if (obj['seen.indicator_type'] == "Intel::DOMAIN") {
+                //         msg = reason + ". Device " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['seen.indicator'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
+                //     } else {
+                //         msg = reason + " " + result[i].name() + ": " + obj['id.orig_h'] + " talking to " + obj['id.resp_h'] + ":" + obj['id.resp_p'] + ". (Reported by " + obj.intel.count + " sources)";
+                //     }
+                //     if (obj.intel && obj.intel.summary) {
+                //         //msg += "\n" + obj.intelurl;
+                //     }
 
-                    log.info("Sending Msg:", msg);
+                //     log.info("Sending Msg:", msg);
 
-                    if (nm.canNotify()==true) {
-                        this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
-                    }
-                });
+                //     if (nm.canNotify()==true) {
+                //         this.txQ2(this.primarygid, msg, msg, {uid: obj.id});
+                //     }
+                // });
             }
             if (callback)
                 callback(null, null);

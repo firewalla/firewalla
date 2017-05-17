@@ -308,7 +308,7 @@ module.exports = class {
                                     target: host.ipv4Addr,
                                   }
                                   alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
-                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+//                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
                                   });
                                 }
                             });
@@ -654,7 +654,7 @@ module.exports = class {
                                   mac: data.mac, 
                                 }
                                 alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
-                                  this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
+//                                  this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
                                 });
                               }
                             });

@@ -40,12 +40,20 @@ class Alarm {
     return;
   }
 
+  getNotificationCategory() {
+    return "NOTIF_" + this.getI18NCategory();
+  }
+  
   getI18NCategory() {
     return this.type;
   }
   
   localizedMessage() {
     return i18n.__(this.getI18NCategory(), this);
+  }
+
+  localizedNotification() {
+    return i18n.__(this.getNotificationCategory(), this);
   }
 
   toString() {

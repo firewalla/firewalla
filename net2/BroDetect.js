@@ -1229,9 +1229,9 @@ module.exports = class {
                       });
                       
                       alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
-                        if (obj != null) {
-                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
-                        }
+                        // if (obj != null) {
+                        //          this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
+                        // }
                       });
                     }); 
                 }); 

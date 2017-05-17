@@ -146,8 +146,11 @@ module.exports = class {
         this.addToActiveQueue(alarm, (err) => {
           if(!err) {
             audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
-            this.publisher.publish("ALARM", "ALARM:CREATED", alarm.aid);
-          }
+            this.publisher.publish("ALARM", "ALARM:CREATED", alarm.device, {
+              notif: alarm.localizedNotification(),
+              aid: alarm.aid
+            });
+          }         
           
           callback(err, alarm.aid);
         });

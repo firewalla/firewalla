@@ -198,12 +198,12 @@ module.exports = class FlowMonitor {
                         });;
                       
                         alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                            if (obj != null) {
-                                this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                                msg:msg,
-                                                obj:obj
-                                });
-                            }
+                            // if (obj != null) {
+                            //     this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                            //                     msg:msg,
+                            //                     obj:obj
+                            //     });
+                            // }
                         });
                     }
                 } else if (c=="porn") {
@@ -253,12 +253,12 @@ module.exports = class FlowMonitor {
                       });
                     
                         alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                            if (obj!=null) {
-                                  this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                       msg:msg,
-                                       obj:obj
-                                  });
-                            }
+                            // if (obj!=null) {
+                            //       this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                            //            msg:msg,
+                            //            obj:obj
+                            //       });
+                            // }
                         });
                     }
                 } else if (c=="intel") {
@@ -368,12 +368,12 @@ module.exports = class FlowMonitor {
                         });
 
                         alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
-                            if (obj!=null) {
-                                 this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                                msg:msg,
-                                                obj:obj
-                                 });
-                            }
+                            // if (obj!=null) {
+                            //      this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
+                            //                     msg:msg,
+                            //                     obj:obj
+                            //      });
+                            // }
                         });
                     }
                 }
@@ -710,13 +710,13 @@ module.exports = class FlowMonitor {
                                               });
                                               
                                               alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
-                                                  if (data!=null) {
-                                                    this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                        direction: "out",
-                                                        "txRatioRanked": [flow],
-                                                        id:data.id,
-                                                    });
-                                                  }
+                                                  // if (data!=null) {
+                                                  //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                  //       direction: "out",
+                                                  //       "txRatioRanked": [flow],
+                                                  //       id:data.id,
+                                                  //   });
+                                                  // }
                                                 });
                                             });
                                         }
@@ -778,13 +778,13 @@ module.exports = class FlowMonitor {
                                               });
 
                                                 alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
-                                                  if (data!=null) {
-                                                    this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                        direction: "in",
-                                                        "txRatioRanked": [flow],
-                                                        id:data.id,
-                                                    });
-                                                  }
+                                                  // if (data!=null) {
+                                                  //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                  //       direction: "in",
+                                                  //       "txRatioRanked": [flow],
+                                                  //       id:data.id,
+                                                  //   });
+                                                  // }
                                                 });
                                             });
                                         }
@@ -869,7 +869,7 @@ module.exports = class FlowMonitor {
       intelManager.lookup(remoteIP, (err, iobj, url) => {
 
         if (err != null || iobj == null) {
-          log.error("Host:Subscriber:Intel:NOTVERIFIED", hip);
+          log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
           return;
         }
         
