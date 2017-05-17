@@ -15,9 +15,6 @@ i18n.configure({
 });
 
 function m(msgTemplate, info) {
-  // console.log("1 " + msgTemplate);
-  // console.log(info);
-  // console.log("2 " + util.inspect(flat.unflatten(info), { showHidden: true, depth: null }));
   return i18n.__(msgTemplate, flat.unflatten(info));
 }
 
