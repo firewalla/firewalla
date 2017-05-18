@@ -9,12 +9,14 @@ let alarmManager2 = new AlarmManager2();
 
 let a = new Alarm.VideoAlarm(new Date() / 1000, "My Macbook Pro", "youku.com", {
   "p.device.name": "My MacBook Pro",
+  "p.device.id": "My MacBook Pro",
   "p.dest.name": "Coursera.org",
   "p.dest.ip": "54.239.130.241"
 });
 
 let a2 = new Alarm.NewDeviceAlarm(new Date() / 1000, "iPad-1", {
   "p.device.name": "iPad-1",
+  "p.device.id": "iPad-1",
   "p.device.ip": "192.168.2.22",
   "p.device.mac": "XX:YY:ZZ:AA:BB:CC:DD:EE",
   "p.device.vendor": "Apple Inc."
