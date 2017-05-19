@@ -1256,6 +1256,7 @@ class netBot extends ControllerBot {
                     // regenerate init data
                     log.info("Re-generate init data");
 
+                    let begin = Date.now();
                     this.hostManager.toJson(true, (err, json) => {
                         let datamodel = {
                             type: 'jsonmsg',
@@ -1268,6 +1269,9 @@ class netBot extends ControllerBot {
                           datamodel.code = 200;
                           datamodel.data = json;
 
+                          let end = Date.now();
+                          log.info("Took " + (end - begin) + "ms to load init data");
+                          
                           this.cacheInitData(json);
 
                         } else {
