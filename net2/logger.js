@@ -35,7 +35,7 @@ var devDebug = {
    'SysManager':'info',
    'PolicyManager':'info',
    'main':'info',
-   'FlowMonitor':'debug'
+   'FlowMonitor':'info'
 };
   
 var productionDebug = {
@@ -122,7 +122,7 @@ module.exports = function (component, loglevel, filename) {
     let transports = [fileTransport];
  
     if (production == false) {
-        console.log("Adding Console Transports",component);
+//        console.log("Adding Console Transports",component);
         transports.push(consoleTransport);
     } 
 

@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
 var ip = require('ip');
 var os = require('os');
 var network = require('network');
@@ -21,6 +21,12 @@ var stats = require('stats-lite');
 
 var redis = require("redis");
 var rclient = redis.createClient();
+
+let Promise = require('bluebird');
+
+// add promises to all redis functions
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
 
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
@@ -30,7 +36,7 @@ var bone = require("../lib/Bone.js");
 var firewalla = require("../net2/Firewalla.js");
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var async = require('async');
@@ -91,12 +97,12 @@ class FlowGraph {
                 
              this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
          } else {
-             //console.log("$$$ before ",flow.flows);
+             //log.info("$$$ before ",flow.flows);
              for (let i in flow.flows) {
                  let f = flow.flows[i];
                  this.addRawFlow(f[0],f[1],f[2],f[3],1);
              }
-             //console.log("$$$ after",this.flowarray);
+             //log.info("$$$ after",this.flowarray);
          }
     }
 
@@ -135,7 +141,7 @@ class FlowGraph {
          }
 
          this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
-    //     console.log("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
+    //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
 
     }
 
@@ -146,15 +152,146 @@ module.exports = class FlowManager {
         if (instance == null) {
             let cache = {};
             instance = this;
-            log = require("./logger.js")("FlowManager", loglevel);
         }
         return instance;
     }
 
+  // use redis hash to store last 24 hours stats
+  recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, ip) {
+    
+    if(!downloadBytes || !uploadBytes)
+      return Promise.reject(new Error("either downloadBytes or uploadBytes is null"));
+    
+    let key = 'stats:last24';
+    
+    if(ip)
+      key = key + ":" + ip;
+
+    let downloadKey = key + ":download";
+    let uploadKey = key + ":upload";
+    
+    timestamp = timestamp - timestamp % 3600; // trim minutes and seconds...
+    let hourOfDay = (timestamp / 3600) % 24;
+
+    let downloadValue = JSON.stringify({bytes: downloadBytes, ts: timestamp});
+    let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
+
+    return rclient.hsetAsync(downloadKey, hourOfDay, downloadValue)
+      .then(rclient.hsetAsync(uploadKey, hourOfDay, uploadValue))
+      .catch((err) => {
+        log.error("Got error when recording last 24 hours stats: " + err);
+        throw err;
+      });
+  }
+
+  /*
+   * {
+   *   "1" : '{ "ts": "1494817200", "bytes": "200" }', 
+   *   "2" : '{ "ts": "1494820800", "bytes": "300" }',
+   *   ...
+   * }
+   * 
+   * TO
+   * 
+   * { 
+   *   "1494817200": "200", 
+   *   "1494820800": "300"... 
+   * }
+   *   
+   */
+  getOrderedStats(stats) {
+    let orderedStats = {};
+
+    if(stats === null)
+      return orderedStats;
+    
+    let keys = Object.keys(stats);
+
+    
+    for(let key in keys) {
+      let v = stats[keys[key]];
+      let o = JSON.parse(v);
+      if(o.ts && o.bytes) {
+        orderedStats[parseInt(o.ts, 10)] = parseInt(o.bytes, 10);
+      }
+    }
+
+    return orderedStats;
+  }
+
+  last24HourDatabaseExists() {
+    return rclient.keysAsync("stats:last24:download");
+  }
+  
+  getLast24HoursDownloadsStats(ip) {
+    let key = 'stats:last24';
+    
+    if(ip)
+      key = key + ":" + ip;
+
+    let downloadKey = key + ":download";
+
+    return rclient.hgetallAsync(downloadKey)
+      .then((stats) => this.getOrderedStats(stats));
+  }
+
+  getLast24HoursUploadStats(ip) {
+    let key = 'stats:last24';
+    
+    if(ip)
+      key = key + ":" + ip;
+
+    let uploadKey = key + ":upload";
+
+    return rclient.hgetallAsync(uploadKey)
+      .then((stats) => this.getOrderedStats(stats));
+  }
+
+  list24HoursTicks() {
+    let list = [];
+    
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+
+    for(let i = 0; i<24; i++) {
+      list.push(tsnow - i * 3600);
+    }
+
+    return list;
+  }
+
+  // stats:type:in:ip => stats:last24
+  migrateFromOldTableForHost(ip) {
+    let downloadKey = "stats:"+type+":in:"+ip;
+    let uploadKey = "stats:"+type+":out:"+ip;
+
+    let ticks = this.list24HoursTicks();
+
+    let downloadPromises = ticks.map((tick) => rclient.zscoreAsync(downloadKey, tick));
+    let uploadPromises = ticks.map((tick) => rclient.zscoreAsync(uploadKey, tick));
+
+    return Promise.all(downloadPromises)
+      .then((downloadBytesList) => {
+        Promise.all(uploadPromises)
+          .then((uploadBytesList) => {
+            let pList = [];
+            for(let i in ticks) {
+              let ip2 = ip;
+              if(ip2 === "0.0.0.0")
+                ip2 = null;
+              pList.push(this.recordLast24HoursStats(ticks[i], downloadBytesList[i], uploadBytesList[i], ip2));
+            }
+            return Promise.all(pList);
+          });
+      });
+  }
+  
     // stats are 'hour', 'day'
     // stats:hour:ip_address score=bytes key=_ts-_ts%3600
     // ip = 0.0.0.0 is system
-    recordStats(ip,type,ts,inBytes,outBytes,callback) {
+  recordStats(ip,type,ts,inBytes,outBytes,callback) {
+    callback = callback || function() {}
+    
         let period = 3600;
         if (type === "day") {
             period = 60*60*24;
@@ -169,93 +306,223 @@ module.exports = class FlowManager {
             return;
         }
  
-        rclient.zincrby(inkey,Number(inBytes),subkey,(err,data)=>{
-            rclient.zincrby(outkey,Number(outBytes),subkey,(err,data)=>{
-                if (callback) {
-                    callback(err);
-                } 
-            }); 
+      rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
+        if(err) {
+          log.error("Failed to record stats on download bytes: " + err);
+          callback(err);
+          return;
+        }
+        
+        rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
+          if(err) {
+            log.error("Failed to record stats on upload bytes: " + err);
+            return;
+          }
+
+          let target = ip;
+          if(target === "0.0.0.0")
+            target = null;
+          
+          this.recordLast24HoursStats(subkey, downloadBytes, uploadBytes, target)
+            .then(() => {
+              callback();
+            }).catch((err) => {
+              log.error("Failed to record stats on last 24 hours stats: " + err);
+              callback(err);
+            });
         }); 
+      }); 
     }
 
-    getStats(iplist,type,from,to,callback) {
-        let outdb = {};
-        let indb = {};
-        let inbytes = 0;
-        let outbytes = 0;
-        let lotsofkeys = 24*30*6;  //half months ... of data 
-        log.debug("Getting stats:",type,iplist,from,to);
-        async.eachLimit(iplist, 1, (ip, cb) => {
-            let inkey = "stats:"+type+":in:"+ip;
-            let outkey = "stats:"+type+":out:"+ip;
-            rclient.zscan(inkey,0,'count',lotsofkeys,(err,data)=>{
-                //console.log("Data:",data);
-                if (data && data.length==2) {
-                    let array = data[1];
-                    log.debug("array:",array.length);
-                    for (let i=0;i<array.length;i++) {
-                        let clock = Number(array[i]);
-                        let bytes = Number(array[i+1]);
-                        i++;
-                        if (clock<Number(from)) {
-                            continue;
-                        }
-                        if (Number(to)!=-1 &&  clock>to) {
-                            continue;
-                        }
-                        
-                        if (indb[clock]) {
-                            indb[clock] += Number(bytes);
-                        } else {
-                            indb[clock] = Number(bytes);
-                        }
-                        inbytes+=Number(bytes);
-                    }
-                } 
-                rclient.zscan(outkey,0,'count',lotsofkeys,(err,data)=>{
-                    if (data && data.length==2) {
-                        let array = data[1];
-                        for (let i=0;i<array.length;i++) {
-                            let clock = Number(array[i]);
-                            let bytes = Number(array[i+1]);
-                            i++;
-                            if (clock<Number(from)) {
-                                continue;
-                            }
-                            if (Number(to)!=-1 &&  clock>to) {
-                                continue;
-                            }
-                            if (outdb[clock]) {
-                                outdb[clock] += Number(bytes);
-                            } else {
-                                outdb[clock] = Number(bytes);
-                            }
-                            outbytes+=Number(bytes);
-                        }
-                    }
-                    cb();
-                });
-            });
-        }, (err)=>{
-            let tsnow = Math.ceil(Date.now()/1000);
-            tsnow = tsnow-tsnow%3600;
-            let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
+  parseGetStatsResult(result, db, from, to) {
+    let bytes = 0;
+    
+    if (result && result.length==2) {
+      let array = result[1];
+      log.debug("array:",array.length);
+      for (let i=0;i<array.length;i++) {
+        let clock = Number(array[i]);
+        let bytes = Number(array[i+1]);
+        i++;
+        if (clock<Number(from)) {
+          continue;
+        }
+        if (Number(to)!=-1 &&  clock>to) {
+          continue;
+        }
+        
+        if (db[clock]) {
+          db[clock] += Number(bytes);
+        } else {
+          db[clock] = Number(bytes);
+        }
+        bytes+=Number(bytes);
+      }
+    }
 
-            let keys = Object.keys(outdb); // or loop over the object to get the array
-            keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-               let key = keys[i];
-               flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
-            }  
-            keys = Object.keys(indb); // or loop over the object to get the array
-            keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-            for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-               let key = keys[i];
-               flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
-            }  
-            //console.log("FLOW DATA IS: ",flowdata,outdb,indb);
-            callback(err, flowdata);
-        });
+    return bytes;
+  }
+
+  sumFlows(flows) {
+    let result = {};
+
+    if(flows.length === 0) {
+      return result;
+    }
+
+    let flow1 = flows[0];
+
+    if(!flow1)
+      return result;
+
+    Object.keys(flow1).map((k) => {
+      let sum = flows.reduce((total, flow) => {
+        if(flow[k] && parseInt(flow[k]) !== NaN) {
+          return total + parseInt(flow[k]);
+        } else {
+          return total;
+        }
+      }, 0);
+      result[k] = sum;
+    });
+
+    return result;
+  }
+
+  sumBytes(flow) {
+    return Object.keys(flow).reduce((total, key) => {
+      if(flow[key] && parseInt(flow[key]) !== NaN) {
+        return total + parseInt(flow[key]);
+      }
+      return total;
+    }, 0);
+  }
+
+  flowToLegacyFormat(flow) {
+    let result = [];
+    
+    return Object.keys(flow)
+      .sort((a,b) => b-a)
+      .map((key) => {
+        return {size: flow[key], ts: key + ""};
+      });
+  }
+
+  // no parameters accepted
+  getSystemStats() {
+    let flowsummary = {};
+    flowsummary.inbytes = 0;
+    flowsummary.outbytes = 0;
+    flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+    flowsummary.tophour = tsnow;
+
+    let download = this.getLast24HoursDownloadsStats();
+    let upload = this.getLast24HoursDownloadsStats();
+    
+    return Promise.join(download, upload, (d, u) => {
+      flowsummary.flowinbytes = this.flowToLegacyFormat(d);
+      flowsummary.inbytes = this.sumBytes(d);
+      flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
+      flowsummary.outbytes = this.sumBytes(u);
+      return new Promise((resolve) => resolve(flowsummary));
+    });   
+  }
+
+  // no parameters accepted
+  getStats2(host) {
+    if(!host)
+      return Promise.reject(new Error("host is null"));
+    
+    host.flowsummary = {};
+    host.flowsummary.inbytes = 0;
+    host.flowsummary.outbytes = 0;
+    host.flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now()/1000);
+    tsnow = tsnow-tsnow%3600;
+    
+    host.flowsummary.tophour = tsnow;
+
+    let ipList = host.getAllIPs();
+    let downloadPromiseList = ipList.map((ip) => this.getLast24HoursDownloadsStats(ip));
+
+    return Promise.all(downloadPromiseList)
+      .then((results) => {
+        let sum = this.sumFlows(results);
+        let legacyFormat = this.flowToLegacyFormat(sum);
+        host.flowsummary.flowinbytes = legacyFormat;
+        host.flowsummary.inbytes = this.sumBytes(sum);
+
+        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadStats(ip));
+
+        return Promise.all(uploadPromiseList)
+          .then((results) => {
+            let sum2 = this.sumFlows(results);
+            let legacyFormat2 = this.flowToLegacyFormat(sum);
+            host.flowsummary.flowoutbytes = legacyFormat2;
+            host.flowsummary.outbytes = this.sumBytes(sum);
+          });
+      });  
+  }
+  
+    getStats(iplist,type,from,to,callback) {
+      let outdb = {};
+      let indb = {};
+      let inbytes = 0;
+      let outbytes = 0;
+      let lotsofkeys = 24*30*6;  //half months ... of data 
+      log.debug("Getting stats:",type,iplist,from,to);
+
+      let multi = rclient.multi();
+
+      let len = iplist.length;
+
+      iplist.forEach((ip) => {
+        let inkey = "stats:"+type+":in:"+ip;
+        let outkey = "stats:"+type+":out:"+ip;
+        
+        multi.zscan(inkey, 0, 'count', lotsofkeys);
+        multi.zscan(outkey, 0, 'count', lotsofkeys);
+      });
+
+      multi.exec((err, results) => {
+
+        if(err) {
+          log.error("Failed to get stats from db: " + err);
+          callback(err);
+          return;
+        }
+        
+        for(var i = 0; i < results.length; i++) {
+          if(i%2 === 0) {
+            inbytes += this.parseGetStatsResult(results[i], indb, from);
+          } else {
+            outbytes += this.parseGetStatsResult(results[i], outdb, to);
+          }
+        }
+
+        let tsnow = Math.ceil(Date.now()/1000);
+        tsnow = tsnow-tsnow%3600;
+        let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
+        
+        let keys = Object.keys(outdb); // or loop over the object to get the array
+        keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+        for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+          let key = keys[i];
+          flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
+        }  
+        keys = Object.keys(indb); // or loop over the object to get the array
+        keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+        for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+          let key = keys[i];
+          flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
+        }  
+        //log.info("FLOW DATA IS: ",flowdata,outdb,indb);
+        callback(err, flowdata);
+      });
     }
 
     // 
@@ -444,7 +711,7 @@ module.exports = class FlowManager {
 
         return flowspec;
 
-        //     console.log("ShostSummary", shostSummary, "DhostSummary", dhostSummary);
+        //     log.info("ShostSummary", shostSummary, "DhostSummary", dhostSummary);
 
     }
 
@@ -614,7 +881,7 @@ module.exports = class FlowManager {
                 cb();
             });
         }, (err) => {
-            console.log(sys);
+            log.info(sys);
             callback(err, sys);
         });
     }
@@ -634,7 +901,7 @@ module.exports = class FlowManager {
             }
             if (flow.flows) {
                  let fg = new FlowGraph("raw");
-                 //console.log("$$$ Before",flow.flows);
+                 //log.info("$$$ Before",flow.flows);
                  for (let i in flow.flows) {
                        let f = flow.flows[i];
                        let count = f[4];
@@ -644,7 +911,7 @@ module.exports = class FlowManager {
                        fg.addRawFlow(f[0],f[1],f[2],f[3],count);
                  }
                  flow.flows = fg.flowarray;
-                 //console.log("$$$ After",flow.flows);
+                 //log.info("$$$ After",flow.flows);
             }
             if (flow.appr) {
                 if (appdb[flow.appr]) {
@@ -663,11 +930,11 @@ module.exports = class FlowManager {
 
 /*
         onsole.log("--------------appsdb ---- ");
-        console.log(appdb);
-        console.log("--------------activitydb---- ");
-        console.log(activitydb);
+        log.info(appdb);
+        log.info("--------------activitydb---- ");
+        log.info(activitydb);
 */
-        //console.log(activitydb);
+        //log.info(activitydb);
  
         let flowobj = {id:0,app:{},activity:{}};
         let hasFlows = false;
@@ -704,7 +971,7 @@ module.exports = class FlowManager {
             return;
         }
 
-        //console.log("### Cleaning",flowobj);
+        //log.info("### Cleaning",flowobj);
 
         bone.flowgraph("clean", [flowobj],(err,data)=>{
             if (callback) {
@@ -825,7 +1092,7 @@ module.exports = class FlowManager {
                 log.error("Flow Manager Error");
                 callback(null, sorted);
             } else {
-                log.info("============ Host:Flows:Sorted", sorted.length);
+                log.debug("============ Host:Flows:Sorted", sorted.length);
                 if (sortby == "time") {
                     sorted.sort(function (a, b) {
                         return Number(b.ts) - Number(a.ts);
@@ -848,11 +1115,11 @@ module.exports = class FlowManager {
                         }
                         log.debug("flows:sorted Query dns manager returnes");
                         this.summarizeActivityFromConnections(sorted,(err,activities)=>{
-                            //console.log("Activities",activities);
+                            //log.info("Activities",activities);
                             let _sorted = [];
                             for (let i in sorted) {
                                 if (flowUtil.checkFlag(sorted[i],'x')) {
-                                    //console.log("DroppingFlow",sorted[i]); 
+                                    //log.info("DroppingFlow",sorted[i]); 
                                 } else {
                                     _sorted.push(sorted[i]);
                                 }

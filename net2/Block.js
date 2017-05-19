@@ -17,7 +17,7 @@
 let util = require('util');
 let cp = require('child_process');
 let path = require('path');
-let log = require("./logger.js")(path.basename(__filename));
+let log = require("./logger.js")(__filename);
 
 
 // =============== block @ connection level ==============
@@ -43,7 +43,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
         if(err) {
           log.info("BLOCK:OUTGOING==> ", addCMD);
           cp.exec(addCMD, (err, stdout, stderr) => {
-            console.log(err, stdout, stderr);
+            log.info(err, stdout, stderr);
             callback(err);        
           });
         }
@@ -51,7 +51,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   } else {
       let delCMD = util.format("sudo %s -D FORWARD --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
-        console.log(err, stdout, stderr);
+        log.info(err, stdout, stderr);
         callback(err);        
       });
   }

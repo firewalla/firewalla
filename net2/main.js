@@ -25,13 +25,31 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 let bone = require("../lib/Bone.js");
 
+let firewalla = require("./Firewalla.js");
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
+var fs = require('fs');
+var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
+
+
+/*
+ * Create the secondary interface 
+ */
+
+var secondaryInterface = require("./SecondaryInterface.js");
+secondaryInterface.create(config,(err,ip,subnet)=>{
+    if (err == null) {
+        log.info("Successful Created Secondary Interface");
+        sysManager.secondaryIp = ip;
+        sysManager.secondarySubnet = subnet; 
+    }
+});
 
 run0();
 
@@ -48,21 +66,20 @@ function run0() {
   }
 }
 
-var fs = require('fs');
-var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
-
-process.on('uncaughtException',(err)=>{
-  log.warn("################### CRASH #############");
-  log.warn("+-+-+-",err.message,err.stack);
-  if (err && err.message && err.message.includes("Redis connection")) {
-    return; 
-  }
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
-  setTimeout(()=>{
-    process.exit(1);
-  },1000*5);
-});
+if(firewalla.isProduction()) {
+  process.on('uncaughtException',(err)=>{
+    log.warn("################### CRASH #############");
+    log.warn("+-+-+-",err.message,err.stack);
+    if (err && err.message && err.message.includes("Redis connection")) {
+      return; 
+    }
+    bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+    setTimeout(()=>{
+      process.exit(1);
+    },1000*5);
+  });
+}
 
 function run() {
 
@@ -121,8 +138,6 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  console.log("LANCHING NETBOT SERVER");
-
   var Spoofer = require('./Spoofer.js');
   let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
 
@@ -171,12 +186,12 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        console.log("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn");
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{ 
           if (err!=null) {
-            console.log("VpnManager:Unable to start vpn");
+            log.info("VpnManager:Unable to start vpn");
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
             hostManager.setPolicy("vpnAvaliable",true);
@@ -190,16 +205,16 @@ function run() {
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
-        console.log(result[i].toShortString());
+        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
-          console.log("=================================");
-          console.log("Notice :", type,ip,obj);
-          console.log("=================================");
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
         });
         result[i].on("Intel:Detected",(type,ip,obj)=>{
-          console.log("=================================");
-          console.log("Notice :", type,ip,obj);
-          console.log("=================================");
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
         });
 	//            result[i].spoof(true);
       }

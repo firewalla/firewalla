@@ -14,6 +14,7 @@ var extend = require('util')._extend
 
 
 
+
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
 //   device (each alarm should have a related device)
@@ -39,30 +40,40 @@ class Alarm {
     return;
   }
 
+  getNotificationCategory() {
+    return "NOTIF_" + this.getI18NCategory();
+  }
+  
   getI18NCategory() {
     return this.type;
   }
   
   localizedMessage() {
-    return i18n.__(this.getI18NCategory(), this.toJsonObject());
+    return i18n.__(this.getI18NCategory(), this);
+  }
+
+  localizedNotification() {
+    return i18n.__(this.getNotificationCategory(), this);
   }
 
   toString() {
     return util.inspect(this);
   }
 
-  toJsonObject() {
-    let obj = {};
-    for(var p in this) {
-      obj[p] = this[p];
-    }
-    return obj;
-  }
+  // toJsonObject() {
+  //   let obj = {};
+  //   for(var p in this) {
+  //     obj[p] = this[p];
+  //   }
+  //   return obj;
+  // }
 
   requiredKeys() {
     return ["p.device.name", "p.device.id"];
   }
 
+
+  
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
     
@@ -77,6 +88,35 @@ class Alarm {
   }
 };
 
+
+class NewDeviceAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+}
+
+class BroNoticeAlarm extends Alarm {
+  constructor(timestamp, device, notice, message, info) {
+    super("ALARM_BRO_NOTICE", timestamp, device, info);
+    this["p.noticeType"] = notice;
+    this["p.message"] = message;
+  }
+}
+
+class IntelAlarm extends Alarm {
+  constructor(timestamp, device, severity, info) {
+    super("ALARM_INTEL", timestamp, device, info);
+    this["p.severity"] = severity;
+  }
+
+  getI18NCategory() {
+    if(this["p.local_is_client"] === "1") {
+      return "ALARM_INTEL_FROM_INSIDE";
+    } else {
+      return "ALARM_INTEL_FROM_OUTSIDE";
+    }
+  }
+}
 
 class OutboundAlarm extends Alarm {
   // p
@@ -119,7 +159,12 @@ class OutboundAlarm extends Alarm {
   getDestinationIPAddress() {
     return this["p.dest.ip"];
   }
+
+  getSimpleOutboundTrafficSize() {
+    return formatBytes(this["p.transfer.outbound.size"]);
+  }
 }
+
 
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
@@ -127,7 +172,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getI18NCategory() {
-    if(this["p.local_is_client"] === 1) {
+    if(this["p.local_is_client"] === "1") {
       return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
     } else {
       return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
@@ -157,7 +202,10 @@ let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
-  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype
+  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
+  ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
+  ALARM_INTEL: IntelAlarm.prototype
 }
 
 module.exports = {
@@ -167,5 +215,8 @@ module.exports = {
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
+  NewDeviceAlarm: NewDeviceAlarm,
+  BroNoticeAlarm: BroNoticeAlarm,
+  IntelAlarm: IntelAlarm,
   mapping: classMapping
 }

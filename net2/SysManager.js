@@ -13,7 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
+
 var iptool = require('ip');
 var os = require('os');
 var network = require('network');
@@ -36,6 +37,8 @@ let DNSServers = {
 
 let f = require('../net2/Firewalla.js');
 
+let i18n = require('../util/i18n.js');
+
 const MAX_CONNS_PER_FLOW = 35000;
 
 const dns = require('dns');
@@ -43,7 +46,6 @@ const dns = require('dns');
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("./logger.js")(__filename, loglevel);
             rclient.hdel("sys:network:info", "oper");
             this.multicastlow = iptool.toLong("224.0.0.0");
             this.multicasthigh = iptool.toLong("239.255.255.255");
@@ -65,6 +67,7 @@ module.exports = class {
               break;
             case "System:LanguageChange":
               this.language = message;
+              i18n.setLocale(this.language);
               break;
             case "System:TimezoneChange":
               this.timezone = message;
@@ -166,7 +169,7 @@ module.exports = class {
     systemRebootedDueToIssue(reset) {
        try {
            if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
-               console.log("SysManager:RebootDueToIssue");
+               log.info("SysManager:RebootDueToIssue");
                if (reset == true) { 
                    require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
                }
@@ -182,6 +185,7 @@ module.exports = class {
     callback = callback || function() {}
 
     this.language = language;
+    i18n.setLocale(this.language);
     rclient.hset("sys:config", "language", language, (err) => {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
@@ -208,6 +212,7 @@ module.exports = class {
     rclient.hgetall("sys:config", (err, results) => {
       if(results && results.language) {
         this.language = results.language;
+        i18n.setLocale(this.language);
       }
 
       if(results && results.timezone) {
@@ -255,7 +260,7 @@ module.exports = class {
                         self.publicIp = ip;
                     }
                 });
-                //         console.log("System Manager Initialized with Config", this.sysinfo);
+                //         log.info("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
                 callback(err);
@@ -441,6 +446,24 @@ module.exports = class {
         return false;
     }
 
+
+    isLocalIP4(intf, ip) {
+        if (this.sysinfo[intf]==null) {
+           return false;
+        }
+
+        let subnet = this.sysinfo[intf].subnet;
+        if (subnet == null) {
+            return false;
+        }
+
+        if (this.isMulticastIP(ip)) {
+            return true;
+        }
+
+        return iptool.cidrSubnet(subnet).contains(ip);
+    }
+
     isLocalIP(ip) {
         if (iptool.isV4Format(ip)) {
 
@@ -456,7 +479,7 @@ module.exports = class {
                 return true;
             }
 
-            return iptool.cidrSubnet(this.subnet).contains(ip);
+            return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
         } else if (iptool.isV6Format(ip)) {
             if (ip.startsWith('::')) {
                 return true;
@@ -508,7 +531,7 @@ module.exports = class {
             this.getSysInfo((err,_sysinfo)=>{
                 log.info("SysManager:Checkin:", license, _sysinfo);
                 bone.checkin(this.config,license,_sysinfo,(err,data)=>{
-                    console.log("CheckedIn:", JSON.stringify(data));
+                    log.info("CheckedIn:", JSON.stringify(data));
                     rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
                         if (data.ddns) {
                             this.ddns = data.ddns;
@@ -540,7 +563,7 @@ module.exports = class {
                 expireDate = Date.now() / 1000 - 8 * 60 * 60;
             }
             for (let k in keys) {
-                //console.log("Expring for ",keys[k],expireDate);
+                //log.info("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
 
                   // drop old flows to avoid explosion due to p2p connections

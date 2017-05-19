@@ -13,7 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
+
 var iptool = require('ip');
 var os = require('os');
 var network = require('network');
@@ -23,6 +24,8 @@ var redis = require("redis");
 var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
+
+let Promise = require('bluebird');
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -38,6 +41,9 @@ var intelManager = new IntelManager('debug');
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
+let AlarmManager2 = require('../alarm/AlarmManager2.js');
+let alarmManager2 = new AlarmManager2();
+
 let f = require('./Firewalla.js');
 
 var alarmManager = null;
@@ -48,10 +54,10 @@ var bone = require("../lib/Bone.js");
 var utils = require('../lib/utils.js');
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 sclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var async = require('async');
@@ -131,7 +137,7 @@ class Host {
                         if (r.ua) {
                             let md = new MobileDetect(r.ua);
                             if (md == null) {
-                                console.log("MD Null");
+                                log.info("MD Null");
                                 continue;
                             }
                             let name = null;
@@ -227,7 +233,7 @@ class Host {
                     } else if (bestOS!=null) {
                         this.hostname = "(?)"+bestOS;
                     }
-                    console.log(this.o.name,this.hostname);
+                    log.info(this.o.name,this.hostname);
                     if (this.hostname!=null && this.o.name!=this.hostname) {
                         //this.o.name = this.hostname;
                         this.save("name",null);
@@ -257,7 +263,7 @@ class Host {
                                 } else if (bestOS!=null) {
                                     this.hostname = "(?)"+bestOS;
                                 }
-                                console.log(this.o.name,this.hostname);
+                                log.info(this.o.name,this.hostname);
                                 if (this.hostname!=null && this.o.name!=this.hostname) {
                                     //this.o.name = this.hostname;
                                     this.save("name",null);
@@ -362,6 +368,17 @@ class Host {
         });
     }
 
+  getAllIPs() {
+    let list = [];
+    list.push(this.o.ipv4Addr);
+    if (this.ipv6Addr && this.ipv6Addr.length > 0) {
+      for (let j in this['ipv6Addr']) {
+        list.push(this['ipv6Addr'][j]);
+      }
+    }
+    return list;
+  }
+  
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
@@ -1079,7 +1096,6 @@ module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
         if (instances[name] == null) {
-            log = require("./logger.js")("HostManager", loglevel);
             this.instanceName = name;
             this.hosts = {}; // all, active, dead, alarm
             this.hostsdb = {};
@@ -1155,100 +1171,229 @@ module.exports = class {
         
     */
 
-    toJson(includeHosts, callback) {
-        let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
-        let json = {
-            network: networkinfo,
-            cpuid: utils.getCpuId(),
-        };
+  basicDataForInit(json) {
+    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    json.network = networkinfo;
+    json.cpuid = utils.getCpuId();
+    
+    if(sysManager.language) {
+      json.language = sysManager.language;
+    }
+    
+    if(sysManager.timezone) {
+      json.timezone = sysManager.timezone;
+    }
 
-      if(sysManager.language) {
-        json.language = sysManager.language;
-      }
+    if(f.isDocker()) {
+      json.docker = true;
+    }
+    
+    json.cpuid = utils.getCpuId()
+    json.updateTime = Date.now();
+    if (sysManager.sshPassword) {           
+      json.ssh = sysManager.sshPassword;
+    }
+    if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
+      json.lastscan = sysManager.sysinfo.oper.LastScan;
+    }
+    json.systemDebug = sysManager.isSystemDebugOn();
+    json.version = sysManager.config.version;
+    json.longVersion = f.getVersion();
+    json.device = "Firewalla (beta)"
+    json.publicIp = sysManager.publicIp;
+    json.ddns = sysManager.ddns;
+    json.license = sysManager.license;
+    if (sysManager.publicIp) {
+      json.publicIp = sysManager.publicIp;
+    }
+  }
 
-      if(sysManager.timezone) {
-        json.timezone = sysManager.timezone;
-      }
-      
-      json.cpuid = utils.getCpuId()
-      json.updateTime = Date.now();
-        if (sysManager.sshPassword) {           
-          json.ssh = sysManager.sshPassword;
+
+  hostsInfoForInit(json) {
+    let _hosts = [];
+    for (let i in this.hosts.all) {
+      _hosts.push(this.hosts.all[i].toJson());
+    }
+    json.hosts = _hosts;    
+  }
+  
+  last24StatsForInit(json) {
+    let download = flowManager.getLast24HoursDownloadsStats();
+    let upload = flowManager.getLast24HoursDownloadsStats();
+
+    return Promise.join(download, upload, (d, u) => {
+      json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
+      return new Promise((resolve) => resolve(json));
+    });
+  }
+
+  policyDataForInit(json) {
+    log.debug("Loading polices");
+    
+    return new Promise((resolve, reject) => {
+      this.loadPolicy((err, data) => {
+        if(err) {
+          reject(err);
+          return;
         }
-        if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
-            json.lastscan = sysManager.sysinfo.oper.LastScan;
+        
+        if (this.policy) {
+          json.policy = this.policy;
         }
-        json.systemDebug = sysManager.isSystemDebugOn();
-      json.version = sysManager.config.version;
-      json.longVersion = f.getVersion();
-        json.device = "Firewalla (beta)"
-        json.publicIp = sysManager.publicIp;
-        json.ddns = sysManager.ddns;
-        json.license = sysManager.license;
-        if (sysManager.publicIp) {
-             json.publicIp = sysManager.publicIp;
-        }
-     flowManager.summarizeBytes2(this.hosts.all, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-        flowManager.getStats(['0.0.0.0'], 'hour', Date.now()/1000 -60*60*24,-1, (err,data)=> {
-          this.getHosts(()=>{
-            json.flowsummary = data;
-            if (includeHosts) {
-                let _hosts = [];
-                for (let i in this.hosts.all) {
-                    _hosts.push(this.hosts.all[i].toJson());
-                }
-                json.hosts = _hosts;
+        resolve(json);
+      });
+    });
+  }
+
+  alarmDataForInit(json) {
+    log.debug("Reading Alarms");
+    if (alarmManager == null) {
+      let AlarmManager = require("./AlarmManager.js");
+      alarmManager = new AlarmManager("info");
+    }
+
+    return new Promise((resolve, reject) => {
+      alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
+        log.debug("Done Reading Alarms");
+        if (err == null && results && results.length > 0) {
+          json.alarms = [];
+          for (let i in results) {
+            let alarm = JSON.parse(results[i]);
+            if(alarm.alarmtype === "intel") {
+              delete alarm.intel.results; // trim intel details
             }
+            
+            if (alarm["id.orig_h"]) {
+              let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
+              let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
+              alarm.hostName = alarm["id.orig_h"];
+              if (origHost && origHost.name()) {
+                alarm.hostName = origHost.name();
+              } else if (toHost && toHost.name()) {
+                alarm.hostName = toHost.name();
+              }
+            }
+            json.alarms.push(alarm);
+          }
+          resolve(json);
+        } else {
+          if(err)
+            reject(err);
+          resolve(json);
+        }
+      });
+    });
+  }
 
-            let key = "alarm:ip4:0.0.0.0";
-            log.debug("Loading polices");
-            this.loadPolicy((err, data) => {
-                if (this.policy) {
-                    json.policy = this.policy;
-                }
-                log.debug("Reading Alarms");
-                if (alarmManager == null) {
-                     let AlarmManager = require("./AlarmManager.js");
-                     alarmManager = new AlarmManager("info");
-                }
-                alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
-                    //       rclient.zrevrangebyscore([key,Date.now()/1000,Date.now()/1000-60*60*24], (err,results)=> {
-                    log.debug("Done Reading Alarms");
-                    if (err == null && results && results.length > 0) {
-                        json.alarms = [];
-                        for (let i in results) {
-                            let alarm = JSON.parse(results[i]);
-                            if (alarm["id.orig_h"]) {
-                                let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
-                                let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
-                                alarm.hostName = alarm["id.orig_h"];
-                                if (origHost && origHost.name()) {
-                                    alarm.hostName = origHost.name();
-                                } else if (toHost && toHost.name()) {
-                                    alarm.hostName = toHost.name();
-                                }
-                            }
-                            json.alarms.push(alarm);
-                        }
-                    }
-                    rclient.hgetall("sys:scan:nat", (err, data) => {
-                        if (data) {
-                            json.scan = {};
-                            for (let d in data) {
-                                json.scan[d] = JSON.parse(data[d]);
-                            }
-                        }
-                        this.loadIgnoredIP((err,ipdata)=>{ 
-                            json.ignoredIP = ipdata;
-                            callback(null, json);
-                        });
-                    });
-                });
-              });
-            });
+  newAlarmDataForInit(json) {
+    log.debug("Reading new alarms");
+
+    return new Promise((resolve, reject) => {
+      alarmManager2.loadActiveAlarms((err, list) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+        json.newAlarms = list;
+        resolve(json);
+      });
+    });
+  }
+
+  natDataForInit(json) {
+    log.debug("Reading nat data");
+
+    return new Promise((resolve, reject) => {
+      rclient.hgetall("sys:scan:nat", (err, data) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+        
+        if (data) {
+          json.scan = {};
+          for (let d in data) {
+            json.scan[d] = JSON.parse(data[d]);
+          }
+        }
+
+        resolve(json);
+      });
+    });
+  }
+
+  ignoredIPDataForInit(json) {
+    log.debug("Reading ignored IP list");
+    return new Promise((resolve, reject) => {
+      this.loadIgnoredIP((err,ipdata)=>{
+        if(err) {
+          reject(err);
+          return;
+        }
+        json.ignoredIP = ipdata;
+        resolve(json);
+      });
+    });
+  }
+
+  legacyStats(json) {
+    log.debug("Reading legacy stats");
+    return flowManager.getSystemStats()
+      .then((flowsummary) => {
+        json.flowsummary = flowsummary;
+      });;
+  }
+
+  legacyHostsStats(json) {
+    log.debug("Reading host legacy stats");
+
+    let promises = this.hosts.all.map((host) => flowManager.getStats2(host))
+    return Promise.all(promises)
+      .then(() => {
+        this.hostsInfoForInit(json);
+        return json;
+      });
+  }
+
+  migrateStats() {
+    let ipList = [];
+    for(let index in this.hosts.all) {
+      ipList.push.apply(ipList, this.hosts.all[index].getAllIPs());
+    }
+
+    ipList.push("0.0.0.0"); // system one
+
+    // total ip list to migrate
+    return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));          
+  }
+  
+    toJson(includeHosts, callback) {
+
+      let json = {};
+
+      this.getHosts(() => {
+        
+        this.basicDataForInit(json);
+        
+        Promise.all([
+          this.last24StatsForInit(json),
+          this.policyDataForInit(json),
+          this.alarmDataForInit(json),
+          this.newAlarmDataForInit(json),
+          this.natDataForInit(json),
+          this.ignoredIPDataForInit(json),
+          this.legacyStats(json),
+          this.legacyHostsStats(json)
+        ]).then(() => {
+          callback(null, json);
+        }).catch((err) => {
+          log.error("Caught error when preparing init data: " + err);
+          log.error(err.stack);
+          //          throw err;
+          callback(err);
         });
-     });
-   }
+      });
+    }
 
     getHostFast(ip) {
         if (ip == null) {
@@ -1371,7 +1516,7 @@ module.exports = class {
             rclient.multi(multiarray).exec((err, replies) => {
                 async.eachLimit(replies,2, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
-                        //console.log("Processing GetHosts ",o);
+                        //log.info("Processing GetHosts ",o);
                         if (o.ipv4) {
                             o.ipv4Addr = o.ipv4;
                         }
@@ -1448,7 +1593,7 @@ module.exports = class {
                     for (let h in this.hostsdb) {
                         let hostbymac = this.hostsdb[h];
                         if (hostbymac) {
-                            console.log("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
+                            log.info("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
                         }
                     }
 */
