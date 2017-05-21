@@ -53,7 +53,7 @@ let ADBLOCK_DNS = "198.101.242.72";
 
 var ip = require('ip');
 
-let b = require('./Block.js');
+let b = require('../control/Block.js');
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE

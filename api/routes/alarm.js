@@ -32,6 +32,15 @@ router.get('/list', (req, res, next) => {
   });
 });
 
+router.get('/:alarm', (req, res, next) => {
+  let alarmID = req.params.alarm;
+
+  am2.getAlarm(alarmID)
+    .then((alarm) => res.json(alarm))
+    .catch((err) => res.status(400).send(err + ""));
+});
+
+
 // create application/json parser 
 let jsonParser = bodyParser.json()
 
