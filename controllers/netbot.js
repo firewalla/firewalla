@@ -711,6 +711,9 @@ class netBot extends ControllerBot {
           });
         }
         break;
+      default:
+        this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+        break;
       }
     }
 
@@ -843,7 +846,7 @@ class netBot extends ControllerBot {
       case "scisurfconfig":
         let ssc = require('../extension/ss_client/ss_client.js');
         ssc.loadConfig((err, result) => {
-          this.simpleTxData(msg, result, err, callback);
+          this.simpleTxData(msg, result || {}, err, callback);
         });
         break;
       case "language":
@@ -861,6 +864,9 @@ class netBot extends ControllerBot {
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
+        break;
+      default:
+        this.simpleTxData(msg, null, new Error("unsupported action"), callback);
       }
     }
 
@@ -1144,20 +1150,39 @@ class netBot extends ControllerBot {
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
-        case "blockFromAlarm":
+        case "alarm:block":
           let alarmID = msg.data.value.alarmID;
-          am2.blockFromAlarm(alarmID, (err) => {
+          let info = msg.data.value;
+          am2.blockFromAlarm(alarmID, info, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
-        case "allowFromAlarm":
-          let alarmID2 = msg.data.value.alarmID;
-          am2.allowFromAlarm(alarmID2, (err) => {
+        case "alarm:allow":
+          alarmID = msg.data.value.alarmID;
+          info = msg.data.value;
+          am2.allowFromAlarm(alarmID, info, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
+        case "alarm:unblock":
+          alarmID = msg.data.value.alarmID;
+          info = msg.data.value;
+          am2.unblockFromAlarm(alarmID, info, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        case "alarm:unallow":
+          alarmID = msg.data.value.alarmID;
+          info = msg.data.value;
+          am2.unallowFromAlarm(alarmID, info, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+
         default:
-          // do nothing
+          // unsupported action
+          this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+          break;
         }
     }
 

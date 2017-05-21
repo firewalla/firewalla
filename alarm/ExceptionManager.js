@@ -15,6 +15,7 @@ let exceptionQueue = "exception_queue";
 
 let exceptionIDKey = "exception:id";
 let initID = 1;
+let exceptionPrefix = "exception:";
 
 let flat = require('flat');
 let audit = require('../util/audit.js');
@@ -117,7 +118,7 @@ module.exports = class {
 
       exception.aid = id;
 
-      let exceptionKey = "exception:" + id;
+      let exceptionKey = exceptionPrefix + id;
 
       rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
         if(err) {
@@ -138,6 +139,46 @@ module.exports = class {
     });
   }
 
+  exceptionExists(exceptionID) {
+    return new Promise((resolve, reject) => {
+      rclient.keys(exceptionPrefix + exceptionID, (err, result) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        resolve(result !== null);
+      });
+    });
+  }
+  
+  deleteException(exceptionID) {
+    log.info("Trying to delete exception " + exceptionID);
+    return this.exceptionExists(exceptionID)
+      .then((exists) => {
+        if(!exists) {
+          log.error("exception " + exceptionID + " doesn't exists");
+          return Promise.reject("exception " + exceptionID + " doesn't exists");
+        }
+
+        return new Promise((resolve, reject) => {
+          let multi = rclient.multi();
+
+          multi.zrem(exceptionQueue, exceptionID);
+          multi.del(exceptionPrefix + exceptionID);
+          multi.exec((err) => {
+            if(err) {
+              log.error("Fail to delete exception: " + err);
+              reject(err);
+              return;
+            }
+
+            resolve();
+          })
+        });
+      });        
+  }
+  
   match(alarm, callback) {
     this.loadExceptions((err, results) => {
       if(err) {

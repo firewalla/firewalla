@@ -176,10 +176,10 @@ function onListening() {
 }
 
 // for non production, just print on console
-if(f.isProduction()) {
+if(f.isProduction() && !f.isDocker()) {
   process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
+    log.info("################### CRASH #############");
+    log.info("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
       return;
     }

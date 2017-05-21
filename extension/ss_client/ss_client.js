@@ -34,10 +34,18 @@ let extensionFolder = fHome + "/extension/ss_client";
 // Files
 let tunnelBinary = extensionFolder + "/fw_ss_tunnel";
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
-let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
-let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 let chinaDNSBinary = extensionFolder + "/chinadns";
 let kcpBinary = extensionFolder + "/kcp_client";
+
+if(f.isDocker()) {
+  tunnelBinary = extensionFolder + "/bin.x86_64/fw_ss_tunnel";
+  redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
+  chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
+  kcpBinary = extensionFolder + "/bin.x86_64/kcp_client";
+}
+
+let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
+let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 
 let chnrouteFile = extensionFolder + "/chnroute";
 let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
@@ -80,7 +88,7 @@ function loadConfig(callback) {
         ssConfig = JSON.parse(result);
         callback(null, ssConfig);
       } else {
-        callback(null, {}); // by default, {} => config not initliazed
+        callback(null, null); // by default, {} => config not initliazed
       }
     } catch (e) {
       log.error("Failed to parse json: " + e);
@@ -119,8 +127,13 @@ function start(callback) {
 
   loadConfig((err, config) => {
     if(err) {
-      log.error("Failed to load config or config does NOT exist");
+      log.error("Failed to load config");
       callback(err);
+      return;
+    }
+
+    if(!config) {
+      callback(new Error("ss not configured"));
       return;
     }
 
@@ -437,7 +450,7 @@ function _stopKCP(callback) {
 function _enableIpset(callback) {
   callback = callback || function() {}
   
-  let cmd = "sudo ipset restore -file " + chnrouteRestoreForIpset;
+  let cmd = "sudo ipset -! restore -file " + chnrouteRestoreForIpset;
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
@@ -486,10 +499,7 @@ function _enableIptablesRule(callback) {
 function _disableIptablesRule(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s %s",
-                        ssConfig.server,
-                        localRedirectionPort,
-                        disableIptablesBinary);
+  let cmd = disableIptablesBinary;
 
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {

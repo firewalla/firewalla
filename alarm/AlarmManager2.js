@@ -1,3 +1,18 @@
+/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 let log = require('../net2/logger.js')(__filename, 'info');
@@ -11,7 +26,7 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
-let Promise = require('promise');
+let Promise = require('bluebird');
 
 let IM = require('../net2/IntelManager.js')
 let im = new IM('info');
@@ -19,11 +34,18 @@ let im = new IM('info');
 var DNSManager = require('../net2/DNSManager.js');
 var dnsManager = new DNSManager('info');
 
+let Policy = require('./Policy.js');
+
+let PolicyManager2 = require('./PolicyManager2.js');
+let pm2 = new PolicyManager2();
+
 let instance = null;
 
 let alarmActiveKey = "alarm_active";
 let ExceptionManager = require('./ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
+
+let Exception = require('./Exception.js');
 
 let alarmIDKey = "alarm:id";
 let alarmPrefix = "_alarm:";
@@ -120,6 +142,21 @@ module.exports = class {
     callback = callback || function() {}
 
     callback(null, this.jsonToAlarm(json));
+  }
+
+  updateAlarm(alarm) {
+    let alarmKey = alarmPrefix + alarm.aid;
+    return new Promise((resolve, reject) => {
+      rclient.hmset(alarmKey, flat.flatten(alarm), (err) => {
+        if(err) {
+          log.error("Failed to set alarm: " + err);
+          reject(err);
+          return;
+        }
+
+        resolve(alarm);
+      });      
+    });
   }
   
   saveAlarm(alarm, callback) {
@@ -238,7 +275,24 @@ module.exports = class {
       return null;
     }
   }
-  
+
+  getAlarm(alarmID) {
+    return new Promise((resolve, reject) => {
+      this.idsToAlarms([alarmID], (err, results) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        if(results == null || results.length === 0) {
+          reject(new Error("alarm not exists"));
+          return;
+        }
+
+        resolve(results[0]);
+      });
+    });
+  }
     idsToAlarms(ids, callback) {
       let multi = rclient.multi();
       
@@ -252,7 +306,6 @@ module.exports = class {
           callback(err);
           return;          
         }
-        
         callback(null, results.map((r) => this.jsonToAlarm(r)).filter((r) => r != null));
       });
     }
@@ -273,7 +326,6 @@ module.exports = class {
           callback(err);
           return;
         }
-
         this.idsToAlarms(alarmIDs, callback);
       });
     }
@@ -291,36 +343,206 @@ module.exports = class {
       callback(null, result > 20 ? 20 : result);
     });
   }
-    // top 20 only by default
-    loadActiveAlarms(number, callback) {
 
-      if(typeof(number) == 'function') {
-        callback = number;
-        number = 20;
+  // top 20 only by default
+  loadActiveAlarms(number, callback) {
+
+    if(typeof(number) == 'function') {
+      callback = number;
+      number = 20;
+    }
+    
+    callback = callback || function() {}
+
+    rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
+      if(err) {
+        log.error("Failed to load active alarms: " + err);
+        callback(err);
+        return;
       }
-      
-      callback = callback || function() {}
 
-      rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
-        if(err) {
-          log.error("Failed to load active alarms: " + err);
-          callback(err);
+      this.idsToAlarms(results, callback);
+    });
+  }
+
+  blockFromAlarm(alarmID, info, callback) {
+    log.info("Going to block alarm " + alarmID);
+
+    let alarmInfo = info.info; // not used by now
+
+    let target = null;
+    let type = null;
+
+    this.getAlarm(alarmID)
+      .then((alarm) => {
+
+        switch(alarm.type) {
+        case "ALARM_NEW_DEVICE":
+          type = "mac";
+          target = alarm["p.device.mac"];
+          break;
+        default:
+          type = "ip";
+          target = alarm["p.dest.ip"];
+          break;
+        }
+
+        if(!type || !target) {
+          callback(new Error("invalid block"));
+          return;
+        }
+        
+        let p = new Policy(type, target);
+        p.aid = alarmID;
+        
+        // FIXME: make it transactional
+        // set alarm handle result + add policy
+        pm2.checkAndSave(p, (err) => {
+          if(err)
+            callback(err);
+          else {
+            alarm.result_policy = p.pid;
+            alarm.result = "block";
+            this.updateAlarm(alarm)
+              .then(() => {
+                callback(null);
+              }).catch((err) => {
+                callback(err);
+              });
+          }
+        });
+      }).catch((err) => {
+        callback(err);
+      });   
+  }
+
+  allowFromAlarm(alarmID, info, callback) {
+    log.info("Going to allow alarm " + alarmID);
+
+    let alarmInfo = info.info; // not used by now
+
+    let target = null;
+    let type = null;
+
+    this.getAlarm(alarmID)
+      .then((alarm) => {
+
+        switch(alarm.type) {
+        case "ALARM_NEW_DEVICE":
+          type = "new_device_mac"; // place holder, not going to be matched by any alarm/policy
+          target = alarm["p.device.ip"];
+          break;
+        default:
+          type = "p.dest.ip";
+          target = alarm["p.dest.ip"];
+          break;
+        }
+
+        if(!type || !target) {
+          callback(new Error("invalid block"));
           return;
         }
 
-        this.idsToAlarms(results, callback);
+        // TODO: may need to define exception at more fine grain level
+        let e = new Exception({
+          "type": alarm.type,
+          "p.dest.ip": target
+        });
+        
+        // FIXME: make it transactional
+        // set alarm handle result + add policy
+
+        exceptionManager.saveException(e, (err) => {
+          if(err) {
+            log.error("Failed to save exception: " + err);
+            callback(err);
+            return;
+          }
+
+          alarm.result_exception = e.aid;
+          alarm.result = "allow";
+
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            }).catch((err) => {
+              callback(err);
+            });
+        });
+      }).catch((err) => {
+        callback(err);
       });
-    }
+  }
 
-    blockFromAlarm(alarmID, callback) {
-      log.info("block alarm " + alarmID);
-      callback(null);
-    }
+  unblockFromAlarm(alarmID, info, callback) {
+    log.info("Going to unblock alarm " + alarmID);
 
-    allowFromAlarm(alarmID, callback) {
-      log.info("allow alarm " + alarmID);
-      callback(null);
-    }
+    let alarmInfo = info.info; // not used by now
+    
+     this.getAlarm(alarmID)
+      .then((alarm) => {
+
+        let pid = alarm.result_policy;
+
+        if(!pid || pid === "") {
+          callback(new Error("can't unblock alarm without binding policy"));
+          return;
+        }
+
+        // FIXME: make it transactional
+        // set alarm handle result + add policy
+        
+        pm2.deletePolicy(pid)
+          .then(() => {
+            alarm.result = "";
+            alarm.result_policy = "";
+            this.updateAlarm(alarm)
+              .then(() => {
+                callback(null);
+              });
+          }).catch((err) => {
+            callback(err);
+          });
+        
+      }).catch((err) => {
+        callback(err);
+      });   
+  }
+  
+  unallowFromAlarm(alarmID, info, callback) {
+    log.info("Going to unallow alarm " + alarmID);
+
+     let alarmInfo = info.info; // not used by now
+    
+     this.getAlarm(alarmID)
+      .then((alarm) => {
+
+        let eid = alarm.result_exception;
+
+        if(!eid || eid === "") {
+          callback(new Error("can't unallow alarm without binding exception"));
+          return;
+        }
+
+        // FIXME: make it transactional
+        // set alarm handle result + add policy
+        
+        exceptionManager.deleteException(eid)
+          .then(() => {
+            alarm.result = "";
+            alarm.result_policy = "";
+            this.updateAlarm(alarm)
+              .then(() => {
+                callback(null);
+              });
+          }).catch((err) => {
+            callback(err);
+          });
+        
+      }).catch((err) => {
+        callback(err);
+      });
+  }
 
     
     enrichDeviceInfo(alarm) {
