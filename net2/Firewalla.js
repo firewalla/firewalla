@@ -160,6 +160,11 @@ function redisclean(config,count) {
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
                     //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  rclient.zremrangebyrank(keys[k], 0, -1 * 1000, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped for self protection")
+                    }
+                  })
                 });
             }
         });
@@ -171,6 +176,11 @@ function redisclean(config,count) {
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
                     //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  rclient.zremrangebyrank(keys[k], 0, -1 * 1000, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped for self protection")
+                    }
+                  })
                 });
             }
         });
