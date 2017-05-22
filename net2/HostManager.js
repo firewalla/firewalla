@@ -1488,17 +1488,28 @@ module.exports = class {
     }
 
 
-    getHosts(callback) {
+    getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started");
         // ready mark and sweep
         if (this.getHostsActive == true) {
             log.info("hostmanager:gethosts:mutx");
-            var stack = new Error().stack
-            log.info("hostmanager:gethosts:mutx:stack:", stack )
+            let stack = new Error().stack
+            let retrykey = retry;
+            if (retry == null) {
+                retrykey = Date.now();
+            }
+            log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
-                this.getHosts(callback);
+                this.getHosts(callback,retrykey);
             },3000);
             return;
+        }
+        if (retry == null) {
+            let stack = new Error().stack
+            log.info("hostmanager:gethosts:mutx:first:", stack )
+        } else {
+            let stack = new Error().stack
+            log.info("hostmanager:gethosts:mutx:last:", retry,stack )
         }
         this.getHostsActive = true;
         this.execPolicy();

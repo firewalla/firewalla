@@ -122,7 +122,7 @@ function constants(name) {
 }
 
 function redisclean(config,count) {
-        let  MAX_CONNS_PER_FLOW = 30000
+        let  MAX_CONNS_PER_FLOW = 25000
         if (count!=null && count >0) {
              MAX_CONNS_PER_FLOW = count;
         }
@@ -170,7 +170,19 @@ function redisclean(config,count) {
             }
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  if(data !== 0) {
+                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by ts) for self protection")
+                  }
+                  
+                  
+                  // drop old flows to avoid explosion due to p2p connections
+                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
+                    }
+                  })
+
                 });
             }
         });
