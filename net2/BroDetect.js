@@ -987,6 +987,8 @@ module.exports = class {
                 if (err == null) {
                     if (this.config.bro.http.expires) {
                         rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.http.expires);
+                    } else {
+                        rclient.expireat(key, parseInt((+new Date) / 1000) + 60*30);
                     }
                 } else {
                     log.error("HTTP:Save:Error", err);
