@@ -17,7 +17,7 @@
 let util = require('util');
 let cp = require('child_process');
 let path = require('path');
-let log = require("./logger.js")(__filename);
+let log = require("../net2/logger.js")(__filename);
 
 
 // =============== block @ connection level ==============

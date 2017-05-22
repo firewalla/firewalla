@@ -41,7 +41,7 @@ module.exports = class {
             this.callbacks = {};
             sclient.on("message", (channel, message) => {
                 let m = JSON.parse(message);
-                log.info("Reciving Msg:", m);
+                log.debug("Reciving Msg:", m);
                 let notified = 0;
                 if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
                     this.callbacks[channel + "." + m.type + "." + m.ip](channel, m.type, m.ip, m.msg);
@@ -51,7 +51,7 @@ module.exports = class {
                     this.callbacks[channel + "." + m.type](channel, m.type, m.ip, m.msg);
                     notified += 1;
                 }
-                log.info("Notified ", notified);
+                log.debug("Notified ", notified);
             });
         }
         return instance;
