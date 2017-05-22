@@ -351,7 +351,7 @@ class netBot extends ControllerBot {
 
       setTimeout(() => {
         setInterval(() => {
-          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
+//          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
         }, 50*1000);
       }, 30*1000)
 
@@ -860,6 +860,12 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
         });
         break;
+      case "alarm":
+        let alarmID = msg.data.value.alarmID;
+        am2.getAlarm(alarmID)
+          .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
+          .catch((err) => this.simpleTxData(msg, null, err, callback));
+        break;
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
@@ -1151,30 +1157,22 @@ class netBot extends ControllerBot {
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
         case "alarm:block":
-          let alarmID = msg.data.value.alarmID;
-          let info = msg.data.value;
-          am2.blockFromAlarm(alarmID, info, (err) => {
+          am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
         case "alarm:allow":
-          alarmID = msg.data.value.alarmID;
-          info = msg.data.value;
-          am2.allowFromAlarm(alarmID, info, (err) => {
+          am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
         case "alarm:unblock":
-          alarmID = msg.data.value.alarmID;
-          info = msg.data.value;
-          am2.unblockFromAlarm(alarmID, info, (err) => {
+          am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
         case "alarm:unallow":
-          alarmID = msg.data.value.alarmID;
-          info = msg.data.value;
-          am2.unallowFromAlarm(alarmID, info, (err) => {
+          am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
@@ -1274,7 +1272,7 @@ class netBot extends ControllerBot {
                 log.info("Process Init load event");
                 
                 this.loadInitCache((err, cachedJson) => {
-                  if(err || ! cachedJson) {
+                  if(true || err || ! cachedJson) {
                     if(err) 
                       log.error("Failed to load init cache: " + err);
 
