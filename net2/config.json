@@ -15,6 +15,7 @@
     },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
+  "newSpoof": true,
   "secondaryInterface": {
      "intf":"eth0:0",
      "ip":"192.168.218.1/24",

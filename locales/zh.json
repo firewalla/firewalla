@@ -16,5 +16,7 @@
   "NOTIF_ALARM_NEW_DEVICE": "发现新设备\"{{p.device.name}}\"接入您的网络",
   "NOTIF_ALARM_BRO_NOTICE": "{{p.message}}",
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问设备\"{{p.device.name}}\"的{{p.device.port}}端口, 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
-  "NOTIF_ALARM_INTEL_FROM_INSIDE": "设备\"{{p.device.name}}\"正在访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址"
+  "NOTIF_ALARM_INTEL_FROM_INSIDE": "设备\"{{p.device.name}}\"正在访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
+  "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "已阻止{{p.dest.name}}访问设备\"{{p.device.name}}\", 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
+  "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已阻止设备\"{{p.device.name}}\"正在访问{{p.dest.name}},该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址"
 }

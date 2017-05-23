@@ -28,8 +28,6 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('info');
 var bone = require("../lib/Bone.js");
