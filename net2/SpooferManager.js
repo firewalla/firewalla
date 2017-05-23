@@ -40,6 +40,8 @@ let cp = require('child_process');
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
 
+let spoofStarted = false;
+
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -47,6 +49,10 @@ Promise.promisifyAll(redis.Multi.prototype);
 
 // WORKAROUND VERSION HERE, will move to a better place
 function startSpoofing() {
+
+  if(spoofStarted) {
+    return Promise.resolve();
+  }
   
   // clean up redis key
   log.info("startSpoofing is called");
@@ -74,6 +80,7 @@ function startSpoofing() {
         log.info("spoofing binary exited with code " + code);
       });
 
+      spoofStarted = true;
       return Promise.resolve();
 
     });

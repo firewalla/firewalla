@@ -138,8 +138,6 @@ function run() {
 
   if(fConfig.newSpoof) {
     let sm = require('./SpooferManager.js')
-    sm.startSpoofing();
-
     sm.startSpoofing()
         .then(() => {
           log.info("New Spoof is started");
