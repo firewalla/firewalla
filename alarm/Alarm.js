@@ -41,7 +41,12 @@ class Alarm {
   }
 
   getNotificationCategory() {
-    return "NOTIF_" + this.getI18NCategory();
+    if(this.result === "block" &&
+       this.result_method === "auto") {
+      return "NOTIF_AUTO_BLOCK_" + this.getI18NCategory();
+    } else {
+      return "NOTIF_" + this.getI18NCategory();
+    }
   }
   
   getI18NCategory() {
