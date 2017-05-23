@@ -16,6 +16,7 @@
 
 let firewalla = require('./Firewalla.js');
 
+var spawn = require('child_process').spawn;
 
 let ngSpoofBinary = __dirname + "/../bin/bitbridge7";
 let spawnProcess = null;
