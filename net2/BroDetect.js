@@ -919,6 +919,7 @@ module.exports = class {
 
             if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
                 let flowdir = 'local';
+                return;
             } else if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst) == false) {
                 let flowdir = "out";
             } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst)) {
