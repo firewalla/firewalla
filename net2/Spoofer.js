@@ -73,11 +73,11 @@ module.exports = class {
         log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
 
         spawnProcess.stdout.on('data', (data) => {
-          spoofLog.info(data);
+          spoofLog.info(data + "");
         });
 
         spawnProcess.stderr.on('data', (data) => {
-          spoofLog.info(data);
+          spoofLog.info(data + "");
         });
 
         spawnProcess.on('close', (code) => {
