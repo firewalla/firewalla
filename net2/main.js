@@ -138,9 +138,6 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  var Spoofer = require('./Spoofer.js');
-  let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
-
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager('info');
