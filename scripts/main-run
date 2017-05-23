@@ -115,6 +115,7 @@ fi
 # Setup permissions
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
+sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
 
 #fix network
 sudo cp $FIREWALLA_HOME/etc/duplex_patch /etc/network/if-pre-up.d/.

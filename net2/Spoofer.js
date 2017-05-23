@@ -62,15 +62,15 @@ module.exports = class {
       .then(() => rclient.delAsync(unmonitoredKey))
       .then(() => {
         let ifName = sysManager.monitoringInterface().name;
-        let myIP = sysManager.myIp();
         let routerIP = sysManager.myGateway();
-
+        let myIP = sysManager.myIp();
+        
         if(!ifName || !myIP || !routerIP) {
           return Promise.reject("require valid interface name, ip address and gateway ip address");
         }
         
-        spawnProcess = spawn(ngSpoofBinary, [ifName, myIP, routerIP]);
-        log.info("starting new spoofing: ", ngSpoofBinary, [ifName, myIP, routerIP], {});
+        spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP]);
+        log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
 
         spawnProcess.stdout.on('data', (data) => {
           spoofLog.info(data);
