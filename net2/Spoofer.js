@@ -346,14 +346,6 @@ module.exports = class {
 
   constructor(intf, config, clean, debug) {
 
-    if(fConfig.newSpoof) {
-      this.startSpoofing()
-        .then(() => {
-          log.info("New Spoof is started");
-        }).catch((err) => {
-          log.error("Failed to start new spoof");
-        });
-    }
         debugging = debug;
 
         // Warning, should not clean default ACL's applied to ip tables

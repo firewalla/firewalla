@@ -139,6 +139,13 @@ function run() {
   if(fConfig.newSpoof) {
     let sm = require('./SpooferManager.js')
     sm.startSpoofing();
+
+    sm.startSpoofing()
+        .then(() => {
+          log.info("New Spoof is started");
+        }).catch((err) => {
+          log.error("Failed to start new spoof");
+        });
   }
   
   var HostManager = require('./HostManager.js');
