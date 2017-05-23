@@ -42,6 +42,8 @@ let i18n = require('../util/i18n.js');
 const MAX_CONNS_PER_FLOW = 25000;
 
 const dns = require('dns');
+let _getIP = require('external-ip')();
+
 
 module.exports = class {
     constructor(loglevel) {
@@ -50,6 +52,7 @@ module.exports = class {
             this.multicastlow = iptool.toLong("224.0.0.0");
             this.multicasthigh = iptool.toLong("239.255.255.255");
             this.locals = {};
+            this.lastIPTime = 0;
             instance = this;
 
           sclient.on("message", function(channel, message) {
@@ -93,6 +96,24 @@ module.exports = class {
   isConfigInitialized() {
     return this.config !== null && this.config[this.config.monitoringInterface] !== null;
   }
+
+   getIP(callback) {
+    if (this.publicIp == null ||  Date.now()/1000-this.lastIPTime>60*60*1) {
+         //let stack = new Error().stack
+         //log.info("TEMPDEBUGUPDATE", stack )
+         this.lastIPTime = Date.now()/1000;
+        _getIP((err, ip2)=> {
+            if(err == null) {
+                this.publicIp = ip2;
+                callback(undefined, ip2);
+            } else {
+                callback(err, undefined);
+            }
+        });
+     } else {
+        callback(null, this.publicIp);
+     }
+   }
   
     delayedActions() {
         setTimeout(()=>{
@@ -132,15 +153,9 @@ module.exports = class {
         var ip = this.publicIp;
         let self = this;
         if (ip == null) {
-            var getIP = require('external-ip')();
-            getIP(function(err, ip2) {
-                if(err == null) {
-                    self.publicIp = ip2;
-                    callback(undefined, ip2);
-                } else {
-                    callback(err, undefined);
-                }
-            })
+              let stack = new Error().stack
+              log.info("TEMPDEBUG", stack )
+              this.getIP(callback);
         } else {
             callback(undefined, ip);
         }
@@ -253,12 +268,8 @@ module.exports = class {
                 }
                 this.ddns = this.sysinfo["ddns"];
                 this.publicIp = this.sysinfo["publicIp"];
-                var getIP = require('external-ip')();
                 var self = this;
-                getIP(function(err,ip) {
-                    if(err == null) {
-                        self.publicIp = ip;
-                    }
+                this.getIP(function(err,ip) {
                 });
                 //         log.info("System Manager Initialized with Config", this.sysinfo);
             }
