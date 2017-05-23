@@ -33,7 +33,7 @@ var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
-let fConfig = require('./config.js');
+let fConfig = require('./config.js').getConfig();
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
