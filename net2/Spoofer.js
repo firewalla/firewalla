@@ -17,6 +17,7 @@
 var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
 var ip = require('ip');
+let fs = require('fs');
 
 let l2 = require('../util/Layer2.js');
 
@@ -29,7 +30,7 @@ let ngSpoofBinary = __dirname + "/../bin/bitbridge7";
 let spawnProcess = null;
 let firewalla = require('./Firewalla.js');
 
-let spoofLog = require('../net2/logger.js')(__filename, 'info', firewalla.getLogFolder() + "/spoof.log");
+let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
@@ -68,21 +69,17 @@ module.exports = class {
         if(!ifName || !myIP || !routerIP) {
           return Promise.reject("require valid interface name, ip address and gateway ip address");
         }
+
+        let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
         
         spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP]);
         log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
 
-        spawnProcess.stdout.on('data', (data) => {
-          spoofLog.info(data + "");
-        });
-
-        spawnProcess.stderr.on('data', (data) => {
-          spoofLog.info(data + "");
-        });
+        spawnProcess.stdout.pipe(logStream);
+        spawnProcess.stderr.pipe(logStream);
 
         spawnProcess.on('close', (code) => {
           log.info("spoofing binary exited with code " + code);
-          spoofLog.info("spoofing binary exited with code " + code);
         });
 
         return Promise.resolve();
