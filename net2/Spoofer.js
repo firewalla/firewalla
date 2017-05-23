@@ -25,11 +25,91 @@ var instance = null;
 var debugging = false;
 let log = require("./logger.js")(__filename, 'info');
 
+let ngSpoofBinary = __dirname + "/../bin/bitbridge7";
+let spawnProcess = null;
+let firewalla = require('./Firewalla.js');
+
+let spoofLog = require('../net2/logger.js')(__filename, 'info', firewalla.getLogFolder() + "/spoof.log");
+
+let monitoredKey = "monitored_hosts";
+let unmonitoredKey = "unmonitored_hosts";
+
+
+let fConfig = require('./config.js').getConfig();
+
+let Promise = require('bluebird');
+
+let redis = require('redis');
+let rclient = redis.createClient();
+
+let cp = require('child_process');
+
+let SysManager = require("./SysManager.js");
+let sysManager = new SysManager();
+
+// add promises to all redis functions
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 module.exports = class {
 
-    
 
-    spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+  // WORKAROUND VERSION HERE, will move to a better place
+  startSpoofing() {
+    
+    // clean up redis key
+    return rclient.delAsync(monitoredKey)
+      .then(() => rclient.delAsync(unmonitoredKey))
+      .then(() => {
+        let ifName = sysManager.monitoringInterface().name;
+        let myIP = sysManager.myIp();
+        let routerIP = sysManager.myGateway();
+
+        if(!ifName || !myIP || !routerIP) {
+          return Promise.reject("require valid interface name, ip address and gateway ip address");
+        }
+        
+        spawnProcess = spawn(ngSpoofBinary, [ifName, myIP, routerIP]);
+        log.info("starting new spoofing: ", ngSpoofBinary, [ifName, myIP, routerIP], {});
+
+        spawnProcess.stdout.on('data', (data) => {
+          spoofLog.info(data);
+        });
+
+        spawnProcess.stderr.on('data', (data) => {
+          spoofLog.info(data);
+        });
+
+        spawnProcess.on('close', (code) => {
+          log.info("spoofing binary exited with code " + code);
+          spoofLog.info("spoofing binary exited with code " + code);
+        });
+
+        return Promise.resolve();
+
+      });
+    
+  }
+
+  newSpoof(address) {
+    return rclient.saddAsync(monitoredKey, address);
+  }
+
+  newUnspoof(address) {
+    return rclient.sremAsync(monitoredKey, address);
+  }
+ 
+  spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+
+    callback = callback || function() {}
+    
+    if(fConfig.newSpoof) {
+      this.newSpoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
+    }
+      
       log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
@@ -238,7 +318,16 @@ module.exports = class {
             this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
         }
     }
-    unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6) {
+  unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+    callback = callback || function() {}
+
+    if(fConfig.newSpoof) {
+      this.newUnspoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
+    }
+    
         log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
         if (ipAddr && tellIpAddr) {
            this._unspoof(ipAddr,tellIpAddr,mac);
@@ -296,7 +385,16 @@ module.exports = class {
         });
     }
 
-    constructor(intf, config, clean, debug) {
+  constructor(intf, config, clean, debug) {
+
+    if(fConfig.newSpoof) {
+      this.startSpoofing()
+        .then(() => {
+          log.info("New Spoof is started");
+        }).catch((err) => {
+          log.error("Failed to start new spoof");
+        });
+    }
         debugging = debug;
 
         // Warning, should not clean default ACL's applied to ip tables
