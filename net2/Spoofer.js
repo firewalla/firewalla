@@ -17,7 +17,6 @@
 var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
 var ip = require('ip');
-let fs = require('fs');
 
 let l2 = require('../util/Layer2.js');
 
@@ -26,11 +25,9 @@ var instance = null;
 var debugging = false;
 let log = require("./logger.js")(__filename, 'info');
 
-let ngSpoofBinary = __dirname + "/../bin/bitbridge7";
-let spawnProcess = null;
 let firewalla = require('./Firewalla.js');
 
-let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
+
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
@@ -45,48 +42,13 @@ let rclient = redis.createClient();
 
 let cp = require('child_process');
 
-let SysManager = require("./SysManager.js");
-let sysManager = new SysManager();
 
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+
 module.exports = class {
-
-
-  // WORKAROUND VERSION HERE, will move to a better place
-  startSpoofing() {
-    
-    // clean up redis key
-    return rclient.delAsync(monitoredKey)
-      .then(() => rclient.delAsync(unmonitoredKey))
-      .then(() => {
-        let ifName = sysManager.monitoringInterface().name;
-        let routerIP = sysManager.myGateway();
-        let myIP = sysManager.myIp();
-        
-        if(!ifName || !myIP || !routerIP) {
-          return Promise.reject("require valid interface name, ip address and gateway ip address");
-        }
-
-        let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
-        
-        spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP]);
-        log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
-
-        spawnProcess.stdout.pipe(logStream);
-        spawnProcess.stderr.pipe(logStream);
-
-        spawnProcess.on('close', (code) => {
-          log.info("spoofing binary exited with code " + code);
-        });
-
-        return Promise.resolve();
-
-      });
-    
-  }
 
   newSpoof(address) {
     return rclient.saddAsync(monitoredKey, address);
