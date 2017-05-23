@@ -55,6 +55,8 @@ let c = require('../net2/MessageBus.js');
 
 let extend = require('util')._extend;
 
+let AUTO_BLOCK_THRESHOLD = 10;
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -158,6 +160,16 @@ module.exports = class {
       });      
     });
   }
+
+  notifAlarm(alarmID) {
+    return this.getAlarm(alarmID)
+      .then((alarm) => {
+            this.publisher.publish("ALARM", "ALARM:CREATED", alarm.device, {
+              notif: alarm.localizedNotification(),
+              aid: alarm.aid
+            })
+      }).catch((err) => Promise.reject(err));
+  }
   
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
@@ -183,10 +195,10 @@ module.exports = class {
         this.addToActiveQueue(alarm, (err) => {
           if(!err) {
             audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
-            this.publisher.publish("ALARM", "ALARM:CREATED", alarm.device, {
-              notif: alarm.localizedNotification(),
-              aid: alarm.aid
-            });
+
+            setTimeout(() => {
+              this.notifAlarm(alarm.aid);
+            }, 3000);
           }         
           
           callback(err, alarm.aid);
@@ -253,7 +265,23 @@ module.exports = class {
           return;
         }
 
-        this.saveAlarm(alarm, callback);
+        this.saveAlarm(alarm, (err) => {
+          if(err) {
+            callback(err);
+            return;
+          }
+
+          if(alarm.type === "ALARM_INTEL") {
+            let num = parseInt(alarm["p.security.numOfReportSources"]);
+            if(num > AUTO_BLOCK_THRESHOLD) {
+              // auto block if num is greater than the threshold
+              this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+              return;
+            }
+          }
+
+          callback(null);
+        });
 
       });
     });
@@ -394,6 +422,9 @@ module.exports = class {
         
         let p = new Policy(type, target);
         p.aid = alarmID;
+
+        if(info.method)
+          p.method = info.method;
         
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -403,6 +434,7 @@ module.exports = class {
           else {
             alarm.result_policy = p.pid;
             alarm.result = "block";
+            alarm.result_method = "auto";
             this.updateAlarm(alarm)
               .then(() => {
                 callback(null);
@@ -492,10 +524,11 @@ module.exports = class {
         // FIXME: make it transactional
         // set alarm handle result + add policy
         
-        pm2.deletePolicy(pid)
+        pm2.disableAndDeletePolicy(pid)
           .then(() => {
             alarm.result = "";
             alarm.result_policy = "";
+            alarm.result_method = "";
             this.updateAlarm(alarm)
               .then(() => {
                 callback(null);
@@ -554,7 +587,7 @@ module.exports = class {
       return new Promise((resolve, reject) => {
         dnsManager.resolveLocalHost(deviceIP, (err, result) => {
           
-          if(err || result == null) {
+          if(err ||result == null) {
             log.error("Failed to find host " + lh + " in database: " + err);
             if(err)
               reject(err);

@@ -37,6 +37,10 @@ let initID = 1;
 
 let extend = require('util')._extend;
 
+let Block = require('../control/Block.js');
+
+let Policy = require('./Policy.js');
+
 module.exports = class {
   constructor() {
     if (instance == null) {
@@ -126,8 +130,11 @@ module.exports = class {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }         
-          
-          callback(err, policy.pid);
+
+          this.enforce(policy)
+            .then(() => {
+              callback(null, policy.pid);
+            }).catch((err) => callback(err));
         });
       });
     });
@@ -152,6 +159,36 @@ module.exports = class {
     });
   }
 
+  getPolicy(policyID) {
+    return new Promise((resolve, reject) => {
+      this.idsToPolicys([policyID], (err, results) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        if(results == null || results.length === 0) {
+          reject(new Error("policy not exists"));
+          return;
+        }
+
+        resolve(results[0]);
+      });
+    });
+  }
+  
+  disableAndDeletePolicy(policyID) {
+    let p = this.getPolicy(policyID);
+    
+    return p.then((policy) => {
+      this.unenforce(policy)
+        .then(() => {
+          return this.deletePolicy(policyID);
+        })
+        .catch((err) => Promise.reject(err));
+    }).catch((err) => Promise.reject(err));
+  }
+  
   deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
     return this.policyExists(policyID)
@@ -180,15 +217,9 @@ module.exports = class {
   }
 
   jsonToPolicy(json) {
-    let proto = Policy.mapping[json.type];
+    let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
-      obj.message = obj.localizedMessage(); // append locaized message info
-
-      if(obj["p.flow"]) {
-        delete obj["p.flow"];
-      }
-      
       return obj;
     } else {
       log.error("Unsupported policy type: " + json.type);
@@ -268,6 +299,22 @@ module.exports = class {
 
       this.idsToPolicys(results, callback);
     });
+  }
+
+  enforce(policy) {
+    if(policy.type === "ip") {
+      return Block.block(policy.target);
+    }
+
+    return Promise.reject("Unsupported policy");
+  }
+
+  unenforce(policy) {
+    if(policy.type === "ip") {
+      return Block.unblock(policy.target);
+    }
+
+    return Promise.reject("Unsupported policy");
   }
 
 }
