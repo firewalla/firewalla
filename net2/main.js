@@ -33,6 +33,8 @@ var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
+let fConfig = require('./config.js').getConfig();
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
@@ -134,6 +136,16 @@ function run() {
   d.start();
   bd.start();
 
+  if(fConfig.newSpoof) {
+    let sm = require('./SpooferManager.js')
+    sm.startSpoofing()
+        .then(() => {
+          log.info("New Spoof is started");
+        }).catch((err) => {
+          log.error("Failed to start new spoof");
+        });
+  }
+  
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
