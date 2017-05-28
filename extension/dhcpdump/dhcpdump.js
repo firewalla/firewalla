@@ -88,31 +88,43 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
      } 
   }
  
-  parseOptions(output) {
+  parse(output) {
+     console.log("DHCPDUMP Parsing output:",output);
      let o =  output.split(/\r?\n/);
      let obj = {};
      for (let i in o) {
          let options = o[i].split(' ');
+         if (options[0].indexOf("OPTION:")==-1) {
+             continue;
+         }
          if (o[i].indexOf("Host name")>-1) {
              obj.name = options[options.length-1];
+             obj.nname = options[options.length-1];
          }
          if (o[i].indexOf("Client-identifier")>-1) {
              obj.mac = options[options.length-1];
+             obj.mac = obj.mac.toUpperCase();
+             if (obj.mac.length==20) {
+                obj.mac = obj.mac.substr(3,19);
+             }
+             if (obj.mac.length!=17) {
+                 return {};
+             }
          }
          if (o[i].indexOf("Request IP address")>-1) {
-             obj.ip = options[options.length-1];
+             obj.ipv4Addr = options[options.length-1];
+             obj.uid = options[options.length-1];
+             if (obj.uid.length<7) {
+                 return {};
+             }
          }
      }
-     console.log(obj);
      return obj; 
   }
 
-  parse(data) {
-      let obj = this.parseOptions(data,["Host name", "IP address","Client-identifier"]);
-  }
-  
   rawStart(callback) {
     callback = callback || function() {}
+
 
     let spawn = require('child_process').spawn;
     let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', 'eth0']);
@@ -125,6 +137,9 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     dhcpdumpSpawn.stdout.on('data', (data) => {
          var message = decoder.write(data);
          let obj = this.parse(message); 
+         if (obj && obj.uid && obj.mac) {
+             callback(obj); 
+         }
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {
@@ -145,7 +160,13 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
   }
 
   start(force, callback) {
-      this.rawStart(callback);
+    let cmdline = 'sudo pkill -f dhcpdump';
+    let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+        this.rawStart(callback);
+    });
   }
 
   stop(callback) {
