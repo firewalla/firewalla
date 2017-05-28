@@ -23,7 +23,6 @@ module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       log = require("../../net2/logger.js")(__filename, loglevel);
-
       instance = this;
     }
     return instance;
