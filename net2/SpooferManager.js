@@ -71,7 +71,6 @@ function startSpoofing() {
       if (firewalla.isProduction()) {
           spoofLogFile="/dev/null";
       }
-      spoofLogFile="/dev/null";
 
       let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
       
