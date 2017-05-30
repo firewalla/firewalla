@@ -32,6 +32,7 @@ module.exports = class {
     callback = callback || function() {}
 
     let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
+    log.info("DHCPExtention:Install",install_cmd);
     require('child_process').exec(install_cmd, (err, out, code) => {
       if (err) {
         log.error("DHCPDUMP:INSTALL:Error", "Failed to execute script install.sh", err);

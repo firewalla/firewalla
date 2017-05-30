@@ -156,6 +156,7 @@ module.exports = class {
         }, 1000 * 60 * 60*24);
      
         this.natScan();
+        this.dhcpDump();
     }
 
     /**
@@ -183,6 +184,20 @@ module.exports = class {
                 }
             });
         }, 60000);
+    }
+
+    dhcpDump() {
+        let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
+        let _dhcpDump = new DhcpDump();
+        _dhcpDump.install((obj)=>{
+            log.info("Discover:DHCPDUMP installed");
+            _dhcpDump.start(false,(obj)=>{
+                 if (obj) {
+                     log.info("Discover:DHCPDUMP:",JSON.stringify(obj));
+                     this.processHost(obj);    
+                 }
+            });
+        });
     }
 
     bonjourParse(service) {
@@ -533,7 +548,7 @@ module.exports = class {
                 let nname = host.nname;
 
                 let key = "host:ip4:" + host.uid;
-                log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid,host.ipv4Addr);
+                log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid,host.ipv4Addr,host.name,host.nname);
                 rclient.hgetall(key, (err, data) => {
                     log.debug("Discovery:Nmap:Redis:Search", key, data, {});
                     if (err == null) {
