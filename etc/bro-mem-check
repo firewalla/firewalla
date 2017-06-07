@@ -16,3 +16,8 @@ disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && logger "FIREWALLA: Disk Delete "+$disk
 (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log
+
+FREE=`df -k --output=avail "/home" | tail -n1`   # df -k not df -h
+if [[ $FREE -lt 1000000 ]]; then               # 10G = 10*1024*1024k
+    /home/pi/firewalla/scripts/clean-disk
+fi;

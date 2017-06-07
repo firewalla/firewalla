@@ -68,6 +68,10 @@ function startSpoofing() {
         return Promise.reject("require valid interface name, ip address and gateway ip address");
       }
 
+      if (firewalla.isProduction()) {
+          spoofLogFile="/dev/null";
+      }
+
       let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
       
       spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP]);
