@@ -911,8 +911,12 @@ class netBot extends ControllerBot {
 
 
           //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
+
+          // getStats2 => load 24 hours download/upload trend
+          flowManager.getStats2(host)
+            .then(() => {
+//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = {};
                 if (host) {
                     jsonobj = host.toJson();

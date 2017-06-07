@@ -1341,7 +1341,7 @@ module.exports = class {
     return flowManager.getSystemStats()
       .then((flowsummary) => {
         json.flowsummary = flowsummary;
-      });;
+      });
   }
 
   legacyHostsStats(json) {

@@ -459,9 +459,9 @@ module.exports = class FlowManager {
         return Promise.all(uploadPromiseList)
           .then((results) => {
             let sum2 = this.sumFlows(results);
-            let legacyFormat2 = this.flowToLegacyFormat(sum);
+            let legacyFormat2 = this.flowToLegacyFormat(sum2);
             host.flowsummary.flowoutbytes = legacyFormat2;
-            host.flowsummary.outbytes = this.sumBytes(sum);
+            host.flowsummary.outbytes = this.sumBytes(sum2);
           });
       });  
   }
