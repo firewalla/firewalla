@@ -217,6 +217,16 @@ module.exports = class FlowManager {
     return orderedStats;
   }
 
+  filterOldData(stats) {
+    let beginDate = new Date() / 1000 - 60 * 60 * 24;
+    for(let key in stats) {
+      if(parseInt(key, 10) < beginDate) {
+        delete stats[key];
+      }
+    }
+    return stats;
+  }
+
   last24HourDatabaseExists() {
     return rclient.keysAsync("stats:last24:download");
   }
@@ -230,7 +240,11 @@ module.exports = class FlowManager {
     let downloadKey = key + ":download";
 
     return rclient.hgetallAsync(downloadKey)
-      .then((stats) => this.getOrderedStats(stats));
+      .then((stats) => {
+        let s = this.getOrderedStats(stats);
+        this.filterOldData(s);
+        return s;
+      });
   }
 
   getLast24HoursUploadStats(ip) {
@@ -242,7 +256,11 @@ module.exports = class FlowManager {
     let uploadKey = key + ":upload";
 
     return rclient.hgetallAsync(uploadKey)
-      .then((stats) => this.getOrderedStats(stats));
+      .then((stats) => {
+        let s = this.getOrderedStats(stats)
+        this.filterOldData(s);
+        return s;
+      });
   }
 
   list24HoursTicks() {
