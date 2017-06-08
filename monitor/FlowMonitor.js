@@ -188,7 +188,7 @@ module.exports = class FlowMonitor {
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarmManager2.enrichDestInfo)
                         .then((alarm) => {
-                          alert();armManager2.checkAndSave(alarm, (err) => {
+                          alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
                             }
                           });
@@ -243,7 +243,7 @@ module.exports = class FlowMonitor {
                     alarmManager2.enrichDeviceInfo(alarm)
                       .then(alarmManager2.enrichDestInfo)
                       .then((alarm) => {
-                        alert();armManager2.checkAndSave(alarm, (err) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
                           }
                         })
