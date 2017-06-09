@@ -434,7 +434,11 @@ module.exports = class {
           else {
             alarm.result_policy = p.pid;
             alarm.result = "block";
-            alarm.result_method = "auto";
+
+            if(info.method === "auto") {
+              alarm.result_method = "auto";
+            }
+
             this.updateAlarm(alarm)
               .then(() => {
                 callback(null);
