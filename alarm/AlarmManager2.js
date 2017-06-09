@@ -247,6 +247,9 @@ module.exports = class {
     let dedupResult = this.dedup(alarm).then((dup) => {   
 
       if(dup) {
+        log.warn("Same alarm is already generated, skipped this time");
+        log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
+        log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
         callback(new Error("duplicated with existing alarms"));
         return;
       } 
@@ -434,7 +437,11 @@ module.exports = class {
           else {
             alarm.result_policy = p.pid;
             alarm.result = "block";
-            alarm.result_method = "auto";
+
+            if(info.method === "auto") {
+              alarm.result_method = "auto";
+            }
+
             this.updateAlarm(alarm)
               .then(() => {
                 callback(null);
