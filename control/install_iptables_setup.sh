@@ -1,5 +1,7 @@
 #!/bin/bash
 
+sudo which ipset &>/dev/null || sudo apt-get install -y ipset
+
 sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
 
 #FIXME: ignore if failed or not
