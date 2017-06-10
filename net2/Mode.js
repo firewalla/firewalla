@@ -16,8 +16,8 @@
 
 let Promise = require('bluebird');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+let redis = require("redis");
+let rclient = redis.createClient();
 
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
@@ -31,7 +31,11 @@ function getSetupMode() {
     return Promise.resolve(_setupMode);
   }
 
-  return rclient.getAsync("mode")
+  return reloadSetupMode();
+}
+
+function reloadSetupMode() {
+   return rclient.getAsync("mode")
     .then((mode) => {
       if(mode) {
         _setupMode = mode;
@@ -87,6 +91,7 @@ module.exports = {
   isSpoofModeOn:isSpoofModeOn,
   isDHCPModeOn:isDHCPModeOn,
   getSetupMode:getSetupMode,
+  reloadSetupMode:reloadSetupMode,
   setSetupMode:setSetupMode,
   dhcpModeOn: dhcpModeOn,
   spoofModeOn: spoofModeOn

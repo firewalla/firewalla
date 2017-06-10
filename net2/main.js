@@ -40,22 +40,6 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
-
-/*
- * Create the secondary interface 
- */
-
-var secondaryInterface = require("./SecondaryInterface.js");
-secondaryInterface.create(config,(err,ip,subnet,ipnet,mask)=>{
-    if (err == null) {
-        log.info("Successful Created Secondary Interface");
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet; 
-        sysManager.secondaryIpnet = ipnet; 
-        sysManager.secondaryMask  = mask; 
-    }
-});
-
 run0();
 
 function run0() {
@@ -140,7 +124,10 @@ function run() {
   bd.start();
 
 
-  ModeManager.startService();  
+  ModeManager.apply();
+
+  // when mode is changed by anyone else, reapply automatically
+  ModeManager.listenOnChange();
   
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');

@@ -17,12 +17,16 @@ let fHome = f.getFirewallaHome();
 
 let userID = f.getUserID();
 
+let Promise = require('bluebird');
+
 let dnsFilterDir = f.getUserConfigFolder() + "/dns";
 let filterFile = dnsFilterDir + "/hash_filter.conf";
 let tmpFilterFile = dnsFilterDir + "/hash_filter.conf.tmp";
 
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
+
+let fConfig = require('../../net2/config.js').getConfig();
 
 let bone = require("../../lib/Bone.js");
 
@@ -34,6 +38,8 @@ let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = null;
 let upstreamDNS = null;
+
+let dhcpFeature = false;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
@@ -295,6 +301,33 @@ module.exports = class {
       cmd = util.format("%s --server=%s", cmd, upstreamDNS);
     }
 
+    if(dhcpFeature &&
+       sysManager.secondaryIpnet &&
+       sysManager.secondaryMask) {
+      log.info("DHCP feature is enabled");
+
+      let rangeBegin = util.format("%s.10", sysManager.secondaryIpnet);
+      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+      let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+      
+      cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
+                        cmd,
+                        rangeBegin,
+                        rangeEnd,
+                        sysManager.secondaryMask,
+                        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+                       );
+
+      // By default, dnsmasq sends some standard options to DHCP clients,
+      // the netmask and broadcast address are set to the same as the host running dnsmasq
+      // and the DNS server and default route are set to the address of the machine running dnsmasq. 
+      cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
+
+      sysManager.myDNS().forEach((dns) => {
+        cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
+      });
+    }
+
     log.info("Command to start dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
@@ -403,6 +436,40 @@ module.exports = class {
       }
       callback(err);
     });
+  }
+
+  enableDHCP() {
+    dhcpFeature = true;
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        if(err) {
+          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+          reject(err);
+          return;          
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  disableDHCP() {
+    dhcpFeature = false;
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        if(err) {
+          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+          reject(err);
+          return;          
+        }
+        
+        resolve();
+      });
+    });    
+  }
+
+  dhcp() {
+    return dhcpFeature;
   }
 
 };
