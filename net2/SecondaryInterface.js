@@ -38,25 +38,33 @@ exports.create = function (config, callback) {
      "intf":"eth0:0",
      "ip":"192.168.218.1/24",
      "ipsubnet":"192.168.218.0/24",
-     "ip2":"192.168.168.1/24"
-     "ipsubnet2":"192.168.218.0/24",
+     "ipnet":"192.168.218",
+     "ipmask":"255.255.255.0",
+     "ip2":"192.168.168.1/24",
+     "ipsubnet2":"192.168.168.0/24",
+     "ipnet2":"192.168.168",
+     "ipmask2":"255.255.255.0"
   },
 */
     if (config.secondaryInterface && config.secondaryInterface.intf) {
         let _secondaryIp = config.secondaryInterface.ip;
         let _secondaryIpSubnet = config.secondaryInterface.ipsubnet;
+        let _secondaryIpNet = config.secondaryInterface.ipnet;
+        let _secondaryMask = config.secondaryInterface.ipmask;
         linux.get_network_interfaces_list((err,list)=>{
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
                     log.error("SecondaryInterface: Already Created Secondary Interface",list[i]);
-                    callback(null,_secondaryIp, _secondaryIpSubnet);
+                    callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
                     return; 
                 }
                 let subnet = getSubnet(list[i].name, 'IPv4');
                 if (subnet == _secondaryIpSubnet) {
                     _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
                     _secondaryIp = config.secondaryInterface.ip2; 
+                    _secondaryIpNet = config.secondaryInterface.ipnet2;
+                    _secondaryMask = config.secondaryInterface.ipmask2;
                 }
             }
             require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => { 
@@ -64,7 +72,7 @@ exports.create = function (config, callback) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }
                 if (callback) {
-                    callback(err,_secondaryIp, _secondaryIpSubnet);
+                    callback(err,_secondaryIp, _secondaryIpSubnet, _secondaryIpNet, _secondaryMask);
                 }
             });
          });

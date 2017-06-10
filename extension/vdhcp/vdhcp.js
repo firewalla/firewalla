@@ -37,7 +37,7 @@ module.exports = class {
       if (err) {
         log.error("VDHCPDUMP:INSTALL:Error", "Failed to execute script install.sh", err);
       } else {
-        log.info("VDHCPDUMP:INSTALL:Success", "DHCPDump is installed successfully");
+        log.info("VDHCPDUMP:INSTALL:Success", "DHCP Server is installed successfully");
       }
 
       callback(err, null);
@@ -52,16 +52,25 @@ module.exports = class {
   }
 
   start(force, local_net, local_mask, vdhcp_net, vdhcp_mask,  callback) {
-    let cmdline = 'sudo __dirname/start.sh '+local_net+' '+ local_mask +' '+vdhcp_net+' '+vdhcp_mask;
+    let cmdline = 'sudo '+__dirname+'/start.sh '+local_net+' '+ local_mask +' '+vdhcp_net+' '+vdhcp_mask;
+    console.log("Starting VDHCPD Server with:", cmdline);
     let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
         if(err) {
-          log.error("Failed to clean up spoofing army: " + err);
+          log.error("Failed to Start VDHCP: " + err);
         }
         callback(err);
     });
   }
 
   stop(callback) {
+    let cmdline = 'sudo '+__dirname+'/stop.sh ';
+    console.log("Stopping VDHCPD Server with:", cmdline);
+    let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+        if(err) {
+          log.error("Failed to Stop VDHCP: " + err);
+        }
+        callback(err);
+    });
   }
 
   restart(callback) {
