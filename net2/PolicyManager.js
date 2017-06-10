@@ -586,11 +586,19 @@ module.exports = class {
       if(policy["dnsmasq"]) {        
         if(host.oper["dnsmasq"] != null &&
            JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+          // do nothing
         } else {
           this.dnsmasq(host, policy["dnsmasq"]);
           host.oper["dnsmasq"] = policy["dnsmasq"];
         }
-      }      
+      } else {        
+        // still start dnsmasq if dhcp mode is enabled
+        // FIXME: need to refactor code here to split "dnsmasq" service from "dns filtering" feature
+        if(dnsmasq.dhcp()) {
+          this.dnsmasq(host, policy["dnsmasq"]);
+          host.oper["dnsmasq"] = policy["dnsmasq"];
+        }
+      }
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);

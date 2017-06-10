@@ -711,6 +711,26 @@ class netBot extends ControllerBot {
           });
         }
         break;
+      case "mode":
+        let v4 = msg.data.value;
+        let err = null;
+        if(v4.mode) {
+          let modeManager = require('../net2/ModeManager.js');
+          switch(v4.mode) {
+          case "spoof":
+            modeManager.setSpoofAndPublish();
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish();
+            break;
+          default:
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
+          }
+          this.simpleTxData(msg, {}, err, callback);
+        }
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
         break;

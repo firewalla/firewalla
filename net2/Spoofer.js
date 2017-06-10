@@ -287,17 +287,17 @@ module.exports = class {
       return;
     }
     
-        log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
-        if (ipAddr && tellIpAddr) {
-           this._unspoof(ipAddr,tellIpAddr,mac);
-        }
-        let maxSpoofer = 5;
-        if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
-            for (let i in ip6Addrs) {
-                this._unspoof6(ip6Addrs[i],gateway6,mac);
-            }
-        }
+    log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
+    if (ipAddr && tellIpAddr) {
+      this._unspoof(ipAddr,tellIpAddr,mac);
     }
+    let maxSpoofer = 5;
+    if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
+      for (let i in ip6Addrs) {
+        this._unspoof6(ip6Addrs[i],gateway6,mac);
+      }
+    }
+  }
 
     clean(ip) {
         //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';

@@ -91,6 +91,13 @@ function startSpoofing() {
   
 }
 
+function stopSpoofing() {
+  if(spawnProcess) {
+    spawnProcess.kill();
+  }
+}
+
 module.exports = {
-  startSpoofing: startSpoofing
+  startSpoofing: startSpoofing,
+  stopSpoofing: stopSpoofing
 }
