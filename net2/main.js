@@ -27,31 +27,18 @@ let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
 
+let ModeManager = require('./ModeManager.js');
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
-let fConfig = require('./config.js').getConfig();
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
-
-
-/*
- * Create the secondary interface 
- */
-
-var secondaryInterface = require("./SecondaryInterface.js");
-secondaryInterface.create(config,(err,ip,subnet)=>{
-    if (err == null) {
-        log.info("Successful Created Secondary Interface");
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet; 
-    }
-});
 
 run0();
 
@@ -136,15 +123,11 @@ function run() {
   d.start();
   bd.start();
 
-  if(fConfig.newSpoof) {
-    let sm = require('./SpooferManager.js')
-    sm.startSpoofing()
-        .then(() => {
-          log.info("New Spoof is started");
-        }).catch((err) => {
-          log.error("Failed to start new spoof");
-        });
-  }
+
+  ModeManager.apply();
+
+  // when mode is changed by anyone else, reapply automatically
+  ModeManager.listenOnChange();
   
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');

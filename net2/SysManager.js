@@ -313,6 +313,18 @@ module.exports = class {
         }
     }
 
+    myIpMask() {
+        if(this.monitoringInterface()) {
+            let mask =  this.monitoringInterface().netmask;            
+            if (mask.startsWith("Mask:")) {
+                mask = mask.substr(5);
+            }
+            return mask;
+        } else {
+            return undefined;
+        }
+    }
+
     myMAC() {
         if (this.monitoringInterface()) {
             return this.monitoringInterface().mac_address;
@@ -347,6 +359,11 @@ module.exports = class {
 
     mySubnet() {
         return this.monitoringInterface().subnet;
+    }
+
+    mySubnetNoSlash() {
+        let subnet = this.mySubnet();
+        return subnet.substring(0, subnet.indexOf('/'));
     }
 
     mySSHPassword() {

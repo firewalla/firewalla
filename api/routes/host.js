@@ -60,14 +60,27 @@ let flowManager = new FlowManager();
 router.get('/:host',
            (req, res, next) => {
              let host = req.params.host;
-             hostManager.getHost(host, (err, h) => {
-               flowManager.getStats2(h).then(() => {
-                 res.json(h.toJson());
-               }).catch((err) => {
-                 res.status(404);
-                 res.send("");
+
+             if(host === "system") {
+               hostManager.toJson(true, (err, json) => {
+                 if(err) {
+                   res.status(500).send("");
+                   return;
+                 } else {
+                   res.json(json);
+                   return;
+                 }
                });
-             });
+             } else {
+               hostManager.getHost(host, (err, h) => {
+                 flowManager.getStats2(h).then(() => {
+                   res.json(h.toJson());
+                 }).catch((err) => {
+                   res.status(404);
+                   res.send("");
+                 });
+               });
+             }
            });
 
 module.exports = router;
