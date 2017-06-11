@@ -44,6 +44,8 @@ var policyManager = new PolicyManager('info');
 let AlarmManager2 = require('../alarm/AlarmManager2.js');
 let alarmManager2 = new AlarmManager2();
 
+let modeManager = require('./ModeManager.js');
+
 let f = require('./Firewalla.js');
 
 var alarmManager = null;
@@ -1353,6 +1355,14 @@ module.exports = class {
       });
   }
 
+  modeForInit(json) {
+    log.debug("Reading mode");
+    return modeManager.mode()
+      .then((mode) => {
+        json.mode = mode;
+      });    
+  }
+
   migrateStats() {
     let ipList = [];
     for(let index in this.hosts.all) {
@@ -1381,7 +1391,8 @@ module.exports = class {
           this.natDataForInit(json),
           this.ignoredIPDataForInit(json),
           this.legacyStats(json),
-          this.legacyHostsStats(json)
+          this.legacyHostsStats(json),
+          this.modeForInit(json)
         ]).then(() => {
           callback(null, json);
         }).catch((err) => {

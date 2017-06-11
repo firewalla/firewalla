@@ -83,13 +83,11 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
         var j = output.indexOf('\r', i+1);
         if (j == -1) j = output.length;
         let str = output.substr(i,j-1);
-        console.log("line: ",str);
         i = j+1;
      } 
   }
  
   parse(output) {
-     console.log("DHCPDUMP Parsing output:",output);
      let o =  output.split(/\r?\n/);
      let obj = {};
      for (let i in o) {
