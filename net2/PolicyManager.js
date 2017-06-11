@@ -294,9 +294,12 @@ module.exports = class {
   }
 
     hblock(host, state) {
-        log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
-        b.blockMac(host.o.mac,state,(err)=>{
-        });
+      log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
+      if(state) {
+        b.blockMac(host.o.mac);
+      } else {
+        b.unblockMac(host.o.mac);
+      }
  /* 
         
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {

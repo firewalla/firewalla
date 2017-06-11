@@ -44,6 +44,12 @@ var policyManager = new PolicyManager('info');
 let AlarmManager2 = require('../alarm/AlarmManager2.js');
 let alarmManager2 = new AlarmManager2();
 
+let PolicyManager2 = require('../alarm/PolicyManager2.js');
+let policyManager2 = new PolicyManager2();
+
+let ExceptionManager = require('../alarm/ExceptionManager.js');
+let exceptionManager = new ExceptionManager();
+
 let modeManager = require('./ModeManager.js');
 
 let f = require('./Firewalla.js');
@@ -1365,6 +1371,36 @@ module.exports = class {
       });    
   }
 
+  // what is blocked
+  policyRulesForInit(json) {
+    log.debug("Reading policy rules");
+    return new Promise((resolve, reject) => {
+      policyManager2.loadActivePolicys((err, rules) => {
+        if(err) {
+          reject(err);          
+        } else {
+          json.policyRules = rules;
+          resolve();
+        }
+      });
+    });
+  }
+
+  // whats is allowed
+  exceptionRulesForInit(json) {
+    log.debug("Reading exception rules");
+    return new Promise((resolve, reject) => {
+      exceptionManager.loadExceptions((err, rules) => {
+        if(err) {
+          reject(err);
+        } else {
+          json.exceptionRules = rules;
+          resolve();
+        }
+      });
+    });
+  }
+  
   migrateStats() {
     let ipList = [];
     for(let index in this.hosts.all) {
@@ -1394,7 +1430,9 @@ module.exports = class {
           this.ignoredIPDataForInit(json),
           this.legacyStats(json),
           this.legacyHostsStats(json),
-          this.modeForInit(json)
+          this.modeForInit(json),
+          this.policyRulesForInit(json),
+          this.exceptionRulesForInit(json)
         ]).then(() => {
           callback(null, json);
         }).catch((err) => {

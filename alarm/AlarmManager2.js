@@ -425,6 +425,21 @@ module.exports = class {
         
         let p = new Policy(type, target);
         p.aid = alarmID;
+        p.reason = alarm.type;
+
+        // add additional info
+        switch(p.type) {
+        case "mac":
+          p.target_name = alarm["p.device.name"];
+          p.target_ip = alarm["p.device.ip"];
+          break;
+        case "ip":
+          p.target_name = alarm["p.dest.name"];
+          p.target_ip = alarm["p.dest.ip"];
+          break;
+        default:
+          break;
+        }
 
         if(info.method)
           p.method = info.method;
@@ -468,11 +483,11 @@ module.exports = class {
 
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
-          type = "new_device_mac"; // place holder, not going to be matched by any alarm/policy
+          type = "mac"; // place holder, not going to be matched by any alarm/policy
           target = alarm["p.device.ip"];
           break;
         default:
-          type = "p.dest.ip";
+          type = "ip";
           target = alarm["p.dest.ip"];
           break;
         }
@@ -485,9 +500,27 @@ module.exports = class {
         // TODO: may need to define exception at more fine grain level
         let e = new Exception({
           "type": alarm.type,
-          "p.dest.ip": target
+          reason: alarm.type,
+          aid: alarmID,
+          "i.type": type
         });
-        
+
+        switch(type) {
+        case "mac":
+          e["p.device.mac"] = alarm["p.device.mac"];
+          e["target_name"] = alarm["p.device.name"];
+          e["target_ip"] = alarm["p.device.ip"];
+          break;
+        case "ip":
+          e["p.dest.ip"] = alarm["p.dest.ip"];
+          e["target_name"] = alarm["p.dest.name"];
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
+        default:
+          // not supported
+          break;
+        }
+
         // FIXME: make it transactional
         // set alarm handle result + add policy
 

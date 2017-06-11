@@ -20,6 +20,8 @@ let path = require('path');
 let log = require("../net2/logger.js")(__filename);
 let Promise = require('bluebird');
 
+let iptool = require("ip");
+
 let inited = false;
 
 // =============== block @ connection level ==============
@@ -48,8 +50,15 @@ setupBlockChain();
 function block(destination) {
   if(!inited)
     return Promise.reject("Block feature not inited");
-  
-  let cmd = "sudo ipset add -! blocked_ip_set " + destination;
+
+  let cmd = null;
+
+  if(iptool.isV4Format(destination)) {
+    cmd = "sudo ipset add -! blocked_ip_set " + destination;    
+  } else {
+    cmd = "sudo ipset add -! blocked_ip_set6 " + destination;
+  }
+
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
@@ -66,7 +75,13 @@ function unblock(destination) {
   if(!inited)
     return Promise.reject("Block feature not inited");
 
-  let cmd = "sudo ipset del -! blocked_ip_set " + destination;
+  let cmd = null;
+  if(iptool.isV4Format(destination)) {
+    cmd = "sudo ipset del -! blocked_ip_set " + destination;
+  } else {
+    cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
+  }
+
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
@@ -89,8 +104,8 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   }
 
   if (state == true) {
-      let checkCMD = util.format("sudo %s -C FORWARD --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-      let addCMD = util.format("sudo %s -A FORWARD --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
+      let checkCMD = util.format("sudo %s -C FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
+      let addCMD = util.format("sudo %s -I FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
 
       cp.exec(checkCMD, (err, stdout, stderr) => {
         if(err) {
@@ -102,7 +117,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
         }
       });
   } else {
-      let delCMD = util.format("sudo %s -D FORWARD --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
+      let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
         log.info(err, stdout, stderr);
         callback(err);        
@@ -110,17 +125,30 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   }
 }
 
-function blockMac(macAddress,state,callback) {
-    blockOutgoing(macAddress,null,state,false, (err)=>{
-        blockOutgoing(macAddress,null,state,true, (err)=>{
-           callback(err);
-        });
+function unblockMac(macAddress, callback) {
+  callback = callback || function() {}
+
+  blockOutgoing(macAddress,null,false,false, (err)=>{
+    blockOutgoing(macAddress,null,false,true, (err)=>{
+      callback(err);
     });
+  });  
+}
+
+function blockMac(macAddress,callback) {
+  callback = callback || function() {}
+
+  blockOutgoing(macAddress,null,true,false, (err)=>{
+    blockOutgoing(macAddress,null,true,true, (err)=>{
+      callback(err);
+    });
+  });
 }
 
 module.exports = {
   blockOutgoing : blockOutgoing,
   blockMac: blockMac,
+  unblockMac: unblockMac,
   block: block,
   unblock: unblock
 }
