@@ -25,7 +25,7 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
-let Promise = require('promise');
+let Promise = require('bluebird');
 
 let instance = null;
 
@@ -280,12 +280,13 @@ module.exports = class {
     });
   }
 
-  // top 20 only by default
+  // FIXME: top 200 only by default
+  // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
 
     if(typeof(number) == 'function') {
       callback = number;
-      number = 20;
+      number = 200;
     }
     
     callback = callback || function() {}
@@ -302,19 +303,33 @@ module.exports = class {
   }
 
   enforce(policy) {
-    if(policy.type === "ip") {
-      return Block.block(policy.target);
-    }
-
-    return Promise.reject("Unsupported policy");
+    switch(policy.type) {
+    case "ip":
+      let blockAsync = Promise.promisify(Block.block);
+      return blockAsync(policy.target);
+      break;
+    case "mac":
+      let blockMacAsync = Promise.promisify(Block.blockMac);
+      return blockMacAsync(policy.target);
+      break;
+    default:
+      return Promise.reject("Unsupported policy");
+    }    
   }
 
   unenforce(policy) {
-    if(policy.type === "ip") {
-      return Block.unblock(policy.target);
+    switch(policy.type) {
+    case "ip":
+      let unblockAsync = Promise.promisify(Block.unblock);
+      return unblockAsync(policy.target);
+      break;
+    case "mac":
+      let unblockMacAsync = Promise.promisify(Block.unblockMac);
+      return unblockMacAsync(policy.target);
+      break;
+    default:
+      return Promise.reject("Unsupported policy");
     }
-
-    return Promise.reject("Unsupported policy");
   }
 
 }
