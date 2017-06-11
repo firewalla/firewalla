@@ -41,8 +41,8 @@ module.exports = class {
 
       let multi = rclient.multi();
 
-      results.forEach((aid) => {
-        let key = "exception:" + aid;
+      results.forEach((eid) => {
+        let key = "exception:" + eid;
         multi.hgetall(key);
       });
 
@@ -97,7 +97,7 @@ module.exports = class {
   }
 
   enqueue(exception, callback) {
-    let id = exception.aid;
+    let id = exception.eid;
     rclient.sadd(exceptionQueue, id, (err) => {
       if(err) {
         log.error("Failed to add exception to active queue: " + err);
@@ -116,7 +116,7 @@ module.exports = class {
         return;
       }
 
-      exception.aid = id;
+      exception.eid = id;
 
       let exceptionKey = exceptionPrefix + id;
 
@@ -129,8 +129,8 @@ module.exports = class {
 
         this.enqueue(exception, (err) => {
           if(!err) {
-            audit.trace("Created exception", exception.aid);
-//            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.aid);
+            audit.trace("Created exception", exception.eid);
+//            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
           }
           
           callback(err);
@@ -188,7 +188,7 @@ module.exports = class {
       
       let matches = results.filter((e) => e.match(alarm));
       if(matches.length > 0) {
-        log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.aid).join(","));
+        log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
         callback(null, true, matches);
       } else {
         callback(null, false);
