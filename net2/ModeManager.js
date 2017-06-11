@@ -199,5 +199,6 @@ module.exports = {
   listenOnChange: listenOnChange,
   publish: publish,
   setDHCPAndPublish: setDHCPAndPublish,
-  setSpoofAndPublish: setSpoofAndPublish
+  setSpoofAndPublish: setSpoofAndPublish,
+  enableSecondaryInterface:_enableSecondaryInterface
 }

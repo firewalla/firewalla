@@ -124,6 +124,9 @@ function run() {
   bd.start();
 
 
+  // always create the secondary interface
+  ModeManager.enableSecondaryInterface();
+  
   ModeManager.apply();
 
   // when mode is changed by anyone else, reapply automatically
