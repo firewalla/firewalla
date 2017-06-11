@@ -74,7 +74,7 @@ function startSpoofing() {
 
       let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
       
-      spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP]);
+      spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP,'-m','-q']);
       log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
 
       spawnProcess.stdout.pipe(logStream);
