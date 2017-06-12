@@ -36,6 +36,7 @@ function getIPTablesCmd(v6) {
   return cmd;
 }
 
+// This function MUST be called at the beginning of main.js
 function setupBlockChain() {
   let cmd = __dirname + "/install_iptables_setup.sh";
 
@@ -45,12 +46,7 @@ function setupBlockChain() {
   inited = true;
 }
 
-setupBlockChain();
-
 function block(destination) {
-  if(!inited)
-    return Promise.reject("Block feature not inited");
-
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -72,9 +68,6 @@ function block(destination) {
 }
 
 function unblock(destination) {
-  if(!inited)
-    return Promise.reject("Block feature not inited");
-
   let cmd = null;
   if(iptool.isV4Format(destination)) {
     cmd = "sudo ipset del -! blocked_ip_set " + destination;
@@ -95,6 +88,7 @@ function unblock(destination) {
 
 // Block every connection initiated from one local machine to a remote ip address
 function blockOutgoing(macAddress, destination, state, v6, callback) {
+
   let destinationStr = ""
 
   let cmd = getIPTablesCmd(v6);
@@ -145,10 +139,49 @@ function blockMac(macAddress,callback) {
   });
 }
 
+function blockPublicPort(localIPAddress, localPort, protocol) {
+  log.info("Blocking public port:", localIPAddress, localPort, protocol, {});
+  protocol = protocol || "tcp";
+
+  let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
+  let cmd = null;
+  
+  if(iptool.isV4Format(localIPAddress)) {
+    cmd = "sudo ipset add -! blocked_ip_port_set " + entry
+  } else {
+    cmd = "sudo ipset add -! blocked_ip_port_set6 " + entry
+  }
+
+  let execAsync = Promise.promisify(cp.exec);
+  
+  return execAsync(cmd);
+}
+
+function unblockPublicPort(localIPAddress, localPort, protocol) {
+  log.info("Unblocking public port:", localIPAddress, localPort, protocol, {});
+  protocol = protocol || "tcp";
+
+  let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
+  let cmd = null;
+  
+  if(iptool.isV4Format(localIPAddress)) {
+    cmd = "sudo ipset del -! blocked_ip_port_set " + entry
+  } else {
+    cmd = "sudo ipset del -! blocked_ip_port_set6 " + entry
+  }
+
+  let execAsync = Promise.promisify(cp.exec);
+  
+  return execAsync(cmd);
+}
+
 module.exports = {
+  setupBlockChain:setupBlockChain,
   blockOutgoing : blockOutgoing,
   blockMac: blockMac,
   unblockMac: unblockMac,
   block: block,
-  unblock: unblock
+  unblock: unblock,
+  blockPublicPort:blockPublicPort,
+  unblockPublicPort:unblockPublicPort
 }

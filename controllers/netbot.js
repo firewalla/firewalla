@@ -50,6 +50,8 @@ let am2 = new AM2();
 let EM = require('../alarm/ExceptionManager.js');
 let em = new EM();
 
+let PM2 = require('../alarm/PolicyManager2.js');
+let pm2 = new PM2();
 
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
@@ -1199,6 +1201,27 @@ class netBot extends ControllerBot {
           am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
+          break;
+
+        case "policy:create":
+          pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
+            if(err) {
+              this.simpleTxData(msg, null, err, callback);
+              return;
+            }
+            
+            pm2.checkAndSave(policy, (err, policyID) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+          });
+          break;
+        case "policy:delete":
+          pm2.disableAndDeletePolicy(msg.data.value.policyID)
+            .then(() => {
+              this.simpleTxData(msg, null, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, null, err, callback);              
+            });
           break;
 
         default:
