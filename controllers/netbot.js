@@ -1224,6 +1224,15 @@ class netBot extends ControllerBot {
             });
           break;
 
+        case "exception:delete":
+          em.deleteException(msg.data.value.exceptionID)
+            .then(() => {
+              this.simpleTxData(msg, null, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+          break;
+
         default:
           // unsupported action
           this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
