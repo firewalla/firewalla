@@ -38,6 +38,7 @@ function getIPTablesCmd(v6) {
 
 // This function MUST be called at the beginning of main.js
 function setupBlockChain() {
+  log.info("Setting up iptables for traffic blocking");
   let cmd = __dirname + "/install_iptables_setup.sh";
 
   // FIXME: ignore if failed or not
