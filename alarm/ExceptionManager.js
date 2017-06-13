@@ -28,6 +28,25 @@ module.exports = class {
     return instance;
   }
 
+
+  getException(exceptionID) {
+    return new Promise((resolve, reject) => {
+      this.idsToExceptions([exceptionID], (err, results) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        if(results == null || results.length === 0) {
+          reject(new Error("exception not exists"));
+          return;
+        }
+
+        resolve(results[0]);
+      });
+    });
+  }
+
   loadExceptions(callback) {
     callback = callback || function() {}
 
@@ -195,6 +214,24 @@ module.exports = class {
       }
     });
   }
+
+  createExceptionFromJson(json, callback) {
+    callback = callback || function() {}
+    
+    callback(null, this.jsonToException(json));
+  }
+
+  jsonToException(json) {
+    let proto = Exception.prototype;
+    if(proto) {
+      let obj = Object.assign(Object.create(proto), json);
+      return obj;
+    } else {
+      log.error("Unsupported exception type: " + json.type);
+      return null;
+    }
+  }
+
 }
 
 
