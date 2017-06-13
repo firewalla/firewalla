@@ -26,7 +26,7 @@ let Promise = require('bluebird');
 
 router.get('/stats', (req, res, next) => {
   let download = flowManager.getLast24HoursDownloadsStats();
-  let upload = flowManager.getLast24HoursDownloadsStats();
+  let upload = flowManager.getLast24HoursUploadsStats();
 
   Promise.join(download, upload, (d, u) => {
     res.json({ upload: u, download: d});

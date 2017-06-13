@@ -124,9 +124,6 @@ function run() {
   bd.start();
 
 
-  // Setup iptables so that it's ready for blocking
-  require('../control/Block.js').setupBlockChain();
-  
   // always create the secondary interface
   ModeManager.enableSecondaryInterface();
   

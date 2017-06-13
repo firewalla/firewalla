@@ -5,7 +5,7 @@ info:
   description: all kinds of debugging api supported by Firewalla
   version: '1.0.0'
 # the domain of the service
-host: localhost:8834
+# host: localhost2:8834
 # array of all schemes that your API supports
 schemes:
   - http
@@ -38,6 +38,16 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Policy'
+    delete:
+      summary: Delete a policy by given id
+      tags:
+        - Policy
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
   /policy/create:
     post:
       summary: Create a new policy with json content
@@ -64,17 +74,60 @@ paths:
         200:
           description: Success
         400:
-          $ref: '#/responses/400BadRequest'          
-  /policy/delete:
+          $ref: '#/responses/400BadRequest'
+  /exception/create:
     post:
-      summary: Delete a policy by given id
+      summary: Create a new exception with json content
       tags:
-        - Policy
+        - Exception
       parameters:
-        - $ref: '#/parameters/idInQuery'
+        - $ref: '#/parameters/json'        
       responses:
         200:
           description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+  /exception/list:
+    get:
+      summary: Returns the list of all policy rules
+      tags:
+        - Exception
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Exceptions'
+  /exception/{id}:
+    get:
+      summary: Query info on a specific exception rule
+      tags:
+        - Exception
+      parameters:
+       - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Exception'
+    delete:
+      summary: Delete an exception by given id
+      tags:
+        - Exception
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+  /flow/stats:
+    get:
+      summary: List upload/download traffic flows in last 24 hours
+      tags:
+        - Flow
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Flows'
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -362,6 +415,28 @@ definitions:
     type: array
     items:
       $ref: '#/definitions/Policy'
+  Exception:
+    type: object
+    properties:
+      eid:
+        type: string
+      timestamp:
+        type: string
+      aid:
+        type: string
+      type:
+        type: string
+  Exceptions:
+    type: array
+    items:
+      $ref: '#/definitions/Exception'
+  Flows:
+    type: object
+    properties:
+      upload:
+        type: object
+      download:
+        type: object
   Item:
     type: object
     properties:

@@ -5,6 +5,11 @@ sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536
 
+# This is to ensure all ipsets are empty when initializing 
+sudo ipset flush blocked_ip_set
+sudo ipset flush blocked_ip_port_set
+
+
 #FIXME: ignore if failed or not
 sudo iptables -N FW_BLOCK
 sudo iptables -F FW_BLOCK
@@ -22,6 +27,9 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ipset create blocked_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536
   sudo ipset create blocked_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536
+  sudo ipset flush blocked_ip_set6
+  sudo ipset flush blocked_ip_port_set6
+
   
   sudo ip6tables -N FW_BLOCK
   sudo ip6tables -F FW_BLOCK  

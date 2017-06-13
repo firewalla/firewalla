@@ -63,5 +63,16 @@ router.post('/create',
               });
             });
 
+router.post('/delete',
+            (req, res, next) => {
+              let id = req.query.id;
+
+              em.deleteException(id)
+                .then(() => {
+                  res.status(200).json({status: "success"});
+                }).catch((err) => {
+                  res.status(400).send('Failed to delete exception: ' + err);
+                });
+            });
 
 module.exports = router;

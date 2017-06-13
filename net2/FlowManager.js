@@ -247,7 +247,7 @@ module.exports = class FlowManager {
       });
   }
 
-  getLast24HoursUploadStats(ip) {
+  getLast24HoursUploadsStats(ip) {
     let key = 'stats:last24';
     
     if(ip)
@@ -449,8 +449,11 @@ module.exports = class FlowManager {
 
   // no parameters accepted
   getStats2(host) {
-    if(!host)
-      return Promise.reject(new Error("host is null"));
+    if(!host) {
+      // if host is null, consider this is system stats
+      return this.getSystemStats();
+    }
+
     
     host.flowsummary = {};
     host.flowsummary.inbytes = 0;
@@ -472,7 +475,7 @@ module.exports = class FlowManager {
         host.flowsummary.flowinbytes = legacyFormat;
         host.flowsummary.inbytes = this.sumBytes(sum);
 
-        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadStats(ip));
+        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadsStats(ip));
 
         return Promise.all(uploadPromiseList)
           .then((results) => {
