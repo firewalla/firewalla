@@ -93,7 +93,7 @@ if(!firewalla.isProduction()) {
   
 
   let applicationUrl = 'http://' + domain + "/v1";
-  swagger.configureSwaggerPaths('', '/docs/api-docs', '');
+  swagger.configureSwaggerPaths('', '/docs/', '');
   swagger.configure(applicationUrl, '1.0.0');
 
   swagger.setApiInfo({

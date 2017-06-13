@@ -449,8 +449,11 @@ module.exports = class FlowManager {
 
   // no parameters accepted
   getStats2(host) {
-    if(!host)
-      return Promise.reject(new Error("host is null"));
+    if(!host) {
+      // if host is null, consider this is system stats
+      return this.getSystemStats();
+    }
+
     
     host.flowsummary = {};
     host.flowsummary.inbytes = 0;
