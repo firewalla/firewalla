@@ -129,7 +129,7 @@ module.exports = class {
         this.addToActiveQueue(policy, (err) => {
           if(!err) {
             audit.trace("Created policy", policy.pid);
-          }         
+          }
 
           this.enforce(policy)
             .then(() => {
@@ -220,6 +220,8 @@ module.exports = class {
     let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
+      if(!obj.timestamp)
+        obj.timestamp = new Date() / 1000;
       return obj;
     } else {
       log.error("Unsupported policy type: " + json.type);
@@ -305,12 +307,14 @@ module.exports = class {
   enforce(policy) {
     switch(policy.type) {
     case "ip":
-      let blockAsync = Promise.promisify(Block.block);
-      return blockAsync(policy.target);
+      return Block.block(policy.target);
       break;
     case "mac":
       let blockMacAsync = Promise.promisify(Block.blockMac);
       return blockMacAsync(policy.target);
+      break;
+    case "ip_port":
+      return Block.blockPublicPort(policy.target, policy.target_port, policy.target_protocol);
       break;
     default:
       return Promise.reject("Unsupported policy");
@@ -320,12 +324,14 @@ module.exports = class {
   unenforce(policy) {
     switch(policy.type) {
     case "ip":
-      let unblockAsync = Promise.promisify(Block.unblock);
-      return unblockAsync(policy.target);
+      return Block.unblock(policy.target);
       break;
     case "mac":
       let unblockMacAsync = Promise.promisify(Block.unblockMac);
       return unblockMacAsync(policy.target);
+      break;
+    case "ip_port":
+      return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
       break;
     default:
       return Promise.reject("Unsupported policy");

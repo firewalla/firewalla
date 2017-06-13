@@ -344,7 +344,8 @@ module.exports = class {
     loadRecentAlarms(duration, callback) {
       if(typeof(duration) == 'function') {
         callback = duration;
-        duration = 86400;
+        duration = 10 * 60; // 10 minutes
+//        duration = 86400;
       }
       
       callback = callback || function() {}
