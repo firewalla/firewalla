@@ -5,7 +5,7 @@ info:
   description: all kinds of debugging api supported by Firewalla
   version: '1.0.0'
 # the domain of the service
-host: localhost:8834
+# host: localhost2:8834
 # array of all schemes that your API supports
 schemes:
   - http
