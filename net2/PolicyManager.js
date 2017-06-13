@@ -103,7 +103,10 @@ module.exports = class {
                 }
             }
             log.info("PolicyManager:flush", defaultTable, {});
-            iptable.run(defaultTable);
+          iptable.run(defaultTable);
+
+          // Setup iptables so that it's ready for blocking
+          require('../control/Block.js').setupBlockChain();
         });
        });
     }
