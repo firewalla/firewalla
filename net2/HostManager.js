@@ -1225,7 +1225,7 @@ module.exports = class {
   
   last24StatsForInit(json) {
     let download = flowManager.getLast24HoursDownloadsStats();
-    let upload = flowManager.getLast24HoursDownloadsStats();
+    let upload = flowManager.getLast24HoursUploadsStats();
 
     return Promise.join(download, upload, (d, u) => {
       json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};

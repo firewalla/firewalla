@@ -118,7 +118,16 @@ paths:
       responses:
         200:
           description: Success
-      
+  /flow/stats:
+    get:
+      summary: List upload/download traffic flows in last 24 hours
+      tags:
+        - Flow
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Flows'
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -421,6 +430,13 @@ definitions:
     type: array
     items:
       $ref: '#/definitions/Exception'
+  Flows:
+    type: object
+    properties:
+      upload:
+        type: object
+      download:
+        type: object
   Item:
     type: object
     properties:

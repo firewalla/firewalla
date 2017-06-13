@@ -247,7 +247,7 @@ module.exports = class FlowManager {
       });
   }
 
-  getLast24HoursUploadStats(ip) {
+  getLast24HoursUploadsStats(ip) {
     let key = 'stats:last24';
     
     if(ip)
@@ -472,7 +472,7 @@ module.exports = class FlowManager {
         host.flowsummary.flowinbytes = legacyFormat;
         host.flowsummary.inbytes = this.sumBytes(sum);
 
-        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadStats(ip));
+        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadsStats(ip));
 
         return Promise.all(uploadPromiseList)
           .then((results) => {
