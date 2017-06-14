@@ -245,3 +245,12 @@ fi
 DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 #sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
 
+NMAP_DATA_FILE=$FIREWALLA_HOME/extension/nmap/nmap-mac-prefixes
+
+function update_nmap_data_file() {
+  if [[ -e $NMAP_DATA_FILE ]]; then
+    sudo cp $NMAP_DATA_FILE /usr/share/nmap/nmap-mac-prefixes
+  fi
+}
+
+update_nmap_data_file

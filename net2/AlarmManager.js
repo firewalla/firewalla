@@ -29,7 +29,7 @@ var uuid = require('uuid');
 
 var bone = require("../lib/Bone.js");
 
-            var hostManager = null;
+var hostManager = null;
 
 
 /* alarms:

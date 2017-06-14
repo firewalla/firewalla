@@ -73,6 +73,9 @@ if(firewalla.isProduction()) {
 function run() {
 
 
+  let hl = require('../hook/HookLoader.js');
+  hl.initHooks();
+  
   var VpnManager = require('../vpn/VpnManager.js');
 
   var BroDetector = require("./BroDetect.js");
@@ -142,12 +145,6 @@ function run() {
 
     policyManager.flush(config);
     //policyManager.defaults(config);
-    //TODO need to write something install automatic rules
-
-    // for each new host  ... need to apply policy
-    var AlarmManager = require("./AlarmManager.js");
-    var alarmManager = new AlarmManager('debug');
-    //alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
   },1000*2);
 
   setTimeout(()=>{
