@@ -15,6 +15,8 @@
 'use strict';
 var ip = require('ip');
 
+let util = require('util');
+
 var debugging = false;
 // var log = function () {
 //     if (debugging) {
@@ -65,10 +67,10 @@ module.exports = class {
             try {
                let ip_info = ip.cidrSubnet(range);
                if (ip_info) {
-                   if(ip_info.subnetMaskLength<24) {
-                       callback(null,null); 
-                       return;
-                   }
+                 if(ip_info.subnetMaskLength<24) {
+                   callback(null,null); 
+                   return;
+                 }
                }
             } catch(e) {
                log.error("Nmap:Scan:Error",range,fast,e);
@@ -93,7 +95,6 @@ module.exports = class {
      }
 
      nmapScan(cmdline,requiremac,callback) {
-
         this.process = require('child_process').exec(cmdline, (err, out, code) => {
             let outarray = out.split("\n");
             let hosts = [];
