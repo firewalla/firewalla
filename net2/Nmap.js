@@ -73,7 +73,7 @@ module.exports = class {
                  }
                }
             } catch(e) {
-               log.error("Nmap:Scan:Error",range,fast,e);
+              log.error("Nmap:Scan:Error",range,fast,e, {});
             }
         }
         let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
