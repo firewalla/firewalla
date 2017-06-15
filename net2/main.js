@@ -202,7 +202,7 @@ function run() {
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
-        log.info(result[i].toShortString());
+//        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
           log.info("=================================");
           log.info("Notice :", type,ip,obj);
