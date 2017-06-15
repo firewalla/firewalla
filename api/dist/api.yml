@@ -128,6 +128,16 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Flows'
+  /host/all:
+    get:
+      summary: List all hosts
+      tags:
+        - Host
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Hosts'
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -437,6 +447,19 @@ definitions:
         type: object
       download:
         type: object
+  Host:
+    type: object
+    properties:
+      ip:
+        type: string
+      mac:
+        type: string
+      lastActive:
+        type: string
+  Hosts:
+    type: array
+    items:
+      $ref: '#/definitions/Host'
   Item:
     type: object
     properties:
