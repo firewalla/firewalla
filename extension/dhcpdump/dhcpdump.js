@@ -140,13 +140,11 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     log.info("DHCPDump started with PID: ", pid); 
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
-      log.info("Found a dhcpdiscover request");
+      log.debug("Found a dhcpdiscover request");
       var message = decoder.write(data);
       let obj = this.parse(message); 
       if (obj && obj.mac) {
         callback(obj); 
-      } else {
-        log.error("obj: " + util.inspect(obj));
       }
     });
 
