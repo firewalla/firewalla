@@ -463,7 +463,7 @@ module.exports = class {
         try {
             let obj = JSON.parse(data);
             if (obj == null) {
-                log.error("Conn:Drop", obj);
+                log.debug("Conn:Drop", obj);
                 return;
             }
             
@@ -478,23 +478,23 @@ module.exports = class {
 
             // drop layer 3 
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
-                log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
+                log.debug("Conn:Drop:ZeroLength",obj.conn_state,obj);
                 return;
             }
 
             if (obj.orig_bytes == null || obj.resp_bytes == null) {
-                log.error("Conn:Drop:NullBytes",obj);
+                log.debug("Conn:Drop:NullBytes",obj);
                 return;
             }
 
             // drop layer 4
             if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
-                log.error("Conn:Drop:ZeroLength2",obj.conn_state,obj);
+                log.debug("Conn:Drop:ZeroLength2",obj.conn_state,obj);
                 return;
             }
 
             if (obj.missed_bytes>10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-                log.error("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
+                log.debug("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
                 return;
             }
 
@@ -552,7 +552,7 @@ module.exports = class {
                     adjusted = true;
                 }
                 if (adjusted == false) {
-                    log.error("Conn:Drop:MissedBytes",obj.conn_state,obj);
+                    log.debug("Conn:Drop:MissedBytes",obj.conn_state,obj);
                     return;
                 } else {
                     log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
@@ -565,7 +565,7 @@ module.exports = class {
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.error("Conn:Drop:State",obj.conn_state,obj);
+                        log.debug("Conn:Drop:State",obj.conn_state,obj);
                         flag = 's';
                //         return;
                 }
