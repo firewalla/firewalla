@@ -77,6 +77,9 @@ class NewDeviceHook extends Hook {
           }
 
           log.info("Found a new device: " + name + "(" + mac + ")");
+
+          result.name = name;
+          result.nname = name;
           
           d.processHost(result, (err, host, newHost) => {
             // alarm will be handled and created by "NewDevice" event
