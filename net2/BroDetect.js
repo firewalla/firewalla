@@ -244,7 +244,7 @@ module.exports = class {
         if (this.connmap[key]!=null) {
              return;
         } 
-        log.info("CONN DEBUG",this.connarray.length,key,value,"length:");
+        log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
         this.connarray.push(value);
         this.connmap[key] = value;
         let mapsize = 9000;
@@ -277,7 +277,7 @@ module.exports = class {
              return;
         } 
         
-        log.info("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
         let mapsize = 9000;
@@ -577,7 +577,7 @@ module.exports = class {
             let flowdir = "in";
             let lhost = null;
 
-            log.info("ProcessingConection:",obj.uid,host,dst);
+            log.debug("ProcessingConection:",obj.uid,host,dst);
 
             // ignore multicast IP
             // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
@@ -722,7 +722,7 @@ module.exports = class {
                 for (let i in flowspec._afmap) {
                     let afobj = this.lookupAppMap(i);
                     if (afobj) {
-                        log.info("DEBUG AFOBJ DELAY RESOLVE",afobj);
+                        log.debug("DEBUG AFOBJ DELAY RESOLVE",afobj);
                         let flow_afobj = flowspec.af[afobj.host];
                         if (flow_afobj) {
                             flow_afobj.rqbl += afobj.rqbl;
@@ -766,7 +766,7 @@ module.exports = class {
                 let strdata = JSON.stringify(tmpspec);
                 //let redisObj = [key, tmpspec.ts, strdata];
                 let redisObj = [key, now, strdata];
-                log.info("Conn:Save:Temp", redisObj);
+                log.debug("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
                         if (this.config.bro.conn.expires) {
