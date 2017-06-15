@@ -60,23 +60,29 @@ class NewDeviceHook extends Hook {
       let mac = event.mac;
       let name = event.name; // name should be fetched via DHCPDUMP
 
-      // get ip address and mac vendor
-      d.discoverMac(mac, (err, result) => {
-        if(err) {
-          log.error("Failed to discover mac address", mac, ": " + err, {});
-          return;
-        }
+      // delay discover, this is to ensure ip address is already allocated
+      // to this new device
+      setTimeout(() => {
+        // get ip address and mac vendor
+        d.discoverMac(mac, (err, result) => {
+          if(err) {
+            log.error("Failed to discover mac address", mac, ": " + err, {});
+            return;
+          }
 
-        if(!result) {
-          // not found... kinda strange, hack??
-          log.warn("New device " + name + " is not found in the network..");
-          return;
-        }
+          if(!result) {
+            // not found... kinda strange, hack??
+            log.warn("New device " + name + " is not found in the network..");
+            return;
+          }
 
-        d.processHost(result, (err, host, newHost) => {
-          // alarm will be handled and created by "NewDevice" event
+          log.info("Found a new device: " + name + "(" + mac + ")");
+          
+          d.processHost(result, (err, host, newHost) => {
+            // alarm will be handled and created by "NewDevice" event
+          });
         });
-      });
+      }, 5000);
     });
 
     sem.on('NewDeviceWithIPOnly', (event) => {

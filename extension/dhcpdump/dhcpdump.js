@@ -86,7 +86,20 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
         i = j+1;
      } 
   }
- 
+
+  normalizeMac(mac) {
+    mac = mac.toUpperCase();
+    let items = mac.split(":");
+    let items2 = items.map((item) => {
+      if(item.length === 1) {
+        return "0" + item;
+      } else {
+        return item;
+      }
+    });
+    return items2.join(":");
+  }
+  
   parse(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
@@ -97,7 +110,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
       let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
       if(match) {
-        obj.mac = match[1];
+        obj.mac = this.normalizeMac(match[1]);
       }
 
       // locate hostname
