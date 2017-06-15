@@ -147,6 +147,11 @@ module.exports = class {
     log.info("Start scanning ip", ip, {});
 
     this.nmap.scan(ip, true, (err, hosts, ports) => {
+      if(err) {
+        log.error("failed to scan: " + err);
+        return;
+      }
+      
       this.hosts = [];
 
       let found = null;
@@ -181,6 +186,11 @@ module.exports = class {
           log.info("Start scanning network ", intf.subnet, "to look for mac", mac, {});
           
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
+            if(err) {
+              log.error("failed to scan: " + err);
+              return;
+            }
+            
             this.hosts = [];
 
             let found = null;
@@ -545,7 +555,11 @@ module.exports = class {
     }
         log.info("Start scanning network:",subnet,fast);
         this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
-        this.nmap.scan(subnet, fast, (err, hosts, ports) => {
+    this.nmap.scan(subnet, fast, (err, hosts, ports) => {
+      if(err) {
+        log.error("Failed to scan: " + err);
+        return;
+      }
             this.hosts = [];
             for (let h in hosts) {
                 let host = hosts[h];

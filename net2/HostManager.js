@@ -26,6 +26,7 @@ var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
 let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -1936,4 +1937,11 @@ module.exports = class {
             callback(null,ignored );
         });
     }
+
+  macExists(mac) {
+    return rclient.keysAsync("host:mac:" + mac)
+      .then((results) => {
+        return results.length > 0
+      });
+  }
 }

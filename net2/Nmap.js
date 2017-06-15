@@ -68,12 +68,14 @@ module.exports = class {
                let ip_info = ip.cidrSubnet(range);
                if (ip_info) {
                  if(ip_info.subnetMaskLength<24) {
-                   callback(null,null); 
+                   callback(null,[], []); 
                    return;
                  }
                }
             } catch(e) {
               log.error("Nmap:Scan:Error",range,fast,e, {});
+              callback(e);
+              return;
             }
         }
         let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
