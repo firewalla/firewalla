@@ -125,6 +125,8 @@ module.exports = class {
                             host.mac = addr.addr;
                             if (addr.vendor != null) {
                                 host.macVendor = addr.vendor;
+                            } else {
+                              host.macVendor = "Unknown";
                             }
                         }
                     }

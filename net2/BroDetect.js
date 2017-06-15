@@ -361,7 +361,7 @@ module.exports = class {
                     rclient.hgetall(key,(err,entry)=>{ 
                         if (entry) {
                             if (entry.host != value.host) {
-                                log.info("Dns:Remap",entry.host,value.host);
+                                log.debug("Dns:Remap",entry.host,value.host);
                                 rclient.hdel(key,"_intel");
                             }
                             if (entry.count) {
