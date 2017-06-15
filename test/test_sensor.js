@@ -16,25 +16,6 @@
 
 let log = require('../net2/logger.js')(__filename);
 
-let FWEvent = class {
-  constructor(eid, type) {
-    this.eid = eid;
-    this.type = type;
-    this.timestamp = new Date()/1000;
-    this.message = "";
-  }
-}
-
-let Sensor = class {
-  constructor() {
-  }
-
-  init() {
-    // do nothing in base class
-  }
-}
-
-module.exports = {
-  FWEvent: FWEvent,
-  Sensor: Sensor
-}
+let _ = require('underscore');
+let chai = require('chai');
+let expect = chai.expect;

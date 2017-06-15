@@ -70,11 +70,16 @@ if(firewalla.isProduction()) {
   });
 }
 
+let hl = null;
+let sl = null;
+
 function run() {
 
-
-  let hl = require('../hook/HookLoader.js');
+  hl = require('../hook/HookLoader.js');
   hl.initHooks();
+
+  sl = require('../sensor/SensorLoader.js');
+  sl.initSensors();
   
   var VpnManager = require('../vpn/VpnManager.js');
 

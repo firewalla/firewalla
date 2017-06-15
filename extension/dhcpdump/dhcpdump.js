@@ -90,34 +90,28 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
   parse(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
-     for (let i in o) {
-         let options = o[i].split(' ');
-         if (options[0].indexOf("OPTION:")==-1) {
-             continue;
-         }
-         if (o[i].indexOf("Host name")>-1) {
-             obj.name = options[options.length-1];
-             obj.nname = options[options.length-1];
-         }
-         if (o[i].indexOf("Client-identifier")>-1) {
-             obj.mac = options[options.length-1];
-             obj.mac = obj.mac.toUpperCase();
-             if (obj.mac.length==20) {
-                obj.mac = obj.mac.substr(3,19);
-             }
-             if (obj.mac.length!=17) {
-                 return {};
-             }
-         }
-         if (o[i].indexOf("Request IP address")>-1) {
-             obj.ipv4Addr = options[options.length-1];
-             obj.uid = options[options.length-1];
-             if (obj.uid.length<7) {
-                 return {};
-             }
-         }
-     }
-     return obj; 
+    for (let i in o) {
+      let line = o[i];
+
+      // locate mac address
+      // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
+      let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
+      if(match) {
+        obj.mac = match[1];
+      }
+
+      // locate hostname
+      let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
+      if(match2) {
+        obj.name = match2[1];
+      }
+    }
+
+    if(obj.mac && obj.name) {
+      return obj;
+    } else {
+      return {};
+    }
   }
 
   rawStart(callback) {
@@ -133,11 +127,14 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     log.info("DHCPDump started with PID: ", pid); 
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
-         var message = decoder.write(data);
-         let obj = this.parse(message); 
-         if (obj && obj.uid && obj.mac) {
-             callback(obj); 
-         }
+      log.info("Found a dhcpdiscover request");
+      var message = decoder.write(data);
+      let obj = this.parse(message); 
+      if (obj && obj.mac) {
+        callback(obj); 
+      } else {
+        log.error("obj: " + util.inspect(obj));
+      }
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {

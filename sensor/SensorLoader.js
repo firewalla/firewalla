@@ -16,25 +16,19 @@
 
 let log = require('../net2/logger.js')(__filename);
 
-let FWEvent = class {
-  constructor(eid, type) {
-    this.eid = eid;
-    this.type = type;
-    this.timestamp = new Date()/1000;
-    this.message = "";
-  }
-}
+let DHCPSensor = require('./DHCPSensor.js');
 
-let Sensor = class {
-  constructor() {
-  }
+let sensors = [];
 
-  init() {
-    // do nothing in base class
-  }
+function initSensors() {
+  sensors.push(new DHCPSensor());
+
+  sensors.forEach((s) => {
+    log.info("Installing Sensor:", s.constructor.name, {});
+    s.init();
+  });
 }
 
 module.exports = {
-  FWEvent: FWEvent,
-  Sensor: Sensor
-}
+  initSensors:initSensors
+};
