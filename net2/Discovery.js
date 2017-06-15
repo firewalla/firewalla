@@ -185,11 +185,12 @@ module.exports = class {
 
             let found = null;
             
-            for (let h in hosts) {
-              let host = hosts[h];
+            for (let i in hosts) {
+              let host = hosts[i];
               if(host.mac && host.mac === mac) {
                 found = host;
                 callback(null, found);
+                break;
               }
             }
 
@@ -197,8 +198,6 @@ module.exports = class {
               callback(null, null);
             }
           });
-        } else {
-          callback(null, null);
         }
       }
     });
@@ -230,7 +229,6 @@ module.exports = class {
         }, 1000 * 60 * 60*24);
      
         this.natScan();
-        this.dhcpDump();
     }
 
     /**
@@ -258,20 +256,6 @@ module.exports = class {
                 }
             });
         }, 60000);
-    }
-
-    dhcpDump() {
-        let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
-        let _dhcpDump = new DhcpDump();
-        _dhcpDump.install((obj)=>{
-            log.info("Discover:DHCPDUMP installed");
-            _dhcpDump.start(false,(obj)=>{
-                 if (obj) {
-                     log.info("Discover:DHCPDUMP:",JSON.stringify(obj));
-                     this.processHost(obj);    
-                 }
-            });
-        });
     }
 
     bonjourParse(service) {
