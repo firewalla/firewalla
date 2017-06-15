@@ -345,7 +345,7 @@ module.exports = class {
                             let changeset = this.mergeHosts(data, host);
                         // JERRRY    changeset['lastActiveTimestamp'] = Date.now() / 1000;
                             changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
-                            log.info("Discovery:Bonjour:Redis:Merge", key, changeset, {});
+                            log.debug("Discovery:Bonjour:Redis:Merge", key, changeset, {});
                             rclient.hmset(key, changeset, (err, result) => {
                                 if (err) {
                                     log.error("Discovery:Nmap:Update:Error", err);
@@ -614,7 +614,7 @@ module.exports = class {
               changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
             }
             changeset['mac'] = host.mac;
-            log.info("Discovery:Nmap:Redis:Merge", key, changeset, {});
+            log.debug("Discovery:Nmap:Redis:Merge", key, changeset, {});
             if (data.mac!=host.mac) {
               this.ipChanged(data.mac,host.uid,host.mac);
             }
@@ -699,10 +699,9 @@ module.exports = class {
               if (newhost == true) {
                 callback(null, host, true);
 
-
                 sem.emitEvent({
                   type: "NewDevice",
-                  name: data.name,
+                  name: data.name || data.bname || host.name,
                   ipv4Addr: data.ipv4Addr,
                   mac: data.mac,
                   macVendor: data.macVendor,
