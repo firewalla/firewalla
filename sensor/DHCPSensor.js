@@ -34,7 +34,6 @@ class DHCPSensor extends Sensor {
     this.dhcpDump.install((obj)=>{
       log.info("DHCPDUMP is installed");
       this.dhcpDump.start(false,(obj)=>{
-        log.info("XXXXXXXXXXX");
         if (obj && obj.mac) {
           // dedup
           if(this.cache[obj.mac])
