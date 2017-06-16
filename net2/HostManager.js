@@ -1941,7 +1941,7 @@ module.exports = class {
   macExists(mac) {
     return rclient.keysAsync("host:mac:" + mac)
       .then((results) => {
-        return results.length > 0
+        return results.length > 0;
       });
   }
 }
