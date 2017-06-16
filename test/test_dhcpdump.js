@@ -17,3 +17,10 @@ d.rawStart();
 setTimeout(() => {
   d.rawStop();
 }, 10000);
+
+let mac = d.normalizeMac("a:b:c:1:2:3:4:5");
+expect(mac).to.equal("0A:0B:0C:01:02:03:04:05");
+
+setTimeout(() => {
+  process.exit(0)
+}, 20000);

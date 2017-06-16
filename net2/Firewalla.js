@@ -149,7 +149,7 @@ function redisclean(config,count) {
 
 
                 rclient.zcount(keys[k],'-inf','+inf',(err,data) => {
-                     log.info("REDISCLEAN: flow:conn ",keys[k],data);
+                     log.debug("REDISCLEAN: flow:conn ",keys[k],data);
                 });
             }
         });
@@ -267,7 +267,7 @@ function redisclean(config,count) {
         rclient.keys("host:user_agent:*",(err,keys)=>{
             for (let j in keys) {
                 rclient.scard(keys[j],(err,count)=>{
-                    log.info(keys[j]," count ", count);
+//                    log.info(keys[j]," count ", count);
                     if (count>MAX_AGENT_STORED) {
                         log.info(keys[j]," pop count ", count-MAX_AGENT_STORED);
                         for (let i=0;i<count-MAX_AGENT_STORED;i++) {

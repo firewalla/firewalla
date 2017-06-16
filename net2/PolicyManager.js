@@ -490,14 +490,13 @@ module.exports = class {
   }
 
     execute(host, ip, policy, callback) {
-        log.info("PolicyManager:Execute:", ip, policy);
 
         if (host.oper == null) {
             host.oper = {};
         }
 
         if (policy == null || Object.keys(policy).length == 0) {
-            log.info("PolicyManager:Execute:NoPolicy", ip, policy);
+            log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
             host.spoof(true);
             host.oper['monitor'] = true;
             if (callback)
@@ -505,9 +504,11 @@ module.exports = class {
             return;
         }
 
+      log.info("PolicyManager:Execute:", ip, policy);
+
         for (let p in policy) {
             if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-                log.info("PolicyManager:AlreadyApplied", p, host.oper[p]);
+                log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
                 continue;
             }
             if (p == "acl") {

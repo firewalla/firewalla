@@ -57,6 +57,19 @@ let flowManager = new FlowManager();
 //               });
 //             });
 
+router.get('/all',
+           (req, res, next) => {
+             let json = {};
+             hostManager.getHosts(() => {
+               hostManager.legacyHostsStats(json)
+                 .then(() => {
+                   res.json(json);
+                 }).catch((err) => {
+                   res.status(500).send('');
+                 });
+             });
+           });
+
 router.get('/:host',
            (req, res, next) => {
              let host = req.params.host;
