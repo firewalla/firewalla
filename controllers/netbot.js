@@ -428,12 +428,28 @@ class netBot extends ControllerBot {
         if(msg) {
           let notifMsg = msg.notif;
           let aid = msg.aid;
-          if(notifMsg && aid) {
+          if(notifMsg) {
             log.info("Sending notification: " + notifMsg);
-            this.tx2(this.primarygid, "test", notifMsg, {
-              aid: aid,
-              gid: this.primarygid
-            });
+
+            let data = {
+              gid:this.primarygid,
+            };
+
+            if(msg.aid) {
+              data.aid = msg.aid;
+            }
+
+            if(msg.alarmID) {
+              data.alarmID = msg.alarmID;
+            }
+
+            if(msg.autoblock) {
+              data.category = "AUTO_BLOCK_ALARM";
+            } else {
+              data.category = "ALARM";
+            }
+
+            this.tx2(this.primarygid, "test", notifMsg, data);
           }
         }
       });
