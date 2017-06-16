@@ -135,7 +135,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', 'eth0']);
     let pid = dhcpdumpSpawn.pid;
     let StringDecoder = require('string_decoder').StringDecoder;
-    let  decoder = new StringDecoder('utf8');
+    let decoder = new StringDecoder('utf8');
 
     log.info("DHCPDump started with PID: ", pid); 
 

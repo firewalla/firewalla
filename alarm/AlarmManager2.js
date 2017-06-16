@@ -164,10 +164,21 @@ module.exports = class {
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
-            this.publisher.publish("ALARM", "ALARM:CREATED", alarm.device, {
-              notif: alarm.localizedNotification(),
-              aid: alarm.aid
-            })
+        let data = {
+          notif: alarm.localizedNotification(),
+          alarmID: alarm.aid,
+          aid: alarm.aid,              
+        };
+
+        if(alarm.result_method === "auto") {
+          data.autoblock = true;
+        }
+        
+        this.publisher.publish("ALARM",
+                               "ALARM:CREATED",
+                               alarm.device,
+                               data);
+        
       }).catch((err) => Promise.reject(err));
   }
   
