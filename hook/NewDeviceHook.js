@@ -20,6 +20,9 @@ let Hook = require('./Hook.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
+let bone = require("../lib/Bone.js");
+
+let flowUtil = require("../net2/FlowUtil.js");
 
 class NewDeviceHook extends Hook {
 
@@ -47,10 +50,40 @@ class NewDeviceHook extends Hook {
       callback(err);
     });
   }
+
+  getVendorInfo(mac, callback) {
+    mac = mac.toUpperCase();
+    let rawData = {
+      ou: mac.slice(0,13), // use 0,13 for better OU compatibility
+      uuid: flowUtil.hashMac(mac)
+    }
+    bone.device("identify", rawData, (err, enrichedData) => {
+      if(err) {
+        log.error("Failed to get vendor info for mac " + mac + ": " + err);
+        callback(err);
+        return;
+      }
+
+      if(enrichedData && enrichedData._vendor) {
+        let v = enrichedData._vendor;
+        if(v.startsWith('"'))
+          v = v.slice(1); // workaround for buggy code, vendor has a unless prefix "
+        callback(null, v);
+      } else {
+        callback(null, null);
+      }
+    });
+  }
   
   init() {
     sem.on('NewDevice', (event) => {
-      this.createAlarm(event.name, event.ipv4Addr, event.mac, event.macVendor);
+      let mac = event.mac;
+      this.getVendorInfo(mac, (err, vendor) => {
+        let v = "Unknown";
+        if(err == null && vendor)
+          v = vendor;
+        this.createAlarm(event.name, event.ipv4Addr, event.mac, v);
+      });
     });
     
     sem.on('NewDeviceWithMacOnly', (event) => {

@@ -428,12 +428,28 @@ class netBot extends ControllerBot {
         if(msg) {
           let notifMsg = msg.notif;
           let aid = msg.aid;
-          if(notifMsg && aid) {
+          if(notifMsg) {
             log.info("Sending notification: " + notifMsg);
-            this.tx2(this.primarygid, "test", notifMsg, {
-              aid: aid,
-              gid: this.primarygid
-            });
+
+            let data = {
+              gid:this.primarygid,
+            };
+
+            if(msg.aid) {
+              data.aid = msg.aid;
+            }
+
+            if(msg.alarmID) {
+              data.alarmID = msg.alarmID;
+            }
+
+            if(msg.autoblock) {
+              data.category = "com.firewalla.category.autoblockalarm";
+            } else {
+              data.category = "com.firewalla.category.alarm";
+            }
+
+            this.tx2(this.primarygid, "test", notifMsg, data);
           }
         }
       });
@@ -1202,6 +1218,22 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
+
+        case "alarm:unblock_and_allow":
+          am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+            if(err) {
+              log.error("Failed to unblock",msg.data.value.alarmID, ", err:", err, {});
+              this.simpleTxData(msg, null, err, callback);
+              return;
+            }
+
+            am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+              if(err) {
+                log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
+              }
+              this.simpleTxData(msg, null, err, callback);              
+            });
+          });
 
         case "policy:create":
           pm2.createPolicyFromJson(msg.data.value, (err, policy) => {

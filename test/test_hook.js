@@ -43,5 +43,15 @@ sem.emitEvent({
 });
 
 setTimeout(() => {
+sem.emitEvent({
+  type: "NewDevice",
+  ipv4Addr: "172.17.0.2",
+  name: "a solid name",
+  message: "track3",
+  mac: "f4:0f:24:34:72:ff",
+});
+}, 5000);
+
+setTimeout(() => {
   process.exit(0);
-}, 3000);
+}, 15000);
