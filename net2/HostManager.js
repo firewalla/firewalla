@@ -1102,21 +1102,22 @@ class Host {
 module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
-        if (instances[name] == null) {
-            this.instanceName = name;
-            this.hosts = {}; // all, active, dead, alarm
-            this.hostsdb = {};
-            this.hosts.all = [];
-            this.callbacks = {};
-            this.type = type;
-            this.policy = {};
-            sysManager.update((err) => {
-                if (err == null) {
-                    log.info("System Manager Updated", sysManager.config);
-                    spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
-                }
-            });
-            let c = require('./MessageBus.js');
+      if (instances[name] == null) {
+        
+        this.instanceName = name;
+        this.hosts = {}; // all, active, dead, alarm
+        this.hostsdb = {};
+        this.hosts.all = [];
+        this.callbacks = {};
+        this.type = type;
+        this.policy = {};
+        sysManager.update((err) => {
+          if (err == null) {
+            log.info("System Manager Updated", sysManager.config);
+            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+          }
+        });
+        let c = require('./MessageBus.js');
             this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");

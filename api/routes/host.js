@@ -20,7 +20,7 @@ let router = express.Router();
 let bodyParser = require('body-parser')
 
 let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager();
+let hostManager = new HostManager('api', 'client', 'info');
 
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();

@@ -57,7 +57,7 @@ var ssConfig = null;
 
 let localKCPTunnelPort = 8856;
 let localKCPTunnelAddress = "127.0.0.1";
-let kcpParameters = "-mtu 1400 -sndwnd 256 -rcvwnd 2048 -mode fast2 -dscp 46";
+let kcpParameters = "-mtu 1400 -sndwnd 256 -dscp 46";
 let localTunnelPort = 8855;
 let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;
@@ -262,14 +262,21 @@ function uninstall(callback) {
 }
 
 function saveConfigToFile() {
-  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
+  if(!ssConfig.server_port)
+    ssConfig.server_port = ssConfig.port
+  
+  if(!ssConfig.method) {
+    ssConfig.method = "aes-256-cfb";
+  }
   
   if(ssConfig.kcp_server && ssConfig.kcp_server_port) {
     let ssKCPConfig = extend({}, ssConfig);
     ssKCPConfig.server = localKCPTunnelAddress;
     ssKCPConfig.server_port = localKCPTunnelPort;
     jsonfile.writeFileSync(ssForKCPConfigPath, ssKCPConfig, {spaces: 2});
-  }   
+  }
+
+  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
 }
 
 function saveConfig(config, callback) {
@@ -391,16 +398,20 @@ function _stopRedirection(callback) {
 function _startKCP(callback) {
   callback = callback || function() {}
 
-  let remoteKCPServer = ssConfig.kcp_server;
-  let remoteKCPPort = ssConfig.kcp_server_port;
+  let remoteKCPServer = ssConfig.server;
+  let remoteKCPPort = ssConfig.kcp_port;
+  let kcpMode = ssConfig.kcp_mode;
+  let server_sndwnd = ssConfig.sndwnd;
 
   if(!remoteKCPServer || !remoteKCPPort) {
     callback(new Error("KCP server and port configuration is required"));
     return;
   }
 
-  let args = util.format("%s --remoteaddr %s:%d --localaddr %s:%d --log %s",
+  let args = util.format("%s --mode %s --rcvwnd %s --remoteaddr %s:%d --localaddr %s:%d --log %s",
                          kcpParameters,
+                         kcpMode,
+                         server_sndwnd,
                          remoteKCPServer,
                          remoteKCPPort,
                          localKCPTunnelAddress,
