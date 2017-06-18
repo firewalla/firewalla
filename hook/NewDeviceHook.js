@@ -95,7 +95,7 @@ class NewDeviceHook extends Hook {
      
       // Check if this mac is already found in redis, skip if so
       let HostManager = require('../net2/HostManager.js');
-      let hostManager = new HostManager();
+      let hostManager = new HostManager('NewDeviceWithMacOnly', 'client', 'info');
 
       hostManager.macExists(mac)
         .then((result) => {
