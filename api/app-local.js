@@ -72,6 +72,7 @@ if(!firewalla.isProduction()) {
 
   enableSubPath('policy');
   enableSubPath('exception');
+  enableSubPath('scisurf');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

@@ -138,6 +138,25 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Hosts'
+  /scisurf/config:
+    get:
+      summary: List scisurf config
+      tags:
+        - SciSurf
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/SciSurfConfig'
+    post:
+      summary: Set SciSurf config
+      tags:
+        - SciSurf
+      parameters:
+        - $ref: '#/parameters/json'        
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -460,6 +479,13 @@ definitions:
     type: array
     items:
       $ref: '#/definitions/Host'
+  SciSurfConfig:
+    type: object
+    properties:
+      server:
+        type: string
+      port:
+        type: string
   Item:
     type: object
     properties:

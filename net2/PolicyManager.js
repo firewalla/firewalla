@@ -87,7 +87,9 @@ module.exports = class {
     }
 
     // this should flush ip6tables as well
-    flush(config) {
+  flush(config, callback) {
+    callback = callback || function() {}
+    
        iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
@@ -107,6 +109,8 @@ module.exports = class {
 
           // Setup iptables so that it's ready for blocking
           require('../control/Block.js').setupBlockChain();
+
+          callback(err);
         });
        });
     }
