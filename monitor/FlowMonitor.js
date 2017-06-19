@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -188,7 +188,7 @@ module.exports = class FlowMonitor {
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarmManager2.enrichDestInfo)
                         .then((alarm) => {
-                          alert();armManager2.checkAndSave(alarm, (err) => {
+                          alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
                             }
                           });
@@ -243,7 +243,7 @@ module.exports = class FlowMonitor {
                     alarmManager2.enrichDeviceInfo(alarm)
                       .then(alarmManager2.enrichDestInfo)
                       .then((alarm) => {
-                        alert();armManager2.checkAndSave(alarm, (err) => {
+                        alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
                           }
                         })

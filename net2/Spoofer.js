@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,11 +25,50 @@ var instance = null;
 var debugging = false;
 let log = require("./logger.js")(__filename, 'info');
 
+let firewalla = require('./Firewalla.js');
+
+
+
+let monitoredKey = "monitored_hosts";
+let unmonitoredKey = "unmonitored_hosts";
+
+
+let fConfig = require('./config.js').getConfig();
+
+let Promise = require('bluebird');
+
+let redis = require('redis');
+let rclient = redis.createClient();
+
+let cp = require('child_process');
+
+
+// add promises to all redis functions
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+
 module.exports = class {
 
-    
+  newSpoof(address) {
+    return rclient.saddAsync(monitoredKey, address);
+  }
 
-    spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+  newUnspoof(address) {
+    return rclient.sremAsync(monitoredKey, address);
+  }
+ 
+  spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+
+    callback = callback || function() {}
+    
+    if(fConfig.newSpoof) {
+      this.newSpoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
+    }
+      
       log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
@@ -238,18 +277,27 @@ module.exports = class {
             this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
         }
     }
-    unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6) {
-        log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
-        if (ipAddr && tellIpAddr) {
-           this._unspoof(ipAddr,tellIpAddr,mac);
-        }
-        let maxSpoofer = 5;
-        if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
-            for (let i in ip6Addrs) {
-                this._unspoof6(ip6Addrs[i],gateway6,mac);
-            }
-        }
+  unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+    callback = callback || function() {}
+
+    if(fConfig.newSpoof) {
+      this.newUnspoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
     }
+    
+    log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
+    if (ipAddr && tellIpAddr) {
+      this._unspoof(ipAddr,tellIpAddr,mac);
+    }
+    let maxSpoofer = 5;
+    if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
+      for (let i in ip6Addrs) {
+        this._unspoof6(ip6Addrs[i],gateway6,mac);
+      }
+    }
+  }
 
     clean(ip) {
         //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
@@ -296,7 +344,8 @@ module.exports = class {
         });
     }
 
-    constructor(intf, config, clean, debug) {
+  constructor(intf, config, clean, debug) {
+
         debugging = debug;
 
         // Warning, should not clean default ACL's applied to ip tables

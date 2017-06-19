@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,7 @@
 'use strict'
 
 let spawn = require('child_process').spawn;
-let mac = require('mac-lookup')
+//let mac = require('mac-lookup')
 
 function getMACAndVendor(ipaddress, cb) {
   
@@ -31,6 +31,8 @@ function getMACAndVendor(ipaddress, cb) {
     }
     
     // get MAC OU company
+    cb(err, {mac_address: mac_address});
+    /* 
     mac.lookup(mac_address, (err, result) => {
       if(err) {
         log.error("Failed to get vendor info for MAC " + mac_address + ", err: " + err);
@@ -40,6 +42,7 @@ function getMACAndVendor(ipaddress, cb) {
 
       cb(err, {mac_address: mac_address, mac_address_vendor: mac_address_vendor});
     });
+    */
   });
 }
               

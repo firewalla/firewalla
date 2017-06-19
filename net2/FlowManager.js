@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,6 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('info');
 var bone = require("../lib/Bone.js");
@@ -219,6 +217,16 @@ module.exports = class FlowManager {
     return orderedStats;
   }
 
+  filterOldData(stats) {
+    let beginDate = new Date() / 1000 - 60 * 60 * 24;
+    for(let key in stats) {
+      if(parseInt(key, 10) < beginDate) {
+        delete stats[key];
+      }
+    }
+    return stats;
+  }
+
   last24HourDatabaseExists() {
     return rclient.keysAsync("stats:last24:download");
   }
@@ -232,10 +240,14 @@ module.exports = class FlowManager {
     let downloadKey = key + ":download";
 
     return rclient.hgetallAsync(downloadKey)
-      .then((stats) => this.getOrderedStats(stats));
+      .then((stats) => {
+        let s = this.getOrderedStats(stats);
+        this.filterOldData(s);
+        return s;
+      });
   }
 
-  getLast24HoursUploadStats(ip) {
+  getLast24HoursUploadsStats(ip) {
     let key = 'stats:last24';
     
     if(ip)
@@ -244,7 +256,11 @@ module.exports = class FlowManager {
     let uploadKey = key + ":upload";
 
     return rclient.hgetallAsync(uploadKey)
-      .then((stats) => this.getOrderedStats(stats));
+      .then((stats) => {
+        let s = this.getOrderedStats(stats)
+        this.filterOldData(s);
+        return s;
+      });
   }
 
   list24HoursTicks() {
@@ -433,8 +449,11 @@ module.exports = class FlowManager {
 
   // no parameters accepted
   getStats2(host) {
-    if(!host)
-      return Promise.reject(new Error("host is null"));
+    if(!host) {
+      // if host is null, consider this is system stats
+      return this.getSystemStats();
+    }
+
     
     host.flowsummary = {};
     host.flowsummary.inbytes = 0;
@@ -456,14 +475,14 @@ module.exports = class FlowManager {
         host.flowsummary.flowinbytes = legacyFormat;
         host.flowsummary.inbytes = this.sumBytes(sum);
 
-        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadStats(ip));
+        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadsStats(ip));
 
         return Promise.all(uploadPromiseList)
           .then((results) => {
             let sum2 = this.sumFlows(results);
-            let legacyFormat2 = this.flowToLegacyFormat(sum);
+            let legacyFormat2 = this.flowToLegacyFormat(sum2);
             host.flowsummary.flowoutbytes = legacyFormat2;
-            host.flowsummary.outbytes = this.sumBytes(sum);
+            host.flowsummary.outbytes = this.sumBytes(sum2);
           });
       });  
   }

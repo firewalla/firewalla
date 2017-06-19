@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,7 +53,7 @@ let ADBLOCK_DNS = "198.101.242.72";
 
 var ip = require('ip');
 
-let b = require('./Block.js');
+let b = require('../control/Block.js');
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -103,7 +103,10 @@ module.exports = class {
                 }
             }
             log.info("PolicyManager:flush", defaultTable, {});
-            iptable.run(defaultTable);
+          iptable.run(defaultTable);
+
+          // Setup iptables so that it's ready for blocking
+          require('../control/Block.js').setupBlockChain();
         });
        });
     }
@@ -294,9 +297,12 @@ module.exports = class {
   }
 
     hblock(host, state) {
-        log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
-        b.blockMac(host.o.mac,state,(err)=>{
-        });
+      log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
+      if(state) {
+        b.blockMac(host.o.mac);
+      } else {
+        b.unblockMac(host.o.mac);
+      }
  /* 
         
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
@@ -484,14 +490,13 @@ module.exports = class {
   }
 
     execute(host, ip, policy, callback) {
-        log.info("PolicyManager:Execute:", ip, policy);
 
         if (host.oper == null) {
             host.oper = {};
         }
 
         if (policy == null || Object.keys(policy).length == 0) {
-            log.info("PolicyManager:Execute:NoPolicy", ip, policy);
+            log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
             host.spoof(true);
             host.oper['monitor'] = true;
             if (callback)
@@ -499,9 +504,11 @@ module.exports = class {
             return;
         }
 
+      log.info("PolicyManager:Execute:", ip, policy);
+
         for (let p in policy) {
             if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-                log.info("PolicyManager:AlreadyApplied", p, host.oper[p]);
+                log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
                 continue;
             }
             if (p == "acl") {
@@ -586,11 +593,19 @@ module.exports = class {
       if(policy["dnsmasq"]) {        
         if(host.oper["dnsmasq"] != null &&
            JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+          // do nothing
         } else {
           this.dnsmasq(host, policy["dnsmasq"]);
           host.oper["dnsmasq"] = policy["dnsmasq"];
         }
-      }      
+      } else {        
+        // still start dnsmasq if dhcp mode is enabled
+        // FIXME: need to refactor code here to split "dnsmasq" service from "dns filtering" feature
+        if(dnsmasq.dhcp()) {
+          this.dnsmasq(host, policy["dnsmasq"]);
+          host.oper["dnsmasq"] = policy["dnsmasq"];
+        }
+      }
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);

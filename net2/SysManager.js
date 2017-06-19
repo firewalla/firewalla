@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,9 +39,11 @@ let f = require('../net2/Firewalla.js');
 
 let i18n = require('../util/i18n.js');
 
-const MAX_CONNS_PER_FLOW = 35000;
+const MAX_CONNS_PER_FLOW = 25000;
 
 const dns = require('dns');
+let _getIP = require('external-ip')();
+
 
 module.exports = class {
     constructor(loglevel) {
@@ -50,6 +52,7 @@ module.exports = class {
             this.multicastlow = iptool.toLong("224.0.0.0");
             this.multicasthigh = iptool.toLong("239.255.255.255");
             this.locals = {};
+            this.lastIPTime = 0;
             instance = this;
 
           sclient.on("message", function(channel, message) {
@@ -93,6 +96,24 @@ module.exports = class {
   isConfigInitialized() {
     return this.config !== null && this.config[this.config.monitoringInterface] !== null;
   }
+
+   getIP(callback) {
+    if (this.publicIp == null ||  Date.now()/1000-this.lastIPTime>60*60*1) {
+         //let stack = new Error().stack
+         //log.info("TEMPDEBUGUPDATE", stack )
+         this.lastIPTime = Date.now()/1000;
+        _getIP((err, ip2)=> {
+            if(err == null) {
+                this.publicIp = ip2;
+                callback(undefined, ip2);
+            } else {
+                callback(err, undefined);
+            }
+        });
+     } else {
+        callback(null, this.publicIp);
+     }
+   }
   
     delayedActions() {
         setTimeout(()=>{
@@ -132,15 +153,9 @@ module.exports = class {
         var ip = this.publicIp;
         let self = this;
         if (ip == null) {
-            var getIP = require('external-ip')();
-            getIP(function(err, ip2) {
-                if(err == null) {
-                    self.publicIp = ip2;
-                    callback(undefined, ip2);
-                } else {
-                    callback(err, undefined);
-                }
-            })
+              let stack = new Error().stack
+              log.info("TEMPDEBUG", stack )
+              this.getIP(callback);
         } else {
             callback(undefined, ip);
         }
@@ -253,12 +268,8 @@ module.exports = class {
                 }
                 this.ddns = this.sysinfo["ddns"];
                 this.publicIp = this.sysinfo["publicIp"];
-                var getIP = require('external-ip')();
                 var self = this;
-                getIP(function(err,ip) {
-                    if(err == null) {
-                        self.publicIp = ip;
-                    }
+                this.getIP(function(err,ip) {
                 });
                 //         log.info("System Manager Initialized with Config", this.sysinfo);
             }
@@ -302,6 +313,18 @@ module.exports = class {
         }
     }
 
+    myIpMask() {
+        if(this.monitoringInterface()) {
+            let mask =  this.monitoringInterface().netmask;            
+            if (mask.startsWith("Mask:")) {
+                mask = mask.substr(5);
+            }
+            return mask;
+        } else {
+            return undefined;
+        }
+    }
+
     myMAC() {
         if (this.monitoringInterface()) {
             return this.monitoringInterface().mac_address;
@@ -336,6 +359,11 @@ module.exports = class {
 
     mySubnet() {
         return this.monitoringInterface().subnet;
+    }
+
+    mySubnetNoSlash() {
+        let subnet = this.mySubnet();
+        return subnet.substring(0, subnet.indexOf('/'));
     }
 
     mySSHPassword() {
@@ -566,10 +594,14 @@ module.exports = class {
                 //log.info("Expring for ",keys[k],expireDate);
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
 
+                  if(data !== 0) {
+                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by ts) for self protection")
+                  }
+                  
                   // drop old flows to avoid explosion due to p2p connections
                   rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
                     if(data !== 0) {
-                      log.warn(data + " entries of flow " + keys[k] + " are dropped for self protection")
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
                     }
                   })
                     //    log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
@@ -599,7 +631,18 @@ module.exports = class {
             }
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  if(data !== 0) {
+                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by timestamp) for self protection")
+                  }
+
+                                    // drop old flows to avoid explosion due to p2p connections
+                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
+                    }
+                  })
+
                 });
             }
         });

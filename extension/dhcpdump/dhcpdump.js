@@ -23,7 +23,6 @@ module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       log = require("../../net2/logger.js")(__filename, loglevel);
-
       instance = this;
     }
     return instance;
@@ -33,6 +32,7 @@ module.exports = class {
     callback = callback || function() {}
 
     let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
+    log.info("DHCPExtention:Install",install_cmd);
     require('child_process').exec(install_cmd, (err, out, code) => {
       if (err) {
         log.error("DHCPDUMP:INSTALL:Error", "Failed to execute script install.sh", err);
@@ -67,18 +67,85 @@ module.exports = class {
     callback = callback || function() {}
     
   }
+
+/*
+OPTION:  57 (  2) Maximum DHCP message size 1500
+OPTION:  61 (  7) Client-identifier         01:c8:69:cd:09:95:4c
+OPTION:  50 (  4) Request IP address        192.168.2.232
+OPTION:  51 (  4) IP address leasetime      7776000 (12w6d)
+OPTION:  12 ( 12) Host name                 Great-Room-3
+*/
+  parseOptions2(output,options) {
+     var i = 0;
+     let eol = require('os').EOL;
+     while (i < output.length)
+     {
+        var j = output.indexOf('\r', i+1);
+        if (j == -1) j = output.length;
+        let str = output.substr(i,j-1);
+        i = j+1;
+     } 
+  }
+
+  normalizeMac(mac) {
+    mac = mac.toUpperCase();
+    let items = mac.split(":");
+    let items2 = items.map((item) => {
+      if(item.length === 1) {
+        return "0" + item;
+      } else {
+        return item;
+      }
+    });
+    return items2.join(":");
+  }
   
+  parse(output) {
+     let o =  output.split(/\r?\n/);
+     let obj = {};
+    for (let i in o) {
+      let line = o[i];
+
+      // locate mac address
+      // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
+      let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
+      if(match) {
+        obj.mac = this.normalizeMac(match[1]);
+      }
+
+      // locate hostname
+      let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
+      if(match2) {
+        obj.name = match2[1];
+      }
+    }
+
+    if(obj.mac && obj.name) {
+      return obj;
+    } else {
+      return {};
+    }
+  }
+
   rawStart(callback) {
     callback = callback || function() {}
+
 
     let spawn = require('child_process').spawn;
     let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', 'eth0']);
     let pid = dhcpdumpSpawn.pid;
+    let StringDecoder = require('string_decoder').StringDecoder;
+    let decoder = new StringDecoder('utf8');
 
     log.info("DHCPDump started with PID: ", pid); 
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
-      log.info(data);
+      log.debug("Found a dhcpdiscover request");
+      var message = decoder.write(data);
+      let obj = this.parse(message); 
+      if (obj && obj.mac) {
+        callback(obj); 
+      }
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {
@@ -99,66 +166,19 @@ module.exports = class {
   }
 
   start(force, callback) {
-    // 0. update resolv.conf
-    // 1. update filter
-    // 2. start dnsmasq service
-    // 3. update iptables rule
-
-    this.updateResolvConf((err) => {
-      if(err) {
-        callback(err);
-        return;
-      }
-      
-      this.updateFilter(force, (err) => {
+    let cmdline = 'sudo pkill -f dhcpdump';
+    let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
         if(err) {
-          callback(err);
-          return;
+          log.error("Failed to clean up spoofing army: " + err);
         }
-
-        this.rawStop((err) => {
-          this.rawStart((err) => {
-            if(err) {
-              this.rawStop();
-              callback(err);
-              return;
-            }
-            
-            this.add_iptables_rules((err) => {
-              if(err) {
-                this.rawStop();
-                this.remove_iptables_rules();
-              }
-              callback(err);
-            });
-          });
-        });
-                     
-      });
-      
+        this.rawStart(callback);
     });
   }
 
   stop(callback) {
-    // 1. remove iptables rules
-    // 2. stop service
-    // optional to remove filter file
-
-    this.remove_iptables_rules((err) => {
-      this.rawStop((err) => {
-        callback(err);
-        }
-      );
-    })
   }
 
   restart(callback) {
-    require('child_process').exec("sudo systemctl restart dnsmasq", (err, out, code) => {
-      if(err) {
-        log.error("DHCPDUMP:RESTART:Error", "Failed to restart dnsmasq: " + err);
-      }
-      callback(err);
-    });
   }
 
 };

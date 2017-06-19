@@ -94,14 +94,14 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
     then
      export FWPRODUCTION=$branch
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
-     cp $FIREWALLA_HOME/bin/real/bitbridge3 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
-     cp $FIREWALLA_HOME/bin/real/bitbridge3 $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6a $FIREWALLA_HOME/bin/.
      mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
@@ -115,6 +115,7 @@ fi
 # Setup permissions
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
+sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
 
 #fix network
 sudo cp $FIREWALLA_HOME/etc/duplex_patch /etc/network/if-pre-up.d/.
@@ -242,5 +243,15 @@ if [[ ! -f /.dockerenv ]]; then
 fi
 
 DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
-sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
+#sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
+
+#NMAP_DATA_FILE=$FIREWALLA_HOME/extension/nmap/nmap-mac-prefixes
+#
+#function update_nmap_data_file() {
+#  if [[ -e $NMAP_DATA_FILE ]]; then
+#    sudo cp $NMAP_DATA_FILE /usr/share/nmap/nmap-mac-prefixes
+#  fi
+#}
+#
+#update_nmap_data_file
 

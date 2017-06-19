@@ -25,6 +25,8 @@ let dnsmasq = require('./routes/dnsmasq');
 let alarm = require('./routes/alarm');
 let flow = require('./routes/flow');
 let host = require('./routes/host');
+let mode = require('./routes/mode');
+let policy = require('./routes/policy');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -52,6 +54,11 @@ subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
+function enableSubPath(path, lib) {
+  lib = lib || path;
+  subpath_v1.use("/" + path, require('./routes/' + lib));
+}
+
 if(!firewalla.isProduction()) {
   // apis for development purpose only, do NOT enable them in production
   subpath_v1.use('/sys', system);
@@ -61,9 +68,13 @@ if(!firewalla.isProduction()) {
   subpath_v1.use('/alarm', alarm);
   subpath_v1.use('/flow', flow);
   subpath_v1.use('/host', host);
+  subpath_v1.use('/mode', mode);
+
+  enableSubPath('policy');
+  enableSubPath('exception');
 
   let subpath_docs = express();
-  app.use("/docs", subpath_docs);
+  subpath_v1.use("/docs", subpath_docs);
   subpath_docs.use("/", express.static('dist'));
 
   swagger.setAppHandler(subpath_docs);
@@ -72,7 +83,17 @@ if(!firewalla.isProduction()) {
     res.sendfile(__dirname + '/dist/index.html');
   });
 
-  swagger.configureSwaggerPaths('', '/docs/api-docs', '');
+  let domain = require('ip').address;
+  if(argv.domain !== undefined)
+    domain = argv.domain;
+
+  if(firewalla.isDocker()) {
+    domain = "127.0.0.1"
+  }
+  
+
+  let applicationUrl = 'http://' + domain + "/v1";
+  swagger.configureSwaggerPaths('', '/docs/', '');
   swagger.configure(applicationUrl, '1.0.0');
 
   swagger.setApiInfo({
@@ -81,7 +102,7 @@ if(!firewalla.isProduction()) {
     termsOfServiceUrl: "",
     contact: "tt@firewalla.com",
     license: "",
-    licenseUrl: ""
+    licenseUrl: "",    
   });
 
 
@@ -127,10 +148,5 @@ module.exports = app;
 
 
 
-var domain = 'localhost';
-if(argv.domain !== undefined)
-    domain = argv.domain;
-else
-    log.info('No --domain=xxx specified, taking default hostname "localhost".');
-var applicationUrl = 'http://' + domain;
+
 

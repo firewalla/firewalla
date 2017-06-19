@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -122,7 +122,8 @@ function constants(name) {
 }
 
 function redisclean(config,count) {
-        let  MAX_CONNS_PER_FLOW = 30000
+        let  MAX_CONNS_PER_FLOW = 25000
+        let  MAX_HTTP_PER_FLOW = 500
         if (count!=null && count >0) {
              MAX_CONNS_PER_FLOW = count;
         }
@@ -148,7 +149,7 @@ function redisclean(config,count) {
 
 
                 rclient.zcount(keys[k],'-inf','+inf',(err,data) => {
-                     log.info("REDISCLEAN: flow:conn ",keys[k],data);
+                     log.debug("REDISCLEAN: flow:conn ",keys[k],data);
                 });
             }
         });
@@ -160,6 +161,11 @@ function redisclean(config,count) {
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
                     //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  rclient.zremrangebyrank(keys[k], 0, -1 * 1000, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped for self protection")
+                    }
+                  })
                 });
             }
         });
@@ -170,7 +176,19 @@ function redisclean(config,count) {
             }
             for (let k in keys) {
                 rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
+                  if(data !== 0) {
+                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by ts) for self protection")
+                  }
+                  
+                  
+                  // drop old flows to avoid explosion due to p2p connections
+                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_HTTP_PER_FLOW, (err, data) => {
+                    if(data !== 0) {
+                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
+                    }
+                  })
+
                 });
             }
         });
@@ -249,7 +267,7 @@ function redisclean(config,count) {
         rclient.keys("host:user_agent:*",(err,keys)=>{
             for (let j in keys) {
                 rclient.scard(keys[j],(err,count)=>{
-                    log.info(keys[j]," count ", count);
+//                    log.info(keys[j]," count ", count);
                     if (count>MAX_AGENT_STORED) {
                         log.info(keys[j]," pop count ", count-MAX_AGENT_STORED);
                         for (let i=0;i<count-MAX_AGENT_STORED;i++) {

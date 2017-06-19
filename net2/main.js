@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,29 +27,18 @@ let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
 
+let ModeManager = require('./ModeManager.js');
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
-
-
-/*
- * Create the secondary interface 
- */
-
-var secondaryInterface = require("./SecondaryInterface.js");
-secondaryInterface.create(config,(err,ip,subnet)=>{
-    if (err == null) {
-        log.info("Successful Created Secondary Interface");
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet; 
-    }
-});
 
 run0();
 
@@ -81,9 +70,17 @@ if(firewalla.isProduction()) {
   });
 }
 
+let hl = null;
+let sl = null;
+
 function run() {
 
+  hl = require('../hook/HookLoader.js');
+  hl.initHooks();
 
+  sl = require('../sensor/SensorLoader.js');
+  sl.initSensors();
+  
   var VpnManager = require('../vpn/VpnManager.js');
 
   var BroDetector = require("./BroDetect.js");
@@ -134,12 +131,18 @@ function run() {
   d.start();
   bd.start();
 
+
+  // always create the secondary interface
+  ModeManager.enableSecondaryInterface();
+  
+  ModeManager.apply();
+
+  // when mode is changed by anyone else, reapply automatically
+  ModeManager.listenOnChange();
+  
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
-
-  var Spoofer = require('./Spoofer.js');
-  let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
@@ -147,12 +150,6 @@ function run() {
 
     policyManager.flush(config);
     //policyManager.defaults(config);
-    //TODO need to write something install automatic rules
-
-    // for each new host  ... need to apply policy
-    var AlarmManager = require("./AlarmManager.js");
-    var alarmManager = new AlarmManager('debug');
-    //alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
   },1000*2);
 
   setTimeout(()=>{
@@ -205,7 +202,7 @@ function run() {
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
-        log.info(result[i].toShortString());
+//        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
           log.info("=================================");
           log.info("Notice :", type,ip,obj);

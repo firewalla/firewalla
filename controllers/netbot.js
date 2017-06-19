@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,6 +50,8 @@ let am2 = new AM2();
 let EM = require('../alarm/ExceptionManager.js');
 let em = new EM();
 
+let PM2 = require('../alarm/PolicyManager2.js');
+let pm2 = new PM2();
 
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
@@ -351,7 +353,7 @@ class netBot extends ControllerBot {
 
       setTimeout(() => {
         setInterval(() => {
-          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
+//          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
         }, 50*1000);
       }, 30*1000)
 
@@ -426,12 +428,28 @@ class netBot extends ControllerBot {
         if(msg) {
           let notifMsg = msg.notif;
           let aid = msg.aid;
-          if(notifMsg && aid) {
+          if(notifMsg) {
             log.info("Sending notification: " + notifMsg);
-            this.tx2(this.primarygid, "test", notifMsg, {
-              aid: aid,
-              gid: this.primarygid
-            });
+
+            let data = {
+              gid:this.primarygid,
+            };
+
+            if(msg.aid) {
+              data.aid = msg.aid;
+            }
+
+            if(msg.alarmID) {
+              data.alarmID = msg.alarmID;
+            }
+
+            if(msg.autoblock) {
+              data.category = "com.firewalla.category.autoblockalarm";
+            } else {
+              data.category = "com.firewalla.category.alarm";
+            }
+
+            this.tx2(this.primarygid, "test", notifMsg, data);
           }
         }
       });
@@ -711,6 +729,29 @@ class netBot extends ControllerBot {
           });
         }
         break;
+      case "mode":
+        let v4 = msg.data.value;
+        let err = null;
+        if(v4.mode) {
+          let modeManager = require('../net2/ModeManager.js');
+          switch(v4.mode) {
+          case "spoof":
+            modeManager.setSpoofAndPublish();
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish();
+            break;
+          default:
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
+          }
+          this.simpleTxData(msg, {}, err, callback);
+        }
+        break;
+      default:
+        this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+        break;
       }
     }
 
@@ -843,7 +884,7 @@ class netBot extends ControllerBot {
       case "scisurfconfig":
         let ssc = require('../extension/ss_client/ss_client.js');
         ssc.loadConfig((err, result) => {
-          this.simpleTxData(msg, result, err, callback);
+          this.simpleTxData(msg, result || {}, err, callback);
         });
         break;
       case "language":
@@ -857,10 +898,19 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
         });
         break;
+      case "alarm":
+        let alarmID = msg.data.value.alarmID;
+        am2.getAlarm(alarmID)
+          .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
+          .catch((err) => this.simpleTxData(msg, null, err, callback));
+        break;
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
+        break;
+      default:
+        this.simpleTxData(msg, null, new Error("unsupported action"), callback);
       }
     }
 
@@ -899,8 +949,12 @@ class netBot extends ControllerBot {
 
 
           //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
+
+          // getStats2 => load 24 hours download/upload trend
+          flowManager.getStats2(host)
+            .then(() => {
+//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
                 let jsonobj = {};
                 if (host) {
                     jsonobj = host.toJson();
@@ -1144,20 +1198,77 @@ class netBot extends ControllerBot {
                     };
           this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           break;
-        case "blockFromAlarm":
-          let alarmID = msg.data.value.alarmID;
-          am2.blockFromAlarm(alarmID, (err) => {
+        case "alarm:block":
+          am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
-        case "allowFromAlarm":
-          let alarmID2 = msg.data.value.alarmID;
-          am2.allowFromAlarm(alarmID2, (err) => {
+        case "alarm:allow":
+          am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
             this.simpleTxData(msg, null, err, callback);
           });
           break;
+        case "alarm:unblock":
+          am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+        case "alarm:unallow":
+          am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+          break;
+
+        case "alarm:unblock_and_allow":
+          am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+            if(err) {
+              log.error("Failed to unblock",msg.data.value.alarmID, ", err:", err, {});
+              this.simpleTxData(msg, null, err, callback);
+              return;
+            }
+
+            am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+              if(err) {
+                log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
+              }
+              this.simpleTxData(msg, null, err, callback);              
+            });
+          });
+
+        case "policy:create":
+          pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
+            if(err) {
+              this.simpleTxData(msg, null, err, callback);
+              return;
+            }
+            
+            pm2.checkAndSave(policy, (err, policyID) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+          });
+          break;
+        case "policy:delete":
+          pm2.disableAndDeletePolicy(msg.data.value.policyID)
+            .then(() => {
+              this.simpleTxData(msg, null, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, null, err, callback);              
+            });
+          break;
+
+        case "exception:delete":
+          em.deleteException(msg.data.value.exceptionID)
+            .then(() => {
+              this.simpleTxData(msg, null, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            });
+          break;
+
         default:
-          // do nothing
+          // unsupported action
+          this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+          break;
         }
     }
 
@@ -1249,13 +1360,14 @@ class netBot extends ControllerBot {
                 log.info("Process Init load event");
                 
                 this.loadInitCache((err, cachedJson) => {
-                  if(err || ! cachedJson) {
+                  if(true || err || ! cachedJson) {
                     if(err) 
                       log.error("Failed to load init cache: " + err);
 
                     // regenerate init data
                     log.info("Re-generate init data");
 
+                    let begin = Date.now();
                     this.hostManager.toJson(true, (err, json) => {
                         let datamodel = {
                             type: 'jsonmsg',
@@ -1268,6 +1380,9 @@ class netBot extends ControllerBot {
                           datamodel.code = 200;
                           datamodel.data = json;
 
+                          let end = Date.now();
+                          log.info("Took " + (end - begin) + "ms to load init data");
+                          
                           this.cacheInitData(json);
 
                         } else {

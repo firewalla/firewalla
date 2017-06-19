@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ let router = express.Router();
 let bodyParser = require('body-parser')
 
 let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager();
+let hostManager = new HostManager('api', 'client', 'info');
 
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();
@@ -57,17 +57,43 @@ let flowManager = new FlowManager();
 //               });
 //             });
 
+router.get('/all',
+           (req, res, next) => {
+             let json = {};
+             hostManager.getHosts(() => {
+               hostManager.legacyHostsStats(json)
+                 .then(() => {
+                   res.json(json);
+                 }).catch((err) => {
+                   res.status(500).send('');
+                 });
+             });
+           });
+
 router.get('/:host',
            (req, res, next) => {
              let host = req.params.host;
-             hostManager.getHost(host, (err, h) => {
-               flowManager.getStats2(h).then(() => {
-                 res.json(h.toJson());
-               }).catch((err) => {
-                 res.status(404);
-                 res.send("");
+
+             if(host === "system") {
+               hostManager.toJson(true, (err, json) => {
+                 if(err) {
+                   res.status(500).send("");
+                   return;
+                 } else {
+                   res.json(json);
+                   return;
+                 }
                });
-             });
+             } else {
+               hostManager.getHost(host, (err, h) => {
+                 flowManager.getStats2(h).then(() => {
+                   res.json(h.toJson());
+                 }).catch((err) => {
+                   res.status(404);
+                   res.send("");
+                 });
+               });
+             }
            });
 
 module.exports = router;

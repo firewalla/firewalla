@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,6 +14,8 @@
  */
 'use strict';
 var ip = require('ip');
+
+let util = require('util');
 
 var debugging = false;
 // var log = function () {
@@ -65,13 +67,15 @@ module.exports = class {
             try {
                let ip_info = ip.cidrSubnet(range);
                if (ip_info) {
-                   if(ip_info.subnetMaskLength<24) {
-                       callback(null,null); 
-                       return;
-                   }
+                 if(ip_info.subnetMaskLength<24) {
+                   callback(null,[], []); 
+                   return;
+                 }
                }
             } catch(e) {
-               log.error("Nmap:Scan:Error",range,fast,e);
+              log.error("Nmap:Scan:Error",range,fast,e, {});
+              callback(e);
+              return;
             }
         }
         let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
@@ -93,7 +97,6 @@ module.exports = class {
      }
 
      nmapScan(cmdline,requiremac,callback) {
-
         this.process = require('child_process').exec(cmdline, (err, out, code) => {
             let outarray = out.split("\n");
             let hosts = [];
@@ -124,6 +127,8 @@ module.exports = class {
                             host.mac = addr.addr;
                             if (addr.vendor != null) {
                                 host.macVendor = addr.vendor;
+                            } else {
+                              host.macVendor = "Unknown";
                             }
                         }
                     }

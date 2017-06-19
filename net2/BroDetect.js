@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -244,7 +244,7 @@ module.exports = class {
         if (this.connmap[key]!=null) {
              return;
         } 
-        log.info("CONN DEBUG",this.connarray.length,key,value,"length:");
+        log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
         this.connarray.push(value);
         this.connmap[key] = value;
         let mapsize = 9000;
@@ -277,7 +277,7 @@ module.exports = class {
              return;
         } 
         
-        log.info("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
         let mapsize = 9000;
@@ -361,7 +361,7 @@ module.exports = class {
                     rclient.hgetall(key,(err,entry)=>{ 
                         if (entry) {
                             if (entry.host != value.host) {
-                                log.info("Dns:Remap",entry.host,value.host);
+                                log.debug("Dns:Remap",entry.host,value.host);
                                 rclient.hdel(key,"_intel");
                             }
                             if (entry.count) {
@@ -463,7 +463,7 @@ module.exports = class {
         try {
             let obj = JSON.parse(data);
             if (obj == null) {
-                log.error("Conn:Drop", obj);
+                log.debug("Conn:Drop", obj);
                 return;
             }
             
@@ -478,23 +478,23 @@ module.exports = class {
 
             // drop layer 3 
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
-                log.error("Conn:Drop:ZeroLength",obj.conn_state,obj);
+                log.debug("Conn:Drop:ZeroLength",obj.conn_state,obj);
                 return;
             }
 
             if (obj.orig_bytes == null || obj.resp_bytes == null) {
-                log.error("Conn:Drop:NullBytes",obj);
+                log.debug("Conn:Drop:NullBytes",obj);
                 return;
             }
 
             // drop layer 4
             if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
-                log.error("Conn:Drop:ZeroLength2",obj.conn_state,obj);
+                log.debug("Conn:Drop:ZeroLength2",obj.conn_state,obj);
                 return;
             }
 
             if (obj.missed_bytes>10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-                log.error("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
+                log.debug("Conn:Drop:MissedBytes:TooLarge",obj.conn_state,obj);
                 return;
             }
 
@@ -552,7 +552,7 @@ module.exports = class {
                     adjusted = true;
                 }
                 if (adjusted == false) {
-                    log.error("Conn:Drop:MissedBytes",obj.conn_state,obj);
+                    log.debug("Conn:Drop:MissedBytes",obj.conn_state,obj);
                     return;
                 } else {
                     log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
@@ -565,7 +565,7 @@ module.exports = class {
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.error("Conn:Drop:State",obj.conn_state,obj);
+                        log.debug("Conn:Drop:State",obj.conn_state,obj);
                         flag = 's';
                //         return;
                 }
@@ -577,7 +577,7 @@ module.exports = class {
             let flowdir = "in";
             let lhost = null;
 
-            log.info("ProcessingConection:",obj.uid,host,dst);
+            log.debug("ProcessingConection:",obj.uid,host,dst);
 
             // ignore multicast IP
             // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
@@ -722,7 +722,7 @@ module.exports = class {
                 for (let i in flowspec._afmap) {
                     let afobj = this.lookupAppMap(i);
                     if (afobj) {
-                        log.info("DEBUG AFOBJ DELAY RESOLVE",afobj);
+                        log.debug("DEBUG AFOBJ DELAY RESOLVE",afobj);
                         let flow_afobj = flowspec.af[afobj.host];
                         if (flow_afobj) {
                             flow_afobj.rqbl += afobj.rqbl;
@@ -766,7 +766,7 @@ module.exports = class {
                 let strdata = JSON.stringify(tmpspec);
                 //let redisObj = [key, tmpspec.ts, strdata];
                 let redisObj = [key, now, strdata];
-                log.info("Conn:Save:Temp", redisObj);
+                log.debug("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
                         if (this.config.bro.conn.expires) {
@@ -919,6 +919,7 @@ module.exports = class {
 
             if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
                 let flowdir = 'local';
+                return;
             } else if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst) == false) {
                 let flowdir = "out";
             } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst)) {
@@ -987,6 +988,8 @@ module.exports = class {
                 if (err == null) {
                     if (this.config.bro.http.expires) {
                         rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.http.expires);
+                    } else {
+                        rclient.expireat(key, parseInt((+new Date) / 1000) + 60*30);
                     }
                 } else {
                     log.error("HTTP:Save:Error", err);

@@ -34,10 +34,18 @@ let extensionFolder = fHome + "/extension/ss_client";
 // Files
 let tunnelBinary = extensionFolder + "/fw_ss_tunnel";
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
-let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
-let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 let chinaDNSBinary = extensionFolder + "/chinadns";
 let kcpBinary = extensionFolder + "/kcp_client";
+
+if(f.isDocker()) {
+  tunnelBinary = extensionFolder + "/bin.x86_64/fw_ss_tunnel";
+  redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
+  chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
+  kcpBinary = extensionFolder + "/bin.x86_64/kcp_client";
+}
+
+let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
+let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 
 let chnrouteFile = extensionFolder + "/chnroute";
 let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
@@ -49,7 +57,7 @@ var ssConfig = null;
 
 let localKCPTunnelPort = 8856;
 let localKCPTunnelAddress = "127.0.0.1";
-let kcpParameters = "-mtu 1400 -sndwnd 256 -rcvwnd 2048 -mode fast2 -dscp 46";
+let kcpParameters = "-mtu 1400 -sndwnd 256 -dscp 46";
 let localTunnelPort = 8855;
 let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;
@@ -80,7 +88,7 @@ function loadConfig(callback) {
         ssConfig = JSON.parse(result);
         callback(null, ssConfig);
       } else {
-        callback(null, {}); // by default, {} => config not initliazed
+        callback(null, null); // by default, {} => config not initliazed
       }
     } catch (e) {
       log.error("Failed to parse json: " + e);
@@ -119,8 +127,13 @@ function start(callback) {
 
   loadConfig((err, config) => {
     if(err) {
-      log.error("Failed to load config or config does NOT exist");
+      log.error("Failed to load config");
       callback(err);
+      return;
+    }
+
+    if(!config) {
+      callback(new Error("ss not configured"));
       return;
     }
 
@@ -249,14 +262,21 @@ function uninstall(callback) {
 }
 
 function saveConfigToFile() {
-  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
+  if(!ssConfig.server_port)
+    ssConfig.server_port = ssConfig.port
+  
+  if(!ssConfig.method) {
+    ssConfig.method = "aes-256-cfb";
+  }
   
   if(ssConfig.kcp_server && ssConfig.kcp_server_port) {
     let ssKCPConfig = extend({}, ssConfig);
     ssKCPConfig.server = localKCPTunnelAddress;
     ssKCPConfig.server_port = localKCPTunnelPort;
     jsonfile.writeFileSync(ssForKCPConfigPath, ssKCPConfig, {spaces: 2});
-  }   
+  }
+
+  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
 }
 
 function saveConfig(config, callback) {
@@ -378,16 +398,20 @@ function _stopRedirection(callback) {
 function _startKCP(callback) {
   callback = callback || function() {}
 
-  let remoteKCPServer = ssConfig.kcp_server;
-  let remoteKCPPort = ssConfig.kcp_server_port;
+  let remoteKCPServer = ssConfig.server;
+  let remoteKCPPort = ssConfig.kcp_port;
+  let kcpMode = ssConfig.kcp_mode;
+  let server_sndwnd = ssConfig.sndwnd;
 
   if(!remoteKCPServer || !remoteKCPPort) {
     callback(new Error("KCP server and port configuration is required"));
     return;
   }
 
-  let args = util.format("%s --remoteaddr %s:%d --localaddr %s:%d --log %s",
+  let args = util.format("%s --mode %s --rcvwnd %s --remoteaddr %s:%d --localaddr %s:%d --log %s",
                          kcpParameters,
+                         kcpMode,
+                         server_sndwnd,
                          remoteKCPServer,
                          remoteKCPPort,
                          localKCPTunnelAddress,
@@ -437,7 +461,7 @@ function _stopKCP(callback) {
 function _enableIpset(callback) {
   callback = callback || function() {}
   
-  let cmd = "sudo ipset restore -file " + chnrouteRestoreForIpset;
+  let cmd = "sudo ipset -! restore -file " + chnrouteRestoreForIpset;
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
@@ -486,10 +510,7 @@ function _enableIptablesRule(callback) {
 function _disableIptablesRule(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s %s",
-                        ssConfig.server,
-                        localRedirectionPort,
-                        disableIptablesBinary);
+  let cmd = disableIptablesBinary;
 
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {

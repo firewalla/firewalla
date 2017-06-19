@@ -20,7 +20,7 @@ module.exports = class {
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
       
-      if(!key.startsWith("p.")) {
+      if(!key.startsWith("p.") && key !== "type") {
         continue;
       }
       

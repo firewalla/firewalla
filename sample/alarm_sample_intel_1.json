@@ -10,7 +10,8 @@
   "p.dest.id": "8.8.8.8",
   "p.dest.name": "xx.yy.zz",
   "p.dest.port": "443",
+  "p.dest.ip": "7.7.7.7",
   "p.security.reason": "a bad ip address",
-  "p.security.numOfReportSources": "6",
+  "p.security.numOfReportSources": "60",
   "p.local_is_client": "1"
 }

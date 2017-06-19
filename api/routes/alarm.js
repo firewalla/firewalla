@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,6 +31,15 @@ router.get('/list', (req, res, next) => {
     }  
   });
 });
+
+router.get('/:alarm', (req, res, next) => {
+  let alarmID = req.params.alarm;
+
+  am2.getAlarm(alarmID)
+    .then((alarm) => res.json(alarm))
+    .catch((err) => res.status(400).send(err + ""));
+});
+
 
 // create application/json parser 
 let jsonParser = bodyParser.json()
