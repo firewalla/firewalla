@@ -598,7 +598,9 @@ var legoEptCloud = class {
         if (mid === null) {
             mid = undefined;
         }
-        var msgstr = JSON.stringify(mpackage);
+      var msgstr = JSON.stringify(mpackage);
+      log.info("encipher unencrypted message size: ", msgstr.length, {});
+      
         this.getKey(gid, (err, key, cacheGroup) => {
             if (err != null && key == null) {
                 callback(err, null)
