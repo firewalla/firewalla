@@ -1134,9 +1134,6 @@ module.exports = class {
                         this.callbacks[type](channel, type, ip, obj);
                     }
                 });
-                //this.hosts = {};
-                //this.getHosts((err,hosts)=> {
-                //});
             });
             this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
                 if (this.type != "server") {

@@ -492,9 +492,10 @@ module.exports = class FlowMonitor {
              for (let i in savedData) {
                  savedData[i] = JSON.stringify(data[i]);
              }
-             rclient.hmset(key,savedData,(err,d)=>{
-                 log.debug("Set Host Summary",key,savedData,d);
-             });
+          let savedDataString = JSON.stringify(savedData);
+          rclient.hmset(key,savedDataString,(err,d)=>{
+            log.debug("Set Host Summary",key,savedData,d);
+          });
         });
     }
 
