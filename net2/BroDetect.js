@@ -336,7 +336,7 @@ module.exports = class {
                 log.debug("Intel:Drop", JSON.parse(data));
             }
         } catch (e) {
-            log.error("Intel:Error Unable to save", e);
+            log.error("Intel:Error Unable to save", e, e.stack, data, {});
         }
     }
 
@@ -427,7 +427,7 @@ module.exports = class {
 
             });
         } catch (e) {
-            log.error("Detect:Software:Error", e, data);
+            log.error("Detect:Software:Error", e, data, e.stack, {});
         }
     }
 
@@ -894,7 +894,7 @@ module.exports = class {
             //    return;
             // }
         } catch (e) {
-            log.error("Conn:Error Unable to save", e, data, new Error().stack);
+            log.error("Conn:Error Unable to save", e, data, new Error().stack, {});
         }
 
     }
@@ -997,7 +997,7 @@ module.exports = class {
             });
 
         } catch (e) {
-            log.error("HTTP:Error Unable to save", e, data);
+            log.error("HTTP:Error Unable to save", e, data, e.stack, {});
         }
 
     }
@@ -1042,7 +1042,7 @@ module.exports = class {
             });
 
         } catch (e) {
-            log.error("SSL:Error Unable to save", e);
+            log.error("SSL:Error Unable to save", e, data, e.stack, {});
         }
     }
 
@@ -1157,7 +1157,7 @@ module.exports = class {
                 }
             });
         } catch (e) {
-            log.error("X509:Error Unable to save", e, {});
+            log.error("X509:Error Unable to save", e, data, e.stack, {});
         }
     }
 
@@ -1258,7 +1258,7 @@ module.exports = class {
               log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
-            log.error("Notice:Error Unable to save", e,data);
+            log.error("Notice:Error Unable to save", e,data, e.stack, {});
         }
     }
 
