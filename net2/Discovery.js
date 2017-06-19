@@ -222,12 +222,13 @@ module.exports = class {
         });
     }
 
-    start() {
-        this.startDiscover(true);
+  start() {
+    // delay start, the first scan will be covered by kickstart
+    //        this.startDiscover(true);
         this.publicIp();
         setTimeout(() => {
             this.startDiscover(false);
-        }, 1000 * 60 * 2);
+        }, 1000 * 60 * 4); 
         setInterval(() => {
             this.startDiscover(false);
         }, 1000 * 60 * 100);
