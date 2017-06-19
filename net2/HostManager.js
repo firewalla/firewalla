@@ -1563,8 +1563,10 @@ module.exports = class {
             let stack = new Error().stack
             log.info("hostmanager:gethosts:mutx:last:", retry,stack )
         }
-        this.getHostsActive = true;
+      this.getHostsActive = true;
+      if(this.type === "server") {
         this.execPolicy();
+      }
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
                 this.hostsdb[h]._mark = false;
@@ -1584,7 +1586,7 @@ module.exports = class {
                             o.ipv4Addr = o.ipv4;
                         }
                         if (o.ipv4Addr == null) {
-                            log.info("hostmanager:gethosts:error:noipv4", o);
+                          log.info("hostmanager:gethosts:error:noipv4", o, {});
                             cb();
                             return;
                         }

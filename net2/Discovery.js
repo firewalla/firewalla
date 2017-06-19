@@ -266,7 +266,7 @@ module.exports = class {
                     });
                 }
             });
-        }, 60000);
+        }, 60 * 1000);
     }
 
     bonjourParse(service) {
