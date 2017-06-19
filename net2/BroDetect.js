@@ -404,7 +404,7 @@ module.exports = class {
                 });
             }
         } catch (e) {
-            log.error("Detect:Dns:Error", e, data);
+            log.error("Detect:Dns:Error", e, data, e.stack, {});
         }
     }
 

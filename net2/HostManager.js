@@ -1117,7 +1117,11 @@ module.exports = class {
             spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
           }
         });
-        let c = require('./MessageBus.js');
+
+        // ONLY register for these events if hostmanager type IS server
+        if(this.type === "server") {
+
+          let c = require('./MessageBus.js');
             this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
@@ -1149,6 +1153,7 @@ module.exports = class {
                 */
                 log.info("SystemPolicy:Changed", channel, ip, type, obj);
             });
+        }
 
             instances[name] = this;
         }
@@ -1534,6 +1539,7 @@ module.exports = class {
     }
 
 
+  // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started");
         // ready mark and sweep
