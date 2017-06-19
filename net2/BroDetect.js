@@ -1129,7 +1129,7 @@ module.exports = class {
             }
 
         } catch (e) {
-          log.error("SSL:Error Unable to save", e, e.stack, {});
+          log.error("SSL:Error Unable to save", e, e.stack, data, {});
         }
     }
 
