@@ -22,7 +22,6 @@ let request = require('request');
 var uuid = require("uuid");
 var io2 = require('socket.io-client');
 
-
 var debugging = false;
 var log = function () {
     if (debugging) {
@@ -598,7 +597,9 @@ var legoEptCloud = class {
         if (mid === null) {
             mid = undefined;
         }
-        var msgstr = JSON.stringify(mpackage);
+      var msgstr = JSON.stringify(mpackage);
+      log2.info("encipher unencrypted message size: ", msgstr.length, {});
+      
         this.getKey(gid, (err, key, cacheGroup) => {
             if (err != null && key == null) {
                 callback(err, null)
