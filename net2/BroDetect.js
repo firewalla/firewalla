@@ -1098,6 +1098,12 @@ module.exports = class {
                             if (data.server_name) {
                                 xobj.server_name = data.server_name;
                             }
+
+                          // san.dns may be an array, need to convert it to string to avoid redis warning
+                          if(xobj["san.dns"] && xobj["san.dns"].constructor === Array) {
+                            xobj["san.dns"] = JSON.stringify(xobj["san.dns"]);
+                          }
+                          
                             rclient.hmset(key, xobj, (err, value) => {
                                 if (err == null) {
                                     if (this.config.bro.ssl.expires) {
