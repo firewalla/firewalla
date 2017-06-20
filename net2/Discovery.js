@@ -505,7 +505,8 @@ module.exports = class {
                }
             }
             */
-            log.debug("Setting redis", redisobjs, {});
+          log.debug("Setting redis", redisobjs, {});
+
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
                     log.error("Discovery::Interfaces:Error", redisobjs,list,error);

@@ -46,6 +46,7 @@ module.exports = class {
       }
       
       var message = req.body.message;
+      
       if(message == null) {
         res.status(400);
         res.json({"error" : "Invalid request"});
