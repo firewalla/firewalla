@@ -157,6 +157,16 @@ paths:
       responses:
         200:
           description: Success
+  /system/status:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -339,6 +349,12 @@ parameters:
     in: body
     required: true
     description: JSON Content
+    type: string
+  compressed:
+    name: compressed
+    in: query
+    required: false
+    description: Compression
     type: string
   page:
     name: page

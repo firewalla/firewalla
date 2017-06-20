@@ -907,6 +907,7 @@ var legoEptCloud = class {
                 msg: beepmsg,
                 data: beepdata
             };
+          log2.info("APN notification payload: ", beep, {});
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
             console.log("sending logs ", e, r);
