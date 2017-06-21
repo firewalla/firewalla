@@ -1117,7 +1117,11 @@ module.exports = class {
             spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
           }
         });
-        let c = require('./MessageBus.js');
+
+        // ONLY register for these events if hostmanager type IS server
+        if(this.type === "server") {
+
+          let c = require('./MessageBus.js');
             this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
@@ -1134,9 +1138,6 @@ module.exports = class {
                         this.callbacks[type](channel, type, ip, obj);
                     }
                 });
-                //this.hosts = {};
-                //this.getHosts((err,hosts)=> {
-                //});
             });
             this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
                 if (this.type != "server") {
@@ -1152,6 +1153,7 @@ module.exports = class {
                 */
                 log.info("SystemPolicy:Changed", channel, ip, type, obj);
             });
+        }
 
             instances[name] = this;
         }
@@ -1537,6 +1539,7 @@ module.exports = class {
     }
 
 
+  // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started");
         // ready mark and sweep
@@ -1560,8 +1563,10 @@ module.exports = class {
             let stack = new Error().stack
             log.info("hostmanager:gethosts:mutx:last:", retry,stack )
         }
-        this.getHostsActive = true;
+      this.getHostsActive = true;
+      if(this.type === "server") {
         this.execPolicy();
+      }
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
                 this.hostsdb[h]._mark = false;
@@ -1581,7 +1586,7 @@ module.exports = class {
                             o.ipv4Addr = o.ipv4;
                         }
                         if (o.ipv4Addr == null) {
-                            log.info("hostmanager:gethosts:error:noipv4", o);
+                          log.info("hostmanager:gethosts:error:noipv4", o, {});
                             cb();
                             return;
                         }

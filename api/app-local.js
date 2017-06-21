@@ -61,7 +61,6 @@ function enableSubPath(path, lib) {
 
 if(!firewalla.isProduction()) {
   // apis for development purpose only, do NOT enable them in production
-  subpath_v1.use('/sys', system);
   subpath_v1.use('/message', message);
   subpath_v1.use('/ss', shadowsocks);
   subpath_v1.use('/dns', dnsmasq);
@@ -72,6 +71,9 @@ if(!firewalla.isProduction()) {
 
   enableSubPath('policy');
   enableSubPath('exception');
+  enableSubPath('scisurf');
+  enableSubPath('system');
+  
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

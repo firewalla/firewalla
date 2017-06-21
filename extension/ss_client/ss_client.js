@@ -57,7 +57,7 @@ var ssConfig = null;
 
 let localKCPTunnelPort = 8856;
 let localKCPTunnelAddress = "127.0.0.1";
-let kcpParameters = "-mtu 1400 -sndwnd 256 -dscp 46";
+let kcpParameters = "-mtu 1400 -sndwnd 256 -dscp 46 --nocomp";
 let localTunnelPort = 8855;
 let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;

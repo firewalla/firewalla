@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,16 +43,16 @@ rclient.on("error", function (err) {
 });
 
 /*
- * 
- *  config.bro.notice.path { 
- *  config.bro.intel.path { 
- * 
+ *
+ *  config.bro.notice.path {
+ *  config.bro.intel.path {
+ *
  *  config.bro.notice.monitor {
  *      'type':'action'
- *  }      
+ *  }
  *
  * {"ts":1463726594.405281,"note":"Scan::Port_Scan","msg":"192.168.2.153 scanned at least 15 unique ports of host 192.168.2.111 in 0m0s","sub":"local","src":"192.168.2.153","dst":"192.168.2.111","peer_descr":"bro","actions":["Notice::ACTION_LOG"],"suppress_for":3600.0,"dropped":false}
- * 
+ *
  * x509
 {"ts":1464811516.502757,"id":"F1zrEA4jvTA90H5uVc","certificate.version":3,"certificate.serial":"053FCE9BA6805B00","certificate.subject":"C=US,ST=California,O=Apple
  Inc.,OU=management:idms.group.506364,CN=*.icloud.com","certificate.issuer":"C=US,O=Apple Inc.,OU=Certification Authority,CN=Apple IST CA 2 - G1","certificate.not_
@@ -69,14 +69,14 @@ icate.key_type":"rsa","certificate.key_length":2048,"certificate.exponent":"6553
 
 var instances = {};
 
-function ValidateIPaddress(ipaddress)   
-{  
-   if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress))  
-      {  
-        return (true)  
-      }  
-    return (false)  
-}  
+function ValidateIPaddress(ipaddress)
+{
+   if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress))
+      {
+        return (true)
+      }
+    return (false)
+}
 
 module.exports = class {
     initWatchers() {
@@ -218,7 +218,7 @@ module.exports = class {
             this.apparray = [];
             this.connmap = {};
             this.connarray = [];
-         
+
             this.initWatchers();
             instances[name] = this;
             let c = require('./MessageBus.js');
@@ -243,7 +243,7 @@ module.exports = class {
     addConnMap(key,value) {
         if (this.connmap[key]!=null) {
              return;
-        } 
+        }
         log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
         this.connarray.push(value);
         this.connmap[key] = value;
@@ -275,8 +275,8 @@ module.exports = class {
 
         if (this.appmap[key]!=null) {
              return;
-        } 
-        
+        }
+
         log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
@@ -336,7 +336,7 @@ module.exports = class {
                 log.debug("Intel:Drop", JSON.parse(data));
             }
         } catch (e) {
-            log.error("Intel:Error Unable to save", e);
+            log.error("Intel:Error Unable to save", e, e.stack, data, {});
         }
     }
 
@@ -350,7 +350,7 @@ module.exports = class {
                 return;
             }
             if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
-                // NOTE write up a look up flow here 
+                // NOTE write up a look up flow here
                 for (let i in obj['answers']) {
                     let key = "dns:ip:" + obj['answers'][i];
                     let value = {
@@ -358,7 +358,7 @@ module.exports = class {
                         'lastActive': Math.ceil(Date.now() / 1000),
                         'count': 1
                     }
-                    rclient.hgetall(key,(err,entry)=>{ 
+                    rclient.hgetall(key,(err,entry)=>{
                         if (entry) {
                             if (entry.host != value.host) {
                                 log.debug("Dns:Remap",entry.host,value.host);
@@ -404,7 +404,7 @@ module.exports = class {
                 });
             }
         } catch (e) {
-            log.error("Detect:Dns:Error", e, data);
+            log.error("Detect:Dns:Error", e, data, e.stack, {});
         }
     }
 
@@ -427,11 +427,11 @@ module.exports = class {
 
             });
         } catch (e) {
-            log.error("Detect:Software:Error", e, data);
+            log.error("Detect:Software:Error", e, data, e.stack, {});
         }
     }
 
- 
+
     // We now seen a new flow coming ... which might have a new ip getting discovered, lets take care of this
     indicateNewFlowSpec(flowspec) {
         let ip = flowspec.lh;
@@ -445,7 +445,7 @@ module.exports = class {
            //log.info("Conn:Learned:Ip",ip,flowspec);
            if (!iptool.isV4Format(ip)) {
               log.info("Conn:Learned:Ip","ping ",ip,flowspec);
-              linux.ping6(sysManager.monitoringInterface().name,ip)    
+              linux.ping6(sysManager.monitoringInterface().name,ip)
               this.pingedIp[ip]=true;
            }
         }
@@ -466,7 +466,7 @@ module.exports = class {
                 log.debug("Conn:Drop", obj);
                 return;
             }
-            
+
             // drop layer 2.5
             if (obj.proto=="icmp") {
                 return;
@@ -476,7 +476,7 @@ module.exports = class {
                 return;
             }
 
-            // drop layer 3 
+            // drop layer 3
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
                 log.debug("Conn:Drop:ZeroLength",obj.conn_state,obj);
                 return;
@@ -517,7 +517,7 @@ module.exports = class {
                 if (rate>20000000) {
                     log.error("Conn:Burst:Drop",rate,obj);
                     return;
-                } 
+                }
                 let packet = obj.resp_bytes/obj.resp_pkts;
                 if (packet >10000000) {
                     log.error("Conn:Burst:Drop2",packet,obj);
@@ -588,7 +588,7 @@ module.exports = class {
                 if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
                     return;
                 }
-  
+
                 if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
                     return;
                 }
@@ -644,7 +644,7 @@ module.exports = class {
             }
 
             // Warning for long running tcp flows, the conn structure logs the ts as the
-            // first packet.  when this happens, if the flow started a while back, it 
+            // first packet.  when this happens, if the flow started a while back, it
             // will get summarize here
 
             let now = Math.ceil(Date.now() / 1000);
@@ -654,7 +654,7 @@ module.exports = class {
                 flowspec = {
                     ts: obj.ts,
                    _ts: now,
-                  __ts: obj.ts,  // this is the first time found 
+                  __ts: obj.ts,  // this is the first time found
                     sh: host, // source
                     dh: dst, // dstination
                     ob: Number(obj.orig_bytes), // transfer bytes
@@ -738,7 +738,7 @@ module.exports = class {
           if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
             tmpspec.sp = obj['id.orig_p'];
             tmpspec.dp = obj['id.resp_p'];
-            
+
                 let portflowkey = obj.proto+"."+obj['id.resp_p'];
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
@@ -819,7 +819,7 @@ module.exports = class {
 
 
                     try {
-                        if (spec.ob>0 && spec.rb>0 && spec.ct>1) { 
+                        if (spec.ob>0 && spec.rb>0 && spec.ct>1) {
                             let hostChanged = hostsChanged[spec.lh];
                             if (hostChanged == null) {
                                 hostsChanged[spec.lh] = Number(spec.ts);
@@ -894,7 +894,7 @@ module.exports = class {
             //    return;
             // }
         } catch (e) {
-            log.error("Conn:Error Unable to save", e, data, new Error().stack);
+            log.error("Conn:Error Unable to save", e, data, new Error().stack, {});
         }
 
     }
@@ -913,8 +913,8 @@ module.exports = class {
 
             /*
             if (!iptool.isV4Format(host)) {
-                 return;                
-            } 
+                 return;
+            }
             */
 
             if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
@@ -938,7 +938,7 @@ module.exports = class {
                 rqbl: obj.request_body_len,
                 rsbl: obj.response_body_len,
             };
-       
+
             this.addAppMap(appCacheObj.uid, appCacheObj);
 
             // TODO: Need to write code take care to ensure orig host is us ...
@@ -997,7 +997,7 @@ module.exports = class {
             });
 
         } catch (e) {
-            log.error("HTTP:Error Unable to save", e, data);
+            log.error("HTTP:Error Unable to save", e, data, e.stack, {});
         }
 
     }
@@ -1023,7 +1023,7 @@ module.exports = class {
                 rqbl: 0,
                 rsbl: 0,
             };
-       
+
             this.addAppMap(appCacheObj.uid, appCacheObj);
 
             // TODO: Need to write code take care to ensure orig host is us ...
@@ -1042,10 +1042,16 @@ module.exports = class {
             });
 
         } catch (e) {
-            log.error("SSL:Error Unable to save", e);
+            log.error("SSL:Error Unable to save", e, data, e.stack, {});
         }
     }
 
+    cleanUpSanDNS(obj) {
+      // san.dns may be an array, need to convert it to string to avoid redis warning
+      if(obj["san.dns"] && obj["san.dns"].constructor === Array) {
+        obj["san.dns"] = JSON.stringify(obj["san.dns"]);
+      }
+    }
 
     processSslData(data) {
         try {
@@ -1075,6 +1081,9 @@ module.exports = class {
                     xobj['server_name'] = dsthost;
                 }
                 log.debug("SSL: host:ext:x509:Save", key, xobj);
+
+                this.cleanUpSanDNS(xobj);
+
                 rclient.hmset(key, xobj, (err, value) => {
                     if (err == null) {
                         if (this.config.bro.ssl.expires) {
@@ -1098,6 +1107,9 @@ module.exports = class {
                             if (data.server_name) {
                                 xobj.server_name = data.server_name;
                             }
+
+                            this.cleanUpSanDNS(xobj);
+
                             rclient.hmset(key, xobj, (err, value) => {
                                 if (err == null) {
                                     if (this.config.bro.ssl.expires) {
@@ -1117,7 +1129,7 @@ module.exports = class {
             }
 
         } catch (e) {
-            log.error("SSL:Error Unable to save", e);
+          log.error("SSL:Error Unable to save", e, e.stack, data, {});
         }
     }
 
@@ -1132,6 +1144,9 @@ module.exports = class {
 
             let key = "flow:x509:" + obj['id'];
             log.debug("X509:Save", key, obj);
+
+            this.cleanUpSanDNS(obj);
+
             rclient.hmset(key, obj, (err, value) => {
                 if (err == null) {
                     if (this.config.bro.x509.expires) {
@@ -1142,7 +1157,7 @@ module.exports = class {
                 }
             });
         } catch (e) {
-            log.error("X509:Error Unable to save", e);
+            log.error("X509:Error Unable to save", e, data, e.stack, {});
         }
     }
 
@@ -1197,11 +1212,11 @@ module.exports = class {
                 } else {
                     lh = "0.0.0.0";
                 }
-        
+
                 let actionobj = {
                      title: obj.msg,
                      actions: ["ignore"],
-                     src: obj.src, 
+                     src: obj.src,
                      dst: obj.dst,
                      note: obj.note,
                      target: lh,
@@ -1218,7 +1233,7 @@ module.exports = class {
                       let message = obj.msg;
                       let noticeType = obj.note;
                       let timestamp = parseFloat(obj.ts);
-                      
+
                       let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
                         "p.device.ip": localIP,
                       });
@@ -1230,20 +1245,20 @@ module.exports = class {
                           }
                         });
                       });
-                      
+
                       alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
                         // if (obj != null) {
                         //          this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
                         // }
                       });
-                    }); 
-                }); 
+                    });
+                });
 
             } else {
               log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
-            log.error("Notice:Error Unable to save", e,data);
+            log.error("Notice:Error Unable to save", e,data, e.stack, {});
         }
     }
 
