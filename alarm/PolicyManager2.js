@@ -288,7 +288,7 @@ module.exports = class {
 
     if(typeof(number) == 'function') {
       callback = number;
-      number = 200;
+      number = 1000; // by default load last 1000 policy rules, for self-protection
     }
     
     callback = callback || function() {}
@@ -304,6 +304,17 @@ module.exports = class {
     });
   }
 
+  enforceAllPolicies() {
+    return new Promise((resolve, reject) => {
+      this.loadActivePolicys((err, rules) => {
+
+        let enforces = rules.map((rule) => this.enforce(rule));
+
+        return Promise.all(enforces);
+      });
+    });
+  }
+  
   enforce(policy) {
     switch(policy.type) {
     case "ip":
