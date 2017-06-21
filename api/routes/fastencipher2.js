@@ -15,6 +15,8 @@ let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
 
+let zlib = require('zlib');
+
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
  * -- message is encrypted already 
@@ -23,7 +25,7 @@ router.post('/message/:gid',
     sc.isInitialized,
     encryption.decrypt,
     function(req, res, next) {
-      var gid = req.params.gid;
+      let gid = req.params.gid;
       let controller = cloudWrapper.getNetBotController(gid);
       if(!controller) {
         // netbot controller is not ready yet, waiting for init complete
@@ -34,7 +36,9 @@ router.post('/message/:gid',
       log.info("================= request from ", req.connection.remoteAddress, " =================");
       log.info(JSON.stringify(req.body, null, '\t'));
       log.info("================= request body end =================");
-      
+
+      let compressed = req.body.compressed;
+
       var alreadySent = false;
       
       controller.msgHandler(gid, req.body, (err, response) => {
@@ -48,8 +52,22 @@ router.post('/message/:gid',
           res.json({ error: err });
           return;
         } else {
-          res.body = JSON.stringify(response);
-          next();
+          res.body = JSON.stringify(response);          
+          log.info("encipher unencrypted message size: ", res.body.length, {});
+          if(compressed) { // compress payload to reduce traffic
+            let input = new Buffer(res.body, 'utf8');
+            zlib.deflate(input, (err, output) => {
+              if(err) {
+                res.status(500).json({ error: err });
+                return;
+              }
+
+              res.body = JSON.stringify({payload: output.toString('base64')});
+              next();
+            });
+          } else {
+            next();
+          }
         }
       });
     },
@@ -64,7 +82,8 @@ router.post('/message/cleartext/:gid',
       log.info(JSON.stringify(req.body, null, '\t'));
       log.info("================= request body end =================");
         
-      var gid = req.params.gid;
+      let gid = req.params.gid;
+      let compressed = req.query.compressed;
       let controller = cloudWrapper.getNetBotController(gid);
 
       if(!controller) {
@@ -84,8 +103,24 @@ router.post('/message/cleartext/:gid',
           res.json({ error: err });
           return;
         } else {
-          log.info("Got response, length: ", JSON.stringify(response).length);
-          res.json(response);
+          let json = JSON.stringify(response);
+          log.info("Got response, length: ", json.length);
+
+          if(compressed) { // compress payload to reduce traffic
+            let input = new Buffer(json, 'utf8');
+            zlib.deflate(input, (err, output) => {
+              if(err) {
+                res.status(500).json({ error: err });
+                return;
+              }
+              
+              res.status(200).json({
+                payload: output.toString('base64')
+              });
+            });
+          } else {
+            res.json(response);
+          }
         }
       });
     }

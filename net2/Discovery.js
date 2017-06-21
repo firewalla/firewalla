@@ -187,7 +187,7 @@ module.exports = class {
           
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
             if(err) {
-              log.error("failed to scan: " + err);
+              log.error("Failed to scan: " + err);
               return;
             }
             
@@ -222,12 +222,13 @@ module.exports = class {
         });
     }
 
-    start() {
-        this.startDiscover(true);
+  start() {
+    // delay start, the first scan will be covered by kickstart
+    //        this.startDiscover(true);
         this.publicIp();
         setTimeout(() => {
             this.startDiscover(false);
-        }, 1000 * 60 * 2);
+        }, 1000 * 60 * 4); 
         setInterval(() => {
             this.startDiscover(false);
         }, 1000 * 60 * 100);
@@ -265,7 +266,7 @@ module.exports = class {
                     });
                 }
             });
-        }, 60000);
+        }, 60 * 1000);
     }
 
     bonjourParse(service) {
@@ -504,7 +505,8 @@ module.exports = class {
                }
             }
             */
-            log.debug("Setting redis", redisobjs, {});
+          log.debug("Setting redis", redisobjs, {});
+
             rclient.hmset(redisobjs, (error, result) => {
                 if (error) {
                     log.error("Discovery::Interfaces:Error", redisobjs,list,error);

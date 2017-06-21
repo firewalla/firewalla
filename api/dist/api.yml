@@ -138,6 +138,35 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Hosts'
+  /scisurf/config:
+    get:
+      summary: List scisurf config
+      tags:
+        - SciSurf
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/SciSurfConfig'
+    post:
+      summary: Set SciSurf config
+      tags:
+        - SciSurf
+      parameters:
+        - $ref: '#/parameters/json'        
+      responses:
+        200:
+          description: Success
+  /system/status:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -321,6 +350,12 @@ parameters:
     required: true
     description: JSON Content
     type: string
+  compressed:
+    name: compressed
+    in: query
+    required: false
+    description: Compression
+    type: string
   page:
     name: page
     in: query
@@ -460,6 +495,13 @@ definitions:
     type: array
     items:
       $ref: '#/definitions/Host'
+  SciSurfConfig:
+    type: object
+    properties:
+      server:
+        type: string
+      port:
+        type: string
   Item:
     type: object
     properties:
