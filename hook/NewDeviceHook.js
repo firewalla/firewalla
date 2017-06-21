@@ -75,7 +75,7 @@ class NewDeviceHook extends Hook {
     });
   }
 
-  findMac(mac, retry) {
+  findMac(name, mac, retry) {
 
     retry = retry || 0;
 
@@ -143,7 +143,7 @@ class NewDeviceHook extends Hook {
           // delay discover, this is to ensure ip address is already allocated
           // to this new device
           setTimeout(() => {
-            this.findMac(mac);
+            this.findMac(name, mac);
           }, 5000);
         });
     });
