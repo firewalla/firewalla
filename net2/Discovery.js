@@ -187,7 +187,7 @@ module.exports = class {
           
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
             if(err) {
-              log.error("failed to scan: " + err);
+              log.error("Failed to scan: " + err);
               return;
             }
             

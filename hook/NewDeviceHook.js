@@ -74,6 +74,41 @@ class NewDeviceHook extends Hook {
       }
     });
   }
+
+  findMac(mac, retry) {
+
+    retry = retry || 0;
+    
+    // get ip address and mac vendor
+    d.discoverMac(mac, (err, result) => {
+      if(err) {
+        log.error("Failed to discover mac address", mac, ": " + err, {});
+        return;
+      }
+
+      if(!result) {
+        // not found... kinda strange, hack??
+        log.warn("New device " + name + " is not found in the network..");
+
+        // if first time, try again in another 10 seconds
+        if(retry === 0) {
+          setTimeout(() => this.findMac(mac, retry + 1),
+                     10 * 1000);
+        }
+        return;
+      }
+
+      log.info("Found a new device: " + name + "(" + mac + ")");
+
+      result.name = name;
+      result.nname = name;
+      
+      d.processHost(result, (err, host, newHost) => {
+        // alarm will be handled and created by "NewDevice" event
+        
+      });
+    });
+  }
   
   init() {
     sem.on('NewDevice', (event) => {
@@ -107,28 +142,7 @@ class NewDeviceHook extends Hook {
           // delay discover, this is to ensure ip address is already allocated
           // to this new device
           setTimeout(() => {
-            // get ip address and mac vendor
-            d.discoverMac(mac, (err, result) => {
-              if(err) {
-                log.error("Failed to discover mac address", mac, ": " + err, {});
-                return;
-              }
-
-              if(!result) {
-                // not found... kinda strange, hack??
-                log.warn("New device " + name + " is not found in the network..");
-                return;
-              }
-
-              log.info("Found a new device: " + name + "(" + mac + ")");
-
-              result.name = name;
-              result.nname = name;
-              
-              d.processHost(result, (err, host, newHost) => {
-                // alarm will be handled and created by "NewDevice" event
-              });
-            });
+            this.findMac(mac);
           }, 5000);
         });
     });
