@@ -53,7 +53,7 @@ router.post('/message/:gid',
           return;
         } else {
           res.body = JSON.stringify(response);          
-          log.info("encipher unencrypted message size: ", res.body.length, {});
+          log.info("encipher uncompressed message size: ", res.body.length, {});
           if(compressed) { // compress payload to reduce traffic
             let input = new Buffer(res.body, 'utf8');
             zlib.deflate(input, (err, output) => {
@@ -63,6 +63,7 @@ router.post('/message/:gid',
               }
 
               res.body = JSON.stringify({payload: output.toString('base64')});
+              log.info("compressed message size: ", res.body.length, {});
               next();
             });
           } else {
