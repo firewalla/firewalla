@@ -78,6 +78,9 @@ class NewDeviceHook extends Hook {
   findMac(mac, retry) {
 
     retry = retry || 0;
+
+    let Discovery = require("../net2/Discovery.js");
+    let d = new Discovery("nmap", null, "info", false);
     
     // get ip address and mac vendor
     d.discoverMac(mac, (err, result) => {
@@ -122,8 +125,6 @@ class NewDeviceHook extends Hook {
     });
     
     sem.on('NewDeviceWithMacOnly', (event) => {
-      let Discovery = require("../net2/Discovery.js");
-      let d = new Discovery("nmap", null, "info");
 
       let mac = event.mac;
       let name = event.name; // name should be fetched via DHCPDUMP
@@ -157,7 +158,7 @@ class NewDeviceHook extends Hook {
       }
 
       let Discovery = require("../net2/Discovery.js");
-      let d = new Discovery("nmap", null, "info");
+      let d = new Discovery("nmap", null, "info", false);
 
       // get mac address
       d.discoverIP(ip, (err, result) => {
