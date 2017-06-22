@@ -138,6 +138,34 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Hosts'
+  /host/{id}:
+    get:
+      summary: Get host information by given ip
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Host'
+  /mac/{id}:
+    post:
+      summary: Update Mac Info
+      tags:
+        - Mac
+      parameters:
+        - $ref: '#/parameters/id'
+        - $ref: '#/parameters/action'
+        - $ref: '#/parameters/name'
+      responses:
+        200:
+          $ref: '#/responses/SuccessMessage'
+        404:
+          $ref: '#/responses/404NotFound'
+        500:
+          $ref: '#/responses/500InternalServerError'
   /scisurf/config:
     get:
       summary: List scisurf config
@@ -343,6 +371,12 @@ parameters:
     in: query
     required: true
     description: Protocol
+    type: string
+  action:
+    name: action
+    in: query
+    required: true
+    description: Action
     type: string
   json:
     name: json
