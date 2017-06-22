@@ -42,9 +42,10 @@ class DeviceStatusUpdateHook extends Hook {
         hostTool.getIPv4Entry(host.ipv4Addr)
           .then((oldHost) => {
             let mergedHost = hostTool.mergeHosts(oldHost, host);
+            console.log("mergedHost", mergedHost, {});
             hostTool.updateHost(mergedHost)
               .then(() => {
-              log.info("Update host info for device ", mergedHost.name, "(", mergedHost.uid, ")", {});
+              log.info("Updated host info for device ", mergedHost.name, "(", mergedHost.uid, ")", {});
               }).catch((err) => {
               log.error("Failed to updateHost: ", err, {});
             })

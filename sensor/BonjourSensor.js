@@ -56,19 +56,30 @@ class BonjourSensor extends Sensor {
       }, (service) => {
         this.bonjourParse(service);
       });
+      
+      // why http?? because sometime http service can't be found via { protocol: 'tcp' }
+      // maybe it's bonjour lib's bug
+      this.bonjourBrowserhttp = bonjour.find({
+        type: 'http'
+      }, (service) => {
+        this.bonjourParse(service);
+      });
       this.bonjourTimer = setInterval(() => {
         log.info("Bonjour Watch Updating");
         this.bonjourBrowserTcp.update();
         this.bonjourBrowserUdp.update();
+        this.bonjourBrowserhttp.update();
       }, 1000 * 60 * 5);
     }
 
     this.bonjourBrowserTcp.stop();
     this.bonjourBrowserUdp.stop();
+    this.bonjourBrowserhttp.stop();
 
     this.bonjourTimer = setInterval(() => {
       this.bonjourBrowserTcp.start();
       this.bonjourBrowserUdp.start();
+      this.bonjourBrowserhttp.start();
     }, 1000 * 5); 
   }
 
@@ -80,6 +91,7 @@ class BonjourSensor extends Sensor {
     }
     
     if(this.hostCache[ipv4Addr]) { // do not process same host in a short time
+      log.info("Ignoring duplicated bonjour services from same ip:", ipv4Addr, {});
       return;
     }
     

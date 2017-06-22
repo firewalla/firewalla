@@ -953,7 +953,6 @@
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/css/highlight.default.css" afterPath="" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/hook/DeviceStatusUpdateHook.js" afterPath="$PROJECT_DIR$/hook/DeviceStatusUpdateHook.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/HostTool.js" afterPath="$PROJECT_DIR$/net2/HostTool.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" />
@@ -987,7 +986,6 @@
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sensor/BonjourSensor.js" afterPath="$PROJECT_DIR$/sensor/BonjourSensor.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sensor/UPNPSensor.js" afterPath="$PROJECT_DIR$/sensor/UPNPSensor.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -1056,8 +1054,8 @@
       <file leaf-file-name="BonjourSensor.js" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/sensor/BonjourSensor.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="426">
-              <caret line="141" column="63" lean-forward="true" selection-start-line="141" selection-start-column="63" selection-end-line="141" selection-end-column="63" />
+            <state relative-caret-position="319">
+              <caret line="100" column="32" lean-forward="true" selection-start-line="100" selection-start-column="32" selection-end-line="100" selection-end-column="32" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -1132,7 +1130,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>DNS:QUERY:RESOLVED</find>
       <find>bin/dev</find>
       <find>resetssh</find>
       <find>_adblock</find>
@@ -1162,6 +1159,7 @@
       <find>ipv4</find>
       <find>callback</find>
       <find>mergedHost</find>
+      <find>bonjourBrowserUdp</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -1520,12 +1518,12 @@
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
       <workItem from="1486021488065" duration="29306000" />
-      <workItem from="1498062649774" duration="15233000" />
+      <workItem from="1498062649774" duration="15699000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="138310000" />
+    <option name="totallyTimeSpent" value="138776000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1979,8 +1977,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/sensor/BonjourSensor.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="426">
-          <caret line="141" column="63" lean-forward="true" selection-start-line="141" selection-start-column="63" selection-end-line="141" selection-end-column="63" />
+        <state relative-caret-position="319">
+          <caret line="100" column="32" lean-forward="true" selection-start-line="100" selection-start-column="32" selection-end-line="100" selection-end-column="32" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>
