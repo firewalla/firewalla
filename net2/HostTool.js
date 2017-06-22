@@ -90,6 +90,10 @@ class HostTool {
   }
   
   updateMACKey(host) {
+    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
+      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    }
+    
     let key = this.getMacKey(host.mac);
     return rclient.hmsetAsync(key, host)
       .then(() => {
@@ -100,6 +104,16 @@ class HostTool {
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
+  
+  cleanupData(data) {
+    Object.keys(data).forEach((key) => {
+      if(data[key] == undefined) {
+        console.log('deleting');
+        delete data[key];
+      }
+    })
+  }
+  
   deleteHost(ipv4) {
     return rclient.delAsync(this.getHostKey(ipv4));
   }
