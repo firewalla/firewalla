@@ -79,18 +79,18 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    if(hostCache[ipv4Addr]) { // do not process same host in a short time
+    if(this.hostCache[ipv4Addr]) { // do not process same host in a short time
       return;
     }
     
-    hostCache[ipv4Addr] = 1;
+    this.hostCache[ipv4Addr] = 1;
     setTimeout(() => {
-      delete hostCache[ipv4Addr];
+      delete this.hostCache[ipv4Addr];
     }, 5 * 1000 * 60); // 5 mins
     
     log.info("Found a bonjour service from host:", ipv4Addr, {});
     
-    this.hostTool.ipv4Exists(ipv4)
+    this.hostTool.ipv4Exists(ipv4Addr)
       .then((found) => {
         if(!found) {
           sem.emitEvent("NewDeviceWithIPOnly", service);
@@ -100,14 +100,14 @@ class BonjourSensor extends Sensor {
           // existing device, updating information
           
           this.hostTool
-            .getIPv4Entry(ipv4)
+            .getIPv4Entry(ipv4Addr)
             .then((data) => {
               let mac = data.mac;
 
               sem.emitEvent("DeviceStatusUpdate", {
-                uid: ipv4,
-                ipv4Addr: ipv4,
-                ipv4: ipv4,
+                uid: ipv4Addr,
+                ipv4Addr: ipv4Addr,
+                ipv4: ipv4Addr,
                 firstFoundTimestamp: Date.now() / 1000,
                 bname: service.name,
                 host: service.host,
