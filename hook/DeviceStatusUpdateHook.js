@@ -34,10 +34,14 @@ class DeviceStatusUpdateHook extends Hook {
   
   run() {
     sem.on("DeviceStatusUpdate", (event) => {
-      this.updateIPv6entries(event.ipv6Addrs, (err) => { // ignore err
-        hostTool.getIPv4Entry(event.ipv4Addr)
-          .then((host) => {
-            let mergedHost = hostTool.mergeHosts(host, event);
+      let host = event.host;
+      if(!host)
+        return;
+      
+      this.updateIPv6entries(host.ipv6Addrs, (err) => { // ignore err
+        hostTool.getIPv4Entry(host.ipv4Addr)
+          .then((oldHost) => {
+            let mergedHost = hostTool.mergeHosts(oldHost, host);
             hostTool.updateHost(mergedHost)
               .then(() => {
               log.info("Update host info for device ", mergedHost.name, "(", mergedHost.uid, ")", {});

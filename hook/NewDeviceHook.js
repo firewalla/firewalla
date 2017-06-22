@@ -139,7 +139,9 @@ class NewDeviceHook extends Hook {
         .then((result) => {
           if(result) {
             log.info("MAC Address", mac, " already exists, updating backup name");
-            sem.emitEvent("RefreshMacBackupName", {
+            sem.emitEvent({
+              type: "RefreshMacBackupName",
+              message: "Update device backup name via MAC Address",
               mac:mac,
               name: name
             });
