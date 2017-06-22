@@ -93,7 +93,11 @@ class BonjourSensor extends Sensor {
     this.hostTool.ipv4Exists(ipv4)
       .then((found) => {
         if(!found) {
-          sem.emitEvent("NewDeviceWithIPOnly", service);
+          sem.emitEvent({
+            type: "NewDeviceWithIPOnly",
+            message: "found a new device via bonjour",
+            service: service
+          });
           return;
           
         } else {
@@ -104,17 +108,20 @@ class BonjourSensor extends Sensor {
             .then((data) => {
               let mac = data.mac;
 
-              sem.emitEvent("DeviceStatusUpdate", {
-                uid: ipv4,
-                ipv4Addr: ipv4,
-                ipv4: ipv4,
-                firstFoundTimestamp: Date.now() / 1000,
-                bname: service.name,
-                host: service.host,
-                ipv6Addr: service.ipv6Addrs,
-                mac: mac
+              sem.emitEvent({
+                type: "DeviceStatusUpdate",
+                message: "Update device status via bonjour", 
+                host: {
+                  uid: ipv4,
+                  ipv4Addr: ipv4,
+                  ipv4: ipv4,
+                  firstFoundTimestamp: Date.now() / 1000,
+                  bname: service.name,
+                  host: service.host,
+                  ipv6Addr: service.ipv6Addrs,
+                  mac: mac
+                }
               });
-              
             })
             .catch((err) => {
             // do nothing if ip address not found in redis
