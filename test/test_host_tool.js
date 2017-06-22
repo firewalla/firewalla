@@ -28,9 +28,7 @@ let object = {
 
 hostTool.cleanupData(object);
 
-console.log(object);
-
-expect(object.a).to.be.null;
+expect(Object.keys(object).length).to.equal(1)
 expect(object.b).to.equal(1);
 
 setTimeout(() => {

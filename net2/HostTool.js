@@ -83,6 +83,9 @@ class HostTool {
     if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
+    
+    this.cleanupData(host);
+    
     return rclient.hmsetAsync(key, host)
       .then(() => {
         return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
@@ -93,6 +96,8 @@ class HostTool {
     if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
+
+    this.cleanupData(host);
     
     let key = this.getMacKey(host.mac);
     return rclient.hmsetAsync(key, host)
@@ -108,7 +113,6 @@ class HostTool {
   cleanupData(data) {
     Object.keys(data).forEach((key) => {
       if(data[key] == undefined) {
-        console.log('deleting');
         delete data[key];
       }
     })
