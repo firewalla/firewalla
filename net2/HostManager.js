@@ -869,7 +869,7 @@ class Host {
             json.flowsummary = this.flowsummary;
         }
 
-        json.macVendor = this.name();
+       // json.macVendor = this.name();
 
         return json;
     }

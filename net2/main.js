@@ -162,12 +162,14 @@ function run() {
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
 
-      pm2.enforceAllPolicies()
-        .then(() => {
-          log.info("All existing policy rules are applied");
-        }).catch((err) => {
+      setTimeout(() => {
+        pm2.enforceAllPolicies()
+          .then(() => {
+            log.info("All existing policy rules are applied");
+          }).catch((err) => {
           log.error("Failed to apply some policy rules: ", err, {});
         });
+      }, 1000 * 10); // delay for 10 seconds
     });
 
   },1000*2);

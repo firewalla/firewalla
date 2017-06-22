@@ -28,6 +28,8 @@ let sysManager = new SysManager('info');
 
 let async = require('async');
 
+let l2 = require('../util/Layer2.js');
+
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
 // 2. Update info for old devices
@@ -35,9 +37,6 @@ let async = require('async');
 class BonjourSensor extends Sensor {
   constructor() {
     super();
-
-    let HostTool = require('../net2/HostTool')
-    this.hostTool = new HostTool();
     
     this.hostCache = {};
   }
@@ -83,6 +82,26 @@ class BonjourSensor extends Sensor {
     }, 1000 * 5); 
   }
 
+  // do not process same host in a short time
+  isDup(service) {
+    let key = service.ipv4Addr;
+    if(!key) {
+      return true;
+    }
+    
+    if(this.hostCache[key]) {
+      log.info("Ignoring duplicated bonjour services from same ip:", key, {});
+      return true;
+    }
+
+    this.hostCache[key] = 1;
+    setTimeout(() => {
+      delete this.hostCache[key];
+    }, 5 * 1000 * 60); // 5 mins
+    
+    return false;
+  }
+  
   processService(service) {
     let ipv4Addr = service.ipv4Addr;
 
@@ -90,65 +109,31 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    if(this.hostCache[ipv4Addr]) { // do not process same host in a short time
-      log.info("Ignoring duplicated bonjour services from same ip:", ipv4Addr, {});
-      return;
-    }
-    
-    this.hostCache[ipv4Addr] = 1;
-    setTimeout(() => {
-      delete this.hostCache[ipv4Addr];
-    }, 5 * 1000 * 60); // 5 mins
-    
     log.info("Found a bonjour service from host:", ipv4Addr, {});
-    
-    this.hostTool.ipv4Exists(ipv4Addr)
-      .then((found) => {
-        if(!found) {
-          sem.emitEvent({
-            type: "NewDeviceWithIPOnly",
-            message: "found a new device via bonjour",
-            service: service
-          });
-          return;
-          
-        } else {
-          // existing device, updating information
-          
-          this.hostTool
-            .getIPv4Entry(ipv4Addr)
-            .then((data) => {
-              let mac = data.mac;
 
-              // to update host:ip4:...
-              sem.emitEvent({
-                type: "DeviceStatusUpdate",
-                message: "Update device status via bonjour", 
-                host: {
-                  uid: ipv4Addr,
-                  ipv4Addr: ipv4Addr,
-                  ipv4: ipv4Addr,
-                  lastActiveTimestamp: Date.now() / 1000,
-                  bname: service.name,
-                  host: service.host,
-                  ipv6Addr: service.ipv6Addrs,
-                  mac: mac
-                }
-              });
-              
-              // to update host:mac:...
-              sem.emitEvent({
-                type: "RefreshMacBackupName",
-                message: "Update device backup name via MAC Address",
-                mac:mac,
-                name: service.name
-              });
-            })
-            .catch((err) => {
-            // do nothing if ip address not found in redis
-          })
-        }
+    l2.getMAC(ipv4Addr, (err, mac) => {
+      
+      if(err) {
+        // not found, ignore this host
+        log.error("Not able to found mac address for host:", ipv4Addr);
+        return;
+      }
+
+      let host = {
+        ipv4: ipv4Addr,
+        ipv4Addr: ipv4Addr,
+        mac: mac,
+        bname: service.name,
+        ipv6Addr: service.ipv6addr
+      };
+      
+      sem.emitEvent({
+        type: "DeviceUpdate",
+        message: "Found a device via bonjour",
+        host: host
       })
+      
+    });
   }
 
   getDeviceName(service) {
@@ -185,12 +170,16 @@ class BonjourSensor extends Sensor {
       }
     }
 
-    this.processService({
+    let s = {
       name: this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       host: service.host
-    });
+    };
+    
+    if(!this.isDup(s)) {
+      this.processService(s);
+    }
   }
 }
 

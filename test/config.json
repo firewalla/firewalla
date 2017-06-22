@@ -1,71 +1,106 @@
 {
-    "version": 1.33,
-    "discovery": {
-      "networkInterfaces": ["eth0","wlan0"]
-    },
-    "iptables": {
-       "defaults": [
-          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
-          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
-       ]
-    },
+  "version": 1.80,
+  "cacheInit": true,
+  "discovery": {
+    "networkInterfaces": ["eth0","eth0:0","wlan0"]
+  },
+  "iptables": {
+    "defaults": [
+      "sudo sudo iptables -t nat -A POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
+      "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+      "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+      "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",
+      "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
+    ]
+  },
   "monitoringInterface": "eth0",
+  "monitoringInterface2": "eth0:0",
+  "newSpoof": true,
+  "secondaryInterface": {
+    "intf":"eth0:0",
+    "ip":"192.168.218.1/24",
+    "ipsubnet":"192.168.218.0/24",
+    "ipnet":"192.168.218",
+    "ipmask":"255.255.255.0",
+    "ip2":"192.168.168.1/24",
+    "ipsubnet2":"192.168.168.0/24",
+    "ipnet2":"192.168.168",
+    "ipmask2":"255.255.255.0"
+  },
+  "dhcp": {
+    "leaseTime": "24h"
+  },
   "sysInfo": {
-    "tailNum": 2
+    "tailNum": 100
+  },
+  "sensors": {
+    "DHCPSensor": {},
+    "UPNPSensor": {},
+    "BonjourSensor": {}
+  },
+  "hooks": {
+    "NewDeviceHook": {},
+    "RefreshMacBackupNameHook": {},
+    "DeviceStatusUpdateHook": {},
+    "DeviceHook": {}
   },
   "bro": {
-      "notice" : {
-         "monitor" : {
-         },
-         "ignore" : {
-            "SSL::Invalid_Server_Cert":"ignore",
-            "PacketFilter::Dropped_Packets":"ignore"
-         },
-         "path" : "/blog/current/notice.log",
-         "expires": 604800
+    "notice" : {
+      "monitor" : {
       },
-      "intel" : {
-         "path": "/blog/current/intel.log",
-         "expires": 604800,
-         "ignore" : {
-           "none":"ignore"
-         }
+      "ignore" : {
+        "SSL::Invalid_Server_Cert":"ignore",
+        "PacketFilter::Dropped_Packets":"ignore",
+        "Scan::Address_Scan":"ignore",
+        "Traceroute::Detected":"ignore",
+        "Weird::Activity":"ignore"
       },
-      "dns": {
-         "path": "/blog/current/dns.log",
-         "expires": 43200
-      },
-      "software": {
-         "path": "/blog/current/software.log",
-         "expires": 604800
-      },
-      "http": {
-         "path": "/blog/current/http.log",
-         "expires": 3600
-      },
-      "ssl": {
-         "path": "/blog/current/ssl.log",
-         "expires": 43200
-      },
-      "conn": {
-         "path": "/blog/current/conn.log",
-         "flowstashExpires": 1800,
-         "expires": 86400
-      },
-      "ssh": {
-         "path": "/blog/current/ssh.log",
-         "expires": 86400
-      },
-      "x509": {
-         "path": "/blog/current/x509.log",
-         "expires": 7200
-      },
-      "knownHosts": {
-         "path": "/blog/current/known_hosts.log",
-         "expires": 3600
-      },
-      "userAgent": {
-         "expires": 604800
+      "path" : "/blog/current/notice.log",
+      "expires": 604800
+    },
+    "intel" : {
+      "path": "/blog/current/intel.log",
+      "expires": 604800,
+      "ignore" : {
+        "none":"ignore"
       }
+    },
+    "dns": {
+      "path": "/blog/current/dns.log",
+      "expires": 100000
+    },
+    "software": {
+      "path": "/blog/current/software.log",
+      "expires": 604800
+    },
+    "http": {
+      "path": "/blog/current/http.log",
+      "expires": 1800
+    },
+    "ssl": {
+      "path": "/blog/current/ssl.log",
+      "expires": 43200
+    },
+    "conn": {
+      "path": "/blog/current/conn.log",
+      "pathdev": "/blog/current/conndev.log",
+      "flowstashExpires": 900,
+      "expires": 86400
+    },
+    "ssh": {
+      "path": "/blog/current/ssh.log",
+      "expires": 86400
+    },
+    "x509": {
+      "path": "/blog/current/x509.log",
+      "expires": 7200
+    },
+    "knownHosts": {
+      "path": "/blog/current/known_hosts.log",
+      "expires": 3600
+    },
+    "userAgent": {
+      "expires": 604800
     }
+  }
 }

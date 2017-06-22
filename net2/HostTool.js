@@ -56,6 +56,13 @@ class HostTool {
     let key = "host:ip4:" + ip;
     return rclient.hgetallAsync(key);
   }
+  
+  getMACEntry(mac) {
+    if(!mac)
+      return Promise.reject("invalid mac address");
+    
+    return rclient.hgetallAsync(this.getMacKey(mac));
+  }
 
   ipv6Exists(ip) {
     return rclient.keysAsync("host:ip6:" + ip)
@@ -72,11 +79,36 @@ class HostTool {
   
   updateHost(host) {
     let uid = host.uid;
-    let key = "host:ip4:" + uid;
-    if(host.ipv6Addr.constructor.name === "Array") {
+    let key = this.getHostKey(uid);
+    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
-    return rclient.hmsetAsync(key, host);
+    return rclient.hmsetAsync(key, host)
+      .then(() => {
+        return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
+      });
+  }
+  
+  updateMACKey(host) {
+    let key = this.getMacKey(host.mac);
+    return rclient.hmsetAsync(key, host)
+      .then(() => {
+        return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+      })
+  }
+  
+  getHostKey(ipv4) {
+    return "host:ip4:" + ipv4;
+  }
+  deleteHost(ipv4) {
+    return rclient.delAsync(this.getHostKey(ipv4));
+  }
+  
+  getMacKey(mac) {
+    return "host:mac:" + mac;
+  }
+  deleteMac(mac) {
+    return rclient.delAsync(this.getMacKey(mac));
   }
 
   mergeHosts(oldhost, newhost) {

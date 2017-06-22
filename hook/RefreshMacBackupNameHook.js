@@ -29,8 +29,6 @@ class RefreshMacBackupNameHook extends Hook {
     sem.on('RefreshMacBackupName', (event) => {
       let mac = event.mac;
       let name = event.name;
-
-      console.log("RefreshMacBackupName", mac, name);
       
       // ignore unknown updates
       if(name.toLowerCase() === "unknown")
