@@ -124,9 +124,11 @@ class BonjourSensor extends Sensor {
         ipv4Addr: ipv4Addr,
         mac: mac,
         bname: service.name,
-        ipv6Addr: service.ipv6addr
       };
       
+      if(service.ipv6Addrs)
+        host.ipv6Addr =  service.ipv6Addrs;
+
       sem.emitEvent({
         type: "DeviceUpdate",
         message: "Found a device via bonjour",

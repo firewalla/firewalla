@@ -84,7 +84,7 @@ function getMAC(ipaddress, cb) {
         
         if (table[l].indexOf(ipaddress + " ") == 0) {
           let mac = table[l].substring(41, 58);
-          cb(false, mac);
+          cb(false, mac.toUpperCase());
           return;
         }
       }
