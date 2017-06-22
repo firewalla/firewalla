@@ -43,7 +43,7 @@ class UPNPSensor extends Sensor {
               log.error("Failed to update upnp mapping in database: " + err, {});
               return;
             }
-            log.info("UPNP mapping is updated,", results.length, " entries", {});
+            log.info("UPNP mapping is updated,", results.length, "entries", {});
           });
         } else {
           log.info("No upnp mapping found in network");

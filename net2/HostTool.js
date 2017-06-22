@@ -72,6 +72,9 @@ class HostTool {
   updateHost(host) {
     let uid = host.uid;
     let key = "host:ip4:" + uid;
+    if(host.ipv6Addr.constructor.name === "Array") {
+      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    }
     return rclient.hmsetAsync(key, host);
   }
 

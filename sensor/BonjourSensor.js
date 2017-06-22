@@ -139,7 +139,7 @@ class BonjourSensor extends Sensor {
   }
   
   bonjourParse(service) {
-    log.debug("Discover:Bonjour:Parsing:Received", service, {});
+    log.info("Discover:Bonjour:Parsing:Received", service, {});
       if (service == null) {
       return;
     }
@@ -157,7 +157,7 @@ class BonjourSensor extends Sensor {
       if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
         ipv4addr = addr;
       } else if (ip.isV4Format(addr)) {
-        log.info("Discover:Bonjour:Parsing:NotLocakV4Adress", addr);
+        log.info("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
         continue;
       } else if (ip.isV6Format(addr)) {
         ipv6addr.push(addr);
