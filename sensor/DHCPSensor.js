@@ -28,7 +28,7 @@ class DHCPSensor extends Sensor {
     this.cache = {};
   }
   
-  init() {
+  run() {
     let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
     this.dhcpDump = new DhcpDump();
     this.dhcpDump.install((obj)=>{

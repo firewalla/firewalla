@@ -26,6 +26,8 @@ function getMACAndVendor(ipaddress, cb) {
   getMAC(ipaddress, (err, result) => {
     if(err) {
       log.error("Failed to get MAC Address for IP " + host.ipv4Addr + ", err: " + err);
+      cb(err);
+      return;
     } else {
       mac_address = result;
     }

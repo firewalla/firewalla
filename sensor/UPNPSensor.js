@@ -13,14 +13,44 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+let log = require('../net2/logger.js')(__filename);
 
 let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
+let redis = require('redis');
+let rclient = redis.createClient();
+
+var natUpnp = require('nat-upnp');
+
 // TODO: to be completed
 class UPNPSensor extends Sensor {
+  constructor() {
+    super();
+    this.upnpClient = natUpnp.createClient();
+  }
   
+  run() {
+    setInterval(() => {
+      this.upnpClient.getMappings((err, results) => {
+        if (results && results.length >= 0) {
+          let key = "sys:scan:nat";
+          rclient.hmset(key, {
+            upnp: JSON.stringify(results)
+          }, (err, data) => {
+            if(err) {
+              log.error("Failed to update upnp mapping in database: " + err, {});
+              return;
+            }
+            log.info("UPNP mapping is updated,", results.length, " entries", {});
+          });
+        } else {
+          log.info("No upnp mapping found in network");
+        }
+      });
+    }, 60 * 1000); // check every minute
+  }
 }
 
+module.exports = UPNPSensor;

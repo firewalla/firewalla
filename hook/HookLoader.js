@@ -16,16 +16,28 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-let NewDeviceHook = require('./NewDeviceHook.js');
+let config = require('../net2/config.js').getConfig();
 
 let hooks = [];
 
 function initHooks() {
-  hooks.push(new NewDeviceHook());
 
-  hooks.forEach((h) => h.init());
+  let hookConfigs = config.hooks;
+
+  if(!hookConfigs)
+    return;
+
+  Object.keys(hookConfigs).forEach((hookName) => {
+    let Hook = require('./' + hookName + '.js');
+    hooks.push(new Hook());
+  });
+}
+
+function run() {
+  hooks.forEach((h) => h.run());
 }
 
 module.exports = {
-  initHooks:initHooks
+  initHooks:initHooks,
+  run:run
 };

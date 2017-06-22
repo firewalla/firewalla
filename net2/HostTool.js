@@ -1,0 +1,176 @@
+/*    Copyright 2016 Firewalla LLC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict';
+
+let log = require('./logger.js')(__filename);
+
+let redis = require('redis');
+let rclient = redis.createClient();
+
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+let SysManager = require('./SysManager.js');
+let sysManager = new SysManager('info');
+
+let instance = null;
+class HostTool {
+  constructor() {
+    if(!instance) {
+      instance = this;
+    }
+    return instance;
+  }
+
+  macExists(mac) {
+    return rclient.keysAsync("host:mac:" + mac)
+      .then((results) => {
+        return results.length > 0;
+      });
+  }
+
+  ipv4Exists(ip) {
+    return rclient.keysAsync("host:ip4:" + ip)
+      .then((results) => {
+        return results.length > 0;
+      });
+  }
+  
+  getIPv4Entry(ip) {
+    if(!ip)
+      return Promise.reject("invalid ip addr");
+    
+    let key = "host:ip4:" + ip;
+    return rclient.hgetallAsync(key);
+  }
+
+  ipv6Exists(ip) {
+    return rclient.keysAsync("host:ip6:" + ip)
+      .then((results) => {
+        return results.length > 0;
+      });
+  }
+
+  updateBackupName(mac, name) {
+    let key = "host:mac:" + mac;
+    return rclient.hsetAsync(key, "bname", name)
+  }
+  
+  updateHost(host) {
+    let uid = host.uid;
+    let key = "host:ip4:" + uid;
+    return rclient.hmsetAsync(key, host);
+  }
+
+  mergeHosts(oldhost, newhost) {
+    let changeset = {};
+    for (let i in oldhost) {
+      if (newhost[i] != null) {
+        if (oldhost[i] != newhost[i]) {
+          changeset[i] = newhost[i];
+        }
+      }
+    }
+    for (let i in newhost) {
+      if (oldhost[i] == null) {
+        changeset[i] = newhost[i];
+      }
+    }
+    return changeset;
+  }
+  
+  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
+  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
+  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
+  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
+  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
+  
+  
+  linkMacWithIPv6(v6addr, mac, callback) {
+    require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
+    });
+    log.info("Discovery:AddV6Host:", v6addr, mac);
+    mac = mac.toUpperCase();
+    let v6key = "host:ip6:" + v6addr;
+    log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
+    sysManager.setNeighbor(v6addr);
+    rclient.hgetall(v6key, (err, data) => {
+      log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, data, err);
+      if (err == null) {
+        if (data != null) {
+          data.mac = mac;
+          data.lastActiveTimestamp = Date.now() / 1000;
+        } else {
+          data = {};
+          data.mac = mac;
+          data.lastActiveTimestamp = Date.now() / 1000;
+          data.firstFoundTimestamp = data.lastActiveTimestamp;
+        }
+        rclient.hmset(v6key, data, (err, result) => {
+          log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
+          let mackey = "host:mac:" + mac;
+          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
+          rclient.hgetall(mackey, (err, data) => {
+            log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
+            if (err == null) {
+              if (data != null) {
+                let ipv6array = [];
+                if (data.ipv6) {
+                  ipv6array = JSON.parse(data.ipv6);
+                }
+
+                // only keep around 5 ipv6 around
+                ipv6array = ipv6array.slice(0,8)
+                let oldindex = ipv6array.indexOf(v6addr);
+                if (oldindex != -1) {
+                  ipv6array.splice(oldindex,1);
+                }
+                ipv6array.unshift(v6addr);
+
+                data.mac = mac.toUpperCase();
+                data.ipv6 = JSON.stringify(ipv6array);
+                data.ipv6Addr = JSON.stringify(ipv6array);
+                //v6 at times will discver neighbors that not there ... 
+                //so we don't update last active here
+                //data.lastActiveTimestamp = Date.now() / 1000;
+              } else {
+                data = {};
+                data.mac = mac.toUpperCase();
+                data.ipv6 = JSON.stringify([v6addr]);;
+                data.ipv6Addr = JSON.stringify([v6addr]);;
+                data.lastActiveTimestamp = Date.now() / 1000;
+                data.firstFoundTimestamp = data.lastActiveTimestamp;
+              }
+              log.debug("Wring Data:", mackey, data);
+              rclient.hmset(mackey, data, (err, result) => {
+                callback(err, null);
+              });
+            } else {
+              log.error("Discover:v6Neighbor:Scan:Find:Error", err);
+              callback(null, null);
+            }
+          });
+
+        });
+      } else {
+        log.error("!!!!!!!!!!! Discover:v6Neighbor:Scan:Find:Error", err);
+        callback(null, null);
+      }
+    });
+  }
+}
+
+module.exports = HostTool;

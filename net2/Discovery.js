@@ -21,7 +21,7 @@ var network = require('network');
 var linux = require('../util/linux.js');
 var Nmap = require('./Nmap.js');
 var instances = {};
-var bonjour = require('bonjour')();
+
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -44,9 +44,10 @@ let Alarm = require('../alarm/Alarm.js');
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
 
-var async = require('async');
+let async = require('async');
 
-var natUpnp = require('nat-upnp');
+let HostTool = require('../net2/HostTool.js');
+let hostTool = new HostTool();
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -106,7 +107,6 @@ module.exports = class {
             });
           }
 
-          this.upnpClient = natUpnp.createClient();
           this.hostCache = {};
         }
     
@@ -127,47 +127,12 @@ module.exports = class {
                         this.nmap = new Nmap(intf.subnet,false);
                     }
                     this.scan(intf.subnet, fast, (err, result) => {
-                      this.bonjourWatch();
                       this.neighborDiscoveryV6(intf.name,intf);
                       callback();
                     });
                 }
             }
         });
-  }
-
-  discoverIP(ip, callback) {
-    callback = callback || function() {}
-
-    log.debug("Prepare to scan ip", ip, {});
-    if (this.nmap == null) {
-      this.nmap = new Nmap(ip,false);
-    }
-
-    log.info("Start scanning ip", ip, {});
-
-    this.nmap.scan(ip, true, (err, hosts, ports) => {
-      if(err) {
-        log.error("failed to scan: " + err);
-        return;
-      }
-      
-      this.hosts = [];
-
-      let found = null;
-      
-      for (let h in hosts) {
-        let host = hosts[h];
-        if(host.ipv4Addr && host.ipv4Addr === ip) {
-          found = host;
-          callback(null, found);
-        }
-      }
-
-      if(!found) {
-        callback(null, null);
-      }
-    });    
   }
   
   discoverMac(mac, callback) {
@@ -238,8 +203,6 @@ module.exports = class {
         setInterval(() => {
             this.publicIp();
         }, 1000 * 60 * 60*24);
-     
-        this.natScan();
     }
 
     /**
@@ -250,198 +213,7 @@ module.exports = class {
         rclient.quit();
         alarmManager.release();
         sysManager.release();
-        bonjour.destroy();
         log.debug("Calling release function of Discovery");
-    }
-    
-    natScan() {
-        setInterval(() => {
-            this.upnpClient.getMappings(function (err, results) {
-                if (results && results.length >= 0) {
-                    let key = "sys:scan:nat";
-                    rclient.hmset(key, {
-                        upnp: JSON.stringify(results)
-                    }, (err, data) => {
-                        log.info("Discover:NatScan", results);
-                    });
-                }
-            });
-        }, 60 * 1000);
-    }
-
-    bonjourParse(service) {
-        log.debug("Discover:Bonjour:Parsing:Received", service, {});
-        if (service == null) {
-            return;
-        }
-        if (service.addresses == null || service.addresses.length == 0 || service.referer.address == null) {
-            return;
-        }
-
-
-
-        let ipv4addr = null;
-        let ipv6addr = [];
-
-        for (let i in service.addresses) {
-            let addr = service.addresses[i];
-            if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
-                ipv4addr = addr;
-            } else if (ip.isV4Format(addr)) {
-                log.info("Discover:Bonjour:Parsing:NotLocakV4Adress", addr);
-                continue;
-            } else if (ip.isV6Format(addr)) {
-                ipv6addr.push(addr);
-            }
-
-        }
-
-
-        if (ipv4addr == null) {
-            //     ipv4addr = service.referer.address;
-        }
-
-        log.debug("Discover:Bonjour:Parsing:Parsing", ipv4addr, ipv6addr, service, {});
-
-
-        // Future need to scan software as well ... the adverisement from bonsjour also say something about ssh ...
-
-        if (ipv4addr) {
-            this.findHostWithIP(ipv4addr, (key, err, data) => {
-                let now = Date.now() / 1000;
-                let name = service.host.replace(".local", "");
-                if (name.length <= 1) {
-                    name = service.name;
-                }
-
-                if (key == null) {
-                    //    key = "host:ip4:"+ipv4addr;
-                    if (name != null) {
-                        this.hostCache[ipv4addr] = {
-                            'name': name,
-                            'expires': now + 60 * 5
-                        };
-                        log.debug("Discovery:Nmap:HostCache:Insert", this.hostCache[ipv4addr]);
-                    }
-                    log.error("Discover:Bonjour:Parsing:NotFound:", ipv4addr, service);
-                    return;
-                }
-
-                let host = {
-                    uid: ipv4addr,
-                    ipv4Addr: ipv4addr,
-                    ipv4: ipv4addr,
-                //    lastActiveTimestamp: now,
-                    firstFoundTimestamp: now,
-                    bname: name,
-                    host: service.host
-                };
-                if (ipv6addr.length > 0) {
-                    host.ipv6Addr = JSON.stringify(ipv6addr);
-                }
-
-
-                async.eachLimit(ipv6addr, 1, (o, cb) => {
-                    if (data != null) {
-                        this.addV6Host(o, data.mac, (err, data) => {
-                            cb();
-                        });
-                    } else {
-                        cb();
-                    }
-                }, (err) => {
-                    log.debug("Discovery:Bonjour:Redis:Search", key, data, {});
-                    if (err == null) {
-                        if (data != null) {
-                            let changeset = this.mergeHosts(data, host);
-                        // JERRRY    changeset['lastActiveTimestamp'] = Date.now() / 1000;
-                            changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
-                            log.debug("Discovery:Bonjour:Redis:Merge", key, changeset, {});
-                            rclient.hmset(key, changeset, (err, result) => {
-                                if (err) {
-                                    log.error("Discovery:Nmap:Update:Error", err);
-                                }
-                            });
-                        } else {
-                            rclient.hmset(key, host, (err, result) => {
-                                if (err) {
-                                    log.error("Discovery:Nmap:Create:Error", err);
-                                } else {
-                                  // Found a new host via Bonjour Scan
-
-                                  sem.emitEvent({
-                                    type: "NewDeviceWithIPOnly",
-                                    ipv4Addr: host.ipv4Addr,
-                                    name: host.bname,
-                                    message: "a new device found by bonjour"
-                                  });
-                                  
-                                  let d = JSON.parse(JSON.stringify(host));
-                                  let actionobj = {
-                                    title: "New Host",
-                                    actions: ["hblock","ignore"],
-                                    target: host.ipv4Addr,
-                                  }
-                                  alarmManager.alarm(host.ipv4Addr, "newhost", "info", "0", d, actionobj, (err,alarm)=>{
-//                                    this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
-                                  });
-                                }
-                            });
-                        }
-                    } else {
-                        log.error("Discovery:Nmap:Redis:Error", err);
-                    }
-                });
-
-            });
-        }
-    }
-
-    bonjourWatch() {
-        log.info("Bonjour Watch Starting");
-        if (this.bonjourBrowserTcp == null) {
-            this.bonjourBrowserTcp = bonjour.find({
-                protocol: 'tcp'
-            }, (service) => {
-                this.bonjourParse(service);
-            });
-            this.bonjourBrowserUdp = bonjour.find({
-                protocol: 'udp'
-            }, (service) => {
-                this.bonjourParse(service);
-            });
-            this.bonjourTimer = setInterval(() => {
-                log.info("Bonjour Watch Updating");
-                this.bonjourBrowserTcp.update();
-                this.bonjourBrowserUdp.update();
-            }, 1000 * 60 * 5);
-        }
-
-        this.bonjourBrowserTcp.stop();
-        this.bonjourBrowserUdp.stop();
-
-        this.bonjourTimer = setInterval(() => {
-            this.bonjourBrowserTcp.start();
-            this.bonjourBrowserUdp.start();
-        }, 1000 * 5);
-
-    }
-
-    mergeHosts(oldhost, newhost) {
-        let changeset = {};
-        for (let i in oldhost) {
-            if (newhost[i] != null) {
-                if (oldhost[i] != newhost[i]) {
-                    changeset[i] = newhost[i];
-                }
-            }
-        }
-        for (let i in newhost) {
-            if (oldhost[i] == null) {
-                changeset[i] = newhost[i];
-            }
-        }
-        return changeset;
     }
 
     is_interface_valid(netif) {
@@ -534,20 +306,6 @@ module.exports = class {
         return foundHosts;
     }
 
-    findHostWithIP(ip, callback) {
-        let key = "host:ip4:" + ip;
-        log.debug("Discovery:FindHostWithIP", key, ip);
-        rclient.hgetall(key, (err, data) => {
-            if (data == null) {
-                callback(null, null, null);
-                return;
-            }
-            let mackey = "host:mac:" + data.mac;
-            rclient.hgetall(mackey, (err, data) => {
-                callback(mackey, err, data);
-            });
-        });
-    }
 
   scan(subnet, fast, callback) {
     if(this.nmap == null) {
@@ -622,7 +380,7 @@ module.exports = class {
         log.debug("Discovery:Nmap:Redis:Search", key, data, {});
         if (err == null) {
           if (data != null) {
-            let changeset = this.mergeHosts(data, host);
+            let changeset = hostTool.mergeHosts(data, host);
             changeset['lastActiveTimestamp'] = Math.floor(Date.now() / 1000);
             if(data.firstFoundTimestamp != null) {
               changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
