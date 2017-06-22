@@ -65,6 +65,7 @@ class HostTool {
   }
 
   updateBackupName(mac, name) {
+    log.info("Updating backup name for mac:", mac, {});
     let key = "host:mac:" + mac;
     return rclient.hsetAsync(key, "bname", name)
   }
