@@ -1943,11 +1943,4 @@ module.exports = class {
             callback(null,ignored );
         });
     }
-
-  macExists(mac) {
-    return rclient.keysAsync("host:mac:" + mac)
-      .then((results) => {
-        return results.length > 0;
-      });
-  }
 }

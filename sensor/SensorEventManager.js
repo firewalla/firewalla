@@ -21,6 +21,10 @@ const EventEmitter = require('events');
 let instance = null;
 
 class SensorEventManager extends EventEmitter {
+  constructor() {
+    super();
+    this.setMaxListeners(0);
+  }
   emitEvent(event) {
     log.info("New Event: " + event.type + " -- " + event.message);
     this.emit(event.type, event);

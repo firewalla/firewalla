@@ -77,9 +77,11 @@ function run() {
 
   hl = require('../hook/HookLoader.js');
   hl.initHooks();
+  hl.run();
 
   sl = require('../sensor/SensorLoader.js');
   sl.initSensors();
+  sl.run();
   
   var VpnManager = require('../vpn/VpnManager.js');
 

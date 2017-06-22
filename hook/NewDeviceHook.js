@@ -113,14 +113,17 @@ class NewDeviceHook extends Hook {
     });
   }
   
-  init() {
+  run() {
     sem.on('NewDevice', (event) => {
       let mac = event.mac;
+      let name = event.name;
+      let ip = event.ipv4Addr;
+      
       this.getVendorInfo(mac, (err, vendor) => {
         let v = "Unknown";
         if(err == null && vendor)
           v = vendor;
-        this.createAlarm(event.name, event.ipv4Addr, event.mac, v);
+        this.createAlarm(name, ip, mac, v);
       });
     });
     
@@ -128,15 +131,18 @@ class NewDeviceHook extends Hook {
 
       let mac = event.mac;
       let name = event.name; // name should be fetched via DHCPDUMP
-     
-      // Check if this mac is already found in redis, skip if so
-      let HostManager = require('../net2/HostManager.js');
-      let hostManager = new HostManager('NewDeviceWithMacOnly', 'client', 'info');
 
-      hostManager.macExists(mac)
+      let HostTool = require('../net2/HostTool')
+      let hostTool = new HostTool();
+
+      hostTool.macExists(mac)
         .then((result) => {
           if(result) {
-            log.info("Ignore dhcp requeast from existing device:" + name + "(" + mac + ")");
+            log.info("MAC Address", mac, " already exists, updating backup name");
+            sem.emitEvent("RefreshMacBackupName", {
+              mac:mac,
+              name: name
+            });
             return;
           }
 
@@ -151,32 +157,31 @@ class NewDeviceHook extends Hook {
     sem.on('NewDeviceWithIPOnly', (event) => {
       let name = event.name;
       let ip = event.ipv4Addr;
+      let ipv6s = event.ipv6s; // not used for now
 
       if(!name || !ip) {
         log.error("require name and ip for event NewDeviceWithIPOnly");
         return;
       }
 
-      let Discovery = require("../net2/Discovery.js");
-      let d = new Discovery("nmap", null, "info", false);
-
       // get mac address
-      d.discoverIP(ip, (err, result) => {
+      let l2 = require('../util/Layer2.js');
+
+      l2.getMAC(ip, (err, result) => {
         if(err) {
           log.error("Failed to discover device", ip, {});
           return;
         }
-
        
-        if(!result) {
+        if(!result || !result.mac_address) {
           // not found... kinda strange, hack??
           log.warn("New device " + name + " is not found in the network..");
           return;
         }
 
-        if(result.mac) {
+        if(result.mac_address) {
           // macVendor is optional
-          this.createAlarm(name, ip, result.mac, result.macVendor);
+          this.createAlarm(name, ip, result.mac_address, result.macVendor);
         }
       });
     });

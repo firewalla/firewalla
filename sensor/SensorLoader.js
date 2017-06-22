@@ -16,19 +16,31 @@
 
 let log = require('../net2/logger.js')(__filename);
 
-let DHCPSensor = require('./DHCPSensor.js');
+let config = require('../net2/config.js').getConfig();
 
 let sensors = [];
 
 function initSensors() {
-  sensors.push(new DHCPSensor());
+  let sensorConfigs = config.sensors;
 
+  if(!sensorConfigs)
+    return;
+
+  Object.keys(sensorConfigs).forEach((sensorName) => {
+    let fp = './' + sensorName + '.js';
+    let s = require(fp);
+    sensors.push(new s());
+  });  
+}
+
+function run() {
   sensors.forEach((s) => {
     log.info("Installing Sensor:", s.constructor.name, {});
-    s.init();
+    s.run();
   });
 }
 
 module.exports = {
-  initSensors:initSensors
+  initSensors:initSensors,
+  run:run
 };
