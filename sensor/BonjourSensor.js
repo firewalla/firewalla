@@ -120,6 +120,7 @@ class BonjourSensor extends Sensor {
             .then((data) => {
               let mac = data.mac;
 
+              // to update host:ip4:...
               sem.emitEvent({
                 type: "DeviceStatusUpdate",
                 message: "Update device status via bonjour", 
@@ -127,12 +128,20 @@ class BonjourSensor extends Sensor {
                   uid: ipv4Addr,
                   ipv4Addr: ipv4Addr,
                   ipv4: ipv4Addr,
-                  firstFoundTimestamp: Date.now() / 1000,
+                  lastActiveTimestamp: Date.now() / 1000,
                   bname: service.name,
                   host: service.host,
                   ipv6Addr: service.ipv6Addrs,
                   mac: mac
                 }
+              });
+              
+              // to update host:mac:...
+              sem.emitEvent({
+                type: "RefreshMacBackupName",
+                message: "Update device backup name via MAC Address",
+                mac:mac,
+                name: service.name
               });
             })
             .catch((err) => {
@@ -151,7 +160,7 @@ class BonjourSensor extends Sensor {
   }
   
   bonjourParse(service) {
-    log.info("Discover:Bonjour:Parsing:Received", service, {});
+    log.debug("Discover:Bonjour:Parsing:Received", service, {});
       if (service == null) {
       return;
     }

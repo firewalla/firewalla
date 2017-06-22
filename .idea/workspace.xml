@@ -1034,8 +1034,8 @@
       <file leaf-file-name="NewDeviceHook.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="195">
-              <caret line="141" column="25" lean-forward="false" selection-start-line="141" selection-start-column="16" selection-end-line="141" selection-end-column="25" />
+            <state relative-caret-position="176">
+              <caret line="141" column="12" lean-forward="true" selection-start-line="141" selection-start-column="12" selection-end-line="146" selection-end-column="15" />
               <folding />
             </state>
           </provider>
@@ -1054,8 +1054,8 @@
       <file leaf-file-name="BonjourSensor.js" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/sensor/BonjourSensor.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="319">
-              <caret line="100" column="32" lean-forward="true" selection-start-line="100" selection-start-column="32" selection-end-line="100" selection-end-column="32" />
+            <state relative-caret-position="293">
+              <caret line="137" column="14" lean-forward="false" selection-start-line="137" selection-start-column="14" selection-end-line="137" selection-end-column="14" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -1090,8 +1090,8 @@
       <file leaf-file-name="DeviceStatusUpdateHook.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/hook/DeviceStatusUpdateHook.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="741">
-              <caret line="52" column="8" lean-forward="true" selection-start-line="52" selection-start-column="8" selection-end-line="52" selection-end-column="8" />
+            <state relative-caret-position="323">
+              <caret line="45" column="26" lean-forward="false" selection-start-line="45" selection-start-column="26" selection-end-line="45" selection-end-column="26" />
               <folding />
             </state>
           </provider>
@@ -1100,8 +1100,8 @@
       <file leaf-file-name="RefreshMacBackupNameHook.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/hook/RefreshMacBackupNameHook.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="152">
-              <caret line="22" column="0" lean-forward="false" selection-start-line="22" selection-start-column="0" selection-end-line="23" selection-end-column="30" />
+            <state relative-caret-position="472">
+              <caret line="52" column="0" lean-forward="true" selection-start-line="52" selection-start-column="0" selection-end-line="52" selection-end-column="0" />
               <folding />
             </state>
           </provider>
@@ -1110,8 +1110,8 @@
       <file leaf-file-name="HostTool.js" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="262">
-              <caret line="76" column="5" lean-forward="true" selection-start-line="76" selection-start-column="5" selection-end-line="76" selection-end-column="5" />
+            <state relative-caret-position="205">
+              <caret line="71" column="2" lean-forward="false" selection-start-line="71" selection-start-column="2" selection-end-line="71" selection-end-column="2" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -1130,7 +1130,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>bin/dev</find>
       <find>resetssh</find>
       <find>_adblock</find>
       <find>flow:conn</find>
@@ -1158,8 +1157,9 @@
       <find>DeviceStatusUpdateHook</find>
       <find>ipv4</find>
       <find>callback</find>
-      <find>mergedHost</find>
       <find>bonjourBrowserUdp</find>
+      <find>RefreshMacBackupName</find>
+      <find>mergedHost</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -1518,12 +1518,12 @@
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
       <workItem from="1486021488065" duration="29306000" />
-      <workItem from="1498062649774" duration="15699000" />
+      <workItem from="1498062649774" duration="16615000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="138776000" />
+    <option name="totallyTimeSpent" value="139692000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1902,14 +1902,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/hook/RefreshMacBackupNameHook.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="152">
-          <caret line="22" column="0" lean-forward="false" selection-start-line="22" selection-start-column="0" selection-end-line="23" selection-end-column="30" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/sensor/DHCPSensor.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="206">
@@ -1926,14 +1918,6 @@
             <marker date="1498116110000" expanded="false" signature="0:21" ph="/*...*/" />
             <marker date="1498116110000" expanded="true" signature="21788:22731" ph="{...}" />
           </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="195">
-          <caret line="141" column="25" lean-forward="false" selection-start-line="141" selection-start-column="16" selection-end-line="141" selection-end-column="25" />
-          <folding />
         </state>
       </provider>
     </entry>
@@ -1959,26 +1943,42 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="262">
-          <caret line="76" column="5" lean-forward="true" selection-start-line="76" selection-start-column="5" selection-end-line="76" selection-end-column="5" />
+        <state relative-caret-position="205">
+          <caret line="71" column="2" lean-forward="false" selection-start-line="71" selection-start-column="2" selection-end-line="71" selection-end-column="2" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/hook/RefreshMacBackupNameHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="472">
+          <caret line="52" column="0" lean-forward="true" selection-start-line="52" selection-start-column="0" selection-end-line="52" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="176">
+          <caret line="141" column="12" lean-forward="true" selection-start-line="141" selection-start-column="12" selection-end-line="146" selection-end-column="15" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/hook/DeviceStatusUpdateHook.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="741">
-          <caret line="52" column="8" lean-forward="true" selection-start-line="52" selection-start-column="8" selection-end-line="52" selection-end-column="8" />
+        <state relative-caret-position="323">
+          <caret line="45" column="26" lean-forward="false" selection-start-line="45" selection-start-column="26" selection-end-line="45" selection-end-column="26" />
           <folding />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/sensor/BonjourSensor.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="319">
-          <caret line="100" column="32" lean-forward="true" selection-start-line="100" selection-start-column="32" selection-end-line="100" selection-end-column="32" />
+        <state relative-caret-position="293">
+          <caret line="137" column="14" lean-forward="false" selection-start-line="137" selection-start-column="14" selection-end-line="137" selection-end-column="14" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>
