@@ -205,7 +205,7 @@ function getRecentLogs(callback) {
 }
 
 function getTopStats() {
-  return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8');
+  return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
 }
 
 function getTop5Flows(callback) {
