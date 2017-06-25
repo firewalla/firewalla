@@ -33,6 +33,9 @@
   "sysInfo": {
     "tailNum": 100
   },
+  "policy": {
+    "autoBlock": true
+  },
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
