@@ -33,10 +33,17 @@ router.post('/message/:gid',
         res.json({error: 'Initializing Firewalla Device, please try later'});
         return;
       }
-      log.info("================= request from ", req.connection.remoteAddress, " =================");
-      log.info(JSON.stringify(req.body, null, '\t'));
-      log.info("================= request body end =================");
-
+      if(req.body.message && 
+        req.body.message.obj &&
+        req.body.message.obj.data &&
+        req.body.message.obj.data.item === "ping") {
+        log.info("Got a ping"); // ping is too frequent, reduce amount of log
+      } else {
+        log.info("================= request from ", req.connection.remoteAddress, " =================");
+        log.info(JSON.stringify(req.body, null, '\t'));
+        log.info("================= request body end =================");
+      }
+      
       let compressed = req.body.compressed;
 
       var alreadySent = false;

@@ -415,6 +415,12 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+        
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
           type = "mac";
@@ -489,6 +495,12 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
           type = "mac"; // place holder, not going to be matched by any alarm/policy
@@ -562,6 +574,13 @@ module.exports = class {
      this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+
+        
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
@@ -597,6 +616,12 @@ module.exports = class {
     
      this.getAlarm(alarmID)
       .then((alarm) => {
+
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
 
         let eid = alarm.result_exception;
 
