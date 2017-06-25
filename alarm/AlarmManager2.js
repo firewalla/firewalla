@@ -267,7 +267,7 @@ module.exports = class {
 
         if(result) {
           matches.forEach((e) => {
-            log.info("Matched Exception: " + e.rules);
+            log.info("Matched Exception: " + e.eid);
           });
           callback(new Error("alarm is covered by exceptions"));
           return;
