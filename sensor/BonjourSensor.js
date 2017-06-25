@@ -115,7 +115,7 @@ class BonjourSensor extends Sensor {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ipv4Addr);
+        log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
         return;
       }
 
