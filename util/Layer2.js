@@ -68,7 +68,7 @@ function getMAC(ipaddress, cb) {
       errstream += data;
     });
     
-    arp.on('exit', function (code) {
+    arp.on('close', function (code) {
       if (code != 0) {
 	      log.info("Error running arp " + code + " " + errstream);
 	      cb(true, code);
