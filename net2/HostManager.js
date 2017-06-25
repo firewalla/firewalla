@@ -91,29 +91,33 @@ class Host {
         if (this.o.ipv4) {
             this.o.ipv4Addr = this.o.ipv4;
         }
-        this.spoofing = false;
-        sclient.on("message", (channel, message) => {
+
+      this._mark = false;
+      this.parse();
+      
+        if(this.mgr.type === 'server') {
+          this.spoofing = false;
+          sclient.on("message", (channel, message) => {
             this.processNotifications(channel, message);
-        });
-        let c = require('./MessageBus.js');
-        this.subscriber = new c('debug');
-        if (obj != null) {
+          });
+          let c = require('./MessageBus.js');
+          this.subscriber = new c('debug');
+          if (obj != null) {
             this.subscribe(this.o.ipv4Addr, "Notice:Detected");
             this.subscribe(this.o.ipv4Addr, "Intel:Detected");
             this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
-        }
-        this.spoofing = false;
-        this._mark = false;
-        this.parse();
-        /*
-        if (this.o.ipv6Addr) {
-            this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-        }
-        */
-        this.predictHostNameUsingUserAgent();
+          }
+          this.spoofing = false;
 
-        this.loadPolicy(callback);
+          /*
+           if (this.o.ipv6Addr) {
+           this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
+           }
+           */
+          this.predictHostNameUsingUserAgent();
 
+          this.loadPolicy(callback);
+        }
     }
 
     update(obj) {
