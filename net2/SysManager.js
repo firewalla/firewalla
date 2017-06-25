@@ -94,7 +94,7 @@ module.exports = class {
 
   // config loaded && interface discovered
   isConfigInitialized() {
-    return this.config !== null && 
+    return this.config != null && 
       this.config.monitoringInterface && 
       this.config[this.config.monitoringInterface] !== null;
   }
