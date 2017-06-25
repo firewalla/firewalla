@@ -55,6 +55,8 @@ let c = require('../net2/MessageBus.js');
 
 let extend = require('util')._extend;
 
+let fConfig = require('../net2/config.js').getConfig();
+
 let AUTO_BLOCK_THRESHOLD = 10;
 
 function formatBytes(bytes,decimals) {
@@ -279,7 +281,9 @@ module.exports = class {
 
           if(alarm.type === "ALARM_INTEL") {
             let num = parseInt(alarm["p.security.numOfReportSources"]);
-            if(num > AUTO_BLOCK_THRESHOLD) {
+            if(fConfig && fConfig.policy && 
+              fConfig.policy.autoBlock && 
+              num > AUTO_BLOCK_THRESHOLD) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               return;

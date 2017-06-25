@@ -197,4 +197,22 @@ alarmManager2.dedup(d1).then((dedupResult) => {
   
 });
 
+let intel1 = new Alarm.IntelAlarm(new Date() / 1000, "10.0.1.33", "major", {
+  "p.device.ip": "10.0.1.33",
+  "p.device.port": 8888,
+  "p.dest.id": "111.111.111.111",
+  "p.dest.ip": "111.111.111.111",
+  "p.dest.name": "www.test.com",
+  "p.dest.port": 8888,
+  "p.security.reason": "test reason",
+  "p.security.numOfReportSources": 100,
+  "p.device.mac": "AA:AA:AA:BB:BB:BB",
+  "p.device.name": "xxxxxxx",
+  "p.device.id": "xxxxxxxx"
+});
+
+alarmManager2.checkAndSave(intel1, (err) => {
+  expect(err).to.be.null;
+})
+
 setTimeout(() => process.exit(0), 10000);
