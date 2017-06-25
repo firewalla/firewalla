@@ -94,14 +94,16 @@ class Host {
 
       this._mark = false;
       this.parse();
+
+      let c = require('./MessageBus.js');
+      this.subscriber = new c('debug');
       
         if(this.mgr.type === 'server') {
           this.spoofing = false;
           sclient.on("message", (channel, message) => {
             this.processNotifications(channel, message);
           });
-          let c = require('./MessageBus.js');
-          this.subscriber = new c('debug');
+
           if (obj != null) {
             this.subscribe(this.o.ipv4Addr, "Notice:Detected");
             this.subscribe(this.o.ipv4Addr, "Intel:Detected");
@@ -125,13 +127,17 @@ class Host {
         if (this.o.ipv4) {
             this.o.ipv4Addr = this.o.ipv4;
         }
-        if (obj != null) {
+        
+        if(this.mgr.type === 'server') {
+          if (obj != null) {
             this.subscribe(this.o.ipv4Addr, "Notice:Detected");
             this.subscribe(this.o.ipv4Addr, "Intel:Detected");
             this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
+          }
+          this.predictHostNameUsingUserAgent();
+          this.loadPolicy(null);
         }
-        this.predictHostNameUsingUserAgent();
-        this.loadPolicy(null);
+        
         this.parse();
     }
 
@@ -954,8 +960,12 @@ class Host {
         rclient.hgetall(key, (err, data) => {
             if (err == null && data != null) {
                 this.o = data;
-                this.subscribe(ip, "Notice:Detected");
-                this.subscribe(ip, "Intel:Detected");
+                
+                if(this.mgr.type === 'server') {
+                  this.subscribe(ip, "Notice:Detected");
+                  this.subscribe(ip, "Intel:Detected");
+                }
+                
                 this.summarizeSoftware(ip, start, end, (err, sortedbycount, sortedbyrecent) => {
                     //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
                     this.softwareByCount = sortedbycount;
@@ -1122,11 +1132,12 @@ module.exports = class {
           }
         });
 
+        let c = require('./MessageBus.js');
+        this.subscriber = new c(loglevel);
+
         // ONLY register for these events if hostmanager type IS server
         if(this.type === "server") {
 
-          let c = require('./MessageBus.js');
-            this.subscriber = new c(loglevel);
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
                 if (this.type == 'server') {
