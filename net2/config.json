@@ -36,7 +36,8 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
-    "BonjourSensor": {}
+    "BonjourSensor": {},
+    "HeapSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

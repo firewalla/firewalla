@@ -241,11 +241,17 @@ function getPerfStats(callback) {
   });
 }
 
+function getHeapDump(file, callback) {
+  let heapdump = require('heapdump');
+  heapdump.writeSnapshot(file, callback);
+}
+
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
-  getPerfStats: getPerfStats
+  getPerfStats: getPerfStats,
+  getHeapDump: getHeapDump
 };

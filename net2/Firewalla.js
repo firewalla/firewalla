@@ -76,6 +76,10 @@ function getUserConfigFolder() {
   return getHiddenFolder() + "/config";
 }
 
+function getTempFolder() {
+  return getHiddenFolder() + "/tmp";
+}
+
 // Get config data from fishbone
 var _boneInfo = null;
 function getBoneInfo(callback) {
@@ -337,6 +341,7 @@ module.exports = {
   redisclean: redisclean,
   constants: constants,
   getVersion: getVersion,
-  isDocker:isDocker
+  isDocker:isDocker,
+  getTempFolder: getTempFolder
 }
 

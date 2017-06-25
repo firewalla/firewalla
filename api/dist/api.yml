@@ -195,6 +195,16 @@ paths:
       responses:
         200:
           description: Success
+  /system/heapdump:
+    get:
+      summary: Get heapdump of firewalla processes
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/process'
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -389,6 +399,12 @@ parameters:
     in: query
     required: false
     description: Compression
+    type: string
+  process:
+    name: process
+    in: query
+    required: false
+    description: Process Name
     type: string
   page:
     name: page
