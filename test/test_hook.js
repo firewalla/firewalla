@@ -22,9 +22,6 @@ let NewDeviceHook = require('../hook/NewDeviceHook.js');
 
 let hook = new NewDeviceHook();
 hook.run();
-hook.createAlarm("test", "172.17.0.3", "AA:BB:CC:AA:BB:CC", "Cisco", (err) => {
-  console.log("test");
-});
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 

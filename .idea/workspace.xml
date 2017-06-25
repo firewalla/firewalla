@@ -2,8 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/sensor/HeapSensor.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_sensor2.js" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/Common/node/paramTypes.js" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/Common/node/swagger.js" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/.bin/docco" afterPath="" />
@@ -954,15 +952,9 @@
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-node.sublime-workspace" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/css/highlight.default.css" afterPath="" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/dist/api.yml" afterPath="$PROJECT_DIR$/api/dist/api.yml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/alarm/Alarm.js" afterPath="$PROJECT_DIR$/alarm/Alarm.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/alarm/AlarmManager2.js" afterPath="$PROJECT_DIR$/alarm/AlarmManager2.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/system.js" afterPath="$PROJECT_DIR$/api/routes/system.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/buildraw4" afterPath="$PROJECT_DIR$/buildraw4" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/sysinfo/SysInfo.js" afterPath="$PROJECT_DIR$/extension/sysinfo/SysInfo.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/monitor/MonitorMain.js" afterPath="$PROJECT_DIR$/monitor/MonitorMain.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/Firewalla.js" afterPath="$PROJECT_DIR$/net2/Firewalla.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/HostTool.js" afterPath="$PROJECT_DIR$/net2/HostTool.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/config.json" afterPath="$PROJECT_DIR$/net2/config.json" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" />
@@ -995,8 +987,8 @@
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/scripts/main-run" afterPath="$PROJECT_DIR$/scripts/main-run" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sensor/DHCPSensor.js" afterPath="$PROJECT_DIR$/sensor/DHCPSensor.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_alarm.js" afterPath="$PROJECT_DIR$/test/test_alarm.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_hook.js" afterPath="$PROJECT_DIR$/test/test_hook.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -1019,14 +1011,70 @@
     <splitter split-orientation="horizontal" split-proportion="0.5">
       <split-first>
         <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-          <file leaf-file-name="system.js" pinned="false" current-in-tab="true">
+          <file leaf-file-name="netbot.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="333">
+                  <caret line="431" column="48" lean-forward="true" selection-start-line="431" selection-start-column="48" selection-end-line="431" selection-end-column="48" />
+                  <folding>
+                    <marker date="1498126177000" expanded="true" signature="20:41" ph="/*...*/" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="system.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/api/routes/system.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="670">
-                  <caret line="141" column="20" lean-forward="true" selection-start-line="141" selection-start-column="20" selection-end-line="141" selection-end-column="20" />
+                <state relative-caret-position="619">
+                  <caret line="138" column="43" lean-forward="true" selection-start-line="138" selection-start-column="43" selection-end-line="138" selection-end-column="43" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="AlarmManager2.js" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="316">
+                  <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="8" selection-end-line="178" selection-end-column="19" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="test_alarm.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/test/test_alarm.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="830">
+                  <caret line="199" column="36" lean-forward="false" selection-start-line="199" selection-start-column="36" selection-end-line="199" selection-end-column="36" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="FlowMonitor.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/monitor/FlowMonitor.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="653">
+                  <caret line="895" column="45" lean-forward="true" selection-start-line="895" selection-start-column="45" selection-end-line="895" selection-end-column="45" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="DeviceHook.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/hook/DeviceHook.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="325">
+                  <caret line="259" column="40" lean-forward="false" selection-start-line="259" selection-start-column="40" selection-end-line="259" selection-end-column="40" />
+                  <folding />
                 </state>
               </provider>
             </entry>
@@ -1041,63 +1089,21 @@
               </provider>
             </entry>
           </file>
+          <file leaf-file-name="BroDetect.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/BroDetect.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="665">
+                  <caret line="1256" column="20" lean-forward="true" selection-start-line="1256" selection-start-column="20" selection-end-line="1256" selection-end-column="20" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
           <file leaf-file-name="buildraw4" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/buildraw4">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="595">
                   <caret line="103" column="16" lean-forward="true" selection-start-line="103" selection-start-column="16" selection-end-line="103" selection-end-column="16" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="package.json" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/api/package.json">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="0">
-                  <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="package.json" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/encipher/package.json">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="544">
-                  <caret line="32" column="4" lean-forward="true" selection-start-line="32" selection-start-column="4" selection-end-line="32" selection-end-column="4" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="firewalla.package.json" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/firewalla.package.json">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="629">
-                  <caret line="38" column="25" lean-forward="true" selection-start-line="38" selection-start-column="25" selection-end-line="38" selection-end-column="25" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="MonitorMain.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/monitor/MonitorMain.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="833">
-                  <caret line="68" column="14" lean-forward="false" selection-start-line="68" selection-start-column="14" selection-end-line="68" selection-end-column="14" />
-                  <folding>
-                    <element signature="n#!!doc" expanded="true" />
-                  </folding>
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="api.yml" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/api/dist/api.yml">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="-8">
-                  <caret line="407" column="16" lean-forward="false" selection-start-line="407" selection-start-column="16" selection-end-line="407" selection-end-column="16" />
                   <folding />
                 </state>
               </provider>
@@ -1115,35 +1121,10 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="logger.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/net2/logger.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="-9">
-                  <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
         </leaf>
       </split-first>
       <split-second>
         <leaf>
-          <file leaf-file-name="DeviceHook.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/hook/DeviceHook.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="-9">
-                  <caret line="165" column="10" lean-forward="false" selection-start-line="165" selection-start-column="10" selection-end-line="165" selection-end-column="10" />
-                  <folding>
-                    <element signature="n#!!block;n#createAlarm#0;n#DeviceHook#0" expanded="false" />
-                    <element signature="n#!!block;n#getVendorInfo#0;n#DeviceHook#0" expanded="false" />
-                    <marker date="1498158916000" expanded="true" signature="1193:9234" ph="{...}" />
-                    <marker date="1498158916000" expanded="true" signature="1239:7910" ph="{...}" />
-                  </folding>
-                </state>
-              </provider>
-            </entry>
-          </file>
           <file leaf-file-name="main.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/net2/main.js">
               <provider selected="true" editor-type-id="text-editor">
@@ -1162,31 +1143,6 @@
                 <state relative-caret-position="333">
                   <caret line="38" column="31" lean-forward="true" selection-start-line="38" selection-start-column="31" selection-end-line="38" selection-end-column="31" />
                   <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="test_sensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_sensor.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="0">
-                  <caret line="111" column="47" lean-forward="false" selection-start-line="111" selection-start-column="47" selection-end-line="111" selection-end-column="47" />
-                  <folding>
-                    <element signature="n#!!doc" expanded="true" />
-                  </folding>
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="BonjourSensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/sensor/BonjourSensor.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="-9">
-                  <caret line="137" column="7" lean-forward="false" selection-start-line="137" selection-start-column="7" selection-end-line="137" selection-end-column="7" />
-                  <folding>
-                    <element signature="n#!!doc" expanded="true" />
-                    <element signature="n#!!block;n#run#0;n#BonjourSensor#0" expanded="false" />
-                  </folding>
                 </state>
               </provider>
             </entry>
@@ -1223,11 +1179,11 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="Firewalla.js" pinned="false" current-in-tab="true">
+          <file leaf-file-name="Firewalla.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="796">
-                  <caret line="344" column="15" lean-forward="false" selection-start-line="344" selection-start-column="2" selection-end-line="344" selection-end-column="15" />
+                <state relative-caret-position="456">
+                  <caret line="324" column="13" lean-forward="true" selection-start-line="324" selection-start-column="13" selection-end-line="324" selection-end-column="13" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
@@ -1235,11 +1191,43 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="Layer2.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/util/Layer2.js">
+          <file leaf-file-name="alarm.js" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/api/routes/alarm.js">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="0">
-                  <caret line="86" column="39" lean-forward="false" selection-start-line="86" selection-start-column="39" selection-end-line="86" selection-end-column="39" />
+                  <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="Alarm.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/alarm/Alarm.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="648">
+                  <caret line="242" column="3" lean-forward="true" selection-start-line="242" selection-start-column="3" selection-end-line="242" selection-end-column="3" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="en.json" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/locales/en.json">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="374">
+                  <caret line="22" column="0" lean-forward="true" selection-start-line="22" selection-start-column="0" selection-end-line="22" selection-end-column="0" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="test_hook.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/test/test_hook.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="170">
+                  <caret line="23" column="11" lean-forward="false" selection-start-line="23" selection-start-column="11" selection-end-line="23" selection-end-column="11" />
                   <folding />
                 </state>
               </provider>
@@ -1258,17 +1246,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>console.log</find>
-      <find>_extend</find>
-      <find>processhost</find>
-      <find>processHost</find>
-      <find>NewDeviceWithMacOnly</find>
-      <find>discoverMac</find>
-      <find>NewDeviceWithIPOnly</find>
-      <find>bonjourBrowserUdp</find>
-      <find>callback</find>
-      <find>constructor</find>
-      <find>fl</find>
       <find>-w -t</find>
       <find>kcp exit</find>
       <find>ipv4</find>
@@ -1288,6 +1265,17 @@
       <find>.node_module</find>
       <find>mkdir</find>
       <find>getTempFolder</find>
+      <find>NewDeviceAlarm</find>
+      <find>IntelAlarm</find>
+      <find>bronoticealarm</find>
+      <find>isdup</find>
+      <find>ALARM:CREATED</find>
+      <find>notifAlarm</find>
+      <find>alarm:</find>
+      <find>checkAndSave</find>
+      <find>dedup</find>
+      <find>uploaded</find>
+      <find>console.log</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -1305,11 +1293,6 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/api/routes/dnsmasq.js" />
-        <option value="$PROJECT_DIR$/extension/dnsmasq/remove_iptables.template.sh" />
-        <option value="$PROJECT_DIR$/extension/upnp/upnp.js" />
-        <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.js" />
-        <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.template.conf" />
         <option value="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" />
         <option value="$PROJECT_DIR$/net2/PolicyManager.js" />
         <option value="$PROJECT_DIR$/api/app.js" />
@@ -1356,6 +1339,11 @@
         <option value="$PROJECT_DIR$/net2/Firewalla.js" />
         <option value="$PROJECT_DIR$/extension/sysinfo/SysInfo.js" />
         <option value="$PROJECT_DIR$/api/routes/system.js" />
+        <option value="$PROJECT_DIR$/test/test_hook.js" />
+        <option value="$PROJECT_DIR$/alarm/Alarm.js" />
+        <option value="$PROJECT_DIR$/alarm/AlarmManager2.js" />
+        <option value="$PROJECT_DIR$/locales/en.json" />
+        <option value="$PROJECT_DIR$/test/test_alarm.js" />
       </list>
     </option>
   </component>
@@ -1459,6 +1447,20 @@
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
             <PATH_ELEMENT>
+              <option name="myItemId" value="test" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
               <option name="myItemId" value="sensor" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
@@ -1502,6 +1504,34 @@
             </PATH_ELEMENT>
             <PATH_ELEMENT>
               <option name="myItemId" value="monitor" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="locales" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="hook" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -1561,6 +1591,20 @@
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
             <PATH_ELEMENT>
+              <option name="myItemId" value="controllers" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
               <option name="myItemId" value="api" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
@@ -1598,6 +1642,20 @@
             </PATH_ELEMENT>
             <PATH_ELEMENT>
               <option name="myItemId" value="dist" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="alarm" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -1709,12 +1767,12 @@
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
       <workItem from="1486021488065" duration="29306000" />
-      <workItem from="1498062649774" duration="42382000" />
+      <workItem from="1498062649774" duration="45186000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="165459000" />
+    <option name="totallyTimeSpent" value="168263000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1778,62 +1836,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/sensor/Sensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/message.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/app-local.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="703">
-          <caret line="76" column="0" lean-forward="true" selection-start-line="76" selection-start-column="0" selection-end-line="76" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/host.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="266">
-          <caret line="36" column="0" lean-forward="true" selection-start-line="36" selection-start-column="0" selection-end-line="36" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/mac.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="110">
-          <caret line="21" column="0" lean-forward="false" selection-start-line="21" selection-start-column="0" selection-end-line="22" selection-end-column="30" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$APPLICATION_CONFIG_DIR$/javascript/nodejs/7.3.0/core-modules/events.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="243">
-          <caret line="209" column="9" lean-forward="false" selection-start-line="209" selection-start-column="9" selection-end-line="209" selection-end-column="9" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/sensor/SensorTemplate.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
@@ -1886,24 +1888,6 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
           <caret line="30" column="4" lean-forward="false" selection-start-line="30" selection-start-column="4" selection-end-line="30" selection-end-column="4" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1402">
-          <caret line="503" column="19" lean-forward="false" selection-start-line="503" selection-start-column="19" selection-end-line="503" selection-end-column="19" />
-          <folding>
-            <marker date="1498126177000" expanded="true" signature="20:41" ph="/*...*/" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/alarm/Alarm.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="195">
-          <caret line="12" column="27" lean-forward="false" selection-start-line="12" selection-start-column="0" selection-end-line="13" selection-end-column="0" />
           <folding />
         </state>
       </provider>
@@ -1974,16 +1958,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_hook.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="19" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="57" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/net2/Discovery.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-41">
@@ -2017,19 +1991,6 @@
           <caret line="30" column="46" lean-forward="false" selection-start-line="30" selection-start-column="46" selection-end-line="30" selection-end-column="46" />
           <folding>
             <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/hook/DeviceHook.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-9">
-          <caret line="165" column="10" lean-forward="false" selection-start-line="165" selection-start-column="10" selection-end-line="165" selection-end-column="10" />
-          <folding>
-            <element signature="n#!!block;n#createAlarm#0;n#DeviceHook#0" expanded="false" />
-            <element signature="n#!!block;n#getVendorInfo#0;n#DeviceHook#0" expanded="false" />
-            <marker date="1498158916000" expanded="true" signature="1193:9234" ph="{...}" />
-            <marker date="1498158916000" expanded="true" signature="1239:7910" ph="{...}" />
           </folding>
         </state>
       </provider>
@@ -2068,7 +2029,7 @@
         <state relative-caret-position="-9">
           <caret line="137" column="7" lean-forward="false" selection-start-line="137" selection-start-column="7" selection-end-line="137" selection-end-column="7" />
           <folding>
-            <element signature="n#!!doc" expanded="true" />
+            <element signature="n#!!doc" expanded="false" />
             <element signature="n#!!block;n#run#0;n#BonjourSensor#0" expanded="false" />
           </folding>
         </state>
@@ -2079,7 +2040,7 @@
         <state relative-caret-position="0">
           <caret line="111" column="47" lean-forward="false" selection-start-line="111" selection-start-column="47" selection-end-line="111" selection-end-column="47" />
           <folding>
-            <element signature="n#!!doc" expanded="true" />
+            <element signature="n#!!doc" expanded="false" />
           </folding>
         </state>
       </provider>
@@ -2204,16 +2165,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="796">
-          <caret line="344" column="15" lean-forward="false" selection-start-line="344" selection-start-column="2" selection-end-line="344" selection-end-column="15" />
-          <folding>
-            <element signature="n#!!doc" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/sensor/HeapSensor.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="194">
@@ -2234,8 +2185,106 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/api/routes/system.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="670">
-          <caret line="141" column="20" lean-forward="true" selection-start-line="141" selection-start-column="20" selection-end-line="141" selection-end-column="20" />
+        <state relative-caret-position="619">
+          <caret line="138" column="43" lean-forward="true" selection-start-line="138" selection-start-column="43" selection-end-line="138" selection-end-column="43" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="456">
+          <caret line="324" column="13" lean-forward="true" selection-start-line="324" selection-start-column="13" selection-end-line="324" selection-end-column="13" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/DeviceHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="325">
+          <caret line="259" column="40" lean-forward="false" selection-start-line="259" selection-start-column="40" selection-end-line="259" selection-end-column="40" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/monitor/FlowMonitor.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="653">
+          <caret line="895" column="45" lean-forward="true" selection-start-line="895" selection-start-column="45" selection-end-line="895" selection-end-column="45" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/BroDetect.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="665">
+          <caret line="1256" column="20" lean-forward="true" selection-start-line="1256" selection-start-column="20" selection-end-line="1256" selection-end-column="20" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_hook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="170">
+          <caret line="23" column="11" lean-forward="false" selection-start-line="23" selection-start-column="11" selection-end-line="23" selection-end-column="11" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/alarm/Alarm.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="648">
+          <caret line="242" column="3" lean-forward="true" selection-start-line="242" selection-start-column="3" selection-end-line="242" selection-end-column="3" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="333">
+          <caret line="431" column="48" lean-forward="true" selection-start-line="431" selection-start-column="48" selection-end-line="431" selection-end-column="48" />
+          <folding>
+            <marker date="1498126177000" expanded="true" signature="20:41" ph="/*...*/" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/locales/en.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="374">
+          <caret line="22" column="0" lean-forward="true" selection-start-line="22" selection-start-column="0" selection-end-line="22" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_alarm.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="830">
+          <caret line="199" column="36" lean-forward="false" selection-start-line="199" selection-start-column="36" selection-end-line="199" selection-end-column="36" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/alarm.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="316">
+          <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="8" selection-end-line="178" selection-end-column="19" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>

@@ -223,7 +223,12 @@ module.exports = class {
   dedup(alarm) {
     return new Promise((resolve, reject) => {
       this.loadRecentAlarms((err, existingAlarms) => {
-        let dups = existingAlarms.filter((a) => this.isDup(a, alarm));
+        if(err) {
+          reject(err);
+          return;
+        }
+        
+        let dups = existingAlarms.filter((a) => alarm.isDup(a));
         if(dups.length > 0) {
           resolve(true);
         } else {
@@ -231,21 +236,6 @@ module.exports = class {
         }
       });
     });
-  }
-  
-  isDup(alarm, alarm2) {
-    let keysToCompare = ["p.dest.id", "p.device.mac", "type"];    
-
-    for(var key in keysToCompare) {
-      let k = keysToCompare[key];
-      if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
-        
-      } else {
-        return false;
-      }
-    }
-
-    return true;
   }
 
   checkAndSave(alarm, callback) {

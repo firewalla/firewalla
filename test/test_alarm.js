@@ -138,7 +138,7 @@ alarmManager2.enrichDestInfo(a6).then((alarm) => {
 
 // Test isDup
 
-expect(alarmManager2.isDup(a5, a6)).to.be.false;
+expect(a5.isDup(a6)).to.be.false;
 
 let c1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
   "p.device.mac": "XXX"
@@ -156,9 +156,9 @@ let c4 = new Alarm.VideoAlarm(date, "10.0.1.22", "DEST-1", {
   "p.device.mac": "XXX"
 });
 
-expect(alarmManager2.isDup(c1, c2)).to.be.true;
-expect(alarmManager2.isDup(c1, c3)).to.be.false;
-expect(alarmManager2.isDup(c1, c4)).to.be.false;
+expect(c1.isDup(c2)).to.be.true;
+expect(c1.isDup(c3)).to.be.false;
+expect(c1.isDup(c4)).to.be.false;
 
 // Test dedup
 
@@ -167,7 +167,9 @@ let random = Math.random();
 let d1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
   "p.device.mac": "XXX",
   "p.device.name": "YYY",
-  "p.device.id": "YYY"
+  "p.device.id": "YYY",
+  "p.dest.name": "DEST-1xx",
+  "p.transfer.outbound.humansize": "100MB"
 });
 
 alarmManager2.dedup(d1).then((dedupResult) => {
@@ -179,7 +181,9 @@ alarmManager2.dedup(d1).then((dedupResult) => {
     let d2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
       "p.device.mac": "XXX",
       "p.device.name": "YYY",
-      "p.device.id": "YYY"
+      "p.device.id": "YYY",
+      "p.dest.name": "DEST-1xxx",
+      "p.transfer.outbound.humansize": "101MB"
     });
     
     alarmManager2.dedup(d2).then((dedupResult2) => {
@@ -193,4 +197,4 @@ alarmManager2.dedup(d1).then((dedupResult) => {
   
 });
 
-setTimeout(() => process.exit(0), 3000);
+setTimeout(() => process.exit(0), 10000);
