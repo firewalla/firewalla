@@ -63,6 +63,8 @@ let heapSensor = null;
 
 function run() {
 
+  sysManager = null; // not needed any more after run()
+  
   // listen on request to dump heap for this process, used for memory optmiziation
   let HeapSensor = require('../sensor/HeapSensor');
   heapSensor = new HeapSensor();

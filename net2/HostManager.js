@@ -1572,8 +1572,8 @@ module.exports = class {
             return;
         }
         if (retry == null) {
-            let stack = new Error().stack
-            log.info("hostmanager:gethosts:mutx:first:", stack )
+            // let stack = new Error().stack
+            // log.info("hostmanager:gethosts:mutx:first:", stack )
         } else {
             let stack = new Error().stack
             log.info("hostmanager:gethosts:mutx:last:", retry,stack )
