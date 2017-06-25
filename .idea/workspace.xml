@@ -952,9 +952,9 @@
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-node.sublime-workspace" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/css/highlight.default.css" afterPath="" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/alarm/Alarm.js" afterPath="$PROJECT_DIR$/alarm/Alarm.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/alarm/AlarmManager2.js" afterPath="$PROJECT_DIR$/alarm/AlarmManager2.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/system.js" afterPath="$PROJECT_DIR$/api/routes/system.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/SysManager.js" afterPath="$PROJECT_DIR$/net2/SysManager.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/main.js" afterPath="$PROJECT_DIR$/net2/main.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" />
@@ -987,8 +987,7 @@
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_alarm.js" afterPath="$PROJECT_DIR$/test/test_alarm.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_hook.js" afterPath="$PROJECT_DIR$/test/test_hook.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sys/kickstart.js" afterPath="$PROJECT_DIR$/sys/kickstart.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -1035,14 +1034,36 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="AlarmManager2.js" pinned="false" current-in-tab="true">
+          <file leaf-file-name="AlarmManager2.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="316">
-                  <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="8" selection-end-line="178" selection-end-column="19" />
+                  <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="19" selection-end-line="178" selection-end-column="19" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="SysManager.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="367">
+                  <caret line="98" column="60" lean-forward="true" selection-start-line="98" selection-start-column="60" selection-end-line="98" selection-end-column="60" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="kickstart.js" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="376">
+                  <caret line="296" column="33" lean-forward="true" selection-start-line="296" selection-start-column="33" selection-end-line="296" selection-end-column="33" />
+                  <folding />
                 </state>
               </provider>
             </entry>
@@ -1099,39 +1120,17 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="buildraw4" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/buildraw4">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="595">
-                  <caret line="103" column="16" lean-forward="true" selection-start-line="103" selection-start-column="16" selection-end-line="103" selection-end-column="16" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="HeapSensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/sensor/HeapSensor.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="194">
-                  <caret line="37" column="38" lean-forward="false" selection-start-line="37" selection-start-column="38" selection-end-line="37" selection-end-column="38" />
-                  <folding>
-                    <element signature="n#!!doc" expanded="true" />
-                  </folding>
-                </state>
-              </provider>
-            </entry>
-          </file>
         </leaf>
       </split-first>
       <split-second>
         <leaf>
-          <file leaf-file-name="main.js" pinned="false" current-in-tab="false">
+          <file leaf-file-name="main.js" pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/net2/main.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="459">
-                  <caret line="150" column="42" lean-forward="false" selection-start-line="150" selection-start-column="42" selection-end-line="150" selection-end-column="42" />
+                <state relative-caret-position="408">
+                  <caret line="57" column="53" lean-forward="true" selection-start-line="57" selection-start-column="53" selection-end-line="57" selection-end-column="53" />
                   <folding>
-                    <marker date="1498156018000" expanded="false" signature="0:21" ph="/*...*/" />
+                    <marker date="1498378651000" expanded="false" signature="0:21" ph="/*...*/" />
                   </folding>
                 </state>
               </provider>
@@ -1191,7 +1190,7 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="alarm.js" pinned="false" current-in-tab="true">
+          <file leaf-file-name="alarm.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/api/routes/alarm.js">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="0">
@@ -1207,8 +1206,45 @@
             <entry file="file://$PROJECT_DIR$/alarm/Alarm.js">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="648">
-                  <caret line="242" column="3" lean-forward="true" selection-start-line="242" selection-start-column="3" selection-end-line="242" selection-end-column="3" />
-                  <folding />
+                  <caret line="240" column="3" lean-forward="false" selection-start-line="240" selection-start-column="3" selection-end-line="240" selection-end-column="3" />
+                  <folding>
+                    <marker date="1498372306000" expanded="true" signature="2396:2543" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="2506:2537" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="2647:2708" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="2738:2772" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="2869:2998" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3028:3076" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3162:3253" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3275:3424" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3319:3366" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3372:3420" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3452:3501" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3543:3618" ph="//..." />
+                    <marker date="1498372306000" expanded="true" signature="3682:3864" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3769:3860" ph="//..." />
+                    <marker date="1498372306000" expanded="true" signature="3883:3943" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="3972:4013" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4050:4095" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4120:4157" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4186:4223" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4255:4288" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4318:4353" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4388:4451" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4481:4528" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4580:4907" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4629:4700" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4722:4905" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4766:4830" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4836:4901" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4948:5065" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="4998:5063" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="5105:5219" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="5154:5217" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="5259:5373" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="5308:5371" ph="{...}" />
+                    <marker date="1498372306000" expanded="true" signature="5394:5684" ph="{&quot;ALARM_PORN&quot;: PornAlarm.prototype...}" />
+                    <marker date="1498372306000" expanded="true" signature="5703:5988" ph="{&quot;Alarm&quot;: Alarm...}" />
+                  </folding>
                 </state>
               </provider>
             </entry>
@@ -1246,8 +1282,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>-w -t</find>
-      <find>kcp exit</find>
       <find>ipv4</find>
       <find>extend({}</find>
       <find>name</find>
@@ -1276,6 +1310,8 @@
       <find>dedup</find>
       <find>uploaded</find>
       <find>console.log</find>
+      <find>Error lookiong up group</find>
+      <find>isconfigini</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -1293,8 +1329,6 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" />
-        <option value="$PROJECT_DIR$/net2/PolicyManager.js" />
         <option value="$PROJECT_DIR$/api/app.js" />
         <option value="$PROJECT_DIR$/buildraw" />
         <option value="$PROJECT_DIR$/test/test_hash.js" />
@@ -1318,7 +1352,6 @@
         <option value="$PROJECT_DIR$/net2/Discovery.js" />
         <option value="$PROJECT_DIR$/test/config.json" />
         <option value="$PROJECT_DIR$/extension/ss_client/ss_client.js" />
-        <option value="$PROJECT_DIR$/net2/main.js" />
         <option value="$PROJECT_DIR$/util/util.js" />
         <option value="$PROJECT_DIR$/net2/HostManager.js" />
         <option value="$PROJECT_DIR$/hook/DeviceHook.js" />
@@ -1341,9 +1374,12 @@
         <option value="$PROJECT_DIR$/api/routes/system.js" />
         <option value="$PROJECT_DIR$/test/test_hook.js" />
         <option value="$PROJECT_DIR$/alarm/Alarm.js" />
-        <option value="$PROJECT_DIR$/alarm/AlarmManager2.js" />
         <option value="$PROJECT_DIR$/locales/en.json" />
         <option value="$PROJECT_DIR$/test/test_alarm.js" />
+        <option value="$PROJECT_DIR$/alarm/AlarmManager2.js" />
+        <option value="$PROJECT_DIR$/net2/SysManager.js" />
+        <option value="$PROJECT_DIR$/sys/kickstart.js" />
+        <option value="$PROJECT_DIR$/net2/main.js" />
       </list>
     </option>
   </component>
@@ -1448,6 +1484,20 @@
             </PATH_ELEMENT>
             <PATH_ELEMENT>
               <option name="myItemId" value="test" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="firewalla" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="sys" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -1767,12 +1817,12 @@
       <workItem from="1485336925321" duration="12924000" />
       <workItem from="1485870492445" duration="10522000" />
       <workItem from="1486021488065" duration="29306000" />
-      <workItem from="1498062649774" duration="45186000" />
+      <workItem from="1498062649774" duration="46278000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="168263000" />
+    <option name="totallyTimeSpent" value="169355000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1836,26 +1886,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/sensor/SensorTemplate.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/SensorLoader.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-114">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/net2/FlowManager.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="266">
@@ -2147,16 +2177,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/net2/main.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="459">
-          <caret line="150" column="42" lean-forward="false" selection-start-line="150" selection-start-column="42" selection-end-line="150" selection-end-column="42" />
-          <folding>
-            <marker date="1498156018000" expanded="false" signature="0:21" ph="/*...*/" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/scripts/main-run">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="333">
@@ -2238,8 +2258,45 @@
     <entry file="file://$PROJECT_DIR$/alarm/Alarm.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="648">
-          <caret line="242" column="3" lean-forward="true" selection-start-line="242" selection-start-column="3" selection-end-line="242" selection-end-column="3" />
-          <folding />
+          <caret line="240" column="3" lean-forward="false" selection-start-line="240" selection-start-column="3" selection-end-line="240" selection-end-column="3" />
+          <folding>
+            <marker date="1498372306000" expanded="true" signature="2396:2543" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="2506:2537" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="2647:2708" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="2738:2772" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="2869:2998" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3028:3076" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3162:3253" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3275:3424" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3319:3366" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3372:3420" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3452:3501" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3543:3618" ph="//..." />
+            <marker date="1498372306000" expanded="true" signature="3682:3864" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3769:3860" ph="//..." />
+            <marker date="1498372306000" expanded="true" signature="3883:3943" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="3972:4013" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4050:4095" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4120:4157" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4186:4223" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4255:4288" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4318:4353" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4388:4451" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4481:4528" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4580:4907" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4629:4700" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4722:4905" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4766:4830" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4836:4901" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4948:5065" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="4998:5063" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="5105:5219" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="5154:5217" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="5259:5373" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="5308:5371" ph="{...}" />
+            <marker date="1498372306000" expanded="true" signature="5394:5684" ph="{&quot;ALARM_PORN&quot;: PornAlarm.prototype...}" />
+            <marker date="1498372306000" expanded="true" signature="5703:5988" ph="{&quot;Alarm&quot;: Alarm...}" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -2271,6 +2328,16 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="316">
+          <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="19" selection-end-line="178" selection-end-column="19" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/api/routes/alarm.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
@@ -2281,12 +2348,30 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
+    <entry file="file://$PROJECT_DIR$/net2/SysManager.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="316">
-          <caret line="178" column="19" lean-forward="false" selection-start-line="178" selection-start-column="8" selection-end-line="178" selection-end-column="19" />
+        <state relative-caret-position="367">
+          <caret line="98" column="60" lean-forward="true" selection-start-line="98" selection-start-column="60" selection-end-line="98" selection-end-column="60" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="376">
+          <caret line="296" column="33" lean-forward="true" selection-start-line="296" selection-start-column="33" selection-end-line="296" selection-end-column="33" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/main.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="408">
+          <caret line="57" column="53" lean-forward="true" selection-start-line="57" selection-start-column="53" selection-end-line="57" selection-end-column="53" />
+          <folding>
+            <marker date="1498378651000" expanded="false" signature="0:21" ph="/*...*/" />
           </folding>
         </state>
       </provider>

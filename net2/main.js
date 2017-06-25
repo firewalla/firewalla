@@ -48,6 +48,16 @@ function run0() {
       sysManager.isConfigInitialized()) {
     run();
   } else {
+    if(!bone.cloudready()) {
+      log.info("Connecting to Firewalla Cloud...");
+    }
+    if(!bone.isAppConnected()) {
+      log.info("Waiting for first app to connect...");
+    }
+    if(!sysManager.isConfigInitialized()) {
+      log.info("Waiting for configuration setup...");
+    }
+    
     setTimeout(()=>{
       sysManager.update(null);
       run0();
