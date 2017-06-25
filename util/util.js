@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,10 +14,16 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+function extend(target) {
+  var sources = [].slice.call(arguments, 1);
+  sources.forEach(function (source) {
+    for (var prop in source) {
+      target[prop] = source[prop];
+    }
+  });
+  return target;
+}
 
-module.exports = class {
-  run() {
-    // do nothing
-  }
+module.exports = {
+  extend:extend
 }

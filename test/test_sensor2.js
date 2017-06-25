@@ -42,11 +42,11 @@ let m3 = "F4:0F:24:AA:AA:06";
 
 
 Promise.all([
-hostTool.deleteHost(h1),
-hostTool.deleteMac(m1),
-hostTool.deleteHost(h2),
-hostTool.deleteMac(m2),
-  ]).then(() => {
+  hostTool.deleteHost(h1),
+  hostTool.deleteMac(m1),
+  hostTool.deleteHost(h2),
+  hostTool.deleteMac(m2),
+]).then(() => {
   log.info("init done");
 });
 

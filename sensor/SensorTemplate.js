@@ -14,10 +14,16 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+let log = require('../net2/logger.js')(__filename);
 
-module.exports = class {
+let Sensor = require('./Sensor.js').Sensor;
+
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
+
+class SensorName extends Sensor {
   run() {
-    // do nothing
   }
 }
+
+module.exports = SensorName;

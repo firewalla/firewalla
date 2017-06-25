@@ -73,7 +73,8 @@ if(!firewalla.isProduction()) {
   enableSubPath('exception');
   enableSubPath('scisurf');
   enableSubPath('system');
-  
+  enableSubPath('mac');
+
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

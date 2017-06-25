@@ -91,12 +91,39 @@ class Alarm {
 
     return true;
   }
+
+  keysToCompareForDedup() {
+    return [];
+  }
+  
+  isDup(alarm) {
+    let alarm2 = this;
+    let keysToCompare = this.keysToCompareForDedup();
+    
+    if(alarm.type !== alarm2.type)
+      return false;
+
+    for(var key in keysToCompare) {
+      let k = keysToCompare[key];
+      if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
+
+      } else {
+        return false;
+      }
+    }
+
+    return true;
+  }
 };
 
 
 class NewDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+  
+  keysToCompareForDedup() {
+    return ["p.device.mac"];
   }
 }
 
@@ -105,6 +132,10 @@ class BroNoticeAlarm extends Alarm {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
     this["p.noticeType"] = notice;
     this["p.message"] = message;
+  }
+  
+  keysToCompareForDedup() {
+    return ["p.message", "p.device.name"];
   }
 }
 
@@ -120,6 +151,10 @@ class IntelAlarm extends Alarm {
     } else {
       return "ALARM_INTEL_FROM_OUTSIDE";
     }
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.dest.name"];
   }
 }
 
@@ -167,6 +202,10 @@ class OutboundAlarm extends Alarm {
 
   getSimpleOutboundTrafficSize() {
     return formatBytes(this["p.transfer.outbound.size"]);
+  }
+  
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.dest.id"];
   }
 }
 

@@ -48,6 +48,16 @@ function run0() {
       sysManager.isConfigInitialized()) {
     run();
   } else {
+    if(!bone.cloudready()) {
+      log.info("Connecting to Firewalla Cloud...");
+    }
+    if(!bone.isAppConnected()) {
+      log.info("Waiting for first app to connect...");
+    }
+    if(!sysManager.isConfigInitialized()) {
+      log.info("Waiting for configuration setup...");
+    }
+    
     setTimeout(()=>{
       sysManager.update(null);
       run0();
@@ -77,9 +87,11 @@ function run() {
 
   hl = require('../hook/HookLoader.js');
   hl.initHooks();
+  hl.run();
 
   sl = require('../sensor/SensorLoader.js');
   sl.initSensors();
+  sl.run();
   
   var VpnManager = require('../vpn/VpnManager.js');
 
@@ -160,12 +172,14 @@ function run() {
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
 
-      pm2.enforceAllPolicies()
-        .then(() => {
-          log.info("All existing policy rules are applied");
-        }).catch((err) => {
+      setTimeout(() => {
+        pm2.enforceAllPolicies()
+          .then(() => {
+            log.info("All existing policy rules are applied");
+          }).catch((err) => {
           log.error("Failed to apply some policy rules: ", err, {});
         });
+      }, 1000 * 10); // delay for 10 seconds
     });
 
   },1000*2);

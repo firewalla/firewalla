@@ -869,7 +869,7 @@ class Host {
             json.flowsummary = this.flowsummary;
         }
 
-        json.macVendor = this.name();
+       // json.macVendor = this.name();
 
         return json;
     }
@@ -1943,11 +1943,4 @@ module.exports = class {
             callback(null,ignored );
         });
     }
-
-  macExists(mac) {
-    return rclient.keysAsync("host:mac:" + mac)
-      .then((results) => {
-        return results.length > 0;
-      });
-  }
 }

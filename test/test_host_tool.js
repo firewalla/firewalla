@@ -14,10 +14,23 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+let _ = require('underscore');
+let chai = require('chai');
+let expect = chai.expect;
 
-module.exports = class {
-  run() {
-    // do nothing
-  }
+let HostTool = require('../net2/HostTool.js');
+let hostTool = new HostTool();
+
+let object = {
+  "a" : undefined,
+  "b" : 1
 }
+
+hostTool.cleanupData(object);
+
+expect(Object.keys(object).length).to.equal(1)
+expect(object.b).to.equal(1);
+
+setTimeout(() => {
+  process.exit(0);
+}, 3000);

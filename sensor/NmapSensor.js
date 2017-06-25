@@ -22,40 +22,15 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Sensor = require('./Sensor.js').Sensor;
 
-class DHCPSensor extends Sensor {
+class NmapSensor extends Sensor {
   constructor() {
     super();
-    this.cache = {};
   }
-  
-  run() {
-    let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
-    this.dhcpDump = new DhcpDump();
-    this.dhcpDump.install((obj)=>{
-      log.info("DHCPDUMP is installed");
-      this.dhcpDump.start(false,(obj)=>{
-        if (obj && obj.mac) {
-          // dedup
-          if(this.cache[obj.mac])
-            return;          
 
-          this.cache[obj.mac] = 1;
-          setTimeout(() => {
-            delete this.cache[obj.mac];
-          }, 60 * 1000); // cache for one minute
-          
-          log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
-          sem.emitEvent({
-            type: "NewDeviceWithMacOnly",
-            mac: obj.mac,
-            name: obj.name,
-            message: "may found a new device by dhcp"
-          });
-        }
-      });
-    });
+  run() {
+    
   }
 }
 
-module.exports = DHCPSensor;
+module.exports = NmapSensor;
 

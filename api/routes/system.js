@@ -15,16 +15,23 @@
 
 'use strict';
 
-var express = require('express');
-var router = express.Router();
+let log = require("../../net2/logger.js")(__filename, "info");
+
+let express = require('express');
+let router = express.Router();
 const passport = require('passport')
 
-var SysManager = require('../../net2/SysManager.js');
-var sysManager = new SysManager('info');
+let SysManager = require('../../net2/SysManager.js');
+let sysManager = new SysManager('info');
 
 let sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
 let zlib = require('zlib');
+
+let redis = require('redis');
+
+let Firewalla = require('../../net2/Firewalla.js');
+
 
 /* system api */
 router.get('/info', 
@@ -88,5 +95,59 @@ router.get('/perfstat',
               res.json(stat);
             });
           });
+
+router.get('/heapdump',
+  (req, res, next) => {
+    let process = req.query.process;
+    
+    process = process || "FireApi";
+    
+    let file = Firewalla.getTempFolder() + "/" + process + "-heapdump-" + new Date() /1000 + ".heapsnapshot";
+    
+    switch(process) {
+      case "FireApi":
+        sysInfo.getHeapDump(file, (err, file) => {
+          if(err) {
+            res.status(500);
+            res.send('server error: ' + err);
+            return;
+          }
+
+          res.download(file);
+        });
+        
+        break;
+      case "FireMain":
+      case "FireMon":
+        let rclient = redis.createClient();
+        let sclient = redis.createClient();
+        
+        rclient.on("message", (channel, message) => {
+          if(channel === "heapdump_done" && message ) {
+            try {
+              let msg = JSON.parse(message);
+              let file = msg.file;
+              let title = msg.title;
+              if(title === process) {
+                res.download(file);
+              }
+            } catch (err) {
+              log.error("Failed to parse payload of heapdump_done message: ", message, err, {});
+            }
+          }
+        });
+        rclient.subscribe("heapdump_done");
+        sclient.publish("heapdump", JSON.stringify({
+          title: process,
+          file: file
+        }));
+        
+        break;
+      default:
+        res.status(404).send("");
+    }
+    
+    
+  });
 
 module.exports = router;

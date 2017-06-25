@@ -33,6 +33,21 @@
   "sysInfo": {
     "tailNum": 100
   },
+  "policy": {
+    "autoBlock": true
+  },
+  "sensors": {
+    "DHCPSensor": {},
+    "UPNPSensor": {},
+    "BonjourSensor": {},
+    "HeapSensor": {}
+  },
+  "hooks": {
+    "NewDeviceHook": {},
+    "RefreshMacBackupNameHook": {},
+    "DeviceStatusUpdateHook": {},
+    "DeviceHook": {}
+  },
     "bro": {
       "notice" : {
          "monitor" : {
