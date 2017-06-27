@@ -1025,10 +1025,9 @@ module.exports = class FlowManager {
         return null;
       }
     }
-    
-    
+       
     // append to existing flow or create new
-    appendFlow(conndb, flowObject) {
+    appendFlow(conndb, flowObject, ip) {
       let o = flowObject;
       
       let key = "";
@@ -1091,7 +1090,7 @@ module.exports = class FlowManager {
         let conndb = {};
         
         flowObjects.forEach((flowObject) => {
-          this.appendFlow(conndb, flowObject);  
+          this.appendFlow(conndb, flowObject, ip);  
         });
         
         let connArray = [];
