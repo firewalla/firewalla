@@ -41,7 +41,7 @@ var async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
-var maxflow = 10000;
+var QUERY_MAX_FLOW = 10000;
 
 var bconfig;
 // Will use bconfig.config.flow.activitymin/activitymax
@@ -791,7 +791,7 @@ module.exports = class FlowManager {
             let flows = [];
             async.eachLimit(listip, 5, (ip, cb2) => {
                 let key = "flow:conn:" + "in" + ":" + ip;
-                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,maxflow], (err, result) => {
+                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,QUERY_MAX_FLOW], (err, result) => {
                     log.info("SummarizeBytes:",key,from,to,result.length);
                     host.flowsummary.inbytesArray = [];
                     host.flowsummary.outbytesArray = [];
@@ -817,7 +817,7 @@ module.exports = class FlowManager {
                         }
                     }
                     let okey = "flow:conn:" + "out" + ":" + ip;
-                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,maxflow], (err, result) => {
+                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,QUERY_MAX_FLOW], (err, result) => {
                         if (err == null) {
                             for (let i=0;i<result.length;i++) {
                                 let o = JSON.parse(result[i]);
@@ -999,11 +999,120 @@ module.exports = class FlowManager {
         });
     }
 
+    
+    isFlowValid(flow) {
+      let o = flow;
+      
+      if (o == null) {
+        log.error("Host:Flows:Sorting:Parsing", result[i]);
+        return false;
+      }
+      if (o.rb == null || o.ob == null) {
+        return false
+      }
+      if (o.rb == 0 && o.ob ==0) {
+        // ignore zero length flows
+        return false;
+      }
+      
+      return true;
+    }
+    
+    flowStringToJSON(flow) {
+      try {
+        return JSON.parse(flow);
+      } catch(err) {
+        return null;
+      }
+    }
+    
+    
+    // append to existing flow or create new
+    appendFlow(conndb, flowObject) {
+      let o = flowObject;
+      
+      let key = "";
+      if (o.sh == ip) {
+        key = o.dh + ":" + o.fd;
+      } else {
+        key = o.sh + ":" + o.fd;
+      }
+      //     let key = o.sh+":"+o.dh+":"+o.fd;
+      let flow = conndb[key];
+      if (flow == null) {
+        conndb[key] = o;
+      } else {
+        flow.rb += o.rb;
+        flow.ct += o.ct;
+        flow.ob += o.ob;
+        flow.du += o.du;
+        if (flow.ts < o.ts) {
+          flow.ts = o.ts;
+        }
+        if (o.pf) {
+          for (let k in o.pf) {
+            if (flow.pf[k] != null) {
+              flow.pf[k].rb += o.pf[k].rb;
+              flow.pf[k].ob += o.pf[k].ob;
+              flow.pf[k].ct += o.pf[k].ct;
+            } else {
+              flow.pf[k] = o.pf[k]
+            }
+          }
+        }
+        if (o.flows) {
+          if (flow.flows) {
+            flow.flows = flow.flows.concat(o.flows);
+          } else {
+            flow.flows = o.flows;
+          }
+        }
+      }
+    }   
+    
+    // conns in last 24 hours
+    recentOutgoingConnections(ip) {
+      let key = "flow:conn:in:" + ip;
+      let to = new Date() / 1000;
+      let from = to - 24 * 3600;
+      
+      console.log(key, from, to);
+      
+      return rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0 , QUERY_MAX_FLOW])
+        .then((results) => {
+        
+        if(results === null || results.length === 0)
+          return [];
+        
+        let flowObjects = results
+                            .map((x) => this.flowStringToJSON(x))
+                            .map((x) => this.isFlowValid(x));
+        
+        let conndb = {};
+        
+        flowObjects.forEach((flowObject) => {
+          this.appendFlow(conndb, flowObject);  
+        });
+        
+        let connArray = [];
+        
+        for(let i in conndb) {
+          connArray.push(conndb[i]);
+        }
+        
+        return connArray;
+        
+        }).catch((err) => {
+        log.error("Failed to query flow data for ip", ip, ":", err, {});
+        return;
+      });
+    }
+    
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
         async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,maxflow], (err, result) => {
+            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,QUERY_MAX_FLOW], (err, result) => {
                 let conndb = {};
                 let interval = 0;
                 let totalInBytes = 0;
@@ -1013,17 +1122,10 @@ module.exports = class FlowManager {
                         log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                     for (let i in result) {
                         let o = JSON.parse(result[i]);
-                        if (o == null) {
-                            log.error("Host:Flows:Sorting:Parsing", result[i]);
-                            continue;
-                        }
-                        if (o.rb == null || o.ob == null) {
-                            continue;
-                        }
-                        if (o.rb == 0 && o.ob ==0) {
-                            // ignore zero length flows
-                            continue;
-                        }
+                        
+                        if(!this.isFlowValid(o))
+                          continue;
+                        
                         if (saveStats) {
                             if (direction == 'in') {
                                 totalInBytes+=Number(o.rb);

@@ -25,38 +25,6 @@ let hostManager = new HostManager('api', 'client', 'info');
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();
 
-// router.get('/list', (req, res, next) => {
-//   am2.loadActiveAlarms((err, list) => {
-//     if(err) {
-//       res.status(500).send('');
-//     } else {
-//       res.json({list: list});
-//     }  
-//   });
-// });
-
-// create application/json parser 
-// let jsonParser = bodyParser.json()
-
-// router.post('/create',
-//             jsonParser,
-//             (req, res, next) => {
-//               am2.createAlarmFromJson(req.body, (err, alarm) => {
-//                 if(err) {
-//                   res.status(400).send("Invalid alarm data");
-//                   return;
-//                 }
-                
-//                 am2.checkAndSave(alarm, (err, alarmID) => {
-//                   if(err) {
-//                     res.status(500).send('Failed to create json: ' + err);
-//                   } else {
-//                     res.status(201).json({alarmID:alarmID});
-//                   }
-//                 });
-//               });
-//             });
-
 router.get('/all',
            (req, res, next) => {
              let json = {};
@@ -96,5 +64,18 @@ router.get('/:host',
              }
            });
 
+router.get('/:host/flow',
+  (req, res, next) => {
+    let host = req.params.host;
+    
+    console.log(host);
+    
+    flowManager.recentOutgoingConnections(host)
+      .then((conns) => {
+        res.json(conns);
+      }).catch((err) => {
+      res.status(500).json({error: err});
+    })
+  });
 
 module.exports = router;
