@@ -1034,7 +1034,9 @@ class Host {
             if (err == null) {
                 let obj = {};
                 obj[name] = data;
-                this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+                if (this.subscriber) {
+                    this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+                }
                 if (callback) {
                     callback(null, obj);
                 }
@@ -1782,7 +1784,9 @@ module.exports = class {
         if (err == null) {
           let obj = {};
           obj[name] = data;
-          this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+          if (this.subscriber) {
+              this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+          }
           if (callback) {
             callback(null, obj);
           }
