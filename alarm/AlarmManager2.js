@@ -230,7 +230,10 @@ module.exports = class {
           return;
         }
         
-        let dups = existingAlarms.filter((a) => alarm.isDup(a));
+        let dups = existingAlarms
+                            .filter((a) => a != null)
+                            .filter((a) => alarm.isDup(a));
+        
         if(dups.length > 0) {
           resolve(true);
         } else {
@@ -298,6 +301,9 @@ module.exports = class {
   }
 
   jsonToAlarm(json) {
+    if(!json)
+      return null;
+    
     let proto = Alarm.mapping[json.type];
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -344,7 +350,7 @@ module.exports = class {
           callback(err);
           return;          
         }
-        callback(null, results.map((r) => this.jsonToAlarm(r)).filter((r) => r != null));
+        callback(null, results.map((r) => this.jsonToAlarm(r)));
       });
     }
     
@@ -365,7 +371,15 @@ module.exports = class {
           callback(err);
           return;
         }
-        this.idsToAlarms(alarmIDs, callback);
+        this.idsToAlarms(alarmIDs, (err, results) => {
+          if(err) {
+            callback(err);
+            return;
+          }
+          
+          results = results.filter((a) => a != null);
+          callback(err, results);
+        });
       });
     }
 
@@ -400,7 +414,15 @@ module.exports = class {
         return;
       }
 
-      this.idsToAlarms(results, callback);
+      this.idsToAlarms(results, (err, results) => {
+        if (err) {
+          callback(err);
+          return;
+        }
+
+        results = results.filter((a) => a != null);
+        callback(err, results);
+      });
     });
   }
 

@@ -1394,10 +1394,29 @@ module.exports = class {
     return new Promise((resolve, reject) => {
       policyManager2.loadActivePolicys((err, rules) => {
         if(err) {
-          reject(err);          
+          reject(err);
+          return;
         } else {
-          json.policyRules = rules;
-          resolve();
+
+          let alarmIDs = rules.map((p) => p.aid);
+
+          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
+            if(err) {
+              log.error("Failed to get alarms by ids:", err, {});
+              reject(err);
+              return;
+            }
+
+            for(let i = 0; i < rules.length; i ++) {
+              if(rules[i] && alarms[i]) {
+                rules[i].alarmMessage = alarms[i].localizedInfo();
+                rules[i].alarmTimestamp = alarms[i].timestamp;
+              }
+            }
+
+            json.policyRules = rules;
+            resolve();
+          });           
         }
       });
     });
@@ -1411,8 +1430,26 @@ module.exports = class {
         if(err) {
           reject(err);
         } else {
-          json.exceptionRules = rules;
-          resolve();
+
+          let alarmIDs = rules.map((p) => p.aid);
+
+          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
+            if(err) {
+              log.error("Failed to get alarms by ids:", err, {});
+              reject(err);
+              return;
+            }
+
+            for(let i = 0; i < rules.length; i ++) {
+              if(rules[i] && alarms[i]) {
+                rules[i].alarmMessage = alarms[i].localizedInfo();
+                rules[i].alarmTimestamp = alarms[i].timestamp;
+              }
+            }
+
+            json.exceptionRules = rules;
+            resolve();
+          });
         }
       });
     });
