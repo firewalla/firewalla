@@ -18,5 +18,14 @@
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问设备\"{{p.device.name}}\"的{{p.device.port}}端口, 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
   "NOTIF_ALARM_INTEL_FROM_INSIDE": "设备\"{{p.device.name}}\"正在访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "已阻止{{p.dest.name}}访问设备\"{{p.device.name}}\", 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
-  "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已阻止设备\"{{p.device.name}}\"正在访问{{p.dest.name}},该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址"
+  "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已阻止设备\"{{p.device.name}}\"正在访问{{p.dest.name}},该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
+  "INFO_ALARM_PORN": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})访问了色情网站{{p.dest.name}}.",
+  "INFO_ALARM_VIDEO": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})访问了视频网站{{p.dest.name}}.",
+  "INFO_ALARM_GAME": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})玩了游戏{{p.dest.name}}.",
+  "INFO_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
+  "INFO_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
+  "INFO_ALARM_NEW_DEVICE": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})接入您的网络",
+  "INFO_ALARM_BRO_NOTICE": "{{localizedRelativeTime}}{{p.message}}",
+  "INFO_ALARM_INTEL_FROM_OUTSIDE": "{{localizedRelativeTime}}{{p.dest.name}}访问设备{{p.device.name}} ({{p.device.ip}}:{{p.device.port}}), 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。",
+  "INFO_ALARM_INTEL_FROM_INSIDE": "{{localizedRelativeTime}}设备{{p.device.name}} ({{p.device.ip}})访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。"
 }
