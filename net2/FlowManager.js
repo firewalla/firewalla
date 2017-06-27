@@ -1004,7 +1004,7 @@ module.exports = class FlowManager {
       let o = flow;
       
       if (o == null) {
-        log.error("Host:Flows:Sorting:Parsing", result[i]);
+        log.error("Host:Flows:Sorting:Parsing", flow);
         return false;
       }
       if (o.rb == null || o.ob == null) {
@@ -1078,7 +1078,7 @@ module.exports = class FlowManager {
       
       console.log(key, from, to);
       
-      return rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0 , QUERY_MAX_FLOW])
+      return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
         .then((results) => {
         
         if(results === null || results.length === 0)
@@ -1086,7 +1086,7 @@ module.exports = class FlowManager {
         
         let flowObjects = results
                             .map((x) => this.flowStringToJSON(x))
-                            .map((x) => this.isFlowValid(x));
+                            .filter((x) => this.isFlowValid(x));
         
         let conndb = {};
         
@@ -1103,7 +1103,7 @@ module.exports = class FlowManager {
         return connArray;
         
         }).catch((err) => {
-        log.error("Failed to query flow data for ip", ip, ":", err, {});
+        log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
         return;
       });
     }
