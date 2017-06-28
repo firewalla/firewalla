@@ -1026,6 +1026,34 @@ module.exports = class FlowManager {
       }
     }
        
+    mergeFlow(targetFlow, flow) {
+      targetFlow.rb += flow.rb;
+      targetFlow.ct += flow.ct;
+      targetFlow.ob += flow.ob;
+      targetFlow.du += flow.du;
+      if (targetFlow.ts < flow.ts) {
+        targetFlow.ts = flow.ts;
+      }
+      if (flow.pf) {
+        for (let k in flow.pf) {
+          if (targetFlow.pf[k] != null) {
+            targetFlow.pf[k].rb += flow.pf[k].rb;
+            targetFlow.pf[k].ob += flow.pf[k].ob;
+            targetFlow.pf[k].ct += flow.pf[k].ct;
+          } else {
+            targetFlow.pf[k] = flow.pf[k]
+          }
+        }
+      }
+      if (flow.flows) {
+        if (targetFlow.flows) {
+          targetFlow.flows = targetFlow.flows.concat(flow.flows);
+        } else {
+          targetFlow.flows = flow.flows;
+        }
+      }
+    }
+    
     // append to existing flow or create new
     appendFlow(conndb, flowObject, ip) {
       let o = flowObject;
@@ -1041,41 +1069,17 @@ module.exports = class FlowManager {
       if (flow == null) {
         conndb[key] = o;
       } else {
-        flow.rb += o.rb;
-        flow.ct += o.ct;
-        flow.ob += o.ob;
-        flow.du += o.du;
-        if (flow.ts < o.ts) {
-          flow.ts = o.ts;
-        }
-        if (o.pf) {
-          for (let k in o.pf) {
-            if (flow.pf[k] != null) {
-              flow.pf[k].rb += o.pf[k].rb;
-              flow.pf[k].ob += o.pf[k].ob;
-              flow.pf[k].ct += o.pf[k].ct;
-            } else {
-              flow.pf[k] = o.pf[k]
-            }
-          }
-        }
-        if (o.flows) {
-          if (flow.flows) {
-            flow.flows = flow.flows.concat(o.flows);
-          } else {
-            flow.flows = o.flows;
-          }
-        }
+        this.mergeFlow(flow, o);
       }
     }   
-    
+  
     // conns in last 24 hours
-    recentOutgoingConnections(ip) {
+    recentOutgoingConnections(ip, interval) {
+      interval = interval || 3600 * 24;
+      
       let key = "flow:conn:in:" + ip;
       let to = new Date() / 1000;
-      let from = to - 24 * 3600;
-      
-      console.log(key, from, to);
+      let from = to - interval;
       
       return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
         .then((results) => {

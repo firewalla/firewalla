@@ -150,7 +150,7 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
-  /host/{id}/flow:
+  /host/{id}/recentFlow:
     get:
       summary: Get flow info of given host
       tags:
@@ -415,6 +415,12 @@ parameters:
     in: query
     required: false
     description: Process Name
+    type: string
+  interval:
+    name: interval
+    in: query
+    required: false
+    description: Query Interval
     type: string
   page:
     name: page

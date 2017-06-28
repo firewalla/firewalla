@@ -1142,11 +1142,11 @@ module.exports = class {
 
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
-                if (this.type == 'server') {
+                if (this.type === 'server') {
                     sysManager.redisclean();
                 }
                 this.getHosts((err, result) => {
-                    if (this.type == 'server') {
+                    if (this.type === 'server') {
                         for (let i in result) {
                             //result[i].spoof(true);
                         }

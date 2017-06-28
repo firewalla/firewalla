@@ -25,6 +25,9 @@ let hostManager = new HostManager('api', 'client', 'info');
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();
 
+let FlowTool = require('../../net2/FlowTool');
+let flowTool = new FlowTool();
+
 router.get('/all',
            (req, res, next) => {
              let json = {};
@@ -64,13 +67,11 @@ router.get('/:host',
              }
            });
 
-router.get('/:host/flow',
+router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
-    
-    console.log(host);
-    
-    flowManager.recentOutgoingConnections(host)
+        
+    flowTool.getRecentOutgoingConnections(host)
       .then((conns) => {
         res.json(conns);
       }).catch((err) => {
