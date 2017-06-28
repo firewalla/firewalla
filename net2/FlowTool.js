@@ -26,7 +26,9 @@ Promise.promisifyAll(redis.Multi.prototype);
 let SysManager = require('./SysManager.js');
 let sysManager = new SysManager('info');
 
-const RECENT_INTERVAL = 30 * 60; // 30 mins
+let country = require('../extension/country/country.js');
+
+const RECENT_INTERVAL = 120 * 60; // 30 mins
 const QUERY_MAX_FLOW = 10000;
 
 let instance = null;
@@ -38,20 +40,28 @@ class FlowTool {
     return instance;
   }
 
-  static _trimFlow(flow) {
+  trimFlow(flow) {
     if(!flow)
       return;
     
-    if(flow.flows)
+    if("flows" in flow)
       delete flow.flows;
     
-    if(flow.pf)
+    if("pf" in flow)
       delete flow.pf;
     
+    if("bl" in flow)
+      delete flow.bl;
+    
+    if("af" in flow)
+      delete flow.af;
+    
+    if("f" in flow)
+      delete flow.f;
     
   }
   
-  static _mergeFlow(targetFlow, flow) {
+  _mergeFlow(targetFlow, flow) {
     targetFlow.rb += flow.rb;
     targetFlow.ct += flow.ct;
     targetFlow.ob += flow.ob;
@@ -80,7 +90,7 @@ class FlowTool {
     }
   }
 
-  static _getKey(flow) {
+  _getKey(flow) {
     let key = "";
     if (flow.sh === flow.lh) {
       key = flow.dh + ":" + flow.fd;
@@ -104,7 +114,7 @@ class FlowTool {
     }
   }
 
-  static _flowStringToJSON(flow) {
+  _flowStringToJSON(flow) {
     try {
       return JSON.parse(flow);
     } catch(err) {
@@ -112,7 +122,7 @@ class FlowTool {
     }
   }
 
-  static _isFlowValid(flow) {
+  _isFlowValid(flow) {
     let o = flow;
 
     if (!o) {
@@ -129,8 +139,21 @@ class FlowTool {
 
     return true;
   }
+
+  _enrichCountryInfo(flow) {
+    let sh = flow.sh;
+    let dh = flow.dh;
+    let lh = flow.lh;
+
+    if (sh === lh) {
+      flow.country = country.getCountry(dh);
+    } else {
+      flow.country = country.getCountry(sh);
+    }
+  }
   
   getRecentOutgoingConnections(ip) {
+    
     let key = "flow:conn:in:" + ip;
     let to = new Date() / 1000;
     let from = to - RECENT_INTERVAL;
@@ -142,10 +165,10 @@ class FlowTool {
           return [];
 
         let flowObjects = results
-          .map((x) => FlowTool._flowStringToJSON(x))
-          .filter((x) => FlowTool._isFlowValid(x));
+          .map((x) => this._flowStringToJSON(x))
+          .filter((x) => this._isFlowValid(x));
         
-        flowObjects.forEach((x) => FlowTool._trimFlow(x));
+        flowObjects.forEach((x) => this.trimFlow(x));
 
         let mergedFlowObjects = [];
         let lastFlowObject = null;
@@ -157,13 +180,16 @@ class FlowTool {
             return;
           }
           
-          if (FlowTool._getKey(lastFlowObject) === FlowTool._getKey(flowObject)) {
-            FlowTool._mergeFlow(lastFlowObject, flowObject);
+          if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
+            this._mergeFlow(lastFlowObject, flowObject);
           } else {
             mergedFlowObjects.push(flowObject);
             lastFlowObject = flowObject;
           }
         });
+        
+        // add country info
+        mergedFlowObjects.forEach(this._enrichCountryInfo);
         
         return mergedFlowObjects;
 

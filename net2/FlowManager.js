@@ -50,6 +50,8 @@ var flowconfig = {
     activityDetectMax : 60*60*5,
 }; 
 
+let flowTool = require('./FlowTool')();
+
 class FlowGraph {
     constructor(name,flowarray) {
          if (flowarray) {
@@ -1202,6 +1204,10 @@ module.exports = class FlowManager {
                     for (let m in conndb) {
                         sorted.push(conndb[m]);
                     }
+                    
+                    // trim to reduce size
+                    sorted.forEach(flowTool.trimFlow);                   
+                  
                     if (result.length>0) 
                         log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
