@@ -26,7 +26,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 let SysManager = require('./SysManager.js');
 let sysManager = new SysManager('info');
 
-const RECENT_INTERVAL = 15 * 60; // 15 mins
+const RECENT_INTERVAL = 30 * 60; // 30 mins
 const QUERY_MAX_FLOW = 10000;
 
 let instance = null;
@@ -38,6 +38,19 @@ class FlowTool {
     return instance;
   }
 
+  static _trimFlow(flow) {
+    if(!flow)
+      return;
+    
+    if(flow.flows)
+      delete flow.flows;
+    
+    if(flow.pf)
+      delete flow.pf;
+    
+    
+  }
+  
   static _mergeFlow(targetFlow, flow) {
     targetFlow.rb += flow.rb;
     targetFlow.ct += flow.ct;
@@ -57,6 +70,7 @@ class FlowTool {
         }
       }
     }
+    
     if (flow.flows) {
       if (targetFlow.flows) {
         targetFlow.flows = targetFlow.flows.concat(flow.flows);
@@ -66,9 +80,9 @@ class FlowTool {
     }
   }
 
-  static _getKey(flow, ip) {
+  static _getKey(flow) {
     let key = "";
-    if (flow.sh === ip) {
+    if (flow.sh === flow.lh) {
       key = flow.dh + ":" + flow.fd;
     } else {
       key = flow.sh + ":" + flow.fd;
@@ -130,6 +144,8 @@ class FlowTool {
         let flowObjects = results
           .map((x) => FlowTool._flowStringToJSON(x))
           .filter((x) => FlowTool._isFlowValid(x));
+        
+        flowObjects.forEach((x) => FlowTool._trimFlow(x));
 
         let mergedFlowObjects = [];
         let lastFlowObject = null;
