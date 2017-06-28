@@ -26,10 +26,17 @@ Promise.promisifyAll(redis.Multi.prototype);
 let SysManager = require('./SysManager.js');
 let sysManager = new SysManager('info');
 
+let DNSManager = require('./DNSManager.js');
+let dnsManager = new DNSManager('info');
+
+let async = require('async');
+
 let country = require('../extension/country/country.js');
 
-const RECENT_INTERVAL = 120 * 60; // 30 mins
+const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const QUERY_MAX_FLOW = 10000;
+const MAX_RECENT_FLOW = 50;
+const MAX_CONCURRENT_ACTIVITY = 10;
 
 let instance = null;
 class FlowTool {
@@ -100,6 +107,14 @@ class FlowTool {
     return key;
   }
   
+  _getRemoteIP(flow) {
+    if (flow.sh === flow.lh) {
+      return flow.dh;
+    } else {
+      return flow.sh;
+    }
+  }
+  
   // append to existing flow or create new
   _appendFlow(conndb, flowObject, ip) {
     let o = flowObject;
@@ -152,13 +167,42 @@ class FlowTool {
     }
   }
   
+  _enrichDNSInfo(flows) {
+
+    return new Promise((resolve, reject) => {
+      async.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
+        let ip = this._getRemoteIP(flow);
+
+        dnsManager.resolvehost(ip, (err, info) => {
+          if (err) {
+            cb(err);
+            return;
+          }
+
+          if (info && info.name) {
+            flow.dhname = info.name;
+          }
+
+          cb();
+        });
+      }, (err) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+        
+        resolve(flows);
+      });
+    });
+  }
+  
   getRecentOutgoingConnections(ip) {
     
     let key = "flow:conn:in:" + ip;
     let to = new Date() / 1000;
-    let from = to - RECENT_INTERVAL;
+    let from = to - MAX_RECENT_INTERVAL;
 
-    return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
+    return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW])
       .then((results) => {
 
         if(results === null || results.length === 0)
@@ -191,7 +235,7 @@ class FlowTool {
         // add country info
         mergedFlowObjects.forEach(this._enrichCountryInfo);
         
-        return mergedFlowObjects;
+        return this._enrichDNSInfo(mergedFlowObjects);
 
       }).catch((err) => {
         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
