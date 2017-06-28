@@ -22,12 +22,34 @@ let bodyParser = require('body-parser')
 let PM2 = require('../../alarm/PolicyManager2.js');
 let pm2 = new PM2();
 
+let AM2 = require('../../alarm/AlarmManager2');
+let am2 = new AM2();
+
 router.get('/list', (req, res, next) => {
   pm2.loadActivePolicys((err, list) => {
     if(err) {
       res.status(500).send('');
+      return;
     } else {
-      res.json({list: list});
+
+      let alarmIDs = list.map((p) => p.aid);
+
+      am2.idsToAlarms(alarmIDs, (err, alarms) => {
+        if(err) {
+          log.error("Failed to get alarms by ids:", err, {});
+          res.status(500).send('');
+          return;
+        }
+
+        for(let i = 0; i < list.length; i ++) {
+          if(list[i] && alarms[i]) {
+            list[i].alarmMessage = alarms[i].localizedInfo();
+            list[i].alarmTimestamp = alarms[i].timestamp;
+          }
+        }
+
+        res.json({list: list});
+      });
     }
   });
 });

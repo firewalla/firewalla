@@ -11,6 +11,7 @@ module.exports = class {
   constructor(rules) {
     // FIXME: ignore any rules not begin with prefix "p"
     extend(this, rules);
+    this.timestamp = new Date() / 1000;
   }
 
   match(alarm) {

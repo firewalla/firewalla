@@ -150,6 +150,16 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
+  /host/{id}/recentFlow:
+    get:
+      summary: Get flow info of given host
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success          
   /mac/{id}:
     post:
       summary: Update Mac Info
@@ -405,6 +415,12 @@ parameters:
     in: query
     required: false
     description: Process Name
+    type: string
+  interval:
+    name: interval
+    in: query
+    required: false
+    description: Query Interval
     type: string
   page:
     name: page

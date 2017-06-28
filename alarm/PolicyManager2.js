@@ -41,7 +41,9 @@ let Block = require('../control/Block.js');
 
 let Policy = require('./Policy.js');
 
-module.exports = class {
+
+
+class PolicyManager2 {
   constructor() {
     if (instance == null) {
       instance = this;
@@ -351,3 +353,4 @@ module.exports = class {
 
 }
 
+module.exports = PolicyManager2;

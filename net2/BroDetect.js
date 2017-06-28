@@ -375,7 +375,7 @@ module.exports = class {
                                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                                  }
                              } else {
-                                 log.error("Dns:Error", "unable to update count");
+                                 log.error("Dns:Error", "unable to update count", err, {});
                              }
                               //  });
                         });
@@ -397,7 +397,7 @@ module.exports = class {
                         log.debug("Dns:Redis:Merge", key, changeset, {});
                         rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
                             if (err) {
-                                log.error("Discovery:Nmap:Update:Error", err);
+                                log.error("Discovery:Nmap:Update:Error", err, {});
                             }
                         });
                     }

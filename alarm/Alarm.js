@@ -8,12 +8,11 @@ let util = require('util');
 let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
 let i18n = require('../util/i18n.js');
 
-var uuid = require('uuid');
+let uuid = require('uuid');
 
-var extend = require('util')._extend
+let extend = require('util')._extend;
 
-
-
+// let moment = require('moment');
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
@@ -53,12 +52,24 @@ class Alarm {
     return this.type;
   }
   
+  getInfoCategory() {
+    return "INFO_" + this.getI18NCategory();
+  }
+  
   localizedMessage() {
     return i18n.__(this.getI18NCategory(), this);
   }
 
   localizedNotification() {
     return i18n.__(this.getNotificationCategory(), this);
+  }
+  
+  localizedInfo() {
+    if(this.timestamp)
+      //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
+      this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
+    
+    return i18n.__(this.getInfoCategory(), this);
   }
 
   toString() {
