@@ -38,7 +38,7 @@ class FlowTool {
     return instance;
   }
 
-  _mergeFlow(targetFlow, flow) {
+  static _mergeFlow(targetFlow, flow) {
     targetFlow.rb += flow.rb;
     targetFlow.ct += flow.ct;
     targetFlow.ob += flow.ob;
@@ -66,7 +66,7 @@ class FlowTool {
     }
   }
 
-  _getKey(flow, ip) {
+  static _getKey(flow, ip) {
     let key = "";
     if (flow.sh === ip) {
       key = flow.dh + ":" + flow.fd;
@@ -90,7 +90,7 @@ class FlowTool {
     }
   }
 
-  _flowStringToJSON(flow) {
+  static _flowStringToJSON(flow) {
     try {
       return JSON.parse(flow);
     } catch(err) {
@@ -98,17 +98,17 @@ class FlowTool {
     }
   }
 
-  _isFlowValid(flow) {
+  static _isFlowValid(flow) {
     let o = flow;
 
-    if (o == null) {
+    if (!o) {
       log.error("Host:Flows:Sorting:Parsing", flow);
       return false;
     }
-    if (o.rb == null || o.ob == null) {
+    if ( !o.rb || !o.ob ) {
       return false
     }
-    if (o.rb == 0 && o.ob ==0) {
+    if (o.rb === 0 && o.ob === 0) {
       // ignore zero length flows
       return false;
     }
@@ -128,28 +128,31 @@ class FlowTool {
           return [];
 
         let flowObjects = results
-          .map((x) => this._flowStringToJSON(x))
-          .filter((x) => this._isFlowValid(x));
+          .map((x) => FlowTool._flowStringToJSON(x))
+          .filter((x) => FlowTool._isFlowValid(x));
 
-        let mergedFlowObjects = flowObjects.reduce((a, b) => {
-          if(a.length === 0)
-            return [b];
-          
-          let last = a[a.length - 1];
-          let lastKey = this._getkey(last);
-          let key = this._getKey(b);
-          if(lastKey === key) {
-            this._mergeFlow(last, b);
-          } else {
-            a.push(b);
+        let mergedFlowObjects = [];
+        let lastFlowObject = null;
+
+        flowObjects.forEach((flowObject) => {
+          if(!lastFlowObject) {
+            mergedFlowObjects.push(flowObject);
+            lastFlowObject = flowObject;
+            return;
           }
-        }, []);
+          
+          if (FlowTool._getKey(lastFlowObject) === FlowTool._getKey(flowObject)) {
+            FlowTool._mergeFlow(lastFlowObject, flowObject);
+          } else {
+            mergedFlowObjects.push(flowObject);
+            lastFlowObject = flowObject;
+          }
+        });
         
         return mergedFlowObjects;
 
       }).catch((err) => {
         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
-        return;
       });
   }
 }
