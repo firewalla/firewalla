@@ -88,3 +88,8 @@ flycheck_*.el
 # directory configuration
 .dir-locals.el
 ######## END OF EMACS ########
+/bin/bitbridge3
+/bin/bitbridge6a
+/bin/bitbridge7
+/imports/bro
+/imports/bro49.tar.gz
