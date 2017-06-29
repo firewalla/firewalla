@@ -215,6 +215,14 @@ paths:
       responses:
         200:
           description: Success
+  /alarm/list:
+    get:
+      summary: Get all active alarms
+      tags:
+        - Alarm
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:

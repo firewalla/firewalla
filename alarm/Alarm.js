@@ -138,6 +138,17 @@ class NewDeviceAlarm extends Alarm {
   }
 }
 
+class VulnerabilityAlarm extends Alarm {
+  constructor(timestamp, device, vulnerabilityID, info) {
+    super("ALARM_VULNERABILITY", timestamp, device, info);
+    this["p.vid"] = vulnerabilityID;
+  }
+
+  getI18NCategory() {
+    return util.format("%s_%s", this.type, this["p.vid"]);
+  }
+}
+
 class BroNoticeAlarm extends Alarm {
   constructor(timestamp, device, notice, message, info) {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
@@ -260,7 +271,8 @@ let classMapping = {
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
-  ALARM_INTEL: IntelAlarm.prototype
+  ALARM_INTEL: IntelAlarm.prototype,
+  ALARM_VULNERABILITY: VulnerabilityAlarm.prototype
 }
 
 module.exports = {
@@ -273,5 +285,6 @@ module.exports = {
   NewDeviceAlarm: NewDeviceAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
+  VulnerabilityAlarm: VulnerabilityAlarm,
   mapping: classMapping
 }
