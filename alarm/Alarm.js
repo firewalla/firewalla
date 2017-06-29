@@ -143,7 +143,12 @@ class VulnerabilityAlarm extends Alarm {
     super("ALARM_VULNERABILITY", timestamp, device, info);
     this["p.vid"] = vulnerabilityID;
   }
+
+  getI18NCategory() {
+    return util.format("%s_%s", this.type, this["p.vid"]);
+  }
 }
+
 class BroNoticeAlarm extends Alarm {
   constructor(timestamp, device, notice, message, info) {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
