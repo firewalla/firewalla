@@ -243,6 +243,18 @@ module.exports = class {
     });
   }
 
+  checkAndSaveAsync(alarm) {
+    return new Promise((resolve, reject) => {
+      this.checkAndSave(alarm, (err) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      })
+    })
+  }
+  
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
     
@@ -683,7 +695,7 @@ module.exports = class {
         dnsManager.resolveLocalHost(deviceIP, (err, result) => {
           
           if(err ||result == null) {
-            log.error("Failed to find host " + lh + " in database: " + err);
+            log.error("Failed to find host " + deviceIP + " in database: " + err);
             if(err)
               reject(err);
             reject(new Error("host " + deviceIP + " not found"));

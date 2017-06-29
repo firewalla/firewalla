@@ -1,0 +1,15 @@
+<component name="libraryTable">
+  <library name="GOPATH &lt;firewalla&gt;">
+    <CLASSES>
+      <root url="file://$USER_HOME$/Code/go/src/golang.org" />
+      <root url="file://$USER_HOME$/Code/go/src/github.com" />
+    </CLASSES>
+    <SOURCES>
+      <root url="file://$USER_HOME$/Code/go/src/golang.org" />
+      <root url="file://$USER_HOME$/Code/go/src/github.com" />
+    </SOURCES>
+    <excluded>
+      <root url="file://$PROJECT_DIR$" />
+    </excluded>
+  </library>
+</component>

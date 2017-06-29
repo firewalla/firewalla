@@ -23,8 +23,9 @@ let util = require('util');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
-var _isProduction = null;
+let _isProduction = null;
 let _isDocker = null;
+let _platform = null; 
 
 let version = null;
 
@@ -34,6 +35,14 @@ function getFirewallaHome() {
 
 function getLocalesDirectory() {
   return firewallaHome + "/locales";
+}
+
+function getPlatform() {
+  if(_platform === null) {
+    _platform = require('child_process').execSync("uname -m");
+  }
+  
+  return _platform;
 }
 
 function getUserID() {
@@ -342,6 +351,7 @@ module.exports = {
   constants: constants,
   getVersion: getVersion,
   isDocker:isDocker,
-  getTempFolder: getTempFolder
+  getTempFolder: getTempFolder,
+  getPlatform: getPlatform
 }
 

@@ -35,7 +35,7 @@ let country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const QUERY_MAX_FLOW = 10000;
-const MAX_RECENT_FLOW = 50;
+const MAX_RECENT_FLOW = 80;
 const MAX_CONCURRENT_ACTIVITY = 10;
 
 let instance = null;
@@ -167,13 +167,14 @@ class FlowTool {
     }
   }
   
+  // FIXME: support dynamically load intel from cloud
   _enrichDNSInfo(flows) {
 
     return new Promise((resolve, reject) => {
       async.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
         let ip = this._getRemoteIP(flow);
 
-        dnsManager.resolvehost(ip, (err, info) => {
+        dnsManager.resolvehost(ip, (err, info, dnsData) => {
           if (err) {
             cb(err);
             return;
@@ -194,6 +195,7 @@ class FlowTool {
         resolve(flows);
       });
     });
+    
   }
   
   getRecentOutgoingConnections(ip) {
@@ -241,6 +243,8 @@ class FlowTool {
         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
       });
   }
+  
+  
 }
 
 module.exports = function() {
