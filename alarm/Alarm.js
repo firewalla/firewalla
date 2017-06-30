@@ -29,6 +29,7 @@ class Alarm {
 //    this.payloads = payloads;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
+    this.notifType = "security"; // default security
     if(info)
       extend(this, info);
 
@@ -260,18 +261,22 @@ class LargeTransferAlarm extends OutboundAlarm {
 class VideoAlarm extends OutboundAlarm {
   constructor(timestamp, device, videoID, info) {
     super("ALARM_VIDEO", timestamp, device, videoID, info);
+    this.notifType = "activity";
   }
 }
 
 class GameAlarm extends OutboundAlarm {
   constructor(timestamp, device, gameID, info) {
     super("ALARM_GAME", timestamp, device, gameID, info);
+    this.notifType = "activity";
+
   }
 }
 
 class PornAlarm extends OutboundAlarm {
   constructor(timestamp, device, pornID, info) {
     super("ALARM_PORN", timestamp, device, pornID, info);
+    this.notifType = "activity";
   }
 }
 

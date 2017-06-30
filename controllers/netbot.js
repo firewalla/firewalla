@@ -72,6 +72,8 @@ let f = require('../net2/Firewalla.js');
 
 let flowTool = require('../net2/FlowTool')();
 
+let i18n = require('../util/i18n');
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -451,6 +453,11 @@ class netBot extends ControllerBot {
         let aid = msg.aid;
         if (notifMsg) {
           log.info("Sending notification: " + notifMsg);
+          
+          notifMsg = {
+            title: i18n.__("SECURITY_ALERT"),
+            body: notifMsg
+          }
 
           let data = {
             gid: this.primarygid,
@@ -462,6 +469,17 @@ class netBot extends ControllerBot {
 
           if (msg.alarmID) {
             data.alarmID = msg.alarmID;
+          }
+          
+          switch(msg.alarmNotifType) {
+            case "security":
+              notifMsg.title = i18n.__("SECURITY_ALERT");
+              break;
+            case "activity":
+              notifMsg.title = i18n.__("ACTIVITY_ALERT");
+              break;
+            default:
+              break;
           }
 
           if (msg.autoblock) {

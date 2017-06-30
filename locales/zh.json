@@ -1,4 +1,6 @@
 {
+  "SECURITY_ALERT": "安全警报",
+  "ACTIVITY_ALERT": "发现网络行为",
   "ALARM_PORN": "此设备访问了色情网站{{p.dest.name}}.",
   "ALARM_VIDEO": "此设备访问了视频网站{{p.dest.name}}.",
   "ALARM_GAME": "此设备玩了游戏{{p.dest.name}}.",
