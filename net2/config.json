@@ -40,7 +40,8 @@
     "DHCPSensor": {},
     "UPNPSensor": {},
     "BonjourSensor": {},
-    "HeapSensor": {}
+    "HeapSensor": {},
+    "AdvancedNmapSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

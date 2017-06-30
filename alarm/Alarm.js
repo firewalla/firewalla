@@ -147,6 +147,17 @@ class VulnerabilityAlarm extends Alarm {
   getI18NCategory() {
     return util.format("%s_%s", this.type, this["p.vid"]);
   }
+
+  isDup(alarm) {
+    if(!super.isDup(alarm))
+      return false;
+    
+    if(alarm["p.vid"] === this["p.vid"]) {
+      return true;
+    } 
+    
+    return false;
+  }
 }
 
 class BroNoticeAlarm extends Alarm {
