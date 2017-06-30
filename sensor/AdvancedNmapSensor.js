@@ -33,6 +33,8 @@ let NmapSensor = require('../sensor/NmapSensor');
 
 let cp = require('child_process');
 
+let spt = require('../net2/SystemPolicyTool')();
+
 let Alarm = require('../alarm/Alarm');
 let AlarmManager2 = require('../alarm/AlarmManager2');
 let am2 = new AlarmManager2();
@@ -53,8 +55,8 @@ class AdvancedNmapSensor extends Sensor {
     let firstScanTime = (30 + Math.random() * 60) * 1000; // 30 - 90 seconds
     let interval = (8 + Math.random() * 4) * 3600 * 1000; // 8-12 hours
     setTimeout(() => {
-      this.runOnce;
-      setInterval(this.runOnce, interval);
+      this.checkAndRunOnce();
+      setInterval(() => this.checkAndRunOnce, interval);
     }, firstScanTime);
   }
   
@@ -78,6 +80,20 @@ class AdvancedNmapSensor extends Sensor {
         })
     }).catch((err) => {
       log.error("Failed to create vulnerability alarm:", err, err.stack, {});
+    })
+  }
+  
+  isSensorEnable() {
+    return spt.isPolicyEnabled("vulScan");
+  }
+  
+  checkAndRunOnce() {
+    this.isSensorEnable()
+      .then((result) => {
+      if(result)
+        this.runOnce();
+      }).catch((err) => {
+      log.error("Failed to check if sensor is enabled");
     })
   }
   

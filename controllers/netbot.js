@@ -261,6 +261,20 @@ class netBot extends ControllerBot {
     });
   }
 
+  _vulScan(ip, value, callback) {
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("vulScan", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on vulScan: " + value);
+        }
+      });
+    });
+  }
+  
   _dnsmasq(ip, value, callback) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
@@ -570,6 +584,11 @@ class netBot extends ControllerBot {
               break;
             case "scisurf":
               this._scisurf(msg.target, msg.data.value.scisurf, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "vulScan":
+              this._vulScan(msg.target, msg.data.value.vulScan, (err, obj) => {
                 cb(err);
               });
               break;
