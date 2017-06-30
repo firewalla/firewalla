@@ -171,7 +171,8 @@ module.exports = class {
         let data = {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
-          aid: alarm.aid,              
+          aid: alarm.aid,
+          alarmNotifType:alarm.notifType
         };
 
         if(alarm.result_method === "auto") {
