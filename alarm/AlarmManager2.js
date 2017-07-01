@@ -710,7 +710,7 @@ module.exports = class {
             "p.device.name": deviceName,
             "p.device.id": deviceID,
             "p.device.mac": deviceID,
-            "p.device.macVendor": result.macVendor
+            "p.device.macVendor": result.macVendor || "Unknown"
           });
 
           resolve(alarm);

@@ -7,7 +7,6 @@
 let instance = null;
 let log = null;
 
-let fs = require('fs');
 let util = require('util');
 let key = require('../common/key.js');
 let jsonfile = require('jsonfile');
@@ -18,10 +17,15 @@ let fHome = f.getFirewallaHome();
 let userID = f.getUserID();
 
 let Promise = require('bluebird');
+let fs = Promise.promisifyAll(require("fs"))
 
 let dnsFilterDir = f.getUserConfigFolder() + "/dns";
 let filterFile = dnsFilterDir + "/hash_filter.conf";
 let tmpFilterFile = dnsFilterDir + "/hash_filter.conf.tmp";
+
+let policyFilterFile = dnsFilterDir + "/policy_filter.conf";
+let adBlockFilterFile = dnsFilterDir + "/adblock_filter.conf";
+let familyFilterFile = dnsFilterDir + "/family_filter.conf";
 
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
@@ -43,12 +47,18 @@ let dhcpFeature = false;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
+let BLACK_HOLE_IP="198.51.100.99";
+
+let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
+
 module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       log = require("../../net2/logger.js")("dnsmasq", loglevel);
 
       instance = this;
+      this.minReloadTime = new Date() / 1000;
+      this.deleteInProgress = false;
     }
     return instance;
   }
@@ -106,7 +116,7 @@ module.exports = class {
     }
 
     if(!nameservers) {
-      nameservers = ["8.8.8.8"];  // use google dns by default, should not reach this code
+      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
     
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
@@ -135,9 +145,92 @@ module.exports = class {
       }
     });
   }
+  
+  cleanUpADBlockFilter() {
+    return fs.unlinkAsync(adBlockFilterFile);
+  }
+  
+  cleanUpFamilyFilter() {
+    return fs.unlinkAsync(familyFilterFile);
+  }
+  
+  cleanUpPolicyFilter() {
+    return fs.unlinkAsync(policyFilterFile);
+  }
+  
+  addPolicyFilterEntry(domain) {
+    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP);
+    
+    return fs.appendFileAsync(policyFilterFile, entry);
+  }
+  
+  removePolicyFilterEntry(domain) {
+    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
+    
+    if(this.deleteInProgress) {
+        return this.delay(1000)  // try again later
+          .then(() => {
+            return this.removePolicyFilterEntry(domain);
+          })
+    }
+    
+    this.deleteInProgress = true;
+    
+    return fs.readFileAsync(policyFilterFile, 'utf8')
+      .then((data) => {
+      
+      let newData = data.split("\n")
+        .filter((line) => line !== entry)
+        .join("\n");
+
+        return fs.writeFileAsync(policyFilterFile, newData)
+          .then(() => {
+            this.deleteInProgress = false;
+          }).catch((err) => {
+            log.error("Failed to write policy data file:", err, {});
+            this.deleteInProgress = false; // make sure the flag is reset back
+          });
+      })
+  }
+  
+  addPolicyFilterEntries(domains) {
+    let entries = domains.map((domain) => util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP));
+    let data = entries.join("");
+    return fs.appendFileAsync(policyFilterFile, data);
+  }
 
   setDefaultNameServers(nameservers) {
     defaultNameServers = nameservers;
+  }
+
+  delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
+  
+  _reload() {
+    let diff = new Date() / 1000 - this.minReloadTime;
+    if(diff > 0) { 
+      return new Promise((resolve, reject) => {
+        this.start(false, (err) => {
+          if (err)
+            reject(err);
+          resolve();
+        });
+      });
+    } else {
+      // delay 1 second plus minReloadTime;
+      return this.delay((-1 * diff + 1) * 1000)
+        .then(() => {
+          return this._reload();
+        });
+    }
+  }
+  
+  reload() {
+    this.minReloadTime = new Date() / 1000 + 1;
+    return this._reload();
   }
   
   updateTmpFilter(force, callback) {
@@ -377,7 +470,7 @@ module.exports = class {
 
   start(force, callback) {
     // 0. update resolv.conf
-    // 1. update filter
+    // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
     // 3. update iptables rule
 

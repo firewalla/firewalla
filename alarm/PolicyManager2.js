@@ -35,6 +35,9 @@ let policyIDKey = "policy:id";
 let policyPrefix = "policy:";
 let initID = 1;
 
+let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ();
+
 let extend = require('util')._extend;
 
 let Block = require('../control/Block.js');
@@ -107,6 +110,16 @@ class PolicyManager2 {
     callback(null, this.jsonToPolicy(json));
   }
   
+  savePolicyAsync(policy) {
+    return new Promise((resolve, reject) => {
+      this.savePolicy(policy, (err) => {
+        if(err)
+          reject(err);
+        
+        resolve();
+      })
+    })
+  }
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
@@ -326,6 +339,12 @@ class PolicyManager2 {
       let blockMacAsync = Promise.promisify(Block.blockMac);
       return blockMacAsync(policy.target);
       break;
+    case "dns":
+      return dnsmasq.addPolicyFilterEntry(policy.target)
+        .then(() => {
+          return dnsmasq.reload();
+        });
+      break;
     case "ip_port":
       return Block.blockPublicPort(policy.target, policy.target_port, policy.target_protocol);
       break;
@@ -343,6 +362,11 @@ class PolicyManager2 {
       let unblockMacAsync = Promise.promisify(Block.unblockMac);
       return unblockMacAsync(policy.target);
       break;
+    case "dns":
+      return dnsmasq.removePolicyFilterEntry(policy.target)
+        .then(() => {
+          return dnsmasq.reload();
+        });
     case "ip_port":
       return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
       break;
