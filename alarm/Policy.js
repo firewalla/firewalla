@@ -17,7 +17,7 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-var extend = require('util')._extend
+let extend = require('util')._extend
 
 module.exports = class {
   constructor(type, target, info) {
@@ -25,7 +25,7 @@ module.exports = class {
     this.type = type;
     this.target = target;
     if(info)
-      extentd(this, info);
+      extend(this, info);
   }
 }
 

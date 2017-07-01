@@ -30,6 +30,9 @@
   "dhcp": {
     "leaseTime": "24h"
   },
+  "dns": {
+    "defaultDNSServer": "8.8.8.8"
+  },
   "sysInfo": {
     "tailNum": 100
   },
@@ -42,7 +45,7 @@
     "BonjourSensor": {},
     "HeapSensor": {},
     "AdvancedNmapSensor": {}
-  },
+},
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
