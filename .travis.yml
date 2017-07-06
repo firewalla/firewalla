@@ -3,7 +3,7 @@ sudo: required
 dist: xenial
 
 install:
-- scripts/install.sh
+- sudo scripts/install.sh
 
 script:
 - cd test; node test_test.js
