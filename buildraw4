@@ -130,8 +130,8 @@ function install_walla()
     sudo cp $basedir/etc/fireupgrade.service /etc/systemd/system/. || perr_and_exit "Failed to copy fireupgrade service."
     
     # ignore systemctl part in docker enviornment, there is some bug that systemctl doesn't work in Docker
-    if [[ ! -f /.dockerenv ]]; then
-
+    if [[ -z ${TRAVIS+x} && ! -f /.dockerenv ]]; then
+    
 	# systemd will bring up firewalla service, which will bring up all the rest firewalla services
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."

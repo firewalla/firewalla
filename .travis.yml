@@ -1,8 +1,13 @@
 language: generic
 sudo: required
 dist: xenial
+
+install:
+- scripts/install.sh
+
 script:
-- BUILD_ONLY=1 ./buildraw
+- cd test; node test_test.js
+
 notifications:
   slack:
     rooms:
