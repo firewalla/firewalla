@@ -52,7 +52,7 @@ if [ -z ${TRAVIS+x} ]; then
   
 else
     ln -s $TRAVIS_BUILD_DIR /home/pi/firewalla
-    sudo chmod 777 -R $TRAVIS_BUILD_DIR
+    sudo chmod 777 -R /home/$USER
 fi
 
 cd /home/pi/firewalla/
