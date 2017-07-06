@@ -2,7 +2,7 @@ language: generic
 
 sudo: required
 
-dist: trusty
+dist: xenial
 
 script:
   - "BUILD_ONLY=1 ./buildraw"
