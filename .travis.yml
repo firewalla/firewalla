@@ -1,8 +1,14 @@
 language: generic
-
 sudo: required
+dist: xenial
 
-dist: trusty
+install:
+- sudo scripts/install.sh
 
 script:
-  - "BUILD_ONLY=1 ./buildraw"
+- cd test; node test_test.js
+
+notifications:
+  slack:
+    rooms:
+      secure: Ec35E+jNFh0CJ2zMqNMOOIFfrGJHFqkXzA2CQgx9g6T7XG4v0QXFgV/fjyEDQnKrEA8LUDuOJxi0GjDPBgR3iGsiFbeQEMcyUsJSIHsgYYPVaB+dek7xHTyFVQUYOLh1eGONVvJ3ZRMio3cUm7jLFcKbLqpTplsztkBqmuRfHDZvLW65PXPOKfIHrOs1tWzIa9sXKCugh/CzSDaLdmgH7QNOZI3YfzT+MxbnJuaOScTb8+7zIUav1G2SGFRgiE8ekXZBcpBAJG9i5Bp6TNdpoRs7eAz86Xk4KHSMl9ZlwOLGjGwQBubb+5ux0r92aQPjbCzy1IO3sUdNbwRTw4W/iwhDYmGzj18dW79+ha8+fDMwYjOQ/S732RQoR6CAhcO4bdi+Rz+DNmPRGvvNasWZVwgAyP3IX1wr8UGt4a8zqvpR7iD1wRgYTZKL/0HZvDc5IA8aVUyNyIA1s8fQiDVY3642Sfiuqzh6hiubbHH+SqwmJsaAd8ZvVIkSJBFJs+2Yh71RFfG5jRjeizjvnRjqj+dAc5zXBwHuIexMv1IGCKNybK8KykNRfmMvndrzzu1Pj8Mr69eO8YqIwR/4caLsFjOJgdPvZIfQxclRBHoskUj9Aj7ydwdsuGCVdDdwGyx2RSBpGO5Mnqr0jLcplq4sYGVrMnbaQTzuSfuA0Nm2Pmc=
