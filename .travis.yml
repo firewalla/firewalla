@@ -3,7 +3,6 @@ sudo: required
 dist: xenial
 
 install:
-- cat scripts/install.sh
 - sudo scripts/install.sh
 
 script:
