@@ -43,6 +43,11 @@ var ttlExpire = 60*60*12;
 let externalPort = 8388;
 let localPort = 8388;
 
+let ssBinary = __dirname + "/bin." + firewalla.getPlatform() + "/fw_ss_server";
+let ssLogFile = firewalla.getLogFolder() + "/fw_ss_server.log";
+
+let cp = require('child_process')
+
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
@@ -55,7 +60,7 @@ module.exports = class {
 
     install(callback) {
       let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
-      require('child_process').exec(install_cmd, (err, out, code) => {
+      cp.exec(install_cmd, (err, out, code) => {
             if (err) {
                 log.error("ShadowSocks:INSTALL:Error", "Unable to install1.sh", err);
             }
@@ -74,7 +79,7 @@ module.exports = class {
         upnp.removePortMapping("tcp", localPort, externalPort);
 
         let cmd = require('util').format("ssserver -d stop --pid %s/run/ss.pid", fHome);
-        require('child_process').exec(cmd, (err, out, code) => {
+        cp.exec(cmd, (err, out, code) => {
             log.info("Stopping ShadowSocket", err);
             if (callback) {
                 callback(err);
@@ -83,28 +88,33 @@ module.exports = class {
     }
 
     start(callback) {
-        if (this.started) {
-            log.info("Shadowsocks::StartedAlready");
-            if (callback)
-                 callback(null, this.portmapped, this.portmapped);
-            return;
-        }
+      if (this.started) {
+        log.info("Shadowsocks::StartedAlready");
+        if (callback)
+          callback(null, this.portmapped, this.portmapped);
+        return;
+      }
+      
+      let outputStream = fs.createWriteStream(ssLogFile, {flags: 'a'});
 
-        let cmd = require('util').format("ssserver -d start -c %s --pid-file %s/run/ss.pid --log-file %s/log/ss.log", configFileLocation, fHome, fHome);
-        log.info(cmd);
-        require('child_process').exec(cmd, (err, out, code) => {
-            log.info("Shadowsocks:Start", err);
-            if (err && this.started == false) {
-                if (callback) {
-                    callback(err);
-                }
-                return;
-            }
-            this.started = true;
+      let args = util.format("-c %s -v",
+        configFileLocation
+      );
 
+      log.info("Running cmd:", ssBinary, args);
 
-            this.addPortMapping(1000);
-        });
+      let ss = cp.spawn(ssBinary, args.split(" "), {detached: true});
+      
+      ss.on('close', (code) => {
+        log.info("Shadowsocks server exited with code", code, {});
+      });
+      
+      ss.stdout.pipe(outputStream);
+      ss.stderr.pipe(outputStream);
+      
+      this.started = true;
+
+      this.addPortMapping(1000);
     }
 
   addPortMapping(time) {
