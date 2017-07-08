@@ -2,47 +2,59 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/swagger-config.png" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/libraries/GOPATH__firewalla_.xml" afterPath="$PROJECT_DIR$/.idea/libraries/GOPATH__firewalla_.xml" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/acl.js" afterPath="$PROJECT_DIR$/testLegacy/acl.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/acl_perf_test.js" afterPath="$PROJECT_DIR$/testLegacy/acl_perf_test.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/config.json" afterPath="$PROJECT_DIR$/testLegacy/config.json" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/demoalarm.json" afterPath="$PROJECT_DIR$/testLegacy/demoalarm.json" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/flow-manager-test.js" afterPath="$PROJECT_DIR$/testLegacy/flow-manager-test.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/flow.js" afterPath="$PROJECT_DIR$/testLegacy/flow.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/malware_simulator.js" afterPath="$PROJECT_DIR$/testLegacy/malware_simulator.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/policytest.js" afterPath="$PROJECT_DIR$/testLegacy/policytest.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/samples" afterPath="$PROJECT_DIR$/testLegacy/samples" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/ss_config.json" afterPath="$PROJECT_DIR$/testLegacy/ss_config.json" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_advancednmapsensor.js" afterPath="$PROJECT_DIR$/testLegacy/test_advancednmapsensor.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_alarm.js" afterPath="$PROJECT_DIR$/testLegacy/test_alarm.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_audit.js" afterPath="$PROJECT_DIR$/testLegacy/test_audit.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_block.js" afterPath="$PROJECT_DIR$/testLegacy/test_block.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_cable_not_connected.js" afterPath="$PROJECT_DIR$/testLegacy/test_cable_not_connected.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_dhcpdump.js" afterPath="$PROJECT_DIR$/testLegacy/test_dhcpdump.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_discovery.js" afterPath="$PROJECT_DIR$/testLegacy/test_discovery.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_dns_policy.js" afterPath="$PROJECT_DIR$/testLegacy/test_dns_policy.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_dnsmasq.js" afterPath="$PROJECT_DIR$/testLegacy/test_dnsmasq.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_firewalla.js" afterPath="$PROJECT_DIR$/testLegacy/test_firewalla.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_flat.js" afterPath="$PROJECT_DIR$/testLegacy/test_flat.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_flowmanager.js" afterPath="$PROJECT_DIR$/testLegacy/test_flowmanager.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_geoip.js" afterPath="$PROJECT_DIR$/testLegacy/test_geoip.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_hash.js" afterPath="$PROJECT_DIR$/testLegacy/test_hash.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_hook.js" afterPath="$PROJECT_DIR$/testLegacy/test_hook.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_host_tool.js" afterPath="$PROJECT_DIR$/testLegacy/test_host_tool.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_i18n.js" afterPath="$PROJECT_DIR$/testLegacy/test_i18n.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_identify_device.js" afterPath="$PROJECT_DIR$/testLegacy/test_identify_device.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_intel_manager.js" afterPath="$PROJECT_DIR$/testLegacy/test_intel_manager.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_logger.js" afterPath="$PROJECT_DIR$/testLegacy/test_logger.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_mac.js" afterPath="$PROJECT_DIR$/testLegacy/test_mac.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_mode.js" afterPath="$PROJECT_DIR$/testLegacy/test_mode.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_networktool.js" afterPath="$PROJECT_DIR$/testLegacy/test_networktool.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_nmapsensor.js" afterPath="$PROJECT_DIR$/testLegacy/test_nmapsensor.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_policy_manager.js" afterPath="$PROJECT_DIR$/testLegacy/test_policy_manager.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_sensor.js" afterPath="$PROJECT_DIR$/testLegacy/test_sensor.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_sensor2.js" afterPath="$PROJECT_DIR$/testLegacy/test_sensor2.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_sensoreventmanager.js" afterPath="$PROJECT_DIR$/testLegacy/test_sensoreventmanager.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_shadowsocks.js" afterPath="$PROJECT_DIR$/testLegacy/test_shadowsocks.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_ss_client.js" afterPath="$PROJECT_DIR$/testLegacy/test_ss_client.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_ssh.js" afterPath="$PROJECT_DIR$/testLegacy/test_ssh.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_sysinfo.js" afterPath="$PROJECT_DIR$/testLegacy/test_sysinfo.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_sysmanager.js" afterPath="$PROJECT_DIR$/testLegacy/test_sysmanager.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_test.js" afterPath="$PROJECT_DIR$/testLegacy/test_test.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_upnp.js" afterPath="$PROJECT_DIR$/testLegacy/test_upnp.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_utils.js" afterPath="$PROJECT_DIR$/testLegacy/test_utils.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_vpn.js" afterPath="$PROJECT_DIR$/testLegacy/test_vpn.js" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/test/test_vuln_alarm.js" afterPath="$PROJECT_DIR$/testLegacy/test_vuln_alarm.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/shadowsocks/install.sh" afterPath="$PROJECT_DIR$/extension/shadowsocks/install.sh" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" afterPath="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/extension/ss_client/ss_client.js" afterPath="$PROJECT_DIR$/extension/ss_client/ss_client.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/locales/en.json" afterPath="$PROJECT_DIR$/locales/en.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/Firewalla.js" afterPath="$PROJECT_DIR$/net2/Firewalla.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/FlowTool.js" afterPath="$PROJECT_DIR$/net2/FlowTool.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/color-support" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/coveralls" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/.bin/nyc" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/coveralls/node_modules/request/node_modules/.bin/uuid" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/coveralls/node_modules/request/node_modules/.bin/uuid" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/js-yaml/node_modules/.bin/esparse" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/js-yaml/node_modules/.bin/esparse" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/js-yaml/node_modules/.bin/esvalidate" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/js-yaml/node_modules/.bin/esvalidate" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/nyc/node_modules/.bin/handlebars" afterPath="$PROJECT_DIR$/node_modules/grunt-contrib-nodeunit/node_modules/nodeunit/node_modules/tap/node_modules/nyc/node_modules/.bin/handlebars" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/.bin/escodegen" afterPath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/.bin/escodegen" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/.bin/esgenerate" afterPath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/.bin/esgenerate" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/handlebars/node_modules/.bin/uglifyjs" afterPath="$PROJECT_DIR$/node_modules/grunt-istanbul/node_modules/istanbul/node_modules/handlebars/node_modules/.bin/uglifyjs" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/.bin/har-validator" afterPath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/.bin/har-validator" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-conv" afterPath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-conv" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-sign" afterPath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-sign" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-verify" afterPath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/grunt-lib-phantomjs/node_modules/phantomjs/node_modules/request/node_modules/http-signature/node_modules/.bin/sshpk-verify" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/mocha/node_modules/.bin/jade" afterPath="$PROJECT_DIR$/node_modules/grunt-mocha/node_modules/mocha/node_modules/.bin/jade" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/i18n/node_modules/messageformat/node_modules/.bin/watchr" afterPath="$PROJECT_DIR$/node_modules/i18n/node_modules/messageformat/node_modules/.bin/watchr" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/jade/node_modules/transformers/node_modules/.bin/uglifyjs" afterPath="$PROJECT_DIR$/node_modules/jade/node_modules/transformers/node_modules/.bin/uglifyjs" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/mac-lookup/node_modules/sqlite3/node_modules/.bin/node-pre-gyp" afterPath="$PROJECT_DIR$/node_modules/mac-lookup/node_modules/sqlite3/node_modules/.bin/node-pre-gyp" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/nat-upnp/node_modules/request/node_modules/.bin/har-validator" afterPath="$PROJECT_DIR$/node_modules/nat-upnp/node_modules/request/node_modules/.bin/har-validator" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/.npmignore" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/.npmignore" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/README.md" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/README.md" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/SAMPLE.md" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/SAMPLE.md" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/docco.css" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/docco.css" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/main.html" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/docs/main.html" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/index.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/index.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/package.json" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/package.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/css/screen.css" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/css/screen.css" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/index.html" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/index.html" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/shred.bundle.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/shred.bundle.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/lib/swagger.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/swagger-ui/swagger-ui.min.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.travis.yml" afterPath="$PROJECT_DIR$/.travis.yml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/host.js" afterPath="$PROJECT_DIR$/api/routes/host.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/Spoofer.js" afterPath="$PROJECT_DIR$/net2/Spoofer.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/connect/node_modules/serve-static/node_modules/send/node_modules/.bin/mime" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/connect/node_modules/serve-static/node_modules/send/node_modules/.bin/mime" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -63,21 +75,21 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file leaf-file-name=".travis.yml" pinned="false" current-in-tab="false">
+      <file leaf-file-name=".travis.yml" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/.travis.yml">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="68">
-              <caret line="4" column="8" lean-forward="false" selection-start-line="4" selection-start-column="8" selection-end-line="4" selection-end-column="8" />
+            <state relative-caret-position="153">
+              <caret line="9" column="7" lean-forward="false" selection-start-line="9" selection-start-column="7" selection-end-line="9" selection-end-column="7" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="app-local.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/api/app-local.js">
+      <file leaf-file-name="Spoofer.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/net2/Spoofer.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="0">
-              <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+            <state relative-caret-position="-486">
+              <caret line="69" column="4" lean-forward="true" selection-start-line="69" selection-start-column="4" selection-end-line="69" selection-end-column="4" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -85,31 +97,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="ss_client.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/extension/ss_client/ss_client.js">
+      <file leaf-file-name="host.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/api/routes/host.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="7514">
-              <caret line="442" column="11" lean-forward="false" selection-start-line="412" selection-start-column="2" selection-end-line="442" selection-end-column="11" />
-              <folding />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="webstorm.vmoptions" pinned="false" current-in-tab="false">
-        <entry file="file://$APPLICATION_CONFIG_DIR$/webstorm.vmoptions">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="204">
-              <caret line="12" column="18" lean-forward="false" selection-start-line="12" selection-start-column="18" selection-end-line="12" selection-end-column="18" />
-              <folding />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="shadowsocks.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="188">
-              <caret line="45" column="54" lean-forward="false" selection-start-line="45" selection-start-column="54" selection-end-line="45" selection-end-column="54" />
+            <state relative-caret-position="1156">
+              <caret line="68" column="0" lean-forward="false" selection-start-line="68" selection-start-column="0" selection-end-line="68" selection-end-column="0" />
               <folding>
                 <element signature="n#!!doc" expanded="true" />
               </folding>
@@ -117,51 +109,73 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="Firewalla.js" pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
+      <file leaf-file-name="test_host_control.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/test_host_control.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="230">
-              <caret line="41" column="100" lean-forward="true" selection-start-line="41" selection-start-column="100" selection-end-line="41" selection-end-column="100" />
+            <state relative-caret-position="182">
+              <caret line="60" column="11" lean-forward="true" selection-start-line="60" selection-start-column="11" selection-end-line="60" selection-end-column="11" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="child_process.js" pinned="false" current-in-tab="false">
-        <entry file="file://$APPLICATION_CONFIG_DIR$/javascript/nodejs/7.3.0/core-modules/child_process.js">
+      <file leaf-file-name="sample_host.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/test/sample_host.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="196">
-              <caret line="519" column="9" lean-forward="false" selection-start-line="519" selection-start-column="9" selection-end-line="519" selection-end-column="9" />
+            <state relative-caret-position="85">
+              <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="18" selection-end-column="0" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="install.sh" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/extension/shadowsocks/install.sh">
+      <file leaf-file-name="HostTool.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="34">
-              <caret line="2" column="52" lean-forward="false" selection-start-line="2" selection-start-column="52" selection-end-line="2" selection-end-column="52" />
+            <state relative-caret-position="85">
+              <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="23" selection-end-column="44" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="test_alarm.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/test/test_alarm.js">
+      <file leaf-file-name="NewDeviceHook.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="527">
-              <caret line="44" column="24" lean-forward="false" selection-start-line="44" selection-start-column="24" selection-end-line="44" selection-end-column="24" />
+            <state relative-caret-position="46">
+              <caret line="79" column="36" lean-forward="true" selection-start-line="78" selection-start-column="6" selection-end-line="79" selection-end-column="36" />
+              <folding>
+                <element signature="n#!!doc" expanded="true" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="PolicyManager.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="239">
+              <caret line="305" column="13" lean-forward="true" selection-start-line="305" selection-start-column="13" selection-end-line="305" selection-end-column="13" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="netbot.js" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
+      <file leaf-file-name="Block.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/control/Block.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="21692">
-              <caret line="1276" column="12" lean-forward="false" selection-start-line="1276" selection-start-column="12" selection-end-line="1276" selection-end-column="12" />
+            <state relative-caret-position="46">
+              <caret line="162" column="31" lean-forward="true" selection-start-line="162" selection-start-column="31" selection-end-line="162" selection-end-column="31" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="test_test2.js" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/testLegacy/test_test2.js">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="136">
+              <caret line="8" column="0" lean-forward="true" selection-start-line="8" selection-start-column="0" selection-end-line="8" selection-end-column="0" />
               <folding />
             </state>
           </provider>
@@ -178,13 +192,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>alarmManager.a</find>
-      <find>processIntelFlow</find>
-      <find>8.8.8.8</find>
-      <find>start(</find>
-      <find>alarmManager.alarm</find>
-      <find>en</find>
-      <find>enforce</find>
       <find>reload</find>
       <find>dns</find>
       <find>VulnerabilityAlarm</find>
@@ -208,6 +215,13 @@
       <find>require('child_process')</find>
       <find>ssForKCPConfigPath</find>
       <find>log</find>
+      <find>execute</find>
+      <find>monitored</find>
+      <find>S</find>
+      <find>Spoof</find>
+      <find>new Spoof</find>
+      <find>monitoredKey</find>
+      <find>unspoof</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -235,15 +249,10 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/net2/BroDetect.js" />
-        <option value="$PROJECT_DIR$/api/routes/policy.js" />
-        <option value="$PROJECT_DIR$/api/routes/exception.js" />
-        <option value="$PROJECT_DIR$/alarm/Exception.js" />
         <option value="$PROJECT_DIR$/util/i18n.js" />
         <option value="$PROJECT_DIR$/extension/ss_client/remove_iptables_template.sh" />
         <option value="$PROJECT_DIR$/api/app-local.js" />
         <option value="$PROJECT_DIR$/net2/HostManager.js" />
-        <option value="$PROJECT_DIR$/api/routes/host.js" />
         <option value="$PROJECT_DIR$/net2/FlowManager.js" />
         <option value="$PROJECT_DIR$/api/bin/www" />
         <option value="$PROJECT_DIR$/scripts/alias.bash" />
@@ -280,12 +289,17 @@
         <option value="$PROJECT_DIR$/test/test_test.js" />
         <option value="$PROJECT_DIR$/buildraw4" />
         <option value="$PROJECT_DIR$/scripts/install.sh" />
-        <option value="$PROJECT_DIR$/.travis.yml" />
         <option value="$PROJECT_DIR$/extension/shadowsocks/install.sh" />
         <option value="$PROJECT_DIR$/extension/ss_client/ss_client.js" />
         <option value="$APPLICATION_CONFIG_DIR$/webstorm.vmoptions" />
         <option value="$PROJECT_DIR$/extension/shadowsocks/shadowsocks.js" />
         <option value="$PROJECT_DIR$/net2/Firewalla.js" />
+        <option value="$PROJECT_DIR$/extension/dnsmasq/dnsmasq.conf" />
+        <option value="$PROJECT_DIR$/api/routes/host.js" />
+        <option value="$PROJECT_DIR$/test/sample_host.js" />
+        <option value="$PROJECT_DIR$/net2/Spoofer.js" />
+        <option value="$PROJECT_DIR$/test/test_host_control.js" />
+        <option value="$PROJECT_DIR$/.travis.yml" />
       </list>
     </option>
   </component>
@@ -978,12 +992,12 @@
       <workItem from="1498722134379" duration="49974000" />
       <workItem from="1499451812928" duration="2534000" />
       <workItem from="1499507676804" duration="388000" />
-      <workItem from="1499514238112" duration="1425000" />
+      <workItem from="1499514238112" duration="6239000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="275125000" />
+    <option name="totallyTimeSpent" value="279939000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1001,6 +1015,7 @@
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.2515625" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.22709776" sideWeight="0.5015625" order="7" side_tool="true" content_ui="tabs" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.22709776" sideWeight="0.4984375" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="10" side_tool="false" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
@@ -1013,7 +1028,6 @@
       <window_info id="Inspection" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="5" side_tool="false" content_ui="tabs" />
       <window_info id="TypeScript" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="9" side_tool="false" content_ui="tabs" />
       <window_info id="Hierarchy" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="2" side_tool="false" content_ui="combo" />
-      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.22709776" sideWeight="0.4984375" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Ant Build" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
     </layout>
   </component>
@@ -1030,69 +1044,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-433">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/alias.sh">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="221">
-          <caret line="13" column="42" lean-forward="true" selection-start-line="13" selection-start-column="42" selection-end-line="13" selection-end-column="42" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/post_run.sh">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="289">
-          <caret line="17" column="2" lean-forward="true" selection-start-line="17" selection-start-column="2" selection-end-line="17" selection-end-column="2" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/main-run">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="580">
-          <caret line="76" column="52" lean-forward="true" selection-start-line="76" selection-start-column="52" selection-end-line="76" selection-end-column="52" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/Sensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1615">
-          <caret line="108" column="10" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="229" selection-end-column="26" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/redis">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/SensorTemplate.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/Sensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="306">
-          <caret line="31" column="4" lean-forward="true" selection-start-line="31" selection-start-column="4" selection-end-line="31" selection-end-column="4" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/sensor/HeapSensor.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-358">
@@ -1233,16 +1184,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1922">
-          <caret line="682" column="34" lean-forward="false" selection-start-line="682" selection-start-column="34" selection-end-line="682" selection-end-column="34" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/test/test_dns_policy.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="680">
@@ -1339,14 +1280,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/.travis.yml">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="68">
-          <caret line="4" column="8" lean-forward="false" selection-start-line="4" selection-start-column="8" selection-end-line="4" selection-end-column="8" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/api/app-local.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
@@ -1377,7 +1310,72 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="7514">
           <caret line="442" column="11" lean-forward="false" selection-start-line="412" selection-start-column="2" selection-end-line="442" selection-end-column="11" />
-          <folding />
+          <folding>
+            <marker date="1499523636341" expanded="true" signature="7719:7917" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="7781:7913" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="7795:7837" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="7951:7964" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="7998:8630" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8470:8626" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8484:8540" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8546:8603" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8663:8992" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8825:8969" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8839:8902" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="8908:8965" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="9031:9648" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="9476:9644" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="9490:9553" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="9559:9621" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="9693:10332" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10144:10328" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10158:10229" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10235:10305" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10370:10696" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10517:10674" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10531:10602" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10608:10670" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10727:11973" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="10967:11058" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="11681:11860" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="11717:11808" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="11883:11963" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="11905:11959" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12003:12299" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12150:12294" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12164:12210" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12216:12270" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12333:12708" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12519:12704" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12533:12613" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12619:12681" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12743:13088" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12900:13084" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12914:12993" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="12999:13060" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13129:13627" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13444:13623" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13458:13528" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13534:13600" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13669:14004" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13819:14000" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13833:13904" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="13910:13976" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="14041:14844" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="14189:14318" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="14765:14819" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="14882:15168" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15007:15164" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15021:15075" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15081:15140" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15191:15212" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15236:15359" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15244:15322" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15335:15357" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15385:15420" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15445:15495" ph="{...}" />
+            <marker date="1499523636341" expanded="true" signature="15514:15700" ph="{&quot;start&quot;: start...}" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -1386,7 +1384,7 @@
         <state relative-caret-position="188">
           <caret line="45" column="54" lean-forward="false" selection-start-line="45" selection-start-column="54" selection-end-line="45" selection-end-column="54" />
           <folding>
-            <element signature="n#!!doc" expanded="true" />
+            <element signature="n#!!doc" expanded="false" />
           </folding>
         </state>
       </provider>
@@ -1399,10 +1397,104 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/extension/dnsmasq/dnsmasq.conf">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="291">
+          <caret line="41" column="10" lean-forward="true" selection-start-line="41" selection-start-column="10" selection-end-line="41" selection-end-column="10" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/net2/Firewalla.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="230">
-          <caret line="41" column="100" lean-forward="true" selection-start-line="41" selection-start-column="100" selection-end-line="41" selection-end-column="100" />
+        <state relative-caret-position="144">
+          <caret line="57" column="1" lean-forward="false" selection-start-line="57" selection-start-column="1" selection-end-line="57" selection-end-column="1" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/testLegacy/test_test2.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="136">
+          <caret line="8" column="0" lean-forward="true" selection-start-line="8" selection-start-column="0" selection-end-line="8" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/PolicyManager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="239">
+          <caret line="305" column="13" lean-forward="true" selection-start-line="305" selection-start-column="13" selection-end-line="305" selection-end-column="13" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/control/Block.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="46">
+          <caret line="162" column="31" lean-forward="true" selection-start-line="162" selection-start-column="31" selection-end-line="162" selection-end-column="31" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="46">
+          <caret line="79" column="36" lean-forward="true" selection-start-line="78" selection-start-column="6" selection-end-line="79" selection-end-column="36" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/sample_host.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="85">
+          <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="18" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="85">
+          <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="23" selection-end-column="44" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/host.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1156">
+          <caret line="68" column="0" lean-forward="false" selection-start-line="68" selection-start-column="0" selection-end-line="68" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/Spoofer.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-486">
+          <caret line="69" column="4" lean-forward="true" selection-start-line="69" selection-start-column="4" selection-end-line="69" selection-end-column="4" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_host_control.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="182">
+          <caret line="60" column="11" lean-forward="true" selection-start-line="60" selection-start-column="11" selection-end-line="60" selection-end-column="11" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/.travis.yml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="153">
+          <caret line="9" column="7" lean-forward="false" selection-start-line="9" selection-start-column="7" selection-end-line="9" selection-end-column="7" />
           <folding />
         </state>
       </provider>

@@ -51,11 +51,17 @@ Promise.promisifyAll(redis.Multi.prototype);
 module.exports = class {
 
   newSpoof(address) {
-    return rclient.saddAsync(monitoredKey, address);
+    return Promise.all([
+      rclient.saddAsync(monitoredKey, address),
+      rclient.sremAsync(unmonitoredKey, address),
+      ]);
   }
 
   newUnspoof(address) {
-    return rclient.sremAsync(monitoredKey, address);
+    return Promise.all([
+      rclient.sremAsync(monitoredKey, address),
+      rclient.saddAsync(unmonitoredKey, address)
+    ]);
   }
  
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {

@@ -4,9 +4,10 @@ dist: xenial
 
 install:
 - sudo scripts/install.sh
+- npm install -g mocha
 
 script:
-- cd test; node test_test.js
+- mocha
 
 notifications:
   slack:
