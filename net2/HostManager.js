@@ -413,7 +413,7 @@ class Host {
             this.spoofing = true;
         } else if (state == false && this.spoofing == true) {
             log.info("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
-            spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6, true);
+            spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
             this.spoofing = false;
         }
     }
