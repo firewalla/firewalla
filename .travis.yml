@@ -4,7 +4,7 @@ dist: xenial
 
 install:
 - sudo scripts/install.sh
-- npm install -g mocha
+- sudo npm install -g mocha
 
 script:
 - mocha
