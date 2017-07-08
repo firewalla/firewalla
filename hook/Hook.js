@@ -17,7 +17,7 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 
 module.exports = class {
-  init() {
+  run() {
     // do nothing
   }
 }

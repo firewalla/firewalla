@@ -23,8 +23,9 @@ let util = require('util');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
-var _isProduction = null;
+let _isProduction = null;
 let _isDocker = null;
+let _platform = null; 
 
 let version = null;
 
@@ -34,6 +35,14 @@ function getFirewallaHome() {
 
 function getLocalesDirectory() {
   return firewallaHome + "/locales";
+}
+
+function getPlatform() {
+  if(_platform === null) {
+    _platform = require('child_process').execSync("uname -m");
+  }
+  
+  return _platform;
 }
 
 function getUserID() {
@@ -74,6 +83,10 @@ function getRuntimeInfoFolder() {
 
 function getUserConfigFolder() {
   return getHiddenFolder() + "/config";
+}
+
+function getTempFolder() {
+  return getHiddenFolder() + "/tmp";
 }
 
 // Get config data from fishbone
@@ -337,6 +350,8 @@ module.exports = {
   redisclean: redisclean,
   constants: constants,
   getVersion: getVersion,
-  isDocker:isDocker
+  isDocker:isDocker,
+  getTempFolder: getTempFolder,
+  getPlatform: getPlatform
 }
 

@@ -55,6 +55,8 @@ let c = require('../net2/MessageBus.js');
 
 let extend = require('util')._extend;
 
+let fConfig = require('../net2/config.js').getConfig();
+
 let AUTO_BLOCK_THRESHOLD = 10;
 
 function formatBytes(bytes,decimals) {
@@ -132,6 +134,7 @@ module.exports = class {
     for(var i = 0; i < keys.length; i++) {
       let k = keys[i];
       if(!alarm[k]) {
+        // typically bug occurs if reaching this code block
         log.error("Invalid payload for " + this.type + ", missing " + k, new Error("").stack, {});
         log.error("Invalid alarm is: " + alarm, {});
         return false;
@@ -168,7 +171,8 @@ module.exports = class {
         let data = {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
-          aid: alarm.aid,              
+          aid: alarm.aid,
+          alarmNotifType:alarm.notifType
         };
 
         if(alarm.result_method === "auto") {
@@ -222,7 +226,15 @@ module.exports = class {
   dedup(alarm) {
     return new Promise((resolve, reject) => {
       this.loadRecentAlarms((err, existingAlarms) => {
-        let dups = existingAlarms.filter((a) => this.isDup(a, alarm));
+        if(err) {
+          reject(err);
+          return;
+        }
+        
+        let dups = existingAlarms
+                            .filter((a) => a != null)
+                            .filter((a) => alarm.isDup(a));
+        
         if(dups.length > 0) {
           resolve(true);
         } else {
@@ -231,22 +243,19 @@ module.exports = class {
       });
     });
   }
-  
-  isDup(alarm, alarm2) {
-    let keysToCompare = ["p.dest.id", "p.device.mac", "type"];    
 
-    for(var key in keysToCompare) {
-      let k = keysToCompare[key];
-      if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
-        
-      } else {
-        return false;
-      }
-    }
-
-    return true;
+  checkAndSaveAsync(alarm) {
+    return new Promise((resolve, reject) => {
+      this.checkAndSave(alarm, (err) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      })
+    })
   }
-
+  
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
     
@@ -274,7 +283,7 @@ module.exports = class {
 
         if(result) {
           matches.forEach((e) => {
-            log.info("Matched Exception: " + e.rules);
+            log.info("Matched Exception: " + e.eid);
           });
           callback(new Error("alarm is covered by exceptions"));
           return;
@@ -288,7 +297,9 @@ module.exports = class {
 
           if(alarm.type === "ALARM_INTEL") {
             let num = parseInt(alarm["p.security.numOfReportSources"]);
-            if(num > AUTO_BLOCK_THRESHOLD) {
+            if(fConfig && fConfig.policy && 
+              fConfig.policy.autoBlock && 
+              num > AUTO_BLOCK_THRESHOLD) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               return;
@@ -303,6 +314,9 @@ module.exports = class {
   }
 
   jsonToAlarm(json) {
+    if(!json)
+      return null;
+    
     let proto = Alarm.mapping[json.type];
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -349,7 +363,7 @@ module.exports = class {
           callback(err);
           return;          
         }
-        callback(null, results.map((r) => this.jsonToAlarm(r)).filter((r) => r != null));
+        callback(null, results.map((r) => this.jsonToAlarm(r)));
       });
     }
     
@@ -370,7 +384,15 @@ module.exports = class {
           callback(err);
           return;
         }
-        this.idsToAlarms(alarmIDs, callback);
+        this.idsToAlarms(alarmIDs, (err, results) => {
+          if(err) {
+            callback(err);
+            return;
+          }
+          
+          results = results.filter((a) => a != null);
+          callback(err, results);
+        });
       });
     }
 
@@ -405,7 +427,15 @@ module.exports = class {
         return;
       }
 
-      this.idsToAlarms(results, callback);
+      this.idsToAlarms(results, (err, results) => {
+        if (err) {
+          callback(err);
+          return;
+        }
+
+        results = results.filter((a) => a != null);
+        callback(err, results);
+      });
     });
   }
 
@@ -420,6 +450,12 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+        
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
           type = "mac";
@@ -494,6 +530,12 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
           type = "mac"; // place holder, not going to be matched by any alarm/policy
@@ -567,6 +609,13 @@ module.exports = class {
      this.getAlarm(alarmID)
       .then((alarm) => {
 
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
+
+        
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
@@ -602,6 +651,12 @@ module.exports = class {
     
      this.getAlarm(alarmID)
       .then((alarm) => {
+
+        if(!alarm) {
+          log.error("Invalid alarm ID:", alarmID);
+          callback(new Error("Invalid alarm ID: " + alarmID));
+          return;
+        }
 
         let eid = alarm.result_exception;
 
@@ -641,7 +696,7 @@ module.exports = class {
         dnsManager.resolveLocalHost(deviceIP, (err, result) => {
           
           if(err ||result == null) {
-            log.error("Failed to find host " + lh + " in database: " + err);
+            log.error("Failed to find host " + deviceIP + " in database: " + err);
             if(err)
               reject(err);
             reject(new Error("host " + deviceIP + " not found"));
@@ -655,7 +710,7 @@ module.exports = class {
             "p.device.name": deviceName,
             "p.device.id": deviceID,
             "p.device.mac": deviceID,
-            "p.device.macVendor": result.macVendor
+            "p.device.macVendor": result.macVendor || "Unknown"
           });
 
           resolve(alarm);

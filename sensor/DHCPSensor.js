@@ -28,7 +28,7 @@ class DHCPSensor extends Sensor {
     this.cache = {};
   }
   
-  init() {
+  run() {
     let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
     this.dhcpDump = new DhcpDump();
     this.dhcpDump.install((obj)=>{
@@ -44,7 +44,7 @@ class DHCPSensor extends Sensor {
             delete this.cache[obj.mac];
           }, 60 * 1000); // cache for one minute
           
-          log.info(util.format("Found a new device: %s (%s)", obj.name, obj.mac));
+          log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
           sem.emitEvent({
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,

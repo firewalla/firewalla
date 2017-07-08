@@ -22,12 +22,32 @@ let bodyParser = require('body-parser')
 let EM = require('../../alarm/ExceptionManager.js');
 let em = new EM();
 
+let AM2 = require('../../alarm/AlarmManager2');
+let am2 = new AM2();
+
 router.get('/list', (req, res, next) => {
   em.loadExceptions((err, list) => {
     if(err) {
       res.status(500).send('');
     } else {
-      res.json({list: list});
+      let alarmIDs = list.map((p) => p.aid);
+
+      am2.idsToAlarms(alarmIDs, (err, alarms) => {
+        if (err) {
+          log.error("Failed to get alarms by ids:", err, {});
+          reject(err);
+          return;
+        }
+        
+        for (let i = 0; i < list.length; i++) {
+          if (list[i] && alarms[i]) {
+            list[i].alarmMessage = alarms[i].localizedInfo();
+            list[i].alarmTimestamp = alarms[i].timestamp;
+          }
+        }
+
+        res.json({list: list});
+      });
     }  
   });
 });

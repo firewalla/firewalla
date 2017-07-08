@@ -293,7 +293,7 @@ function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin");
     eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
-            log.info("Error lookiong up group", err);
+            log.info("Error looking up group", err, err.stack, {});
             callback(err, false);
             return;
         }

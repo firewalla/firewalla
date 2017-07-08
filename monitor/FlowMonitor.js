@@ -13,15 +13,15 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log = require("../net2/logger.js")(__filename, 'info');
-var os = require('os');
-var network = require('network');
+let log = require("../net2/logger.js")(__filename, 'info');
+let os = require('os');
+let network = require('network');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+let redis = require("redis");
+let rclient = redis.createClient();
 
-var FlowManager = require('../net2/FlowManager.js');
-var flowManager = new FlowManager('info');
+let FlowManager = require('../net2/FlowManager.js');
+let flowManager = new FlowManager('info');
 
 let Alarm = require('../alarm/Alarm.js');
 let AlarmManager2 = require('../alarm/AlarmManager2.js');
@@ -29,29 +29,29 @@ let alarmManager2 = new AlarmManager2();
 
 let audit = require('../util/audit.js');
 
-var uuid = require('uuid');
+let uuid = require('uuid');
 
 rclient.on("error", function (err) {
     log.error("Redis(alarm) Error " + err);
 });
 
-var async = require('async');
-var instance = null;
-var HostManager = require("../net2/HostManager.js");
-var hostManager = new HostManager("cli", 'client', 'info');
+let async = require('async');
+let instance = null;
+let HostManager = require("../net2/HostManager.js");
+let hostManager = new HostManager("cli", 'client', 'info');
 
-var stddev_limit = 8;
-var AlarmManager = require('../net2/AlarmManager.js');
-var alarmManager = new AlarmManager('debug');
+let stddev_limit = 8;
+let AlarmManager = require('../net2/AlarmManager.js');
+let alarmManager = new AlarmManager('debug');
 
-var IntelManager = require('../net2/IntelManager.js');
-var intelManager = new IntelManager('debug');
+let IntelManager = require('../net2/IntelManager.js');
+let intelManager = new IntelManager('debug');
 
-var SysManager = require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager('info');
 
-var DNSManager = require('../net2/DNSManager.js');
-var dnsManager = new DNSManager('info');
+let DNSManager = require('../net2/DNSManager.js');
+let dnsManager = new DNSManager('info');
 
 const flowUtil = require('../net2/FlowUtil.js');
 

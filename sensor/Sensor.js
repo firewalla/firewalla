@@ -29,9 +29,10 @@ let Sensor = class {
   constructor() {
   }
 
-  init() {
+  run() {
     // do nothing in base class
   }
+  
 }
 
 module.exports = {

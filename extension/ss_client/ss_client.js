@@ -236,6 +236,8 @@ function start(callback) {
 function stop(callback) {
   callback = callback || function() {}
 
+  log.info("Stopping everything on ss_client");
+  
   async.applyEachSeries([ _disableIptablesRule,
                           _disableChinaDNS,
                           _stopRedirection,
@@ -430,7 +432,7 @@ function _startKCP(callback) {
       callback(new Error("kcp exited with code " + code));
       callbacked = true;
     }
-    log.info("kcp exited with code", code);
+    log.info("kcp exited with code", code, {});
   });
 
   setTimeout(() => {
