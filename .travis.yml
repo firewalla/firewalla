@@ -5,9 +5,10 @@ dist: xenial
 install:
 - sudo scripts/install.sh
 - sudo npm install -g mocha
+- git clone https://github.com/firewalla/firewalla_nodemodules /home/pi/.node_modules
 
 script:
-- mocha
+- NODE_PATH=/home/pi/.node_modules:$NODE_PATH mocha
 
 notifications:
   slack:
