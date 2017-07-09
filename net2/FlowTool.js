@@ -35,7 +35,7 @@ let country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const QUERY_MAX_FLOW = 10000;
-const MAX_RECENT_FLOW = 80;
+const MAX_RECENT_FLOW = 50; 
 const MAX_CONCURRENT_ACTIVITY = 10;
 
 let instance = null;

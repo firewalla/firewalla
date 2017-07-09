@@ -39,7 +39,7 @@ function getLocalesDirectory() {
 
 function getPlatform() {
   if(_platform === null) {
-    _platform = require('child_process').execSync("uname -m");
+    _platform = require('child_process').execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
   }
   
   return _platform;

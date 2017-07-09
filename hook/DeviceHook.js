@@ -40,6 +40,17 @@ class DeviceHook extends Hook {
   }
 
   run() {
+
+    // DeviceUpdate event format:
+    //   ipv4: ipv4Addr
+    //   ipv4Addr: ipv4Addr
+    //   mac: mac
+    //   bname: service.name (optional)
+    //   ipv6Addr =  service.ipv6Addrs (optional)
+    
+    // DeviceUpdate may be triggered by nmap scan, bonjour monitor,
+    // dhcp monitor and etc...
+    
     sem.on("DeviceUpdate", (event) => {
       let host = event.host;
       let mac = host.mac;

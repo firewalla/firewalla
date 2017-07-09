@@ -68,7 +68,7 @@ rm ~pi/.ssh/known_hosts
 > /var/log/wtmp
 > /var/log/btmp
 
-
+sudo -u pi mkdir -p /home/pi/logs/
 
 
 

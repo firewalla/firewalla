@@ -22,9 +22,21 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Sensor = require('./Sensor.js').Sensor;
 
+let networkTool = require('../net2/NetworkTool')();
+let cp = require('child_process');
+
+let Firewalla = require('../net2/Firewalla');
+
+let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
+
+
 class NmapSensor extends Sensor {
   constructor() {
     super();
+
+    this.networkInterface = networkTool.getLocalNetworkInterface();
+    // this.networkRange = this.networkInterface && this.networkInterface.subnet;
+    this.enabled = true; // very basic feature, always enabled
   }
 
   static _handleAddressEntry(address, host) {
@@ -150,9 +162,132 @@ class NmapSensor extends Sensor {
 
     return host;
   }
+
+  getNetworkRanges() {
+    return this.networkInterface
+      .then((results) => {
+      this.networkRanges = results && 
+        results.map((x) => x.subnet)
+          .map((subnet) => {
+          return subnet.replace('/16', '/24') // a very hard code for 16 subnet
+        }) ;
+      return this.networkRanges;
+      });
+  }
   
   run() {
+    process.nextTick(() => {
+      this.checkAndRunOnce(false);
+    });
+    setInterval(() => {
+      this.checkAndRunOnce(false);
+    }, 1000 * 60 * 120); // every 120 minutes, slow scan
+    setInterval(() => {
+      this.checkAndRunOnce(true);
+    }, 1000 * 60 * 5); // every 5 minutes, fast scan
+  }
+
+  checkAndRunOnce(fastMode) {
+    this.isSensorEnable()
+      .then((result) => {
+        if(result) {
+          this.getNetworkRanges()
+            .then(() => {
+              this.runOnce(fastMode)
+            })
+        }
+      }).catch((err) => {
+      log.error("Failed to check if sensor is enabled", err, {});
+    })
+  }
+
+  runOnce(fastMode) {
+    if(!this.networkRanges)
+      return Promise.reject(new Error("network range is required"));
     
+    return Promise.all(this.networkRanges.map((range) => {
+
+      log.info("Scanning network", range, "to detect new devices...");
+
+      let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
+      if (fastMode === true) {
+        cmd = util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary);
+      }
+      
+      NmapSensor.scan(cmd)
+        .then((hosts) => {
+          log.info("Analyzing scan result...");
+          
+          if(hosts.length === 0) {
+            log.info("No device is found for network", range, {});
+            return;
+          }
+          hosts.forEach((h) => {
+            log.info("Found device:", h.ipv4Addr, util.inspect(h, {depth: null}))
+            this._processHost(h);
+          })
+        }).catch((err) => {
+        log.error("Failed to scan:", err, {});
+      });
+    }));
+  }
+  
+  _processHost(host) {
+    if(host) {
+      sem.emitEvent({
+        type: "DeviceUpdate",
+        message: "A new device found @ NewDeviceHook",
+        host:  {
+          ipv4: host.ipv4Addr,
+          ipv4Addr: host.ipv4Addr,
+          mac: host.mac,
+          macVendor: host.macVendor
+        }
+      });
+    }
+  }
+
+  isSensorEnable() {
+    return Promise.resolve(this.enabled);
+  }
+  
+  static scan(cmd) {
+    log.info("Running command:", cmd);
+
+    return new Promise((resolve, reject) => {
+      cp.exec(cmd, (err, stdout, stderr) => {
+
+        if(err || stderr) {
+          reject(err || new Error(stderr));
+          return;
+        }
+
+        let findings = null;
+        try {
+          findings = JSON.parse(stdout);
+        } catch (err) {
+          reject(err);
+        }
+
+        if(!findings) {
+          return;
+        }
+
+        let hostsJSON = findings.nmaprun && findings.nmaprun.host;
+        
+        if(!hostsJSON)
+          return;
+        
+        if(hostsJSON.constructor !== Array) {
+          hostsJSON = [hostsJSON];
+        }
+
+        let hosts = hostsJSON.map(NmapSensor.parseNmapHostResult);
+        
+        resolve(hosts);
+      })
+    });
+
   }
 }
 
