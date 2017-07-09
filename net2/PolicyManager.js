@@ -637,7 +637,15 @@ module.exports = class {
             host.appliedAcl = {};
         }
 
-        /* iterate policies and see if anything need to be modified */
+      // FIXME: Will got rangeError: Maximum call stack size exceeded when number of acl is huge
+
+      if(policy.length > 1000) {
+          log.warn("Too many policy rules for host", host.shname);
+          callback(null, null); // self protection
+          return; 
+        }
+        
+      /* iterate policies and see if anything need to be modified */
         for (let p in policy) {
             let block = policy[p];
             if (block._src || block._dst) {
@@ -657,8 +665,8 @@ module.exports = class {
                 log.info("PolicyManager:ModifiedACL",block,newblock,{});
             }
         }
-
-        async.eachLimit(policy, 1, (block, cb) => {
+      
+        async.eachLimit(policy, 10, (block, cb) => {
             if (policy.done != null && policy.done == true) {
                 cb();
             } else {

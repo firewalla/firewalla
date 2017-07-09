@@ -48,9 +48,20 @@ class AdvancedNmapSensor extends Sensor {
     super();
     
     this.networkInterface = networkTool.getLocalNetworkInterface();
-    this.networkRange = this.networkInterface && this.networkInterface.subnet;
   }
 
+  getNetworkRanges() {
+    return this.networkInterface
+      .then((results) => {
+        this.networkRanges = results &&
+          results.map((x) => x.subnet)
+            .map((subnet) => {
+              return subnet.replace('/16', '/24') // a very hard code for 16 subnet
+            }) ;
+        return this.networkRanges;
+      });
+  }
+  
   run() {
     let firstScanTime = (30 + Math.random() * 60) * 1000; // 30 - 90 seconds
     let interval = (8 + Math.random() * 4) * 3600 * 1000; // 8-12 hours
@@ -90,10 +101,14 @@ class AdvancedNmapSensor extends Sensor {
   checkAndRunOnce() {
     this.isSensorEnable()
       .then((result) => {
-      if(result)
-        this.runOnce();
+        if(result) {
+          this.getNetworkRanges()
+            .then(() => {
+              this.runOnce()
+            })
+        }
       }).catch((err) => {
-      log.error("Failed to check if sensor is enabled");
+      log.error("Failed to check if sensor is enabled", err, {});
     })
   }
   
@@ -108,31 +123,38 @@ class AdvancedNmapSensor extends Sensor {
       
       let ports = scriptConfig[scriptName].ports;
       if(ports) {
-        this._scan([scriptName], ports)
-          .then((hosts) => {
-            log.info("Analyzing scan result...");
-            if(hosts.length === 0) {
-              log.info("No vulnerability is found");
-              return;
-            }
-            hosts.forEach((h) => {
-              if(h.scripts) {
-                h.scripts.forEach((script) => {
-                  if(script.state === "VULNERABLE") {
-                    log.info("Found vulnerability", script.key, "on host", h.ipv4Addr, {});
-                    this.createVulnerabilityAlarm(h, script);  
-                  }
-                })
+        if(!this.networkRanges)
+          return Promise.reject(new Error("Network range is required"));
+        
+        this.networkRanges.forEach((range) => {
+          this._scan(range, [scriptName], ports)
+            .then((hosts) => {
+              log.info("Analyzing scan result...");
+
+              // ignore any hosts 
+              hosts = hosts.filter((x) => x.scripts && x.scripts.length > 0);
+              
+              if(hosts.length === 0) {
+                log.info("No vulnerability is found");
+                return;
               }
-            })
-          });
+              hosts.forEach((h) => {
+                if(h.scripts) {
+                  h.scripts.forEach((script) => {
+                    if(script.state === "VULNERABLE") {
+                      log.info("Found vulnerability", script.key, "on host", h.ipv4Addr, {});
+                      this.createVulnerabilityAlarm(h, script);
+                    }
+                  })
+                }
+              })
+            });
+        })
       }
     })
   }
   
-  _scan(scripts, ports) {
-    if(!this.networkRange)
-      return reject(new Error("require network range"));
+  _scan(range, scripts, ports) {
     
     let portString = ports.join(",");
     
@@ -141,39 +163,9 @@ class AdvancedNmapSensor extends Sensor {
     
     // nmap -Pn -p445 -n --script ~/Downloads/smb-vuln-ms17-010.nse 10.0.1.0/24 -oX - | ./xml2json
     let cmd = util.format("sudo nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s", 
-      portString, scriptPaths.join(" "), this.networkRange, xml2jsonBinary);
-    
-    return new Promise((resolve, reject) => {
-      cp.exec(cmd, (err, stdout, stderr) => {
-        
-        if(err || stderr) {
-          reject(err || new Error(stderr));
-          return;
-        }
+      portString, scriptPaths.join(" "), range, xml2jsonBinary);
 
-        let findings = null;
-        try {
-          findings = JSON.parse(stdout);
-        } catch (err) {
-          reject(err);
-        }
-        
-        if(!findings) {
-          return;
-        }
-
-        let hostsJSON = findings.nmaprun && findings.nmaprun.host;
-        
-        if(hostsJSON.constructor !== Array) {
-          hostsJSON = [hostsJSON];
-        }
-        
-        let hosts = hostsJSON.map(NmapSensor.parseNmapHostResult)
-          .filter((x) => x.scripts && x.scripts.length > 0);
-        
-        resolve(hosts);
-      })
-    });
+    return NmapSensor.scan(cmd)
     
   }
   

@@ -104,7 +104,7 @@ class NetworkTool {
         if(list2.length === 0) {
           return Promise.resolve(null);
         } else {
-          return list2[0];
+          return list2;
         }
       });
   }
