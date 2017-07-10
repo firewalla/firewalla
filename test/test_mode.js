@@ -45,7 +45,9 @@ describe('Test mode feature', function() {
     cw.login()
       .then(() => {
         bone.waitUtilCloudReady(() => {
-          done();
+          sysManager.update(() => {
+            done();
+          })
         })
       }).catch((err) => {
       assert.fail()
