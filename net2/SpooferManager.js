@@ -18,7 +18,6 @@ let firewalla = require('./Firewalla.js');
 
 var spawn = require('child_process').spawn;
 
-let ngSpoofBinary = __dirname + "/../bin/bitbridge7";
 let spawnProcess = null;
 
 let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
@@ -46,6 +45,13 @@ let spoofStarted = false;
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+function getBinary() {
+  if(firewalla.getPlatform() === "x86_64") {
+    return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge7";
+  }
+  
+  return firewalla.getFirewallaHome() + "/bin/bitbridge7";
+}
 
 // WORKAROUND VERSION HERE, will move to a better place
 function startSpoofing() {
@@ -74,8 +80,12 @@ function startSpoofing() {
 
       let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
       
-      spawnProcess = spawn(ngSpoofBinary, [ifName, routerIP, myIP,'-m','-q']);
-      log.info("starting new spoofing: ", ngSpoofBinary, [ifName, routerIP, myIP], {});
+      if(firewalla.isDocker() || firewalla.isTravis()) {
+        spawnProcess = spawn("sudo", [getBinary(), ifName, routerIP, myIP,'-m','-q'])
+      } else {
+        spawnProcess = spawn(getBinary(), [ifName, routerIP, myIP,'-m','-q']);
+      }
+      log.info("starting new spoofing: ", getBinary(), [ifName, routerIP, myIP], {});
 
       spawnProcess.stdout.pipe(logStream);
       spawnProcess.stderr.pipe(logStream);
@@ -92,9 +102,19 @@ function startSpoofing() {
 }
 
 function stopSpoofing() {
-  if(spawnProcess) {
-    spawnProcess.kill();
-  }
+  return new Promise((resolve, reject) => {
+    spoofStarted = false;
+    
+    // if(spawnProcess) {
+    //   spawnProcess.kill();
+    // }
+    cp.exec("sudo pkill bitbridge7", (err) => {
+      // ignore err, since bitbridge7 may not exist
+      resolve();
+    })
+  }).catch((err) => {
+    //catch everything here
+  })
 }
 
 module.exports = {

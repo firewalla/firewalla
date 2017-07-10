@@ -5,7 +5,8 @@ dist: xenial
 install:
 - sudo scripts/install.sh
 - sudo npm install -g mocha
-- sudo -u pi git clone https://github.com/firewalla/firewalla_nodemodules /home/pi/.node_modules
+- sudo -u pi git clone https://github.com/firewalla/firewalla_nodemodules.x86_64 /home/pi/.node_modules
+- sudo /home/pi/firewalla/scripts/travis_setup.sh
 
 script:
 - NODE_PATH=/home/pi/.node_modules:$NODE_PATH sudo -E -u pi mocha

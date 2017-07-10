@@ -126,6 +126,9 @@ class DeviceHook extends Hook {
           log.info("Host entry is created for this new device");
 
           let mac = enrichedHost.mac;
+          
+          if(!mac)
+            return; // ignore if mac is undefined
 
           this.getVendorInfo(mac, (err, vendor) => {
             
@@ -256,7 +259,7 @@ class DeviceHook extends Hook {
           })
 
         }).catch((err) => {
-        log.error("Failed to create host entry:", err, {});
+        log.error("Failed to create host entry:", err, err.stack, {});
       });
     });
   }

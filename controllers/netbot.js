@@ -1409,7 +1409,15 @@ class netBot extends ControllerBot {
               log.info("Re-generate init data");
 
               let begin = Date.now();
-              this.hostManager.toJson(true, (err, json) => {
+              
+              let options = {}
+              
+              if(rawmsg.message.obj.data && 
+                rawmsg.message.obj.data.simulator) {
+                // options.simulator = 1
+              }
+              
+              this.hostManager.toJson(true, options, (err, json) => {
                 let datamodel = {
                   type: 'jsonmsg',
                   mtype: 'init',

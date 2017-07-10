@@ -653,8 +653,8 @@ var legoEptCloud = class {
 
     // Direct one-to-one message handling
     receiveMessage(gid, msg, callback) {
-        let logMessage = require('util').format("Got encrytped message from group %s", gid);
-      log2.info(logMessage);
+        let logMessage = require('util').format("Got encrypted message from group %s", gid);
+      log2.debug(logMessage);
 
         this.getKey(gid, (err, key, cacheGroup) => {
           if (err != null && key == null) {
