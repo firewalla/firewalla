@@ -37,7 +37,7 @@ router.post('/message/:gid',
         req.body.message.obj &&
         req.body.message.obj.data &&
         req.body.message.obj.data.item === "ping") {
-        log.info("Got a ping"); // ping is too frequent, reduce amount of log
+        log.debug("Got a ping"); // ping is too frequent, reduce amount of log
       } else {
         log.info("================= request from ", req.connection.remoteAddress, " =================");
         log.info(JSON.stringify(req.body, null, '\t'));
@@ -60,7 +60,7 @@ router.post('/message/:gid',
           return;
         } else {
           res.body = JSON.stringify(response);          
-          log.info("encipher uncompressed message size: ", res.body.length, {});
+          log.debug("encipher uncompressed message size: ", res.body.length, {});
           if(compressed) { // compress payload to reduce traffic
             let input = new Buffer(res.body, 'utf8');
             zlib.deflate(input, (err, output) => {
@@ -70,7 +70,7 @@ router.post('/message/:gid',
               }
 
               res.body = JSON.stringify({payload: output.toString('base64')});
-              log.info("compressed message size: ", res.body.length, {});
+              log.debug("compressed message size: ", res.body.length, {});
               next();
             });
           } else {

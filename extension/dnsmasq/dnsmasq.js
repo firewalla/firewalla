@@ -136,8 +136,8 @@ module.exports = class {
 
       if(result) {
         // need update
-        console.log("filterFile is ", filterFile);
-        console.log("tmpFilterFile is ", tmpFilterFile);
+        log.debug("filterFile is ", filterFile);
+        log.debug("tmpFilterFile is ", tmpFilterFile);
         fs.rename(tmpFilterFile, filterFile, callback);      
       } else {
         // no need to update

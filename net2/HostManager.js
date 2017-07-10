@@ -62,6 +62,8 @@ var bone = require("../lib/Bone.js");
 
 var utils = require('../lib/utils.js');
 
+let fConfig = require('./config.js').getConfig();
+
 rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
@@ -1198,9 +1200,20 @@ module.exports = class {
         
     */
 
-  basicDataForInit(json) {
+  basicDataForInit(json, options) {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
     json.network = networkinfo;
+    
+    if(f.isDocker() &&
+      ! options.simulator &&
+        fConfig.docker &&
+        fConfig.docker.hostIP
+    ) {
+      // if it is running inside docker, and app is not from simulator
+      // use docker host as the network ip
+      json.network.ip_address = fConfig.docker.hostIP;
+    }
+    
     json.cpuid = utils.getCpuId();
     
     if(sysManager.language) {
@@ -1469,13 +1482,18 @@ module.exports = class {
     return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));          
   }
   
-    toJson(includeHosts, callback) {
+    toJson(includeHosts, options, callback) {
+      
+      if(typeof options === 'function') {
+          callback = options;
+          options = {}
+      }
 
       let json = {};
 
       this.getHosts(() => {
         
-        this.basicDataForInit(json);
+        this.basicDataForInit(json, options);
         
         Promise.all([
           this.last24StatsForInit(json),

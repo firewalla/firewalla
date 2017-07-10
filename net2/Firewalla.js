@@ -77,6 +77,12 @@ function isDocker() {
   return _isDocker;
 }
 
+function isTravis() {
+  if(process.env.TRAVIS)
+    return true;
+  return false;
+}
+
 function getRuntimeInfoFolder() {
   return getHiddenFolder() + "/run";
 }
@@ -352,6 +358,7 @@ module.exports = {
   getVersion: getVersion,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
-  getPlatform: getPlatform
+  getPlatform: getPlatform,
+  isTravis: isTravis
 }
 
