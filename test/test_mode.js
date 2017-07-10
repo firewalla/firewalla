@@ -31,14 +31,22 @@ let cw = require("../net2/FWCloudWrapper");
  
 let assert = chai.assert;
 
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager();
+let firewallaConfig = require('../net2/config.js').getConfig();
+sysManager.setConfig(firewallaConfig);
+
+let bone = require('../lib/Bone');
+
 describe('Test mode feature', function() {
   this.timeout(10000);
   
   beforeEach((done) => {
-
     cw.login()
       .then(() => {
-        done();
+        bone.waitUtilCloudReady(() => {
+          done();
+        })
       }).catch((err) => {
       assert.fail()
     });
