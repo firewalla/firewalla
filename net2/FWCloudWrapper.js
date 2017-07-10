@@ -43,7 +43,7 @@ eptcloud.debug(false);
 
 function initializeGroup(callback) {
   let groupId = storage.getItemSync('groupId');
-  if (groupId !== null) {
+  if (groupId != null) {
     log.info("Found stored group x", groupId);
     callback(null, groupId);
     return;
