@@ -115,7 +115,7 @@ module.exports = class {
       nameservers = sysManager.myDNS();
     }
 
-    if(!nameservers) {
+    if(!nameservers || nameservers.length === 0) {
       nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
     

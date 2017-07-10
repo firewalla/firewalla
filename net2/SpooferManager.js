@@ -102,14 +102,18 @@ function startSpoofing() {
 }
 
 function stopSpoofing() {
-  if(spawnProcess) {
-    spawnProcess.kill();
-  }
   return new Promise((resolve, reject) => {
+    spoofStarted = false;
+    
+    // if(spawnProcess) {
+    //   spawnProcess.kill();
+    // }
     cp.exec("sudo pkill bitbridge7", (err) => {
       // ignore err, since bitbridge7 may not exist
       resolve();
     })
+  }).catch((err) => {
+    //catch everything here
   })
 }
 
