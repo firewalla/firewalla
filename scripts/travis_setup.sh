@@ -6,3 +6,4 @@ mkdir -p "/home/pi/.firewalla"
 mkdir -p "/home/pi/.firewalla/tmp"
 mkdir -p "/home/pi/.firewalla/config/dns"
 mkdir -p "/home/pi/logs"
+mkdir -p /home/pi/.forever
