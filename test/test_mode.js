@@ -21,7 +21,7 @@ let should = chai.should;
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-let Mode = require('../net2/mode.js');
+let Mode = require('../net2/Mode.js');
 let ModeManager = require('../net2/ModeManager');
 
 let fs = require('fs');
