@@ -30,8 +30,8 @@ let bone = require('../lib/Bone');
 function bootstrap() {
   return cw.login()
     .then(() => {
-      bone.waitUtilCloudReady(() => {
-        sysManager.setConfig(firewallaConfig)
+      return bone.waitUtilCloudReady(() => {
+        return sysManager.setConfig(firewallaConfig)
           .then(() => {
             return new Promise((resolve, reject) => {
               sysManager.update(() => {
@@ -40,10 +40,7 @@ function bootstrap() {
             })
           });
       })
-    }).catch((err) => {
-    log.error("Failed to login Firwalla Cloud", err, {});
-    assert.fail()
-  });  
+    });  
 }
 
 module.exports = {
