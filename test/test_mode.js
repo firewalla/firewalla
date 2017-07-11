@@ -34,9 +34,14 @@ let assert = chai.assert;
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
-sysManager.setConfig(firewallaConfig);
 
 let bone = require('../lib/Bone');
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 describe('Test mode feature', function() {
   this.timeout(10000);
@@ -45,11 +50,15 @@ describe('Test mode feature', function() {
     cw.login()
       .then(() => {
         bone.waitUtilCloudReady(() => {
-          sysManager.update(() => {
-            done();
-          })
+          sysManager.setConfig(firewallaConfig)
+            .then(() => {
+              sysManager.update(() => {
+                done();
+              })
+            });
         })
       }).catch((err) => {
+      log.error("Failed to login Firwalla Cloud", err, {});
       assert.fail()
     });
   });
@@ -65,13 +74,16 @@ describe('Test mode feature', function() {
     
     ModeManager.switchToDHCP()
       .then(() => {
-        cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err) => {
-          expect(err).to.be.null;
+      delay(1000)
+        .then(() => {
+          cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err) => {
+            expect(err).to.be.null;
 
-          cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
-            console.log(stdout);
-            expect(err).to.not.null;
-            done()
+            cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
+              console.log(stdout);
+              expect(err).to.not.null;
+              done()
+            })
           })
         })
       })
