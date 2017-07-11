@@ -31,6 +31,8 @@ let d = new Discovery("bootstrap", firewallaConfig, "info", false);
 
 let bone = require('../lib/Bone');
 
+let bootstrapped = false;
+
 /*
   1. cloud login
   2. load config
@@ -38,6 +40,9 @@ let bone = require('../lib/Bone');
   4. load network interface
  */
 function bootstrap() {
+  if(bootstrapped)
+    return Promise.resolve();
+  
   return cw.login()
     .then(() => {
       return bone.waitUtilCloudReady(() => {
@@ -46,6 +51,7 @@ function bootstrap() {
             return new Promise((resolve, reject) => {
               d.discoverInterfaces(() => {
                 sysManager.update(() => {
+                  bootstrapped = true;
                   resolve();
                 });
               });
