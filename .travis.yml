@@ -10,7 +10,7 @@ install:
 - /sbin/ifconfig
 
 script:
-- NODE_PATH=/home/pi/.node_modules:$NODE_PATH sudo -E -u pi mocha
+- HOME=/home/pi NODE_PATH=/home/pi/.node_modules:$NODE_PATH sudo -E -u pi mocha
 
 notifications:
   slack:
