@@ -27,15 +27,11 @@ let ModeManager = require('../net2/ModeManager');
 let fs = require('fs');
 let cp = require('child_process');
 
-let cw = require("../net2/FWCloudWrapper");
- 
 let assert = chai.assert;
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager();
-let firewallaConfig = require('../net2/config.js').getConfig();
+let Promise = require('bluebird');
 
-let bone = require('../lib/Bone');
+let Bootstrap = require('../net2/Bootstrap');
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -47,19 +43,11 @@ describe('Test mode feature', function() {
   this.timeout(10000);
   
   beforeEach((done) => {
-    cw.login()
+    Bootstrap.bootstrap()
       .then(() => {
-        bone.waitUtilCloudReady(() => {
-          sysManager.setConfig(firewallaConfig)
-            .then(() => {
-              sysManager.update(() => {
-                done();
-              })
-            });
-        })
+        done();
       }).catch((err) => {
-      log.error("Failed to login Firwalla Cloud", err, {});
-      assert.fail()
+      log.error("Failed to bootstrap Firwalla", err, {});
     });
   });
   

@@ -308,7 +308,6 @@ module.exports = class {
 
     monitoringInterface() {
         if (this.config) {
-          log.info(require('util').inspect(this.sysinfo, {depth: null}));
             return this.sysinfo[this.config.monitoringInterface];
         }
     }
