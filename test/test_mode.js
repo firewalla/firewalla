@@ -74,7 +74,10 @@ describe('Test mode feature', function() {
             })
           })
         })
-      })
+      }).catch((err) => {
+      log.error("Failed to switch to DHCP:", err, {});
+      assert.fail();
+    })
   });
   
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
