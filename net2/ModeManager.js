@@ -42,7 +42,7 @@ function _enforceSpoofMode() {
       .then(() => {
         log.info("New Spoof is started");
       }).catch((err) => {
-        log.error("Failed to start new spoof");
+        log.error("Failed to start new spoof", err, {});
       });
   } else {
     // old style, might not work
