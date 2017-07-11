@@ -1073,7 +1073,7 @@ class Host {
         }
         rclient.hmset(key, d, (err, data) => {
             if (err != null) {
-                log.error("Host:Policy:Save:Error", key, err);
+                log.error("Host:Policy:Save:Error", key, err, {});
             }
             if (callback) 
                 callback(err, null);
@@ -1087,7 +1087,7 @@ class Host {
         rclient.hgetall(key, (err, data) => {
             log.debug("Host:Policy:Load:Debug", key, data);
             if (err != null) {
-                log.error("Host:Policy:Load:Error", key, err);
+                log.error("Host:Policy:Load:Error", key, err, {});
                 if (callback) {
                     callback(err, null);
                 }
