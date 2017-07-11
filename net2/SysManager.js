@@ -26,6 +26,10 @@ var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
 
@@ -226,6 +230,7 @@ module.exports = class {
   }
   
   update(callback) {
+    log.info("Loading sysmanager data from redis");
     rclient.hgetall("sys:config", (err, results) => {
       if(results && results.language) {
         this.language = results.language;
@@ -282,12 +287,12 @@ module.exports = class {
     }
 
     setConfig(config) {
-        rclient.hset("sys:network:info", "config", JSON.stringify(config), (err, result) => {
-            if (err == null) {
-                this.config = config;
-                //log.info("System Configuration Upgraded");
-            }
-        });
+        return rclient.hsetAsync("sys:network:info", "config", JSON.stringify(config))
+          .then(() => {
+            this.config = config;
+          }).catch((err) => {
+            log.error("Failed to set sys:network:info in redis", err, {});
+          });       
     }
 
     setOperationalState(state, value) {
@@ -303,7 +308,8 @@ module.exports = class {
 
     monitoringInterface() {
         if (this.config) {
-            return this.sysinfo[this.config.monitoringInterface];
+          //log.info(require('util').inspect(this.sysinfo, {depth: null}));
+          return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
         }
     }
 

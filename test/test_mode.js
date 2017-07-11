@@ -27,30 +27,27 @@ let ModeManager = require('../net2/ModeManager');
 let fs = require('fs');
 let cp = require('child_process');
 
-let cw = require("../net2/FWCloudWrapper");
- 
 let assert = chai.assert;
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager();
-let firewallaConfig = require('../net2/config.js').getConfig();
-sysManager.setConfig(firewallaConfig);
+let Promise = require('bluebird');
 
-let bone = require('../lib/Bone');
+let Bootstrap = require('../net2/Bootstrap');
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 describe('Test mode feature', function() {
   this.timeout(10000);
   
   beforeEach((done) => {
-    cw.login()
+    Bootstrap.bootstrap()
       .then(() => {
-        bone.waitUtilCloudReady(() => {
-          sysManager.update(() => {
-            done();
-          })
-        })
+        done();
       }).catch((err) => {
-      assert.fail()
+      log.error("Failed to bootstrap Firwalla", err, {});
     });
   });
   
@@ -65,16 +62,22 @@ describe('Test mode feature', function() {
     
     ModeManager.switchToDHCP()
       .then(() => {
-        cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err) => {
-          expect(err).to.be.null;
+      delay(1000)
+        .then(() => {
+          cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err) => {
+            expect(err).to.be.null;
 
-          cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
-            console.log(stdout);
-            expect(err).to.not.null;
-            done()
+            cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
+              console.log(stdout);
+              expect(err).to.not.null;
+              done()
+            })
           })
         })
-      })
+      }).catch((err) => {
+      log.error("Failed to switch to DHCP:", err, {});
+      assert.fail();
+    })
   });
   
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
