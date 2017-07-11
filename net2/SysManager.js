@@ -226,6 +226,7 @@ module.exports = class {
   }
   
   update(callback) {
+    log.info("Loading sysmanager data from redis");
     rclient.hgetall("sys:config", (err, results) => {
       if(results && results.language) {
         this.language = results.language;
@@ -303,6 +304,7 @@ module.exports = class {
 
     monitoringInterface() {
         if (this.config) {
+          console.log(require('util').inspect(this.syinfo, {depth: null}));
             return this.sysinfo[this.config.monitoringInterface];
         }
     }
