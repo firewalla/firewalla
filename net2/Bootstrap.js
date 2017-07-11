@@ -23,10 +23,20 @@ let cw = require("../net2/FWCloudWrapper");
 
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager();
+
 let firewallaConfig = require('../net2/config.js').getConfig();
+
+var Discovery = require("./Discovery.js");
+let d = new Discovery("bootstrap", firewallaConfig, "info", false);
 
 let bone = require('../lib/Bone');
 
+/*
+  1. cloud login
+  2. load config
+  3. discover local network interfaces
+  4. load network interface
+ */
 function bootstrap() {
   return cw.login()
     .then(() => {
@@ -34,14 +44,16 @@ function bootstrap() {
         return sysManager.setConfig(firewallaConfig)
           .then(() => {
             return new Promise((resolve, reject) => {
-              sysManager.update(() => {
-                resolve();
-              })
+              d.discoverInterfaces(() => {
+                sysManager.update(() => {
+                  resolve();
+                });
+              });
             })
           });
-      })
+      });
     });  
-}
+};
 
 module.exports = {
   bootstrap: bootstrap
