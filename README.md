@@ -7,6 +7,7 @@
 Support (email fire@firewalla.com)
 ## Install From Image
 ```
+Only Raspberry Pi3 is supported.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
 Prepare a blank microsd card > 8GB size
 Follow the same step as installing a raspberry pi image
@@ -54,15 +55,15 @@ sudo apt-get clean
 Encipher Connect is a secure messenger used to talk to Raspberry Pi.
 
 ```
-https://itunes.apple.com/us/app/encipher-connect/id1082886344?mt=8
+https://itunes.apple.com/us/app/firewalla/id1180904053
 ```
 
 * connect ethernet port to router.
-* install encipher connect from app store.
-* launch encipher connect
-* tap on 'Firewalla Bot' and connect
+* install firewalla from app store.
+* launch firewalla 
+* tap on 'Firewalla' and connect
 
-If anything bad happens, unplug it. 
+If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
 
 ### Contributions
 
