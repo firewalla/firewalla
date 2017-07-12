@@ -7,6 +7,8 @@ install:
 - sudo npm install -g mocha
 - sudo -u pi git clone https://github.com/firewalla/firewalla_nodemodules.x86_64 /home/pi/.node_modules
 - sudo -u pi /home/pi/firewalla/scripts/travis_setup.sh
+- ls -la /home/pi
+- ls -la /home/pi/.firewalla
 - /sbin/ifconfig
 
 script:
