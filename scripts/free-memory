@@ -1,5 +1,4 @@
 #!/bin/bash -
-logger "FIREWALLA: REDIS CLEAN"
-cd /home/pi/
-node /home/pi/firewalla/scripts/clean-redis.js &
+logger "FIREWALLA: REDIS DATA CLEAN"
+redis-cli publish "OldDataCleanSensor" "Start"
 sync

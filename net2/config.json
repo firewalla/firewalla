@@ -45,7 +45,57 @@
     "BonjourSensor": {},
     "HeapSensor": {},
     "AdvancedNmapSensor": {},
-    "NmapSensor": {}
+    "NmapSensor": {},
+    "OldDataCleanSensor": {
+      "alarm" : {
+        "expires": 604800,
+        "count": 1000
+      },
+      "notice" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "intel" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "dns": {
+        "expires": 100000,
+        "count": 10000
+      },
+      "software": {
+        "expires": 604800,
+        "count": 10000
+      },
+      "http": {
+        "expires": 1800,
+        "count": 10000
+      },
+      "ssl": {
+        "expires": 43200,
+        "count": 10000
+      },
+      "conn": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "ssh": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "x509": {
+        "expires": 7200,
+        "count": 10000
+      },
+      "knownHosts": {
+        "expires": 3600,
+        "count": 10000
+      },
+      "userAgent": {
+        "expires": 604800,
+        "count": 10000
+      }
+    }
 },
   "hooks": {
     "NewDeviceHook": {},

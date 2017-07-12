@@ -29,7 +29,9 @@ function initSensors() {
   Object.keys(sensorConfigs).forEach((sensorName) => {
     let fp = './' + sensorName + '.js';
     let s = require(fp);
-    sensors.push(new s());
+    let ss = new s();
+    ss.setConfig(sensorConfigs[sensorName]);
+    sensors.push(ss);
   });  
 }
 

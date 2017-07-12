@@ -84,7 +84,6 @@ function  _block(ip,blocktype,value,callback) {
 
 
 setTimeout(()=>{
-    sysmanager.redisclean();
     let ip = program.host;
 
     console.log("Looking up host ",ip);
