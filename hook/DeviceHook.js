@@ -239,7 +239,7 @@ class DeviceHook extends Hook {
     sem.on("RegularDeviceInfoUpdate", (event) => {
       let host = event.host;
 
-      log.info(util.format("Regular Device Update for %s (%s - %s)", host.bname, host.ipv4Addr, host.mac));
+      log.debug(util.format("Regular Device Update for %s (%s - %s)", host.bname, host.ipv4Addr, host.mac));
 
       let enrichedHost = extend({}, host, {
         lastActiveTimestamp: new Date() / 1000
@@ -247,12 +247,12 @@ class DeviceHook extends Hook {
 
       hostTool.updateHost(enrichedHost)
         .then(() => {
-          log.info("Host entry is updated for this device");
+          log.debug("Host entry is updated for this device");
 
           hostTool.updateMACKey(enrichedHost)
             .then(() => {
 
-              log.info("MAC entry is updated");
+              log.debug("MAC entry is updated");
 
             }).catch((err) => {
             log.error("Failed to create mac entry:", err, err.stack, {});

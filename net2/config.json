@@ -43,7 +43,6 @@
     "DHCPSensor": {},
     "UPNPSensor": {},
     "BonjourSensor": {},
-    "HeapSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "OldDataCleanSensor": {

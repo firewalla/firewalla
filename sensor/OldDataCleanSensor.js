@@ -166,7 +166,7 @@ class OldDataCleanSensor extends Sensor {
               })
           })
         ).then(() => {
-          log.info("CleanHostData on", keys, "is completed", {});
+          // log.info("CleanHostData on", keys, "is completed", {});
         })
       });
   }

@@ -242,8 +242,9 @@ function getPerfStats(callback) {
 }
 
 function getHeapDump(file, callback) {
-  let heapdump = require('heapdump');
-  heapdump.writeSnapshot(file, callback);
+  callback(null);
+  // let heapdump = require('heapdump');
+  // heapdump.writeSnapshot(file, callback);
 }
 
 module.exports = {
