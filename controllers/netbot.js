@@ -1393,11 +1393,20 @@ class netBot extends ControllerBot {
 
   msgHandler(gid, rawmsg, callback) {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
+      
+      if(!callback) { // cloud mode
+        if("compressMode" in rawmsg.message) {
+          callback = {
+            compressMode: rawmsg.message.compressMode
+          } // FIXME: A dirty hack to reuse callback to pass options
+        }  
+      }
+      
       let msg = rawmsg.message.obj;
 //            log.info("Received jsondata", msg);
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-
+          
           log.info("Process Init load event");
 
           this.loadInitCache((err, cachedJson) => {
