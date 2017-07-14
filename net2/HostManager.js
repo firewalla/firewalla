@@ -1387,8 +1387,11 @@ module.exports = class {
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host))
     return Promise.all(promises)
       .then(() => {
-        this.hostsInfoForInit(json);
-        return json;
+        return this.hostPolicyRulesForInit(json)
+          .then(() => {
+            this.hostsInfoForInit(json);
+            return json;
+          })
       });
   }
 
@@ -1465,6 +1468,23 @@ module.exports = class {
         }
       });
     });
+  }
+  
+  hostPolicyRulesForInit(json) {
+    log.debug("Reading individual host policy rules");
+
+    return new Promise((resolve, reject) => {
+      async.eachLimit(this.hosts.all, 10, (host, cb) => {
+        host.loadPolicy(cb)
+      }, (err) => {
+        if(err) {
+          log.error("Failed to load individual host policy rules", err, {});
+          reject(err);
+        } else {
+          resolve(json);
+        }
+      });
+    })
   }
   
   migrateStats() {
