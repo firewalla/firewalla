@@ -409,15 +409,38 @@ class Host {
         log.debug("Host:Spoof:", state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
-        if (state == true && this.spoofing == false) {
-            log.info("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
-            spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
+
+      if(fConfig.newSpoof) {
+        // new spoof supports spoofing on same device for mutliple times,
+        // so no need to check if it is already spoofing or not
+        if(state === true) {
+          spoofer.newSpoof(this.o.ipv4Addr)
+            .then(() => {
+            log.info("Started spoofing", this.o.ipv4Addr);
             this.spoofing = true;
-        } else if (state == false && this.spoofing == true) {
-            log.info("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
-            spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
-            this.spoofing = false;
+            }).catch((err) => {
+            log.error("Failed to spoof", this.o.ipv4Addr);
+          })
+        } else {
+          spoofer.newUnspoof(this.o.ipv4Addr)
+            .then(() => {
+              log.info("Stopped spoofing", this.o.ipv4Addr);
+              this.spoofing = false;
+            }).catch((err) => {
+            log.error("Failed to unspoof", this.o.ipv4Addr);
+          })
         }
+      } else {
+        if (state === true && this.spoofing === false) {
+          log.info("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+          spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
+          this.spoofing = true;
+        } else if (state === false && this.spoofing === true) {
+          log.info("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+          spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
+          this.spoofing = false;
+        }
+      }       
     }
 
     // Notice

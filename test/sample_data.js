@@ -17,11 +17,15 @@
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
-
-
+let Alarm = require('../alarm/Alarm.js');
+let Exception = require('../Alarm/Exception.js');
+let ExceptionManager = require('../Alarm/ExceptionManager.js');
+let exceptionManager = new ExceptionManager();
+let AlarmManager2 = require('../alarm/AlarmManager2.js')
+let alarmManager2 = new AlarmManager2();
 let Promise = require('bluebird');
 
-function createSampleHost() {
+exports.createSampleHost = () => {
   let addHost = hostTool.updateHost({
     ipv4Addr: "172.17.0.10",
     mac: "F4:0F:24:00:00:01",
@@ -52,14 +56,49 @@ function createSampleHost() {
   return Promise.all([addHost, addMac])
 }
 
-function removeSampleHost() {
+exports.removeSampleHost = () => {
   let removeHost = hostTool.deleteHost("172.17.0.10")
   let removeMac = hostTool.deleteMac("F4:0F:24:00:00:01")
   
   return Promise.all([removeHost, removeMac])
 }
 
-module.exports = {
-  createSampleHost: createSampleHost,
-  removeSampleHost: removeSampleHost
+let lastExceptionID = null;
+
+exports.createSampleException= () => {
+  return new Promise((resolve, reject) => {
+    let e1 = new Exception({"p.dest.name": "spotify.com"});
+    exceptionManager.saveException(e1, (err) => {
+      if(err) {
+        reject(err);
+        return;
+      }
+      
+      lastExceptionID = e1.eid;
+      
+      resolve();
+    })
+  })
 }
+
+exports.removeSampleException = () => {
+  if(lastExceptionID) {
+    return exceptionManager.deleteException(lastExceptionID)      
+  }
+  
+  return Promise.resolve();
+};
+
+exports.createSamplePolicy = () => {
+  
+}
+
+exports.createSampleVideoAlarm = () => {
+  let a1 = new Alarm.VideoAlarm(new Date() / 1000, "10.0.1.22", "DEST-1", {
+    "p.dest.name": "spotify.com",
+    "p.device.name": "My Macbook",
+    "p.device.id": "My Macbook",
+    "p.dest.id": "spotify.com"
+  });
+  return alarmManager2.checkAndSaveAsync(a1);
+};
