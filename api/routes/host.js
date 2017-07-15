@@ -58,7 +58,13 @@ router.get('/:host',
              } else {
                hostManager.getHost(host, (err, h) => {
                  flowManager.getStats2(h).then(() => {
-                   res.json(h.toJson());
+                   h.loadPolicy((err) => {
+                     if(err) {
+                       res.status(500).send("");
+                       return;
+                     }
+                     res.json(h.toJson());
+                   })
                  }).catch((err) => {
                    res.status(404);
                    res.send("");
@@ -66,6 +72,14 @@ router.get('/:host',
                });
              }
            });
+
+router.get('/:host',
+  (req, res, next) => {
+    let host = req.params.host;
+    
+    
+  }
+)
 
 router.get('/:host/recentFlow',
   (req, res, next) => {

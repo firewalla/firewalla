@@ -1,5 +1,5 @@
 {
-  "version": 1.80,
+  "version": 1.85,
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
