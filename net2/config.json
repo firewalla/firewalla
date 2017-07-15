@@ -46,7 +46,7 @@
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
-    "BoneServiceSensor": {},
+    "BoneSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,

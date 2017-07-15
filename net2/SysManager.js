@@ -557,41 +557,4 @@ module.exports = class {
         }
         return false;
     }
-
-    checkIn(callback) {
-        fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
-            let license = null;
-            if (_data) {
-                license = JSON.parse(_data);
-            } 
-            this.getSysInfo((err,_sysinfo)=>{
-                log.info("SysManager:Checkin:", license, _sysinfo);
-                bone.checkin(this.config,license,_sysinfo,(err,data)=>{
-                  if(err) {
-                    log.error("Failed to checkin:", err, {});
-                    return;
-                  }
-                    log.info("CheckedIn:", JSON.stringify(data));
-                    rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
-                        if (data.ddns) {
-                            this.ddns = data.ddns;
-                            rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
-                                 if (callback) {
-                                     callback(null,null);
-                                 }
-                            });
-                        }
-                        if (data.publicIp) {
-                            this.publicIp = data.publicIp;
-                            rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
-                            });
-                        }
-                    });
-                });
-            });
-       });
-
-    }   
-       
-
 };
