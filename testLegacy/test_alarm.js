@@ -64,8 +64,8 @@ log.info(b);
 log.info(b.localizedMessage());
 expect(alarmManager2.validateAlarm(b)).to.be.false;
 
-let exception = require('../Alarm/Exception.js');
-let ExceptionManager = require('../Alarm/ExceptionManager.js');
+let exception = require('../alarm/Exception.js');
+let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 let e1 = new Exception({"p.device.name": "My Macbook"});
 exceptionManager.saveException(e1, (err) => {

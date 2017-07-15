@@ -18,8 +18,8 @@ let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
 let Alarm = require('../alarm/Alarm.js');
-let Exception = require('../Alarm/Exception.js');
-let ExceptionManager = require('../Alarm/ExceptionManager.js');
+let Exception = require('../alarm/Exception.js');
+let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
