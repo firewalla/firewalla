@@ -991,7 +991,7 @@ class Host {
     }
 
     redisclean() {
-        sysManager.redisclean();
+      // deprecated, do nothing
     }
 
     // policy:mac:xxxxx
@@ -1073,7 +1073,7 @@ class Host {
         }
         rclient.hmset(key, d, (err, data) => {
             if (err != null) {
-                log.error("Host:Policy:Save:Error", key, err);
+                log.error("Host:Policy:Save:Error", key, err, {});
             }
             if (callback) 
                 callback(err, null);
@@ -1087,7 +1087,7 @@ class Host {
         rclient.hgetall(key, (err, data) => {
             log.debug("Host:Policy:Load:Debug", key, data);
             if (err != null) {
-                log.error("Host:Policy:Load:Error", key, err);
+                log.error("Host:Policy:Load:Error", key, err, {});
                 if (callback) {
                     callback(err, null);
                 }
@@ -1144,9 +1144,6 @@ module.exports = class {
 
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
-                if (this.type === 'server') {
-                    sysManager.redisclean();
-                }
                 this.getHosts((err, result) => {
                     if (this.type === 'server') {
                         for (let i in result) {
@@ -1390,8 +1387,11 @@ module.exports = class {
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host))
     return Promise.all(promises)
       .then(() => {
-        this.hostsInfoForInit(json);
-        return json;
+        return this.hostPolicyRulesForInit(json)
+          .then(() => {
+            this.hostsInfoForInit(json);
+            return json;
+          })
       });
   }
 
@@ -1468,6 +1468,23 @@ module.exports = class {
         }
       });
     });
+  }
+  
+  hostPolicyRulesForInit(json) {
+    log.debug("Reading individual host policy rules");
+
+    return new Promise((resolve, reject) => {
+      async.eachLimit(this.hosts.all, 10, (host, cb) => {
+        host.loadPolicy(cb)
+      }, (err) => {
+        if(err) {
+          log.error("Failed to load individual host policy rules", err, {});
+          reject(err);
+        } else {
+          resolve(json);
+        }
+      });
+    })
   }
   
   migrateStats() {
