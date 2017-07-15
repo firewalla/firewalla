@@ -1,5 +1,6 @@
 {
   "version": 1.85,
+  "firewallaServerURL": "https://firewalla.encipher.io/bone/api/v2",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
@@ -45,6 +46,7 @@
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
+    "BoneServiceSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,

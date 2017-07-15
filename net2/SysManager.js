@@ -567,6 +567,10 @@ module.exports = class {
             this.getSysInfo((err,_sysinfo)=>{
                 log.info("SysManager:Checkin:", license, _sysinfo);
                 bone.checkin(this.config,license,_sysinfo,(err,data)=>{
+                  if(err) {
+                    log.error("Failed to checkin:", err, {});
+                    return;
+                  }
                     log.info("CheckedIn:", JSON.stringify(data));
                     rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
                         if (data.ddns) {
