@@ -74,7 +74,7 @@ if(!firewalla.isProduction()) {
   enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
-
+  enableSubPath('debugEncipher');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

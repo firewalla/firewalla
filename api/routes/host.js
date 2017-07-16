@@ -28,6 +28,8 @@ let flowManager = new FlowManager();
 let FlowTool = require('../../net2/FlowTool');
 let flowTool = new FlowTool();
 
+let Promise = require('bluebird');
+
 router.get('/all',
            (req, res, next) => {
              let json = {};
@@ -63,7 +65,14 @@ router.get('/:host',
                        res.status(500).send("");
                        return;
                      }
-                     res.json(h.toJson());
+                     
+                     let jsonObj = h.toJson();
+
+                     Promise.all([
+                       flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs())
+                     ]).then(() => {
+                       res.json(jsonObj);
+                     });
                    })
                  }).catch((err) => {
                    res.status(404);

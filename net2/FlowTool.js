@@ -197,6 +197,25 @@ class FlowTool {
     });
     
   }
+
+  prepareRecentFlowsForHost(json, listip) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+    
+    json.flows.time = [];
+
+    let promises = listip.map((ip) => {
+      return this.getRecentOutgoingConnections(ip)
+        .then((flows) => {
+          Array.prototype.push.apply(json.flows.time, flows);
+          return json;
+        })
+    });
+
+    return Promise.all(promises);
+
+  }
   
   getRecentOutgoingConnections(ip) {
     

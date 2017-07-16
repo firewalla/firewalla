@@ -1,6 +1,7 @@
 {
   "version": 1.85,
-  "firewallaServerURL": "https://firewalla.encipher.io/bone/api/v2",
+  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v2",
+  "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
