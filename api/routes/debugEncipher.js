@@ -31,7 +31,7 @@ let sc = require('../lib/SystemCheck.js');
 
 let zlib = require('zlib');
 
-router.post('/message/cleartext/:gid',
+router.post('/message/:gid',
   function(req, res, next) {
     log.info("A new request");
     log.info("================= request body =================");

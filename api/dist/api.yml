@@ -223,6 +223,14 @@ paths:
       responses:
         200:
           description: Success
+  /debugEncipher/message:
+    post:
+      summary: Debug Channel
+      tags:
+        - System
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
