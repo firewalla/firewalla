@@ -123,13 +123,19 @@ function getBoneInfoSync() {
 function getVersion() {
   if(!version) {
     let cmd = "git describe --tags";
-    let versionElements = require('child_process').execSync(cmd).toString('utf-8')
+    let versionElements = [];
+    
+    try {
+      versionElements = require('child_process').execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
+    } catch (err) {
+      log.error("Failed to get git version tags", err, {});
+    }
 
     if(versionElements.length === 3) {
       version = util.format("%s.%s (%s)", versionElements[0], versionElements[1], versionElements[2]);
     } else {
-      version = "";
+      version = "0.0 (0)";
     }
   }
 
