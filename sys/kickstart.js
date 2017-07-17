@@ -236,7 +236,8 @@ function openInvite(group,gid,ttl) {
 
                 network.get_private_ip(function(err, ip) {
                     txtfield.ipaddress = ip;
-                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
+                    let name = config.endpoint_name + gid.substring(0, 8);
+                    service = intercomm.publish(null, name, 'devhi', 8833, 'tcp', txtfield);
                 });
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);

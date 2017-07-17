@@ -23,6 +23,7 @@ var uuid = require("uuid");
 var io2 = require('socket.io-client');
 
 let zlib = require('zlib');
+let License = require('../../util/license.js');
 
 var debugging = false;
 var log = function () {
@@ -30,6 +31,8 @@ var log = function () {
         console.log(Array.prototype.slice.call(arguments));
     }
 };
+
+let fConfig = require('../../net2/config.js').getConfig();
 
 let log2 = require('../../net2/logger.js')(__filename, 'info');
 
@@ -60,7 +63,7 @@ var legoEptCloud = class {
             this.appSecret = null;
             this.info = null; // to be encrypted
             this.signature = "";
-            this.endpoint = "https://firewalla.encipher.io/iot/api/v2";
+            this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
             this.token = null;
             this.eid = null;
             this.groupCache = {};
@@ -147,6 +150,7 @@ var legoEptCloud = class {
                 'appId': this.appId,
                 'appSecret': this.appSecret,
                 'signature': this.signature,
+                'license': License.getLicense()
             }
         };
         if (this.info) {

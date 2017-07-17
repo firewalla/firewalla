@@ -1043,7 +1043,7 @@ class netBot extends ControllerBot {
 
               // use new way to get recent connections
               Promise.all([
-                this.prepareRecentFlowsForHost(jsonobj, listip)
+                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
               ]).then(() => {
                 this.simpleTxData(msg, jsonobj, null, callback);
               }).catch((err) => {
@@ -1054,24 +1054,6 @@ class netBot extends ControllerBot {
         });
 
     });
-  }
-
-  prepareRecentFlowsForHost(json, listip) {
-    if (!"flows" in json)
-      json.flows = {};
-
-    json.flows.time = [];
-
-    let promises = listip.map((ip) => {
-      return flowTool.getRecentOutgoingConnections(ip)
-        .then((flows) => {
-          Array.prototype.push.apply(json.flows.time, flows);
-          return json;
-        })
-    });
-
-    return Promise.all(promises);
-
   }
 
   enrichCountryInfo(flows) {

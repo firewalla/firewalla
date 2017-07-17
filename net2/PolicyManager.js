@@ -606,8 +606,11 @@ module.exports = class {
         // still start dnsmasq if dhcp mode is enabled
         // FIXME: need to refactor code here to split "dnsmasq" service from "dns filtering" feature
         if(dnsmasq.dhcp()) {
-          this.dnsmasq(host, policy["dnsmasq"]);
-          host.oper["dnsmasq"] = policy["dnsmasq"];
+          this.dnsmasq(host, {state: true});
+          host.oper["dnsmasq"] = {state: true};
+        } else {
+          this.dnsmasq(host, {state: false});
+          host.oper["dnsmasq"] = {state: false};
         }
       }
 

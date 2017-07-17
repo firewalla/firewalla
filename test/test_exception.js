@@ -16,6 +16,7 @@
 
 let chai = require('chai');
 let should = chai.should();
+let assert = chai.assert;
 
 let sample = require('./sample_data');
 
@@ -29,51 +30,28 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+let AlarmManager2 = require('../alarm/AlarmManager2.js')
+let alarmManager2 = new AlarmManager2();
+
 describe('Test control features on host', () => {
-  
+
   beforeEach((done) => {
-    sample.createSampleHost()
+    sample.createSampleException()
       .then(() => done())
   });
-  
+
   afterEach((done) => {
-    sample.removeSampleHost()
+    sample.removeSampleException()
       .then(() => done())
   })
-  
-  it('should block host to access internet when "internet off" is tapped');
-  
-  it('should exclude host from montioring when "monitor off" is tapped');
-  
-  it('should update redis database when spoof', (done) => {
-    spoof.newSpoof("172.17.0.10")
+
+  it('should prevent from alarming if covered by exception', (done) => {
+    sample.createSampleVideoAlarm()
       .then(() => {
-        rclient.sismemberAsync("monitored_hosts", "172.17.0.10")
-          .then((result) => {
-            result.should.equal(1)
-
-            rclient.sismemberAsync("unmonitored_hosts", "172.17.0.10")
-              .then((result) => {
-                result.should.equal(0)
-              })
-          })
-      });
-    done();
-  });
-
-  it('should update redis database when unspoof', (done) => {
-    spoof.newUnspoof("172.17.0.10")
-      .then(() => {
-        rclient.sismemberAsync("monitored_hosts", "172.17.0.10")
-          .then((result) => {
-            result.should.equal(0)
-
-            rclient.sismemberAsync("unmonitored_hosts", "172.17.0.10")
-              .then((result) => {
-                result.should.equal(1)
-              })
-          })
-      });
-    done();
+        assert.fail();
+      }).catch((err) => {
+      err.toString().should.equal("Error: alarm is covered by exceptions");
+      done();
+    })
   })
 });

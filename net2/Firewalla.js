@@ -95,6 +95,10 @@ function getTempFolder() {
   return getHiddenFolder() + "/tmp";
 }
 
+function getEncipherConfigFolder() {
+  return "/encipher.config";
+}
+
 // Get config data from fishbone
 var _boneInfo = null;
 function getBoneInfo(callback) {
@@ -157,6 +161,7 @@ module.exports = {
   isDocker:isDocker,
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,
-  isTravis: isTravis
+  isTravis: isTravis,
+  getEncipherConfigFolder: getEncipherConfigFolder
 }
 

@@ -74,7 +74,7 @@ if(!firewalla.isProduction()) {
   enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
-
+  enableSubPath('encipher');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);
@@ -124,9 +124,9 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("Got error when handling request:", err, err.stack, {});
+    log.error("[Developerment] Got error when handling request:", err, err.stack, {});
     res.status(err.status || 500);
-    res.render('error', {
+    res.json({
       message: err.message,
       error: err
     });
@@ -138,7 +138,7 @@ if (app.get('env') === 'development') {
 app.use(function(err, req, res, next) {
   log.error("Got error when handling request: ", err, err.stack, {});
   res.status(err.status || 500);
-  res.render('error', {
+  res.json({
     message: err.message,
     error: {}
   });

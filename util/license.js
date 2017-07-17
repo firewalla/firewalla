@@ -2,7 +2,9 @@
 
 let fs = require('fs');
 
-let path = '/encipher.config/license'
+let Firewalla = require('../net2/Firewalla.js');
+
+let path = Firewalla.getEncipherConfigFolder() + '/license';
 
 function getLicense() {
     if (!fs.existsSync(path)) {

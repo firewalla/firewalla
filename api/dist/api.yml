@@ -223,6 +223,18 @@ paths:
       responses:
         200:
           description: Success
+  /encipher/message/{id}:
+    post:
+      summary: Debug Channel
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/id'
+        - $ref: '#/parameters/json'
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:

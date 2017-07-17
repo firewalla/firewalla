@@ -184,17 +184,6 @@ function run() {
 
   },1000*2);
 
-  setTimeout(()=>{
-    sysManager.checkIn((err,data)=>{
-    });
-  },5000);
-
-  setInterval(()=>{
-    sysManager.checkIn((err,data)=>{
-    });
-  },1000*60*60*1);
-
-
   setInterval(()=>{
     try {
       if (global.gc) {
