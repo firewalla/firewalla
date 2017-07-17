@@ -231,6 +231,7 @@ paths:
       parameters:
         - $ref: '#/parameters/id'
         - $ref: '#/parameters/json'
+        - $ref: '#/parameters/compressed'
       responses:
         200:
           description: Success
