@@ -13,11 +13,10 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
-var config;
-var redis = require("redis");
-var rclient = redis.createClient();
-log = require("../net2/logger.js")("Firewalla", "info");
+let log = require("../net2/logger.js")(__filename)
+let config;
+
+let cp = require('child_process');
 
 let util = require('util');
 
@@ -26,8 +25,12 @@ let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
 let _isProduction = null;
 let _isDocker = null;
 let _platform = null; 
+let _isOverlayFS = null;
 
 let version = null;
+
+let redis = require('redis');
+let rclient = redis.createClient();
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -61,16 +64,20 @@ function getHiddenFolder() {
   return getUserHome() + "/.firewalla";
 }
 
+function getOverlayUpperDirPartition() {
+  return "/media/root-rw/"
+}
+
 function isProduction() {
   // if either of condition matches, this is production environment
-  if (_isProduction==null) {
+  if (_isProduction === null) {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
   }
   return _isProduction;
 }
 
 function isDocker() {
-  if(_isDocker == null) {
+  if(_isDocker === null) {
     _isDocker = require('fs').existsSync("/.dockerenv");
   }
 
@@ -81,6 +88,21 @@ function isTravis() {
   if(process.env.TRAVIS)
     return true;
   return false;
+}
+
+function isOverlayFS() {
+  if(_isOverlayFS === null) {
+    let result = true;
+    try {
+      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");  
+    } catch(err) {
+      result = false;
+    }
+    
+    _isOverlayFS = result;
+  }
+  
+  return _isOverlayFS;
 }
 
 function getRuntimeInfoFolder() {
@@ -168,6 +190,8 @@ module.exports = {
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,
   isTravis: isTravis,
+  isOverlayFS: isOverlayFS,
+  getOverlayUpperDirPartition:getOverlayUpperDirPartition,
   getEncipherConfigFolder: getEncipherConfigFolder
 }
 
