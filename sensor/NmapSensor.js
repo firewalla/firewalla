@@ -223,7 +223,7 @@ class NmapSensor extends Sensor {
             return;
           }
           hosts.forEach((h) => {
-            log.info("Found device:", h.ipv4Addr, util.inspect(h, {depth: null}))
+            log.info("Found device:", h.ipv4Addr, {});
             this._processHost(h);
           })
         }).catch((err) => {

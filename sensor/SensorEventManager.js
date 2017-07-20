@@ -27,7 +27,26 @@ class SensorEventManager extends EventEmitter {
   }
   emitEvent(event) {
     log.info("New Event: " + event.type + " -- " + event.message);
-    this.emit(event.type, event);
+    log.info(event.type, "subscribers: ", this.listenerCount(event.type), {});
+    if(this.listenerCount(event.type) === 0) {
+      log.error("No subscription on event type:", event.type, {});
+    } else {
+      this.emit(event.type, event);  
+    }
+  }
+  
+  on(event, callback) {
+    // Error.stack is slow, so expecting subscription calls are rare, use it carefully
+    log.info("Subscribing event", event, "from", 
+      new Error().stack.split("\n")[2]
+        .replace("     at", "")
+        .replace(/.*\//, "")
+        .replace(/:[^:]*$/,""));
+    super.on(event, callback);
+  }
+  
+  clearAllSubscriptions() {
+    super.removeAllListeners();  
   }
 }
 

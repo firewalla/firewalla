@@ -62,7 +62,7 @@ class BoneSensor extends Sensor {
           return;
         }
         
-        log.info("Cloud checkin:", license, _sysinfo, {});
+        log.info("Checking in Cloud...");
 
         Bone.checkin(fConfig, license, _sysinfo, (err,data) => {
           if(err) {

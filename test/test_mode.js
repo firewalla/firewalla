@@ -19,6 +19,8 @@ let chai = require('chai');
 let expect = chai.expect;
 let should = chai.should;
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 let log = require('../net2/logger.js')(__filename, 'info');
 
 let Mode = require('../net2/Mode.js');
@@ -39,13 +41,21 @@ function delay(t) {
   });
 }
 
+let DNSMASQSensor = require('../sensor/DNSMASQSensor');
+let s = new DNSMASQSensor();
+
 describe('Test mode feature', function() {
   this.timeout(10000);
   
   beforeEach((done) => {
     Bootstrap.bootstrap()
       .then(() => {
-        done();
+        sem.clearAllSubscriptions();
+        s.registered = false;
+        s.run()
+          .then(() => {
+          done();
+          });
       }).catch((err) => {
       log.error("Failed to bootstrap Firwalla", err, {});
     });
@@ -53,31 +63,37 @@ describe('Test mode feature', function() {
   
   afterEach((done) => {
     cp.exec("sudo pkill bitbridge7", (err) => {
-      done();
+      s._stop()
+        .then(() => {
+          done();
+        });
     })
   });
   
   it('should enable dhcp and disable spoofing when mode is switched to dhcp', (done) => {
     setTimeout(done, 10000);
     
-    ModeManager.switchToDHCP()
+    delay(0)
       .then(() => {
-      delay(1000)
-        .then(() => {
-          cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err) => {
-            expect(err).to.be.null;
+        ModeManager.switchToDHCP()
+          .then(() => {
+            delay(2000)
+              .then(() => {
+                cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
+                  expect(err).to.be.null;
 
-            cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
-              console.log(stdout);
-              expect(err).to.not.null;
-              done()
-            })
-          })
+                  cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
+                    console.log(stdout);
+                    expect(err).to.not.null;
+                    done()
+                  })
+                })
+              })
+          }).catch((err) => {
+          log.error("Failed to switch to DHCP:", err, {});
+          assert.fail();
         })
-      }).catch((err) => {
-      log.error("Failed to switch to DHCP:", err, {});
-      assert.fail();
-    })
+      })
   });
   
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {

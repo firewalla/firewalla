@@ -48,6 +48,7 @@
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "BoneSensor": {},
+    "DNSMASQSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,
