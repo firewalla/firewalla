@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,7 @@ function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
-    log.info("Firewalla initliazed");
+    log.debug("Firewalla initliazed");
     next();
   } else {
     res.status(503);

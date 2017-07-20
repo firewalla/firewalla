@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,10 @@
 'use strict';
 var ip = require('ip');
 
+let util = require('util');
+
+let Firewalla = require('../net2/Firewalla');
+
 var debugging = false;
 // var log = function () {
 //     if (debugging) {
@@ -23,6 +27,9 @@ var debugging = false;
 // };
 
 let log = require('./logger.js')(__filename, 'info');
+
+let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
+
 
 module.exports = class {
 
@@ -61,22 +68,28 @@ module.exports = class {
     }
 
     scan(range, fast, callback) {
+      
         if (false == ip.isV4Format(range)) {
-            try {
+          // workaround for docker enviornment, replace 16 to 24
+          range = range.replace('/16', '/24');
+
+          try {
                let ip_info = ip.cidrSubnet(range);
-               if (ip_info) {
-                   if(ip_info.subnetMaskLength<24) {
-                       callback(null,null); 
-                       return;
-                   }
+               if (ip_info) {                  
+                 if(ip_info.subnetMaskLength<24) {
+                   callback(null,[], []); 
+                   return;
+                 }
                }
             } catch(e) {
-               log.error("Nmap:Scan:Error",range,fast,e);
+              log.error("Nmap:Scan:Error",range,fast,e, {});
+              callback(e);
+              return;
             }
         }
-        let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ' + range + ' -oX - | xml-json host';
+        let cmdline = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
         if (fast == true) {
-            cmdline = 'sudo nmap -sn -PO --host-timeout 30s  ' + range + ' -oX - | xml-json host';
+            cmdline = util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary);
         }
         log.info("Running commandline: ", cmdline);
 
@@ -93,14 +106,32 @@ module.exports = class {
      }
 
      nmapScan(cmdline,requiremac,callback) {
+        this.process = require('child_process').exec(cmdline, (err, stdout, code) => {
 
-        this.process = require('child_process').exec(cmdline, (err, out, code) => {
-            let outarray = out.split("\n");
+          let findings = null;
+          try {
+            findings = JSON.parse(stdout);
+          } catch (err) {
+            callback(err);
+            return;
+          }
+
+          if(!findings) {
+            callback(null, [], []);
+            return;
+          }
+
+          let hostsJSON = findings.nmaprun && findings.nmaprun.host;
+
+          if(hostsJSON.constructor !== Array) {
+            hostsJSON = [hostsJSON];
+          }
+          
             let hosts = [];
             let ports = [];
-            for (let a in outarray) {
+            for (let a in hostsJSON) {
                 try {
-                    let hostjson = JSON.parse(outarray[a]);
+                    let hostjson = hostsJSON[a];
                     let host = {};
                     if (hostjson.hostnames && hostjson.hostnames.constructor == Object) {
                         host.hostname = hostjson.hostnames.hostname.name;
@@ -124,6 +155,8 @@ module.exports = class {
                             host.mac = addr.addr;
                             if (addr.vendor != null) {
                                 host.macVendor = addr.vendor;
+                            } else {
+                              host.macVendor = "Unknown";
                             }
                         }
                     }

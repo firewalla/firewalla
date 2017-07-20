@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,8 @@ let request = require('request');
 var uuid = require("uuid");
 var io2 = require('socket.io-client');
 
+let zlib = require('zlib');
+let License = require('../../util/license.js');
 
 var debugging = false;
 var log = function () {
@@ -29,6 +31,8 @@ var log = function () {
         console.log(Array.prototype.slice.call(arguments));
     }
 };
+
+let fConfig = require('../../net2/config.js').getConfig();
 
 let log2 = require('../../net2/logger.js')(__filename, 'info');
 
@@ -59,7 +63,7 @@ var legoEptCloud = class {
             this.appSecret = null;
             this.info = null; // to be encrypted
             this.signature = "";
-            this.endpoint = "https://firewalla.encipher.io/iot/api/v2";
+            this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
             this.token = null;
             this.eid = null;
             this.groupCache = {};
@@ -146,6 +150,7 @@ var legoEptCloud = class {
                 'appId': this.appId,
                 'appSecret': this.appSecret,
                 'signature': this.signature,
+                'license': License.getLicense()
             }
         };
         if (this.info) {
@@ -586,74 +591,103 @@ var legoEptCloud = class {
     // VALID MTYPE:  jsondata
 
 
-    sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
-        var self = this;
-        var mpackage = {
-            'random': self.keygen(),
-            'message': msg,
-        };
-        if (fid === null) {
-            fid = undefined;
+  _send(gid, msgstr, _beep, mtype, fid, mid, callback) {
+    let self = this;
+    
+    log2.info("encipher unencrypted message size: ", msgstr.length, {});
+
+    this.getKey(gid, (err, key, cacheGroup) => {
+      if (err != null && key == null) {
+        callback(err, null)
+        return;
+      }
+      log('tag is ', self.tag, 'key is ', key);
+      var crypted = self.encrypt(msgstr, key);
+
+      if (_beep && 'encrypted' in _beep) {
+        _beep.encrypted = self.encrypt(JSON.stringify(_beep.encrypted), key);
+        // _beep.encrypted = self.encrypt((_beep.encrypted),key);
+      }
+
+      log('encrypted text ', crypted);
+      let options = {
+        uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
+        method: 'POST',
+        auth: {
+          bearer: self.token
+        },
+        json: {
+          'timestamp': Math.floor(Date.now() / 1000),
+          'message': crypted,
+          'beep': _beep,
+          'mtype': mtype,
+          'fid': fid,
+          'mid': mid,
         }
-        if (mid === null) {
-            mid = undefined;
+      };
+
+      request(options, (err2, httpResponse, body) => {
+        if (err2 != null) {
+          let stack = new Error().stack;
+          console.log("Error while requesting ", err2, stack);
+          callback(err2, null);
+          return;
         }
-        var msgstr = JSON.stringify(mpackage);
-        this.getKey(gid, (err, key, cacheGroup) => {
-            if (err != null && key == null) {
-                callback(err, null)
-                return;
-            }
-            log('tag is ', self.tag, 'key is ', key);
-            var crypted = self.encrypt(msgstr, key);
-
-            if (_beep && 'encrypted' in _beep) {
-                _beep.encrypted = self.encrypt(JSON.stringify(_beep.encrypted), key);
-                // _beep.encrypted = self.encrypt((_beep.encrypted),key);
-            }
-
-            log('encrypted text ', crypted);
-            var options = {
-                uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
-                method: 'POST',
-                auth: {
-                    bearer: self.token
-                },
-                json: {
-                    'timestamp': Math.floor(Date.now() / 1000),
-                    'message': crypted,
-                    'beep': _beep,
-                    'mtype': mtype,
-                    'fid': fid,
-                    'mid': mid,
-                }
-            };
-
-            request(options, (err2, httpResponse, body) => {
-                if (err2 != null) {
-                    let stack = new Error().stack;
-                    console.log("Error while requesting ", err2, stack);
-                    callback(err2, null);
-                    return;
-                }
-                if (httpResponse.statusCode < 200 ||
-                    httpResponse.statusCode > 299) {
-                    this.eptHandleError(httpResponse.statusCode, (code, p) => {
-                        callback(httpResponse.statusCode, null);
-                    });
-                } else {
-                    log("send message to group ", body);
-                    log(body);
-                    callback(null, body);
-                }
-            });
-        });
+        if (httpResponse.statusCode < 200 ||
+          httpResponse.statusCode > 299) {
+          this.eptHandleError(httpResponse.statusCode, (code, p) => {
+            callback(httpResponse.statusCode, null);
+          });
+        } else {
+          log("send message to group ", body);
+          log(body);
+          callback(null, body);
+        }
+      });
+    });
+  }
+  
+  sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
+    console.log(msg);
+    var mpackage = {
+      'random': this.keygen(),
+      'message': msg,
+    };
+    if (fid === null) {
+      fid = undefined;
     }
+    if (mid === null) {
+      mid = undefined;
+    }
+    let msgstr = JSON.stringify(mpackage);
+
+    if(msg.data && msg.data.compressMode) {
+      // compress before encrypt
+      let input = new Buffer(msgstr, 'utf8');
+      zlib.deflate(input, (err, output) => {
+        if(err) {
+          log2.error("Failed to compress payload:", err, {});
+          callback(err);
+          return;
+        }
+        
+        let payload = {
+          compressMode: true,
+          data: output.toString('base64')
+        };
+        
+        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback);
+      })
+    } else {
+      this._send(gid, msgstr, _beep, mtype, fid, mid, callback);
+    }
+
+  }
 
     // Direct one-to-one message handling
     receiveMessage(gid, msg, callback) {
-        let logMessage = require('util').format("Got encrytped message from group %s", gid);
-      log2.info(logMessage);
+        let logMessage = require('util').format("Got encrypted message from group %s", gid);
+      log2.debug(logMessage);
 
         this.getKey(gid, (err, key, cacheGroup) => {
           if (err != null && key == null) {
@@ -906,6 +940,7 @@ var legoEptCloud = class {
                 msg: beepmsg,
                 data: beepdata
             };
+          log2.info("APN notification payload: ", beep, {});
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
             console.log("sending logs ", e, r);

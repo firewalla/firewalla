@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,6 +46,7 @@ module.exports = class {
       }
       
       var message = req.body.message;
+      
       if(message == null) {
         res.status(400);
         res.json({"error" : "Invalid request"});

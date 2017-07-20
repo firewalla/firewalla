@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,7 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-var extend = require('util')._extend
+let extend = require('util')._extend
 
 module.exports = class {
   constructor(type, target, info) {
@@ -25,7 +25,7 @@ module.exports = class {
     this.type = type;
     this.target = target;
     if(info)
-      extentd(this, info);
+      extend(this, info);
   }
 }
 

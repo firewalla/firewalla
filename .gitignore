@@ -2,7 +2,9 @@
 logs
 *.log
 npm-debug.log*
+.DS_Store
 
+*.swp
 # Runtime data
 pids
 *.pid
@@ -74,7 +76,7 @@ tramp
 
 # cask packages
 .cask/
-dist/
+#dist/
 
 # Flycheck
 flycheck_*.el
@@ -88,3 +90,10 @@ flycheck_*.el
 # directory configuration
 .dir-locals.el
 ######## END OF EMACS ########
+/bin/bitbridge3
+/bin/bitbridge6a
+/bin/bitbridge7
+/imports/bro
+/imports/bro49.tar.gz
+
+/tmp/

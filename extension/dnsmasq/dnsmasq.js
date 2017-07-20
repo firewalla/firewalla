@@ -7,7 +7,6 @@
 let instance = null;
 let log = null;
 
-let fs = require('fs');
 let util = require('util');
 let key = require('../common/key.js');
 let jsonfile = require('jsonfile');
@@ -17,12 +16,21 @@ let fHome = f.getFirewallaHome();
 
 let userID = f.getUserID();
 
+let Promise = require('bluebird');
+let fs = Promise.promisifyAll(require("fs"))
+
 let dnsFilterDir = f.getUserConfigFolder() + "/dns";
 let filterFile = dnsFilterDir + "/hash_filter.conf";
 let tmpFilterFile = dnsFilterDir + "/hash_filter.conf.tmp";
 
+let policyFilterFile = dnsFilterDir + "/policy_filter.conf";
+let adBlockFilterFile = dnsFilterDir + "/adblock_filter.conf";
+let familyFilterFile = dnsFilterDir + "/family_filter.conf";
+
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
+
+let fConfig = require('../../net2/config.js').getConfig();
 
 let bone = require("../../lib/Bone.js");
 
@@ -35,14 +43,22 @@ let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 let defaultNameServers = null;
 let upstreamDNS = null;
 
+let dhcpFeature = false;
+
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
-module.exports = class {
+let BLACK_HOLE_IP="198.51.100.99";
+
+let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
+
+module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
       log = require("../../net2/logger.js")("dnsmasq", loglevel);
 
       instance = this;
+      this.minReloadTime = new Date() / 1000;
+      this.deleteInProgress = false;
     }
     return instance;
   }
@@ -99,8 +115,8 @@ module.exports = class {
       nameservers = sysManager.myDNS();
     }
 
-    if(!nameservers) {
-      nameservers = ["8.8.8.8"];  // use google dns by default, should not reach this code
+    if(!nameservers || nameservers.length === 0) {
+      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
     
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
@@ -120,8 +136,8 @@ module.exports = class {
 
       if(result) {
         // need update
-        console.log("filterFile is ", filterFile);
-        console.log("tmpFilterFile is ", tmpFilterFile);
+        log.debug("filterFile is ", filterFile);
+        log.debug("tmpFilterFile is ", tmpFilterFile);
         fs.rename(tmpFilterFile, filterFile, callback);      
       } else {
         // no need to update
@@ -129,9 +145,78 @@ module.exports = class {
       }
     });
   }
+  
+  cleanUpADBlockFilter() {
+    return fs.unlinkAsync(adBlockFilterFile);
+  }
+  
+  cleanUpFamilyFilter() {
+    return fs.unlinkAsync(familyFilterFile);
+  }
+  
+  cleanUpPolicyFilter() {
+    return fs.unlinkAsync(policyFilterFile);
+  }
+  
+  addPolicyFilterEntry(domain) {
+    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP);
+    
+    return fs.appendFileAsync(policyFilterFile, entry);
+  }
+  
+  removePolicyFilterEntry(domain) {
+    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
+    
+    if(this.deleteInProgress) {
+        return this.delay(1000)  // try again later
+          .then(() => {
+            return this.removePolicyFilterEntry(domain);
+          })
+    }
+    
+    this.deleteInProgress = true;
+    
+    return fs.readFileAsync(policyFilterFile, 'utf8')
+      .then((data) => {
+      
+      let newData = data.split("\n")
+        .filter((line) => line !== entry)
+        .join("\n");
+
+        return fs.writeFileAsync(policyFilterFile, newData)
+          .then(() => {
+            this.deleteInProgress = false;
+          }).catch((err) => {
+            log.error("Failed to write policy data file:", err, {});
+            this.deleteInProgress = false; // make sure the flag is reset back
+          });
+      })
+  }
+  
+  addPolicyFilterEntries(domains) {
+    let entries = domains.map((domain) => util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP));
+    let data = entries.join("");
+    return fs.appendFileAsync(policyFilterFile, data);
+  }
 
   setDefaultNameServers(nameservers) {
     defaultNameServers = nameservers;
+  }
+
+  delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
+  
+  reload() {
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        if (err)
+          reject(err);
+        resolve();
+      });
+    }).bind(this);
   }
   
   updateTmpFilter(force, callback) {
@@ -295,13 +380,44 @@ module.exports = class {
       cmd = util.format("%s --server=%s", cmd, upstreamDNS);
     }
 
-    log.info("Command to start dnsmasq: ", cmd);
+    if(dhcpFeature && (!sysManager.secondaryIpnet ||
+      !sysManager.secondaryMask)) {
+      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
+    }
+    if(dhcpFeature &&
+       sysManager.secondaryIpnet &&
+       sysManager.secondaryMask) {
+      log.info("DHCP feature is enabled");
+
+      let rangeBegin = util.format("%s.10", sysManager.secondaryIpnet);
+      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+      let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+      
+      cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
+                        cmd,
+                        rangeBegin,
+                        rangeEnd,
+                        sysManager.secondaryMask,
+                        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+                       );
+
+      // By default, dnsmasq sends some standard options to DHCP clients,
+      // the netmask and broadcast address are set to the same as the host running dnsmasq
+      // and the DNS server and default route are set to the address of the machine running dnsmasq. 
+      cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
+
+      sysManager.myDNS().forEach((dns) => {
+        cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
+      });
+    }
+
+    log.debug("Command to start dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
       if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to start dnsmasq: " + err);
+        log.error("DNSMASQ:START:Error", "Failed to start dnsmasq: " + err, {});
       } else {
-        log.info("DNSMASQ:START:SUCCESS");
+        log.info("DNSMASQ:START:SUCCESS", {});
       }
 
       callback(err);
@@ -311,12 +427,12 @@ module.exports = class {
   rawStop(callback) {
     callback = callback || function() {}
 
-    let cmd = util.format("cat %s | sudo xargs kill", dnsmasqPIDFile);
-    log.info("Command to stop dnsmasq: ", cmd);
+    let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    log.debug("Command to stop dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
       if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq: " + err);
+        log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code: " + err);
       } else {
       }
 
@@ -344,9 +460,10 @@ module.exports = class {
 
   start(force, callback) {
     // 0. update resolv.conf
-    // 1. update filter
+    // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
     // 3. update iptables rule
+    log.info("Starting DNSMASQ...", {});
 
     this.updateResolvConf((err) => {
       if(err) {
@@ -354,32 +471,25 @@ module.exports = class {
         return;
       }
       
-      this.updateFilter(force, (err) => {
-        if(err) {
-          callback(err);
-          return;
-        }
+      this.rawStop((err) => {
+        this.rawStart((err) => {
+          if(err) {
+            this.rawStop();
+            callback(err);
+            return;
+          }
 
-        this.rawStop((err) => {
-          this.rawStart((err) => {
+          this.add_iptables_rules((err) => {
             if(err) {
               this.rawStop();
-              callback(err);
-              return;
+              this.remove_iptables_rules();
+            } else {
+              log.info("DNSMASQ is started successfully");
             }
-            
-            this.add_iptables_rules((err) => {
-              if(err) {
-                this.rawStop();
-                this.remove_iptables_rules();
-              }
-              callback(err);
-            });
+            callback(err);
           });
         });
-                     
       });
-      
     });
   }
 
@@ -388,6 +498,7 @@ module.exports = class {
     // 2. stop service
     // optional to remove filter file
 
+    log.info("Stopping DNSMASQ:", {});
     this.remove_iptables_rules((err) => {
       this.rawStop((err) => {
         callback(err);
@@ -403,6 +514,45 @@ module.exports = class {
       }
       callback(err);
     });
+  }
+
+  enableDHCP() {
+    dhcpFeature = true;
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        log.info("Started DHCP")
+        if(err) {
+          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+          reject(err);
+          return;          
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  disableDHCP() {
+    dhcpFeature = false;
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        if(err) {
+          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+          reject(err);
+          return;          
+        }
+        
+        resolve();
+      });
+    });    
+  }
+
+  dhcp() {
+    return dhcpFeature;
+  }
+  
+  setDHCPFlag(flag) {
+    dhcpFeature = flag;
   }
 
 };

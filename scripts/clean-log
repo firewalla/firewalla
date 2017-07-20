@@ -12,6 +12,7 @@ cat /dev/null > /home/pi/.forever/ui.log
 cat /dev/null > /home/pi/.forever/monitor.log
 cat /dev/null > /home/pi/.forever/api.log
 cat /dev/null > /home/pi/.forever/dns.log
+cat /dev/null > /home/pi/.forever/spoof.log
 cat /dev/null > /tmp/forever.out
 cat /dev/null > /tmp/forever.log
 cat /dev/null > /tmp/forever.err

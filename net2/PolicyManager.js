@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,6 +37,8 @@ let upnp = new UPNP();
 
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
+
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let ss_client = require('../extension/ss_client/ss_client.js');
 
@@ -87,7 +89,9 @@ module.exports = class {
     }
 
     // this should flush ip6tables as well
-    flush(config) {
+  flush(config, callback) {
+    callback = callback || function() {}
+    
        iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
@@ -103,7 +107,12 @@ module.exports = class {
                 }
             }
             log.info("PolicyManager:flush", defaultTable, {});
-            iptable.run(defaultTable);
+          iptable.run(defaultTable);
+
+          // Setup iptables so that it's ready for blocking
+          require('../control/Block.js').setupBlockChain();
+
+          callback(err);
         });
        });
     }
@@ -294,9 +303,12 @@ module.exports = class {
   }
 
     hblock(host, state) {
-        log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
-        b.blockMac(host.o.mac,state,(err)=>{
-        });
+      log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
+      if(state) {
+        b.blockMac(host.o.mac);
+      } else {
+        b.unblockMac(host.o.mac);
+      }
  /* 
         
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
@@ -413,34 +425,13 @@ module.exports = class {
     }
 
   dnsmasq(host, config, callback) {
-    let dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
-    let dd = new dnsmasq('info');
-
     if (config.state == true) {
-      dd.install((err) => {
-        if(err) {
-          log.error("Fail to install dnsmasq: " + err);
-          return;
-        }
-
-        // no force update
-        dd.start(false, (err) => {
-          if(err == null) {
-            log.info("dnsmasq service is started successfully");
-          } else {
-            log.error("Failed to start dnsmasq: " + err);
-          }
-        })
-
+      sem.emitEvent({
+        type: "StartDNS"
       })
-
     } else {
-      dd.stop((err) => {
-        if(err == null) {
-          log.info("dnsmasq service is stopped successfully");
-        } else {
-          log.error("Failed to stop dnsmasq: " + err);
-        }
+      sem.emitEvent({
+        type: "StopDNS"
       })
     }
   }
@@ -484,14 +475,13 @@ module.exports = class {
   }
 
     execute(host, ip, policy, callback) {
-        log.info("PolicyManager:Execute:", ip, policy);
 
         if (host.oper == null) {
             host.oper = {};
         }
 
         if (policy == null || Object.keys(policy).length == 0) {
-            log.info("PolicyManager:Execute:NoPolicy", ip, policy);
+            log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
             host.spoof(true);
             host.oper['monitor'] = true;
             if (callback)
@@ -499,9 +489,11 @@ module.exports = class {
             return;
         }
 
+      log.info("PolicyManager:Execute:", ip, policy);
+
         for (let p in policy) {
             if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-                log.info("PolicyManager:AlreadyApplied", p, host.oper[p]);
+                log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
                 continue;
             }
             if (p == "acl") {
@@ -582,15 +574,17 @@ module.exports = class {
 
       // put dnsmasq logic at the end, as it is foundation feature
       // e.g. adblock/family feature might configure something in dnsmasq
-    
-      if(policy["dnsmasq"]) {        
+
+      if(policy["dnsmasq"]) {
         if(host.oper["dnsmasq"] != null &&
-           JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+          JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+          // do nothing
         } else {
           this.dnsmasq(host, policy["dnsmasq"]);
           host.oper["dnsmasq"] = policy["dnsmasq"];
         }
-      }      
+      }
+
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);
@@ -618,7 +612,15 @@ module.exports = class {
             host.appliedAcl = {};
         }
 
-        /* iterate policies and see if anything need to be modified */
+      // FIXME: Will got rangeError: Maximum call stack size exceeded when number of acl is huge
+
+      if(policy.length > 1000) {
+          log.warn("Too many policy rules for host", host.shname);
+          callback(null, null); // self protection
+          return; 
+        }
+        
+      /* iterate policies and see if anything need to be modified */
         for (let p in policy) {
             let block = policy[p];
             if (block._src || block._dst) {
@@ -638,8 +640,8 @@ module.exports = class {
                 log.info("PolicyManager:ModifiedACL",block,newblock,{});
             }
         }
-
-        async.eachLimit(policy, 1, (block, cb) => {
+      
+        async.eachLimit(policy, 10, (block, cb) => {
             if (policy.done != null && policy.done == true) {
                 cb();
             } else {

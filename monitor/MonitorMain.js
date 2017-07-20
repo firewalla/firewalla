@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -59,8 +59,17 @@ process.on('uncaughtException',(err)=>{
     },1000*2);
 });
 
+let heapSensor = null;
+
 function run() {
 
+  sysManager = null; // not needed any more after run()
+  
+  // listen on request to dump heap for this process, used for memory optmiziation
+  // let HeapSensor = require('../sensor/HeapSensor');
+  // heapSensor = new HeapSensor();
+  // heapSensor.run();
+  
 let tick = 60 * 15; // waking up every 5 min
 let monitorWindow = 60 * 60 * 4; // eight hours window
 

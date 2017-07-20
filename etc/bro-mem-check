@@ -8,7 +8,7 @@ mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
 (( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
-(( mem <= 40 )) && curl http://localhost:8834/v1/sys/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 40 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 40 )) &&  /home/pi/firewalla/scripts/fire-reboot
 (( mem <= 65 )) && /home/pi/firewalla/scripts/free-memory
 
@@ -16,3 +16,8 @@ disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && logger "FIREWALLA: Disk Delete "+$disk
 (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log
+
+FREE=`df -k --output=avail "/home" | tail -n1`   # df -k not df -h
+if [[ $FREE -lt 1000000 ]]; then               # 10G = 10*1024*1024k
+    /home/pi/firewalla/scripts/clean-disk
+fi;

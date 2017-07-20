@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -236,7 +236,8 @@ function openInvite(group,gid,ttl) {
 
                 network.get_private_ip(function(err, ip) {
                     txtfield.ipaddress = ip;
-                    service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
+                    let name = config.endpoint_name + gid.substring(0, 8);
+                    service = intercomm.publish(null, name, 'devhi', 8833, 'tcp', txtfield);
                 });
 
                 intercomm.bpublish(gid, obj.r, config.serviceType);
@@ -293,7 +294,7 @@ function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin");
     eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
-            log.info("Error lookiong up group", err);
+            log.info("Error looking up group", err, err.stack, {});
             callback(err, false);
             return;
         }

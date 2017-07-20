@@ -1,5 +1,7 @@
 {
-  "version": 1.70,
+  "version": 1.85,
+  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v2",
+  "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
@@ -15,15 +17,94 @@
     },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
+  "newSpoof": true,
   "secondaryInterface": {
      "intf":"eth0:0",
      "ip":"192.168.218.1/24",
      "ipsubnet":"192.168.218.0/24",
+     "ipnet":"192.168.218",
+     "ipmask":"255.255.255.0",
      "ip2":"192.168.168.1/24",
-     "ipsubnet2":"192.168.168.0/24"
+     "ipsubnet2":"192.168.168.0/24",
+     "ipnet2":"192.168.168",
+     "ipmask2":"255.255.255.0"
+  },
+  "dhcp": {
+    "leaseTime": "24h"
+  },
+  "dns": {
+    "defaultDNSServer": "8.8.8.8"
   },
   "sysInfo": {
     "tailNum": 100
+  },
+  "policy": {
+    "autoBlock": true
+  },
+  "sensors": {
+    "DHCPSensor": {},
+    "UPNPSensor": {},
+    "BonjourSensor": {},
+    "AdvancedNmapSensor": {},
+    "NmapSensor": {},
+    "BoneSensor": {},
+    "DNSMASQSensor": {},
+    "OldDataCleanSensor": {
+      "alarm" : {
+        "expires": 604800,
+        "count": 1000
+      },
+      "notice" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "intel" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "dns": {
+        "expires": 100000,
+        "count": 10000
+      },
+      "software": {
+        "expires": 604800,
+        "count": 10000
+      },
+      "http": {
+        "expires": 1800,
+        "count": 10000
+      },
+      "ssl": {
+        "expires": 43200,
+        "count": 10000
+      },
+      "conn": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "ssh": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "x509": {
+        "expires": 7200,
+        "count": 10000
+      },
+      "knownHosts": {
+        "expires": 3600,
+        "count": 10000
+      },
+      "userAgent": {
+        "expires": 604800,
+        "count": 10000
+      }
+    }
+},
+  "hooks": {
+    "NewDeviceHook": {},
+    "RefreshMacBackupNameHook": {},
+    "DeviceStatusUpdateHook": {},
+    "DeviceHook": {}
   },
     "bro": {
       "notice" : {

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,7 +26,7 @@ let Promise = require('bluebird');
 
 router.get('/stats', (req, res, next) => {
   let download = flowManager.getLast24HoursDownloadsStats();
-  let upload = flowManager.getLast24HoursDownloadsStats();
+  let upload = flowManager.getLast24HoursUploadsStats();
 
   Promise.join(download, upload, (d, u) => {
     res.json({ upload: u, download: d});

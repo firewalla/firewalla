@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,10 @@ var redis = require("redis");
 var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
+
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
 
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
@@ -94,7 +98,9 @@ module.exports = class {
 
   // config loaded && interface discovered
   isConfigInitialized() {
-    return this.config !== null && this.config[this.config.monitoringInterface] !== null;
+    return this.config != null && 
+      this.config.monitoringInterface && 
+      this.config[this.config.monitoringInterface] !== null;
   }
 
    getIP(callback) {
@@ -224,6 +230,7 @@ module.exports = class {
   }
   
   update(callback) {
+    log.debug("Loading sysmanager data from redis");
     rclient.hgetall("sys:config", (err, results) => {
       if(results && results.language) {
         this.language = results.language;
@@ -280,12 +287,12 @@ module.exports = class {
     }
 
     setConfig(config) {
-        rclient.hset("sys:network:info", "config", JSON.stringify(config), (err, result) => {
-            if (err == null) {
-                this.config = config;
-                //log.info("System Configuration Upgraded");
-            }
-        });
+        return rclient.hsetAsync("sys:network:info", "config", JSON.stringify(config))
+          .then(() => {
+            this.config = config;
+          }).catch((err) => {
+            log.error("Failed to set sys:network:info in redis", err, {});
+          });       
     }
 
     setOperationalState(state, value) {
@@ -301,13 +308,26 @@ module.exports = class {
 
     monitoringInterface() {
         if (this.config) {
-            return this.sysinfo[this.config.monitoringInterface];
+          //log.info(require('util').inspect(this.sysinfo, {depth: null}));
+          return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
         }
     }
 
     myIp() {
         if(this.monitoringInterface()) {
             return this.monitoringInterface().ip_address;            
+        } else {
+            return undefined;
+        }
+    }
+
+    myIpMask() {
+        if(this.monitoringInterface()) {
+            let mask =  this.monitoringInterface().netmask;            
+            if (mask.startsWith("Mask:")) {
+                mask = mask.substr(5);
+            }
+            return mask;
         } else {
             return undefined;
         }
@@ -327,7 +347,7 @@ module.exports = class {
 
 
     myDNS() { // return array
-        let _dns = this.monitoringInterface().dns;
+        let _dns = (this.monitoringInterface() && this.monitoringInterface().dns) || [];
         let v4dns = [];
         for (let i in _dns) {
             if (iptool.isV4Format(_dns[i])) {
@@ -347,6 +367,11 @@ module.exports = class {
 
     mySubnet() {
         return this.monitoringInterface().subnet;
+    }
+
+    mySubnetNoSlash() {
+        let subnet = this.mySubnet();
+        return subnet.substring(0, subnet.indexOf('/'));
     }
 
     mySSHPassword() {
@@ -532,192 +557,4 @@ module.exports = class {
         }
         return false;
     }
-
-    checkIn(callback) {
-        fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
-            let license = null;
-            if (_data) {
-                license = JSON.parse(_data);
-            } 
-            this.getSysInfo((err,_sysinfo)=>{
-                log.info("SysManager:Checkin:", license, _sysinfo);
-                bone.checkin(this.config,license,_sysinfo,(err,data)=>{
-                    log.info("CheckedIn:", JSON.stringify(data));
-                    rclient.set("sys:bone:info",JSON.stringify(data) , (err, result) => {
-                        if (data.ddns) {
-                            this.ddns = data.ddns;
-                            rclient.hset("sys:network:info", "ddns", JSON.stringify(data.ddns), (err, result) => {
-                                 if (callback) {
-                                     callback(null,null);
-                                 }
-                            });
-                        }
-                        if (data.publicIp) {
-                            this.publicIp = data.publicIp;
-                            rclient.hset("sys:network:info", "publicIp", JSON.stringify(data.publicIp), (err, result) => {
-                            });
-                        }
-                    });
-                });
-            });
-       });
-
-    }
-
-    redisclean() {
-        log.info("Redis Cleaning SysManager");
-        f.redisclean(this.config);
-        return;
-        rclient.keys("flow:conn:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.conn.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                //log.info("Expring for ",keys[k],expireDate);
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-
-                  if(data !== 0) {
-                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by ts) for self protection")
-                  }
-                  
-                  // drop old flows to avoid explosion due to p2p connections
-                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
-                    if(data !== 0) {
-                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
-                    }
-                  })
-                    //    log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-
-
-                rclient.zcount(keys[k],'-inf','+inf',(err,data) => {
-                     log.info("REDISCLEAN: flow:conn ",keys[k],data);
-                });
-            }
-        });
-        rclient.keys("flow:ssl:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.ssl.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-            }
-        });
-        rclient.keys("flow:http:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.http.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                  //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                  if(data !== 0) {
-                    log.warn(data + " entries of flow " + keys[k] + " are dropped (by timestamp) for self protection")
-                  }
-
-                                    // drop old flows to avoid explosion due to p2p connections
-                  rclient.zremrangebyrank(keys[k], 0, -1 * MAX_CONNS_PER_FLOW, (err, data) => {
-                    if(data !== 0) {
-                      log.warn(data + " entries of flow " + keys[k] + " are dropped (by count) for self protection")
-                    }
-                  })
-
-                });
-            }
-        });
-        rclient.keys("notice:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.notice.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-            }
-        });
-        rclient.keys("intel:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.intel.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-                rclient.zremrangebyrank(keys[k], 0, -20, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-            }
-        });
-        rclient.keys("software:*", (err, keys) => {
-            var expireDate = Date.now() / 1000 - this.config.bro.software.expires;
-            if (expireDate > Date.now() / 1000 - 8 * 60 * 60) {
-                expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            }
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],err,data);
-                });
-            }
-        });
-        rclient.keys("monitor:flow:*", (err, keys) => {
-            let expireDate = Date.now() / 1000 - 8 * 60 * 60;
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-            }
-        });
-        rclient.keys("alarm:ip4:*", (err, keys) => {
-            let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 7;
-            for (let k in keys) {
-                rclient.zremrangebyscore(keys[k], "-inf", expireDate, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-                rclient.zremrangebyrank(keys[k], 0, -20, (err, data) => {
-                    //log.debug("Host:Redis:Clean",keys[k],expireDate,err,data);
-                });
-            }
-        });
-        rclient.keys("stats:hour*",(err,keys)=> {
-            let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
-            for (let j in keys) {
-                rclient.zscan(keys[j],0,(err,data)=>{
-                    if (data && data.length==2) {
-                       let array = data[1];
-                       for (let i=0;i<array.length;i++) {
-                           if (array[i]<expireDate) {
-                               rclient.zrem(keys[j],array[i]);
-                           }
-                           i += Number(1);
-                       }
-                    }
-                });
-            }
-        });
-        let MAX_AGENT_STORED = 150;
-        rclient.keys("host:user_agent:*",(err,keys)=>{
-            for (let j in keys) {
-                rclient.scard(keys[j],(err,count)=>{
-                    log.info(keys[j]," count ", count);
-                    if (count>MAX_AGENT_STORED) {
-                        log.info(keys[j]," pop count ", count-MAX_AGENT_STORED);
-                        for (let i=0;i<count-MAX_AGENT_STORED;i++) {
-                            rclient.spop(keys[j],(err)=>{
-                                if (err) {
-                                    log.info(keys[j]," count ", count-MAX_AGENT_STORED, err);
-                                }
-                            });
-                        }
-                    }
-                });
-            }
-        });
-    }
-
 };

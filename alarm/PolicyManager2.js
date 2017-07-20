@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,7 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
-let Promise = require('promise');
+let Promise = require('bluebird');
 
 let instance = null;
 
@@ -35,9 +35,20 @@ let policyIDKey = "policy:id";
 let policyPrefix = "policy:";
 let initID = 1;
 
+let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ();
+
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 let extend = require('util')._extend;
 
-module.exports = class {
+let Block = require('../control/Block.js');
+
+let Policy = require('./Policy.js');
+
+
+
+class PolicyManager2 {
   constructor() {
     if (instance == null) {
       instance = this;
@@ -101,6 +112,16 @@ module.exports = class {
     callback(null, this.jsonToPolicy(json));
   }
   
+  savePolicyAsync(policy) {
+    return new Promise((resolve, reject) => {
+      this.savePolicy(policy, (err) => {
+        if(err)
+          reject(err);
+        
+        resolve();
+      })
+    })
+  }
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
@@ -125,9 +146,12 @@ module.exports = class {
         this.addToActiveQueue(policy, (err) => {
           if(!err) {
             audit.trace("Created policy", policy.pid);
-          }         
-          
-          callback(err, policy.pid);
+          }
+
+          this.enforce(policy)
+            .then(() => {
+              callback(null, policy.pid);
+            }).catch((err) => callback(err));
         });
       });
     });
@@ -152,6 +176,36 @@ module.exports = class {
     });
   }
 
+  getPolicy(policyID) {
+    return new Promise((resolve, reject) => {
+      this.idsToPolicys([policyID], (err, results) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        if(results == null || results.length === 0) {
+          reject(new Error("policy not exists"));
+          return;
+        }
+
+        resolve(results[0]);
+      });
+    });
+  }
+  
+  disableAndDeletePolicy(policyID) {
+    let p = this.getPolicy(policyID);
+    
+    return p.then((policy) => {
+      this.unenforce(policy)
+        .then(() => {
+          return this.deletePolicy(policyID);
+        })
+        .catch((err) => Promise.reject(err));
+    }).catch((err) => Promise.reject(err));
+  }
+  
   deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
     return this.policyExists(policyID)
@@ -180,15 +234,11 @@ module.exports = class {
   }
 
   jsonToPolicy(json) {
-    let proto = Policy.mapping[json.type];
+    let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
-      obj.message = obj.localizedMessage(); // append locaized message info
-
-      if(obj["p.flow"]) {
-        delete obj["p.flow"];
-      }
-      
+      if(!obj.timestamp)
+        obj.timestamp = new Date() / 1000;
       return obj;
     } else {
       log.error("Unsupported policy type: " + json.type);
@@ -249,12 +299,13 @@ module.exports = class {
     });
   }
 
-  // top 20 only by default
+  // FIXME: top 200 only by default
+  // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
 
     if(typeof(number) == 'function') {
       callback = number;
-      number = 20;
+      number = 1000; // by default load last 1000 policy rules, for self-protection
     }
     
     callback = callback || function() {}
@@ -270,5 +321,68 @@ module.exports = class {
     });
   }
 
+  enforceAllPolicies() {
+    return new Promise((resolve, reject) => {
+      this.loadActivePolicys((err, rules) => {
+
+        let enforces = rules.map((rule) => this.enforce(rule));
+
+        return Promise.all(enforces);
+      });
+    });
+  }
+  
+  enforce(policy) {
+    switch(policy.type) {
+    case "ip":
+      return Block.block(policy.target);
+      break;
+    case "mac":
+      let blockMacAsync = Promise.promisify(Block.blockMac);
+      return blockMacAsync(policy.target);
+      break;
+    case "dns":
+      return dnsmasq.addPolicyFilterEntry(policy.target)
+        .then(() => {
+          sem.emitEvent({
+            type: 'ReloadDNSRule',
+            message: 'DNSMASQ filter rule is updated'
+          });
+        });
+      break;
+    case "ip_port":
+      return Block.blockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+      break;
+    default:
+      return Promise.reject("Unsupported policy");
+    }    
+  }
+
+  unenforce(policy) {
+    switch(policy.type) {
+    case "ip":
+      return Block.unblock(policy.target);
+      break;
+    case "mac":
+      let unblockMacAsync = Promise.promisify(Block.unblockMac);
+      return unblockMacAsync(policy.target);
+      break;
+    case "dns":
+      return dnsmasq.removePolicyFilterEntry(policy.target)
+        .then(() => {
+          sem.emitEvent({
+            type: 'ReloadDNSRule',
+            message: 'DNSMASQ filter rule is updated'
+          });
+      });
+    case "ip_port":
+      return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+      break;
+    default:
+      return Promise.reject("Unsupported policy");
+    }
+  }
+
 }
 
+module.exports = PolicyManager2;

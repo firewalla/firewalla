@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,29 +27,18 @@ let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
 
+let ModeManager = require('./ModeManager.js');
+
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
-
-
-/*
- * Create the secondary interface 
- */
-
-var secondaryInterface = require("./SecondaryInterface.js");
-secondaryInterface.create(config,(err,ip,subnet)=>{
-    if (err == null) {
-        log.info("Successful Created Secondary Interface");
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet; 
-    }
-});
 
 run0();
 
@@ -59,6 +48,16 @@ function run0() {
       sysManager.isConfigInitialized()) {
     run();
   } else {
+    if(!bone.cloudready()) {
+      log.info("Connecting to Firewalla Cloud...");
+    }
+    if(!bone.isAppConnected()) {
+      log.info("Waiting for first app to connect...");
+    }
+    if(!sysManager.isConfigInitialized()) {
+      log.info("Waiting for configuration setup...");
+    }
+    
     setTimeout(()=>{
       sysManager.update(null);
       run0();
@@ -81,9 +80,19 @@ if(firewalla.isProduction()) {
   });
 }
 
+let hl = null;
+let sl = null;
+
 function run() {
 
+  hl = require('../hook/HookLoader.js');
+  hl.initHooks();
+  hl.run();
 
+  sl = require('../sensor/SensorLoader.js');
+  sl.initSensors();
+  sl.run();
+  
   var VpnManager = require('../vpn/VpnManager.js');
 
   var BroDetector = require("./BroDetect.js");
@@ -134,37 +143,46 @@ function run() {
   d.start();
   bd.start();
 
+
+  // always create the secondary interface
+  ModeManager.enableSecondaryInterface();
+  
+  ModeManager.apply();
+
+  // when mode is changed by anyone else, reapply automatically
+  ModeManager.listenOnChange();
+  
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
-
-  var Spoofer = require('./Spoofer.js');
-  let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager('info');
 
-    policyManager.flush(config);
-    //policyManager.defaults(config);
-    //TODO need to write something install automatic rules
+    policyManager.flush(config, (err) => {
 
-    // for each new host  ... need to apply policy
-    var AlarmManager = require("./AlarmManager.js");
-    var alarmManager = new AlarmManager('debug');
-    //alarmManager.alarm("0.0.0.0", "message", 'major','50',{msg:"Fishbone core is starting"},null);
+      //policyManager.defaults(config);
+      
+      if(err) {
+        log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
+        return;
+      }
+      
+      let PolicyManager2 = require('../alarm/PolicyManager2.js');
+      let pm2 = new PolicyManager2();
+
+      setTimeout(() => {
+        pm2.enforceAllPolicies()
+          .then(() => {
+            log.info("All existing policy rules are applied");
+          }).catch((err) => {
+          log.error("Failed to apply some policy rules: ", err, {});
+        });
+      }, 1000 * 10); // delay for 10 seconds
+    });
+
   },1000*2);
-
-  setTimeout(()=>{
-    sysManager.checkIn((err,data)=>{
-    });
-  },5000);
-
-  setInterval(()=>{
-    sysManager.checkIn((err,data)=>{
-    });
-  },1000*60*60*1);
-
 
   setInterval(()=>{
     try {
@@ -205,7 +223,7 @@ function run() {
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
-        log.info(result[i].toShortString());
+//        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
           log.info("=================================");
           log.info("Notice :", type,ip,obj);

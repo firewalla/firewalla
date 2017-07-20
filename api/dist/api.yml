@@ -1,0 +1,632 @@
+# a demonstration of an API spec with HTTP responses in YAML
+swagger: '2.0'
+info:
+  title: Firewalla API
+  description: all kinds of debugging api supported by Firewalla
+  version: '1.0.0'
+# the domain of the service
+# host: localhost2:8834
+# array of all schemes that your API supports
+schemes:
+  - http
+# will be prefixed to all paths
+basePath: /v1
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /policy/list:
+    get:
+      summary: Returns the list of all policy rules
+      tags:
+        - Policy
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Policies'
+  /policy/{id}:
+    get:
+      summary: Query info on a specific policy rule
+      tags:
+        - Policy
+      parameters:
+       - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Policy'
+    delete:
+      summary: Delete a policy by given id
+      tags:
+        - Policy
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
+  /policy/create:
+    post:
+      summary: Create a new policy with json content
+      tags:
+        - Policy
+      parameters:
+        - $ref: '#/parameters/json'
+      responses:
+        200:
+          description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+  /policy/create/ip_port:
+    post:
+      summary: Create a new ip_port policy, any traffic to this ip/port/protocol will be blocked
+      tags:
+        - Policy
+      parameters:
+        - $ref: '#/parameters/ip'
+        - $ref: '#/parameters/port'          
+        - $ref: '#/parameters/protocol'
+        - $ref: '#/parameters/name'
+      responses:
+        200:
+          description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+  /exception/create:
+    post:
+      summary: Create a new exception with json content
+      tags:
+        - Exception
+      parameters:
+        - $ref: '#/parameters/json'        
+      responses:
+        200:
+          description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+  /exception/list:
+    get:
+      summary: Returns the list of all policy rules
+      tags:
+        - Exception
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Exceptions'
+  /exception/{id}:
+    get:
+      summary: Query info on a specific exception rule
+      tags:
+        - Exception
+      parameters:
+       - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Exception'
+    delete:
+      summary: Delete an exception by given id
+      tags:
+        - Exception
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+  /flow/stats:
+    get:
+      summary: List upload/download traffic flows in last 24 hours
+      tags:
+        - Flow
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Flows'
+  /host/all:
+    get:
+      summary: List all hosts
+      tags:
+        - Host
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Hosts'
+  /host/{id}:
+    get:
+      summary: Get host information by given ip
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Host'
+  /host/{id}/recentFlow:
+    get:
+      summary: Get flow info of given host
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success          
+  /mac/{id}:
+    post:
+      summary: Update Mac Info
+      tags:
+        - Mac
+      parameters:
+        - $ref: '#/parameters/id'
+        - $ref: '#/parameters/action'
+        - $ref: '#/parameters/name'
+      responses:
+        200:
+          $ref: '#/responses/SuccessMessage'
+        404:
+          $ref: '#/responses/404NotFound'
+        500:
+          $ref: '#/responses/500InternalServerError'
+  /scisurf/config:
+    get:
+      summary: List scisurf config
+      tags:
+        - SciSurf
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/SciSurfConfig'
+    post:
+      summary: Set SciSurf config
+      tags:
+        - SciSurf
+      parameters:
+        - $ref: '#/parameters/json'        
+      responses:
+        200:
+          description: Success
+  /system/status:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
+  /system/heapdump:
+    get:
+      summary: Get heapdump of firewalla processes
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/process'
+      responses:
+        200:
+          description: Success
+  /alarm/list:
+    get:
+      summary: Get all active alarms
+      tags:
+        - Alarm
+      responses:
+        200:
+          description: Success
+  /encipher/message/{id}:
+    post:
+      summary: Debug Channel
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/id'
+        - $ref: '#/parameters/json'
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
+  /items:
+    x-swagger-router-controller: ItemController
+    get:
+      summary: Returns a list of items
+      operationId: getItems
+      parameters:
+        - $ref: '#/parameters/page'
+        - $ref: '#/parameters/limit'
+        - $ref: '#/parameters/sort'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Items'
+          headers:
+            Pagination-Count:
+              description: Total number of items
+              type: integer
+            Pagination-Page:
+              description: Current page number
+              type: integer
+            Pagination-Limit:
+              description: Number of returned items
+              type: integer
+        400:
+          $ref: '#/responses/400BadRequest'
+        401:
+          $ref: '#/responses/401Unauthorized'
+        403:
+          $ref: '#/responses/403Forbidden'
+        404:
+          $ref: '#/responses/404NotFound'
+        429:
+          $ref: '#/responses/429TooManyRequests'
+        500:
+          $ref: '#/responses/500InternalServerError'
+        503:
+          $ref: '#/responses/503ServiceUnavailable'
+    post:
+      summary: Creates a new item
+      operationId: createItem
+      parameters:
+        - $ref: '#/parameters/item'
+      responses:
+        201:
+          $ref: '#/responses/SuccessMessage'
+        400:
+          $ref: '#/responses/400BadRequest'
+        401:
+          $ref: '#/responses/401Unauthorized'
+        403:
+          $ref: '#/responses/403Forbidden'
+        404:
+          $ref: '#/responses/404NotFound'
+        409:
+          $ref: '#/responses/409Conflict'
+        429:
+          $ref: '#/responses/429TooManyRequests'
+        500:
+          $ref: '#/responses/500InternalServerError'
+        503:
+          $ref: '#/responses/503ServiceUnavailable'
+            
+  /items/{id}:
+    x-swagger-router-controller: ItemController
+    get:
+      summary: Returns a single item
+      operationId: getItem
+      parameters:
+       - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Item'
+        400:
+          $ref: '#/responses/400BadRequest'
+        401:
+          $ref: '#/responses/401Unauthorized'
+        403:
+          $ref: '#/responses/403Forbidden'
+        404:
+          $ref: '#/responses/404NotFound'
+        429:
+          $ref: '#/responses/429TooManyRequests'
+        500:
+          $ref: '#/responses/500InternalServerError'
+        503:
+          $ref: '#/responses/503ServiceUnavailable'
+    patch:
+      summary: Updates properties of an existing item
+      operationId: updateItem
+      parameters:
+        - $ref: '#/parameters/id'
+        - $ref: '#/parameters/item'
+      responses:
+        204:
+          description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+        401:
+          $ref: '#/responses/401Unauthorized'
+        403:
+          $ref: '#/responses/403Forbidden'
+        404:
+          $ref: '#/responses/404NotFound'
+        409:
+          $ref: '#/responses/409Conflict'
+        429:
+          $ref: '#/responses/429TooManyRequests'
+        500:
+          $ref: '#/responses/500InternalServerError'
+        503:
+          $ref: '#/responses/503ServiceUnavailable'
+    delete:
+      summary: Deletes an existing item
+      operationId: deleteItem
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        204:
+          description: Success
+        400:
+          $ref: '#/responses/400BadRequest'
+        401:
+          $ref: '#/responses/401Unauthorized'
+        403:
+          $ref: '#/responses/403Forbidden'
+        404:
+          $ref: '#/responses/404NotFound'
+        409:
+          $ref: '#/responses/409Conflict'
+        429:
+          $ref: '#/responses/429TooManyRequests'
+        500:
+          $ref: '#/responses/500InternalServerError'
+        503:
+          $ref: '#/responses/503ServiceUnavailable'
+
+# define reusable parameters:
+parameters:
+  id:
+    name: id
+    in: path
+    required: true
+    description: Item id
+    type: string
+  idInQuery:
+    name: id
+    in: query
+    required: true
+    description: Item id
+    type: string
+  ip:
+    name: ip
+    in: query
+    required: true
+    description: IP Address
+    type: string
+  port:
+    name: port
+    in: query
+    required: true
+    description: Port
+    type: string
+  name:
+    name: name
+    in: query
+    required: true
+    description: description
+    type: string
+  protocol:
+    name: protocol
+    in: query
+    required: true
+    description: Protocol
+    type: string
+  action:
+    name: action
+    in: query
+    required: true
+    description: Action
+    type: string
+  json:
+    name: json
+    in: body
+    required: true
+    description: JSON Content
+    type: string
+  compressed:
+    name: compressed
+    in: query
+    required: false
+    description: Compression
+    type: string
+  process:
+    name: process
+    in: query
+    required: false
+    description: Process Name
+    type: string
+  interval:
+    name: interval
+    in: query
+    required: false
+    description: Query Interval
+    type: string
+  page:
+    name: page
+    in: query
+    description: Current page number
+    required: false
+    type: integer
+    format: int32
+    default: 1
+    minimum: 1
+  limit:
+    name: limit
+    in: query
+    description: Limits the number of returned items
+    required: false
+    type: integer
+    format: int32
+    default: 10
+    minimum: 10
+    maximum: 100
+    multipleOf: 10
+  sort:
+    name: sort
+    in: query
+    type: array
+    required: false
+    description: Sorting order of items
+    uniqueItems: true
+    minItems: 1
+    maxItems: 6
+    collectionFormat: pipes
+    items:
+      type: string
+      pattern: '([+-]\w*){1}(\|[+-]\w*){0,5}'
+      default: '+name'
+  item:
+    name: item
+    in: body
+    description: An item
+    schema:
+      $ref: "#/definitions/Item"
+    
+# define reusable responses:
+responses:
+  SuccessMessage:
+    description: Success
+    schema:
+      $ref: '#/definitions/Message'
+  400BadRequest:
+    description: The request was invalid or cannot be otherwise served.
+    schema:
+      $ref: '#/definitions/ValidationError'
+  401Unauthorized:
+    description: Authentication credentials were missing or incorrect.
+    schema:
+      $ref: '#/definitions/Message'
+  403Forbidden:
+    description: The request is understood, but it has been refused or access is not allowed.
+    schema:
+      $ref: '#/definitions/Message'
+  404NotFound:
+    description: The URI requested is invalid or the resource requested does not exists. 
+    schema:
+      $ref: '#/definitions/Message'
+  409Conflict:
+    description: Any message which should help the user to resolve the conflict. 
+    schema:
+      $ref: '#/definitions/Message'
+  429TooManyRequests:
+    description: The request cannot be served due to the application’s rate limit having been exhausted for the resource. 
+    schema:
+      $ref: '#/definitions/Message'
+  500InternalServerError:
+    description: Something is broken.
+    schema:
+      $ref: '#/definitions/Message'
+  503ServiceUnavailable:
+    description: The server is up, but overloaded with requests. Try again later. 
+    schema:
+      $ref: '#/definitions/Message'
+
+# define reusable definitions:
+definitions:
+  Policy:
+    type: object
+    properties:
+      pid:
+        type: string
+      timestamp:
+        type: string
+      target:
+        type: string
+      target_name:
+        type: string
+      target_ip:
+        type: string
+      type:
+        type: string
+      aid:
+        type: string
+          
+  Policies:
+    type: array
+    items:
+      $ref: '#/definitions/Policy'
+  Exception:
+    type: object
+    properties:
+      eid:
+        type: string
+      timestamp:
+        type: string
+      aid:
+        type: string
+      type:
+        type: string
+  Exceptions:
+    type: array
+    items:
+      $ref: '#/definitions/Exception'
+  Flows:
+    type: object
+    properties:
+      upload:
+        type: object
+      download:
+        type: object
+  Host:
+    type: object
+    properties:
+      ip:
+        type: string
+      mac:
+        type: string
+      lastActive:
+        type: string
+  Hosts:
+    type: array
+    items:
+      $ref: '#/definitions/Host'
+  SciSurfConfig:
+    type: object
+    properties:
+      server:
+        type: string
+      port:
+        type: string
+  Item:
+    type: object
+    properties:
+      id:
+        type: string
+        readOnly: true
+      name:
+        type: string
+      price:
+        type: string
+      color:
+        type: string
+  Items:
+    type: array
+    items:
+      $ref: '#/definitions/Item'
+  Message:
+    type: object
+    properties:
+      message:
+        type: string
+  Error:
+    type: object
+    properties:
+      code:
+        type: integer
+        format: int32
+      message:
+        type: string
+      field:
+        type: string
+  Errors:
+    type: array
+    items:
+      $ref: '#/definitions/Error'
+  ValidationError:
+    type: object
+    properties:
+      message:
+        type: string
+      errors:
+        $ref: '#/definitions/Errors'

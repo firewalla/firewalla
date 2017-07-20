@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -238,6 +238,9 @@ module.exports = class DNSManager {
         }
     }
 
+    _getIntel(ip, flow, callback) {
+      
+    }
   getIntel(ip, flow, dnsdata, now, callback) {
         log.debug("Get Intel:",ip);
         if (dnsdata) {
@@ -319,6 +322,8 @@ module.exports = class DNSManager {
            if (err || data == null || data.length ==0) {
                log.debug("##### MISS",err,data);
                if (data && data.length == 0) {
+                 
+                 // if nothing found, record the timestamp
                    let intel = {ts:Math.floor(Date.now()/1000)};
                    intel.rcount = iplist.length;
                    let key = "dns:ip:"+ip;
