@@ -14,7 +14,7 @@ for i in `seq 1 12`; do
 done
 
 if [[ ! -f /.dockerenv ]]; then
-    sudo ntpdate -s time.nist.gov
+    sudo ntpdate -b -u -s time.nist.gov
     logger "FIREWALLA.DATE.SYNC"
     sudo systemctl start ntp
     sudo ntpd -gq
@@ -234,7 +234,7 @@ sync
 if [[ ! -f /.dockerenv ]]; then
     sudo systemctl start ntp
     sudo ntpd -gq
-    sudo ntpdate -s time.nist.gov
+    sudo ntpdate -b -u -s time.nist.gov
     sudo systemctl start ntp
     sync
 fi
