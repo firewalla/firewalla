@@ -51,7 +51,7 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
-module.exports = class {
+module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
       log = require("../../net2/logger.js")("dnsmasq", loglevel);
@@ -209,28 +209,14 @@ module.exports = class {
     });
   }
   
-  _reload() {
-    let diff = new Date() / 1000 - this.minReloadTime;
-    if(diff > 0) { 
-      return new Promise((resolve, reject) => {
-        this.start(false, (err) => {
-          if (err)
-            reject(err);
-          resolve();
-        });
-      });
-    } else {
-      // delay 1 second plus minReloadTime;
-      return this.delay((-1 * diff + 1) * 1000)
-        .then(() => {
-          return this._reload();
-        });
-    }
-  }
-  
   reload() {
-    this.minReloadTime = new Date() / 1000 + 1;
-    return this._reload();
+    return new Promise((resolve, reject) => {
+      this.start(false, (err) => {
+        if (err)
+          reject(err);
+        resolve();
+      });
+    }).bind(this);
   }
   
   updateTmpFilter(force, callback) {
@@ -394,6 +380,10 @@ module.exports = class {
       cmd = util.format("%s --server=%s", cmd, upstreamDNS);
     }
 
+    if(dhcpFeature && (!sysManager.secondaryIpnet ||
+      !sysManager.secondaryMask)) {
+      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
+    }
     if(dhcpFeature &&
        sysManager.secondaryIpnet &&
        sysManager.secondaryMask) {
@@ -421,13 +411,13 @@ module.exports = class {
       });
     }
 
-    log.info("Command to start dnsmasq: ", cmd);
+    log.debug("Command to start dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
       if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to start dnsmasq: " + err);
+        log.error("DNSMASQ:START:Error", "Failed to start dnsmasq: " + err, {});
       } else {
-        log.info("DNSMASQ:START:SUCCESS");
+        log.info("DNSMASQ:START:SUCCESS", {});
       }
 
       callback(err);
@@ -437,12 +427,12 @@ module.exports = class {
   rawStop(callback) {
     callback = callback || function() {}
 
-    let cmd = util.format("cat %s | sudo xargs kill", dnsmasqPIDFile);
-    log.info("Command to stop dnsmasq: ", cmd);
+    let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    log.debug("Command to stop dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
       if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq: " + err);
+        log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code: " + err);
       } else {
       }
 
@@ -473,6 +463,7 @@ module.exports = class {
     // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
     // 3. update iptables rule
+    log.info("Starting DNSMASQ...", {});
 
     this.updateResolvConf((err) => {
       if(err) {
@@ -480,32 +471,25 @@ module.exports = class {
         return;
       }
       
-      this.updateFilter(force, (err) => {
-        if(err) {
-          callback(err);
-          return;
-        }
+      this.rawStop((err) => {
+        this.rawStart((err) => {
+          if(err) {
+            this.rawStop();
+            callback(err);
+            return;
+          }
 
-        this.rawStop((err) => {
-          this.rawStart((err) => {
+          this.add_iptables_rules((err) => {
             if(err) {
               this.rawStop();
-              callback(err);
-              return;
+              this.remove_iptables_rules();
+            } else {
+              log.info("DNSMASQ is started successfully");
             }
-            
-            this.add_iptables_rules((err) => {
-              if(err) {
-                this.rawStop();
-                this.remove_iptables_rules();
-              }
-              callback(err);
-            });
+            callback(err);
           });
         });
-                     
       });
-      
     });
   }
 
@@ -514,6 +498,7 @@ module.exports = class {
     // 2. stop service
     // optional to remove filter file
 
+    log.info("Stopping DNSMASQ:", {});
     this.remove_iptables_rules((err) => {
       this.rawStop((err) => {
         callback(err);
@@ -535,6 +520,7 @@ module.exports = class {
     dhcpFeature = true;
     return new Promise((resolve, reject) => {
       this.start(false, (err) => {
+        log.info("Started DHCP")
         if(err) {
           log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
           reject(err);
@@ -563,6 +549,10 @@ module.exports = class {
 
   dhcp() {
     return dhcpFeature;
+  }
+  
+  setDHCPFlag(flag) {
+    dhcpFeature = flag;
   }
 
 };

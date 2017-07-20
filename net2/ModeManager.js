@@ -27,8 +27,7 @@ let Promise = require('bluebird');
 
 let util = require('util');
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let curMode = null;
 
@@ -91,11 +90,19 @@ function _enableSecondaryInterface() {
 }
 
 function _enforceDHCPMode() {
-  return dnsmasq.enableDHCP();
+  sem.emitEvent({
+    type: 'StartDHCP',
+    message: "Enabling DHCP Mode"
+  });
+  return Promise.resolve();
 }
 
 function _disableDHCPMode() {
-  return dnsmasq.disableDHCP();
+  sem.emitEvent({
+    type: 'StopDHCP',
+    message: "Disabling DHCP Mode"
+  });
+  return Promise.resolve();
 }
 
 function apply() {

@@ -38,6 +38,8 @@ let upnp = new UPNP();
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 let ss_client = require('../extension/ss_client/ss_client.js');
 
 var firewalla = require('../net2/Firewalla.js');
@@ -423,34 +425,13 @@ module.exports = class {
     }
 
   dnsmasq(host, config, callback) {
-    let dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
-    let dd = new dnsmasq('info');
-
     if (config.state == true) {
-      dd.install((err) => {
-        if(err) {
-          log.error("Fail to install dnsmasq: " + err);
-          return;
-        }
-
-        // no force update
-        dd.start(false, (err) => {
-          if(err == null) {
-            log.info("dnsmasq service is started successfully");
-          } else {
-            log.error("Failed to start dnsmasq: " + err);
-          }
-        })
-
+      sem.emitEvent({
+        type: "StartDNS"
       })
-
     } else {
-      dd.stop((err) => {
-        if(err == null) {
-          log.info("dnsmasq service is stopped successfully");
-        } else {
-          log.error("Failed to stop dnsmasq: " + err);
-        }
+      sem.emitEvent({
+        type: "StopDNS"
       })
     }
   }
@@ -593,26 +574,17 @@ module.exports = class {
 
       // put dnsmasq logic at the end, as it is foundation feature
       // e.g. adblock/family feature might configure something in dnsmasq
-    
-      if(policy["dnsmasq"]) {        
+
+      if(policy["dnsmasq"]) {
         if(host.oper["dnsmasq"] != null &&
-           JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+          JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
           // do nothing
         } else {
           this.dnsmasq(host, policy["dnsmasq"]);
           host.oper["dnsmasq"] = policy["dnsmasq"];
         }
-      } else {        
-        // still start dnsmasq if dhcp mode is enabled
-        // FIXME: need to refactor code here to split "dnsmasq" service from "dns filtering" feature
-        if(dnsmasq.dhcp()) {
-          this.dnsmasq(host, {state: true});
-          host.oper["dnsmasq"] = {state: true};
-        } else {
-          this.dnsmasq(host, {state: false});
-          host.oper["dnsmasq"] = {state: false};
-        }
       }
+
 
         if (policy['monitor'] == null) {
             log.debug("PolicyManager:ApplyingMonitor", ip);

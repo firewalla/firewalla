@@ -198,7 +198,7 @@ sudo sysctl -w net.ipv4.conf.all.route_localnet=1
 
 
 if [[ -f /.dockerenv ]]; then
-    forever start  -a --uid firemain  -c "/usr/bin/node --expose-gc"  ./main.js
+    forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 else
     sudo systemctl start firemain 
 fi

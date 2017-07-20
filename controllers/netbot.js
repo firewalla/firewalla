@@ -41,6 +41,8 @@ var vpnManager = new VpnManager('info');
 var IntelManager = require('../net2/IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let DeviceMgmtTool = require('../util/DeviceMgmtTool');
+
 let Promise = require('bluebird');
 
 let redis = require('redis');
@@ -1099,17 +1101,11 @@ class netBot extends ControllerBot {
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
     } else if (msg.data.item === "reset") {
-      log.info("Reseting System");
-      let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200
-        }
-        this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
+      DeviceMgmtTool.resetDevice()
+        .then(() => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
       });
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");

@@ -46,7 +46,7 @@ router.post('/message/:gid',
       res.status(404).send('');
       return;
     }
-    var alreadySent = false;
+    let alreadySent = false;
 
     controller.msgHandler(gid, req.body, (err, response) => {
       if(alreadySent) {

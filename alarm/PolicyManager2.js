@@ -38,6 +38,8 @@ let initID = 1;
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 let extend = require('util')._extend;
 
 let Block = require('../control/Block.js');
@@ -342,7 +344,10 @@ class PolicyManager2 {
     case "dns":
       return dnsmasq.addPolicyFilterEntry(policy.target)
         .then(() => {
-          return dnsmasq.reload();
+          sem.emitEvent({
+            type: 'ReloadDNSRule',
+            message: 'DNSMASQ filter rule is updated'
+          });
         });
       break;
     case "ip_port":
@@ -365,8 +370,11 @@ class PolicyManager2 {
     case "dns":
       return dnsmasq.removePolicyFilterEntry(policy.target)
         .then(() => {
-          return dnsmasq.reload();
-        });
+          sem.emitEvent({
+            type: 'ReloadDNSRule',
+            message: 'DNSMASQ filter rule is updated'
+          });
+      });
     case "ip_port":
       return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
       break;

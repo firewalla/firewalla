@@ -72,28 +72,53 @@ module.exports = class {
     configure(callback) {}
 
     stop(callback) {
-        this.started = false;
+      callback = callback || function() {}
 
-        let UPNP = require('../../extension/upnp/upnp');
-        let upnp = new UPNP();
-        upnp.removePortMapping("tcp", localPort, externalPort);
+      this.started = false;
 
-        let cmd = require('util').format("ssserver -d stop --pid %s/run/ss.pid", fHome);
-        cp.exec(cmd, (err, out, code) => {
-            log.info("Stopping ShadowSocket", err);
-            if (callback) {
-                callback(err);
-            }
-        });
+      let UPNP = require('../../extension/upnp/upnp');
+      let upnp = new UPNP();
+      upnp.removePortMapping("tcp", localPort, externalPort);
+
+      this._stop(callback);
+    }
+    
+    _stop(callback) {
+      callback = callback || function() {}
+
+      let cmd = "pkill -9 fw_ss_server";
+      cp.exec(cmd, (err, out, code) => {
+        if(err) {
+          log.error("Failed to stop fw_ss_server", err, {});
+          callback(err);
+          return;
+        }
+
+        log.info("Shadowsocks is stopped");
+        callback(err);
+      });
     }
 
     start(callback) {
+      callback = callback || function() {}
+      
+      // always stop first before start
+      this._stop(() => {
+        this._start(callback);
+      })
+    }
+    
+    _start(callback) {
+      callback = callback || function() {}
+      
       if (this.started) {
         log.info("Shadowsocks::StartedAlready");
         if (callback)
           callback(null, this.portmapped, this.portmapped);
         return;
       }
+      
+      log.info("Starting shadowsocks server...");
       
       let outputStream = fs.createWriteStream(ssLogFile, {flags: 'a'});
 
@@ -103,14 +128,18 @@ module.exports = class {
 
       log.info("Running cmd:", ssBinary, args);
 
-      let ss = cp.spawn(ssBinary, args.split(" "), {detached: true});
-      
-      ss.on('close', (code) => {
-        log.info("Shadowsocks server exited with code", code, {});
-      });
-      
+      let ss = cp.spawn(ssBinary, args.split(" "));
+
       ss.stdout.pipe(outputStream);
       ss.stderr.pipe(outputStream);
+      
+      ss.on('exit', (code) => {
+        if(code) {
+          log.error("Shadowsocks server exited with error code", code);
+        } else {
+          log.info("Shadowsocks server exited successfully");
+        }
+      });
       
       this.started = true;
 
