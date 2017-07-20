@@ -27,6 +27,7 @@ let cp = require('child_process');
 let assert = chai.assert;
 
 let Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
 let Bootstrap = require('../net2/Bootstrap');
 
@@ -35,27 +36,30 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 let DNSMASQSensor = require('../sensor/DNSMASQSensor');
 let s = new DNSMASQSensor();
 
+let ModeManager = require('../net2/ModeManager');
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
   });
 }
 
+
 describe('Test dnsmasq feature', function() {
-  this.timeout(20000);
+  this.timeout(10000);
 
   beforeEach((done) => {
-    Bootstrap.bootstrap()
-      .then(() => {
-        sem.clearAllSubscriptions();
-        s.registered = false;
-        s.run()
-          .then(() => {
-            done();
-          });
-      }).catch((err) => {
-      log.error("Failed to bootstrap Firwalla", err, {});
-    });
+    async(() => {
+      await (Bootstrap.bootstrap())
+      sem.clearAllSubscriptions();
+      s.registered = false;
+      await (s.run())
+      await (ModeManager.enableSecondaryInterface())
+      done();
+    })();
   });
 
   afterEach((done) => {
@@ -88,4 +92,36 @@ describe('Test dnsmasq feature', function() {
       })
   });
 
+  it('should enable dhcp mode if dhcp mode is enabled', (done) => {
+    sem.emitEvent({
+      type: 'StartDHCP'
+    });
+    
+    async(() => {
+      await (delay(2000))
+      cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
+        expect(err).to.be.null;
+        done();
+      });
+    })();
+  });
+  
+  it('should NOT enable dhcp mode if dhcp mode is not enable', (done) => {
+    sem.emitEvent({
+      type: 'StartDHCP'
+    });
+    
+    async(() => {
+      await (delay(2000))
+      sem.emitEvent({
+        type: 'StopDHCP'
+      });
+      await (delay(2000))
+      cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
+        expect(err).to.not.null;
+        done();
+      });
+    })();
+    
+  });
 });

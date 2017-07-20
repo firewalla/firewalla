@@ -107,6 +107,7 @@ class DNSMASQSensor extends Sensor {
               });
 
               sem.on("StartDHCP", (event) => {
+                log.info("Starting DHCP")
                 dnsmasq.enableDHCP();
               });
 

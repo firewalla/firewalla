@@ -380,6 +380,10 @@ module.exports = class DNSMASQ {
       cmd = util.format("%s --server=%s", cmd, upstreamDNS);
     }
 
+    if(dhcpFeature && (!sysManager.secondaryIpnet ||
+      !sysManager.secondaryMask)) {
+      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
+    }
     if(dhcpFeature &&
        sysManager.secondaryIpnet &&
        sysManager.secondaryMask) {
@@ -516,6 +520,7 @@ module.exports = class DNSMASQ {
     dhcpFeature = true;
     return new Promise((resolve, reject) => {
       this.start(false, (err) => {
+        log.info("Started DHCP")
         if(err) {
           log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
           reject(err);
