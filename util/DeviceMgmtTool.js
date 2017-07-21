@@ -41,30 +41,19 @@ class DeviceMgmtTool {
     log.info("Resetting device to factory defaults...");
 
     if(Firewalla.isOverlayFS()) {
+      log.info("OverlayFS is enabled");
       return new Promise((resolve, reject) => {
-        let cmd = require("util").format("sudo mv %s %s.bak", 
-          this._getOverlayUpperWorkDirectory(), 
-          this._getOverlayUpperWorkDirectory());
-        
+        let cmd = Firewalla.getFirewallaHome() + "/scripts/system-reset-all-overlayfs.sh";
+
         cp.exec(cmd, (err) => {
           if(err) {
             log.error("Failed to rename overlay upper work directory to backup:", err, {});
           }
-
-          let cmd = require("util").format("sudo mv %s %s.bak",
-            this._getOverlayUpperDirectory(),
-            this._getOverlayUpperDirectory());
-          
-          cp.exec(cmd, (err) => {
-            if(err) {
-              log.error("Failed to rename overlay upper directory to backup:", err, {});
-            }
-            
-            resolve();
-          });
+          resolve();
         });
       });      
     } else {
+      log.info("Regular filesystem without OverlayFS");
       let script = Firewalla.getFirewallaHome() + "/scripts/system-reset-all";
       return new Promise((resolve, reject) => {
         cp.exec(script, (err, stdout, stderr) => {

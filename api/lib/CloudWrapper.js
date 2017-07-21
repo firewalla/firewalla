@@ -32,20 +32,30 @@ if (config == null) {
   process.exit(1);
 }
 
-var eptname = config.endpoint_name;
-var appId = config.appId;
-var appSecret = config.appSecret;
-var cloud = require('../../encipher');
+let eptname = config.endpoint_name;
+let appId = config.appId;
+let appSecret = config.appSecret;
+let cloud = require('../../encipher');
 
-var eptcloud = new cloud(eptname);
-var nbControllers = {};
+let eptcloud = null;
+let nbControllers = {};
 
-var instance = null;
+let instance = null;
+
+let redis = require('redis');
+let rclient = redis.createClient();
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       instance = this;
+
+      eptcloud = new cloud(eptname);
 
       // Initialize cloud and netbot controller
       eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {

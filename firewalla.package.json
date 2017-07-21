@@ -69,6 +69,8 @@
     "passport": "*",
     "passport-http-bearer": "^1.0.1",
     "serve-favicon": "~2.3.0",
-    "bl": "1.2.0"
+    "bl": "1.2.0",
+    "asyncawait": "1.0.6",
+    "child-process-promise": "*"
   }
 }

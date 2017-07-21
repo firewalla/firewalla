@@ -176,33 +176,9 @@ module.exports = class {
         }
       }
     });
-  }
-
-    publicIp() {
-        var getIP = require('external-ip')();
-        getIP(function(err, ip) {
-            if(err == null) {
-                sysManager.publicIp = ip;
-            }
-        });
-    }
+  }   
 
   start() {
-    // delay start, the first scan will be covered by kickstart
-    //        this.startDiscover(true);
-        this.publicIp();
-        // setTimeout(() => {
-        //     this.startDiscover(false);
-        // }, 1000 * 60 * 0.3);  // in 1 min
-        // setInterval(() => {
-        //     this.startDiscover(false);
-        // }, 1000 * 60 * 100); // every 100 minutes
-        // setInterval(() => {
-        //     this.startDiscover(true);
-        // }, 1000 * 60 * 5); // every 5 minutes, fast scan
-        setInterval(() => {
-            this.publicIp(); // check public ip every day
-        }, 1000 * 60 * 60*24);
     }
 
     /**

@@ -49,6 +49,7 @@
     "NmapSensor": {},
     "BoneSensor": {},
     "DNSMASQSensor": {},
+    "PublicIPSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,
