@@ -59,6 +59,8 @@ let ssh = new SSH('info');
 
 let f = require('../net2/Firewalla.js');
 
+let fConfig = require('../net2/config.js');
+
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
@@ -217,6 +219,8 @@ function displayInvite(obj) {
 }
 
 function openInvite(group,gid,ttl) {
+  log.info("Opening invite for group",gid);
+
                 var obj = eptcloud.eptGenerateInvite(gid);
                 var txtfield = {
                     'gid': gid,
@@ -276,7 +280,10 @@ function postAppLinked() {
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
 
-  if(f.isProduction()) {
+  if(f.isProduction() &&
+      // resetPassword by default unless resetPassword flag is explictly set to false
+    (typeof fConfig.resetPassword === 'undefined' ||
+    fConfig.resetPassword === true)) {
     setTimeout(()=> {
       ssh.resetRandomPassword((err,password) => {
         if(err) {
@@ -291,7 +298,7 @@ function postAppLinked() {
 }
 
 function inviteFirstAdmin(gid, callback) {
-    log.info("Initializing first admin");
+    log.info("Initializing first admin:", gid);
     eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
             log.info("Error looking up group", err, err.stack, {});

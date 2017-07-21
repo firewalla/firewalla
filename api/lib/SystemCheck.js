@@ -25,7 +25,7 @@ function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
-    log.debug("Firewalla initliazed");
+    log.info("Firewalla initialization complete");
     next();
   } else {
     res.status(503);

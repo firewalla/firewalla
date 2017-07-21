@@ -150,7 +150,7 @@ function check_upgrade {
 }
 
 if [[ "$branch" == "release_pi_1_0" ]]; then
-  check_upgrade external-ip ^0.2.4
+  #check_upgrade external-ip ^0.2.4
   check_upgrade jsonfile ^2.4.0
   check_upgrade lodash ^4.17.2
   check_upgrade random-seed 0.3.0

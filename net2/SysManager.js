@@ -21,6 +21,8 @@ var network = require('network');
 var instance = null;
 var fs = require('fs');
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 var redis = require("redis");
 var rclient = redis.createClient();
 var sclient = redis.createClient();
@@ -46,8 +48,6 @@ let i18n = require('../util/i18n.js');
 const MAX_CONNS_PER_FLOW = 25000;
 
 const dns = require('dns');
-let _getIP = require('external-ip')();
-
 
 module.exports = class {
     constructor(loglevel) {
@@ -81,16 +81,21 @@ module.exports = class {
             }
           });
           sclient.subscribe("System:DebugChange");
- 
-            this.delayedActions();
 
-            fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
-                let license = null;
-                if (_data) {
-                    license = JSON.parse(_data);
-                } 
-                this.license = license;
-            });
+          this.delayedActions();
+
+          fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
+            let license = null;
+            if (_data) {
+              license = JSON.parse(_data);
+            }
+            this.license = license;
+          });
+          
+          sem.on("PublicIP:Updated", (event) => {
+            if(event.ip)
+              this.publicIp = event.ip;
+          });
         }
         this.update(null);
         return instance;
@@ -102,24 +107,6 @@ module.exports = class {
       this.config.monitoringInterface && 
       this.config[this.config.monitoringInterface] !== null;
   }
-
-   getIP(callback) {
-    if (this.publicIp == null ||  Date.now()/1000-this.lastIPTime>60*60*1) {
-         //let stack = new Error().stack
-         //log.info("TEMPDEBUGUPDATE", stack )
-         this.lastIPTime = Date.now()/1000;
-        _getIP((err, ip2)=> {
-            if(err == null) {
-                this.publicIp = ip2;
-                callback(undefined, ip2);
-            } else {
-                callback(err, undefined);
-            }
-        });
-     } else {
-        callback(null, this.publicIp);
-     }
-   }
   
     delayedActions() {
         setTimeout(()=>{
@@ -153,18 +140,6 @@ module.exports = class {
         rclient.quit();
         sclient.quit();
         log.info("Calling release function of SysManager");
-    }
-
-    getPublicIP(callback) {
-        var ip = this.publicIp;
-        let self = this;
-        if (ip == null) {
-              let stack = new Error().stack
-              log.info("TEMPDEBUG", stack )
-              this.getIP(callback);
-        } else {
-            callback(undefined, ip);
-        }
     }
     
     debugOn(callback) {
@@ -276,8 +251,6 @@ module.exports = class {
                 this.ddns = this.sysinfo["ddns"];
                 this.publicIp = this.sysinfo["publicIp"];
                 var self = this;
-                this.getIP(function(err,ip) {
-                });
                 //         log.info("System Manager Initialized with Config", this.sysinfo);
             }
             if (callback != null) {
