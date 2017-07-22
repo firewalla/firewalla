@@ -31,26 +31,14 @@ function isInitialized(req, res, next) {
       req.params.gid) {
 
     let gid = req.params.gid;
-    if(cloudWrapper.isGroupLoaded(gid)) {
+    if (cloudWrapper.isGroupLoaded(gid)) {
       next();
       return;
-    } 
-    
-    // loading group info from cloud
-    cloudWrapper.init()
-      .then(() => {
-        log.info("Firewalla initialization complete");
-        next();
-      })
-      .catch((err) => {
-        res.status(503);
-        res.json({error: 'Initializing Firewalla Device, please try later: ' + err});
-      })
-    
-  } else {
-    res.status(503);
-    res.json({error: 'Initializing Firewalla Device, please try later'});
+    }
   }
+
+  res.status(503);
+  res.json({error: 'GID not exists, device may still in init phase, please try later!'});
 }
 
 module.exports = {

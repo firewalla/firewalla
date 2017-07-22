@@ -52,19 +52,49 @@ Promise.promisifyAll(redis.RedisClient.prototype);
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
+
 module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       instance = this;
 
       eptcloud = new cloud(eptname);
+      this.eptcloud = eptcloud;
       
       async(() => {
+
+        log.info("[Boot] Waiting for security keys to be ready");
+        // key ready
+        await(eptcloud.utilKeyReady());
+
+        log.info("[Boot] Loading security keys");
+        await(eptcloud.loadKeys());
+
+        log.info("[Boot] Waiting for cloud token to be ready");
+        // token ready
         await(Bone.waitUntilCloudReadyAsync());
-        this.init();
+
+        log.info("[Boot] Setting up communication channel with cloud");
+        this.tryingInit();
       })();
     }
     return instance;
+  }
+
+  tryingInit() {
+    return async(() => {
+      try {
+        await(this.init());
+      } catch(err) {
+        await(delay(3000));
+        return this.tryingInit();
+      };
+    })();
   }
   
   isGroupLoaded(gid) {
@@ -72,6 +102,8 @@ module.exports = class {
   }
   
   init() {
+    log.info("Initializing Cloud Wrapper...");
+
     return new Promise((resolve, reject) => {
       // Initialize cloud and netbot controller
       eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
@@ -91,6 +123,7 @@ module.exports = class {
             log.info("Found %d groups this device has joined", groups.length);
 
             if(groups.length === 0) {
+              log.error("Wating for kickstart process to create group");
               reject(new Error("This device belongs to no group"));
               return;
             }
