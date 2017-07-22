@@ -46,22 +46,24 @@ function bootstrap() {
   if(bootstrapped)
     return Promise.resolve();
   
-  return cw.login()
+  return async(() => {
+    await (cw.getCloud().loadKeys());
+    await (cw.login());
+    await (bone.waitUntilCloudReadyAsync());
+    await (sysManager.setConfig(firewallaConfig));
+  })()
+
     .then(() => {
-      return bone.waitUtilCloudReady(() => {
-        return sysManager.setConfig(firewallaConfig)
-          .then(() => {
-            return new Promise((resolve, reject) => {
-              d.discoverInterfaces(() => {
-                sysManager.update(() => {
-                  bootstrapped = true;
-                  resolve();
-                });
-              });
-            })
+      return new Promise((resolve, reject) => {
+        d.discoverInterfaces(() => {
+          sysManager.update(() => {
+            bootstrapped = true;
+            resolve();
           });
-      });
-    });  
+        });
+      })
+    })
+
 }
 
 function getGroup() {

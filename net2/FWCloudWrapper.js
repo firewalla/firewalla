@@ -41,6 +41,10 @@ let eptname = config.endpoint_name;
 let eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
 
+function getCloud() {
+  return eptcloud;
+}
+
 function initializeGroup(callback) {
   let groupId = storage.getItemSync('groupId');
   if (groupId != null) {
@@ -96,5 +100,6 @@ function login() {
 }
 
 module.exports = {
-  login: login
+  login: login,
+  getCloud: getCloud
 }
