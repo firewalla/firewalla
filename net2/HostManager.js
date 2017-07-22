@@ -1154,7 +1154,7 @@ module.exports = class {
         this.policy = {};
         sysManager.update((err) => {
           if (err == null) {
-            log.info("System Manager Updated", sysManager.config);
+            log.info("System Manager Updated");
             spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
           }
         });
@@ -1698,7 +1698,7 @@ module.exports = class {
                             o.ipv4Addr = o.ipv4;
                         }
                         if (o.ipv4Addr == null) {
-                          log.info("hostmanager:gethosts:error:noipv4", o, {});
+                          log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac,{});
                             cb();
                             return;
                         }
@@ -1726,7 +1726,7 @@ module.exports = class {
                         }
                         // two mac have the same IP,  pick the latest, until the otherone update itself 
                         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-                            log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o, hostbymac.o);
+                            log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
                             if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
                                 this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }

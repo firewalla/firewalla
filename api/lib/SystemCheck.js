@@ -16,6 +16,9 @@
 
 let bone = require("../../lib/Bone.js");
 
+let CloudWrapper = require('../lib/CloudWrapper');
+let cloudWrapper = new CloudWrapper();
+
 let log = require("../../net2/logger.js")(__filename, 'info');
 
 let SysManager = require('../../net2/SysManager.js');
@@ -24,13 +27,18 @@ let sysManager = new SysManager('info');
 function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
       // this is to ensure sysManager is already initliazed when called in API code
-      sysManager.isConfigInitialized()) {
-    log.info("Firewalla initialization complete");
-    next();
-  } else {
-    res.status(503);
-    res.json({error: 'Initializing Firewalla Device, please try later'});
+      sysManager.isConfigInitialized() &&
+      req.params.gid) {
+
+    let gid = req.params.gid;
+    if (cloudWrapper.isGroupLoaded(gid)) {
+      next();
+      return;
+    }
   }
+
+  res.status(503);
+  res.json({error: 'GID not exists, device may still in init phase, please try later!'});
 }
 
 module.exports = {

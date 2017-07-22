@@ -14,11 +14,14 @@
  */
 'use strict';
 
-var CloudWrapper = require('../lib/CloudWrapper');
-var cloudWrapper = new CloudWrapper();
+let CloudWrapper = require('../lib/CloudWrapper');
+let cloudWrapper = new CloudWrapper();
 
-var instance = null;
-var log = null;
+let instance = null;
+let log = null;
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 module.exports = class {
     constructor(loglevel) {
@@ -30,28 +33,20 @@ module.exports = class {
     }
 
     decrypt(req, res, next) {
-      var gid = req.params.gid;
+      let gid = req.params.gid;
+      let message = req.body.message;
+
       if(gid == null) {
         res.status(400);
         res.json({"error" : "Invalid group id"});
         return;
       }
 
-      let controller = cloudWrapper.getNetBotController(gid);
-      if(!controller) {
-        // netbot controller is not ready yet, waiting for init complete
-        res.status(503);
-        res.json({error: 'Initializing Firewalla Device, please try later'});
-        return;
-      }
-      
-      var message = req.body.message;
-      
       if(message == null) {
         res.status(400);
         res.json({"error" : "Invalid request"});
         return;
-      }      
+      }
 
       cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
         if(err) {
@@ -66,13 +61,13 @@ module.exports = class {
     }
 
     encrypt(req, res, next) {
-      var gid = req.params.gid;
+      let gid = req.params.gid;
       if(gid == null) {
         res.json({"error" : "Invalid group id"});
         return;
       }
 
-      var body = res.body;
+      let body = res.body;
 
       if(body == null) {
         res.json({"error" : "Response error"});

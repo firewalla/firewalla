@@ -49,6 +49,14 @@ sudo apt-get clean
 
 ```
 
+### Build On Docker (Beta, for development purpose only)
+```
+cd docker
+docker build -f Dockerfile2 -t firewalla .
+docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
+# to get an interactive shell
+docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
+```
 
 ### Get IPhone Software
 

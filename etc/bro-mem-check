@@ -17,7 +17,15 @@ disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log
 
-FREE=`df -k --output=avail "/home" | tail -n1`   # df -k not df -h
-if [[ $FREE -lt 1000000 ]]; then               # 10G = 10*1024*1024k
+if mount | grep overlay &>/dev/null; then
+  # overlay fs uses a separate disk for logs
+  FREE=`df -k --output=avail "/log" | tail -n1`   # df -k not df -h
+  if [[ $FREE -lt 100000 ]]; then               # 100M
     /home/pi/firewalla/scripts/clean-disk
-fi;
+  fi;
+else
+  FREE=`df -k --output=avail "/home" | tail -n1`   # df -k not df -h
+  if [[ $FREE -lt 1000000 ]]; then               # 1G
+    /home/pi/firewalla/scripts/clean-disk
+  fi;
+fi

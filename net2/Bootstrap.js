@@ -26,12 +26,15 @@ let sysManager = new SysManager();
 
 let firewallaConfig = require('../net2/config.js').getConfig();
 
-var Discovery = require("./Discovery.js");
+let Discovery = require("./Discovery.js");
 let d = new Discovery("bootstrap", firewallaConfig, "info", false);
 
 let bone = require('../lib/Bone');
 
 let bootstrapped = false;
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 /*
   1. cloud login
@@ -43,23 +46,37 @@ function bootstrap() {
   if(bootstrapped)
     return Promise.resolve();
   
-  return cw.login()
+  return async(() => {
+    await (cw.getCloud().loadKeys());
+    await (cw.login());
+    await (bone.waitUntilCloudReadyAsync());
+    await (sysManager.setConfig(firewallaConfig));
+  })()
+
     .then(() => {
-      return bone.waitUtilCloudReady(() => {
-        return sysManager.setConfig(firewallaConfig)
-          .then(() => {
-            return new Promise((resolve, reject) => {
-              d.discoverInterfaces(() => {
-                sysManager.update(() => {
-                  bootstrapped = true;
-                  resolve();
-                });
-              });
-            })
+      return new Promise((resolve, reject) => {
+        d.discoverInterfaces(() => {
+          sysManager.update(() => {
+            bootstrapped = true;
+            resolve();
           });
-      });
-    });  
-};
+        });
+      })
+    })
+
+}
+
+function getGroup() {
+
+}
+
+function login() {
+ 
+}
+
+function groupReady() {
+
+}
 
 module.exports = {
   bootstrap: bootstrap
