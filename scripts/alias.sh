@@ -1,7 +1,7 @@
 #!/bin/bash
 
 alias t0='tail -F ~/.forever/main.log'
-alias t00='tail -F ~/.forever/firemain.log'
+alias t00='tail -F ~/.forever/*.log'
 alias t1='tail -F ~/.forever/kickui.log'
 alias t2='tail -F ~/.forever/monitor.log'
 alias t3='tail -F ~/.forever/api.log'

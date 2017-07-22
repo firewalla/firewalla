@@ -42,6 +42,8 @@ let nbControllers = {};
 
 let instance = null;
 
+let Bone = require('./../../lib/Bone');
+
 let redis = require('redis');
 let rclient = redis.createClient();
 let Promise = require('bluebird');
@@ -56,7 +58,21 @@ module.exports = class {
       instance = this;
 
       eptcloud = new cloud(eptname);
-
+      
+      async(() => {
+        await(Bone.waitUntilCloudReadyAsync());
+        this.init();
+      })();
+    }
+    return instance;
+  }
+  
+  isGroupLoaded(gid) {
+    return nbControllers[gid];
+  }
+  
+  init() {
+    return new Promise((resolve, reject) => {
       // Initialize cloud and netbot controller
       eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
         if(err) {
@@ -64,44 +80,62 @@ module.exports = class {
           process.exit(1);
         } else {
           log.info("Success logged in Firewalla Cloud");
-          eptcloud.eptFind(result, function (err, ept) {
+
+          eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
             if(err) {
-              log.error("Failed to find device identity: %s", err.toString());
-            } else {
-              log.info("Got device identity");
+              log.error("Fail to find groups")
+              reject(err);
+              return;
             }
-            
-            eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
-              if(err) {
-                log.error("Fail to find groups")
-              } else {
-                log.info("Found %d groups this device belongs to", groups.length);
+
+            log.info("Found %d groups this device has joined", groups.length);
+
+            if(groups.length === 0) {
+              reject(new Error("This device belongs to no group"));
+              return;
+            }
+
+            groups.forEach((group) => {
+              let groupID = group.gid;
+              if(nbControllers[groupID]) {
+                return;
               }
-              groups.forEach(function(group) {
-                let groupID = group.gid;
-                let NetBotController = require("../../controllers/netbot.js");
-                let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
-                nbConfig.controller = config.controllers[0];
-                // temp use apiMode = false to enable api to act as ui as well
-                let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
-                if(nbController) {
-                  nbControllers[groupID] = nbController;
-                  log.info("netbot controller for group " + groupID + " is intialized successfully");
-                }
-              });
+              let NetBotController = require("../../controllers/netbot.js");
+              let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
+              nbConfig.controller = config.controllers[0];
+              // temp use apiMode = false to enable api to act as ui as well
+              let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
+              if(nbController) {
+                nbControllers[groupID] = nbController;
+                log.info("netbot controller for group " + groupID + " is intialized successfully");
+              }
             });
-          }); 
+
+            resolve();
+          });
         }
       });
-    }
-    return instance;
+    })
   }
 
   getNetBotController(groupID) {
-    return nbControllers[groupID];
+    let controller = nbControllers[groupID];
+    if(controller) {
+      return Promise.resolve(controller);
+    }
+
+    return this.init()
+      .then(() => {
+        controller = nbControllers[groupID];
+        if(controller) {
+          return Promise.resolve(controller);
+        } else {
+          return Promise.reject(new Error("Failed to found group" + groupID));
+        }
+      });
   }
 
   getCloud() {
     return eptcloud;
   }
-}
+};

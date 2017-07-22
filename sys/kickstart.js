@@ -287,9 +287,9 @@ function postAppLinked() {
     setTimeout(()=> {
       ssh.resetRandomPassword((err,password) => {
         if(err) {
-          console.log("Failed to reset ssh password");
+          log.info("Failed to reset ssh password");
         } else {
-          console.log("A new random SSH password is used!");
+          log.info("A new random SSH password is used!");
           sysManager.sshPassword = password;
         }
       });

@@ -22,19 +22,19 @@ let request = require('request');
 var uuid = require("uuid");
 var io2 = require('socket.io-client');
 
+let log2 = require('../../net2/logger')(__filename);
+
 let zlib = require('zlib');
 let License = require('../../util/license.js');
 
 var debugging = false;
 var log = function () {
     if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
+        log2.info(Array.prototype.slice.call(arguments));
     }
 };
 
 let fConfig = require('../../net2/config.js').getConfig();
-
-let log2 = require('../../net2/logger.js')(__filename, 'info');
 
 let instance = {};
 
@@ -168,7 +168,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -256,7 +256,7 @@ var legoEptCloud = class {
             log(body);
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -288,7 +288,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -322,7 +322,7 @@ var legoEptCloud = class {
         request(options, function (err, httpResponse, body) {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -363,7 +363,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -400,7 +400,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -629,7 +629,7 @@ var legoEptCloud = class {
       request(options, (err2, httpResponse, body) => {
         if (err2 != null) {
           let stack = new Error().stack;
-          console.log("Error while requesting ", err2, stack);
+          log2.info("Error while requesting ", err2, stack);
           callback(err2, null);
           return;
         }
@@ -648,7 +648,7 @@ var legoEptCloud = class {
   }
   
   sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
-    console.log(msg);
+    log2.info(msg, {});
     var mpackage = {
       'random': this.keygen(),
       'message': msg,
@@ -729,7 +729,7 @@ var legoEptCloud = class {
             request(options, (err2, httpResponse, body) => {
                 if (err2 != null) {
                   let stack = new Error().stack;
-                    console.log("Error while requesting ", err2, stack);
+                    log2.info("Error while requesting ", err2, stack);
                     callback(err2, null);
                     return;
                 }
@@ -783,10 +783,10 @@ var legoEptCloud = class {
                     this.notifySocket = false;
                 });
                 this.socket.on("glisten200",(data)=>{
-                     console.log("SOCKET Glisten 200 group indicator");
+                     log2.info("SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
-                     console.log("SOCKET newMsg From Group indicator");
+                     log2.info("SOCKET newMsg From Group indicator");
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {
                          cacheGroup.lastfetch = Date.now() / 1000;
                          callback(err,messages);
@@ -794,7 +794,7 @@ var legoEptCloud = class {
                 });
                 this.socket.on('connect', ()=>{
                     this.notifySocket = true;
-                    console.log("Socket:Connect");
+                    log2.info("Socket:Connect");
                     if (this.notifyGids.length>0) {
                         this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
                     }
@@ -899,7 +899,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log2.info("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -920,7 +920,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log2.info("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -943,7 +943,7 @@ var legoEptCloud = class {
           log2.info("APN notification payload: ", beep, {});
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log2.info("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -967,7 +967,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log2.info("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -1010,7 +1010,7 @@ var legoEptCloud = class {
                             beep['sound'] = sound;
                         }
                         self.sendMsgToGroup(gid, msg, beep, "file", url.key, mid, (e, r) => {
-                            console.log("sending messages", e, r);
+                            log2.info("sending messages", e, r);
                             callback(e, r);
                         });
                     }
@@ -1144,7 +1144,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log2.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }

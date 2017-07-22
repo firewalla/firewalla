@@ -20,26 +20,22 @@ process.title = "FireApi";
 let log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
-var fs = require('fs');
-var cloud = require('../encipher');
-var program = require('commander');
-var qrcode = require('qrcode-terminal');
-var publicIp = require('public-ip');
-var intercomm = require('../lib/intercomm.js');
+let fs = require('fs');
+let qrcode = require('qrcode-terminal');
 
-var ControllerBot = require('../lib/ControllerBot.js');
+let ControllerBot = require('../lib/ControllerBot.js');
 
-var HostManager = require('../net2/HostManager.js');
-var SysManager = require('../net2/SysManager.js');
-var FlowManager = require('../net2/FlowManager.js');
-var flowManager = new FlowManager('info');
-var AlarmManager = require('../net2/AlarmManager.js');
-var alarmManager = new AlarmManager('info');
-var sysmanager = new SysManager();
-var VpnManager = require("../vpn/VpnManager.js");
-var vpnManager = new VpnManager('info');
-var IntelManager = require('../net2/IntelManager.js');
-var intelManager = new IntelManager('debug');
+let HostManager = require('../net2/HostManager.js');
+let SysManager = require('../net2/SysManager.js');
+let FlowManager = require('../net2/FlowManager.js');
+let flowManager = new FlowManager('info');
+let AlarmManager = require('../net2/AlarmManager.js');
+let alarmManager = new AlarmManager('info');
+let sysmanager = new SysManager();
+let VpnManager = require("../vpn/VpnManager.js");
+let vpnManager = new VpnManager('info');
+let IntelManager = require('../net2/IntelManager.js');
+let intelManager = new IntelManager('debug');
 
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
@@ -62,10 +58,10 @@ let ssh = new SSH('info');
 
 let country = require('../extension/country/country.js');
 
-var builder = require('botbuilder');
-var uuid = require('uuid');
+let builder = require('botbuilder');
+let uuid = require('uuid');
 
-var async = require('async');
+let async = require('async');
 
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
@@ -352,7 +348,7 @@ class netBot extends ControllerBot {
     //      this.dialog = new builder.LuisDialog(config.dialog.api);
     this.dialog = new builder.CommandDialog();
     this.bot.add('/', this.dialog);
-    var self = this;
+    let self = this;
     this.compress = true;
     this.scanning = false;
 
@@ -885,7 +881,7 @@ class netBot extends ControllerBot {
       case "sshRecentPassword":
         ssh.getPassword((err, password) => {
 
-          var data = "";
+          let data = "";
 
           if (err) {
             log.error("Got error when reading password: " + err);
@@ -1293,8 +1289,8 @@ class netBot extends ControllerBot {
   }
 
   getDefaultResponseDataModel(msg, data, err) {
-    var code = 200;
-    var message = "";
+    let code = 200;
+    let message = "";
     if (err) {
       log.error("Got error before simpleTxData: " + err);
       code = 500;
@@ -1367,6 +1363,23 @@ class netBot extends ControllerBot {
         this.cacheInitData(json);
       });
     }
+  }
+
+  msgHandlerAsync(gid, rawmsg) {
+    return new Promise((resolve, reject) => {
+      let processed = false; // only callback once
+      this.msgHandler(gid, rawmsg, (err, response) => {
+        if(processed)
+          return;
+
+        processed = true;
+        if(err) {
+          reject(err);
+        } else {
+          resolve(response);
+        }
+      })
+    })
   }
 
   msgHandler(gid, rawmsg, callback) {
@@ -1508,7 +1521,7 @@ process.on("unhandledRejection", function (r, e) {
   log.info("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
 });
 
-var bone = require('../lib/Bone.js');
+let bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {
