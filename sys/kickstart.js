@@ -436,6 +436,7 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
         initializeGroup(function (err, gid) {
             var groupid = gid;
             if (gid) {
+              // TODO: This should be the only code to update sys:ept to avoid race condition
                 rclient.hmset("sys:ept", {
                     eid: eptcloud.eid,
                     token: eptcloud.token,
@@ -465,11 +466,11 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, fu
 process.stdin.resume();
 
 intercomm.discover(null, ['devhi', 'devinfo'], function (type, name, txt) {
-    log.info("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
-    log.info(type, name, txt);
-    if (type == 'devinfo') {
-        if ('sensor' in txt) {}
-    }
+    // log.info("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
+    // log.info(type, name, txt);
+    // if (type == 'devinfo') {
+    //     if ('sensor' in txt) {}
+    // }
 });
 
 function exitHandler(options, err) {
