@@ -33,8 +33,6 @@ let bone = require('../lib/Bone');
 
 let bootstrapped = false;
 
-let eptcloud = new cloud(eptname);
-
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
