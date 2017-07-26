@@ -94,7 +94,7 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = await (hostTool.getAllMACs());
       macs.forEach((mac) => {
-        this.aggr(mac);
+        this.aggr(mac, ts);
       })
     })
   }
@@ -108,7 +108,6 @@ class FlowAggregationSensor extends Sensor {
 
     let msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
     log.info(msg);
-    console.log(msg);
 
     return async(() => {
       let ips = await (hostTool.getIPsByMac(macAddress));
