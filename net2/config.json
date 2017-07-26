@@ -50,6 +50,7 @@
     "BoneSensor": {},
     "DNSMASQSensor": {},
     "PublicIPSensor": {},
+    "FlowAggregationSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,

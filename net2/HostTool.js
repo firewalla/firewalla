@@ -26,6 +26,9 @@ Promise.promisifyAll(redis.Multi.prototype);
 let SysManager = require('./SysManager.js');
 let sysManager = new SysManager('info');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let instance = null;
 class HostTool {
   constructor() {
@@ -145,7 +148,32 @@ class HostTool {
     }
     return changeset;
   }
-  
+
+  getIPsByMac(mac) {
+    return async(() => {
+      let ips = [];
+      let macObject = await(this.getMACEntry(mac));
+      if(macObject.ipv4Addr) {
+        ips.push(macObject.ipv4Addr);
+      }
+
+      if(macObject.ipv6Addr) {
+        let json = macObject.ipv6Addr;
+        let ipv6s = JSON.parse(json);
+        ips.push.apply(ips, ipv6s);
+      }
+
+      return ips;
+    })();
+  }
+
+  getAllMACs() {
+    return async(() => {
+      let keys = await (rclient.keysAsync("host:mac:*"));
+      return keys.map((key) => key.replace("host:mac:", ""));
+    })();
+  }
+
   //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
   //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE

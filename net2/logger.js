@@ -121,17 +121,16 @@ module.exports = function (component, loglevel, filename) {
   
     let transports = [fileTransport];
  
-    if (production == false) {
+    if (production == false && process.env.NODE_ENV !== 'test') {
 //        console.log("Adding Console Transports",component);
         transports.push(consoleTransport);
-    } 
-
-
+    }
+  
     var logger = new(winston.Logger)({
         transports: transports
     });
 
-    if (production == false) {
+    if (production == false && logger.transports.console) {
         logger.transports.console.level = _loglevel;
     }
 
@@ -140,6 +139,7 @@ module.exports = function (component, loglevel, filename) {
         winston.loggers.loggers[key].remove(winston.transports.Console);
       }
     }
+
     debugMap[component]=logger;
     return logger;
 };

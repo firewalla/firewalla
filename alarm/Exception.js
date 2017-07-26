@@ -26,11 +26,11 @@ module.exports = class {
       }
       
       var val = this[key];
-//      console.log(val);
+      // console.log(val);
       if(!alarm[key]) return false;
 
       let val2 = alarm[key];
-//      console.log(val2);
+      // console.log(val2);
       if(val2 !== val) return false;
 
       matched = true;

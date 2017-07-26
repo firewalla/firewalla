@@ -25,11 +25,38 @@ let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
 let Promise = require('bluebird');
 
+let redis = require('redis');
+let rclient = redis.createClient();
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let flowTool = require('../net2/FlowTool')();
+
+let FlowAggrTool = require('../net2/FlowAggrTool');
+let flowAggrTool = new FlowAggrTool();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+let ts = new Date() / 1000;
+let now = new Date() / 1000;
+
+let hostIP = "172.17.0.10";
+let hostMac = "F4:0F:24:00:00:01";
+let destIP = "114.113.217.103";
+
+exports.ts = ts;
+exports.now = now;
+exports.hostIP = hostIP;
+exports.hostMac = hostMac;
+exports.destIP = destIP;
+
 exports.createSampleHost = () => {
   let addHost = hostTool.updateHost({
-    ipv4Addr: "172.17.0.10",
-    mac: "F4:0F:24:00:00:01",
-    uid: "172.17.0.10",
+    ipv4Addr: hostIP,
+    mac: hostMac,
+    uid: hostIP,
     lastActiveTimestamp: new Date() / 1000 + "",
     firstFoundTimestamp: new Date() / 1000 + "",
     hostname: "Test Device 1",
@@ -40,25 +67,26 @@ exports.createSampleHost = () => {
   let addMac = hostTool.updateMACKey({
     bname: "Test Device 1",
     host: "Test Device 1",
-    uid: "172.17.0.10",
+    uid: hostIP,
     lastActiveTimestamp: new Date() / 1000 + "",
     firstFoundTimestamp: new Date() / 1000 + "",
     pname: "UnknownMobile/iOS",
-    mac: "F4:0F:24:00:00:01",
+    mac: hostMac,
     _name: "iPhone",
-    ipv4Addr: "172.17.0.10",
+    ipv4Addr: hostIP,
     macVendor: "Apple",
     deviceClass: "mobile",
     ua_os_name: "iOS",
-    ipv4: "172.17.0.10",
+    ipv4: hostIP,
+    ipv6Addr: "[\"fe80::aa07:d334:59a3:1200\", \"fe80::aa07:d334:59a3:1201\"]"
   });
   
   return Promise.all([addHost, addMac])
 }
 
 exports.removeSampleHost = () => {
-  let removeHost = hostTool.deleteHost("172.17.0.10")
-  let removeMac = hostTool.deleteMac("F4:0F:24:00:00:01")
+  let removeHost = hostTool.deleteHost(hostIP)
+  let removeMac = hostTool.deleteMac(hostMac)
   
   return Promise.all([removeHost, removeMac])
 }
@@ -102,3 +130,121 @@ exports.createSampleVideoAlarm = () => {
   });
   return alarmManager2.checkAndSaveAsync(a1);
 };
+
+exports.createSampleGameAlarm = () => {
+  let a1 = new Alarm.GameAlarm(new Date() / 1000, "10.0.1.199", "battle.net", {
+    device: "MiMac",
+    alarmTimestamp: "1500906094.763",
+    timestamp: "1500906041.064573",
+    notifType: "activity",
+    "p.dest.ip": destIP,
+    "p.dest.name": "battle.net",
+    "p.device.ip" : "10.0.1.199",
+    "p.device.name": "MiMac",
+    "p.device.id": "B8:09:8A:B9:4B:05",
+    "p.dest.id": "battle.net",
+    "p.device.macVendor": "Apple",
+    "p.device.mac": "B8:09:8A:B9:4B:05",
+    "p.dest.latitude": "31.0456",
+    "p.dest.longitude": "121.3997",
+    "p.dest.country": "CN",
+    message: "This device visited game website battle.net."
+  });
+  return alarmManager2.checkAndSaveAsync(a1);
+};
+
+exports.createSampleException2 = () => {
+  return new Promise((resolve, reject) => {
+    let e1 = new Exception({
+      "i.type": "domain",
+      "reason": "ALARM_GAME",
+      "type": "ALARM_GAME",
+      "timestamp": "1500913117.175",
+      "p.dest.id": "battle.net",
+      "target_name": "battle.net",
+      "target_ip": destIP,
+    });
+
+    exceptionManager.saveException(e1, (err) => {
+      if(err) {
+        reject(err);
+        return;
+      }
+
+      lastExceptionID = e1.eid;
+
+      resolve();
+    })
+  });
+};
+
+let flowObj = {
+  "ts": ts,
+  "_ts": ts,
+  "__ts": ts,
+  "sh":hostIP,
+  "dh": destIP,
+  "ob":100,
+  "rb":200,
+  "ct":1,
+  "fd":"in", // download
+  "lh":hostIP,
+  "du":100,
+  "bl":900,
+  "pf":{"udp.8000":{"ob":262,"rb":270,"ct":1}},
+  "af":{},
+  "pr":"tcp",
+  "f":null,
+  "flows":[[1500975078,1500975078,262,270]]};
+
+
+let flowObj2 = {
+  "ts": ts + 1,
+  "_ts": ts + 1,
+  "__ts": ts + 1,
+  "sh":hostIP,
+  "dh": destIP,
+  "ob":100,
+  "rb":200,
+  "ct":1,
+  "fd":"in", // download
+  "lh":hostIP,
+  "du":100,
+  "bl":900,
+  "pf":{"udp.8000":{"ob":262,"rb":270,"ct":1}},
+  "af":{},
+  "pr":"tcp",
+  "f":null,
+  "flows":[[1500975078,1500975078,262,270]]};
+
+exports.sampleFlow1 = flowObj;
+exports.sampleFlow2 = flowObj2;
+  
+exports.createSampleFlows = () => {
+  return async(() => {
+    await (flowTool.addFlow(hostIP, "in", flowObj));
+    await (flowTool.addFlow(hostIP, "in", flowObj2));
+  })();
+};
+
+exports.removeSampleFlows = () => {
+  return async(() => {
+    await (flowTool.removeFlow(hostIP, "in", flowObj));
+    await (flowTool.removeFlow(hostIP, "in", flowObj2));
+  })();
+};
+
+exports.removeSampleAggrFlows = () => {
+  return async(() => {
+    await (flowAggrTool.removeFlow(hostMac, "download", "600", now, destIP));
+  })();
+};
+
+exports.removeAllSampleAggrFlows = () => {
+  return async(() => {
+    let keys = await(rclient.keysAsync("aggrflow:F4:0F:24:00:00:01:*"));
+    keys.forEach((key) => {
+      await (rclient.delAsync(key));
+    })
+  })();
+}

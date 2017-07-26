@@ -23,13 +23,15 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-let SysManager = require('./SysManager.js');
-let sysManager = new SysManager('info');
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 let DNSManager = require('./DNSManager.js');
 let dnsManager = new DNSManager('info');
 
-let async = require('async');
+let async2 = require('async');
+
+let util = require('util');
 
 let country = require('../extension/country/country.js');
 
@@ -171,7 +173,7 @@ class FlowTool {
   _enrichDNSInfo(flows) {
 
     return new Promise((resolve, reject) => {
-      async.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
+      async2.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
         let ip = this._getRemoteIP(flow);
 
         dnsManager.resolvehost(ip, (err, info, dnsData) => {
@@ -262,8 +264,80 @@ class FlowTool {
         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
       });
   }
+
+  getFlowKey(ip, type) {
+    return util.format("flow:conn:%s:%s", type, ip);
+  }
+  addFlow(ip, type, flow) {
+    let key = this.getFlowKey(ip, type);
+    
+    if(typeof flow !== 'object') {
+      return Promise.reject("Invalid flow type: " + typeof flow);
+    }
+    
+    return rclient.zaddAsync(key, flow.ts, JSON.stringify(flow));
+  }
   
+  removeFlow(ip, type, flow) {
+    let key = this.getFlowKey(ip, type);
+
+    if(typeof flow !== 'object') {
+      return Promise.reject("Invalid flow type: " + typeof flow);
+    }
+
+    return rclient.zremAsync(key, JSON.stringify(flow))
+  }
   
+  flowExists(ip, type, flow) {
+    let key = this.getFlowKey(ip, type);
+
+    if(typeof flow !== 'object') {
+      return Promise.reject("Invalid flow type: " + typeof flow);
+    }
+
+    return async(() => {
+      let result = await(rclient.zscoreAsync(key, JSON.stringify(flow)));
+
+      if(result == null) {
+        return false;
+      } else {
+        return true;
+      }
+    })();
+  }
+
+  queryFlows(ip, type, begin, end) {
+    let key = this.getFlowKey(ip, type);
+
+    return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
+      .then((flowStrings) => {
+        return flowStrings.map((flowString) => JSON.parse(flowString));
+      })
+  }
+
+  getDestIP(flow) {
+    if(flow.lh === flow.sh) {
+      return flow.dh;
+    } else {
+      return flow.sh;
+    }
+  }
+
+  getDownloadTraffic(flow) {
+    if(flow.lh === flow.sh) {
+      return flow.rb;
+    } else {
+      return flow.ob;
+    }
+  }
+
+  getUploadTraffic(flow) {
+    if(flow.lh === flow.sh) {
+      return flow.ob;
+    } else {
+      return flow.rb;
+    }
+  }
 }
 
 module.exports = function() {
