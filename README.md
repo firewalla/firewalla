@@ -4,7 +4,7 @@
        src="https://scan.coverity.com/projects/11583/badge.svg"/>
 </a>
 ## Firewalla  (Pre-Alpha)
-Support (email fire@firewalla.com)
+Support (email help@firewalla.com)
 ## Install From Image
 ```
 Only Raspberry Pi3 is supported.  
