@@ -61,7 +61,10 @@ let country = require('../extension/country/country.js');
 let builder = require('botbuilder');
 let uuid = require('uuid');
 
-let async = require('async');
+let async2 = require('async');
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
@@ -71,6 +74,9 @@ let f = require('../net2/Firewalla.js');
 let flowTool = require('../net2/FlowTool')();
 
 let i18n = require('../util/i18n');
+
+let NetBotTool = require('../net2/NetBotTool');
+let netBotTool = new NetBotTool();
 
 class netBot extends ControllerBot {
 
@@ -561,7 +567,7 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "policy":
-        async.eachLimit(Object.keys(msg.data.value), 1, (o, cb) => {
+        async2.eachLimit(Object.keys(msg.data.value), 1, (o, cb) => {
           switch (o) {
             case "monitor":
               this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
@@ -967,99 +973,45 @@ class netBot extends ControllerBot {
 
       log.info("Summarize", target, listip);
 
+      async(() => {
 
-      //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
+        // load 24 hours download/upload trend
+        await (flowManager.getStats2(host));
 
-      // getStats2 => load 24 hours download/upload trend
-      flowManager.getStats2(host)
-        .then(() => {
-//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
-          let jsonobj = {};
-          if (host) {
-            jsonobj = host.toJson();
-          }
-          alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
-            log.info("Found alarms");
-            jsonobj.alarms = alarms;
-            // hour block = summarize into blocks of hours ...
-            flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, false, (err, result, activities) => {
-              log.info("--- Connectionby most recent ---", result.length);
-              let response = {
-                time: [],
-                rx: [],
-                tx: [],
-                duration: []
-              };
-              let max = 50;
-              for (let i in result) {
-                let s = result[i];
-                response.time.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              flowManager.sort(result, 'rxdata');
-              log.info("-----------Sort by rx------------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.rx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              //log.info(JSON.stringify(response.rx));
-              flowManager.sort(result, 'txdata');
-              log.info("-----------  Sort by tx------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.tx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              jsonobj.flows = response;
-              jsonobj.activities = activities;
+        let jsonobj = {};
+        if (host) {
+          jsonobj = host.toJson();
+        }
 
-              /*
-               flowManager.sort(result, 'duration');
-               log.info("-----------Sort by rx------------------------");
-               max = 10;
-               for (let i in result) {
-               let s = result[i];
-               response.duration.push(s);
-               if (max-- < 0) {
-               break;
-               }
-               }
-               */
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, listip));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, host.mac));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, host.mac));
+        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, host.mac));
+        await (this.enrichCountryInfo(jsonobj.flows));
 
-              // enrich flow info with country
-              this.enrichCountryInfo(jsonobj.flows);
-
-              // use new way to get recent connections
-              Promise.all([
-                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
-              ]).then(() => {
-                this.simpleTxData(msg, jsonobj, null, callback);
-              }).catch((err) => {
-                this.simpleTxData(msg, null, err, callback);
-              });
-            });
-          });
-        });
+        this.simpleTxData(msg, jsonobj, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      });
 
     });
   }
 
   enrichCountryInfo(flows) {
     // support time flow first
-    let flowsSet = [flows.time, flows.rx, flows.tx];
+    let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
 
     flowsSet.forEach((eachFlows) => {
+      if(!eachFlows)
+        return;
+
       eachFlows.forEach((flow) => {
+
+        if(flow.ip) {
+          flow.country = country.getCountry(ip);
+          return;
+        }
+
         let sh = flow.sh;
         let dh = flow.dh;
         let lh = flow.lh;

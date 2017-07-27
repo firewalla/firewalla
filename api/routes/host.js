@@ -30,6 +30,9 @@ let flowTool = new FlowTool();
 
 let Promise = require('bluebird');
 
+let NetBotTool = require('../../net2/NetBotTool');
+let netBotTool = new NetBotTool();
+
 router.get('/all',
            (req, res, next) => {
              let json = {};
@@ -69,8 +72,11 @@ router.get('/:host',
                      let jsonObj = h.toJson();
 
                      Promise.all([
-                       flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs())
-                     ]).then(() => {
+                       flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs()),
+                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.mac),
+                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.mac),
+                       netBotTool.prepareActivitiesFlowsForHost(jsonObj, host.mac),
+                   ]).then(() => {
                        res.json(jsonObj);
                      });
                    })

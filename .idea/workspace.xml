@@ -2,11 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ef50613d-592b-4750-a3f4-3a3302ca23ff" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/net2/FlowAggrTool.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_flow_aggr_tool.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_flow_tool.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_flowaggregation_sensor.js" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/test/test_hosttool.js" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/hook/DestIPFoundHook.js" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/net2/NetBotTool.js" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/net2/test" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/external-ip/.jshintrc" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/external-ip/.npmignore" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/external-ip/.travis.yml" afterPath="" />
@@ -69,14 +67,12 @@
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/heapdump/test/test-callback.js" afterPath="" />
       <change type="DELETED" beforePath="$PROJECT_DIR$/node_modules/heapdump/test/test-sigusr2.js" afterPath="" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.travis.yml" afterPath="$PROJECT_DIR$/.travis.yml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/alarm/Exception.js" afterPath="$PROJECT_DIR$/alarm/Exception.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/api/routes/host.js" afterPath="$PROJECT_DIR$/api/routes/host.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/controllers/netbot.js" afterPath="$PROJECT_DIR$/controllers/netbot.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/locales/en.json" afterPath="$PROJECT_DIR$/locales/en.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/Discovery.js" afterPath="$PROJECT_DIR$/net2/Discovery.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/FlowTool.js" afterPath="$PROJECT_DIR$/net2/FlowTool.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/HostTool.js" afterPath="$PROJECT_DIR$/net2/HostTool.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/DNSManager.js" afterPath="$PROJECT_DIR$/net2/DNSManager.js" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/HostManager.js" afterPath="$PROJECT_DIR$/net2/HostManager.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/config.json" afterPath="$PROJECT_DIR$/net2/config.json" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/net2/logger.js" afterPath="$PROJECT_DIR$/net2/logger.js" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/bleno/node_modules/bluetooth-hci-socket/node_modules/usb/node_modules/.bin/node-pre-gyp" afterPath="$PROJECT_DIR$/node_modules/bleno/node_modules/bluetooth-hci-socket/node_modules/usb/node_modules/.bin/node-pre-gyp" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/bonjour/node_modules/.bin/multicast-dns" afterPath="$PROJECT_DIR$/node_modules/bonjour/node_modules/.bin/multicast-dns" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/express/node_modules/send/node_modules/.bin/mime" afterPath="$PROJECT_DIR$/node_modules/express/node_modules/send/node_modules/.bin/mime" />
@@ -131,9 +127,6 @@
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/public-ip/node_modules/meow/node_modules/normalize-package-data/node_modules/.bin/semver" afterPath="$PROJECT_DIR$/node_modules/public-ip/node_modules/meow/node_modules/normalize-package-data/node_modules/.bin/semver" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/connect/node_modules/serve-static/node_modules/send/node_modules/.bin/mime" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/connect/node_modules/serve-static/node_modules/send/node_modules/.bin/mime" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/send/node_modules/.bin/mime" afterPath="$PROJECT_DIR$/node_modules/swagger-node-express/node_modules/express/node_modules/send/node_modules/.bin/mime" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/sample_data.js" afterPath="$PROJECT_DIR$/test/sample_data.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_dnsmasq.js" afterPath="$PROJECT_DIR$/test/test_dnsmasq.js" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test/test_exception.js" afterPath="$PROJECT_DIR$/test/test_exception.js" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -155,60 +148,27 @@
     <splitter split-orientation="horizontal" split-proportion="0.5">
       <split-first>
         <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-          <file leaf-file-name="kickstart.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
+          <file leaf-file-name="fastencipher2.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="515">
-                  <caret line="442" column="13" lean-forward="false" selection-start-line="442" selection-start-column="0" selection-end-line="442" selection-end-column="19" />
+                <state relative-caret-position="572">
+                  <caret line="35" column="13" lean-forward="true" selection-start-line="35" selection-start-column="13" selection-end-line="35" selection-end-column="13" />
                   <folding>
-                    <element signature="n#!!block;n#generateEncryptionKey#0" expanded="false" />
-                    <element signature="n#!!block;n#initializeGroup#0" expanded="false" />
-                    <element signature="n#!!block;n#displayKey#0" expanded="false" />
-                    <element signature="n#!!block;n#displayInvite#0" expanded="false" />
-                    <element signature="n#!!block;n#openInvite#0" expanded="false" />
-                    <element signature="n#!!block;n#postAppLinked#0" expanded="false" />
-                    <element signature="n#!!block;n#inviteFirstAdmin#0" expanded="false" />
-                    <element signature="n#!!block;n#launchService2#0" expanded="false" />
+                    <element signature="n#!!doc" expanded="true" />
+                    <marker date="1501176269000" expanded="true" signature="1191:1297" ph="/*...*/" />
+                    <marker date="1501176269000" expanded="true" signature="1415:1917" ph="{...}" />
+                    <marker date="1501176269000" expanded="true" signature="1474:1688" ph="{...}" />
+                    <marker date="1501176269000" expanded="true" signature="1716:1909" ph="{...}" />
                   </folding>
                 </state>
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="ControllerBot.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/lib/ControllerBot.js">
+          <file leaf-file-name="host.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/api/routes/host.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="340">
-                  <caret line="20" column="30" lean-forward="false" selection-start-line="20" selection-start-column="30" selection-end-line="20" selection-end-column="30" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="test_mode.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_mode.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="221">
-                  <caret line="26" column="40" lean-forward="false" selection-start-line="26" selection-start-column="0" selection-end-line="27" selection-end-column="0" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="Bone.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/lib/Bone.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="213">
-                  <caret line="77" column="19" lean-forward="false" selection-start-line="77" selection-start-column="19" selection-end-line="77" selection-end-column="19" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="FlowAggregationSensor.js" pinned="false" current-in-tab="true">
-            <entry file="file://$PROJECT_DIR$/sensor/FlowAggregationSensor.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="157">
-                  <caret line="45" column="27" lean-forward="false" selection-start-line="45" selection-start-column="6" selection-end-line="45" selection-end-column="27" />
+                <state relative-caret-position="469">
+                  <caret line="78" column="0" lean-forward="false" selection-start-line="78" selection-start-column="0" selection-end-line="78" selection-end-column="0" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
@@ -216,21 +176,77 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="DNSMASQSensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/sensor/DNSMASQSensor.js">
+          <file leaf-file-name="test.json" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/tmp/test.json">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="68">
-                  <caret line="17" column="0" lean-forward="false" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+                <state relative-caret-position="528">
+                  <caret line="1095" column="22" lean-forward="true" selection-start-line="1095" selection-start-column="22" selection-end-line="1095" selection-end-column="22" />
                   <folding />
                 </state>
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="DHCPSensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/sensor/DHCPSensor.js">
+          <file leaf-file-name="FlowManager.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/FlowManager.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="408">
-                  <caret line="43" column="6" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="61" selection-end-column="0" />
+                <state relative-caret-position="289">
+                  <caret line="30" column="0" lean-forward="false" selection-start-line="30" selection-start-column="0" selection-end-line="31" selection-end-column="40" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="DestIPFoundHook.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/hook/DestIPFoundHook.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="428">
+                  <caret line="35" column="36" lean-forward="true" selection-start-line="35" selection-start-column="36" selection-end-line="35" selection-end-column="36" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="NewDeviceHook.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="-580">
+                  <caret line="21" column="0" lean-forward="true" selection-start-line="21" selection-start-column="0" selection-end-line="21" selection-end-column="0" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="RefreshMacBackupNameHook.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/hook/RefreshMacBackupNameHook.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="457">
+                  <caret line="29" column="19" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="52" selection-end-column="0" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="FlowUtil.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/FlowUtil.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="717">
+                  <caret line="171" column="14" lean-forward="true" selection-start-line="171" selection-start-column="14" selection-end-line="171" selection-end-column="14" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="DNSManager.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/DNSManager.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="430">
+                  <caret line="130" column="0" lean-forward="false" selection-start-line="130" selection-start-column="0" selection-end-line="130" selection-end-column="0" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
@@ -248,65 +264,35 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="www" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/api/bin/www">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="379">
-                  <caret line="68" column="0" lean-forward="false" selection-start-line="68" selection-start-column="0" selection-end-line="68" selection-end-column="0" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="app.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/api/app.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="442">
-                  <caret line="28" column="38" lean-forward="false" selection-start-line="28" selection-start-column="38" selection-end-line="28" selection-end-column="38" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
         </leaf>
       </split-first>
       <split-second>
         <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-          <file leaf-file-name="config.json" pinned="false" current-in-tab="true">
+          <file leaf-file-name="config.json" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/net2/config.json">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="451">
-                  <caret line="52" column="32" lean-forward="false" selection-start-line="52" selection-start-column="32" selection-end-line="52" selection-end-column="32" />
+                <state relative-caret-position="255">
+                  <caret line="15" column="8" lean-forward="true" selection-start-line="15" selection-start-column="8" selection-end-line="15" selection-end-column="8" />
                   <folding />
                 </state>
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="test_public_ip_sensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_public_ip_sensor.js">
+          <file leaf-file-name="netbot.js" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="510">
-                  <caret line="54" column="11" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="66" selection-end-column="3" />
+                <state relative-caret-position="618">
+                  <caret line="989" column="44" lean-forward="false" selection-start-line="989" selection-start-column="0" selection-end-line="990" selection-end-column="0" />
                   <folding />
                 </state>
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="test_exception.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_exception.js">
+          <file leaf-file-name="#netbot.js#" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/controllers/#netbot.js#">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="485">
-                  <caret line="96" column="11" lean-forward="false" selection-start-line="96" selection-start-column="11" selection-end-line="96" selection-end-column="11" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="HostTool.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="602">
-                  <caret line="169" column="16" lean-forward="true" selection-start-line="169" selection-start-column="16" selection-end-line="169" selection-end-column="16" />
+                <state relative-caret-position="363">
+                  <caret line="1041" column="2" lean-forward="false" selection-start-line="1041" selection-start-column="2" selection-end-line="1041" selection-end-column="2" />
                   <folding />
                 </state>
               </provider>
@@ -315,8 +301,33 @@
           <file leaf-file-name="FlowAggrTool.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/net2/FlowAggrTool.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="272">
-                  <caret line="34" column="51" lean-forward="true" selection-start-line="34" selection-start-column="51" selection-end-line="34" selection-end-column="51" />
+                <state relative-caret-position="307">
+                  <caret line="158" column="16" lean-forward="false" selection-start-line="158" selection-start-column="2" selection-end-line="158" selection-end-column="16" />
+                  <folding>
+                    <element signature="n#!!doc" expanded="true" />
+                    <marker date="1501176261000" expanded="true" signature="1173:7126" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="5437:5921" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="5573:5913" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="5765:5885" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="5791:5877" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="5981:6118" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6165:6415" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6267:6407" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6353:6400" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6487:6605" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6641:6705" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6747:6815" ph="{...}" />
+                    <marker date="1501176261000" expanded="true" signature="6894:7124" ph="{...}" />
+                  </folding>
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="NetBotTool.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/NetBotTool.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="695">
+                  <caret line="73" column="0" lean-forward="false" selection-start-line="73" selection-start-column="0" selection-end-line="73" selection-end-column="0" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
@@ -324,11 +335,21 @@
               </provider>
             </entry>
           </file>
-          <file leaf-file-name="index.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/node_modules/redis/index.js">
+          <file leaf-file-name="HostManager.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/net2/HostManager.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="263">
-                  <caret line="321" column="31" lean-forward="false" selection-start-line="321" selection-start-column="31" selection-end-line="321" selection-end-column="31" />
+                <state relative-caret-position="316">
+                  <caret line="1145" column="4" lean-forward="false" selection-start-line="1145" selection-start-column="4" selection-end-line="1145" selection-end-column="4" />
+                  <folding />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="test_flow_aggr_tool.js" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/test/test_flow_aggr_tool.js">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="374">
+                  <caret line="35" column="0" lean-forward="false" selection-start-line="35" selection-start-column="0" selection-end-line="36" selection-end-column="38" />
                   <folding />
                 </state>
               </provider>
@@ -337,41 +358,11 @@
           <file leaf-file-name="FlowTool.js" pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/net2/FlowTool.js">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="306">
-                  <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="19" selection-end-column="35" />
+                <state relative-caret-position="266">
+                  <caret line="219" column="3" lean-forward="false" selection-start-line="219" selection-start-column="3" selection-end-line="219" selection-end-column="3" />
                   <folding>
                     <element signature="n#!!doc" expanded="true" />
                   </folding>
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="test_flowaggregation_sensor.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_flowaggregation_sensor.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="255">
-                  <caret line="28" column="0" lean-forward="true" selection-start-line="28" selection-start-column="0" selection-end-line="28" selection-end-column="0" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="test_hosttool.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/test_hosttool.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="651">
-                  <caret line="59" column="42" lean-forward="false" selection-start-line="59" selection-start-column="42" selection-end-line="59" selection-end-column="42" />
-                  <folding />
-                </state>
-              </provider>
-            </entry>
-          </file>
-          <file leaf-file-name="sample_data.js" pinned="false" current-in-tab="false">
-            <entry file="file://$PROJECT_DIR$/test/sample_data.js">
-              <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="476">
-                  <caret line="41" column="26" lean-forward="false" selection-start-line="41" selection-start-column="26" selection-end-line="41" selection-end-column="26" />
-                  <folding />
                 </state>
               </provider>
             </entry>
@@ -389,27 +380,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>async</find>
-      <find>REDIS DATA CLEAN</find>
-      <find>it('flow should NOT exist if flow is removed', (done) =&gt; {    async(() =&gt; {      let removeResult = await(flowTool.removeFlow(&quot;10.0.1.1&quot;, &quot;in&quot;, flow));      console.log(removeResult);      let result = await(flowTool.flowExists(&quot;10.0.1.1&quot;, &quot;in&quot;, flow));      expect(result).to.be.false;      done();    })();  })</find>
-      <find>172.17.0.2</find>
-      <find>should reload correctly even multiple reload requests arrive at the same time</find>
-      <find>h</find>
-      <find>hmset</find>
-      <find>processHost</find>
-      <find>ipv6</find>
-      <find>XXXXXX</find>
-      <find>11</find>
-      <find>111</find>
-      <find>(111</find>
-      <find>(&quot;111</find>
-      <find>conso</find>
-      <find>console.log</find>
-      <find>test</find>
-      <find>test e</find>
-      <find>test ex</find>
-      <find>test exc</find>
-      <find>10m</find>
       <find>OldDataCleanSensor</find>
       <find>ts</find>
       <find>require('../net2/host</find>
@@ -417,8 +387,29 @@
       <find>toint</find>
       <find>console.</find>
       <find>getall</find>
+      <find>expire</find>
+      <find>addflow</find>
       <find>zadd</find>
+      <find>zlib</find>
+      <find>summarize</find>
+      <find>&quot;time</find>
+      <find>&quot;time&quot;</find>
       <find>getkey</find>
+      <find>recent</find>
+      <find>overlayfs.</find>
+      <find>system-reset-</find>
+      <find>topdown</find>
+      <find>async</find>
+      <find>getStats2</find>
+      <find>summarizeConnections</find>
+      <find>devicehandler</find>
+      <find>sending logs</find>
+      <find>getLastSumFlow</find>
+      <find>./dnsmanager.js</find>
+      <find>query</find>
+      <find>summarizeConn</find>
+      <find>enrichCountryInfoenrichCountryInfo</find>
+      <find>dns:ip</find>
     </findStrings>
     <replaceStrings>
       <replace>d.</replace>
@@ -457,15 +448,6 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/util/DeviceTool.js" />
-        <option value="$PROJECT_DIR$/net2/Firewalla.js" />
-        <option value="$PROJECT_DIR$/test/test_flow_control.js" />
-        <option value="$PROJECT_DIR$/util/FlowControl.js" />
-        <option value="$PROJECT_DIR$/alarm/PolicyManager2.js" />
-        <option value="$PROJECT_DIR$/net2/PolicyManager.js" />
-        <option value="$PROJECT_DIR$/sensor/BoneSensor.js" />
-        <option value="$PROJECT_DIR$/sensor/NmapSensor.js" />
-        <option value="$PROJECT_DIR$/net2/ModeManager.js" />
         <option value="$PROJECT_DIR$/net2/main.js" />
         <option value="$PROJECT_DIR$/test/test_mode.js" />
         <option value="$PROJECT_DIR$/sensor/SensorEventManager.js" />
@@ -481,14 +463,10 @@
         <option value="$PROJECT_DIR$/etc/bro-mem-check" />
         <option value="$PROJECT_DIR$/api/lib/Encryption.js" />
         <option value="$PROJECT_DIR$/scripts/alias.sh" />
-        <option value="$PROJECT_DIR$/api/routes/fastencipher2.js" />
-        <option value="$PROJECT_DIR$/api/lib/SystemCheck.js" />
         <option value="$PROJECT_DIR$/lib/Bone.js" />
-        <option value="$PROJECT_DIR$/net2/HostManager.js" />
         <option value="$PROJECT_DIR$/encipher/lib/encipherio.js" />
         <option value="$PROJECT_DIR$/api/lib/CloudWrapper.js" />
         <option value="$PROJECT_DIR$/lib/ControllerBot.js" />
-        <option value="$PROJECT_DIR$/controllers/netbot.js" />
         <option value="$PROJECT_DIR$/sys/kickstart.js" />
         <option value="$PROJECT_DIR$/sensor/DeviceFlowAggregationSensor.js" />
         <option value="$PROJECT_DIR$/test/test_hosttool.js" />
@@ -500,14 +478,27 @@
         <option value="$PROJECT_DIR$/test/test_exception.js" />
         <option value="$PROJECT_DIR$/net2/logger.js" />
         <option value="$PROJECT_DIR$/test/tset_flow_aggr_tool.js" />
-        <option value="$PROJECT_DIR$/test/test_flow_aggr_tool.js" />
-        <option value="$PROJECT_DIR$/net2/FlowTool.js" />
         <option value="$PROJECT_DIR$/net2/HostTool.js" />
         <option value="$PROJECT_DIR$/test/sample_data.js" />
-        <option value="$PROJECT_DIR$/net2/FlowAggrTool.js" />
         <option value="$PROJECT_DIR$/test/test_flowaggregation_sensor.js" />
+        <option value="$PROJECT_DIR$/sensor/Sensor.js" />
         <option value="$PROJECT_DIR$/sensor/FlowAggregationSensor.js" />
+        <option value="$PROJECT_DIR$/api/lib/SystemCheck.js" />
+        <option value="$PROJECT_DIR$/test/test_flow_aggr_tool.js" />
+        <option value="$PROJECT_DIR$/api/routes/encipher.js" />
+        <option value="$PROJECT_DIR$/net2/test" />
+        <option value="$PROJECT_DIR$/net2/test.json" />
+        <option value="$PROJECT_DIR$/net2/FlowTool.js" />
         <option value="$PROJECT_DIR$/net2/config.json" />
+        <option value="$PROJECT_DIR$/net2/HostManager.js" />
+        <option value="$PROJECT_DIR$/api/routes/fastencipher2.js" />
+        <option value="$PROJECT_DIR$/controllers/netbot.js" />
+        <option value="$PROJECT_DIR$/net2/FlowAggrTool.js" />
+        <option value="$PROJECT_DIR$/hook/DestIPFoundHook.js" />
+        <option value="$PROJECT_DIR$/net2/DNSManager.js" />
+        <option value="$PROJECT_DIR$/net2/NetBotTool.js" />
+        <option value="$PROJECT_DIR$/api/routes/host.js" />
+        <option value="$PROJECT_DIR$/tmp/test.json" />
       </list>
     </option>
   </component>
@@ -527,9 +518,6 @@
   <component name="JsGulpfileManager">
     <detection-done>true</detection-done>
     <sorting>DEFINITION_ORDER</sorting>
-  </component>
-  <component name="NodeModulesDirectoryManager">
-    <handled-path value="$PROJECT_DIR$/node_modules" />
   </component>
   <component name="PackageJsonUpdateNotifier">
     <dismissed value="$PROJECT_DIR$/api/package.json" />
@@ -604,6 +592,11 @@
             <path>
               <item name="firewalla" type="b2602c69:ProjectViewProjectNode" />
               <item name="firewalla" type="462c0819:PsiDirectoryNode" />
+              <item name="hook" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="firewalla" type="b2602c69:ProjectViewProjectNode" />
+              <item name="firewalla" type="462c0819:PsiDirectoryNode" />
               <item name="scripts" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
@@ -615,6 +608,11 @@
               <item name="firewalla" type="b2602c69:ProjectViewProjectNode" />
               <item name="firewalla" type="462c0819:PsiDirectoryNode" />
               <item name="test" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="firewalla" type="b2602c69:ProjectViewProjectNode" />
+              <item name="firewalla" type="462c0819:PsiDirectoryNode" />
+              <item name="tmp" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
           <select />
@@ -986,7 +984,7 @@
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="454365000" />
+    <option name="totallyTimeSpent" value="464656000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -1001,12 +999,12 @@
     <frame x="0" y="22" width="2560" height="1360" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.2515625" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
+      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.2515625" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
-      <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.32996893" sideWeight="0.5015625" order="7" side_tool="true" content_ui="tabs" />
-      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.22637363" sideWeight="0.49583334" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.22593167" sideWeight="0.5058594" order="7" side_tool="true" content_ui="tabs" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.22593167" sideWeight="0.49414062" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
-      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.32996893" sideWeight="0.4984375" order="10" side_tool="false" content_ui="tabs" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32996893" sideWeight="0.4984375" order="10" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="8" side_tool="false" content_ui="tabs" />
       <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
@@ -1040,227 +1038,9 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/api/bin/www">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="379">
-          <caret line="68" column="0" lean-forward="false" selection-start-line="68" selection-start-column="0" selection-end-line="68" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/lib/SystemCheck.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="384">
-          <caret line="38" column="36" lean-forward="true" selection-start-line="38" selection-start-column="36" selection-end-line="38" selection-end-column="36" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/lib/Encryption.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="13" column="3" lean-forward="true" selection-start-line="13" selection-start-column="3" selection-end-line="13" selection-end-column="3" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="43">
-          <caret line="27" column="0" lean-forward="true" selection-start-line="27" selection-start-column="0" selection-end-line="27" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/ModeManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="303">
-          <caret line="70" column="34" lean-forward="false" selection-start-line="70" selection-start-column="9" selection-end-line="70" selection-end-column="34" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_mode.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="221">
-          <caret line="26" column="40" lean-forward="false" selection-start-line="26" selection-start-column="0" selection-end-line="27" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/#ControllerBot.js#" />
-    <entry file="file://$PROJECT_DIR$/encipher/lib/encipherio.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="263">
-          <caret line="164" column="4" lean-forward="false" selection-start-line="164" selection-start-column="4" selection-end-line="164" selection-end-column="4" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/ControllerBot.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="340">
-          <caret line="20" column="30" lean-forward="false" selection-start-line="20" selection-start-column="30" selection-end-line="20" selection-end-column="30" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/HostManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="19397">
-          <caret line="1154" column="23" lean-forward="false" selection-start-line="1154" selection-start-column="23" selection-end-line="1154" selection-end-column="23" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="323">
-          <caret line="19" column="59" lean-forward="false" selection-start-line="19" selection-start-column="59" selection-end-line="19" selection-end-column="59" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="515">
-          <caret line="442" column="13" lean-forward="false" selection-start-line="442" selection-start-column="0" selection-end-line="442" selection-end-column="19" />
-          <folding>
-            <element signature="n#!!block;n#generateEncryptionKey#0" expanded="false" />
-            <element signature="n#!!block;n#initializeGroup#0" expanded="false" />
-            <element signature="n#!!block;n#displayKey#0" expanded="false" />
-            <element signature="n#!!block;n#displayInvite#0" expanded="false" />
-            <element signature="n#!!block;n#openInvite#0" expanded="false" />
-            <element signature="n#!!block;n#postAppLinked#0" expanded="false" />
-            <element signature="n#!!block;n#inviteFirstAdmin#0" expanded="false" />
-            <element signature="n#!!block;n#launchService2#0" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/PublicIPSensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="663">
-          <caret line="52" column="35" lean-forward="false" selection-start-line="52" selection-start-column="19" selection-end-line="52" selection-end-column="35" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/api/lib/CloudWrapper.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1853">
-          <caret line="122" column="78" lean-forward="false" selection-start-line="122" selection-start-column="78" selection-end-line="122" selection-end-column="78" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/system-reset-all-overlayfs.sh">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="306">
-          <caret line="18" column="37" lean-forward="true" selection-start-line="18" selection-start-column="37" selection-end-line="18" selection-end-column="37" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/alarm/AlarmManager2.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="388">
-          <caret line="277" column="25" lean-forward="true" selection-start-line="277" selection-start-column="25" selection-end-line="277" selection-end-column="25" />
-          <folding>
-            <element signature="n#!!doc" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/alarm/Exception.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="578">
-          <caret line="34" column="0" lean-forward="false" selection-start-line="34" selection-start-column="0" selection-end-line="34" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/lib/Bone.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="213">
-          <caret line="77" column="19" lean-forward="false" selection-start-line="77" selection-start-column="19" selection-end-line="77" selection-end-column="19" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/encipher/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="0">
-          <caret line="0" column="38" lean-forward="false" selection-start-line="0" selection-start-column="38" selection-end-line="0" selection-end-column="38" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/util/FlowControl.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="573">
-          <caret line="35" column="19" lean-forward="true" selection-start-line="35" selection-start-column="19" selection-end-line="35" selection-end-column="19" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/DHCPSensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="408">
-          <caret line="43" column="6" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="61" selection-end-column="0" />
-          <folding>
-            <element signature="n#!!doc" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_flow_control.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="901">
-          <caret line="66" column="12" lean-forward="false" selection-start-line="66" selection-start-column="0" selection-end-line="67" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/alarm/ExceptionManager.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="279">
-          <caret line="200" column="2" lean-forward="false" selection-start-line="200" selection-start-column="2" selection-end-line="200" selection-end-column="2" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/util/DeviceMgmtTool.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="311">
-          <caret line="45" column="85" lean-forward="false" selection-start-line="45" selection-start-column="59" selection-end-line="45" selection-end-column="85" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_host_control.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="391">
-          <caret line="36" column="5" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="78" selection-end-column="3" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_public_ip_sensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="510">
-          <caret line="54" column="11" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="66" selection-end-column="3" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/scripts/free-memory">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
-          <caret line="1" column="19" lean-forward="false" selection-start-line="1" selection-start-column="19" selection-end-line="1" selection-end-column="19" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/scripts/free-memory-lastresort">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/FlowUtil.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-987">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
         </state>
       </provider>
@@ -1276,6 +1056,9 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="486">
           <caret line="57" column="25" lean-forward="true" selection-start-line="57" selection-start-column="25" selection-end-line="57" selection-end-column="25" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -1306,6 +1089,7 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-221">
           <caret line="206" column="2" lean-forward="false" selection-start-line="206" selection-start-column="2" selection-end-line="206" selection-end-column="2" />
+          <folding />
         </state>
       </provider>
     </entry>
@@ -1336,21 +1120,9 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="316">
           <caret line="38" column="37" lean-forward="false" selection-start-line="38" selection-start-column="26" selection-end-line="38" selection-end-column="37" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/sensor/Sensor.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-160">
-          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/test/test_flow_aggr_tool.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="350">
-          <caret line="35" column="0" lean-forward="false" selection-start-line="35" selection-start-column="0" selection-end-line="36" selection-end-column="38" />
-          <folding />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -1365,26 +1137,8 @@
     <entry file="file://$PROJECT_DIR$/net2/HostTool.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="602">
-          <caret line="169" column="16" lean-forward="true" selection-start-line="169" selection-start-column="16" selection-end-line="169" selection-end-column="16" />
+          <caret line="169" column="16" lean-forward="false" selection-start-line="169" selection-start-column="16" selection-end-line="169" selection-end-column="16" />
           <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/node_modules/redis/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="263">
-          <caret line="321" column="31" lean-forward="false" selection-start-line="321" selection-start-column="31" selection-end-line="321" selection-end-column="31" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/FlowTool.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="306">
-          <caret line="18" column="0" lean-forward="false" selection-start-line="18" selection-start-column="0" selection-end-line="19" selection-end-column="35" />
-          <folding>
-            <element signature="n#!!doc" expanded="true" />
-          </folding>
         </state>
       </provider>
     </entry>
@@ -1400,16 +1154,9 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="476">
           <caret line="41" column="26" lean-forward="false" selection-start-line="41" selection-start-column="26" selection-end-line="41" selection-end-column="26" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/net2/FlowAggrTool.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="272">
-          <caret line="34" column="51" lean-forward="true" selection-start-line="34" selection-start-column="51" selection-end-line="34" selection-end-column="51" />
           <folding>
-            <element signature="n#!!doc" expanded="true" />
+            <marker date="1501133620000" expanded="true" signature="6342:6454" ph="{...}" />
+            <marker date="1501133620000" expanded="true" signature="6365:6448" ph="{...}" />
           </folding>
         </state>
       </provider>
@@ -1417,15 +1164,209 @@
     <entry file="file://$PROJECT_DIR$/test/test_flowaggregation_sensor.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="255">
-          <caret line="28" column="0" lean-forward="true" selection-start-line="28" selection-start-column="0" selection-end-line="28" selection-end-column="0" />
+          <caret line="28" column="0" lean-forward="false" selection-start-line="28" selection-start-column="0" selection-end-line="28" selection-end-column="0" />
           <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/sensor/Sensor.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="501">
+          <caret line="33" column="49" lean-forward="false" selection-start-line="33" selection-start-column="49" selection-end-line="33" selection-end-column="49" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/sensor/FlowAggregationSensor.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="157">
-          <caret line="45" column="27" lean-forward="false" selection-start-line="45" selection-start-column="6" selection-end-line="45" selection-end-column="27" />
+        <state relative-caret-position="556">
+          <caret line="146" column="62" lean-forward="false" selection-start-line="146" selection-start-column="62" selection-end-line="146" selection-end-column="62" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/bin/www">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="379">
+          <caret line="68" column="0" lean-forward="false" selection-start-line="68" selection-start-column="0" selection-end-line="68" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/app.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="442">
+          <caret line="28" column="38" lean-forward="false" selection-start-line="28" selection-start-column="38" selection-end-line="28" selection-end-column="38" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/lib/CloudWrapper.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="2074">
+          <caret line="122" column="78" lean-forward="false" selection-start-line="122" selection-start-column="78" selection-end-line="122" selection-end-column="78" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+            <marker date="1500746328000" expanded="true" signature="3497:3601" ph="{...}" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_mode.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="221">
+          <caret line="26" column="40" lean-forward="false" selection-start-line="26" selection-start-column="0" selection-end-line="27" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/config/netbot.config">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/node_modules/redis/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="263">
+          <caret line="321" column="31" lean-forward="false" selection-start-line="321" selection-start-column="31" selection-end-line="321" selection-end-column="31" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/lib/Encryption.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-748">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/encipher.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="722">
+          <caret line="58" column="21" lean-forward="false" selection-start-line="58" selection-start-column="21" selection-end-line="58" selection-end-column="21" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/test">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="544">
+          <caret line="32" column="25" lean-forward="true" selection-start-line="32" selection-start-column="25" selection-end-line="32" selection-end-column="25" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/test.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="334">
+          <caret line="175" column="12" lean-forward="false" selection-start-line="175" selection-start-column="6" selection-end-line="175" selection-end-column="12" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/FlowTool.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="266">
+          <caret line="219" column="3" lean-forward="false" selection-start-line="219" selection-start-column="3" selection-end-line="219" selection-end-column="3" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test/test_flow_aggr_tool.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="374">
+          <caret line="35" column="0" lean-forward="false" selection-start-line="35" selection-start-column="0" selection-end-line="36" selection-end-column="38" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/lib/SystemCheck.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="678">
+          <caret line="73" column="10" lean-forward="true" selection-start-line="73" selection-start-column="10" selection-end-line="73" selection-end-column="10" />
+          <folding>
+            <element signature="n#!!doc" expanded="false" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/sys/kickstart.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="515">
+          <caret line="442" column="13" lean-forward="false" selection-start-line="442" selection-start-column="0" selection-end-line="442" selection-end-column="19" />
+          <folding>
+            <element signature="n#!!block;n#generateEncryptionKey#0" expanded="false" />
+            <element signature="n#!!block;n#initializeGroup#0" expanded="false" />
+            <element signature="n#!!block;n#displayKey#0" expanded="false" />
+            <element signature="n#!!block;n#displayInvite#0" expanded="false" />
+            <element signature="n#!!block;n#openInvite#0" expanded="false" />
+            <element signature="n#!!block;n#postAppLinked#0" expanded="false" />
+            <element signature="n#!!block;n#inviteFirstAdmin#0" expanded="false" />
+            <element signature="n#!!block;n#launchService2#0" expanded="false" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/lib/ControllerBot.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="340">
+          <caret line="20" column="30" lean-forward="false" selection-start-line="20" selection-start-column="30" selection-end-line="20" selection-end-column="30" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/scripts/system-reset-all-overlayfs.sh">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/lib/Bone.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="213">
+          <caret line="77" column="19" lean-forward="false" selection-start-line="77" selection-start-column="19" selection-end-line="77" selection-end-column="19" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/scripts/main-run">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="643">
+          <caret line="71" column="0" lean-forward="false" selection-start-line="71" selection-start-column="0" selection-end-line="71" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/NewDeviceHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-580">
+          <caret line="21" column="0" lean-forward="true" selection-start-line="21" selection-start-column="0" selection-end-line="21" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/RefreshMacBackupNameHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="457">
+          <caret line="29" column="19" lean-forward="true" selection-start-line="0" selection-start-column="0" selection-end-line="52" selection-end-column="0" />
           <folding>
             <element signature="n#!!doc" expanded="true" />
           </folding>
@@ -1434,8 +1375,133 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/net2/config.json">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="451">
-          <caret line="52" column="32" lean-forward="false" selection-start-line="52" selection-start-column="32" selection-end-line="52" selection-end-column="32" />
+        <state relative-caret-position="255">
+          <caret line="15" column="8" lean-forward="true" selection-start-line="15" selection-start-column="8" selection-end-line="15" selection-end-column="8" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/fastencipher2.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="572">
+          <caret line="35" column="13" lean-forward="true" selection-start-line="35" selection-start-column="13" selection-end-line="35" selection-end-column="13" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+            <marker date="1501176269000" expanded="true" signature="1191:1297" ph="/*...*/" />
+            <marker date="1501176269000" expanded="true" signature="1415:1917" ph="{...}" />
+            <marker date="1501176269000" expanded="true" signature="1474:1688" ph="{...}" />
+            <marker date="1501176269000" expanded="true" signature="1716:1909" ph="{...}" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/FlowUtil.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="717">
+          <caret line="171" column="14" lean-forward="true" selection-start-line="171" selection-start-column="14" selection-end-line="171" selection-end-column="14" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/HostManager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="316">
+          <caret line="1145" column="4" lean-forward="false" selection-start-line="1145" selection-start-column="4" selection-end-line="1145" selection-end-column="4" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/controllers/#netbot.js#">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="363">
+          <caret line="1041" column="2" lean-forward="false" selection-start-line="1041" selection-start-column="2" selection-end-line="1041" selection-end-column="2" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/FlowAggrTool.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="307">
+          <caret line="158" column="16" lean-forward="false" selection-start-line="158" selection-start-column="2" selection-end-line="158" selection-end-column="16" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+            <marker date="1501176261000" expanded="true" signature="1173:7126" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="5437:5921" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="5573:5913" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="5765:5885" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="5791:5877" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="5981:6118" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6165:6415" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6267:6407" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6353:6400" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6487:6605" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6641:6705" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6747:6815" ph="{...}" />
+            <marker date="1501176261000" expanded="true" signature="6894:7124" ph="{...}" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/FlowManager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="289">
+          <caret line="30" column="0" lean-forward="false" selection-start-line="30" selection-start-column="0" selection-end-line="31" selection-end-column="40" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/hook/DestIPFoundHook.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="428">
+          <caret line="35" column="36" lean-forward="true" selection-start-line="35" selection-start-column="36" selection-end-line="35" selection-end-column="36" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/DNSManager.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="430">
+          <caret line="130" column="0" lean-forward="false" selection-start-line="130" selection-start-column="0" selection-end-line="130" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/net2/NetBotTool.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="695">
+          <caret line="73" column="0" lean-forward="false" selection-start-line="73" selection-start-column="0" selection-end-line="73" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/controllers/netbot.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="618">
+          <caret line="989" column="44" lean-forward="false" selection-start-line="989" selection-start-column="0" selection-end-line="990" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/api/routes/host.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="469">
+          <caret line="78" column="0" lean-forward="false" selection-start-line="78" selection-start-column="0" selection-end-line="78" selection-end-column="0" />
+          <folding>
+            <element signature="n#!!doc" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/tmp/test.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="528">
+          <caret line="1095" column="22" lean-forward="true" selection-start-line="1095" selection-start-column="22" selection-end-line="1095" selection-end-column="22" />
           <folding />
         </state>
       </provider>

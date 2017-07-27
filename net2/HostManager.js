@@ -971,6 +971,18 @@ class Host {
         rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
     }
 
+    getHostAsync(ip) {
+      return new Promise((resolve, reject) => {
+        this.getHost(ip, (err, host) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(host);
+          }
+        })
+      })
+    }
+
     getHost(ip, callback) {
         let key = "host:ip4:" + ip;
         log.debug("Discovery:FindHostWithIP", key, ip);

@@ -38,6 +38,8 @@ var flowUtil = require('../net2/FlowUtil.js');
 
 var hostManager = null;
 
+let Promise = require('bluebird');
+
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -556,6 +558,7 @@ module.exports = class DNSManager {
         let HostManager = require("../net2/HostManager.js");
         hostManager = new HostManager("cli", 'client', 'info');
     }
+
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {
