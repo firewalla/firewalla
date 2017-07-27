@@ -121,7 +121,8 @@ class FlowAggrTool {
     let num = tickKeys.length;
     
     if(num <= 0) {
-      return Promise.reject("Invalid parameters to call addSumFlow");
+      log.warn("Nothing to sum for key", sumFlowKey, {});
+      return Promise.resolve();
     }
     
     // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
