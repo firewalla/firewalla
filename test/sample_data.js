@@ -39,8 +39,8 @@ let flowAggrTool = new FlowAggrTool();
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-let ts = new Date() / 1000;
-let now = new Date() / 1000;
+let ts = Math.floor(new Date() / 1000);
+let now = Math.floor(new Date() / 1000);
 
 let hostIP = "172.17.0.10";
 let hostMac = "F4:0F:24:00:00:01";
@@ -233,6 +233,13 @@ exports.removeSampleFlows = () => {
     await (flowTool.removeFlow(hostIP, "in", flowObj2));
   })();
 };
+
+exports.createSampleAggrFlows = () => {
+  return async(() => {
+    await (flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600), destIP, 200));
+    await (flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600) - 600, destIP, 300));
+  })();  
+}
 
 exports.removeSampleAggrFlows = () => {
   return async(() => {

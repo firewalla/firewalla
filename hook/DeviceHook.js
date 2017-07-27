@@ -96,6 +96,7 @@ class DeviceHook extends Hook {
                     sem.emitEvent({
                       type: "RegularDeviceInfoUpdate",
                       message: "Refresh device status @ DeviceHook",
+                      suppressEventLogging: true,
                       host: host
                     });
                     

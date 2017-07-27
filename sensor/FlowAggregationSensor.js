@@ -39,6 +39,8 @@ let flowAggrTool = new FlowAggrTool();
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
+function toFloorInt(n){ return Math.floor(Number(n)); };
+
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
@@ -47,13 +49,18 @@ class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
+    this.config.flowRange = 24 * 3600 // 24 hours
   }
-
+  
   run() {
     let ts = new Date() / 1000 - 180; // 3 minutes ago
-    process.nextTick(this.aggrAll(ts));
+    process.nextTick(() => this.aggrAll(ts));
+    process.nextTick(() => this.sumAll(ts));
+    
+    // TODO: Need to ensure all ticks will be processed and stored in redis
     setInterval(() => {
       this.aggrAll(ts);
+      this.sumAll(ts);
     }, this.config.interval * 1000);
   }
 
@@ -96,15 +103,38 @@ class FlowAggregationSensor extends Sensor {
       macs.forEach((mac) => {
         this.aggr(mac, ts);
       })
-    })
+    })();
   }
+  
+  sumAll(ts) {
+    let now = new Date() / 1000;
 
+    if(now < ts + 60) {
+      // TODO: could have some enhancement here!
+      // if the diff between ts and now is less than 60 seconds, return error
+      // this is to ensure the flows are already processed and stored in redis before aggregation
+      return Promise.reject(new Error("sum too soon"));
+    }
+    
+    let end = flowAggrTool.getIntervalTick(ts);
+    let begin = end - this.config.flowRange;
+    
+
+    return async(() => {
+      let macs = await (hostTool.getAllMACs());
+      macs.forEach((mac) => {
+        await (flowAggrTool.addSumFlow(mac, "download", begin, end));
+        await (flowAggrTool.addSumFlow(mac, "upload", begin, end));
+      })
+    })();
+  }
+  
   aggr(macAddress, ts) {
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.interval;
 
-    let endString = new Date(end * 1000).toString();
-    let beginString = new Date(begin * 1000).toString();
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     let msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
     log.info(msg);

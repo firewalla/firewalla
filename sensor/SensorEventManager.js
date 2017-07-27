@@ -26,12 +26,18 @@ class SensorEventManager extends EventEmitter {
     this.setMaxListeners(0);
   }
   emitEvent(event) {
-    log.info("New Event: " + event.type + " -- " + event.message);
-    log.info(event.type, "subscribers: ", this.listenerCount(event.type), {});
-    if(this.listenerCount(event.type) === 0) {
+    if(!event.suppressEventLogging) {
+      log.info("New Event: " + event.type + " -- " + event.message);
+    }
+    
+    log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
+    let count = this.listenerCount(event.type);
+    if(count === 0) {
       log.error("No subscription on event type:", event.type, {});
+    } else if (count > 1) {
+      log.warn("Subscribers on event type:", event.type, "is more than ONE", {});
     } else {
-      this.emit(event.type, event);  
+      this.emit(event.type, event);
     }
   }
   

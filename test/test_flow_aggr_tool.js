@@ -57,4 +57,66 @@ describe('FlowAggrTool', () => {
     })
   });
   
+  describe('.getLargerIntervalTick', () => {
+    it('the tick of 301 (with interval 30) should be 330', (done) => {
+      expect(flowAggrTool.getLargerIntervalTick(301, 30)).to.equal(330);
+      done();
+    });
+
+    it('the tick of 301.3 (with interval 30) should be 330', (done) => {
+      expect(flowAggrTool.getLargerIntervalTick(301.3, 30)).to.equal(330);
+      done();
+    });
+
+    it('the tick of 301.4 (with interval 30.3) should be 330', (done) => {
+      expect(flowAggrTool.getLargerIntervalTick(301.4, 30.3)).to.equal(330);
+      done();
+    })
+
+    it('the tick of 180 (with interval 70) should be 210', (done) => {
+      expect(flowAggrTool.getLargerIntervalTick(180, 70)).to.equal(210);
+      done();
+    })
+  });
+  
+  describe('.getTicks', () => {
+    it('should have 5 ticks between 100 and 200 (with interval 20)', (done) => {
+      // 100 should not be ticks as the range is open-interval.
+      let ticks = flowAggrTool.getTicks(100, 200, 20);
+      expect(ticks.length).to.equal(5);
+      done();
+    })
+  });
+  
+  describe('.addSumFlow', () => {
+    
+    afterEach((done) => {
+      async(() => {
+        await (flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600));
+        await (flowAggrTool.removeAllSumFlows(sample.hostMac, "download"));
+        done();
+      })();
+    });
+    
+    it('should be able to sum flows correctly', (done) => {
+      let ts = flowAggrTool.toFloorInt(new Date() / 1000 - 24 * 3600);
+      let begin = flowAggrTool.getIntervalTick(ts, 600);
+      let end = flowAggrTool.getLargerIntervalTick(ts + 24* 3600, 600);
+      
+      async(() => {
+        await (sample.createSampleAggrFlows());
+        let result = await (
+          flowAggrTool.addSumFlow(sample.hostMac, "download", begin, end, 600)
+        );
+        expect(result).to.above(0);
+        
+        let traffic = await (flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1));
+        expect(traffic.length).to.equal(2);
+        expect(traffic[0]).to.equal(sample.destIP);
+        expect(traffic[1]).to.equal("500");
+        done();
+      })();
+    })
+  });
+  
 });
