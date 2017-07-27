@@ -116,7 +116,7 @@ class FlowAggregationSensor extends Sensor {
       return Promise.reject(new Error("sum too soon"));
     }
     
-    let end = flowAggrTool.getIntervalTick(ts);
+    let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.flowRange;
     
 
