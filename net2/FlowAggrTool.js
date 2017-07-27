@@ -115,6 +115,12 @@ class FlowAggrTool {
   // content: destination ip address
   // score: traffic size
   addSumFlow(mac, trafficDirection, begin, end, interval) {
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    
+    log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+    
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
     let ticks = this.getTicks(begin, end, interval);
     let tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));

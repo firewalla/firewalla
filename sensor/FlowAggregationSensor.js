@@ -53,12 +53,15 @@ class FlowAggregationSensor extends Sensor {
   }
   
   run() {
-    let ts = new Date() / 1000 - 180; // 3 minutes ago
-    process.nextTick(() => this.aggrAll(ts));
-    process.nextTick(() => this.sumAll(ts));
+    process.nextTick(() => {
+      let ts = new Date() / 1000 - 180; // 3 minutes ago
+      this.aggrAll(ts);
+      this.sumAll(ts);
+    });
     
     // TODO: Need to ensure all ticks will be processed and stored in redis
     setInterval(() => {
+      let ts = new Date() / 1000 - 180;
       this.aggrAll(ts);
       this.sumAll(ts);
     }, this.config.interval * 1000);
