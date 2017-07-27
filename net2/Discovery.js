@@ -365,7 +365,7 @@ module.exports = class {
             }
             changeset['mac'] = host.mac;
             log.debug("Discovery:Nmap:Redis:Merge", key, changeset, {});
-            if (data.mac!=host.mac) {
+            if (data.mac!=null && data.mac!=host.mac) {
               this.ipChanged(data.mac,host.uid,host.mac);
             }
             rclient.hmset(key, changeset, (err, result) => {
