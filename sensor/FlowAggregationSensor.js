@@ -50,20 +50,28 @@ class FlowAggregationSensor extends Sensor {
     super();
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
     this.config.flowRange = 24 * 3600 // 24 hours
+    this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
+    this.config.aggrFlowExpireTime = 48 * 3600 // 48 hours
+  }
+  
+  scheduledJob() {
+    log.info("Generating summarized flows info...")
+    return async(() => {
+      let ts = new Date() / 1000 - 180; // 3 minutes ago
+      await (this.aggrAll(ts));
+      await (this.sumAll(ts));
+      log.info("Summarized flow generation is complete");
+    })();
   }
   
   run() {
     process.nextTick(() => {
-      let ts = new Date() / 1000 - 180; // 3 minutes ago
-      this.aggrAll(ts);
-      this.sumAll(ts);
+      this.scheduledJob();
     });
     
     // TODO: Need to ensure all ticks will be processed and stored in redis
     setInterval(() => {
-      let ts = new Date() / 1000 - 180;
-      this.aggrAll(ts);
-      this.sumAll(ts);
+      this.scheduledJob();
     }, this.config.interval * 1000);
   }
 
@@ -126,8 +134,8 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = await (hostTool.getAllMACs());
       macs.forEach((mac) => {
-        await (flowAggrTool.addSumFlow(mac, "download", begin, end, this.config.interval));
-        await (flowAggrTool.addSumFlow(mac, "upload", begin, end, this.config.interval));
+        await (flowAggrTool.addSumFlow(mac, "download", begin, end, this.config.interval, this.config.sumFlowExpireTime));
+        await (flowAggrTool.addSumFlow(mac, "upload", begin, end, this.config.interval, this.config.sumFlowExpireTime));
       })
     })();
   }
@@ -156,8 +164,8 @@ class FlowAggregationSensor extends Sensor {
 
       let traffic = this.trafficGroupByDestIP(flows);
 
-      await (flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic));
-      await (flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic));
+      await (flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
+      await (flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
 
     })();
   }

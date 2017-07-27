@@ -118,5 +118,17 @@ describe('FlowAggrTool', () => {
       })();
     })
   });
+
+  describe('.getLastSumFlow .setLastSumFlow', (done) => {
+    it('should be able to get the same value that was set to database', (done) => {
+      async(() => {
+        let testData = "XXXXXXXXXXX";
+        await (flowAggrTool.setLastSumFlow(sample.hostMac, "download", testData));
+        let key = await (flowAggrTool.getLastSumFlow(sample.hostMac, "download"));
+        expect(key).to.equal(testData);
+        done();
+      })();
+    })
+  });
   
 });

@@ -41,6 +41,43 @@ function isInitialized(req, res, next) {
   res.json({error: 'GID not exists, device may still in init phase, please try later!'});
 }
 
+function debugInfo(req, res, next) {
+  if(req.body.message &&
+    req.body.message.obj &&
+    req.body.message.obj.data &&
+    req.body.message.obj.data.item === "ping") {
+    log.debug("Got a ping"); // ping is too frequent, reduce amount of log
+  } else {
+    log.info("================= request from ", req.connection.remoteAddress, " =================");
+    log.info(JSON.stringify(req.body, null, '\t'));
+    log.info("================= request body end =================");
+  }
+  next();
+}
+
+function compressPayloadIfRequired(req, res, next) {
+  let compressed = req.body.compressed;
+
+  if(compressed) { // compress payload to reduce traffic
+    log.debug("encipher uncompressed message size: ", res.body.length, {});
+    let input = new Buffer(res.body, 'utf8');
+    zlib.deflate(input, (err, output) => {
+      if(err) {
+        res.status(500).json({ error: err });
+        return;
+      }
+
+      res.body = JSON.stringify({payload: output.toString('base64')});
+      log.debug("compressed message size: ", res.body.length, {});
+      next();
+    });
+  } else {
+    next();
+  }
+}
+
 module.exports = {
-  isInitialized: isInitialized
+  isInitialized: isInitialized,
+  debugInfo: debugInfo,
+  compressPayloadIfRequired: compressPayloadIfRequired
 }

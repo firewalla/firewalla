@@ -71,7 +71,9 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  addFlows(mac, trafficDirection, interval, ts, traffics) {
+  addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
+    expire = expire || 48 * 3600; // by default keep 48 hours
+
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
     let args = [key];
 
@@ -86,7 +88,7 @@ class FlowAggrTool {
 
     return rclient.zaddAsync(args)
       .then(() => {
-      return rclient.expireAsync(key, 48 * 3600) // 48 hours
+      return rclient.expireAsync(key, expire)
       });
   }
   
@@ -114,7 +116,8 @@ class FlowAggrTool {
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>
   // content: destination ip address
   // score: traffic size
-  addSumFlow(mac, trafficDirection, begin, end, interval) {
+  addSumFlow(mac, trafficDirection, begin, end, interval, expire) {
+    expire = expire || 2 * 3600; // by default expire in two hours
 
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
@@ -141,7 +144,7 @@ class FlowAggrTool {
       let result = await (rclient.zunionstoreAsync(args));
       if(result > 0) {
         await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey));
-        await(rclient.expireAsync(sumFlowKey, 48 * 3600)); // expire in 48 hours
+        await(rclient.expireAsync(sumFlowKey, expire));
       }
       
       return Promise.resolve(result);
@@ -152,11 +155,36 @@ class FlowAggrTool {
     let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
     return rclient.setAsync(key, keyName);
   }
+
+  getLastSumFlow(mac, trafficDirection) {
+    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    return rclient.getAsync(key);
+  }
   
   getSumFlow(mac, trafficDirection, begin, end, count) {
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
     
     return rclient.zrangeAsync(sumFlowKey, 0, count, 'withscores');
+  }
+
+  getTopSumFlowByKey(key, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    return async(() => {
+      let destAndScores = await (rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count));
+      let results = [];
+      for(let i = 0; i < destAndScores.length; i++) {
+        if(i % 2 === 1) {
+          results.push({ip: destAndScores[i-1], count: destAndScores[i]});
+        }
+      }
+      return results;
+    })();
+  }
+
+  getTopSumFlow(mac, trafficDirection, begin, end, count) {
+    let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+
+    return this.getTopSumFlowByKey(sumFlowKey, count);
   }
   
   removeAllSumFlows(mac, trafficDirection) {

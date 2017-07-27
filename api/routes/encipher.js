@@ -29,56 +29,34 @@ let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
 
-let zlib = require('zlib');
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 router.post('/message/:gid',
-  function(req, res, next) {
-    log.info("A new request");
-    log.info("================= request body =================");
-    log.info(JSON.stringify(req.body, null, '\t'));
-    log.info("================= request body end =================");
+
+  sc.debugInfo,
+
+  (req, res, next) => {
 
     let gid = req.params.gid;
-    let compressed = req.query.compressed;
-    let controller = cloudWrapper.getNetBotController(gid);
 
-    if(!controller) {
-      res.status(404).send('');
-      return;
-    }
-    let alreadySent = false;
+    async(() => {
+      let controller = await(cloudWrapper.getNetBotController(gid));
+      let response = await(controller.msgHandlerAsync(gid, req.body));
+      res.body = JSON.stringify(response);
+      next();
+    })()
+      .catch((err) => {
+        // netbot controller is not ready yet, waiting for init complete
+        res.status(503);
+        res.json({error: 'Initializing Firewalla Device, please try later'});
+      });
+  },
 
-    controller.msgHandler(gid, req.body, (err, response) => {
-      if(alreadySent) {
-        return;
-      }
+  sc.compressPayloadIfRequired,
 
-      alreadySent = true;
-
-      if(err) {
-        res.json({ error: err });
-        return;
-      } else {
-        let json = JSON.stringify(response);
-        log.info("Got response, length: ", json.length);
-
-        if(compressed) { // compress payload to reduce traffic
-          let input = new Buffer(json, 'utf8');
-          zlib.deflate(input, (err, output) => {
-            if(err) {
-              res.status(500).json({ error: err });
-              return;
-            }
-
-            res.status(200).json({
-              payload: output.toString('base64')
-            });
-          });
-        } else {
-          res.json(response);
-        }
-      }
-    });
+  (req, res, next) => {
+    res.send();
   }
 );
 
