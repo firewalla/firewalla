@@ -24,6 +24,8 @@ let log = require("../../net2/logger.js")(__filename, 'info');
 let SysManager = require('../../net2/SysManager.js');
 let sysManager = new SysManager('info');
 
+let zlib = require('zlib');
+
 function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
       // this is to ensure sysManager is already initliazed when called in API code
@@ -56,7 +58,7 @@ function debugInfo(req, res, next) {
 }
 
 function compressPayloadIfRequired(req, res, next) {
-  let compressed = req.body.compressed;
+  let compressed = req.body.compressed || req.query.compressed;
 
   if(compressed) { // compress payload to reduce traffic
     log.debug("encipher uncompressed message size: ", res.body.length, {});

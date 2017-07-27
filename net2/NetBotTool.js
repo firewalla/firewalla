@@ -73,7 +73,6 @@ class NetBotTool {
     }
 
     json.flows.activities = [];
-    console.log(json);
     return Promise.resolve();
   }
 

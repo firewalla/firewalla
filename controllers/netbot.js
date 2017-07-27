@@ -984,9 +984,9 @@ class netBot extends ControllerBot {
         }
 
         await (flowTool.prepareRecentFlowsForHost(jsonobj, listip));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, host.mac));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, host.mac));
-        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, host.mac));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, host.o.mac));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, host.o.mac));
+        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, host.o.mac));
         await (this.enrichCountryInfo(jsonobj.flows));
 
         this.simpleTxData(msg, jsonobj, null, callback);
@@ -1008,7 +1008,7 @@ class netBot extends ControllerBot {
       eachFlows.forEach((flow) => {
 
         if(flow.ip) {
-          flow.country = country.getCountry(ip);
+          flow.country = country.getCountry(flow.ip);
           return;
         }
 
