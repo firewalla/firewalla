@@ -56,7 +56,7 @@ router.post('/message/:gid',
   sc.compressPayloadIfRequired,
 
   (req, res, next) => {
-    res.send();
+    res.send(res.body);
   }
 );
 
