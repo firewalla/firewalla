@@ -50,9 +50,9 @@ class DestIPFoundHook extends Hook {
     };
 
     // dns
-    if(sslInfo.server_name) {
+    if(sslInfo && sslInfo.server_name) {
       intel.host = sslInfo.server_name
-    } else if(dnsInfo.host) {
+    } else if(dnsInfo && dnsInfo.host) {
       intel.host = dnsInfo.host;
     }
 
@@ -84,6 +84,7 @@ class DestIPFoundHook extends Hook {
 
     return domains;
   }
+
   run() {
     sem.on('DestIPFound', (event) => {
 

@@ -55,7 +55,7 @@ exports.create = function (config, callback) {
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
-                    log.error("SecondaryInterface: Already Created Secondary Interface",list[i]);
+                    log.warn("Already Created Secondary Interface",list[i]);
                     callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
                     return; 
                 }
