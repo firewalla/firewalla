@@ -106,7 +106,7 @@ class DestIPFoundHook extends Hook {
           return;
         }
 
-        log.info("Found new destination IP " + ip + ", checking intels...");
+        log.info("Found new IP " + ip + ", checking intels...");
         
         let sslInfo = await (intelTool.getSSLCertificate(ip));
         let dnsInfo = await (intelTool.getDNS(ip));

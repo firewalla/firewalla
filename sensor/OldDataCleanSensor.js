@@ -75,15 +75,17 @@ class OldDataCleanSensor extends Sensor {
   
   // clean by expired time and count
   regularClean(type, keyPattern) {
-    return this.getKeys(keyPattern)
-      .then((keys) => {
-        return Promise.all([keys.map((key) => {
-          return Promise.all([
-            this.cleanByExpireDate(key, this.getExpiredDate(type)),
-            this.cleanToCount(key, this.getCount(type))
-          ]);       
-        })]);
+
+    return async(() => {
+      let keys = await (this.getKeys(keyPattern));
+
+      keys.forEach((key) => {
+        await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
+        await (this.cleanToCount(key, this.getCount(type)));
       })
+
+    })();
+
   }
   
   cleanAlarm() {
