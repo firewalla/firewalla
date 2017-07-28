@@ -106,7 +106,8 @@
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
-    "DeviceHook": {}
+    "DeviceHook": {},
+    "DestIPFoundHook": {}
   },
     "bro": {
       "notice" : {

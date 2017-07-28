@@ -17,6 +17,15 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 
 module.exports = class {
+
+  constructor() {
+    this.config = {};
+  }
+
+  setConfig(config) {
+    require('util')._extend(this.config, config);
+  }
+
   run() {
     // do nothing
   }

@@ -95,7 +95,7 @@ function iptables(rule, callback) {
         log.info("IPTABLE:DNS:Running commandline: ", cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
             if (err) {
-                log.info("IPTABLE:DNS:Error unable to set", cmdline, err);
+                log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
             if (callback) {
                 callback(err, null);
@@ -186,7 +186,7 @@ function _dnsChange(ip, dns, state, callback) {
     log.info("IPTABLE:DNS:Running commandline: ", cmdline);
     this.process = require('child_process').exec(cmdline, (err, out, code) => {
         if (err) {
-            log.info("IPTABLE:DNS:Error unable to set", cmdline, err);
+            log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
         }
         if (callback) {
             callback(err, null);
@@ -197,7 +197,7 @@ function _dnsChange(ip, dns, state, callback) {
 function flush(callback) {
     this.process = require('child_process').exec("sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F ", (err, out, code) => {
         if (err) {
-            log.info("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err);
         }
         if (callback) {
             callback(err, null);
@@ -208,7 +208,7 @@ function flush(callback) {
 function flush6(callback) {
     this.process = require('child_process').exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat", (err, out, code) => {
         if (err) {
-            log.info("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err);
         }
         if (callback) {
             callback(err, null);
@@ -221,7 +221,7 @@ function run(listofcmds, callback) {
         log.info("IPTABLE:DNS:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
-                log.info("IPTABLE:DNS:Error unable to set", err);
+                log.error("IPTABLE:DNS:Error unable to set", err);
             }
             if (callback) {
                 callback(err, null);

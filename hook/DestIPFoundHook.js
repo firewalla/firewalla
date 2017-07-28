@@ -33,31 +33,83 @@ let await = require('asyncawait/await');
 let DNSManager = require('../net2/DNSManager.js');
 let dnsManager = new DNSManager('info');
 
+let IntelTool = require('../net2/IntelTool');
+let intelTool = new IntelTool();
+
 class DestIPFoundHook extends Hook {
 
+  constructor() {
+    super();
+
+    this.config.intelExpireTime = 7 * 24 * 3600; // one week
+  }
+
+  aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
+    let intel = {
+      ip: ip
+    };
+
+    // dns
+    if(sslInfo.server_name) {
+      intel.host = sslInfo.server_name
+    } else if(dnsInfo.host) {
+      intel.host = dnsInfo.host;
+    }
+
+    // app
+    cloudIntelInfos.forEach((info) => {
+      if(info.ip === ip || info.ip === intel.host) {
+        if(info.apps) {
+          intel.apps = JSON.stringify(info.apps);
+        }
+
+        if(info.c) {
+          intel.category = info.c;
+        }
+      }
+    });
+
+    return intel;
+  }
+  
   run() {
     sem.on('DestIPFound', (event) => {
 
       let ip = event.ip;
 
-
-
-
-      // ignore unknown updates
-      if(name.toLowerCase() === "unknown")
+      if(!ip)
         return;
+      
+      async(() => {
+        let result = await (intelTool.intelExists(ip));
 
-      hostTool.macExists(mac)
-        .then((result) => {
-          if (!result)
-            return;
+        if(result) {
+          return;
+        }
 
-          hostTool.updateBackupName(mac, name)
-            .then(() => {})
-            .catch((err) => {
-              log.error("Failed to update backup name: ", err, {})
-            })
-        })
+        log.info("Found new destination IP", ip, "is found, checking intels");
+        
+        let sslInfo = await (intelTool.getSSLCertificate(ip));
+        let dnsInfo = await (intelTool.getDNS(ip));
+
+        let domain = sslInfo.server_name;
+        if(!domain) {
+          domain = dnsInfo.host;
+        }
+
+        let ips = [ip];
+        let domains = [];
+        if(domain)
+          domains.push(domain);
+
+        let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains))
+
+        let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
+
+        await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
+
+      })();
+
     });
   }
 }

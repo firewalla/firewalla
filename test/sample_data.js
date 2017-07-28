@@ -254,4 +254,48 @@ exports.removeAllSampleAggrFlows = () => {
       await (rclient.delAsync(key));
     })
   })();
+};
+
+exports.addSampleSSLInfo = () => {
+  return async(() => {
+    let key = "host:ext.x509:" + hostIP;
+    
+    let data = {
+      "server_name": "www.google.com",
+      "subject": "CN=*.google.com,OU=COMODO SSL Wildcard,OU=ABCDEF"
+    };
+    
+    return rclient.hmsetAsync(key, data);
+  })();
+}
+
+exports.removeSampleSSLInfo = () => {
+  return async(() => {
+    let key = "host:ext.x509:" + hostIP;
+
+    return rclient.delAsync(key);
+  })();
+}
+
+exports.addSampleDNSInfo = () => {
+  return async(() => {
+    let key = "dns:ip:" + hostIP;
+
+    let data = {
+      host: 'www.google.com',
+      lastActive: '1501220422',
+      count: '24',
+      _intel: '{"ts":1500896988,"rcount":2}'
+    };
+
+    return rclient.hmsetAsync(key, data);
+  })();
+}
+
+exports.removeSampleDNSInfo = () => {
+  return async(() => {
+    let key = "dns:ip:" + hostIP;
+
+    return rclient.delAsync(key);
+  })();
 }

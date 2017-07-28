@@ -116,33 +116,10 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-/*
-function dnsChange(ip,dns,state,callback) {
-    // TODO need to take care of 5353 as well
-    var action = "-A";
-    if (state == false) {
-        action = "-D";
-    }
-
-    var cmd = "iptables";
-    var cmdline = "sudo iptables -t nat "+action+"  PREROUTING -p tcp -s "+ip+" --dport 53 -j DNAT --to-destination "+dns+"  && sudo iptables -t nat "+action+" PREROUTING -p udp -s "+ip+" --dport 53 -j DNAT --to-destination "+dns;
-    
-    log.info("IPTABLE:DNS:Running commandline: ",cmdline);
-    this.process = require('child_process').exec(cmdline, (err,out,code)=> {
-        if (err) {
-            log.info("IPTABLE:DNS:Error unable to set",cmdline, err); 
-        } 
-        if (callback) {
-            callback(err,null);
-        }
-    });
-}
-*/
-
 function flush(callback) {
     this.process = require('child_process').exec("sudo ip6tables -F && sudo iptables -F -t nat", (err, out, code) => {
         if (err) {
-            log.info("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err);
         }
         if (callback) {
             callback(err, null);
@@ -153,7 +130,7 @@ function flush(callback) {
 function flush6(callback) {
     this.process = require('child_process').exec("sudo ip6tables -F && sudo iptables -F -t nat", (err, out, code) => {
         if (err) {
-            log.info("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err);
         }
         if (callback) {
             callback(err, null);
@@ -166,7 +143,7 @@ function run(listofcmds, callback) {
         log.info("IPTABLE:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
-                log.info("IPTABLE:DNS:Error unable to set", err);
+                log.error("IPTABLE:DNS:Error unable to set", err);
             }
             if (callback) {
                 callback(err, null);

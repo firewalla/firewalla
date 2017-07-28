@@ -29,12 +29,17 @@ function initHooks() {
 
   Object.keys(hookConfigs).forEach((hookName) => {
     let Hook = require('./' + hookName + '.js');
-    hooks.push(new Hook());
+    let hook = new Hook();
+    hook.setConfig(hookConfigs[hookName]);
+    hooks.push(hook);
   });
 }
 
 function run() {
-  hooks.forEach((h) => h.run());
+  hooks.forEach((h) => {
+    log.info("Installing Hook:", h.constructor.name, {});
+    h.run()
+  });
 }
 
 module.exports = {

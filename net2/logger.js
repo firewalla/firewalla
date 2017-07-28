@@ -111,6 +111,7 @@ module.exports = function (component, loglevel, filename) {
                 return format;
               }
             });
+  
     var fileTransport = new (winston.transports.File)({level:_loglevel,
                                                        name:'log-file',
                                                        filename: filename,
@@ -125,8 +126,31 @@ module.exports = function (component, loglevel, filename) {
 //        console.log("Adding Console Transports",component);
         transports.push(consoleTransport);
     }
+    
+    if(process.env.NODE_ENV === 'test') {
+      let transport = new (winston.transports.File)
+      ({level:_loglevel,
+        name:'log-file-test',
+        filename: "test.log",
+        dirname: "/home/pi/.forever",
+        maxsize: 100000,
+        maxFiles: 1,
+        json: false,
+        timestamp:true,
+        colorize: true,
+        formatter: (options) => {
+          let format = require('util').format("%s %s %s: %s",
+            options.level.toUpperCase(),
+            new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''),
+            component,
+            options.message);
+          return format;
+        }});
+      
+      transports.push(transport);
+    }
   
-    var logger = new(winston.Logger)({
+    let logger = new(winston.Logger)({
         transports: transports
     });
 

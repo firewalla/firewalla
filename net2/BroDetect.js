@@ -42,6 +42,8 @@ rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 /*
  *
  *  config.bro.notice.path {
@@ -769,6 +771,13 @@ module.exports = class {
                 log.debug("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
+
+                      let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+                      sem.emitEvent({
+                        type: 'DestIPFound',
+                        ip: remoteIPAddress
+                      });
+
                         if (this.config.bro.conn.expires) {
                             //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
                         }

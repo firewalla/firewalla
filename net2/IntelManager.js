@@ -213,7 +213,7 @@ module.exports = class {
             }
             if (httpResponse.statusCode < 200 ||
                 httpResponse.statusCode > 299) {
-                log.info("**** Error while response HTTP ", httpResponse.statusCode);
+                log.error("**** Error while response HTTP ", httpResponse.statusCode);
                 callback(httpResponse.statusCode, null, null);
                 return;
             }
@@ -255,7 +255,7 @@ module.exports = class {
             }
             if (httpResponse.statusCode < 200 ||
                 httpResponse.statusCode > 299) {
-                log.info("**** Error while response HTTP ", httpResponse.statusCode);
+                log.error("**** Error while response HTTP ", httpResponse.statusCode);
                 callback(httpResponse.statusCode, null, null);
                 return;
             }
