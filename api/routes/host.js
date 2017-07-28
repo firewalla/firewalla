@@ -73,9 +73,9 @@ router.get('/:host',
 
                      Promise.all([
                        flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs()),
-                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.mac),
-                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.mac),
-                       netBotTool.prepareActivitiesFlowsForHost(jsonObj, host.mac),
+                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareActivitiesFlowsForHost(jsonObj, host.o.mac),
                    ]).then(() => {
                        res.json(jsonObj);
                      });

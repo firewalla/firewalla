@@ -60,14 +60,25 @@ class NetBotTool {
   }
 
   prepareTopDownloadFlowsForHost(json, mac) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
     return this._prepareTopFlowsForHost(json, mac, "download");
   }
 
   prepareTopUploadFlowsForHost(json, mac) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+    
     return this._prepareTopFlowsForHost(json, mac, "upload");
   }
 
   prepareActivitiesFlowsForHost(json, mac) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+    
     if (!("flows" in json)) {
       json.flows = {};
     }
