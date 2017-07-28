@@ -164,6 +164,8 @@ describe('IntelTool', () => {
 
       async(() => {
         await (intelTool.addIntel(sample.hostIP, intel))
+        let e = await (intelTool.intelExists(sample.hostIP));
+        expect(e).to.equal(true);
         let r = await (intelTool.getIntel(sample.hostIP));
         expect(r.ip).to.equal(sample.hostIP);
         expect(r.host).to.equal('www.google.com')

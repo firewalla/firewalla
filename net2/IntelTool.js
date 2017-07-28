@@ -127,8 +127,11 @@ class IntelTool {
       bone.intel("*","check", data, (err, data) => {
         if(err)
           reject(err)
-        else
+        else {
+          log.info("IntelCheck Result:", data, {});
           resolve(data);
+        }
+
       });  
     });
   }
@@ -143,16 +146,21 @@ class IntelTool {
     
     return async(() => {
       let sslInfo = await (rclient.hgetallAsync(certKey));
-      let subject = sslInfo.subject;
-      if(subject) {
-        let result = this._parseX509Subject(subject);
-        if(result) {
-          sslInfo.CN = result.CN;
-          sslInfo.OU = result.OU;
+      if(sslInfo) {
+        let subject = sslInfo.subject;
+        if(subject) {
+          let result = this._parseX509Subject(subject);
+          if(result) {
+            sslInfo.CN = result.CN;
+            sslInfo.OU = result.OU;
+          }
         }
+
+        return sslInfo;
+      } else {
+        return undefined;
       }
-      
-      return sslInfo;
+
     })();
   }
 
