@@ -15,8 +15,8 @@ sudo rm -fr ${FIREWALLA_LOG_DIR}/*/*
 : ${FIREWALLA_UPPER_DIR:=/media/root-rw/overlay}
 : ${FIREWALLA_UPPER_WORK_DIR:=/media/root-rw/overlay-workdir}
 
-mv ${FIREWALLA_UPPER_DIR}{,.bak}
-mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
+sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
+sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 sync
 sync
