@@ -42,6 +42,7 @@ class DestIPFoundHook extends Hook {
     super();
 
     this.config.intelExpireTime = 7 * 24 * 3600; // one week
+    this.pendingIPs = {};
   }
 
   aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
@@ -92,6 +93,11 @@ class DestIPFoundHook extends Hook {
 
       if(!ip)
         return;
+
+      if(this.pendingIPs[ip])
+        return; // already on the way of getting intel
+
+      this.pendingIPs[ip] = 1;
       
       async(() => {
         let result = await (intelTool.intelExists(ip));
@@ -100,7 +106,7 @@ class DestIPFoundHook extends Hook {
           return;
         }
 
-        log.info("Found new destination IP", ip, "is found, checking intels");
+        log.info("Found new destination IP " + ip + ", checking intels...");
         
         let sslInfo = await (intelTool.getSSLCertificate(ip));
         let dnsInfo = await (intelTool.getDNS(ip));
@@ -114,7 +120,12 @@ class DestIPFoundHook extends Hook {
 
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
 
-      })();
+        delete this.pendingIPs[ip];
+
+      })().catch((err) => {
+        if(this.pendingIPs[ip])
+          delete this.pendingIPs[ip];
+      });
 
     });
   }
