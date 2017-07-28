@@ -28,6 +28,9 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let fConfig = require('../net2/config.js').getConfig();
 
 class OldDataCleanSensor extends Sensor {
@@ -172,28 +175,37 @@ class OldDataCleanSensor extends Sensor {
   }
   
   scheduledJob() {
-    log.info("Start cleaning old data in redis")
-    
-    let tasks = [
-      this.regularClean("conn", "flow:conn:*"),
-      this.regularClean("ssl", "flow:ssl:*"),
-      this.regularClean("http", "flow:http:*"),
-      this.regularClean("notice", "notice:*"),
-      this.regularClean("intel", "intel:*"),
-      this.regularClean("software", "software:*"),
-      this.regularClean("monitor", "monitor:flow:*"),
-      this.regularClean("alarm", "alarm:ip4:*"),
-      this.cleanHourlyStats(),
-      this.cleanUserAgents(),
-      this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30),
-      this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30),
-      this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365)
-    ];
-    
-    return Promise.all(tasks)
-      .then(() => {
-        log.info("scheduledJob is executed successfully");
-      });
+    return async(() => {
+      log.info("Start cleaning old data in redis")
+
+      await (this.regularClean("conn", "flow:conn:*"));
+      log.info("1");
+      await (this.regularClean("ssl", "flow:ssl:*"));
+      log.info("2");
+      await (this.regularClean("http", "flow:http:*"));
+      log.info("3");
+      await (this.regularClean("notice", "notice:*"));
+      log.info("4");
+      await (this.regularClean("intel", "intel:*"));
+      log.info("5");
+      await (this.regularClean("software", "software:*"));
+      log.info("6");
+      await (this.regularClean("monitor", "monitor:flow:*"));
+      log.info("7");
+      await (this.regularClean("alarm", "alarm:ip4:*"));
+      log.info("8");
+      await (this.cleanHourlyStats());
+      log.info("9");
+      await (this.cleanUserAgents());
+      log.info("10");
+      await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
+      log.info("11");
+      await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
+      log.info("12");
+      await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+
+      log.info("scheduledJob is executed successfully");
+    })();
   }
   
   listen() {
