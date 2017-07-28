@@ -56,7 +56,7 @@ class IntelTool {
   intelExists(ip) {
     let key = this.getIntelKey(ip);
 
-    return rclient.keys(key)
+    return rclient.keysAsync(key)
       .then((keys) => {
         if(keys.length === 1) {
           return true;
@@ -112,7 +112,8 @@ class IntelTool {
       });
 
       flowList.push({
-        _iplist:_ipList
+        _iplist:_ipList,
+        flow: {fd: 'in'}      // this line is just a WORKAROUND for fishbone bug. FIXME
       })
     }
 
