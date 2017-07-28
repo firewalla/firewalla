@@ -777,7 +777,8 @@ module.exports = class {
                       setTimeout(() => {
                         sem.emitEvent({
                           type: 'DestIPFound',
-                          ip: remoteIPAddress
+                          ip: remoteIPAddress,
+                          suppressEventLogging: true
                         });
                       }, 15 * 1000); // send out in 15 seconds
 
