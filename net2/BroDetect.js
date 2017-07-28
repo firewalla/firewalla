@@ -773,10 +773,14 @@ module.exports = class {
                     if (err == null) {
 
                       let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-                      sem.emitEvent({
-                        type: 'DestIPFound',
-                        ip: remoteIPAddress
-                      });
+
+                      setTimeout(() => {
+                        sem.emitEvent({
+                          type: 'DestIPFound',
+                          ip: remoteIPAddress
+                        });
+                      }, 15 * 1000); // send out in 15 seconds
+
 
                         if (this.config.bro.conn.expires) {
                             //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
