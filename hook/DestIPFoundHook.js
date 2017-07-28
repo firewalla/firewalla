@@ -71,7 +71,19 @@ class DestIPFoundHook extends Hook {
 
     return intel;
   }
-  
+
+  getDomains(sslInfo, dnsInfo) {
+    let domain = sslInfo && sslInfo.server_name;
+    if(!domain) {
+      domain = dnsInfo && dnsInfo.host;
+    }
+
+    let domains = [];
+    if(domain)
+      domains.push(domain);
+
+    return domains;
+  }
   run() {
     sem.on('DestIPFound', (event) => {
 
@@ -92,17 +104,10 @@ class DestIPFoundHook extends Hook {
         let sslInfo = await (intelTool.getSSLCertificate(ip));
         let dnsInfo = await (intelTool.getDNS(ip));
 
-        let domain = sslInfo.server_name;
-        if(!domain) {
-          domain = dnsInfo.host;
-        }
-
+        let domains = this.getDomains(sslInfo, dnsInfo);
         let ips = [ip];
-        let domains = [];
-        if(domain)
-          domains.push(domain);
 
-        let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains))
+        let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
 
         let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
 
