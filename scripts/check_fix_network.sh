@@ -1,0 +1,65 @@
+#!/bin/bash
+
+
+SLEEP_INTERVAL=${SLEEP_INTERVAL:-5}
+
+get_value() {
+    case $1 in
+        ip)
+            /sbin/ifconfig eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}'
+            ;;
+        gw)
+            /sbin/route -n | awk '$1=="0.0.0.0" {print $2}'
+            ;;
+        dns)
+            grep nameserver /etc/resolv.conf | awk '{print $2}'
+            ;;
+    esac
+}
+
+set_value() {
+    kind=$1
+    saved_value=$2
+    case ${kind} in
+        ip)
+            /sbin/ifconfig eth0 ${saved_value}
+            ;;
+        gw)
+            /sbin/route add default gw ${saved_value} eth0
+            ;;
+        dns)
+            echo "nameserver ${saved_value}" >> /etc/resolv.conf
+            ;;
+    esac
+}
+
+check_fix_value() {
+    kind=$1
+    current_value=$(get_value $kind)
+    saved_file="/var/run/saved_${kind}"
+    r=0
+    if [[ -n "$current_value" ]]
+    then
+        /bin/rm -f ${saved_file}
+        echo ${current_value} > ${saved_file} || r=1
+        logger "Current ${kind} detected(${current_value}), saved in ${saved_file}"
+    elif [[ -f "${saved_file}" ]]
+    then
+        sleep ${SLEEP_INTERVAL}
+        saved_value=$(cat ${saved_file})
+        set_value ${kind} ${saved_value} || r=1
+        logger "WARN:NO ${kind} detected, set to saved value - ${saved_value}"
+    else
+        r=1
+        logger "ERROR:NO ${kind} and NO saved value detected."
+    fi
+    return $r
+}
+
+sleep ${SLEEP_INTERVAL}
+for x in ip gw dns
+do
+    check_fix_value $x || rc=1
+done
+
+exit $rc
