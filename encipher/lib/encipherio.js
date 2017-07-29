@@ -115,7 +115,7 @@ let legoEptCloud = class {
         let pubFile = await(fs.readFileAsync(this.getPublicKeyPath()));
         let priFile = await(fs.readFileAsync(this.getPrivateKeyPath()));
         if(pubFile.length < 10 || priFile.length < 10) {
-          log2.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
+          log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
           await(this.cleanupKeys());
           return Promise.resolve(null);
         } else {
@@ -785,7 +785,7 @@ let legoEptCloud = class {
       let input = new Buffer(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
-          log2.error("Failed to compress payload:", err, {});
+          log.error("Failed to compress payload:", err, {});
           callback(err);
           return;
         }
@@ -806,17 +806,17 @@ let legoEptCloud = class {
     // Direct one-to-one message handling
     receiveMessage(gid, msg, callback) {
         let logMessage = require('util').format("Got encrypted message from group %s", gid);
-      log2.debug(logMessage);
+      log.debug(logMessage);
 
         this.getKey(gid, (err, key, cacheGroup) => {
           if (err != null && key == null) {
-            log2.error("Got error when fetching key: %s", key);
+            log.error("Got error when fetching key: %s", key);
             callback(err, null);
             return;
           }
           
           if(key == null) {
-            log2.error("encryption key is not found for group: %s", gid);
+            log.error("encryption key is not found for group: %s", gid);
             callback("key not found, invalid group?", null);
             return;
           }
