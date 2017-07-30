@@ -78,7 +78,7 @@ let i18n = require('../util/i18n');
 let NetBotTool = require('../net2/NetBotTool');
 let netBotTool = new NetBotTool();
 
-let HostTool = require('../net2/hostTool');
+let HostTool = require('../net2/HostTool');
 let hostTool = new HostTool();
 
 class netBot extends ControllerBot {
