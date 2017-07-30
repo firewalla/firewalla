@@ -20,6 +20,8 @@ let Hook = require('./Hook.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
+let country = require('../extension/country/country.js');
+
 let redis = require('redis');
 let rclient = redis.createClient();
 
@@ -86,6 +88,10 @@ class DestIPFoundHook extends Hook {
     return domains;
   }
 
+  enrichCountry(ip) {
+    return country.getCountry(ip);
+  }
+
   run() {
     sem.on('DestIPFound', (event) => {
 
@@ -98,7 +104,7 @@ class DestIPFoundHook extends Hook {
         return; // already on the way of getting intel
 
       this.pendingIPs[ip] = 1;
-      
+
       async(() => {
         let result = await (intelTool.intelExists(ip));
 
@@ -107,7 +113,7 @@ class DestIPFoundHook extends Hook {
         }
 
         log.info("Found new IP " + ip + ", checking intels...");
-        
+
         let sslInfo = await (intelTool.getSSLCertificate(ip));
         let dnsInfo = await (intelTool.getDNS(ip));
 
@@ -117,6 +123,7 @@ class DestIPFoundHook extends Hook {
         let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
 
         let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
+        aggrIntelInfo.country = this.enrichCountry(ip);
 
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
 
