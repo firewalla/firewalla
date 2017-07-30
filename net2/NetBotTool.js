@@ -33,6 +33,9 @@ let util = require('util');
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
 
+let IntelTool = require('../net2/IntelTool');
+let intelTool = new IntelTool();
+
 let instance = null;
 
 class NetBotTool {
@@ -54,6 +57,20 @@ class NetBotTool {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
       if (flowKey) {
         let traffic = await (flowAggrTool.getTopSumFlowByKey(flowKey,20)) // get top 20
+
+        let promises = Promise.all(traffic.map((f) => {
+          return intelTool.getIntel(f.ip)
+          .then((intel) => {
+            if(intel) {
+              f.country = intel.country;
+              f.host = intel.host;
+            }
+            return f;
+          });
+        }));
+
+        await (promises);
+
         json.flows[trafficDirection] = traffic
       }
     })();
@@ -70,7 +87,7 @@ class NetBotTool {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
-    
+
     return this._prepareTopFlowsForHost(json, mac, "upload");
   }
 
@@ -78,7 +95,7 @@ class NetBotTool {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
-    
+
     if (!("flows" in json)) {
       json.flows = {};
     }
