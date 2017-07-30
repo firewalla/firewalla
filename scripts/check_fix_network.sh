@@ -12,7 +12,18 @@ get_value() {
             /sbin/route -n | awk '$1=="0.0.0.0" {print $2}'
             ;;
         dns)
-            grep nameserver /etc/resolv.conf | awk '{print $2}'
+            dns_file=/etc/resolv.conf
+            dns_bak=/etc/resolv.conf.bak
+            if [[ -e $dns_file ]]
+            then
+                # file exists, show path of backup file
+                echo $dns_bak
+                # only backup if not done before
+                [[ -e $dns_bak ]] || cp -a $dns_file $dns_bak
+            else
+                # file NOT exist - error
+                echo ''
+            fi
             ;;
     esac
 }
@@ -28,7 +39,8 @@ set_value() {
             /sbin/route add default gw ${saved_value} eth0
             ;;
         dns)
-            echo "nameserver ${saved_value}" >> /etc/resolv.conf
+            bak_file=$saved_value
+            [[ -e $bak_file ]] && cp -a /etc/resolv.conf{.bak,}
             ;;
     esac
 }
