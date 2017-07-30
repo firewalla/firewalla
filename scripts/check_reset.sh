@@ -20,7 +20,7 @@ rm -f ${USB_RESET_FILE}; delete_ok=$?
 if [[ ${need_reset} -eq 0 && ${delete_ok} -eq 0 ]]
 then
     logger "${USB_RESET_FILE} detected, reset overlayfs"
-    echo exec $RESET_SCRIPT
+    exec $RESET_SCRIPT
 else
     logger "${USB_RESET_FILE} NOT found"
 fi
