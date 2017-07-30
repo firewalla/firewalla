@@ -7,12 +7,15 @@
 Support (email help@firewalla.com or jerry@firewalla.com)
 ## Install From Image
 ```
-Only Raspberry Pi3 is supported.  
+If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
 Prepare a blank microsd card > 8GB size
 Follow the same step as installing a raspberry pi image
 https://www.raspberrypi.org/documentation/installation/installing-images/
+
+
 ```
+We are focusing on delivering the official hardware, hence Raspberry Pi support is a bit lacking, we are hoping to pick it up soon.  We will be very likely selling a development version of Firewalla very soon.  It will be at cost with a small mark up to take care the labor involved. 
 
 ### To Build On Raspberry Pi
 - Download Jessie Lite
