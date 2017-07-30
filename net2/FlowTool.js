@@ -33,11 +33,14 @@ let async2 = require('async');
 
 let util = require('util');
 
+let IntelTool = require('../net2/IntelTool');
+let intelTool = new IntelTool();
+
 let country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const QUERY_MAX_FLOW = 10000;
-const MAX_RECENT_FLOW = 50; 
+const MAX_RECENT_FLOW = 50;
 const MAX_CONCURRENT_ACTIVITY = 10;
 
 let instance = null;
@@ -52,24 +55,24 @@ class FlowTool {
   trimFlow(flow) {
     if(!flow)
       return;
-    
+
     if("flows" in flow)
       delete flow.flows;
-    
+
     if("pf" in flow)
       delete flow.pf;
-    
+
     if("bl" in flow)
       delete flow.bl;
-    
+
     if("af" in flow)
       delete flow.af;
-    
+
     if("f" in flow)
       delete flow.f;
-    
+
   }
-  
+
   _mergeFlow(targetFlow, flow) {
     targetFlow.rb += flow.rb;
     targetFlow.ct += flow.ct;
@@ -89,7 +92,7 @@ class FlowTool {
         }
       }
     }
-    
+
     if (flow.flows) {
       if (targetFlow.flows) {
         targetFlow.flows = targetFlow.flows.concat(flow.flows);
@@ -108,7 +111,7 @@ class FlowTool {
     }
     return key;
   }
-  
+
   _getRemoteIP(flow) {
     if (flow.sh === flow.lh) {
       return flow.dh;
@@ -116,13 +119,13 @@ class FlowTool {
       return flow.sh;
     }
   }
-  
+
   // append to existing flow or create new
   _appendFlow(conndb, flowObject, ip) {
     let o = flowObject;
 
     let key = this._getKey(o, ip);
-    
+
     let flow = conndb[key];
     if (flow == null) {
       conndb[key] = o;
@@ -157,6 +160,7 @@ class FlowTool {
     return true;
   }
 
+
   _enrichCountryInfo(flow) {
     let sh = flow.sh;
     let dh = flow.dh;
@@ -168,12 +172,12 @@ class FlowTool {
       flow.country = country.getCountry(sh);
     }
   }
-  
+
   // FIXME: support dynamically load intel from cloud
   _enrichDNSInfo(flows) {
 
     return new Promise((resolve, reject) => {
-      async2.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
+      async.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
         let ip = this._getRemoteIP(flow);
 
         dnsManager.resolvehost(ip, (err, info, dnsData) => {
@@ -193,18 +197,18 @@ class FlowTool {
           reject(err);
           return;
         }
-        
+
         resolve(flows);
       });
     });
-    
+
   }
 
   prepareRecentFlowsForHost(json, listip) {
     if (!("flows" in json)) {
       json.flows = {};
     }
-    
+
     json.flows.time = [];
 
     let promises = listip.map((ip) => {
@@ -218,51 +222,137 @@ class FlowTool {
     return Promise.all(promises);
 
   }
-  
+
+  _mergeFlows(flowObjects) {
+    let mergedFlowObjects = [];
+    let lastFlowObject = null;
+
+    flowObjects.forEach((flowObject) => {
+      if(!lastFlowObject) {
+        mergedFlowObjects.push(flowObject);
+        lastFlowObject = flowObject;
+        return;
+      }
+
+      if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
+        this._mergeFlow(lastFlowObject, flowObject);
+      } else {
+        mergedFlowObjects.push(flowObject);
+        lastFlowObject = flowObject;
+      }
+    });
+
+    return mergedFlowObjects;
+  }
+
+  // convert flow json to a simplified json format that's more readable by app
+  toSimpleFlow(flow) {
+    let f = {};
+
+    f.ts = flow.ts;
+    f.fd = flow.fd;
+
+    if(flow.lh === flow.sh) {
+      f.ip = flow.dh;
+      f.upload = flow.ob;
+      f.download = flow.rb;
+    } else {
+      f.ip = flow.sh;
+      f.upload = flow.rb;
+      f.download = flow.ob;
+    }
+
+    return f;
+  }
+
+  legacyGetRecentOutgoingConnections(ip) {
+
+     let key = "flow:conn:in:" + ip;
+     let to = new Date() / 1000;
+     let from = to - MAX_RECENT_INTERVAL;
+
+     return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW])
+       .then((results) => {
+
+         if(results === null || results.length === 0)
+           return [];
+
+         let flowObjects = results
+           .map((x) => this._flowStringToJSON(x))
+           .filter((x) => this._isFlowValid(x));
+
+         flowObjects.forEach((x) => this.trimFlow(x));
+
+         let mergedFlowObjects = [];
+         let lastFlowObject = null;
+
+         flowObjects.forEach((flowObject) => {
+           if(!lastFlowObject) {
+             mergedFlowObjects.push(flowObject);
+             lastFlowObject = flowObject;
+             return;
+           }
+
+           if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
+             this._mergeFlow(lastFlowObject, flowObject);
+           } else {
+             mergedFlowObjects.push(flowObject);
+             lastFlowObject = flowObject;
+           }
+         });
+
+         // add country info
+         mergedFlowObjects.forEach(this._enrichCountryInfo);
+
+         return this._enrichDNSInfo(mergedFlowObjects);
+
+       }).catch((err) => {
+         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
+       });
+   }
+
   getRecentOutgoingConnections(ip) {
-    
-    let key = "flow:conn:in:" + ip;
+    return this.getRecentConnections(ip, "in")
+  }
+
+  getRecentIncomingConnections(ip) {
+    return this.getRecentConnections(ip, "out");
+  }
+
+  getRecentConnections(ip, direction) {
+    let key = util.format("flow:conn:%s:%s", direction, ip);
     let to = new Date() / 1000;
     let from = to - MAX_RECENT_INTERVAL;
 
-    return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW])
-      .then((results) => {
+    return async(() => {
+      let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW]));
 
-        if(results === null || results.length === 0)
-          return [];
+      if(results === null || results.length === 0)
+        return [];
 
-        let flowObjects = results
-          .map((x) => this._flowStringToJSON(x))
-          .filter((x) => this._isFlowValid(x));
-        
-        flowObjects.forEach((x) => this.trimFlow(x));
+      let flowObjects = results
+        .map((x) => this._flowStringToJSON(x))
+        .filter((x) => this._isFlowValid(x));
 
-        let mergedFlowObjects = [];
-        let lastFlowObject = null;
+      flowObjects.forEach((x) => this.trimFlow(x));
 
-        flowObjects.forEach((flowObject) => {
-          if(!lastFlowObject) {
-            mergedFlowObjects.push(flowObject);
-            lastFlowObject = flowObject;
-            return;
+      let mergedFlow = this._mergeFlows(flowObjects);
+
+      let simpleFlows = mergedFlow.map((f) => this.toSimpleFlow(f));
+
+      let promises = Promise.all(simpleFlows.map((f) => {
+        return intelTool.getIntel(f.ip)
+        .then((intel) => {
+          if(intel) {
+            f.country = intel.country;
+            f.host = intel.host;
           }
-          
-          if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
-            this._mergeFlow(lastFlowObject, flowObject);
-          } else {
-            mergedFlowObjects.push(flowObject);
-            lastFlowObject = flowObject;
-          }
+          return f;
         });
-        
-        // add country info
-        mergedFlowObjects.forEach(this._enrichCountryInfo);
-        
-        return this._enrichDNSInfo(mergedFlowObjects);
+      }));
 
-      }).catch((err) => {
-        log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
-      });
+      return promises;
+    })();
   }
 
   getFlowKey(ip, type) {
@@ -270,14 +360,14 @@ class FlowTool {
   }
   addFlow(ip, type, flow) {
     let key = this.getFlowKey(ip, type);
-    
+
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
     }
-    
+
     return rclient.zaddAsync(key, flow.ts, JSON.stringify(flow));
   }
-  
+
   removeFlow(ip, type, flow) {
     let key = this.getFlowKey(ip, type);
 
@@ -287,7 +377,7 @@ class FlowTool {
 
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
-  
+
   flowExists(ip, type, flow) {
     let key = this.getFlowKey(ip, type);
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -78,6 +78,9 @@ let i18n = require('../util/i18n');
 let NetBotTool = require('../net2/NetBotTool');
 let netBotTool = new NetBotTool();
 
+let HostTool = require('../net2/hostTool');
+let hostTool = new HostTool();
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -121,24 +124,24 @@ class netBot extends ControllerBot {
               host.setPolicy(blocktype, value, (err, data) => {
                 if (err == null) {
                   if (callback != null)
-                  //   this.tx(this.primarygid, "Success:"+ip,"hosts summary");  
+                  //   this.tx(this.primarygid, "Success:"+ip,"hosts summary");
                     callback(null, "Success:" + ip);
                 } else {
                   if (callback != null)
-                  // this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");  
+                  // this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                     callback(err, "Unable to block ip " + ip)
 
                 }
               });
             } else {
               if (callback != null)
-              //this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");  
+              //this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                 callback("error", "Unable to block ip " + ip);
             }
           });
         } else {
           if (callback != null)
-          //this.tx(this.primarygid, "host not found","hosts summary");  
+          //this.tx(this.primarygid, "host not found","hosts summary");
             callback("error", "Host not found");
         }
       });
@@ -280,7 +283,7 @@ class netBot extends ControllerBot {
       });
     });
   }
-  
+
   _dnsmasq(ip, value, callback) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
@@ -324,7 +327,7 @@ class netBot extends ControllerBot {
   }
 
   /*
-   *  
+   *
    *   {
    *      state: on/off
    *      intel: <major/minor>
@@ -396,7 +399,7 @@ class netBot extends ControllerBot {
     this.subscriber = new c('debug');
 
     this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
-      //this.tx(this.primarygid, "Discovery started","message");  
+      //this.tx(this.primarygid, "Discovery started","message");
     });
     this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
       log.info("Found new host ", channel, type, ip);
@@ -457,7 +460,7 @@ class netBot extends ControllerBot {
         let aid = msg.aid;
         if (notifMsg) {
           log.info("Sending notification: " + notifMsg);
-          
+
           notifMsg = {
             title: i18n.__("SECURITY_ALERT"),
             body: notifMsg
@@ -474,7 +477,7 @@ class netBot extends ControllerBot {
           if (msg.alarmID) {
             data.alarmID = msg.alarmID;
           }
-          
+
           switch(msg.alarmNotifType) {
             case "security":
               notifMsg.title = i18n.__("SECURITY_ALERT");
@@ -664,7 +667,7 @@ class netBot extends ControllerBot {
         break;
       case "host":
         //data.item = "host" test
-        //data.value = "{ name: " "}"                           
+        //data.value = "{ name: " "}"
         let data = msg.data;
         log.info("Setting Host", msg);
         let reply = {
@@ -708,7 +711,7 @@ class netBot extends ControllerBot {
       case "intel":
         // intel actions
         //   - ignore / unignore
-        //   - report 
+        //   - report
         //   - block / unblockj
         intelManager.action(msg.target, msg.data.value.action, (err) => {
           let reply = {
@@ -945,15 +948,9 @@ class netBot extends ControllerBot {
     let hosts = [];
     this.hostManager.getHost(target, (err, host) => {
       if (host == null && target != "0.0.0.0") {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 404,
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        let error = new Error("Invalide Host");
+        error.code = 404;
+        this.simpleTxData(msg, null, error, callback);
         return;
       } else if (target == "0.0.0.0") {
         listip = [];
@@ -1246,6 +1243,9 @@ class netBot extends ControllerBot {
     if (err) {
       log.error("Got error before simpleTxData: " + err);
       code = 500;
+      if(err && err.code) {
+        code = err.code;
+      }
       message = err + "";
     }
 
@@ -1336,20 +1336,20 @@ class netBot extends ControllerBot {
 
   msgHandler(gid, rawmsg, callback) {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
-      
+
       if(!callback) { // cloud mode
         if("compressMode" in rawmsg.message) {
           callback = {
             compressMode: rawmsg.message.compressMode
           } // FIXME: A dirty hack to reuse callback to pass options
-        }  
+        }
       }
-      
+
       let msg = rawmsg.message.obj;
 //            log.info("Received jsondata", msg);
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-          
+
           log.info("Process Init load event");
 
           this.loadInitCache((err, cachedJson) => {
@@ -1361,14 +1361,14 @@ class netBot extends ControllerBot {
               log.info("Re-generate init data");
 
               let begin = Date.now();
-              
+
               let options = {}
-              
-              if(rawmsg.message.obj.data && 
+
+              if(rawmsg.message.obj.data &&
                 rawmsg.message.obj.data.simulator) {
                 // options.simulator = 1
               }
-              
+
               this.hostManager.toJson(true, options, (err, json) => {
                 let datamodel = {
                   type: 'jsonmsg',
