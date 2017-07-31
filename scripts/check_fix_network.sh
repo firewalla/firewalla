@@ -13,7 +13,7 @@ get_value() {
             ;;
         dns)
             dns_file=/etc/resolv.conf
-            dns_bak=/etc/resolv.conf.bak
+            dns_bak=/etc/resolv.conf.firewalla
             if [[ -e $dns_file ]]
             then
                 # file exists, show path of backup file
@@ -40,7 +40,7 @@ set_value() {
             ;;
         dns)
             bak_file=$saved_value
-            [[ -e $bak_file ]] && cp -a /etc/resolv.conf{.bak,}
+            [[ -e $bak_file ]] && cp -a /etc/resolv.conf{.firewalla,}
             ;;
     esac
 }
