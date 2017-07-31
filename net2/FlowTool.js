@@ -36,6 +36,9 @@ let util = require('util');
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
+let DestIPFoundHook = require('../hook/DestIPFoundHook');
+let destIPFoundHook = new DestIPFoundHook();
+
 let country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
@@ -346,6 +349,15 @@ class FlowTool {
           if(intel) {
             f.country = intel.country;
             f.host = intel.host;
+            return f;
+          } else {
+            // intel not exists in redis, create a new one
+            return async(() => {
+              intel = await (destIPFoundHook.processIP(f.ip));
+              f.country = intel.country;
+              f.host = intel.host;
+              return f;
+            })();
           }
           return f;
         });

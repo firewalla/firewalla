@@ -92,6 +92,33 @@ class DestIPFoundHook extends Hook {
     return country.getCountry(ip);
   }
 
+  processIP(ip) {
+    return async(() => {
+      let result = await (intelTool.intelExists(ip));
+
+      if(result) {
+        return;
+      }
+
+      log.info("Found new IP " + ip + ", checking intels...");
+
+      let sslInfo = await (intelTool.getSSLCertificate(ip));
+      let dnsInfo = await (intelTool.getDNS(ip));
+
+      let domains = this.getDomains(sslInfo, dnsInfo);
+      let ips = [ip];
+
+      let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
+
+      let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
+      aggrIntelInfo.country = this.enrichCountry(ip);
+
+      await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
+
+      return aggrIntelInfo;
+    })()
+  }
+
   run() {
     sem.on('DestIPFound', (event) => {
 
@@ -105,33 +132,14 @@ class DestIPFoundHook extends Hook {
 
       this.pendingIPs[ip] = 1;
 
-      async(() => {
-        let result = await (intelTool.intelExists(ip));
-
-        if(result) {
-          return;
-        }
-
-        log.info("Found new IP " + ip + ", checking intels...");
-
-        let sslInfo = await (intelTool.getSSLCertificate(ip));
-        let dnsInfo = await (intelTool.getDNS(ip));
-
-        let domains = this.getDomains(sslInfo, dnsInfo);
-        let ips = [ip];
-
-        let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
-
-        let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-        aggrIntelInfo.country = this.enrichCountry(ip);
-
-        await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
-
-        delete this.pendingIPs[ip];
-
-      })().catch((err) => {
-        if(this.pendingIPs[ip])
-          delete this.pendingIPs[ip];
+      this.processIP(ip)
+        .then(() => {
+          if(this.pendingIPs[ip])
+            delete this.pendingIPs[ip];
+        })
+        .catch((err) => {
+          if(this.pendingIPs[ip])
+            delete this.pendingIPs[ip];
       });
 
     });
