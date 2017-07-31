@@ -67,7 +67,7 @@ describe('FlowTool', () => {
     })
   });
 
-  describe('.getRecentOutgoingConnections', (done) => {
+  describe('.getRecentOutgoingConnections', () => {
     beforeEach((done) => {
       async(() => {
         await (sample.createSampleFlows());
@@ -99,7 +99,17 @@ describe('FlowTool', () => {
     })
   })
 
-  describe('.getRecentIncomingConnections', (done) => {
+  describe('._mergeFlows', () => {
+    it('should merge flow correctly', (done) => {
+      let flows = [sample.sampleFlow1, sample.sampleFlow2];
+      let mergedFlows = flowTool._mergeFlows(flows);
+      expect(mergedFlows.length).to.equal(1);
+      expect(mergedFlows[0].dh).to.equal(sample.destIP);
+      done();
+    })
+  })
+
+  describe('.getRecentIncomingConnections', () => {
     beforeEach((done) => {
       async(() => {
         await (sample.createSampleFlows());

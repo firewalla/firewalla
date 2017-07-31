@@ -339,7 +339,7 @@ class FlowTool {
 
       flowObjects.forEach((x) => this.trimFlow(x));
 
-      let mergedFlow = this._mergeFlows(flowObjects);
+      let mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts));
 
       let simpleFlows = mergedFlow.map((f) => this.toSimpleFlow(f));
 
