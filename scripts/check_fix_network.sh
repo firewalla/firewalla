@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-SLEEP_INTERVAL=${SLEEP_INTERVAL:-5}
+SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 
 get_value() {
     case $1 in
