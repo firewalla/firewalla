@@ -50,7 +50,7 @@ describe('Test Flow Aggregation Sensor', () => {
 
   describe('.aggr', () => {
     beforeEach((done) => {
-      async(() =>
+      async(() => {
         // just make sure all data in test db is cleaned up
         await (sample.removeSampleHost());
         await (sample.removeSampleFlows());
