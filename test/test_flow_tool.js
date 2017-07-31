@@ -101,7 +101,12 @@ describe('FlowTool', () => {
 
   describe('._mergeFlows', () => {
     it('should merge flow correctly', (done) => {
-      let flows = [sample.sampleFlow1, sample.sampleFlow2];
+
+      // A clone of existing flow obj is required so that it won't
+      // change the original flow obj
+      // Changing original flow obj may impact other testcases.
+      let flows = [JSON.parse(JSON.stringify(sample.sampleFlow1)),
+        JSON.parse(JSON.stringify(sample.sampleFlow2))];
       let mergedFlows = flowTool._mergeFlows(flows);
       expect(mergedFlows.length).to.equal(1);
       expect(mergedFlows[0].dh).to.equal(sample.destIP);
