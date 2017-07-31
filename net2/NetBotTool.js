@@ -79,7 +79,11 @@ class NetBotTool {
             }
             return f;
           });
-        }));
+        })).then(() => {
+          return traffic.sort((a, b) => {
+            return b - a;
+          });
+        });
 
         await (promises);
 

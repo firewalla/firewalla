@@ -361,7 +361,11 @@ class FlowTool {
           }
           return f;
         });
-      }));
+      })).then(() => {
+        return simpleFlows.sort((a, b) => {
+          return a - b;
+        })
+      });
 
       return promises;
     })();
