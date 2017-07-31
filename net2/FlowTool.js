@@ -212,12 +212,12 @@ class FlowTool {
       json.flows = {};
     }
 
-    json.flows.time = [];
+    json.flows.recent = [];
 
     let promises = listip.map((ip) => {
       return this.getRecentOutgoingConnections(ip)
         .then((flows) => {
-          Array.prototype.push.apply(json.flows.time, flows);
+          Array.prototype.push.apply(json.flows.recent, flows);
           return json;
         })
     });
