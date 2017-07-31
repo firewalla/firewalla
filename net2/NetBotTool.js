@@ -81,7 +81,7 @@ class NetBotTool {
           });
         })).then(() => {
           return traffic.sort((a, b) => {
-            return b - a;
+            return b.count - a.count;
           });
         });
 

@@ -363,7 +363,7 @@ class FlowTool {
         });
       })).then(() => {
         return simpleFlows.sort((a, b) => {
-          return a - b;
+          return a.ts - b.ts;
         })
       });
 
