@@ -46,30 +46,35 @@ function getIntervalEnd(ts) {
 }
 
 describe('Test Flow Aggregation Sensor', () => {
-  beforeEach((done) => {
-    async(() => {
-      await (sample.createSampleHost());
-      await (sample.createSampleFlows());
-      done();
-    })();
-  });
 
-  afterEach((done) => {
-    async(() => {
-      await (sample.removeSampleHost());
-      await (sample.removeSampleFlows());
-      done();
-    })();
-  });
-  
-  after((done) => {
-    async(() => {
-      await (sample.removeAllSampleAggrFlows());
-      done();
-    })();
-  });
 
   describe('.aggr', () => {
+    beforeEach((done) => {
+      async(() =>
+        // just make sure all data in test db is cleaned up
+        await (sample.removeSampleHost());
+        await (sample.removeSampleFlows());
+        await (sample.createSampleHost());
+        await (sample.createSampleFlows());
+        done();
+      })();
+    });
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleHost());
+        await (sample.removeSampleFlows());
+        done();
+      })();
+    });
+
+    after((done) => {
+      async(() => {
+        await (sample.removeAllSampleAggrFlows());
+        done();
+      })();
+    });
+
     it('should aggregate multiple flows together', (done) => {
       async(() => {
         await (flowAggrSensor.aggr(sample.hostMac, getIntervalEnd(sample.ts)));
@@ -90,9 +95,9 @@ describe('Test Flow Aggregation Sensor', () => {
         expect(ttl).to.be.below(48 * 3600 + 1);
         done();
       })();
-    })    
+    })
   })
-  
+
   describe('.trafficGroupByDestIP', () => {
     it('should correctly group traffic by destination ip addresses', (done) => {
       let flows = [sample.sampleFlow1, sample.sampleFlow2];
