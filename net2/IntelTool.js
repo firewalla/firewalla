@@ -187,14 +187,16 @@ class IntelTool {
     return rclient.hgetallAsync(key);
   }
 
-  updateIntelKeyInDNS(ip, intel) {
+  updateIntelKeyInDNS(ip, intel, expireTime) {
+    expireTime = expireTime || 24 * 3600; // default one day
+
     let key = this.getDNSKey(ip);
 
     let intelJSON = JSON.stringify(intel);
 
     return rclient.hsetAsync(key, "_intel", intelJSON)
       .then(() => {
-        return rclient.expireAsync(key, 24 * 3600) // one day
+        return rclient.expireAsync(key, expireTime)
       });
   }
 }
