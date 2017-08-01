@@ -805,7 +805,14 @@ class netBot extends ControllerBot {
 
 
 
-  getHandler(gid, msg, callback) {
+  getHandler(gid, msg, appInfo, callback) {
+
+    // backward compatible
+    if(typeof appInfo === 'function') {
+      callback = appInfo;
+      appInfo = undefined;
+    }
+
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
@@ -813,7 +820,6 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
-          let appInfo = appTool.getAppInfo(msg);
           let useNewDeviceHandler = appTool.isAppReadyForNewDeviceHandler(appInfo);
           if(useNewDeviceHandler) {
             let ip = msg.target;
@@ -826,6 +832,7 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, null, err, callback);
             })
           } else {
+            log.info("Using the legacy way to get device info:", msg.target, {});
             this.getAllIPForHost(msg.target, (err, ips) => {
               this.deviceHandler(msg, gid, msg.target, ips, callback);
             });
@@ -1552,7 +1559,8 @@ class netBot extends ControllerBot {
           //
           this.setHandler(gid, msg, callback);
         } else if (rawmsg.message.obj.mtype === "get") {
-          this.getHandler(gid, msg, callback);
+          let appInfo = appTool.getAppInfo(rawmsg.message);
+          this.getHandler(gid, msg, appInfo, callback);
         } else if (rawmsg.message.obj.mtype === "cmd") {
           this.cmdHandler(gid, msg, callback);
         }
