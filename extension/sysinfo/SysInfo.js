@@ -72,8 +72,20 @@ function stopUpdating() {
 
 function getRealMemoryUsage() {
   let spawn = require('child_process').spawn;
-  let prc = spawn('free',  []);
-  
+
+  let prc = null;
+
+  try {
+    prc = spawn('free',  []);
+  } catch (err) {
+    if(err.code === 'ENOMEM') {
+      log.error("Not enough memory to spawn process 'free':", err, {});
+    } else {
+      log.error("Failed to spawn process 'free':", err, {});
+    }
+    // do nothing
+  }
+
   prc.stdout.setEncoding('utf8');
   prc.stdout.on('data', function (data) {
     var str = data.toString()
@@ -85,7 +97,7 @@ function getRealMemoryUsage() {
     usedMem = parseInt(lines[1][2]);
     allMem = parseInt(lines[1][1]);
     realMemUsage = 1.0 * usedMem / allMem;
-    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);    
+    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
   });
 }
 
@@ -126,7 +138,7 @@ function getConns() {
     let countConns = function(key, callback) {
       rclient.zcount(key, '-inf', '+inf', callback);
     }
-    
+
     async.map(keys, countConns, (err, results) => {
       if(results.length > 0) {
         conn = results.reduce((a,b) => (a+b));
@@ -200,7 +212,7 @@ function getRecentLogs(callback) {
       }
     });
   }
-  
+
   async.map(logFiles, tailFunction, callback);
 }
 
@@ -214,7 +226,7 @@ function getTop5Flows(callback) {
       callback(err);
       return;
     }
-    
+
     async.map(results, (flow, callback) => {
       rclient.zcount(flow, "-inf", "+inf", (err, count) => {
         if(err) {

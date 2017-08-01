@@ -39,7 +39,7 @@ let instance = null;
 
 
 class IntelTool {
-  
+
   constructor() {
     if(!instance) {
       instance = this;
@@ -47,12 +47,12 @@ class IntelTool {
     }
     return instance;
   }
-  
+
   getIntelKey(ip) {
     return util.format("intel:ip:%s", ip);
   }
 
-  
+
   intelExists(ip) {
     let key = this.getIntelKey(ip);
 
@@ -65,10 +65,10 @@ class IntelTool {
         }
       })
   }
-  
+
   getIntel(ip) {
     let key = this.getIntelKey(ip);
-    
+
     return rclient.hgetallAsync(key);
   }
 
@@ -90,20 +90,20 @@ class IntelTool {
 
     return rclient.delAsync(key);
   }
-  
+
   checkIntelFromCloud(ipList, domainList) {
     let flowList = [];
     let _ipList = [];
-    
+
     if(this.debugMode) {
       _ipList.push.apply(_ipList, ipList);
-      _ipList.push.apply(_ipList, domainList);   
+      _ipList.push.apply(_ipList, domainList);
       flowList.push({
         iplist:_ipList,
         _iplist:_ipList
       })
     } else {
-      _ipList.push.apply(_ipList, 
+      _ipList.push.apply(_ipList,
         ipList.map((i) => flowUtil.hashIp(i)));
 
       domainList.forEach((d) => {
@@ -122,7 +122,7 @@ class IntelTool {
     let data = {flowlist:flowList, hashed:hashed};
 
     // log.info(require('util').inspect(data, {depth: null}));
-    
+
     return new Promise((resolve, reject) => {
       bone.intel("*","check", data, (err, data) => {
         if(err)
@@ -132,7 +132,7 @@ class IntelTool {
           resolve(data);
         }
 
-      });  
+      });
     });
   }
 
@@ -140,10 +140,10 @@ class IntelTool {
   getSSLCertKey(ip) {
     return util.format("host:ext.x509:%s", ip);
   }
-  
+
   getSSLCertificate(ip) {
     let certKey = this.getSSLCertKey(ip);
-    
+
     return async(() => {
       let sslInfo = await (rclient.hgetallAsync(certKey));
       if(sslInfo) {
@@ -176,15 +176,26 @@ class IntelTool {
 
     return result;
   }
-  
+
   getDNSKey(ip) {
     return util.format("dns:ip:%s", ip);
   }
-  
+
   getDNS(ip) {
     let key = this.getDNSKey(ip);
-    
+
     return rclient.hgetallAsync(key);
+  }
+
+  updateIntelKeyInDNS(ip, intel) {
+    let key = this.getDNSKey(ip);
+
+    let intelJSON = JSON.stringify(intel);
+
+    return rclient.hsetAsync(key, "_intel", intelJSON)
+      .then(() => {
+        return rclient.expireAsync(key, 24 * 3600) // one day
+      });
   }
 }
 

@@ -42,36 +42,36 @@ let Bootstrap = require('../net2/Bootstrap');
 
 
 describe('IntelTool', () => {
-  
+
   describe('._parseX509Subject', () => {
-    
+
     it('should parse subject correctly', (done) => {
       let subject = "CN=*.crashlytics.com,OU=COMODO SSL Wildcard,OU=Domain Control Validated";
       let result = intelTool._parseX509Subject(subject);
-      
+
       expect(result.CN).to.equal('*.crashlytics.com');
       expect(result.OU).to.equal('Domain Control Validated');
       done();
     });
-    
+
   });
-  
+
   describe('.getSSLCertificate', () => {
-    
+
     beforeEach((done) => {
       async(() => {
         await (sample.addSampleSSLInfo());
         done();
       })();
     })
-    
+
     afterEach((done) => {
       async(() => {
         await (sample.removeSampleSSLInfo());
         done();
       })();
     })
-    
+
     it('should get ssl certificate correctly', (done) => {
       async(() => {
         let result = await (intelTool.getSSLCertificate(sample.hostIP));
@@ -83,7 +83,7 @@ describe('IntelTool', () => {
     })
   });
 
-  describe('.getDNS', (done) => {
+  describe('.getDNS', () => {
 
     beforeEach((done) => {
       async(() => {
@@ -108,7 +108,32 @@ describe('IntelTool', () => {
     })
 
   });
-  
+
+  describe('.updateIntelKeyInDNS', () => {
+    beforeEach((done) => {
+      async(() => {
+        await (sample.addSampleDNSInfo());
+        done();
+      })();
+    })
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleDNSInfo());
+        done();
+      })();
+    })
+
+    it('should update the intel entry correctly', (done) => {
+      async(() => {
+        await (intelTool.updateIntelKeyInDNS(sample.hostIP, {test: 1}))
+        let dnsInfo = await (intelTool.getDNS(sample.hostIP));
+        expect(JSON.parse(dnsInfo._intel).test).to.equal(1);
+        done();
+      })();
+    });
+  });
+
   describe('.checkIntelFromCloud', function () {
     this.timeout(10000);
 
@@ -123,7 +148,7 @@ describe('IntelTool', () => {
       intelTool.debugMode = false;
       done();
     });
-    
+
     it('should be able to load app info from Cloud successfully (debug-mode)', (done) => {
       async(() => {
         intelTool.debugMode = true;
