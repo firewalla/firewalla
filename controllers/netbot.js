@@ -81,6 +81,8 @@ let netBotTool = new NetBotTool();
 let HostTool = require('../net2/HostTool');
 let hostTool = new HostTool();
 
+let appTool = require('../net2/AppTool')();
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -800,6 +802,9 @@ class netBot extends ControllerBot {
     });
   }
 
+
+
+
   getHandler(gid, msg, callback) {
     // mtype: get
     // target = ip address
@@ -808,9 +813,23 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
-          this.getAllIPForHost(msg.target, (err, ips) => {
-            this.deviceHandler(msg, gid, msg.target, ips, callback);
-          });
+          let appInfo = appTool.getAppInfo(msg);
+          let useNewDeviceHandler = appTool.isAppReadyForNewDeviceHandler(appInfo);
+          if(useNewDeviceHandler) {
+            let ip = msg.target;
+            log.info("Loading device info in a new way:", ip);
+            this.newDeviceHandler(msg, ip)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+          } else {
+            this.getAllIPForHost(msg.target, (err, ips) => {
+              this.deviceHandler(msg, gid, msg.target, ips, callback);
+            });
+          }
         }
         break;
       case "vpn":
@@ -943,14 +962,55 @@ class netBot extends ControllerBot {
     }
   }
 
+  newDeviceHandler(msg, ip) {
+    log.info("Getting info on device", ip, {});
+
+    return async(() => {
+      if(ip === '0.0.0.0') {
+        return Promise.reject("newDeviceHandler doesn't support wildcard ip address 0.0.0.0");
+      }
+
+      let host = await (this.hostManager.getHostAsync(ip));
+      if(!host || !host.o.mac) {
+        let error = new Error("Invalide Host");
+        error.code = 404;
+        return Promise.reject(error);
+      }
+
+      let mac = host.o.mac;
+      let ips = host.getAllIPs();
+
+      // load 24 hours download/upload trend
+      await (flowManager.getStats2(host));
+
+      let jsonobj = {};
+      if (host) {
+        jsonobj = host.toJson();
+
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, ips));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+      }
+
+      return jsonobj;
+    })();
+  }
+
   deviceHandler(msg, gid, target, listip, callback) {
     log.info("Getting Devices", gid, target, listip);
     let hosts = [];
     this.hostManager.getHost(target, (err, host) => {
       if (host == null && target != "0.0.0.0") {
-        let error = new Error("Invalide Host");
-        error.code = 404;
-        this.simpleTxData(msg, null, error, callback);
+        let datamodel = {
+          type: 'jsonmsg',
+          mtype: 'reply',
+          id: uuid.v4(),
+          expires: Math.floor(Date.now() / 1000) + 60 * 5,
+          replyid: msg.id,
+          code: 404,
+        };
+        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         return;
       } else if (target == "0.0.0.0") {
         listip = [];
@@ -970,26 +1030,89 @@ class netBot extends ControllerBot {
 
       log.info("Summarize", target, listip);
 
-      async(() => {
 
-        // load 24 hours download/upload trend
-        await (flowManager.getStats2(host));
+      //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
 
-        let jsonobj = {};
-        if (host) {
-          jsonobj = host.toJson();
-        }
+      // getStats2 => load 24 hours download/upload trend
+      flowManager.getStats2(host)
+        .then(() => {
+//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
+//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
+          let jsonobj = {};
+          if (host) {
+            jsonobj = host.toJson();
+          }
+          alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
+            log.info("Found alarms");
+            jsonobj.alarms = alarms;
+            // hour block = summarize into blocks of hours ...
+            flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, false, (err, result, activities) => {
+              log.info("--- Connectionby most recent ---", result.length);
+              let response = {
+                time: [],
+                rx: [],
+                tx: [],
+                duration: []
+              };
+              let max = 50;
+              for (let i in result) {
+                let s = result[i];
+                response.time.push(s);
+                if (max-- < 0) {
+                  break;
+                }
+              }
+              flowManager.sort(result, 'rxdata');
+              log.info("-----------Sort by rx------------------------");
+              max = 15;
+              for (let i in result) {
+                let s = result[i];
+                response.rx.push(s);
+                if (max-- < 0) {
+                  break;
+                }
+              }
+              //log.info(JSON.stringify(response.rx));
+              flowManager.sort(result, 'txdata');
+              log.info("-----------  Sort by tx------------------");
+              max = 15;
+              for (let i in result) {
+                let s = result[i];
+                response.tx.push(s);
+                if (max-- < 0) {
+                  break;
+                }
+              }
+              jsonobj.flows = response;
+              jsonobj.activities = activities;
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, listip));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, host.o.mac));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, host.o.mac));
-        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, host.o.mac));
-        await (this.enrichCountryInfo(jsonobj.flows));
+              /*
+               flowManager.sort(result, 'duration');
+               log.info("-----------Sort by rx------------------------");
+               max = 10;
+               for (let i in result) {
+               let s = result[i];
+               response.duration.push(s);
+               if (max-- < 0) {
+               break;
+               }
+               }
+               */
 
-        this.simpleTxData(msg, jsonobj, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      });
+              // enrich flow info with country
+              this.enrichCountryInfo(jsonobj.flows);
+
+              // use new way to get recent connections
+              Promise.all([
+                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
+              ]).then(() => {
+                this.simpleTxData(msg, jsonobj, null, callback);
+              }).catch((err) => {
+                this.simpleTxData(msg, null, err, callback);
+              });
+            });
+          });
+        });
 
     });
   }
@@ -1241,7 +1364,7 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData: " + err);
+      log.error("Got error before simpleTxData:", err, err.stack, {});
       code = 500;
       if(err && err.code) {
         code = err.code;

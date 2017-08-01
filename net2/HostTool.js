@@ -51,19 +51,19 @@ class HostTool {
         return results.length > 0;
       });
   }
-  
+
   getIPv4Entry(ip) {
     if(!ip)
       return Promise.reject("invalid ip addr");
-    
+
     let key = "host:ip4:" + ip;
     return rclient.hgetallAsync(key);
   }
-  
+
   getMACEntry(mac) {
     if(!mac)
       return Promise.reject("invalid mac address");
-    
+
     return rclient.hgetallAsync(this.getMacKey(mac));
   }
 
@@ -79,40 +79,40 @@ class HostTool {
     let key = "host:mac:" + mac;
     return rclient.hsetAsync(key, "bname", name)
   }
-  
+
   updateHost(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
     if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
-    
+
     this.cleanupData(host);
-    
+
     return rclient.hmsetAsync(key, host)
       .then(() => {
         return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
       });
   }
-  
+
   updateMACKey(host) {
     if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
 
     this.cleanupData(host);
-    
+
     let key = this.getMacKey(host.mac);
     return rclient.hmsetAsync(key, host)
       .then(() => {
         return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
       })
   }
-  
+
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
-  
+
   cleanupData(data) {
     Object.keys(data).forEach((key) => {
       if(data[key] == undefined) {
@@ -120,11 +120,11 @@ class HostTool {
       }
     })
   }
-  
+
   deleteHost(ipv4) {
     return rclient.delAsync(this.getHostKey(ipv4));
   }
-  
+
   getMacKey(mac) {
     return "host:mac:" + mac;
   }
@@ -167,6 +167,13 @@ class HostTool {
     })();
   }
 
+  getMacByIP(ip) {
+    return async(() => {
+      let host = await (this.getIPv4Entry(ip));
+      return host && host.mac;
+    })();
+  }
+
   getAllMACs() {
     return async(() => {
       let keys = await (rclient.keysAsync("host:mac:*"));
@@ -179,8 +186,8 @@ class HostTool {
   // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
   // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
-  
-  
+
+
   linkMacWithIPv6(v6addr, mac, callback) {
     require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
     });
@@ -225,7 +232,7 @@ class HostTool {
                 data.mac = mac.toUpperCase();
                 data.ipv6 = JSON.stringify(ipv6array);
                 data.ipv6Addr = JSON.stringify(ipv6array);
-                //v6 at times will discver neighbors that not there ... 
+                //v6 at times will discver neighbors that not there ...
                 //so we don't update last active here
                 //data.lastActiveTimestamp = Date.now() / 1000;
               } else {

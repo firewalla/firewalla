@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -99,7 +99,7 @@ class Host {
 
       let c = require('./MessageBus.js');
       this.subscriber = new c('debug');
-      
+
         if(this.mgr.type === 'server') {
           this.spoofing = false;
           sclient.on("message", (channel, message) => {
@@ -129,7 +129,7 @@ class Host {
         if (this.o.ipv4) {
             this.o.ipv4Addr = this.o.ipv4;
         }
-        
+
         if(this.mgr.type === 'server') {
           if (obj != null) {
             this.subscribe(this.o.ipv4Addr, "Notice:Detected");
@@ -139,7 +139,7 @@ class Host {
           this.predictHostNameUsingUserAgent();
           this.loadPolicy(null);
         }
-        
+
         this.parse();
     }
 
@@ -196,7 +196,7 @@ class Host {
                                 bestOS = r.os;
                             }
                             break;
-                        } 
+                        }
                         */
                     }
                     log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
@@ -268,7 +268,7 @@ class Host {
                             if (results!=null && results.length>0) {
                                 let bestFamily = null;
                                 let bestOS = null;
-                                for (let i in results) { 
+                                for (let i in results) {
                                     let r = JSON.parse(results[i]);
                                     if (r!=null) {
                                         if (r.family.indexOf("Other")==-1) {
@@ -277,7 +277,7 @@ class Host {
                                             bestOS = r.os;
                                         }
                                         break;
-                                    } 
+                                    }
                                 }
                                 if (bestFamily!=null) {
                                     this.hostname = "(?)"+bestFamily;
@@ -290,7 +290,7 @@ class Host {
                                     this.save("name",null);
                                 }
                             }
-                        }); 
+                        });
             */
 
         }
@@ -355,10 +355,10 @@ class Host {
         } else {}
         if (this.o.dtype) {
             this.dtype = JSON.parse(this.o.dtype);
-        } 
+        }
         if (this.o.activities) {
             this.activities= JSON.parse(this.o.activities);
-        } 
+        }
     }
 
     redisfy() {
@@ -399,7 +399,7 @@ class Host {
     }
     return list;
   }
-  
+
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
@@ -440,7 +440,7 @@ class Host {
           spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
           this.spoofing = false;
         }
-      }       
+      }
     }
 
     // Notice
@@ -581,7 +581,7 @@ class Host {
                         rclient.zadd([key2,obj.ts,JSON.stringify(obj)],(err,response)=>{
                             if (err) {
                                 log.error("alarm:save:error", err,key2);
-                            } 
+                            }
                         });
                         */
                     });
@@ -661,22 +661,22 @@ class Host {
     {
        deviceClass: mobile, thing, computer, other, unknown
        human: score
-    }    
+    }
     */
     /* produce following
      *
      * .o._identifyExpiration : time stamp
      * .o._devicePhoto: "http of photo"
-     * .o._devicePolicy: <future> 
+     * .o._devicePolicy: <future>
      * .o._deviceType:
      * .o._deviceClass:
      *
-     * this is for device identification only. 
+     * this is for device identification only.
      */
 
     packageTopNeighbors(count, callback) {
         let nkey = "neighbor:"+this.o.mac;
-        rclient.hgetall(nkey,(err,neighbors)=> { 
+        rclient.hgetall(nkey,(err,neighbors)=> {
             if (neighbors) {
                 let neighborArray = [];
                 for (let i in neighbors) {
@@ -688,9 +688,9 @@ class Host {
                 neighborArray.sort(function (a, b) {
                     return Number(b.count) - Number(a.count);
                 })
-                callback(err, neighborArray.slice(0,count)); 
+                callback(err, neighborArray.slice(0,count));
             } else {
-                callback(err, null); 
+                callback(err, null);
             }
         });
 
@@ -712,10 +712,10 @@ class Host {
                 delete neighbor.ip;
             }
         }
-        
+
         return _neighbors;
     }
-    
+
     identifyDevice(force, callback) {
         log.debug("HOST:IDENTIFY",this.o.mac);
         if (force==false  && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
@@ -724,8 +724,8 @@ class Host {
                 callback(null, null);
             return;
         }
-        // need to have if condition, not sending too much info if the device is ...  
-        // this may be used initially _identifyExpiration 
+        // need to have if condition, not sending too much info if the device is ...
+        // this may be used initially _identifyExpiration
 
         let obj = {
             deviceClass: 'unknown',
@@ -744,9 +744,9 @@ class Host {
             obj.name = this.name();
         }
         try {
-            this.packageTopNeighbors(60,(err,neighbors)=>{ 
+            this.packageTopNeighbors(60,(err,neighbors)=>{
                 if (neighbors) {
-                    obj.neighbors = this.hashNeighbors(neighbors); 
+                    obj.neighbors = this.hashNeighbors(neighbors);
                 }
                 rclient.smembers("host:user_agent:" + this.o.ipv4Addr, (err, results) => {
                     if (results != null) {
@@ -808,7 +808,7 @@ class Host {
                                }
                                rclient.hmset(key,data, (err,result)=> {
                          });
-         
+
                 }
         */
 
@@ -997,12 +997,12 @@ class Host {
         rclient.hgetall(key, (err, data) => {
             if (err == null && data != null) {
                 this.o = data;
-                
+
                 if(this.mgr.type === 'server') {
                   this.subscribe(ip, "Notice:Detected");
                   this.subscribe(ip, "Intel:Detected");
                 }
-                
+
                 this.summarizeSoftware(ip, start, end, (err, sortedbycount, sortedbyrecent) => {
                     //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
                     this.softwareByCount = sortedbycount;
@@ -1110,7 +1110,7 @@ class Host {
             if (err != null) {
                 log.error("Host:Policy:Save:Error", key, err, {});
             }
-            if (callback) 
+            if (callback)
                 callback(err, null);
         });
 
@@ -1156,7 +1156,7 @@ module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
       if (instances[name] == null) {
-        
+
         this.instanceName = name;
         this.hosts = {}; // all, active, dead, alarm
         this.hostsdb = {};
@@ -1224,18 +1224,18 @@ module.exports = class {
                 if (data == null || err!=null) {
                     callback(err, null);
                 } else {
-                    let host = new Host(data);  
-                    callback(null,host); 
+                    let host = new Host(data);
+                    callback(null,host);
                 }
             });
         }
-        
+
     */
 
   basicDataForInit(json, options) {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
     json.network = networkinfo;
-    
+
     if(f.isDocker() &&
       ! options.simulator &&
         fConfig.docker &&
@@ -1245,13 +1245,13 @@ module.exports = class {
       // use docker host as the network ip
       json.network.ip_address = fConfig.docker.hostIP;
     }
-    
+
     json.cpuid = utils.getCpuId();
-    
+
     if(sysManager.language) {
       json.language = sysManager.language;
     }
-    
+
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
     }
@@ -1259,10 +1259,10 @@ module.exports = class {
     if(f.isDocker()) {
       json.docker = true;
     }
-    
+
     json.cpuid = utils.getCpuId()
     json.updateTime = Date.now();
-    if (sysManager.sshPassword) {           
+    if (sysManager.sshPassword) {
       json.ssh = sysManager.sshPassword;
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
@@ -1286,9 +1286,9 @@ module.exports = class {
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
     }
-    json.hosts = _hosts;    
+    json.hosts = _hosts;
   }
-  
+
   last24StatsForInit(json) {
     let download = flowManager.getLast24HoursDownloadsStats();
     let upload = flowManager.getLast24HoursUploadsStats();
@@ -1301,14 +1301,14 @@ module.exports = class {
 
   policyDataForInit(json) {
     log.debug("Loading polices");
-    
+
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
         if(err) {
           reject(err);
           return;
         }
-        
+
         if (this.policy) {
           json.policy = this.policy;
         }
@@ -1334,7 +1334,7 @@ module.exports = class {
             if(alarm.alarmtype === "intel") {
               delete alarm.intel.results; // trim intel details
             }
-            
+
             if (alarm["id.orig_h"]) {
               let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
               let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
@@ -1381,7 +1381,7 @@ module.exports = class {
           reject(err);
           return;
         }
-        
+
         if (data) {
           json.scan = {};
           for (let d in data) {
@@ -1435,7 +1435,7 @@ module.exports = class {
     return modeManager.mode()
       .then((mode) => {
         json.mode = mode;
-      });    
+      });
   }
 
   // what is blocked
@@ -1466,7 +1466,7 @@ module.exports = class {
 
             json.policyRules = rules;
             resolve();
-          });           
+          });
         }
       });
     });
@@ -1504,7 +1504,7 @@ module.exports = class {
       });
     });
   }
-  
+
   hostPolicyRulesForInit(json) {
     log.debug("Reading individual host policy rules");
 
@@ -1521,7 +1521,7 @@ module.exports = class {
       });
     })
   }
-  
+
   migrateStats() {
     let ipList = [];
     for(let index in this.hosts.all) {
@@ -1531,11 +1531,11 @@ module.exports = class {
     ipList.push("0.0.0.0"); // system one
 
     // total ip list to migrate
-    return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));          
+    return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));
   }
-  
+
     toJson(includeHosts, options, callback) {
-      
+
       if(typeof options === 'function') {
           callback = options;
           options = {}
@@ -1544,9 +1544,9 @@ module.exports = class {
       let json = {};
 
       this.getHosts(() => {
-        
+
         this.basicDataForInit(json, options);
-        
+
         Promise.all([
           this.last24StatsForInit(json),
           this.policyDataForInit(json),
@@ -1573,11 +1573,23 @@ module.exports = class {
     getHostFast(ip) {
         if (ip == null) {
            return null;
-        } 
+        }
 
         return this.hostsdb["host:ip4:"+ip];
     }
 
+    getHostAsync(ip) {
+      return new Promise((resolve, reject) => {
+        this.getHost(ip, (err, host) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(host);
+          }
+        })
+      })
+    }
+    
     getHost(ip, callback) {
         dnsManager.resolveLocalHost(ip, (err, o) => {
             if (o == null) {
@@ -1596,7 +1608,7 @@ module.exports = class {
                 //this.hosts.all.push(host);
                 this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
                 if (this.hostsdb['host:mac:' + o.mac]) {
-                    // up date if needed 
+                    // up date if needed
                 }
                 callback(null, host);
             } else {
@@ -1605,7 +1617,7 @@ module.exports = class {
         });
     }
 
-    // take hosts list, get mac address, look up mac table, and see if 
+    // take hosts list, get mac address, look up mac table, and see if
     // ipv6 or ipv4 addresses needed updating
 
     syncHost(host, save, callback) {
@@ -1725,8 +1737,8 @@ module.exports = class {
                             this.hostsdb['host:mac:' + o.mac] = hostbymac;
                         } else {
                             if (o.ipv4!=hostbymac.o.ipv4) {
-                                // the physical host get a new ipv4 address 
-                                //  
+                                // the physical host get a new ipv4 address
+                                //
                                 this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
                             }
                             this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
@@ -1736,7 +1748,7 @@ module.exports = class {
                         if (hostbyip) {
                             hostbyip._mark = true;
                         }
-                        // two mac have the same IP,  pick the latest, until the otherone update itself 
+                        // two mac have the same IP,  pick the latest, until the otherone update itself
                         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
                             log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
                             if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
@@ -1744,7 +1756,7 @@ module.exports = class {
                             }
                         }
                         this.syncHost(hostbymac, true, (err) => {
-      
+
                             if (this.type == "server") {
                                 hostbymac.applyPolicy((err)=>{
                                     hostbymac._mark = true;
@@ -1790,7 +1802,7 @@ module.exports = class {
                         let hostbymac = this.hostsdb[h];
                         if (hostbymac) {
                         }
-                        if (this.hostsdb[h] && this.hostsdb[h]._mark == false) { 
+                        if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
                             let index = this.hosts.all.indexOf(this.hostsdb[h]);
                             if (index!=-1) {
                                 this.hosts.all.splice(index,1);
@@ -1872,29 +1884,29 @@ module.exports = class {
       if (name == "acl") {
         // when adding acl, enrich acl policy with source IP => MAC address mapping.
         // so that iptables can block with MAC Address, which is more accurate
-        // 
-        // will always associate a mac with the 
+        //
+        // will always associate a mac with the
         let localIP = null;
         if (sysManager.isLocalIP(data.src)) {
-            localIP = data.src; 
+            localIP = data.src;
         }
         if (sysManager.isLocalIP(data.dst)) {
             localIP = data.dst;
         }
- 
+
         if(localIP) {
           this.getHost(localIP, (err, host) => {
             if(!err) {
-              data.mac = host.o.mac; // may add more attributes in the future                  
+              data.mac = host.o.mac; // may add more attributes in the future
             }
             this.appendACL(name, data);
-            savePolicyWrapper(name, data, callback);            
+            savePolicyWrapper(name, data, callback);
           });
         } else {
           this.appendACL(name, data);
           savePolicyWrapper(name, data, callback);
         }
-        
+
       } else {
         if (this.policy[name] != null && this.policy[name] == data) {
           if (callback) {
@@ -1908,7 +1920,7 @@ module.exports = class {
 
         savePolicyWrapper(name, data, callback);
       }
-      
+
     });
   }
 
@@ -2020,7 +2032,7 @@ module.exports = class {
         rclient.hdel(key,ip,callback);
         log.info("Unignore:",ip);
     }
- 
+
     ignoreIP(ip,reason,callback) {
         let now = Math.ceil(Date.now() / 1000);
         let key = "policy:ignore";
@@ -2028,7 +2040,7 @@ module.exports = class {
            ip: ip,
            ts: now,
        reason: reason
-        }; 
+        };
         let objkey ={};
         objkey[ip]=JSON.stringify(obj);
         rclient.hmset(key,objkey,(err,data)=> {
@@ -2037,7 +2049,7 @@ module.exports = class {
             } else {
                 callback(null,null);
             }
-        });  
+        });
     }
 
     isIgnoredIP(ip,callback) {
