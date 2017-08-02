@@ -973,7 +973,8 @@ class netBot extends ControllerBot {
     log.info("Getting flow info of the entire network");
 
     let begin = msg.data && msg.data.start;
-    let end = msg.data && msg.data.end;
+    //let end = msg.data && msg.data.end;
+    let end = begin && (begin + 3600);
 
     if(!begin || !end) {
       return Promise.reject(new Error("Require begin and error when calling systemFlowHandler"));
@@ -996,7 +997,7 @@ class netBot extends ControllerBot {
       return jsonobj;
     })();
   }
-  
+
   newDeviceHandler(msg, ip) {
     log.info("Getting info on device", ip, {});
 
