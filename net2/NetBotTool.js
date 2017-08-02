@@ -49,7 +49,59 @@ class NetBotTool {
     return instance;
   }
 
-  _prepareTopFlowsForHost(json, mac, trafficDirection) {
+  prepareTopDownloadFlows(json, options) {
+    return this._prepareTopFlows(json, "download", options);
+  }
+
+  prepareTopUploadFlows(json, options) {
+    return this._prepareTopFlows(json, "upload", options);
+  }
+
+  // Top Download/Upload in the entire network
+  _prepareTopFlows(json, trafficDirection, options) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
+
+    return async(() => {
+      let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 20));
+
+      let promises = Promise.all(traffic.map((f) => {
+        return intelTool.getIntel(f.ip)
+        .then((intel) => {
+          if(intel) {
+            f.country = intel.country;
+            f.host = intel.host;
+            return f;
+          } else {
+            // intel not exists in redis, create a new one
+            return async(() => {
+              intel = await (destIPFoundHook.processIP(f.ip));
+              f.country = intel.country;
+              f.host = intel.host;
+              return f;
+            })();
+          }
+          return f;
+        });
+      })).then(() => {
+        return traffic.sort((a, b) => {
+          return b.count - a.count;
+        });
+      });
+
+      await (promises);
+
+      json.flows[trafficDirection] = traffic
+    })();
+  }
+
+  _prepareTopFlowsForHost(json, mac, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -92,19 +144,19 @@ class NetBotTool {
     })();
   }
 
-  prepareTopDownloadFlowsForHost(json, mac) {
+  prepareTopDownloadFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
-    return this._prepareTopFlowsForHost(json, mac, "download");
+    return this._prepareTopFlowsForHost(json, mac, "download", options);
   }
 
-  prepareTopUploadFlowsForHost(json, mac) {
+  prepareTopUploadFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
 
-    return this._prepareTopFlowsForHost(json, mac, "upload");
+    return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
   prepareActivitiesFlowsForHost(json, mac) {

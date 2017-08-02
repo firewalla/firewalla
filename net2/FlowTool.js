@@ -314,18 +314,20 @@ class FlowTool {
        });
    }
 
-  getRecentOutgoingConnections(ip) {
-    return this.getRecentConnections(ip, "in")
+  getRecentOutgoingConnections(ip, options) {
+    return this.getRecentConnections(ip, "in", options)
   }
 
-  getRecentIncomingConnections(ip) {
-    return this.getRecentConnections(ip, "out");
+  getRecentIncomingConnections(ip, options) {
+    return this.getRecentConnections(ip, "out", options);
   }
 
-  getRecentConnections(ip, direction) {
+  getRecentConnections(ip, direction, options) {
+    options = options || {};
+
     let key = util.format("flow:conn:%s:%s", direction, ip);
-    let to = new Date() / 1000;
-    let from = to - MAX_RECENT_INTERVAL;
+    let to = options.end || new Date() / 1000;
+    let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
     return async(() => {
       let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW]));

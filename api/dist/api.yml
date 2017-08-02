@@ -67,7 +67,7 @@ paths:
         - Policy
       parameters:
         - $ref: '#/parameters/ip'
-        - $ref: '#/parameters/port'          
+        - $ref: '#/parameters/port'
         - $ref: '#/parameters/protocol'
         - $ref: '#/parameters/name'
       responses:
@@ -81,7 +81,7 @@ paths:
       tags:
         - Exception
       parameters:
-        - $ref: '#/parameters/json'        
+        - $ref: '#/parameters/json'
       responses:
         200:
           description: Success
@@ -159,7 +159,27 @@ paths:
         - $ref: '#/parameters/id'
       responses:
         200:
-          description: Success          
+          description: Success
+  /host/{id}/topDownload:
+    get:
+      summary: Get flow info of given host
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+  /host/{id}/topUpload:
+    get:
+      summary: Get flow info of given host
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
   /mac/{id}:
     post:
       summary: Update Mac Info
@@ -191,7 +211,7 @@ paths:
       tags:
         - SciSurf
       parameters:
-        - $ref: '#/parameters/json'        
+        - $ref: '#/parameters/json'
       responses:
         200:
           description: Success
@@ -202,6 +222,22 @@ paths:
         - System
       parameters:
         - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
+  /system/topDownload:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      responses:
+        200:
+          description: Success
+  /system/topUpload:
+    get:
+      summary: Load current device status
+      tags:
+        - System
       responses:
         200:
           description: Success
@@ -297,7 +333,7 @@ paths:
           $ref: '#/responses/500InternalServerError'
         503:
           $ref: '#/responses/503ServiceUnavailable'
-            
+
   /items/{id}:
     x-swagger-router-controller: ItemController
     get:
@@ -482,7 +518,7 @@ parameters:
     description: An item
     schema:
       $ref: "#/definitions/Item"
-    
+
 # define reusable responses:
 responses:
   SuccessMessage:
@@ -502,15 +538,15 @@ responses:
     schema:
       $ref: '#/definitions/Message'
   404NotFound:
-    description: The URI requested is invalid or the resource requested does not exists. 
+    description: The URI requested is invalid or the resource requested does not exists.
     schema:
       $ref: '#/definitions/Message'
   409Conflict:
-    description: Any message which should help the user to resolve the conflict. 
+    description: Any message which should help the user to resolve the conflict.
     schema:
       $ref: '#/definitions/Message'
   429TooManyRequests:
-    description: The request cannot be served due to the application’s rate limit having been exhausted for the resource. 
+    description: The request cannot be served due to the application’s rate limit having been exhausted for the resource.
     schema:
       $ref: '#/definitions/Message'
   500InternalServerError:
@@ -518,7 +554,7 @@ responses:
     schema:
       $ref: '#/definitions/Message'
   503ServiceUnavailable:
-    description: The server is up, but overloaded with requests. Try again later. 
+    description: The server is up, but overloaded with requests. Try again later.
     schema:
       $ref: '#/definitions/Message'
 
@@ -541,7 +577,7 @@ definitions:
         type: string
       aid:
         type: string
-          
+
   Policies:
     type: array
     items:

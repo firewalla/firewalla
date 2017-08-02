@@ -53,22 +53,23 @@ class FlowAggregationSensor extends Sensor {
     this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
     this.config.aggrFlowExpireTime = 48 * 3600 // 48 hours
   }
-  
+
   scheduledJob() {
     log.info("Generating summarized flows info...")
     return async(() => {
       let ts = new Date() / 1000 - 180; // 3 minutes ago
       await (this.aggrAll(ts));
       await (this.sumAll(ts));
+      await (this.updateAllHourlySummedFlows(ts));
       log.info("Summarized flow generation is complete");
     })();
   }
-  
+
   run() {
     process.nextTick(() => {
       this.scheduledJob();
     });
-    
+
     // TODO: Need to ensure all ticks will be processed and stored in redis
     setInterval(() => {
       this.scheduledJob();
@@ -116,7 +117,58 @@ class FlowAggregationSensor extends Sensor {
       })
     })();
   }
-  
+
+  // this will be periodically called to update the summed flows in last 24 hours
+  // for hours between -24 to -2, if any of these flows are created already, don't update
+  // for the last hour, it will periodically update every 10 minutes;
+  updateAllHourlySummedFlows(ts) {
+    // let now = Math.floor(new Date() / 1000);
+    let now = ts; // actually it's NOT now, typically it's 3 mins earlier than NOW;
+    let lastHourTick = Math.floor(now / 3600) * 3600;
+
+    return async(() => {
+
+      // the 24th last hours -> the 2nd last hour
+      for(let i = 1; i < 24; i++) {
+        let ts = lastHourTick - i * 3600;
+        await (this.hourlySummedFlows(ts, {
+          skipIfExists: true
+        }));
+      }
+
+      // last hour and this hour
+      for(let i = -1; i < 1; i++) {
+        let ts = lastHourTick - i * 3600;
+        await (this.hourlySummedFlows(ts, {
+          skipIfExists: false
+        }));
+      }
+    })();
+
+  }
+
+  // sum all traffic together, across devices
+  hourlySummedFlows(ts, options) {
+    // ts is the end timestamp of the hour
+    ts = Math.floor(ts / 3600) * 3600
+    let end = ts;
+    let begin = end - 3600;
+
+    return async(() => {
+      let options = {
+        begin: begin,
+        end: end,
+        interval: this.config.interval,
+        expireTime: 36 * 3600, // keep for 36 hours
+        skipIfExists: options.skipIfExists
+      }
+
+      await (flowAggrTool.addSumFlow("download", options));
+      await (flowAggrTool.addSumFlow("upload", options));
+
+    })();
+  }
+
   sumAll(ts) {
     let now = new Date() / 1000;
 
@@ -126,20 +178,28 @@ class FlowAggregationSensor extends Sensor {
       // this is to ensure the flows are already processed and stored in redis before aggregation
       return Promise.reject(new Error("sum too soon"));
     }
-    
+
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.flowRange;
-    
+
 
     return async(() => {
+      let options = {
+        begin: begin,
+        end: end,
+        interval: this.config.interval,
+        expireTime: this.config.sumFlowExpireTime,
+      }
+
       let macs = await (hostTool.getAllMACs());
       macs.forEach((mac) => {
-        await (flowAggrTool.addSumFlow(mac, "download", begin, end, this.config.interval, this.config.sumFlowExpireTime));
-        await (flowAggrTool.addSumFlow(mac, "upload", begin, end, this.config.interval, this.config.sumFlowExpireTime));
+        options.mac = mac;
+        await (flowAggrTool.addSumFlow("download", options));
+        await (flowAggrTool.addSumFlow("upload", options));
       })
     })();
   }
-  
+
   aggr(macAddress, ts) {
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.interval;
@@ -173,4 +233,3 @@ class FlowAggregationSensor extends Sensor {
 }
 
 module.exports = FlowAggregationSensor;
-

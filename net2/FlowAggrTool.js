@@ -51,7 +51,11 @@ class FlowAggrTool {
   }
 
   getSumFlowKey(mac, trafficDirection, begin, end) {
-    return util.format("sumflow:%s:%s:%s:%s", mac, trafficDirection, begin, end);
+    if(mac) {
+      return util.format("sumflow:%s:%s:%s:%s", mac, trafficDirection, begin, end);
+    } else {
+      return util.format("syssumflow:%s:%s:%s", trafficDirection, begin, end);
+    }
   }
 
   // aggrflow:<device_mac>:download:10m:<ts>
@@ -80,7 +84,10 @@ class FlowAggrTool {
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
       args.push(traffic)
-      args.push(destIP)
+      args.push(JSON.stringify({
+        device: mac,
+        destIP: destIP
+      }))
     }
 
     args.push(0);
@@ -116,8 +123,20 @@ class FlowAggrTool {
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>
   // content: destination ip address
   // score: traffic size
-  addSumFlow(mac, trafficDirection, begin, end, interval, expire) {
-    expire = expire || 2 * 3600; // by default expire in two hours
+
+  // interval is the interval of each aggr flow (aggrflow:...)
+  addSumFlow(trafficDirection, options) {
+
+    if(!options.begin || !options.end) {
+      return Promise.reject(new Error("Require begin and end"));
+    }
+
+    let begin = options.begin;
+    let end = options.end;
+    let expire = options.expireTime || 2 * 3600; // by default expire in two hours
+    let interval = options.interval || 600; // by default 10 mins
+
+    let mac = options.mac; // if mac is undefined, by default it will scan over all machines
 
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
@@ -126,21 +145,41 @@ class FlowAggrTool {
 
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
     let ticks = this.getTicks(begin, end, interval);
-    let tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
-    let num = tickKeys.length;
-
-    if(num <= 0) {
-      log.warn("Nothing to sum for key", sumFlowKey, {});
-      return Promise.resolve();
-    }
-
-    // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
-    let args = [sumFlowKey, num];
-    args.push.apply(args, tickKeys);
-
-    log.debug("zunionstore args: ", args, {});
+    let tickKeys = null
 
     return async(() => {
+
+      if(mac) {
+        tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
+      } else {
+        // * is a hack code here, in redis, it means matching everything during keys command
+        tickKeys = ticks.map((tick) => {
+          let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
+          let keys = await (rclient.keysAsync(keyPattern));
+          return keys;
+        }).reduce((a,b) => a.concat(b), []); // reduce version of flatMap
+      }
+
+      let num = tickKeys.length;
+
+      if(num <= 0) {
+        log.warn("Nothing to sum for key", sumFlowKey, {});
+        return Promise.resolve();
+      }
+
+      // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
+      let args = [sumFlowKey, num];
+      args.push.apply(args, tickKeys);
+
+      log.debug("zunionstore args: ", args, {});
+
+      if(options.skipIfExists) {
+        let exists = await(rclient.keysAsync(sumFlowKey));
+        if(exits.length > 0) {
+          return;
+        }
+      }
+
       let result = await (rclient.zunionstoreAsync(args));
       if(result > 0) {
         await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey));
@@ -174,10 +213,15 @@ class FlowAggrTool {
       let results = [];
       for(let i = 0; i < destAndScores.length; i++) {
         if(i % 2 === 1) {
-          let ip = destAndScores[i-1];
+          let payload = destAndScores[i-1];
           let count = destAndScores[i];
-          if(ip !== '_' && count !== 0) {
-            results.push({ip: ip, count: count});
+          if(payload !== '_' && count !== 0) {
+            try {
+              let json = JSON.parse(payload);
+              results.push({ip: json.destIP, device: json.device, count: count});
+            } catch(err) {
+              log.error("Failed to parse payload: ", payload, {});
+            }
           }
         }
       }
@@ -204,7 +248,9 @@ class FlowAggrTool {
 
   getFlowTrafficByDestIP(mac, trafficDirection, interval, ts, destIP) {
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
-    return rclient.zscoreAsync(key, destIP);
+
+    // MUST device first, destIP second!!
+    return rclient.zscoreAsync(key, JSON.stringify({device:mac, destIP: destIP}));
   }
 
   getIntervalTick(ts, interval) {

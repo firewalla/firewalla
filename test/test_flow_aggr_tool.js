@@ -56,7 +56,7 @@ describe('FlowAggrTool', () => {
       done();
     })
   });
-  
+
   describe('.getLargerIntervalTick', () => {
     it('the tick of 301 (with interval 30) should be 330', (done) => {
       expect(flowAggrTool.getLargerIntervalTick(301, 30)).to.equal(330);
@@ -78,7 +78,7 @@ describe('FlowAggrTool', () => {
       done();
     })
   });
-  
+
   describe('.getTicks', () => {
     it('should have 5 ticks between 100 and 200 (with interval 20)', (done) => {
       // 100 should not be ticks as the range is open-interval.
@@ -87,9 +87,9 @@ describe('FlowAggrTool', () => {
       done();
     })
   });
-  
+
   describe('.addSumFlow', () => {
-    
+
     afterEach((done) => {
       async(() => {
         await (flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600));
@@ -97,19 +97,24 @@ describe('FlowAggrTool', () => {
         done();
       })();
     });
-    
+
     it('should be able to sum flows correctly', (done) => {
       let ts = flowAggrTool.toFloorInt(new Date() / 1000 - 24 * 3600);
       let begin = flowAggrTool.getIntervalTick(ts, 600);
       let end = flowAggrTool.getLargerIntervalTick(ts + 24* 3600, 600);
-      
+
       async(() => {
         await (sample.createSampleAggrFlows());
         let result = await (
-          flowAggrTool.addSumFlow(sample.hostMac, "download", begin, end, 600)
+          flowAggrTool.addSumFlow("download", {
+            begin: begin,
+            end: end,
+            interval: 600,
+            mac: sample.hostMac
+          })
         );
         expect(result).to.above(0);
-        
+
         let traffic = await (flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1));
         expect(traffic.length).to.equal(2);
         expect(traffic[0]).to.equal(sample.destIP);
@@ -130,5 +135,5 @@ describe('FlowAggrTool', () => {
       })();
     })
   });
-  
+
 });

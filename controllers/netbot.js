@@ -1111,7 +1111,7 @@ class netBot extends ControllerBot {
 
               // use new way to get recent connections
               Promise.all([
-                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
+//                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
               ]).then(() => {
                 this.simpleTxData(msg, jsonobj, null, callback);
               }).catch((err) => {

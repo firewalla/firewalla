@@ -15,6 +15,8 @@
 
 'use strict'
 
+let log = require('../../net2/logger.js')(__filename);
+
 let express = require('express');
 let router = express.Router();
 let bodyParser = require('body-parser')
@@ -32,6 +34,9 @@ let Promise = require('bluebird');
 
 let NetBotTool = require('../../net2/NetBotTool');
 let netBotTool = new NetBotTool();
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 router.get('/all',
            (req, res, next) => {
@@ -105,6 +110,48 @@ router.get('/:host/recentFlow',
         res.json(conns);
       }).catch((err) => {
       res.status(500).json({error: err});
+    })
+  });
+
+router.get('/:host/topDownload',
+  (req, res, next) => {
+    let host = req.params.host;
+    let json = {};
+
+    return async(() => {
+      let h = hostManager.getHostAsync(host);
+      let mac = h.o && h.o.mac;
+      if(!mac) {
+        return;
+      }
+      await (netBotTool.prepareTopDownloadFlowsForHost(json, mac));
+    })()
+    .then(() => res.json(json))
+    .catch((err) => {
+      log.error("Got error when calling topDownload:", err, {})
+      res.status(404);
+      res.send("");
+    })
+  });
+
+router.get('/:host/topUpload',
+  (req, res, next) => {
+    let host = req.params.host;
+    let json = {};
+
+    return async(() => {
+      let h = hostManager.getHostAsync(host);
+      let mac = h.o && h.o.mac;
+      if(!mac) {
+        return;
+      }
+      await (netBotTool.prepareTopUploadFlowsForHost(json, mac));
+    })()
+    .then(() => res.json(json))
+    .catch((err) => {
+      log.error("Got error when calling topUpload:", err, {})
+      res.status(404);
+      res.send("");
     })
   });
 
