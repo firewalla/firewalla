@@ -153,6 +153,7 @@ class FlowAggregationSensor extends Sensor {
     ts = Math.floor(ts / 3600) * 3600
     let end = ts;
     let begin = end - 3600;
+    let skipIfExists = options && options.skipIfExists;
 
     return async(() => {
       let options = {
@@ -160,7 +161,7 @@ class FlowAggregationSensor extends Sensor {
         end: end,
         interval: this.config.interval,
         expireTime: 36 * 3600, // keep for 36 hours
-        skipIfExists: options.skipIfExists
+        skipIfExists: skipIfExists
       }
 
       await (flowAggrTool.addSumFlow("download", options));

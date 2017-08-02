@@ -969,12 +969,41 @@ class netBot extends ControllerBot {
     }
   }
 
+  systemFlowHandler(msg) {
+    log.info("Getting flow info of the entire network");
+
+    let begin = msg.data && msg.data.start;
+    let end = msg.data && msg.data.end;
+
+    if(!begin || !end) {
+      return Promise.reject(new Error("Require begin and error when calling systemFlowHandler"));
+    }
+
+    log.info("FROM: ", new Date(begin * 1000).toLocaleTimeString();
+    log.info("TO: ", new Date(end * 1000).toLocaleTimeString();
+
+    return async(() => {
+      let jsonobj = {};
+      let options = {
+        begin: begin,
+        end: end
+      }
+      //await (flowTool.prepareRecentFlows(jsonobj, ips));
+      await (netBotTool.prepareTopUploadFlows(jsonobj, options));
+      await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
+      //await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+
+      return jsonobj;
+    })();
+)
+
+  }
   newDeviceHandler(msg, ip) {
     log.info("Getting info on device", ip, {});
 
     return async(() => {
       if(ip === '0.0.0.0') {
-        return Promise.reject("newDeviceHandler doesn't support wildcard ip address 0.0.0.0");
+        return this.systemFlowHandler(msg);
       }
 
       let host = await (this.hostManager.getHostAsync(ip));
