@@ -37,7 +37,12 @@ class SensorEventManager extends EventEmitter {
   subscribeEvent() {
     rclient.on("message", (channel, message) => {
       if(channel === this.getRemoteChannel(process.title)) {
-        this.emitEvent(message);
+        try {
+          let m = JSON.parse()
+          this.emitEvent(m);
+        } catch (err) {
+          log.error("Failed to parse channel message:", err, {});
+        }
       } else {
         log.info("Ignore channel", channel, {});
       }
@@ -54,7 +59,7 @@ class SensorEventManager extends EventEmitter {
     if(event.toProcess && event.toProcess !== process.title) {
       // this event is meant to send to another process
       let channel = this.getRemoteChannel(event.toProcess);
-      sclient.publish(channel, event);
+      sclient.publish(channel, JSON.stringify(event));
       return;
     }
 
