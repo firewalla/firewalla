@@ -995,9 +995,8 @@ class netBot extends ControllerBot {
 
       return jsonobj;
     })();
-)
-
   }
+  
   newDeviceHandler(msg, ip) {
     log.info("Getting info on device", ip, {});
 
