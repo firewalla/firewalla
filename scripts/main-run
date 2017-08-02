@@ -1,17 +1,66 @@
 #!/bin/bash -
+#
+#    Copyright 2017 Firewalla LLC 
+# 
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+# 
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 logger `date`
 
-GITHUB_STATUS_API=https://status.github.com/api.json
+sudo $FIREWALLA_HOME/scripts/check_reset.sh
 
+NETWORK_STABLE=0
+
+for i in `seq 1 10`; do
+    DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
+    if ping -c 1 $DEFAULT_ROUTE &> /dev/null
+    then
+       /usr/bin/logger "FIREWALLA.MAINRUN.PING SUCCESS"
+       NETWORK_STABLE=1
+       break
+    else
+       echo "Ping Failed"
+       /usr/bin/logger "FIREWALLA.MAINRUN.PING NO Local Network"
+       sleep 1
+    fi
+done
+
+if [[ $NETWORK_STABLE == 0 ]]; then
+   eth0_ip=$(/sbin/ifconfig eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}')
+   if [[ -z "${eth0_ip// }" ]]
+   then
+       /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK No Network Restoring old settings"
+       sudo $FIREWALLA_HOME/scripts/check_fix_network.sh restore
+       sleep 4
+   else 
+       /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK Ping Failed IP: $eth0_ip"
+   fi 
+else 
+   /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK Save New Settings"
+   sudo $FIREWALLA_HOME/scripts/check_fix_network.sh save &
+fi
+
+GITHUB_STATUS_API=https://status.github.com/api.json
 for i in `seq 1 12`; do
     HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
-    /usr/bin/logger "FIREWALLA.MAINRUN NO Network $HTTP_STATUS_CODE"
+    /usr/bin/logger "FIREWALLA.MAINRUN.PING NO Network $HTTP_STATUS_CODE"
     sleep 1
 done
+
 
 if [[ ! -f /.dockerenv ]]; then
     sudo ntpdate -b -u -s time.nist.gov
