@@ -2,9 +2,11 @@
 
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-5}
+LOGGER=/usr/bin/logger
 
 get_value() {
-    case $1 in
+    kind=$1
+    case $kind in
         ip)
             /sbin/ifconfig eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}'
             ;;
@@ -12,20 +14,23 @@ get_value() {
             /sbin/route -n | awk '$1=="0.0.0.0" {print $2}'
             ;;
         dns)
-            dns_file=/etc/resolv.conf
-            dns_bak=/etc/resolv.conf.bak
-            if [[ -e $dns_file ]]
-            then
-                # file exists, show path of backup file
-                echo $dns_bak
-                # only backup if not done before
-                [[ -e $dns_bak ]] || cp -a $dns_file $dns_bak
-            else
-                # file NOT exist - error
-                echo ''
-            fi
+            grep nameserver /etc/resolv.conf | awk '{print $2}'
             ;;
     esac
+}
+
+save_values() {
+    r=0
+    for kind in ip gw dns
+    do
+        value=$(get_value $kind)
+        [[ -n "$value" ]] || continue
+        file=/var/run/saved_${kind}
+        $LOGGER "Save $kind value $value in $file"
+        rm -f $file
+        echo "$value" > $file || r=1
+    done
+    return $r
 }
 
 set_value() {
@@ -39,39 +44,46 @@ set_value() {
             /sbin/route add default gw ${saved_value} eth0
             ;;
         dns)
-            bak_file=$saved_value
-            [[ -e $bak_file ]] && cp -a /etc/resolv.conf{.bak,}
+            echo "nameserver ${saved_value}" >> /etc/resolv.conf
             ;;
     esac
 }
 
-check_fix_value() {
-    kind=$1
-    current_value=$(get_value $kind)
-    saved_file="/var/run/saved_${kind}"
+restore_values() {
     r=0
-    if [[ -n "$current_value" ]]
-    then
-        /bin/rm -f ${saved_file}
-        echo ${current_value} > ${saved_file} || r=1
-        logger "Current ${kind} detected(${current_value}), saved in ${saved_file}"
-    elif [[ -f "${saved_file}" ]]
-    then
-        sleep ${SLEEP_INTERVAL}
-        saved_value=$(cat ${saved_file})
-        set_value ${kind} ${saved_value} || r=1
-        logger "WARN:NO ${kind} detected, set to saved value - ${saved_value}"
-    else
-        r=1
-        logger "ERROR:NO ${kind} and NO saved value detected."
-    fi
+    for kind in ip gw dns
+    do
+        file=/var/run/saved_${kind}
+        [[ -e "$file" ]] || continue
+        saved_value=$(cat $file)
+        [[ -n "$saved_value" ]] || continue
+        $LOGGER "Restore $kind saved value ${saved_value} from $file"
+        set_value $kind $saved_value || r=1
+    done
     return $r
 }
 
 sleep ${SLEEP_INTERVAL}
-for x in ip gw dns
-do
-    check_fix_value $x || rc=1
-done
+rc=0
+cmd=$1
+case $cmd in
+    save)
+        save_values
+        ;;
+    restore)
+        restore_values
+        ;;
+    *)
+        # check if current IP exists
+        current_ip=$(get_value ip)
+        if [[ -n "$current_ip" ]]
+        then
+            save_values
+        else
+            restore_values
+        fi
+        ;;
+esac
+sleep ${SLEEP_INTERVAL}
 
 exit $rc
