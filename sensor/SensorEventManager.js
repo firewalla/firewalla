@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,6 +18,10 @@ let log = require('../net2/logger.js')(__filename);
 
 const EventEmitter = require('events');
 
+let redis = require('redis');
+let rclient = redis.createClient();
+let sclient = redis.createClient();
+
 let instance = null;
 
 class SensorEventManager extends EventEmitter {
@@ -25,11 +29,35 @@ class SensorEventManager extends EventEmitter {
     super();
     this.setMaxListeners(0);
   }
+
+  getRemoteChannel(title) {
+    return "TO." + title;
+  }
+
+  subscribeEvent() {
+    rclient.on("message", (channel, message) => {
+      if(channel === this.getRemoteChannel(process.title)) {
+        this.emitEvent(message);
+      } else {
+        log.info("Ignore channel", channel, {});
+      }
+    });
+
+    rclient.subscribe(this.getRemoteChannel(process.title));
+  }
+
   emitEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + event.message);
     }
-    
+
+    if(event.toProcess && event.toProcess !== process.title) {
+      // this event is meant to send to another process
+      let channel = this.getRemoteChannel(event.toProcess);
+      sclient.publish(channel, event);
+      return;
+    }
+
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
     let count = this.listenerCount(event.type);
     if(count === 0) {
@@ -40,19 +68,19 @@ class SensorEventManager extends EventEmitter {
       this.emit(event.type, event);
     }
   }
-  
+
   on(event, callback) {
     // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.info("Subscribing event", event, "from", 
+    log.info("Subscribing event", event, "from",
       new Error().stack.split("\n")[2]
         .replace("     at", "")
         .replace(/.*\//, "")
         .replace(/:[^:]*$/,""));
     super.on(event, callback);
   }
-  
+
   clearAllSubscriptions() {
-    super.removeAllListeners();  
+    super.removeAllListeners();
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -111,13 +111,13 @@ class PolicyManager2 {
 
     callback(null, this.jsonToPolicy(json));
   }
-  
+
   savePolicyAsync(policy) {
     return new Promise((resolve, reject) => {
       this.savePolicy(policy, (err) => {
         if(err)
           reject(err);
-        
+
         resolve();
       })
     })
@@ -159,7 +159,7 @@ class PolicyManager2 {
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
-    
+
     this.savePolicy(policy, callback);
   }
 
@@ -193,10 +193,10 @@ class PolicyManager2 {
       });
     });
   }
-  
+
   disableAndDeletePolicy(policyID) {
     let p = this.getPolicy(policyID);
-    
+
     return p.then((policy) => {
       this.unenforce(policy)
         .then(() => {
@@ -205,7 +205,7 @@ class PolicyManager2 {
         .catch((err) => Promise.reject(err));
     }).catch((err) => Promise.reject(err));
   }
-  
+
   deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
     return this.policyExists(policyID)
@@ -230,7 +230,7 @@ class PolicyManager2 {
             resolve();
           })
         });
-      });        
+      });
   }
 
   jsonToPolicy(json) {
@@ -245,31 +245,31 @@ class PolicyManager2 {
       return null;
     }
   }
-  
+
     idsToPolicys(ids, callback) {
       let multi = rclient.multi();
-      
+
       ids.forEach((pid) => {
         multi.hgetall(policyPrefix + pid);
       });
-      
+
       multi.exec((err, results) => {
         if(err) {
           log.error("Failed to load active policys (hgetall): " + err);
           callback(err);
-          return;          
+          return;
         }
-        
+
         callback(null, results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null));
       });
     }
-    
+
     loadRecentPolicys(duration, callback) {
       if(typeof(duration) == 'function') {
         callback = duration;
         duration = 86400;
       }
-      
+
       callback = callback || function() {}
 
       let scoreMax = new Date() / 1000 + 1;
@@ -307,7 +307,7 @@ class PolicyManager2 {
       callback = number;
       number = 1000; // by default load last 1000 policy rules, for self-protection
     }
-    
+
     callback = callback || function() {}
 
     rclient.zrevrange(policyActiveKey, 0, number -1 , (err, results) => {
@@ -331,7 +331,7 @@ class PolicyManager2 {
       });
     });
   }
-  
+
   enforce(policy) {
     switch(policy.type) {
     case "ip":
@@ -341,12 +341,14 @@ class PolicyManager2 {
       let blockMacAsync = Promise.promisify(Block.blockMac);
       return blockMacAsync(policy.target);
       break;
+    case "domain":
     case "dns":
       return dnsmasq.addPolicyFilterEntry(policy.target)
         .then(() => {
           sem.emitEvent({
             type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated'
+            message: 'DNSMASQ filter rule is updated',
+            toProcess: 'FireMain'
           });
         });
       break;
@@ -355,7 +357,7 @@ class PolicyManager2 {
       break;
     default:
       return Promise.reject("Unsupported policy");
-    }    
+    }
   }
 
   unenforce(policy) {
