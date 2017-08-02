@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,7 +63,7 @@ router.get('/:policy', (req, res, next) => {
 });
 
 
-// create application/json parser 
+// create application/json parser
 let jsonParser = bodyParser.json()
 
 router.post('/create',
@@ -74,7 +74,7 @@ router.post('/create',
                   res.status(400).send("Invalid policy data");
                   return;
                 }
-                
+
                 pm2.checkAndSave(policy, (err, policyID) => {
                   if(err) {
                     res.status(500).send('Failed to create json: ' + err);
@@ -99,13 +99,13 @@ router.post('/create/ip_port',
                 target_name: name,
                 type: "ip_port"
               };
-              
+
               pm2.createPolicyFromJson(json, (err, policy) => {
                 if(err) {
                   res.status(400).send("Invalid policy data");
                   return;
                 }
-                
+
                 pm2.checkAndSave(policy, (err, policyID) => {
                   if(err) {
                     res.status(400).send('Failed to create json: ' + err);
@@ -117,9 +117,9 @@ router.post('/create/ip_port',
             });
 
 
-router.post('/delete',
+router.delete('/:policy',
             (req, res, next) => {
-              let id = req.query.id;
+              let id = req.params.policy;
 
               pm2.disableAndDeletePolicy(id)
                 .then(() => {
