@@ -69,7 +69,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 20));
+      let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
 
       let promises = Promise.all(traffic.map((f) => {
         return intelTool.getIntel(f.ip)
