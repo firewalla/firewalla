@@ -374,7 +374,8 @@ class PolicyManager2 {
         .then(() => {
           sem.emitEvent({
             type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated'
+            message: 'DNSMASQ filter rule is updated',
+            toProcess: 'FireMain'
           });
       });
     case "ip_port":
