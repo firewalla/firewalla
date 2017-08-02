@@ -141,7 +141,11 @@ class FlowAggrTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+    if(mac) {
+      log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+    } else {
+      log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+    }
 
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
     let ticks = this.getTicks(begin, end, interval);

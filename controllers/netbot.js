@@ -979,8 +979,8 @@ class netBot extends ControllerBot {
       return Promise.reject(new Error("Require begin and error when calling systemFlowHandler"));
     }
 
-    log.info("FROM: ", new Date(begin * 1000).toLocaleTimeString();
-    log.info("TO: ", new Date(end * 1000).toLocaleTimeString();
+    log.info("FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("TO: ", new Date(end * 1000).toLocaleTimeString());
 
     return async(() => {
       let jsonobj = {};
