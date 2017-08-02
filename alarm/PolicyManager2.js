@@ -369,6 +369,7 @@ class PolicyManager2 {
       let unblockMacAsync = Promise.promisify(Block.unblockMac);
       return unblockMacAsync(policy.target);
       break;
+    case "domain":
     case "dns":
       return dnsmasq.removePolicyFilterEntry(policy.target)
         .then(() => {
