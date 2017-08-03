@@ -38,6 +38,8 @@ var flowUtil = require('../net2/FlowUtil.js');
 
 var hostManager = null;
 
+let Promise = require('bluebird');
+
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -175,11 +177,6 @@ module.exports = class DNSManager {
                     },ddata);
                 }
             } else {
-                let key1 = "dns:ip:" + ip;
-                //rclient.hgetall(key1, (err, data) => {
-    //                if (ddata && ddata._intel) { 
-                  //      ddata.intel = JSON.parse(ddata._intel);
-                 //   }
                     if (ddata != null) {
                         let d = null;
                         if (O != null) {
@@ -195,29 +192,6 @@ module.exports = class DNSManager {
                             };
                         }
                         callback(null,d,ddata);
-/*
-                        rclient.hgetall(ddata.host, (err, data2) => {
-                            if (data2 != null) {
-                                if (O != null) {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host,
-                                        org: O
-                                    };
-                                } else {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host
-                                    };
-                                }
-                                callback(err, d,ddata);
-                            } else {
-                                callback(err, d,ddata);
-                            }
-                        });
-*/
-     
-
                     } else {
                         callback(null, null,null);
                     }
@@ -303,17 +277,13 @@ module.exports = class DNSManager {
            callback(null,null);
            return; 
         }
-      
 
         let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
-        //flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
         if (hashdebug == false) {
             flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
         } else {
-            //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
             flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
-//            log.info("######## DEBUG ",JSON.stringify(flowlist));
         }
 
         log.info("######## Sending:",JSON.stringify(flowlist));
@@ -556,6 +526,7 @@ module.exports = class DNSManager {
         let HostManager = require("../net2/HostManager.js");
         hostManager = new HostManager("cli", 'client', 'info');
     }
+
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {

@@ -97,3 +97,5 @@ flycheck_*.el
 /imports/bro49.tar.gz
 
 /tmp/
+
+api/db/token.json

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,8 @@
 
 'use strict'
 
+let log = require('../../net2/logger.js')(__filename);
+
 let express = require('express');
 let router = express.Router();
 let bodyParser = require('body-parser')
@@ -29,6 +31,12 @@ let FlowTool = require('../../net2/FlowTool');
 let flowTool = new FlowTool();
 
 let Promise = require('bluebird');
+
+let NetBotTool = require('../../net2/NetBotTool');
+let netBotTool = new NetBotTool();
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 router.get('/all',
            (req, res, next) => {
@@ -65,12 +73,15 @@ router.get('/:host',
                        res.status(500).send("");
                        return;
                      }
-                     
+
                      let jsonObj = h.toJson();
 
                      Promise.all([
-                       flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs())
-                     ]).then(() => {
+                       flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs()),
+                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareActivitiesFlowsForHost(jsonObj, h.o.mac),
+                   ]).then(() => {
                        res.json(jsonObj);
                      });
                    })
@@ -85,20 +96,62 @@ router.get('/:host',
 router.get('/:host',
   (req, res, next) => {
     let host = req.params.host;
-    
-    
+
+
   }
 )
 
 router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
-        
+
     flowTool.getRecentOutgoingConnections(host)
       .then((conns) => {
         res.json(conns);
       }).catch((err) => {
       res.status(500).json({error: err});
+    })
+  });
+
+router.get('/:host/topDownload',
+  (req, res, next) => {
+    let host = req.params.host;
+    let json = {};
+
+    return async(() => {
+      let h = hostManager.getHostAsync(host);
+      let mac = h.o && h.o.mac;
+      if(!mac) {
+        return;
+      }
+      await (netBotTool.prepareTopDownloadFlowsForHost(json, mac));
+    })()
+    .then(() => res.json(json))
+    .catch((err) => {
+      log.error("Got error when calling topDownload:", err, {})
+      res.status(404);
+      res.send("");
+    })
+  });
+
+router.get('/:host/topUpload',
+  (req, res, next) => {
+    let host = req.params.host;
+    let json = {};
+
+    return async(() => {
+      let h = hostManager.getHostAsync(host);
+      let mac = h.o && h.o.mac;
+      if(!mac) {
+        return;
+      }
+      await (netBotTool.prepareTopUploadFlowsForHost(json, mac));
+    })()
+    .then(() => res.json(json))
+    .catch((err) => {
+      log.error("Got error when calling topUpload:", err, {})
+      res.status(404);
+      res.send("");
     })
   });
 

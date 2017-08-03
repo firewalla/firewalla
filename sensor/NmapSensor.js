@@ -237,6 +237,7 @@ class NmapSensor extends Sensor {
       sem.emitEvent({
         type: "DeviceUpdate",
         message: "A new device found @ NewDeviceHook",
+        suppressEventLogging: true, 
         host:  {
           ipv4: host.ipv4Addr,
           ipv4Addr: host.ipv4Addr,

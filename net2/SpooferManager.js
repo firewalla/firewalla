@@ -90,7 +90,7 @@ function startSpoofing() {
       spawnProcess.stdout.pipe(logStream);
       spawnProcess.stderr.pipe(logStream);
 
-      spawnProcess.on('close', (code) => {
+      spawnProcess.on('exit', (code) => {
         log.info("spoofing binary exited with code " + code);
       });
 

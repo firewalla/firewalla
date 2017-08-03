@@ -33,25 +33,89 @@ Promise.promisifyAll(redis.Multi.prototype);
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
 
-describe('Test control features on host', () => {
+let Exception = require('../alarm/Exception');
+let Alarm = require('../alarm/Alarm');
 
-  beforeEach((done) => {
-    sample.createSampleException()
-      .then(() => done())
+describe('Exception', () => {
+
+  describe('Example 1', () => {
+
+    beforeEach((done) => {
+      sample.createSampleException()
+        .then(() => done())
+    });
+
+    afterEach((done) => {
+      sample.removeSampleException()
+        .then(() => done())
+    })
+
+    it('should prevent from alarming if covered by exception', (done) => {
+      sample.createSampleVideoAlarm()
+        .then(() => {
+          assert.fail();
+        }).catch((err) => {
+        err.toString().should.equal("Error: alarm is covered by exceptions");
+        done();
+      })
+    })
   });
 
-  afterEach((done) => {
-    sample.removeSampleException()
-      .then(() => done())
-  })
+  describe('Example 2', () => {
+    beforeEach((done) => {
+      sample.createSampleException2()
+        .then(() => done())
+    });
 
-  it('should prevent from alarming if covered by exception', (done) => {
-    sample.createSampleVideoAlarm()
-      .then(() => {
-        assert.fail();
-      }).catch((err) => {
-      err.toString().should.equal("Error: alarm is covered by exceptions");
+    afterEach((done) => {
+      sample.removeSampleException()
+        .then(() => done())
+    })
+
+    it('should prvent from alarming if covered by exception2', (done) => {
+      sample.createSampleGameAlarm()
+        .then(() => {
+          assert.fail();
+        }).catch((err) => {
+        err.toString().should.equal("Error: alarm is covered by exceptions");
+        done();
+      })
+    })
+
+    it('this exception should match this alarm candidate', (done) => {
+      let e1 = new Exception({
+        "i.type": "domain",
+        "reason": "ALARM_GAME",
+        "type": "ALARM_GAME",
+        "timestamp": "1500913117.175",
+        "p.dest.id": "battle.net",
+        "target_name": "battle.net",
+        "target_ip": "114.113.217.103",
+      });
+
+      let a1 = new Alarm.GameAlarm(new Date() / 1000, "10.0.1.199", "battle.net", {
+        device: "MiMac",
+        alarmTimestamp: "1500906094.763",
+        timestamp: "1500906041.064573",
+        notifType: "activity",
+        "p.dest.ip": "114.113.217.103",
+        "p.dest.name": "battle.net",
+        "p.device.ip" : "10.0.1.199",
+        "p.device.name": "MiMac",
+        "p.device.id": "B8:09:8A:B9:4B:05",
+        "p.dest.id": "battle.net",
+        "p.device.macVendor": "Apple",
+        "p.device.mac": "B8:09:8A:B9:4B:05",
+        "p.dest.latitude": "31.0456",
+        "p.dest.longitude": "121.3997",
+        "p.dest.country": "CN",
+        message: "This device visited game website battle.net."
+      });
+
+      e1.match(a1).should.be.true
       done();
     })
-  })
+  });
+
 });
+
