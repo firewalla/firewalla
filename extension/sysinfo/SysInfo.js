@@ -77,6 +77,21 @@ function getRealMemoryUsage() {
 
   try {
     prc = spawn('free',  []);
+
+    prc.stdout.setEncoding('utf8');
+    prc.stdout.on('data', function (data) {
+      var str = data.toString()
+      var lines = str.split(/\n/g);
+      for(var i = 0; i < lines.length; i++) {
+        lines[i] = lines[i].split(/\s+/);
+      }
+
+      usedMem = parseInt(lines[1][2]);
+      allMem = parseInt(lines[1][1]);
+      realMemUsage = 1.0 * usedMem / allMem;
+      log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
+    });
+    
   } catch (err) {
     if(err.code === 'ENOMEM') {
       log.error("Not enough memory to spawn process 'free':", err, {});
@@ -86,19 +101,7 @@ function getRealMemoryUsage() {
     // do nothing
   }
 
-  prc.stdout.setEncoding('utf8');
-  prc.stdout.on('data', function (data) {
-    var str = data.toString()
-    var lines = str.split(/\n/g);
-    for(var i = 0; i < lines.length; i++) {
-      lines[i] = lines[i].split(/\s+/);
-    }
 
-    usedMem = parseInt(lines[1][2]);
-    allMem = parseInt(lines[1][1]);
-    realMemUsage = 1.0 * usedMem / allMem;
-    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
-  });
 }
 
 function getTemp() {
