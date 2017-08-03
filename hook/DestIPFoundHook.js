@@ -92,12 +92,22 @@ class DestIPFoundHook extends Hook {
     return country.getCountry(ip);
   }
 
+  // this code shall be disabled in production.
+  workaroundIntelUpdate(intel) {
+    if(intel.host.match(/weixin.qq.com$/) && !intel.apps) {
+      intel.apps = {"wechat" : "100"};
+    }
+  }
+
   processIP(ip, notUpdateDB) {
     return async(() => {
-      let result = await (intelTool.intelExists(ip));
 
-      if(result) {
-        return;
+      if(!notUpdateDB) {
+        let result = await (intelTool.intelExists(ip));
+
+        if(result) {
+          return;
+        }
       }
 
       log.info("Found new IP " + ip + ", checking intels...");
@@ -117,6 +127,8 @@ class DestIPFoundHook extends Hook {
 
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = this.enrichCountry(ip);
+
+      this.workaroundIntelUpdate(aggrIntelInfo);
 
       if(!notUpdateDB) {
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));

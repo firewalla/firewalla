@@ -27,12 +27,14 @@ let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
 
-let DestIPFoundHook = require('../../hook/DestIPFoundHook');
-let destIPFoundHook = new DestIPFoundHook();
 
 router.get('/:ip',
            (req, res, next) => {
              let ip = req.params.ip
+
+             let DestIPFoundHook = require('../../hook/DestIPFoundHook');
+             let destIPFoundHook = new DestIPFoundHook();
+
              destIPFoundHook.processIP(ip, true) // do not store result in redis
              .then((json) => {
                 res.json(json);
