@@ -64,6 +64,10 @@ class DestIPFoundHook extends Hook {
       if(info.ip === ip || info.ip === intel.host) {
         if(info.apps) {
           intel.apps = JSON.stringify(info.apps);
+          let keys = Object.keys(info.apps);
+          if(keys && keys[0]) {
+            intel.app = keys[0];
+          }
         }
 
         if(info.c) {

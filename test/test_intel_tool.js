@@ -230,4 +230,25 @@ describe('IntelTool', () => {
 
   })
 
+  describe('.appExists', () => {
+    beforeEach((done) => {
+      sample.addSampleIntelInfo()
+      .then(() => done())
+    })
+
+    afterEach((done) => {
+      sample.removeSampleIntelInfo()
+      .then(() => done())
+    })
+
+    it('should be able to check whether this ip is related to any app', (done) => {
+      async(() => {
+        let result = await(intelTool.appExists(sample.destIP));
+        expect(result).to.equal(true);
+        done();
+      })();
+
+    })
+  })
+
 });

@@ -39,6 +39,9 @@ let flowAggrTool = new FlowAggrTool();
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
+let IntelTool = require('../net2/IntelTool');
+let intelTool = new IntelTool();
+
 function toFloorInt(n){ return Math.floor(Number(n)); };
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -74,6 +77,34 @@ class FlowAggregationSensor extends Sensor {
     setInterval(() => {
       this.scheduledJob();
     }, this.config.interval * 1000);
+  }
+
+  trafficGroupByApp(flows) {
+    let traffic = {};
+
+    return async(() => {
+
+      flows.forEach((flow) => {
+        let destIP = flowTool.getDestIP(flow);
+        let intel = await (intelTool.getIntel(destIP));
+        let app = intel.app;
+
+        if(!app)
+          return;
+
+        let t = traffic[app];
+
+        if(typeof t === 'undefined') {
+          traffic[app] = {duration: 0};
+          t = traffic[app];
+        }
+
+        // FIXME: Should have more accurate calculation here
+        t.duration = Math.max(flow.du, t.duration);
+      });
+
+      return traffic;
+    })();
   }
 
   // flows => { ip1 => 100KB, ip2 => 2MB }
@@ -114,6 +145,7 @@ class FlowAggregationSensor extends Sensor {
       let macs = await (hostTool.getAllMACs());
       macs.forEach((mac) => {
         this.aggr(mac, ts);
+        this.aggrActivity(mac, ts);
       })
     })();
   }
@@ -166,6 +198,7 @@ class FlowAggregationSensor extends Sensor {
 
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
+      await (flowAggrTool.addSumFlow("app", options));
 
     })();
   }
@@ -197,7 +230,66 @@ class FlowAggregationSensor extends Sensor {
         options.mac = mac;
         await (flowAggrTool.addSumFlow("download", options));
         await (flowAggrTool.addSumFlow("upload", options));
+        await (flowAggrTool.addSumFlow("app", options));
       })
+    })();
+  }
+
+  _flowHasActivity(flow, cache) {
+    cache = cache || {}
+
+    let destIP = flowTool.getDestIP(flow);
+
+    if(cache && cache[destIP] === 0) {
+      return false;
+    }
+
+    if(cache && cache[destIP] === 1) {
+      return true;
+    }
+
+    return async(() => {
+      let intel = await (intelTool.getIntel(destIP));
+      if(intel == null) {
+        cache[destIP] = 0;
+        return false;
+      } else {
+        cache[destIP] = 1;
+        return true;
+      }
+    })();
+  }
+
+  aggrActivity(macAddress, ts) {
+    let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
+    let begin = end - this.config.interval;
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    let msg = util.format("Aggregating %s activities between %s and %s", macAddress, beginString, endString)
+    log.info(msg);
+
+    return async(() => {
+      let ips = await (hostTool.getIPsByMac(macAddress));
+
+      let flows = [];
+
+      ips.forEach((ip) => {
+        let cache = {};
+        let outgoingFlows = await (flowTool.queryFlows(ip, "in", begin, end)); // in => outgoing
+        let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => this._flowHasActivity(f, cache));
+        flows.push.apply(flows, outgoingFlowsHavingIntels);
+        let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
+        let incomingFlowsHavingIntels = incomingFlows.filter((f) => this._flowHasActivity(f, cache));
+        flows.push.apply(flows, incomingFlowsHavingIntels);
+      });
+
+      // now flows array should only contain flows having intels
+      let traffic = await (this.trafficGroupByApp(flows));
+
+      await (flowAggrTool.addActivityFlows(macAddress, this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
+
     })();
   }
 

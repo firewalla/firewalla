@@ -245,7 +245,7 @@ let flowObj2 = {
   "ct":1,
   "fd":"in", // download
   "lh":hostIP,
-  "du":100,
+  "du":300,
   "bl":900,
   "pf":{"udp.8000":{"ob":262,"rb":270,"ct":1}},
   "af":{},
@@ -363,7 +363,9 @@ exports.addSampleIntelInfo = () => {
       await (rclient.hmsetAsync(key, {
         ip: ip,
         host: "www.google.com",
-        country: "US"
+        country: "US",
+        app: "search",
+        apps: '{"search": "100"}'
       }));
     });
   })();

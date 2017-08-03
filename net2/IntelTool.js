@@ -72,6 +72,19 @@ class IntelTool {
       })
   }
 
+  appExists(ip) {
+    let key = this.getIntelKey(ip);
+
+    return rclient.hgetAsync(key, "app")
+    .then((result) => {
+      if(result == null) {
+        return false;
+      } else {
+        return true;
+      }
+    });
+  }
+
   getIntel(ip) {
     let key = this.getIntelKey(ip);
 
@@ -99,7 +112,7 @@ class IntelTool {
 
   checkIntelFromCloud(ipList, domainList) {
     log.info("Checking intel for", ipList, domainList, {});
-    
+
     let flowList = [];
     let _ipList = [];
 

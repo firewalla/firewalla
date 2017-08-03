@@ -98,6 +98,52 @@ describe('Test Flow Aggregation Sensor', () => {
     })
   })
 
+  describe('.aggrActivity', () => {
+    beforeEach((done) => {
+      async(() => {
+        // just make sure all data in test db is cleaned up
+        await (sample.removeSampleHost());
+        await (sample.removeSampleFlows());
+        await (sample.createSampleHost());
+        await (sample.createSampleFlows());
+        await (sample.addSampleIntelInfo());
+        done();
+      })();
+    });
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleHost());
+        await (sample.removeSampleFlows());
+        await (sample.removeSampleIntelInfo());
+        done();
+      })();
+    });
+
+    after((done) => {
+      async(() => {
+        await (sample.removeAllSampleAggrFlows());
+        done();
+      })();
+    });
+
+    it('should aggregate multiple flows together', (done) => {
+      async(() => {
+        await (flowAggrSensor.aggrActivity(sample.hostMac, getIntervalEnd(sample.ts)));
+        let result = await (flowAggrTool.flowExists(sample.hostMac, "app", "600", getIntervalEnd(sample.ts)));
+        expect(result).to.be.true;
+
+        let traffic = await (flowAggrTool.getActivityFlowTrafficByActivity(sample.hostMac, "600", getIntervalEnd(sample.ts), 'search'));
+        expect(traffic).to.equal('300');
+
+        let key = flowAggrTool.getFlowKey(sample.hostMac, "app", "600", getIntervalEnd(sample.ts));
+        let ttl = await (rclient.ttlAsync(key));
+        expect(ttl).to.be.below(48 * 3600 + 1);
+        done();
+      })();
+    })
+  })
+
   describe('.trafficGroupByDestIP', () => {
     it('should correctly group traffic by destination ip addresses', (done) => {
       let flows = [sample.sampleFlow1, sample.sampleFlow2];
@@ -106,6 +152,64 @@ describe('Test Flow Aggregation Sensor', () => {
       expect(traffic[sample.destIP]).to.not.equal(undefined);
       expect(traffic[sample.destIP].upload).to.equal(200);
       expect(traffic[sample.destIP].download).to.equal(400);
+      done();
+    })
+  })
+
+  describe('.trafficGroupByApp', () => {
+    beforeEach((done) => {
+      async(() => {
+        await (sample.addSampleIntelInfo());
+        done()
+      })();
+    });
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleIntelInfo());
+        done()
+      })();
+    });
+
+    it('should correctly group traffic by app', (done) => {
+      async(() => {
+        let flows = [sample.sampleFlow1, sample.sampleFlow2];
+        let traffic = await (flowAggrSensor.trafficGroupByApp(flows));
+        let keys = Object.keys(traffic);
+        expect(keys.length).to.equal(1);
+        expect(keys[0]).to.equal('search');
+        expect(traffic['search']['duration']).to.equal(300);
+        done();
+      })();
+    })
+  })
+
+  describe('._flowHasActivity', () => {
+    beforeEach((done) => {
+      async(() => {
+        await (sample.addSampleIntelInfo());
+        done()
+      })();
+    });
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleIntelInfo());
+        done()
+      })();
+    });
+
+    it('should check if any flow has activity', (done) => {
+      let flow = sample.sampleFlow1;
+      let cache = {};
+      let result = await (flowAggrSensor._flowHasActivity(flow, cache));
+      expect(result).to.equal(true);
+      expect(cache[sample.destIP]).to.equal(1);
+      let flow2 = JSON.parse(JSON.stringify(flow));
+      flow2.dh = '8.9.9.9';
+      let result2 = await(flowAggrSensor._flowHasActivity(flow2, cache));
+      expect(result2).to.equal(false);
+      expect(cache['8.9.9.9']).to.equal(0);
       done();
     })
   })

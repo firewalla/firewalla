@@ -75,6 +75,29 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
+  addActivityFlows(mac, interval, ts, traffics, expire) {
+    expire = expire || 48 * 3600; // by default keep 48 hours
+
+    let key = this.getFlowKey(mac, "app", interval, ts);
+    let args = [key];
+    for(let app in traffics) {
+      let duration = (traffics[app] && traffics[app]['duration']) || 0;
+      args.push(duration)
+      args.push(JSON.stringify({
+        device: mac,
+        app: app
+      }))
+    }
+
+    args.push(0);
+    args.push("_"); // placeholder to keep key exists
+
+    return rclient.zaddAsync(args)
+      .then(() => {
+      return rclient.expireAsync(key, expire)
+      });
+  }
+
   addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
     expire = expire || 48 * 3600; // by default keep 48 hours
 
@@ -255,6 +278,18 @@ class FlowAggrTool {
 
     // MUST device first, destIP second!!
     return rclient.zscoreAsync(key, JSON.stringify({device:mac, destIP: destIP}));
+  }
+
+  getActivityFlowTrafficByActivity(mac, interval, ts, app) {
+    let key = this.getFlowKey(mac, "app", interval, ts);
+
+    return async(() => {
+      let xx = await (rclient.zrangeAsync(key, 0, -1, 'withscores'));
+      let score = await (rclient.zscoreAsync(key, JSON.stringify({device:mac, app: app})));
+      return score;
+    })();
+    // MUST device first, destIP second!!
+    return
   }
 
   getIntervalTick(ts, interval) {

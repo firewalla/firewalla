@@ -72,10 +72,10 @@ describe('Test Host Tool', () => {
           expect(result[0]).to.equal("172.17.0.10");
           expect(result[1]).to.equal("fe80::aa07:d334:59a3:1200");
           expect(result[2]).to.equal("fe80::aa07:d334:59a3:1201");
-          done();
         } catch(err) {
           assert.fail();
         }
+        done();
       })();
     })
   })
