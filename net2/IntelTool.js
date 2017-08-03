@@ -34,6 +34,8 @@ let util = require('util');
 
 let flowUtil = require('../net2/FlowUtil.js');
 
+let firewalla = require('../net2/Firewalla.js');
+
 let instance = null;
 
 
@@ -43,7 +45,11 @@ class IntelTool {
   constructor() {
     if(!instance) {
       instance = this;
-      this.debugMode = false;
+      if(firewalla.isProduction()) {
+        this.debugMode = false;
+      } else {
+        this.debugMode = true;
+      }
     }
     return instance;
   }
