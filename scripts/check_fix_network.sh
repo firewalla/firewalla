@@ -1,10 +1,27 @@
 #!/bin/bash
 
+#
+#    Copyright 2017 Firewalla LLC 
+# 
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+# 
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 
-SLEEP_INTERVAL=${SLEEP_INTERVAL:-5}
+SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
+LOGGER=/usr/bin/logger
 
 get_value() {
-    case $1 in
+    kind=$1
+    case $kind in
         ip)
             /sbin/ifconfig eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}'
             ;;
@@ -15,6 +32,20 @@ get_value() {
             grep nameserver /etc/resolv.conf | awk '{print $2}'
             ;;
     esac
+}
+
+save_values() {
+    r=0
+    for kind in ip gw dns
+    do
+        value=$(get_value $kind)
+        [[ -n "$value" ]] || continue
+        file=/var/run/saved_${kind}
+        $LOGGER "Save $kind value $value in $file"
+        rm -f $file
+        echo "$value" > $file || r=1
+    done
+    return $r
 }
 
 set_value() {
@@ -33,33 +64,41 @@ set_value() {
     esac
 }
 
-check_fix_value() {
-    kind=$1
-    current_value=$(get_value $kind)
-    saved_file="/var/run/saved_${kind}"
+restore_values() {
     r=0
-    if [[ -n "$current_value" ]]
-    then
-        /bin/rm -f ${saved_file}
-        echo ${current_value} > ${saved_file} || r=1
-        logger "Current ${kind} detected(${current_value}), saved in ${saved_file}"
-    elif [[ -f "${saved_file}" ]]
-    then
-        sleep ${SLEEP_INTERVAL}
-        saved_value=$(cat ${saved_file})
-        set_value ${kind} ${saved_value} || r=1
-        logger "WARN:NO ${kind} detected, set to saved value - ${saved_value}"
-    else
-        r=1
-        logger "ERROR:NO ${kind} and NO saved value detected."
-    fi
+    for kind in ip gw dns
+    do
+        file=/var/run/saved_${kind}
+        [[ -e "$file" ]] || continue
+        saved_value=$(cat $file)
+        [[ -n "$saved_value" ]] || continue
+        $LOGGER "Restore $kind saved value ${saved_value} from $file"
+        set_value $kind $saved_value || r=1
+    done
     return $r
 }
 
 sleep ${SLEEP_INTERVAL}
-for x in ip gw dns
-do
-    check_fix_value $x || rc=1
-done
+rc=0
+cmd=$1
+case $cmd in
+    save)
+        save_values
+        ;;
+    restore)
+        restore_values
+        ;;
+    *)
+        # check if current IP exists
+        current_ip=$(get_value ip)
+        if [[ -n "$current_ip" ]]
+        then
+            save_values
+        else
+            restore_values
+        fi
+        ;;
+esac
+sleep ${SLEEP_INTERVAL}
 
 exit $rc
