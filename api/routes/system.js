@@ -145,6 +145,23 @@ router.get('/recent',
   }
 );
 
+router.get('/apps',
+  (req, res, next) => {
+    let now = new Date() / 1000;
+    let end = Math.floor(now / 3600) * 3600;
+    let begin = end - 3600;
+    let json = {};
+    netBotTool.prepareActivitiesFlows(json, {
+      begin: begin,
+      end: end
+    }).then(() => {
+      res.json(json);
+    }).catch((err) => {
+      res.status(500).send({error: err});
+    })
+  }
+);
+
 router.get('/perfstat',
           function(req, res, next) {
             sysInfo.getPerfStats((err, stat) => {

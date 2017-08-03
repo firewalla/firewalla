@@ -249,6 +249,14 @@ paths:
       responses:
         200:
           description: Success
+  /system/apps:
+    get:
+      summary: Load current device apps status
+      tags:
+        - System
+      responses:
+        200:
+          description: Success
   /system/heapdump:
     get:
       summary: Get heapdump of firewalla processes
