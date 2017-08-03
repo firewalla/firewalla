@@ -93,11 +93,11 @@ class DestIPFoundHook extends Hook {
   }
 
   // this code shall be disabled in production.
-  workaroundIntelUpdate(intel) {
-    if(intel.host.match(/weixin.qq.com$/) && !intel.apps) {
-      intel.apps = {"wechat" : "100"};
-    }
-  }
+  // workaroundIntelUpdate(intel) {
+  //   if(intel.host.match(/weixin.qq.com$/) && !intel.apps) {
+  //     intel.apps = JSON.stringify({"wechat" : "100"});
+  //   }
+  // }
 
   processIP(ip, options) {
     options = options || {};
@@ -133,7 +133,7 @@ class DestIPFoundHook extends Hook {
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = this.enrichCountry(ip);
 
-      this.workaroundIntelUpdate(aggrIntelInfo);
+      // this.workaroundIntelUpdate(aggrIntelInfo);
 
       if(!skipRedisUpdate) {
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));

@@ -98,6 +98,8 @@ class IntelTool {
   }
 
   checkIntelFromCloud(ipList, domainList) {
+    log.info("Checking intel for", ipList, domainList, {});
+    
     let flowList = [];
     let _ipList = [];
 
