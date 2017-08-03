@@ -87,11 +87,11 @@ class FlowAggregationSensor extends Sensor {
       flows.forEach((flow) => {
         let destIP = flowTool.getDestIP(flow);
         let intel = await (intelTool.getIntel(destIP));
-        let app = intel.app;
 
-        if(!app)
+        if(!(intel && intel.app))
           return;
 
+        let app = intel.app;
         let t = traffic[app];
 
         if(typeof t === 'undefined') {

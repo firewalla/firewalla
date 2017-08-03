@@ -62,9 +62,10 @@ describe('Test Host Tool', () => {
     })
   });
 
-  describe('.getIPsByMac', () => {
+  describe('.getIPsByMac', function() {
+    this.timeout(10000);
+
     it('getIPsByMac should return ipv4 and ipv6 addresses', (done) => {
-      setTimeout(done, 10000);
       async(() => {
         try {
           let result = await(hostTool.getIPsByMac("F4:0F:24:00:00:01"));

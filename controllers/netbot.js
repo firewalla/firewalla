@@ -992,7 +992,7 @@ class netBot extends ControllerBot {
       await (flowTool.prepareRecentFlows(jsonobj, options));
       await (netBotTool.prepareTopUploadFlows(jsonobj, options));
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
-      //await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+      await (netBotTool.prepareActivitiesFlows(jsonobj, options));
 
       return jsonobj;
     })();

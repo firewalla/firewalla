@@ -57,6 +57,27 @@ class NetBotTool {
     return this._prepareTopFlows(json, "upload", options);
   }
 
+  prepareActivitiesFlows(json, options) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
+
+    return async(() => {
+      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+
+      traffic.sort((a, b) => {
+          return b.count - a.count;
+      });
+
+      json.flows.apps = traffic;
+    })();
+  }
+
   // Top Download/Upload in the entire network
   _prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
@@ -159,17 +180,25 @@ class NetBotTool {
     return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
-  prepareActivitiesFlowsForHost(json, mac) {
+  prepareActivitiesFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
 
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
+    json.flows.apps = [];
 
-    json.flows.activities = [];
-    return Promise.resolve();
+    return async(() => {
+      let flowKey = await (flowAggrTool.getLastSumFlow(mac, "app"));
+      if (flowKey) {
+        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+
+        traffic.sort((a,b) => {
+          return b.count - a.count;
+        });
+
+        json.flows.apps = traffic;
+      }
+    })();
   }
 
 }
