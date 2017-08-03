@@ -37,6 +37,9 @@ let Promise = require('bluebird');
 let NetBotTool = require('../../net2/NetBotTool');
 let netBotTool = new NetBotTool();
 
+let flowTool = require('../net2/FlowTool')();
+
+
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
@@ -131,7 +134,7 @@ router.get('/recent',
     let end = Math.floor(now / 3600) * 3600;
     let begin = end - 3600;
     let json = {};
-    netBotTool.prepareRecentFlows(json, {
+    flowTool.prepareRecentFlows(json, {
       begin: begin,
       end: end
     }).then(() => {
