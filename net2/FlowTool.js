@@ -222,6 +222,7 @@ class FlowTool {
     return async(() => {
 
       let flows = await(this.getAllRecentOutgoingConnections(options));
+      flows = flows.slice(0, MAX_RECENT_FLOW);
       Array.prototype.push.apply(json.flows.recent, flows);
     })();
   }
