@@ -67,6 +67,16 @@ class HostTool {
     return rclient.hgetallAsync(this.getMacKey(mac));
   }
 
+  getHostname(hostEntry) {
+    if(hostEntry.name)
+      return hostEntry.name;
+
+    if(hostEntry.bname)
+      return hostEntry.bname;
+
+    return hostEntry.ipv4;
+  }
+
   ipv6Exists(ip) {
     return rclient.keysAsync("host:ip6:" + ip)
       .then((results) => {

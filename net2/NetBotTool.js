@@ -39,6 +39,9 @@ let intelTool = new IntelTool();
 let DestIPFoundHook = require('../hook/DestIPFoundHook');
 let destIPFoundHook = new DestIPFoundHook();
 
+let HostTool = require('../net2/HostTool');
+let hostTool = new HostTool();
+
 let instance = null;
 
 class NetBotTool {
@@ -76,7 +79,14 @@ class NetBotTool {
       let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
-          return b.count - a.count;
+        return b.count - a.count;
+      });
+
+      traffic.forEach((t) => {
+        let mac = t.device;
+        let host = await (hostTool.getMACEntry(mac));
+        let name = hostTool.getHostname(host);
+        t.deviceName = name;
       });
 
       json.flows.apps = traffic;
