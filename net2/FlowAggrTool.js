@@ -259,7 +259,7 @@ class FlowAggrTool {
   getActivitySumFlowByKey(key, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     return async(() => {
-      let destAndScores = await (rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count));
+      let appAndScores = await (rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count));
       let results = [];
       for(let i = 0; i < appAndScores.length; i++) {
         if(i % 2 === 1) {
