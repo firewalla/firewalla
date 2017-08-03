@@ -65,6 +65,11 @@ class NetBotTool {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(util.format("Getting app flows between %s and %s", beginString, endString));
+
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
 
     return async(() => {
