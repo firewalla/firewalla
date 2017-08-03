@@ -227,7 +227,7 @@ paths:
           description: Success
   /system/topDownload:
     get:
-      summary: Load current device status
+      summary: Load current device top download status
       tags:
         - System
       responses:
@@ -235,7 +235,15 @@ paths:
           description: Success
   /system/topUpload:
     get:
-      summary: Load current device status
+      summary: Load current device top upload status
+      tags:
+        - System
+      responses:
+        200:
+          description: Success
+  /system/recent:
+    get:
+      summary: Load current device recent flow activity status
       tags:
         - System
       responses:
