@@ -92,7 +92,7 @@ class DestIPFoundHook extends Hook {
     return country.getCountry(ip);
   }
 
-  processIP(ip) {
+  processIP(ip, notUpdateDB) {
     return async(() => {
       let result = await (intelTool.intelExists(ip));
 
@@ -111,12 +111,16 @@ class DestIPFoundHook extends Hook {
       let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo, this.config.intelExpireTime));
+      if(!notUpdateDB) {
+        await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo, this.config.intelExpireTime));
+      }
 
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = this.enrichCountry(ip);
 
-      await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
+      if(!notUpdateDB) {
+        await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
+      }
 
       return aggrIntelInfo;
     })()

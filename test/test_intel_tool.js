@@ -149,7 +149,7 @@ describe('IntelTool', () => {
       done();
     });
 
-    it('should be able to load app info from Cloud successfully (debug-mode)', (done) => {
+    it('should be able to load youtube info from Cloud successfully (debug-mode)', (done) => {
       async(() => {
         intelTool.debugMode = true;
         let result = await (intelTool.checkIntelFromCloud([], ["youtube.com"]));
@@ -163,7 +163,21 @@ describe('IntelTool', () => {
       })();
     })
 
-    it('should be able to load app info from Cloud successfully (non-debug-mode)', (done) => {
+    it('should be able to load wechat info from Cloud successfully (debug-mode)', (done) => {
+      async(() => {
+        intelTool.debugMode = true;
+        let result = await (intelTool.checkIntelFromCloud([], ["hkshort.weixin.qq.com"]));
+        expect(result.length).to.equal(2);
+        log.debug(result);
+        let r1 = result[0];
+        expect(r1.ip).to.equal('hkshort.weixin.qq.com');
+        expect(r1.apps).to.not.equal(undefined);
+        expect(r1.apps.wechat).to.equal('100');
+        done();
+      })();
+    })
+
+    it('should be able to load youtube info from Cloud successfully (non-debug-mode)', (done) => {
       async(() => {
         let result = await (intelTool.checkIntelFromCloud([], ["youtube.com"]));
         expect(result.length).to.equal(1);
@@ -172,6 +186,20 @@ describe('IntelTool', () => {
         expect(r1.ip).to.equal('LvOZqM9U3cK9V1r05/4lr38ecDvgztKSGdyzL4bvE8c=');
         expect(r1.c).to.equal('av')
         expect(JSON.parse(r1.cs)[0]).to.equal('social');
+        done();
+      })();
+    })
+
+    it('should be able to load wechat info from Cloud successfully (non-debug-mode)', (done) => {
+      async(() => {
+        let result = await (intelTool.checkIntelFromCloud([], ["hkshort.weixin.qq.com"]));
+        console.log(result);
+        expect(result.length).to.equal(1);
+        log.debug(result);
+        let r1 = result[0];
+        expect(r1.ip).to.equal('LvOZqM9U3cK9V1r05/4lr38ecDvgztKSGdyzL4bvE8c=');
+        // expect(r1.c).to.equal('av')
+        // expect(JSON.parse(r1.cs)[0]).to.equal('social');
         done();
       })();
     })

@@ -279,6 +279,18 @@ paths:
       responses:
         200:
           description: Success
+  /intel/{ip}:
+    get:
+      summary: Get intel information about this ip
+      tags:
+        - Intel
+      parameters:
+        - $ref: '#/parameters/ipPath'
+      responses:
+        200:
+          description: Success
+          schema:
+            $ref: '#/definitions/Host'
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -435,6 +447,12 @@ parameters:
   ip:
     name: ip
     in: query
+    required: true
+    description: IP Address
+    type: string
+  ipPath:
+    name: ip
+    in: path
     required: true
     description: IP Address
     type: string
