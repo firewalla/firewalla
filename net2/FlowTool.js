@@ -39,6 +39,9 @@ let intelTool = new IntelTool();
 let DestIPFoundHook = require('../hook/DestIPFoundHook');
 let destIPFoundHook = new DestIPFoundHook();
 
+let HostTool = require('../net2/HostTool.js');
+let hostTool = new HostTool();
+
 let country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
@@ -207,23 +210,43 @@ class FlowTool {
 
   }
 
-  prepareRecentFlowsForHost(json, listip) {
+  prepareRecentFlows(json, options) {
+    options = options || {}
+
     if (!("flows" in json)) {
       json.flows = {};
     }
 
     json.flows.recent = [];
 
-    let promises = listip.map((ip) => {
-      return this.getRecentOutgoingConnections(ip)
-        .then((flows) => {
-          Array.prototype.push.apply(json.flows.recent, flows);
-          return json;
-        })
-    });
+    return async(() => {
 
-    return Promise.all(promises);
+      let flows = await(this.getAllRecentOutgoingConnections(options));
+      Array.prototype.push.apply(json.flows.recent, flows);
+    })();
+  }
 
+  prepareRecentFlowsForHost(json, mac) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    json.flows.recent = [];
+
+    return async(() => {
+      let ips = await (hostTool.getIPsByMac(mac));
+      let allFlows = [];
+      ips.forEach((ip) => {
+        let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}));
+        allFlows.push.apply(allFlows, flows);
+      })
+
+      allFlows.sort((a, b) => {
+        return b.ts - a.ts;
+      })
+
+      Array.prototype.push.apply(json.flows.recent, allFlows);
+    })();
   }
 
   _mergeFlows(flowObjects) {
@@ -322,15 +345,54 @@ class FlowTool {
     return this.getRecentConnections(ip, "out", options);
   }
 
+
+  getAllRecentOutgoingConnections(options) {
+    return this.getAllRecentConnections("in", options)
+  }
+
+  getAllRecentIncomingConnections(options) {
+    return this.getAllRecentConnections("out", options);
+  }
+
+  // this is to get all recent connections in the network
+  // regardless which device it belongs to
+  getAllRecentConnections(direction, options) {
+    options = options || {}
+
+    let to = options.end || new Date() / 1000;
+    let from = options.begin || (to - MAX_RECENT_INTERVAL);
+
+    return async(() => {
+      let allIPs = await (hostTool.getAllIPs());
+      let allFlows = [];
+      allIPs.forEach((ips_mac) => {
+        let ips = ips_mac.ips
+        ips.forEach((ip) => {
+          options.mac = ips_mac.mac;
+          let flows = await (this.getRecentConnections(ip, direction, options));
+          allFlows.push.apply(allFlows, flows);
+        })
+      });
+
+      allFlows.sort((a, b) => {
+        return b.ts - a.ts;
+      })
+
+      return allFlows;
+    })();
+  }
+
   getRecentConnections(ip, direction, options) {
     options = options || {};
+
+    let max_recent_flow = options.maxRecentFlow || MAX_RECENT_FLOW;
 
     let key = util.format("flow:conn:%s:%s", direction, ip);
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
     return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW]));
+      let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
 
       if(results === null || results.length === 0)
         return [];
@@ -343,7 +405,14 @@ class FlowTool {
 
       let mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts));
 
-      let simpleFlows = mergedFlow.map((f) => this.toSimpleFlow(f));
+      let simpleFlows = mergedFlow
+            .map((f) => this.toSimpleFlow(f))
+            .map((f) => {
+              if(options.mac) {
+                f.device = options.mac; // record the mac address here
+              }
+              return f;
+            });
 
       let promises = Promise.all(simpleFlows.map((f) => {
         return intelTool.getIntel(f.ip)

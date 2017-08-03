@@ -181,6 +181,24 @@ class HostTool {
     })();
   }
 
+  getAllIPs() {
+    let allIPs = [];
+
+    return async(() => {
+
+      let macs = await (this.getAllMACs());
+
+      macs.forEach((mac) => {
+        let ips = await (this.getIPsByMac(mac));
+        if(ips) {
+          allIPs.push({ips: ips, mac: mac})
+        }
+      });
+
+      return allIPs;
+    })();
+  }
+
   //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
   //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE

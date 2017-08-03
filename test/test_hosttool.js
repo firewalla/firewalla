@@ -79,4 +79,24 @@ describe('Test Host Tool', () => {
       })();
     })
   })
+
+  describe('.getAllIPs', () => {
+    it('getAllIPs should return all ip address in the network', (done) => {
+      async(() => {
+        let allIPs = await (hostTool.getAllIPs());
+        expect(allIPs.length).to.above(2);
+        expect(allIPs.length).to.below(5);
+        allIPs.forEach((ip_mac) => {
+          if(ip_mac.ip === sample.hostIP) {
+            expect(ip_mac.mac).to.equal(sample.hostMac);
+          }
+
+          if(ip_mac.ip === sample.hostIP2) {
+            expect(ip_mac.mac).to.equal(sample.hostMac2);
+          }
+        })
+        done();
+      })();
+    })
+  })
 });

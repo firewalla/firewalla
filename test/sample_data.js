@@ -44,6 +44,8 @@ let now = Math.floor(new Date() / 1000);
 
 let hostIP = "172.17.0.10";
 let hostMac = "F4:0F:24:00:00:01";
+let hostIP2 = "172.17.0.20";
+let hostMac2 = "F4:0F:24:00:00:02";
 let destIP = "114.113.217.103";
 let destIP2 = "114.113.217.104";
 
@@ -51,7 +53,10 @@ exports.ts = ts;
 exports.now = now;
 exports.hostIP = hostIP;
 exports.hostMac = hostMac;
+exports.hostIP2 = hostIP2;
+exports.hostMac2 = hostMac2;
 exports.destIP = destIP;
+exports.destIP2 = destIP2;
 
 exports.createSampleHost = () => {
   let addHost = hostTool.updateHost({
@@ -82,14 +87,44 @@ exports.createSampleHost = () => {
     ipv6Addr: "[\"fe80::aa07:d334:59a3:1200\", \"fe80::aa07:d334:59a3:1201\"]"
   });
 
-  return Promise.all([addHost, addMac])
+  let addHost2 = hostTool.updateHost({
+    ipv4Addr: hostIP,
+    mac: hostMac2,
+    uid: hostIP2,
+    lastActiveTimestamp: new Date() / 1000 + "",
+    firstFoundTimestamp: new Date() / 1000 + "",
+    hostname: "Test Device 2",
+    hostnameType: "PTR",
+    macVendor: "Apple"
+  });
+
+  let addMac2 = hostTool.updateMACKey({
+    bname: "Test Device 2",
+    host: "Test Device 2",
+    uid: hostIP2,
+    lastActiveTimestamp: new Date() / 1000 + "",
+    firstFoundTimestamp: new Date() / 1000 + "",
+    pname: "UnknownMobile/iOS",
+    mac: hostMac2,
+    _name: "iPhone",
+    ipv4Addr: hostIP2,
+    macVendor: "Apple",
+    deviceClass: "mobile",
+    ua_os_name: "iOS",
+    ipv4: hostIP,
+    ipv6Addr: "[\"fe80::aa07:d334:59a3:1202\", \"fe80::aa07:d334:59a3:1203\"]"
+  });
+
+  return Promise.all([addHost, addMac, addHost2, addMac2])
 }
 
 exports.removeSampleHost = () => {
   let removeHost = hostTool.deleteHost(hostIP)
   let removeMac = hostTool.deleteMac(hostMac)
+  let removeHost2 = hostTool.deleteHost(hostIP2)
+  let removeMac2 = hostTool.deleteMac(hostMac2)
 
-  return Promise.all([removeHost, removeMac])
+  return Promise.all([removeHost, removeMac, removeHost2, removeMac2])
 }
 
 let lastExceptionID = null;
@@ -222,11 +257,13 @@ let flowObj3 = JSON.parse(JSON.stringify(flowObj));
 flowObj3.dh = destIP2;
 flowObj3.ob = 300;
 flowObj3.rb = 400;
+flowObj3.fd = 'out';
 
 let flowObj4 = JSON.parse(JSON.stringify(flowObj2));
 flowObj4.dh = destIP2;
 flowObj4.ob = 300;
 flowObj4.rb = 400;
+flowObj4.fd = 'out';
 
 exports.sampleFlow1 = flowObj;
 exports.sampleFlow2 = flowObj2;

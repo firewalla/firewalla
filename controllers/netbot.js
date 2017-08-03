@@ -989,7 +989,7 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      //await (flowTool.prepareRecentFlows(jsonobj, ips));
+      await (flowTool.prepareRecentFlows(jsonobj, options));
       await (netBotTool.prepareTopUploadFlows(jsonobj, options));
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
       //await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
@@ -1014,7 +1014,6 @@ class netBot extends ControllerBot {
       }
 
       let mac = host.o.mac;
-      let ips = host.getAllIPs();
 
       // load 24 hours download/upload trend
       await (flowManager.getStats2(host));
@@ -1023,7 +1022,7 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, ips));
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));

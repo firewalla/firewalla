@@ -134,7 +134,41 @@ describe('FlowTool', () => {
 
     it('should list recent incoming flows correctly', (done) => {
       async(() => {
-        let flows = await (flowTool.getRecentOutgoingConnections(sample.hostIP));
+        let flows = await (flowTool.getRecentIncomingConnections(sample.hostIP));
+        expect(flows.length).to.equal(1);
+        let flow = flows[0];
+        expect(flow.ip).to.equal(sample.destIP2);
+        expect(flow.country).to.equal('US');
+        expect(flow.host).to.equal('www.google.com');
+        done();
+      })();
+
+    })
+  })
+
+  describe('.getAllRecentOutgoingConnections', () => {
+    beforeEach((done) => {
+      async(() => {
+        await (sample.createSampleHost());
+        await (sample.createSampleFlows());
+        await (sample.addSampleIntelInfo());
+        done();
+      })();
+
+    })
+
+    afterEach((done) => {
+      async(() => {
+        await (sample.removeSampleFlows());
+        await (sample.removeSampleIntelInfo());
+        await (sample.removeSampleHost());
+        done();
+      })();
+    })
+
+    it('should list recent incoming flows correctly', (done) => {
+      async(() => {
+        let flows = await (flowTool.getAllRecentOutgoingConnections());
         expect(flows.length).to.equal(1);
         let flow = flows[0];
         expect(flow.ip).to.equal(sample.destIP);
