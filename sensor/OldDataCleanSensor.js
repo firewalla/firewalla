@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,24 +42,24 @@ class OldDataCleanSensor extends Sensor {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
     let minInterval = 8 * 60 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
-    
+
     return Date.now() / 1000 - expireInterval;
   }
-  
+
   getCount(type) {
     let count = (this.config[type] && this.config[type].count) || 10000;
     return count;
   }
-  
+
   cleanByExpireDate(key, expireDate) {
     return rclient.zremrangebyscoreAsync(key, "-inf", expireDate)
       .then((count) => {
         if(count > 0) {
-          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));  
+          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
         }
       });
   }
-  
+
   cleanToCount(key, leftOverCount) {
     return rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
       .then((count) => {
@@ -72,12 +72,18 @@ class OldDataCleanSensor extends Sensor {
   getKeys(keyPattern) {
     return rclient.keysAsync(keyPattern);
   }
-  
+
   // clean by expired time and count
-  regularClean(type, keyPattern) {
+  regularClean(type, keyPattern, ignorePatterns) {
 
     return async(() => {
       let keys = await (this.getKeys(keyPattern));
+
+      if(ignorePatterns) {
+        keys = keys.filter((x) => {
+          return ignorePatterns.filter((p) => x.match(p)).length === 0
+        });
+      }
 
       keys.forEach((key) => {
         await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
@@ -87,19 +93,19 @@ class OldDataCleanSensor extends Sensor {
     })();
 
   }
-  
+
   cleanAlarm() {
     // TODO
   }
-  
+
   cleanPolicy() {
     // TODO
   }
-  
+
   cleanException() {
     // TODO
   }
-  
+
   cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
       rclient.keys("stats:hour*",(err,keys)=> {
@@ -118,10 +124,10 @@ class OldDataCleanSensor extends Sensor {
           });
         }
       });
-      
+
     return Promise.resolve();
   }
-  
+
   cleanUserAgents() {
     // FIXME: not well coded here, deprecated code
       let MAX_AGENT_STORED = 150;
@@ -142,10 +148,10 @@ class OldDataCleanSensor extends Sensor {
           });
         }
       });
-      
+
       return Promise.resolve();
   }
-  
+
   cleanHostData(type, keyPattern, defaultExpireInterval) {
     let expireInterval = (this.config[type] && this.config[type].expires) ||
       defaultExpireInterval;
@@ -175,7 +181,7 @@ class OldDataCleanSensor extends Sensor {
         })
       });
   }
-  
+
   scheduledJob() {
     return async(() => {
       log.info("Start cleaning old data in redis")
@@ -188,7 +194,7 @@ class OldDataCleanSensor extends Sensor {
       log.info("3");
       await (this.regularClean("notice", "notice:*"));
       log.info("4");
-      await (this.regularClean("intel", "intel:*"));
+      await (this.regularClean("intel", "intel:*", [/^intel:ip/]));
       log.info("5");
       await (this.regularClean("software", "software:*"));
       log.info("6");
@@ -209,27 +215,27 @@ class OldDataCleanSensor extends Sensor {
       log.info("scheduledJob is executed successfully");
     })();
   }
-  
+
   listen() {
     pubClient.on("message", (channel, message) => {
       if(channel === "OldDataCleanSensor" && message === "Start") {
-        this.scheduledJob();  
+        this.scheduledJob();
       }
     });
     pubClient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
   }
-  
+
   run() {
     super.run();
-    
+
     this.listen();
-    
+
     setTimeout(() => {
       this.scheduledJob();
       setInterval(() => {
         this.scheduledJob();
-      }, 1000 * 60 * 60); // cleanup every hour 
+      }, 1000 * 60 * 60); // cleanup every hour
     }, 1000 * 60 * 5); // first time in 5 mins
   }
 }

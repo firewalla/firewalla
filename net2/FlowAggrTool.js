@@ -179,7 +179,7 @@ class FlowAggrTool {
 
       if(options.skipIfExists) {
         let exists = await(rclient.keysAsync(sumFlowKey));
-        if(exits.length > 0) {
+        if(exists.length > 0) {
           return;
         }
       }
