@@ -37,7 +37,7 @@ let Promise = require('bluebird');
 let NetBotTool = require('../../net2/NetBotTool');
 let netBotTool = new NetBotTool();
 
-let flowTool = require('../net2/FlowTool')();
+let flowTool = require('../../net2/FlowTool')();
 
 
 let async = require('asyncawait/async');
