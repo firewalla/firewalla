@@ -99,10 +99,15 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  processIP(ip, notUpdateDB) {
+  processIP(ip, options) {
+    options = options || {};
+
+    let skipRedisUpdate = options.skipUpdate;
+    let forceRedisUpdate = options.forceUpdate;
+
     return async(() => {
 
-      if(!notUpdateDB) {
+      if(!skipRedisUpdate && !forceRedisUpdate) {
         let result = await (intelTool.intelExists(ip));
 
         if(result) {
@@ -121,7 +126,7 @@ class DestIPFoundHook extends Hook {
       let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      if(!notUpdateDB) {
+      if(!skipRedisUpdate) {
         await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo, this.config.intelExpireTime));
       }
 
@@ -130,7 +135,7 @@ class DestIPFoundHook extends Hook {
 
       this.workaroundIntelUpdate(aggrIntelInfo);
 
-      if(!notUpdateDB) {
+      if(!skipRedisUpdate) {
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
       }
 
