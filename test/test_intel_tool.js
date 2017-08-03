@@ -190,7 +190,7 @@ describe('IntelTool', () => {
       })();
     })
 
-    it('should be able to load wechat info from Cloud successfully (non-debug-mode)', (done) => {
+    it.skip('should be able to load wechat info from Cloud successfully (non-debug-mode)', (done) => {
       async(() => {
         let result = await (intelTool.checkIntelFromCloud([], ["hkshort.weixin.qq.com"]));
         console.log(result);
