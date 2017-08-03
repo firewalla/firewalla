@@ -286,6 +286,7 @@ paths:
         - Intel
       parameters:
         - $ref: '#/parameters/ipPath'
+        - $ref: '#/parameters/force'
       responses:
         200:
           description: Success
@@ -461,6 +462,12 @@ parameters:
     in: query
     required: true
     description: Port
+    type: string
+  force:
+    name: force
+    in: query
+    required: false
+    description: Force Update
     type: string
   name:
     name: name
