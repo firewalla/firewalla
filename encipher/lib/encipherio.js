@@ -897,7 +897,8 @@ let legoEptCloud = class {
 
             if (this.socket == null) {
                 this.notifyGids.push(gid);
-                this.socket = io2.connect('https://firewalla.encipher.io/');
+                //this.socket = io2.connect('https://firewalla.encipher.io/');
+                this.socket = io2('https://firewalla.encipher.io',{path: '/socket.io'});
                 this.socket.on('disconnect', ()=>{
                     this.notifySocket = false;
                 });
