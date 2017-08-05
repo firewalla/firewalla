@@ -1,11 +1,11 @@
 #!/bin/bash -
 #
-#    Copyright 2017 Firewalla LLC 
-# 
+#    Copyright 2017 Firewalla LLC
+#
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
 #    as published by the Free Software Foundation.
-# 
+#
 #    This program is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -18,12 +18,15 @@
 #
 # Ensure network is stable first then launch main-start
 #
-# 
+#
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 logger `date`
 
 sudo $FIREWALLA_HOME/scripts/check_reset.sh
+
+# Enable zram to increase memory
+sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 
 NETWORK_STABLE=0
 
@@ -48,10 +51,10 @@ if [[ $NETWORK_STABLE == 0 ]]; then
        /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK No Network Restoring old settings"
        sudo $FIREWALLA_HOME/scripts/check_fix_network.sh restore
        sleep 4
-   else 
+   else
        /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK Ping Failed IP: $eth0_ip"
-   fi 
-else 
+   fi
+else
    /usr/bin/logger "FIREWALLA.MAINRUN.NETWORK Save New Settings"
    sudo $FIREWALLA_HOME/scripts/check_fix_network.sh save &
 fi
