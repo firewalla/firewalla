@@ -53,6 +53,9 @@ let exceptionManager = new ExceptionManager();
 
 let modeManager = require('./ModeManager.js');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let f = require('./Firewalla.js');
 
 var alarmManager = null;
@@ -71,12 +74,14 @@ sclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
 
-var async = require('async');
+var _async = require('async');
 
 var MobileDetect = require('mobile-detect');
 
 var flowUtil = require('../net2/FlowUtil.js');
 
+let AppTool = require('./AppTool');
+let appTool = new AppTool();
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -1318,6 +1323,7 @@ module.exports = class {
   }
 
   alarmDataForInit(json) {
+
     log.debug("Reading Alarms");
     if (alarmManager == null) {
       let AlarmManager = require("./AlarmManager.js");
@@ -1509,7 +1515,7 @@ module.exports = class {
     log.debug("Reading individual host policy rules");
 
     return new Promise((resolve, reject) => {
-      async.eachLimit(this.hosts.all, 10, (host, cb) => {
+      _async.eachLimit(this.hosts.all, 10, (host, cb) => {
         host.loadPolicy(cb)
       }, (err) => {
         if(err) {
@@ -1545,21 +1551,33 @@ module.exports = class {
 
       this.getHosts(() => {
 
-        this.basicDataForInit(json, options);
+        async(() => {
 
-        Promise.all([
-          this.last24StatsForInit(json),
-          this.policyDataForInit(json),
-          this.alarmDataForInit(json),
-          this.newAlarmDataForInit(json),
-          this.natDataForInit(json),
-          this.ignoredIPDataForInit(json),
-          this.legacyStats(json),
-          this.legacyHostsStats(json),
-          this.modeForInit(json),
-          this.policyRulesForInit(json),
-          this.exceptionRulesForInit(json)
-        ]).then(() => {
+          let requiredPromises = [
+            this.last24StatsForInit(json),
+            this.policyDataForInit(json),
+            this.legacyHostsStats(json),
+            this.modeForInit(json),
+            this.policyRulesForInit(json),
+            this.exceptionRulesForInit(json),
+            this.newAlarmDataForInit(json),
+            this.natDataForInit(json),
+            this.ignoredIPDataForInit(json)
+          ]
+
+          this.basicDataForInit(json, options);
+
+          await (requiredPromises);
+
+          if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
+            await (this.legacyStats(json));
+          }
+
+          if(!appTool.isAppReadyToDiscardLegacyAlarm(options.appInfo)) {
+            await (this.alarmDataForInit(json));
+          }
+
+        })().then(() => {
           callback(null, json);
         }).catch((err) => {
           log.error("Caught error when preparing init data: " + err);
@@ -1589,7 +1607,7 @@ module.exports = class {
         })
       })
     }
-    
+
     getHost(ip, callback) {
         dnsManager.resolveLocalHost(ip, (err, o) => {
             if (o == null) {
@@ -1715,7 +1733,7 @@ module.exports = class {
             }
             let since = Date.now()/1000-60*60*24*7; // one week
             rclient.multi(multiarray).exec((err, replies) => {
-                async.eachLimit(replies,2, (o, cb) => {
+                _async.eachLimit(replies,2, (o, cb) => {
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
                         //log.info("Processing GetHosts ",o);
                         if (o.ipv4) {
@@ -2069,7 +2087,7 @@ module.exports = class {
 
     isIgnoredIPs(ips,callback) {
         let ignored = false;
-        async.each(ips, (ip, cb) => {
+        _async.each(ips, (ip, cb) => {
             this.isIgnoredIP(ip,(err,data)=>{
                 if (err==null&& data!=null) {
                     ignored = true;
