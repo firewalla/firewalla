@@ -7,10 +7,10 @@ mem=$(free -m | awk '/-/{print $4}')
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
-(( mem <= 40 )) && logger "FIREWALLA: Memory reboot"+$mem
-(( mem <= 40 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
-(( mem <= 40 )) &&  /home/pi/firewalla/scripts/fire-reboot
-(( mem <= 65 )) && /home/pi/firewalla/scripts/free-memory
+(( mem <= 30 )) && logger "FIREWALLA: Memory reboot"+$mem
+(( mem <= 30 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
+(( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
 
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && logger "FIREWALLA: Disk Delete "+$disk

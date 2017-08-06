@@ -161,20 +161,28 @@ class FlowAggrTool {
 
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    if(mac) {
-      log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
-    } else {
-      log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
-    }
-
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
-    let ticks = this.getTicks(begin, end, interval);
-    let tickKeys = null
-
+    
     return async(() => {
+
+      if(options.skipIfExists) {
+        let exists = await(rclient.keysAsync(sumFlowKey));
+        if(exists.length > 0) {
+          return;
+        }
+      }
+
+      let endString = new Date(end * 1000).toLocaleTimeString();
+      let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+      if(mac) {
+        log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+      } else {
+        log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+      }
+
+      let ticks = this.getTicks(begin, end, interval);
+      let tickKeys = null
 
       if(mac) {
         tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
