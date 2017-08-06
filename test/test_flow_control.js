@@ -64,17 +64,17 @@ describe('FlowControl reload function', function() {
 
     flowControl.reload(job1)
       .then(() => {
-      expect(o.v).to.equal(1);
-      done();
+        expect(o.v).to.equal(1);
+        done();
       })
 
   });
-  
+
   it('should only run twice if two jobs are scheduled at the same time', (done) => {
     let o = {v: 0};
 
     let job1 = getSimulatedJob(o);
-    
+
     flowControl.reload(job1)
       .then(() => {
         expect(o.v).to.equal(1);
@@ -82,9 +82,9 @@ describe('FlowControl reload function', function() {
       }).catch((err) => {
       assert.fail()
     })
-    
+
     flowControl.reload(job1)
-      
+
   })
 
   it('should only run once if three jobs are scheduled at the same time', (done) => {
@@ -125,7 +125,7 @@ describe('FlowControl reload function', function() {
     flowControl.reload(job1)
     flowControl.reload(job1)
   })
-  
+
   it('should only run twice if a second batch of jobs are scheduled in two seconds', (done) => {
     let o = {v: 0};
 
@@ -146,7 +146,7 @@ describe('FlowControl reload function', function() {
     flowControl.reload(job1)
     flowControl.reload(job1)
     flowControl.reload(job1)
-    
+
     delay(1500)
       .then(() => {
         let job1 = getSimulatedJob(o);
@@ -167,12 +167,12 @@ describe('FlowControl reload function', function() {
         flowControl.reload(job1)
         flowControl.reload(job1)
       })
-    
+
     delay(5000)
       .then(() => {
       expect(o.v).to.equal(2);
       done();
       })
   })
-  
+
 });

@@ -48,6 +48,20 @@ class AppTool {
       return false;
   }
 
+  // when app supports providing app info, it means legacy flow info can be discarded
+  isAppReadyToDiscardLegacyFlowInfo(appInfo) {
+    if(appInfo)
+      return true
+    else
+      return false;
+  }
+
+  isAppReadyToDiscardLegacyAlarm(appInfo) {
+    if(appInfo)
+      return true
+    else
+      return false;
+  }
 }
 
 module.exports = function () {
