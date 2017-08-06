@@ -1552,6 +1552,7 @@ module.exports = class {
       this.getHosts(() => {
 
         async(() => {
+
           let requiredPromises = [
             this.last24StatsForInit(json),
             this.policyDataForInit(json),
@@ -1563,6 +1564,8 @@ module.exports = class {
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json)
           ]
+
+          this.basicDataForInit(json, options);
 
           await (requiredPromises);
 
