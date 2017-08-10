@@ -15,6 +15,7 @@ if [[ $redis_process_cnt = 0 ]]; then
    sleep 10
    redis_process_cnt=`sudo systemctl status redis-server |grep 'active (running)' | wc -l`
    if [[ $redis_process_cnt = 0 ]]; then
+       sudo rm -r -f /var/log/redis/*
        /usr/bin/logger "REBOOT: FIREWALLA PING NO REDIS"
        /home/pi/firewalla/scripts/fire-reboot
        exit 0
