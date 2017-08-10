@@ -144,7 +144,7 @@ class DeviceHook extends Hook {
         } catch(err) {
           // do nothing
         }
-        
+
         let v = "Unknown";
         if(vendor)
           v = vendor;
