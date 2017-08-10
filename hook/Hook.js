@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,8 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
+let Promise = require('bluebird');
+
 module.exports = class {
 
   constructor() {
@@ -24,6 +26,12 @@ module.exports = class {
 
   setConfig(config) {
     require('util')._extend(this.config, config);
+  }
+
+  delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
   }
 
   run() {

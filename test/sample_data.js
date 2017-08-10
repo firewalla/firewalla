@@ -58,6 +58,12 @@ exports.hostMac2 = hostMac2;
 exports.destIP = destIP;
 exports.destIP2 = destIP2;
 
+exports.newDeviceHost = {
+  mac: hostMac,
+  ipv4Addr: hostIP,
+  ipv4: hostIP
+}
+
 exports.createSampleHost = () => {
   let addHost = hostTool.updateHost({
     ipv4Addr: hostIP,
