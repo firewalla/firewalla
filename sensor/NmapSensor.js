@@ -238,7 +238,7 @@ class NmapSensor extends Sensor {
         type: "DeviceUpdate",
         message: "A new device found @ NewDeviceHook",
         suppressEventLogging: true,
-        suppressAlarm: this.suppressAlarm
+        suppressAlarm: this.suppressAlarm,
         host:  {
           ipv4: host.ipv4Addr,
           ipv4Addr: host.ipv4Addr,
