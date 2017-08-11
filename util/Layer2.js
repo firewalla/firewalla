@@ -16,8 +16,10 @@
 'use strict'
 
 let spawn = require('child_process').spawn;
-//let mac = require('mac-lookup')
 let log = require('../net2/logger.js')(__filename);
+
+let _SimpleCache = require('../util/SimpleCache.js')
+let SimpleCache = new _SimpleCache("macCache",60*10);
 
 function getMACAndVendor(ipaddress, cb) {
   
@@ -52,6 +54,11 @@ function getMACAndVendor(ipaddress, cb) {
 
 function getMAC(ipaddress, cb) {
 
+  let _mac = SimpleCache.lookup(ipaddress);
+  if (_mac != null) {
+      cb(false,_mac);
+      return;
+  }
   // ping the ip address to encourage the kernel to populate the arp tables
   let ping = spawn("ping", ["-c", "1", ipaddress ]);
   
@@ -83,8 +90,9 @@ function getMAC(ipaddress, cb) {
         if (l == 0) continue;
         
         if (table[l].indexOf(ipaddress + " ") == 0) {
-          let mac = table[l].substring(41, 58);
-          cb(false, mac.toUpperCase());
+          let mac = table[l].substring(41, 58).toUpperCase();
+          SimpleCache.insert(ipaddress,mac); 
+          cb(false, mac);
           return;
         }
       }
