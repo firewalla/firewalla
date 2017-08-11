@@ -200,6 +200,9 @@ class FlowAggrTool {
 
       if(num <= 0) {
         log.warn("Nothing to sum for key", sumFlowKey, {});
+
+        // add a placeholder in redis to avoid duplicated queries
+        await (rclient.zaddAsync(sumFlowKey, 0, '_'));
         return Promise.resolve();
       }
 
