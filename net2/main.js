@@ -187,8 +187,8 @@ function run() {
   setInterval(()=>{
     try {
       if (global.gc) {
-        log.info("Running GC...")
         global.gc();
+        log.info("GC executed, RSS is now", process.memoryUsage().rss, {});
       }
     } catch(e) {
     }

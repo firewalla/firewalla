@@ -162,7 +162,7 @@ class FlowAggrTool {
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
 
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
-    
+
     return async(() => {
 
       if(options.skipIfExists) {
@@ -190,6 +190,7 @@ class FlowAggrTool {
         // * is a hack code here, in redis, it means matching everything during keys command
         tickKeys = ticks.map((tick) => {
           let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
+          log.info("Checking key pattern:", keyPattern);
           let keys = await (rclient.keysAsync(keyPattern));
           return keys;
         }).reduce((a,b) => a.concat(b), []); // reduce version of flatMap
