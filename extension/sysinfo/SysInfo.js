@@ -78,6 +78,11 @@ function getRealMemoryUsage() {
   try {
     prc = spawn('free',  []);
 
+    if (prc == null || prc.stdout == null) {
+        log.error("Failed to spawn process 'free'",{});
+        return;
+    }
+
     prc.stdout.setEncoding('utf8');
     prc.stdout.on('data', function (data) {
       var str = data.toString()

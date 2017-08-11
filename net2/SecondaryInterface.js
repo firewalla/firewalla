@@ -71,6 +71,8 @@ exports.create = function (config, callback) {
                 if (err!=null) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }
+                require('child_process').exec("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh "+_secondaryIp,(err,out,code)=>{
+                });
                 if (callback) {
                     callback(err,_secondaryIp, _secondaryIpSubnet, _secondaryIpNet, _secondaryMask);
                 }
