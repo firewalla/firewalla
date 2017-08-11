@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -57,7 +57,7 @@ function run0() {
     if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
     }
-    
+
     setTimeout(()=>{
       sysManager.update(null);
       run0();
@@ -71,7 +71,7 @@ if(firewalla.isProduction()) {
     log.warn("################### CRASH #############");
     log.warn("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
-      return; 
+      return;
     }
     bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
@@ -92,7 +92,7 @@ function run() {
   sl = require('../sensor/SensorLoader.js');
   sl.initSensors();
   sl.run();
-  
+
   var VpnManager = require('../vpn/VpnManager.js');
 
   var BroDetector = require("./BroDetect.js");
@@ -131,7 +131,7 @@ function run() {
 
     if(failure) {
       log.error("Failed to find any alive ethernets, taking down the entire main.js")
-      process.exit(1);        
+      process.exit(1);
     }
   });
 
@@ -146,12 +146,12 @@ function run() {
 
   // always create the secondary interface
   ModeManager.enableSecondaryInterface();
-  
+
   ModeManager.apply();
 
   // when mode is changed by anyone else, reapply automatically
   ModeManager.listenOnChange();
-  
+
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
@@ -163,12 +163,12 @@ function run() {
     policyManager.flush(config, (err) => {
 
       //policyManager.defaults(config);
-      
+
       if(err) {
         log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
         return;
       }
-      
+
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
 
@@ -187,6 +187,7 @@ function run() {
   setInterval(()=>{
     try {
       if (global.gc) {
+        log.info("Running GC...")
         global.gc();
       }
     } catch(e) {
@@ -197,7 +198,7 @@ function run() {
 /*
   Bug: when two firewalla's are on the same network, this will change the upnp
   setting.  Need to fix this later.
-  
+
   this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
 */
   setTimeout(()=>{
@@ -207,7 +208,7 @@ function run() {
         log.info("VpnManager:Unable to start vpn");
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
-        vpnManager.start((err)=>{ 
+        vpnManager.start((err)=>{
           if (err!=null) {
             log.info("VpnManager:Unable to start vpn");
             hostManager.setPolicy("vpnAvaliable",false);
