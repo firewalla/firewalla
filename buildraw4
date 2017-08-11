@@ -10,7 +10,7 @@ function usage()
 {
     cat << EOM
 Usage: buildraw [-n] [-h]"
-    -n      Skip apt dependency installations. 
+    -n      Skip apt dependency installations.
     -h      Show this help.
 EOM
 }
@@ -18,7 +18,7 @@ EOM
 function setup_sys_env()
 {
     # Set firewalla global environment variable
-    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then 
+    if ! grep "^FIREWALLA_HOME=" /etc/environment &>/dev/null; then
         echo "FIREWALLA_HOME "+$basedir
         sudo /bin/echo "FIREWALLA_HOME=$basedir" | sudo bash -c 'cat - >>  /etc/environment' || perr_and_exit "Failed to setup FIREWALLA_HOME env variable."
     fi
@@ -27,10 +27,10 @@ function setup_sys_env()
     if ! grep "^NODE_PATH=" /etc/environment &>/dev/null; then
 	sudo echo "NODE_PATH=/home/pi/.node_modules" | sudo bash -c 'cat - >> /etc/environment' || perr_and_exit "Failed to add NODE_PATH env"
     fi
-    
+
 }
 
-function install_dependencies() 
+function install_dependencies()
 {
     git pull || perr_and_exit "Failed to pull latest firewalla code."
 
@@ -41,7 +41,7 @@ function install_dependencies()
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
 
-    apt_pkg_list="wget net-tools curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron ntpdate ipset dhcpdump dnsmasq dnsutils"
+    apt_pkg_list="wget net-tools curl redis-server iptables ca-certificates nmap dsniff bluetooth bluez libbluetooth-dev libudev-dev nodejs openvpn easy-rsa python-pip cron ntpdate ipset dhcpdump dnsmasq dnsutils nbtscan"
 
     echo "Installing dependencies, please be patient..."
     sudo apt-get install $apt_pkg_list -y || perr_and_exit "Failed to install needed packages."
@@ -55,10 +55,10 @@ function install_dependencies()
         # https://github.com/npm/npm/issues/4719
         sudo npm config set unsafe-perm true
     fi
-    
+
     echo "Installing tools: forever and xml-json..."
-    sudo npm install forever -g 
-    sudo npm install xml-json -g 
+    sudo npm install forever -g
+    sudo npm install xml-json -g
 
     echo "Setting up required folders and configures..."
     sudo mkdir -p /blog || perr_and_exit "Failed to create folder /blog"
@@ -81,7 +81,7 @@ function install_walla()
     branch=$(git rev-parse --abbrev-ref HEAD)
     CPU_PLATFORM=$(uname -m)
 
-    
+
 
     if [[ ! -e $FW_NODE_MODULES_PATH ]]; then
         if [[ $CPU_PLATFORM == "x86_64" ]]; then
@@ -89,7 +89,7 @@ function install_walla()
             git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         elif [[ $CPU_PLATFORM == "armv7l" ]]; then
             NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
-            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH	    
+            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
             cd $FW_NODE_MODULES_PATH
 	        git fetch
 	        git checkout $branch
@@ -97,7 +97,7 @@ function install_walla()
             cd -
         elif [[ $CPU_PLATFORM == "aarch64" ]]; then
             NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.aarch64.git
-            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH	    
+            git clone $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
             cd $FW_NODE_MODULES_PATH
 	        git fetch
 	        git checkout $branch
@@ -108,12 +108,12 @@ function install_walla()
 
     # Skip bro installation if in docker environment, bro in apt repo will be used in Docker
     if [[ ! -f /.dockerenv ]]; then
-        echo "Installing bro..." 
+        echo "Installing bro..."
         if [[ ! -f $basedir/imports/bro49.tar.gz ]]; then
-            cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz 
+            cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz
         fi
         cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
-        cp $basedir/bin/real/bit* $basedir/bin/ 
+        cp $basedir/bin/real/bit* $basedir/bin/
     fi
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
@@ -128,10 +128,10 @@ function install_walla()
     sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.servie."
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
     sudo cp $basedir/etc/fireupgrade.service /etc/systemd/system/. || perr_and_exit "Failed to copy fireupgrade service."
-    
+
     # ignore systemctl part in docker enviornment, there is some bug that systemctl doesn't work in Docker
     if [[ -z ${TRAVIS+x} && ! -f /.dockerenv ]]; then
-    
+
 	# systemd will bring up firewalla service, which will bring up all the rest firewalla services
         sudo systemctl daemon-reload || perr_and_exit "Failed to refresh systemd services."
         sudo systemctl enable firewalla || perr_and_exit "Failed to enable firewalla service."

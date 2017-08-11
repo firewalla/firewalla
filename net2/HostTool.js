@@ -71,8 +71,11 @@ class HostTool {
     if(hostEntry.name)
       return hostEntry.name;
 
-    if(hostEntry.bname)
+    if(hostEntry.bname && hostEntry.bname !== "_")
       return hostEntry.bname;
+
+    if(hostEntry.sambaName && hostEntry.sambaName !== "_")
+      return hostEntry.sambaName;
 
     return hostEntry.ipv4;
   }
@@ -105,7 +108,7 @@ class HostTool {
       });
   }
 
-  updateMACKey(host) {
+  updateMACKey(host, skipUpdatingExpireTime) {
     if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
       host.ipv6Addr = JSON.stringify(host.ipv6Addr);
     }
@@ -115,9 +118,20 @@ class HostTool {
     let key = this.getMacKey(host.mac);
     return rclient.hmsetAsync(key, host)
       .then(() => {
-        return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+        if(skipUpdatingExpireTime) {
+          return;
+        } else {
+          return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+        }
       })
   }
+
+  updateKeysInMAC(mac, hash) {
+    let key = this.getMacKey(mac);
+
+    return rclient.hmsetAsync(key, hash);
+  }
+
 
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
@@ -188,6 +202,18 @@ class HostTool {
     return async(() => {
       let keys = await (rclient.keysAsync("host:mac:*"));
       return keys.map((key) => key.replace("host:mac:", ""));
+    })();
+  }
+
+  getAllMACEntries() {
+    return async(() => {
+      let macKeys = await (this.getAllMACs());
+      let entries = [];
+      macKeys.forEach((mac) => {
+        let entry = await (this.getMACEntry(mac));
+        entries.push(entry);
+      })
+      return entries;
     })();
   }
 

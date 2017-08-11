@@ -63,10 +63,11 @@ sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
 sync
 /usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
 logger "FIREWALLA: Deployed BRO using BROCTL"
-cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo sysctl -p
+
 sudo -u pi crontab -r
 sudo dhclient -6 eth0 &
 sudo dhclient -4 eth0 &
 logger "FIREWALLA: BRO-RUN Finished"
 (sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&
-
