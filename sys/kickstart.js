@@ -73,7 +73,7 @@ let nmapSensor = new NmapSensor();
 nmapSensor.suppressAlarm = true;
 nmapSensor.checkAndRunOnce(true)
 .then(() => {
-  delete nmapSensor;
+  nmapSensor = null;
 })
 
 const license = require('../util/license.js');
