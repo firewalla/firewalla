@@ -114,7 +114,7 @@ module.exports = class {
   isConfigInitialized() {
     return this.config != null &&
       this.config.monitoringInterface &&
-      this.config[this.config.monitoringInterface] !== null;
+      this.config.monitoringInterface in this.config;
   }
 
     delayedActions() {
