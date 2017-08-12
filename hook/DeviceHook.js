@@ -157,6 +157,10 @@ class DeviceHook extends Hook {
             enrichedHost.bname = sambaName;
         }
 
+        if(!enrichedHost.bname) {
+          enrichedHost.bname = enrichedHost.macVendor || "Unknown"; // finally, use macVendor if no name
+        }
+
         enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
 
         await (hostTool.updateMACKey(enrichedHost));
