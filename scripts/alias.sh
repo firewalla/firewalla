@@ -1,9 +1,11 @@
 #!/bin/bash
 
 alias t0='tail -F ~/.forever/main.log'
+alias t00='tail -F ~/.forever/*.log'
 alias t1='tail -F ~/.forever/kickui.log'
 alias t2='tail -F ~/.forever/monitor.log'
 alias t3='tail -F ~/.forever/api.log'
+alias frr='forever restartall'
 alias fr0='forever restart 0'
 alias fr1='forever restart 1'
 alias fr2='forever restart 2'

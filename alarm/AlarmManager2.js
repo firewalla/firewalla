@@ -542,8 +542,8 @@ module.exports = class {
           target = alarm["p.device.ip"];
           break;
         default:
-          type = "ip";
-          target = alarm["p.dest.ip"];
+          type = "domain";
+          target = alarm["p.dest.id"];
           break;
         }
 
@@ -571,7 +571,12 @@ module.exports = class {
           e["target_name"] = alarm["p.dest.name"];
           e["target_ip"] = alarm["p.dest.ip"];
           break;
-        default:
+          case "domain":
+            e["p.dest.id"] = alarm["p.dest.id"];
+            e["target_name"] = alarm["p.dest.id"];
+            e["target_ip"] = alarm["p.dest.ip"];
+            break;
+          default:
           // not supported
           break;
         }

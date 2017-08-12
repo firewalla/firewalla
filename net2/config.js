@@ -16,8 +16,17 @@ function getConfig() {
       userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
     }
 
+    let testConfig = {};
+    if(process.env.NODE_ENV === 'test') {
+      let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
+      if(fs.existsSync(testConfigFile)) {
+        testConfig = JSON.parse(fs.readFileSync(testConfigFile, 'utf8'));
+        log.warn("Test config is being used", testConfig, {});
+      }
+    }
+
     // user config will override system default config file
-    config = Object.assign({}, defaultConfig, userConfig);
+    config = Object.assign({}, defaultConfig, userConfig, testConfig);
   }
   return config;
 }

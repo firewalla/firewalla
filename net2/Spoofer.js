@@ -51,11 +51,17 @@ Promise.promisifyAll(redis.Multi.prototype);
 module.exports = class {
 
   newSpoof(address) {
-    return rclient.saddAsync(monitoredKey, address);
+    return Promise.all([
+      rclient.saddAsync(monitoredKey, address),
+      rclient.sremAsync(unmonitoredKey, address),
+      ]);
   }
 
   newUnspoof(address) {
-    return rclient.sremAsync(monitoredKey, address);
+    return Promise.all([
+      rclient.sremAsync(monitoredKey, address),
+      rclient.saddAsync(unmonitoredKey, address)
+    ]);
   }
  
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
@@ -307,10 +313,29 @@ module.exports = class {
         }
         log.info("Spoof:Clean:Running commandline: ", cmdline);
 
-      let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
-        if(err) {
-          log.error("Failed to clean up spoofing army: " + err);
-        }
+      return new Promise((resolve, reject) => {
+        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+          if (err) {
+            log.error("Failed to clean up spoofing army: " + err);
+          }
+          resolve();
+        });
+      });
+    }
+    
+    clean7() {
+      //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
+      let cmdline = 'sudo pkill -f bitbridge7';
+
+      log.info("Spoof:Clean:Running commandline: ", cmdline);
+
+      return new Promise((resolve, reject) => {
+        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+          if(err) {
+            log.error("Failed to clean up spoofing army: " + err);
+          }
+          resolve();
+        });
       });
     }
 

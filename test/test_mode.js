@@ -12,43 +12,103 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+'use strict'
 
-'use strict';
+let _ = require('underscore');
+let chai = require('chai');
+let expect = chai.expect;
+let should = chai.should;
 
-var _ = require('underscore');
-var chai = require('chai');
-var expect = chai.expect;
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-let Mode = require('../net2/mode.js');
+let Mode = require('../net2/Mode.js');
+let ModeManager = require('../net2/ModeManager');
 
-Mode.getSetupMode()
-  .then((mode) => {    
-    expect(mode).to.equal('spoof');
+let fs = require('fs');
+let cp = require('child_process');
 
-    Mode.isSpoofModeOn()
-      .then((result) => {
-        expect(result).to.be.true;
+let assert = chai.assert;
 
-        Mode.dhcpModeOn()
-          .then((newMode) => {
-            expect(newMode).to.equal('dhcp');
+let Promise = require('bluebird');
 
-            Mode.isDHCPModeOn()
-              .then((result2) => {
-                expect(result2).to.be.true;
+let Bootstrap = require('../net2/Bootstrap');
 
-                Mode.spoofModeOn()
-                  .then((newMode2) => {
-                    expect(newMode2).to.equal('spoof');
-                  });
-              });                        
-          });
-      });
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
   });
+}
 
+let DNSMASQSensor = require('../sensor/DNSMASQSensor');
+let s = new DNSMASQSensor();
 
-setTimeout(() => {
-  process.exit(0);
-}, 3000);
+describe('Test mode feature', function() {
+  this.timeout(10000);
+  
+  beforeEach((done) => {
+    Bootstrap.bootstrap()
+      .then(() => {
+        sem.clearAllSubscriptions();
+        s.registered = false;
+        s.run()
+          .then(() => {
+          done();
+          });
+      }).catch((err) => {
+      log.error("Failed to bootstrap Firwalla", err, {});
+    });
+  });
+  
+  afterEach((done) => {
+    cp.exec("sudo pkill bitbridge7", (err) => {
+      s._stop()
+        .then(() => {
+          done();
+        });
+    })
+  });
+  
+  it('should enable dhcp and disable spoofing when mode is switched to dhcp', (done) => {
+    setTimeout(done, 10000);
+    
+    delay(0)
+      .then(() => {
+        ModeManager.switchToDHCP()
+          .then(() => {
+            delay(2000)
+              .then(() => {
+                cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
+                  expect(err).to.be.null;
+
+                  cp.exec("ps aux | grep bi[t]bridge7", (err, stdout) => {
+                    console.log(stdout);
+                    expect(err).to.not.null;
+                    done()
+                  })
+                })
+              })
+          }).catch((err) => {
+          log.error("Failed to switch to DHCP:", err, {});
+          assert.fail();
+        })
+      })
+  });
+  
+  it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
+    setTimeout(done, 10000);
+
+    ModeManager.switchToSpoof()
+      .then(() => {
+        cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
+          expect(err).to.not.null;
+
+          cp.exec("ps aux | grep bi[t]bridge7", (err) => {
+            expect(err).to.be.null;
+            done()
+          })
+        })
+      })
+  });
+});

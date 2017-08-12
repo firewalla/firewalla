@@ -176,33 +176,9 @@ module.exports = class {
         }
       }
     });
-  }
-
-    publicIp() {
-        var getIP = require('external-ip')();
-        getIP(function(err, ip) {
-            if(err == null) {
-                sysManager.publicIp = ip;
-            }
-        });
-    }
+  }   
 
   start() {
-    // delay start, the first scan will be covered by kickstart
-    //        this.startDiscover(true);
-        this.publicIp();
-        setTimeout(() => {
-            this.startDiscover(false);
-        }, 1000 * 60 * 4); 
-        setInterval(() => {
-            this.startDiscover(false);
-        }, 1000 * 60 * 100);
-        setInterval(() => {
-            this.startDiscover(true);
-        }, 1000 * 60 * 5);
-        setInterval(() => {
-            this.publicIp();
-        }, 1000 * 60 * 60*24);
     }
 
     /**
@@ -264,7 +240,7 @@ module.exports = class {
                         uid:list[i].ip_address,
                         mac:list[i].mac_address.toUpperCase(),
                         ipv4Addr:list[i].ip_address,
-                        ipv6Addr:list[i].ip6_addresses,
+                        ipv6Addr:list[i].ip6_addresses || JSON.stringify([]),
                     };
                     this.processHost(host);
                 }
@@ -389,7 +365,7 @@ module.exports = class {
             }
             changeset['mac'] = host.mac;
             log.debug("Discovery:Nmap:Redis:Merge", key, changeset, {});
-            if (data.mac!=host.mac) {
+            if (data.mac!=null && data.mac!=host.mac) {
               this.ipChanged(data.mac,host.uid,host.mac);
             }
             rclient.hmset(key, changeset, (err, result) => {

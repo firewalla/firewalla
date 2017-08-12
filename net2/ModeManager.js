@@ -27,8 +27,7 @@ let Promise = require('bluebird');
 
 let util = require('util');
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let curMode = null;
 
@@ -42,7 +41,7 @@ function _enforceSpoofMode() {
       .then(() => {
         log.info("New Spoof is started");
       }).catch((err) => {
-        log.error("Failed to start new spoof");
+        log.error("Failed to start new spoof", err, {});
       });
   } else {
     // old style, might not work
@@ -56,12 +55,16 @@ function _enforceSpoofMode() {
 function _disableSpoofMode() {
   if(fConfig.newSpoof) {
     let sm = require('./SpooferManager.js')
-    log.info("Spoofing is stopped");
+    log.info("Stopping spoofing");
+    return sm.stopSpoofing()
   } else {
     // old style, might not work
     var Spoofer = require('./Spoofer.js');
     let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
-    spoofer.clean();
+    return Promise.all([
+      spoofer.clean(),
+      spoofer.clean7()
+    ]);
   }
 }
 
@@ -87,11 +90,19 @@ function _enableSecondaryInterface() {
 }
 
 function _enforceDHCPMode() {
-  return dnsmasq.enableDHCP();
+  sem.emitEvent({
+    type: 'StartDHCP',
+    message: "Enabling DHCP Mode"
+  });
+  return Promise.resolve();
 }
 
 function _disableDHCPMode() {
-  return dnsmasq.disableDHCP();
+  sem.emitEvent({
+    type: 'StopDHCP',
+    message: "Disabling DHCP Mode"
+  });
+  return Promise.resolve();
 }
 
 function apply() {
@@ -118,17 +129,19 @@ function apply() {
 }
 
 function switchToDHCP() {
-  Mode.dhcpModeOn()
+  return Mode.dhcpModeOn()
     .then(() => {
-      _disableSpoofMode();
-      return apply();
+      return _disableSpoofMode()
+        .then(() => {
+        return apply();
+        });
     });
 }
 
 function switchToSpoof() {
-  Mode.spoofModeOn()
+  return Mode.spoofModeOn()
     .then(() => {
-      _disableDHCPMode()
+      return _disableDHCPMode()
         .then(() => {
           return apply();
         });

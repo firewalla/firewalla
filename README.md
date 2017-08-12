@@ -4,14 +4,18 @@
        src="https://scan.coverity.com/projects/11583/badge.svg"/>
 </a>
 ## Firewalla  (Pre-Alpha)
-Support (email fire@firewalla.com)
+Support (email help@firewalla.com or jerry@firewalla.com)
 ## Install From Image
 ```
+If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
 Prepare a blank microsd card > 8GB size
 Follow the same step as installing a raspberry pi image
 https://www.raspberrypi.org/documentation/installation/installing-images/
+
+
 ```
+We are focusing on delivering the official hardware, hence Raspberry Pi support is a bit lacking, we are hoping to pick it up soon.  We will be very likely selling a development version of Firewalla very soon.  It will be at cost with a small mark up to take care the labor involved. 
 
 ### To Build On Raspberry Pi
 - Download Jessie Lite
@@ -48,21 +52,29 @@ sudo apt-get clean
 
 ```
 
+### Build On Docker (Beta, for development purpose only)
+```
+cd docker
+docker build -f Dockerfile2 -t firewalla .
+docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
+# to get an interactive shell
+docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
+```
 
 ### Get IPhone Software
 
 Encipher Connect is a secure messenger used to talk to Raspberry Pi.
 
 ```
-https://itunes.apple.com/us/app/encipher-connect/id1082886344?mt=8
+https://itunes.apple.com/us/app/firewalla/id1180904053
 ```
 
 * connect ethernet port to router.
-* install encipher connect from app store.
-* launch encipher connect
-* tap on 'Firewalla Bot' and connect
+* install firewalla from app store.
+* launch firewalla 
+* tap on 'Firewalla' and connect
 
-If anything bad happens, unplug it. 
+If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
 
 ### Contributions
 

@@ -38,9 +38,13 @@ let am2 = new AM2();
 
 var linux = require('../util/linux.js');
 
+let l2 = require('../util/Layer2.js');
+
 rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
+
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 /*
  *
@@ -769,6 +773,18 @@ module.exports = class {
                 log.debug("Conn:Save:Temp", redisObj);
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
+
+                      let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+
+                      setTimeout(() => {
+                        sem.emitEvent({
+                          type: 'DestIPFound',
+                          ip: remoteIPAddress,
+                          suppressEventLogging: true
+                        });
+                      }, 15 * 1000); // send out in 15 seconds
+
+
                         if (this.config.bro.conn.expires) {
                             //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
                         }
@@ -1163,15 +1179,44 @@ module.exports = class {
 
     //{"ts":1465878273.418592,"host":"192.168.2.239"}
     processknownHostsData(data) {
-        try {
-            let obj = JSON.parse(data);
-            if (obj == null) {
-                log.error("KnownHosts:Drop", obj);
-                return;
-            }
-            this.publisher.publish("DiscoveryEvent", "Host:Detected", obj['host'], obj);
+      try {
+        let obj = JSON.parse(data);
+        if (obj == null) {
+          log.error("KnownHosts:Drop", obj);
+          return;
+        }
 
-        } catch (e) {}
+        let ip = obj.host;
+        if(!ip) {
+          log.error("Invalid knownHosts entry:", obj, {});
+          return;
+        }
+
+        log.info("Found a known host from host:", ip, {});
+
+        l2.getMAC(ip, (err, mac) => {
+
+          if(err) {
+            // not found, ignore this host
+            log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
+            return;
+          }
+
+          let host = {
+            ipv4: ip,
+            ipv4Addr: ip,
+            mac: mac
+          };
+
+          sem.emitEvent({
+            type: "DeviceUpdate",
+            message: "Found a device via bonjour",
+            host: host
+          })
+
+        });
+
+      } catch (e) {}
     }
 
     //{"ts":1465969866.72256,"note":"Scan::Port_Scan","msg":"192.168.2.190 scanned at least 15 unique ports of host 192.168.2.108 in 0m1s","sub":"local","src":

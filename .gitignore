@@ -2,7 +2,9 @@
 logs
 *.log
 npm-debug.log*
+.DS_Store
 
+*.swp
 # Runtime data
 pids
 *.pid
@@ -74,7 +76,7 @@ tramp
 
 # cask packages
 .cask/
-dist/
+#dist/
 
 # Flycheck
 flycheck_*.el
@@ -93,3 +95,7 @@ flycheck_*.el
 /bin/bitbridge7
 /imports/bro
 /imports/bro49.tar.gz
+
+/tmp/
+
+api/db/token.json

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,26 +20,24 @@ process.title = "FireApi";
 let log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
-var fs = require('fs');
-var cloud = require('../encipher');
-var program = require('commander');
-var qrcode = require('qrcode-terminal');
-var publicIp = require('public-ip');
-var intercomm = require('../lib/intercomm.js');
+let fs = require('fs');
+let qrcode = require('qrcode-terminal');
 
-var ControllerBot = require('../lib/ControllerBot.js');
+let ControllerBot = require('../lib/ControllerBot.js');
 
-var HostManager = require('../net2/HostManager.js');
-var SysManager = require('../net2/SysManager.js');
-var FlowManager = require('../net2/FlowManager.js');
-var flowManager = new FlowManager('info');
-var AlarmManager = require('../net2/AlarmManager.js');
-var alarmManager = new AlarmManager('info');
-var sysmanager = new SysManager();
-var VpnManager = require("../vpn/VpnManager.js");
-var vpnManager = new VpnManager('info');
-var IntelManager = require('../net2/IntelManager.js');
-var intelManager = new IntelManager('debug');
+let HostManager = require('../net2/HostManager.js');
+let SysManager = require('../net2/SysManager.js');
+let FlowManager = require('../net2/FlowManager.js');
+let flowManager = new FlowManager('info');
+let AlarmManager = require('../net2/AlarmManager.js');
+let alarmManager = new AlarmManager('info');
+let sysmanager = new SysManager();
+let VpnManager = require("../vpn/VpnManager.js");
+let vpnManager = new VpnManager('info');
+let IntelManager = require('../net2/IntelManager.js');
+let intelManager = new IntelManager('debug');
+
+let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 let Promise = require('bluebird');
 
@@ -60,10 +58,13 @@ let ssh = new SSH('info');
 
 let country = require('../extension/country/country.js');
 
-var builder = require('botbuilder');
-var uuid = require('uuid');
+let builder = require('botbuilder');
+let uuid = require('uuid');
 
-var async = require('async');
+let async2 = require('async');
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
@@ -73,6 +74,14 @@ let f = require('../net2/Firewalla.js');
 let flowTool = require('../net2/FlowTool')();
 
 let i18n = require('../util/i18n');
+
+let NetBotTool = require('../net2/NetBotTool');
+let netBotTool = new NetBotTool();
+
+let HostTool = require('../net2/HostTool');
+let hostTool = new HostTool();
+
+let appTool = require('../net2/AppTool')();
 
 class netBot extends ControllerBot {
 
@@ -117,24 +126,24 @@ class netBot extends ControllerBot {
               host.setPolicy(blocktype, value, (err, data) => {
                 if (err == null) {
                   if (callback != null)
-                  //   this.tx(this.primarygid, "Success:"+ip,"hosts summary");  
+                  //   this.tx(this.primarygid, "Success:"+ip,"hosts summary");
                     callback(null, "Success:" + ip);
                 } else {
                   if (callback != null)
-                  // this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");  
+                  // this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                     callback(err, "Unable to block ip " + ip)
 
                 }
               });
             } else {
               if (callback != null)
-              //this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");  
+              //this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                 callback("error", "Unable to block ip " + ip);
             }
           });
         } else {
           if (callback != null)
-          //this.tx(this.primarygid, "host not found","hosts summary");  
+          //this.tx(this.primarygid, "host not found","hosts summary");
             callback("error", "Host not found");
         }
       });
@@ -276,7 +285,7 @@ class netBot extends ControllerBot {
       });
     });
   }
-  
+
   _dnsmasq(ip, value, callback) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
@@ -320,7 +329,7 @@ class netBot extends ControllerBot {
   }
 
   /*
-   *  
+   *
    *   {
    *      state: on/off
    *      intel: <major/minor>
@@ -350,7 +359,7 @@ class netBot extends ControllerBot {
     //      this.dialog = new builder.LuisDialog(config.dialog.api);
     this.dialog = new builder.CommandDialog();
     this.bot.add('/', this.dialog);
-    var self = this;
+    let self = this;
     this.compress = true;
     this.scanning = false;
 
@@ -392,7 +401,7 @@ class netBot extends ControllerBot {
     this.subscriber = new c('debug');
 
     this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
-      //this.tx(this.primarygid, "Discovery started","message");  
+      //this.tx(this.primarygid, "Discovery started","message");
     });
     this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
       log.info("Found new host ", channel, type, ip);
@@ -453,7 +462,7 @@ class netBot extends ControllerBot {
         let aid = msg.aid;
         if (notifMsg) {
           log.info("Sending notification: " + notifMsg);
-          
+
           notifMsg = {
             title: i18n.__("SECURITY_ALERT"),
             body: notifMsg
@@ -470,7 +479,7 @@ class netBot extends ControllerBot {
           if (msg.alarmID) {
             data.alarmID = msg.alarmID;
           }
-          
+
           switch(msg.alarmNotifType) {
             case "security":
               notifMsg.title = i18n.__("SECURITY_ALERT");
@@ -563,7 +572,7 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "policy":
-        async.eachLimit(Object.keys(msg.data.value), 1, (o, cb) => {
+        async2.eachLimit(Object.keys(msg.data.value), 1, (o, cb) => {
           switch (o) {
             case "monitor":
               this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
@@ -660,7 +669,7 @@ class netBot extends ControllerBot {
         break;
       case "host":
         //data.item = "host" test
-        //data.value = "{ name: " "}"                           
+        //data.value = "{ name: " "}"
         let data = msg.data;
         log.info("Setting Host", msg);
         let reply = {
@@ -704,7 +713,7 @@ class netBot extends ControllerBot {
       case "intel":
         // intel actions
         //   - ignore / unignore
-        //   - report 
+        //   - report
         //   - block / unblockj
         intelManager.action(msg.target, msg.data.value.action, (err) => {
           let reply = {
@@ -793,7 +802,17 @@ class netBot extends ControllerBot {
     });
   }
 
-  getHandler(gid, msg, callback) {
+
+
+
+  getHandler(gid, msg, appInfo, callback) {
+
+    // backward compatible
+    if(typeof appInfo === 'function') {
+      callback = appInfo;
+      appInfo = undefined;
+    }
+
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
@@ -801,9 +820,23 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
-          this.getAllIPForHost(msg.target, (err, ips) => {
-            this.deviceHandler(msg, gid, msg.target, ips, callback);
-          });
+          let useNewDeviceHandler = appTool.isAppReadyForNewDeviceHandler(appInfo);
+          if(useNewDeviceHandler) {
+            let ip = msg.target;
+            log.info("Loading device info in a new way:", ip);
+            this.newDeviceHandler(msg, ip)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+          } else {
+            log.info("Using the legacy way to get device info:", msg.target, {});
+            this.getAllIPForHost(msg.target, (err, ips) => {
+              this.deviceHandler(msg, gid, msg.target, ips, callback);
+            });
+          }
         }
         break;
       case "vpn":
@@ -883,7 +916,7 @@ class netBot extends ControllerBot {
       case "sshRecentPassword":
         ssh.getPassword((err, password) => {
 
-          var data = "";
+          let data = "";
 
           if (err) {
             log.error("Got error when reading password: " + err);
@@ -934,6 +967,69 @@ class netBot extends ControllerBot {
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
+  }
+
+  systemFlowHandler(msg) {
+    log.info("Getting flow info of the entire network");
+
+    let begin = msg.data && msg.data.start;
+    //let end = msg.data && msg.data.end;
+    let end = begin && (begin + 3600);
+
+    if(!begin || !end) {
+      return Promise.reject(new Error("Require begin and error when calling systemFlowHandler"));
+    }
+
+    log.info("FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("TO: ", new Date(end * 1000).toLocaleTimeString());
+
+    return async(() => {
+      let jsonobj = {};
+      let options = {
+        begin: begin,
+        end: end
+      }
+      await (flowTool.prepareRecentFlows(jsonobj, options));
+      await (netBotTool.prepareTopUploadFlows(jsonobj, options));
+      await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
+      await (netBotTool.prepareActivitiesFlows(jsonobj, options));
+
+      return jsonobj;
+    })();
+  }
+
+  newDeviceHandler(msg, ip) {
+    log.info("Getting info on device", ip, {});
+
+    return async(() => {
+      if(ip === '0.0.0.0') {
+        return this.systemFlowHandler(msg);
+      }
+
+      let host = await (this.hostManager.getHostAsync(ip));
+      if(!host || !host.o.mac) {
+        let error = new Error("Invalide Host");
+        error.code = 404;
+        return Promise.reject(error);
+      }
+
+      let mac = host.o.mac;
+
+      // load 24 hours download/upload trend
+      await (flowManager.getStats2(host));
+
+      let jsonobj = {};
+      if (host) {
+        jsonobj = host.toJson();
+
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+      }
+
+      return jsonobj;
+    })();
   }
 
   deviceHandler(msg, gid, target, listip, callback) {
@@ -1043,7 +1139,7 @@ class netBot extends ControllerBot {
 
               // use new way to get recent connections
               Promise.all([
-                this.prepareRecentFlowsForHost(jsonobj, listip)
+//                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
               ]).then(() => {
                 this.simpleTxData(msg, jsonobj, null, callback);
               }).catch((err) => {
@@ -1056,30 +1152,21 @@ class netBot extends ControllerBot {
     });
   }
 
-  prepareRecentFlowsForHost(json, listip) {
-    if (!"flows" in json)
-      json.flows = {};
-
-    json.flows.time = [];
-
-    let promises = listip.map((ip) => {
-      return flowTool.getRecentOutgoingConnections(ip)
-        .then((flows) => {
-          Array.prototype.push.apply(json.flows.time, flows);
-          return json;
-        })
-    });
-
-    return Promise.all(promises);
-
-  }
-
   enrichCountryInfo(flows) {
     // support time flow first
-    let flowsSet = [flows.time, flows.rx, flows.tx];
+    let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
 
     flowsSet.forEach((eachFlows) => {
+      if(!eachFlows)
+        return;
+
       eachFlows.forEach((flow) => {
+
+        if(flow.ip) {
+          flow.country = country.getCountry(flow.ip);
+          return;
+        }
+
         let sh = flow.sh;
         let dh = flow.dh;
         let lh = flow.lh;
@@ -1117,17 +1204,11 @@ class netBot extends ControllerBot {
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
     } else if (msg.data.item === "reset") {
-      log.info("Reseting System");
-      let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200
-        }
-        this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
+      DeviceMgmtTool.resetDevice()
+        .then(() => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
       });
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
@@ -1315,11 +1396,14 @@ class netBot extends ControllerBot {
   }
 
   getDefaultResponseDataModel(msg, data, err) {
-    var code = 200;
-    var message = "";
+    let code = 200;
+    let message = "";
     if (err) {
-      log.error("Got error before simpleTxData: " + err);
+      log.error("Got error before simpleTxData:", err, err.stack, {});
       code = 500;
+      if(err && err.code) {
+        code = err.code;
+      }
       message = err + "";
     }
 
@@ -1391,8 +1475,34 @@ class netBot extends ControllerBot {
     }
   }
 
+  msgHandlerAsync(gid, rawmsg) {
+    return new Promise((resolve, reject) => {
+      let processed = false; // only callback once
+      this.msgHandler(gid, rawmsg, (err, response) => {
+        if(processed)
+          return;
+
+        processed = true;
+        if(err) {
+          reject(err);
+        } else {
+          resolve(response);
+        }
+      })
+    })
+  }
+
   msgHandler(gid, rawmsg, callback) {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
+
+      if(!callback) { // cloud mode
+        if("compressMode" in rawmsg.message) {
+          callback = {
+            compressMode: rawmsg.message.compressMode
+          } // FIXME: A dirty hack to reuse callback to pass options
+        }
+      }
+
       let msg = rawmsg.message.obj;
 //            log.info("Received jsondata", msg);
       if (rawmsg.message.obj.type === "jsonmsg") {
@@ -1409,7 +1519,15 @@ class netBot extends ControllerBot {
               log.info("Re-generate init data");
 
               let begin = Date.now();
-              this.hostManager.toJson(true, (err, json) => {
+
+              let options = {}
+
+              if(rawmsg.message.obj.data &&
+                rawmsg.message.obj.data.simulator) {
+                // options.simulator = 1
+              }
+
+              this.hostManager.toJson(true, options, (err, json) => {
                 let datamodel = {
                   type: 'jsonmsg',
                   mtype: 'init',
@@ -1469,7 +1587,8 @@ class netBot extends ControllerBot {
           //
           this.setHandler(gid, msg, callback);
         } else if (rawmsg.message.obj.mtype === "get") {
-          this.getHandler(gid, msg, callback);
+          let appInfo = appTool.getAppInfo(rawmsg.message);
+          this.getHandler(gid, msg, appInfo, callback);
         } else if (rawmsg.message.obj.mtype === "cmd") {
           this.cmdHandler(gid, msg, callback);
         }
@@ -1513,7 +1632,7 @@ process.on("unhandledRejection", function (r, e) {
   log.info("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
 });
 
-var bone = require('../lib/Bone.js');
+let bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {

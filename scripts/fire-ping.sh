@@ -11,7 +11,7 @@ mem=$(free -m | awk '/-/{print $4}')
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
-for i in `seq 1 3`; do
+for i in `seq 1 5`; do
     if ping -c 1 $DEFAULT_ROUTE &> /dev/null
     then
 #       sudo touch /dev/watchdog

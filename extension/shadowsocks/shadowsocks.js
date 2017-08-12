@@ -43,6 +43,11 @@ var ttlExpire = 60*60*12;
 let externalPort = 8388;
 let localPort = 8388;
 
+let ssBinary = __dirname + "/bin." + firewalla.getPlatform() + "/fw_ss_server";
+let ssLogFile = firewalla.getLogFolder() + "/fw_ss_server.log";
+
+let cp = require('child_process')
+
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
@@ -55,7 +60,7 @@ module.exports = class {
 
     install(callback) {
       let install_cmd = util.format('cd %s/extension/shadowsocks; bash ./install.sh', fHome);
-      require('child_process').exec(install_cmd, (err, out, code) => {
+      cp.exec(install_cmd, (err, out, code) => {
             if (err) {
                 log.error("ShadowSocks:INSTALL:Error", "Unable to install1.sh", err);
             }
@@ -67,44 +72,78 @@ module.exports = class {
     configure(callback) {}
 
     stop(callback) {
-        this.started = false;
+      callback = callback || function() {}
 
-        let UPNP = require('../../extension/upnp/upnp');
-        let upnp = new UPNP();
-        upnp.removePortMapping("tcp", localPort, externalPort);
+      this.started = false;
 
-        let cmd = require('util').format("ssserver -d stop --pid %s/run/ss.pid", fHome);
-        require('child_process').exec(cmd, (err, out, code) => {
-            log.info("Stopping ShadowSocket", err);
-            if (callback) {
-                callback(err);
-            }
-        });
+      let UPNP = require('../../extension/upnp/upnp');
+      let upnp = new UPNP();
+      upnp.removePortMapping("tcp", localPort, externalPort);
+
+      this._stop(callback);
+    }
+    
+    _stop(callback) {
+      callback = callback || function() {}
+
+      let cmd = "pkill -9 fw_ss_server";
+      cp.exec(cmd, (err, out, code) => {
+        if(err) {
+          log.error("Failed to stop fw_ss_server", err, {});
+          callback(err);
+          return;
+        }
+
+        log.info("Shadowsocks is stopped");
+        callback(err);
+      });
     }
 
     start(callback) {
-        if (this.started) {
-            log.info("Shadowsocks::StartedAlready");
-            if (callback)
-                 callback(null, this.portmapped, this.portmapped);
-            return;
+      callback = callback || function() {}
+      
+      // always stop first before start
+      this._stop(() => {
+        this._start(callback);
+      })
+    }
+    
+    _start(callback) {
+      callback = callback || function() {}
+      
+      if (this.started) {
+        log.info("Shadowsocks::StartedAlready");
+        if (callback)
+          callback(null, this.portmapped, this.portmapped);
+        return;
+      }
+      
+      log.info("Starting shadowsocks server...");
+      
+      let outputStream = fs.createWriteStream(ssLogFile, {flags: 'a'});
+
+      let args = util.format("-c %s -v",
+        configFileLocation
+      );
+
+      log.info("Running cmd:", ssBinary, args);
+
+      let ss = cp.spawn(ssBinary, args.split(" "));
+
+      ss.stdout.pipe(outputStream);
+      ss.stderr.pipe(outputStream);
+      
+      ss.on('exit', (code) => {
+        if(code) {
+          log.error("Shadowsocks server exited with error code", code);
+        } else {
+          log.info("Shadowsocks server exited successfully");
         }
+      });
+      
+      this.started = true;
 
-        let cmd = require('util').format("ssserver -d start -c %s --pid-file %s/run/ss.pid --log-file %s/log/ss.log", configFileLocation, fHome, fHome);
-        log.info(cmd);
-        require('child_process').exec(cmd, (err, out, code) => {
-            log.info("Shadowsocks:Start", err);
-            if (err && this.started == false) {
-                if (callback) {
-                    callback(err);
-                }
-                return;
-            }
-            this.started = true;
-
-
-            this.addPortMapping(1000);
-        });
+      this.addPortMapping(1000);
     }
 
   addPortMapping(time) {

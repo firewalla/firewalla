@@ -1,5 +1,7 @@
 {
-  "version": 1.80,
+  "version": 1.86,
+  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v2",
+  "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
@@ -9,8 +11,8 @@
           "sudo sudo iptables -t nat -A POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
-          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
+          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",
+          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
        ]
     },
   "monitoringInterface": "eth0",
@@ -43,14 +45,70 @@
     "DHCPSensor": {},
     "UPNPSensor": {},
     "BonjourSensor": {},
-    "HeapSensor": {},
-    "AdvancedNmapSensor": {}
+    "AdvancedNmapSensor": {},
+    "NmapSensor": {},
+    "BoneSensor": {},
+    "DNSMASQSensor": {},
+    "PublicIPSensor": {},
+    "FlowAggregationSensor": {},
+    "DeviceNameUpdateSensor": {},
+    "OldDataCleanSensor": {
+      "alarm" : {
+        "expires": 604800,
+        "count": 1000
+      },
+      "notice" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "intel" : {
+        "expires": 604800,
+        "count": 10000
+      },
+      "dns": {
+        "expires": 100000,
+        "count": 10000
+      },
+      "software": {
+        "expires": 604800,
+        "count": 10000
+      },
+      "http": {
+        "expires": 1800,
+        "count": 10000
+      },
+      "ssl": {
+        "expires": 43200,
+        "count": 10000
+      },
+      "conn": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "ssh": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "x509": {
+        "expires": 7200,
+        "count": 10000
+      },
+      "knownHosts": {
+        "expires": 3600,
+        "count": 10000
+      },
+      "userAgent": {
+        "expires": 604800,
+        "count": 10000
+      }
+    }
 },
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
-    "DeviceHook": {}
+    "DeviceHook": {},
+    "DestIPFoundHook": {}
   },
     "bro": {
       "notice" : {
@@ -75,7 +133,7 @@
       },
       "dns": {
          "path": "/blog/current/dns.log",
-         "expires": 100000 
+         "expires": 100000
       },
       "software": {
          "path": "/blog/current/software.log",
@@ -92,7 +150,7 @@
       "conn": {
          "path": "/blog/current/conn.log",
          "pathdev": "/blog/current/conndev.log",
-         "flowstashExpires": 900, 
+         "flowstashExpires": 900,
          "expires": 86400
       },
       "ssh": {

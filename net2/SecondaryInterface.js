@@ -55,7 +55,7 @@ exports.create = function (config, callback) {
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
-                    log.error("SecondaryInterface: Already Created Secondary Interface",list[i]);
+                    log.warn("Already Created Secondary Interface",list[i]);
                     callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
                     return; 
                 }
@@ -71,6 +71,8 @@ exports.create = function (config, callback) {
                 if (err!=null) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }
+                require('child_process').exec("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh "+_secondaryIp,(err,out,code)=>{
+                });
                 if (callback) {
                     callback(err,_secondaryIp, _secondaryIpSubnet, _secondaryIpNet, _secondaryMask);
                 }

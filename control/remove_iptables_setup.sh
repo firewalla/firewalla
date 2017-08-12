@@ -10,4 +10,4 @@ if which ip6tables; then
   sudo iptables -X FW_BLOCK
 fi
 
-sudo ipset del blocked_ip_set
+sudo ipset del -! blocked_ip_set

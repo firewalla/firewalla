@@ -27,10 +27,16 @@ let FWEvent = class {
 
 let Sensor = class {
   constructor() {
+    this.config = {};
+  }
+  
+  setConfig(config) {
+    require('util')._extend(this.config, config);
   }
 
   run() {
     // do nothing in base class
+    log.info(require('util').format("%s is launched", typeof this.constructor));
   }
   
 }

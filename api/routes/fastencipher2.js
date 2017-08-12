@@ -1,13 +1,26 @@
-"use strict"
-var express = require('express');
-var router = express.Router();
-const passport = require('passport')
+/*    Copyright 2016 Firewalla LLC 
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict';
+let express = require('express');
+let router = express.Router();
 
-var Encryption = require('../lib/Encryption'); // encryption middleware
-var encryption = new Encryption();
+let Encryption = require('../lib/Encryption'); // encryption middleware
+let encryption = new Encryption();
 
-var CloudWrapper = require('../lib/CloudWrapper');
-var cloudWrapper = new CloudWrapper();
+let CloudWrapper = require('../lib/CloudWrapper');
+let cloudWrapper = new CloudWrapper();
 
 let f = require('../../net2/Firewalla.js');
 
@@ -15,7 +28,10 @@ let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
 
-let zlib = require('zlib');
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -24,114 +40,25 @@ let zlib = require('zlib');
 router.post('/message/:gid',
     sc.isInitialized,
     encryption.decrypt,
-    function(req, res, next) {
+    sc.debugInfo,
+    (req, res, next) => {
       let gid = req.params.gid;
-      let controller = cloudWrapper.getNetBotController(gid);
-      if(!controller) {
-        // netbot controller is not ready yet, waiting for init complete
-        res.status(503);
-        res.json({error: 'Initializing Firewalla Device, please try later'});
-        return;
-      }
-      if(req.body.message && 
-        req.body.message.obj &&
-        req.body.message.obj.data &&
-        req.body.message.obj.data.item === "ping") {
-        log.info("Got a ping"); // ping is too frequent, reduce amount of log
-      } else {
-        log.info("================= request from ", req.connection.remoteAddress, " =================");
-        log.info(JSON.stringify(req.body, null, '\t'));
-        log.info("================= request body end =================");
-      }
       
-      let compressed = req.body.compressed;
-
-      var alreadySent = false;
-      
-      controller.msgHandler(gid, req.body, (err, response) => {
-        if(alreadySent) {
-          return;
-        }
-
-        alreadySent = true;
-        
-        if(err) {
-          res.json({ error: err });
-          return;
-        } else {
-          res.body = JSON.stringify(response);          
-          log.info("encipher uncompressed message size: ", res.body.length, {});
-          if(compressed) { // compress payload to reduce traffic
-            let input = new Buffer(res.body, 'utf8');
-            zlib.deflate(input, (err, output) => {
-              if(err) {
-                res.status(500).json({ error: err });
-                return;
-              }
-
-              res.body = JSON.stringify({payload: output.toString('base64')});
-              log.info("compressed message size: ", res.body.length, {});
-              next();
-            });
-          } else {
-            next();
-          }
-        }
-      });
+      async(() => {
+        let controller = await(cloudWrapper.getNetBotController(gid));
+        let response = await(controller.msgHandlerAsync(gid, req.body));
+        res.body = JSON.stringify(response);
+        next();
+      })()
+        .catch((err) => {
+          // netbot controller is not ready yet, waiting for init complete
+          res.status(503);
+          res.json({error: 'Initializing Firewalla Device, please try later'});
+        });
     },
+  
+    sc.compressPayloadIfRequired,
     encryption.encrypt
-);
-
-router.post('/message/cleartext/:gid', 
-    passport.authenticate('bearer', { session: false }),
-    function(req, res, next) {
-      log.info("A new request");
-      log.info("================= request body =================");
-      log.info(JSON.stringify(req.body, null, '\t'));
-      log.info("================= request body end =================");
-        
-      let gid = req.params.gid;
-      let compressed = req.query.compressed;
-      let controller = cloudWrapper.getNetBotController(gid);
-
-      if(!controller) {
-	res.status(404).send('');
-	return;
-      }
-      var alreadySent = false;
-
-      controller.msgHandler(gid, req.body, (err, response) => {
-        if(alreadySent) {
-          return;
-        }
-        
-        alreadySent = true;
-        
-        if(err) {
-          res.json({ error: err });
-          return;
-        } else {
-          let json = JSON.stringify(response);
-          log.info("Got response, length: ", json.length);
-
-          if(compressed) { // compress payload to reduce traffic
-            let input = new Buffer(json, 'utf8');
-            zlib.deflate(input, (err, output) => {
-              if(err) {
-                res.status(500).json({ error: err });
-                return;
-              }
-              
-              res.status(200).json({
-                payload: output.toString('base64')
-              });
-            });
-          } else {
-            res.json(response);
-          }
-        }
-      });
-    }
 );
 
 module.exports = router;
