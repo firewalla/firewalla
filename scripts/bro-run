@@ -6,7 +6,7 @@ if [ -f  /bspool/tmp/post-term* ]; then
     logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
-    /home/pi/firewalla/scripts/fire-reboot-normal
+    /home/pi/firewalla/scripts/fire-reboot
 fi
 GITHUB_STATUS_API=https://status.github.com/api.json
 for i in `seq 1 10`; do
@@ -63,10 +63,11 @@ sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
 sync
 /usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
 logger "FIREWALLA: Deployed BRO using BROCTL"
-cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo sysctl -p
+
 sudo -u pi crontab -r
 sudo dhclient -6 eth0 &
 sudo dhclient -4 eth0 &
 logger "FIREWALLA: BRO-RUN Finished"
 (sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&
-

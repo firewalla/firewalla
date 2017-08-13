@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,21 +32,79 @@ if (config == null) {
   process.exit(1);
 }
 
-var eptname = config.endpoint_name;
-var appId = config.appId;
-var appSecret = config.appSecret;
-var cloud = require('../../encipher');
+let eptname = config.endpoint_name;
+let appId = config.appId;
+let appSecret = config.appSecret;
+let cloud = require('../../encipher');
 
-var eptcloud = new cloud(eptname);
-var nbControllers = {};
+let eptcloud = null;
+let nbControllers = {};
 
-var instance = null;
+let instance = null;
+
+let Bone = require('./../../lib/Bone');
+
+let redis = require('redis');
+let rclient = redis.createClient();
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
       instance = this;
 
+      eptcloud = new cloud(eptname);
+      this.eptcloud = eptcloud;
+      
+      async(() => {
+
+        log.info("[Boot] Waiting for security keys to be ready");
+        // key ready
+        await(eptcloud.utilKeyReady());
+
+        log.info("[Boot] Loading security keys");
+        await(eptcloud.loadKeys());
+
+        log.info("[Boot] Waiting for cloud token to be ready");
+        // token ready
+        await(Bone.waitUntilCloudReadyAsync());
+
+        log.info("[Boot] Setting up communication channel with cloud");
+        this.tryingInit();
+      })();
+    }
+    return instance;
+  }
+
+  tryingInit() {
+    return async(() => {
+      try {
+        await(this.init());
+      } catch(err) {
+        await(delay(3000));
+        return this.tryingInit();
+      };
+    })();
+  }
+  
+  isGroupLoaded(gid) {
+    return nbControllers[gid];
+  }
+  
+  init() {
+    log.info("Initializing Cloud Wrapper...");
+
+    return new Promise((resolve, reject) => {
       // Initialize cloud and netbot controller
       eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
         if(err) {
@@ -54,44 +112,63 @@ module.exports = class {
           process.exit(1);
         } else {
           log.info("Success logged in Firewalla Cloud");
-          eptcloud.eptFind(result, function (err, ept) {
+
+          eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
             if(err) {
-              log.error("Failed to find device identity: %s", err.toString());
-            } else {
-              log.info("Got device identity");
+              log.error("Fail to find groups")
+              reject(err);
+              return;
             }
-            
-            eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
-              if(err) {
-                log.error("Fail to find groups")
-              } else {
-                log.info("Found %d groups this device belongs to", groups.length);
+
+            log.info("Found %d groups this device has joined", groups.length);
+
+            if(groups.length === 0) {
+              log.error("Wating for kickstart process to create group");
+              reject(new Error("This device belongs to no group"));
+              return;
+            }
+
+            groups.forEach((group) => {
+              let groupID = group.gid;
+              if(nbControllers[groupID]) {
+                return;
               }
-              groups.forEach(function(group) {
-                let groupID = group.gid;
-                let NetBotController = require("../../controllers/netbot.js");
-                let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
-                nbConfig.controller = config.controllers[0];
-                // temp use apiMode = false to enable api to act as ui as well
-                let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
-                if(nbController) {
-                  nbControllers[groupID] = nbController;
-                  log.info("netbot controller for group " + groupID + " is intialized successfully");
-                }
-              });
+              let NetBotController = require("../../controllers/netbot.js");
+              let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
+              nbConfig.controller = config.controllers[0];
+              // temp use apiMode = false to enable api to act as ui as well
+              let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
+              if(nbController) {
+                nbControllers[groupID] = nbController;
+                log.info("netbot controller for group " + groupID + " is intialized successfully");
+              }
             });
-          }); 
+
+            resolve();
+          });
         }
       });
-    }
-    return instance;
+    })
   }
 
   getNetBotController(groupID) {
-    return nbControllers[groupID];
+    let controller = nbControllers[groupID];
+    if(controller) {
+      return Promise.resolve(controller);
+    }
+
+    return this.init()
+      .then(() => {
+        controller = nbControllers[groupID];
+        if(controller) {
+          return Promise.resolve(controller);
+        } else {
+          return Promise.reject(new Error("Failed to found group" + groupID));
+        }
+      });
   }
 
   getCloud() {
     return eptcloud;
   }
-}
+};

@@ -1,8 +1,11 @@
 'use strict'
 
 let fs = require('fs');
+let Firewalla = require('../net2/Firewalla.js');
+let path = Firewalla.getEncipherConfigFolder() + '/license';
 
-let path = '/encipher.config/license'
+let license = null;
+let signature = null;
 
 function getLicense() {
     if (!fs.existsSync(path)) {
@@ -13,7 +16,9 @@ function getLicense() {
         return null;
     }
     let licenseobj = JSON.parse(license);
-    return licenseobj.DATA;
+    license = licenseobj.DATA;
+    signature = licenseobj.SIGNATURE;
+    return licenseobj;
 }
 
 function verifyLicense(license) {

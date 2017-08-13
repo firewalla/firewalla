@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -166,9 +166,16 @@ module.exports = class {
             if (err == null) {
                 publicIp.v4((err, ip) => {
                     if (err != null) {
-                        if (callback) 
-                            callback(err, null);
-                        return;
+                        log.error("VPNManager:INSTALL:Error IP",ip,err);
+                        ip = sysManager.myDDNS();
+                        if (ip == null) {
+                             ip = sysManager.publicIp;
+                        }
+                        if (ip == null) {
+                            if (callback) 
+                                callback(err, null);
+                            return;
+                        }
                     }
 
                     // !! Pay attention to the parameter "-E" which is used to preserve the

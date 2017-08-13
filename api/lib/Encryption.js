@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,11 +14,14 @@
  */
 'use strict';
 
-var CloudWrapper = require('../lib/CloudWrapper');
-var cloudWrapper = new CloudWrapper();
+let CloudWrapper = require('../lib/CloudWrapper');
+let cloudWrapper = new CloudWrapper();
 
-var instance = null;
-var log = null;
+let instance = null;
+let log = null;
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
 
 module.exports = class {
     constructor(loglevel) {
@@ -30,14 +33,17 @@ module.exports = class {
     }
 
     decrypt(req, res, next) {
-      var gid = req.params.gid;
+      let gid = req.params.gid;
+      let message = req.body.message;
+
       if(gid == null) {
+        res.status(400);
         res.json({"error" : "Invalid group id"});
         return;
       }
 
-      var message = req.body.message;
       if(message == null) {
+        res.status(400);
         res.json({"error" : "Invalid request"});
         return;
       }
@@ -55,13 +61,13 @@ module.exports = class {
     }
 
     encrypt(req, res, next) {
-      var gid = req.params.gid;
+      let gid = req.params.gid;
       if(gid == null) {
         res.json({"error" : "Invalid group id"});
         return;
       }
 
-      var body = res.body;
+      let body = res.body;
 
       if(body == null) {
         res.json({"error" : "Response error"});

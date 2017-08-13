@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,9 +18,9 @@ let log = require("../net2/logger.js")(__filename, "info");
 
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
-console.log("================================================================================");
-console.log("Monitor Starting:",config.version);
-console.log("================================================================================");
+log.info("================================================================================");
+log.info("Monitor Starting:",config.version);
+log.info("================================================================================");
 
 // api/main/monitor all depends on sysManager configuration
 let SysManager = require('../net2/SysManager.js');
@@ -48,8 +48,8 @@ function run0() {
 }
 
 process.on('uncaughtException',(err)=>{
-    console.log("################### CRASH #############");
-    console.log("+-+-+-",err.message,err.stack);
+    log.info("################### CRASH #############");
+    log.info("+-+-+-",err.message,err.stack);
     if (err && err.message && err.message.includes("Redis connection")) {
         return;
     }
@@ -59,17 +59,26 @@ process.on('uncaughtException',(err)=>{
     },1000*2);
 });
 
+let heapSensor = null;
+
 function run() {
 
+  sysManager = null; // not needed any more after run()
+  
+  // listen on request to dump heap for this process, used for memory optmiziation
+  // let HeapSensor = require('../sensor/HeapSensor');
+  // heapSensor = new HeapSensor();
+  // heapSensor.run();
+  
 let tick = 60 * 15; // waking up every 5 min
 let monitorWindow = 60 * 60 * 4; // eight hours window
 
 let FlowMonitor = require('./FlowMonitor.js');
 let flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
 
-console.log("================================================================================");
-console.log("Monitor Running ");
-console.log("================================================================================");
+log.info("================================================================================");
+log.info("Monitor Running ");
+log.info("================================================================================");
 
 flowMonitor.run();
 setInterval(() => {

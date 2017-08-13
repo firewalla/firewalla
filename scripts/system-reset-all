@@ -18,5 +18,6 @@ sudo ./clean-all
 sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
 sync
 sync
+logger "REBOOT: User REBOOT"
 /home/pi/firewalla/scripts/fire-reboot-normal
 

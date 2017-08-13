@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,55 +18,67 @@ var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
 var ip = require('ip');
 
+let l2 = require('../util/Layer2.js');
+
 var instance = null;
 
 var debugging = false;
-var log = function () {
-    if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
-    }
-};
+let log = require("./logger.js")(__filename, 'info');
+
+let firewalla = require('./Firewalla.js');
+
+
+
+let monitoredKey = "monitored_hosts";
+let unmonitoredKey = "unmonitored_hosts";
+
+
+let fConfig = require('./config.js').getConfig();
+
+let Promise = require('bluebird');
+
+let redis = require('redis');
+let rclient = redis.createClient();
+
+let cp = require('child_process');
+
+
+// add promises to all redis functions
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 
 module.exports = class {
 
-    getMAC(ipaddress, cb) {
-        var arp = spawn("/usr/sbin/arp", ["-n", ipaddress]);
-        var buffer = '';
-        var errstream = '';
-        arp.stdout.on('data', (data) => {
-            buffer += data;
-        });
-        arp.stderr.on('data', (data) => {
-            errstream += data;
-        });
+  newSpoof(address) {
+    return Promise.all([
+      rclient.saddAsync(monitoredKey, address),
+      rclient.sremAsync(unmonitoredKey, address),
+      ]);
+  }
 
-        arp.on('close', (code) => {
-            if (code !== 0) {
-                log("Error running arp " + code + " " + errstream);
-                spawn('/bin/ping', [ipaddress, '-c', 2]);
-                cb(true, code);
-                return;
-            }
-            var table = buffer.split('\n');
-            if (table.length >= 2 && table[1].length > 10) {
-                var parts = table[1].split(' ').filter(String);
-                log("GETMAC:PARTS:",table,parts);
-                cb(false, parts[2]);
-                if (parts[2] == null) {}
-                return;
-            }
-            //log("Could not find ip in arp table"+ipaddress);
-            cb(true, "Could not find ip in arp table: " + ipaddress);
-            spawn('/bin/ping', [ipaddress, '-c', 2]);
-        });
+  newUnspoof(address) {
+    return Promise.all([
+      rclient.sremAsync(monitoredKey, address),
+      rclient.saddAsync(unmonitoredKey, address)
+    ]);
+  }
+ 
+  spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
 
+    callback = callback || function() {}
+    
+    if(fConfig.newSpoof) {
+      this.newSpoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
     }
-
-    spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
-      log("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
+      
+      log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
-            log("Can't spoof self to self", ipAddr, tellIpAddr);
+            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }
@@ -76,21 +88,21 @@ module.exports = class {
             return;
         }
 
-        this.getMAC(ipAddr, (err, _mac) => {
+        l2.getMAC(ipAddr, (err, _mac) => {
             if (_mac) {
                 _mac = _mac.toUpperCase();
             }
             if (err == false && _mac != null && _mac.match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$") != null && _mac == mac) {
-                //log("Got mac ipAddr",ipAddr," with mac ", mac);
-                log("Spoof:Spoof", ipAddr + " " + tellIpAddr + " " + mac + " " + _mac);
+                //log.info("Got mac ipAddr",ipAddr," with mac ", mac);
+                log.info("Spoof:Spoof", ipAddr + " " + tellIpAddr + " " + mac + " " + _mac);
                 this._spoof(ipAddr, tellIpAddr, mac, callback);
             } else {
                 // this will be better to tie up with nmap,
                 // scans.  then msg through a channel 
                 // 
-                //log("Host not there exist, waiting", ipAddr,err,mac);
+                //log.info("Host not there exist, waiting", ipAddr,err,mac);
                 if (_mac != mac) {
-                    log("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
+                    log.info("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
                 }
                 setTimeout(() => {
                     this.spoof(ipAddr, tellIpAddr, mac, null,null,callback);
@@ -130,7 +142,7 @@ module.exports = class {
             ipv6db[ipv6Addrs[i]]=1; 
             if (null == this._spoofersFind(mac,ipv6Addrs[i],'v6',gateway)) {
                 newips.push(ipv6Addrs[i]);
-                console.log("Spoof:AddNew",ipv6Addrs[i]);
+                log.info("Spoof:AddNew",ipv6Addrs[i]);
             }
         }
 
@@ -138,12 +150,12 @@ module.exports = class {
             for (let j in this.spoofers[mac]['v6']) {
                 if (ipv6db[j]==null) {
                    removals.push(j);
-                   console.log("Spoof:Remove",j);
+                   log.info("Spoof:Remove",j);
                 }
             }
         }
 
-        console.log("Spoof:Spoof:new",newips,"removals", removals);
+        log.info("Spoof:Spoof:new",newips,"removals", removals);
 
         if (removals.length>0) {
             this.unspoof(null,null,mac,removals,gateway);
@@ -167,10 +179,10 @@ module.exports = class {
     }
 
     _spoof6(ip6Addr, tellIpAddr, mac,callback) {
-        console.log("Spoof:Spoof6",ip6Addr,tellIpAddr);
+        log.info("Spoof:Spoof6",ip6Addr,tellIpAddr);
       //  if (ip6Addr == tellIpAddr || ip6Addr.startsWith("fe80") ) {
         if (ip6Addr == tellIpAddr ) {
-            log("Can't spoof self to self", ip6Addr, tellIpAddr);
+            log.info("Can't spoof self to self", ip6Addr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }         
@@ -190,7 +202,7 @@ module.exports = class {
             let taskr = require('child_process').exec(cmdline2, (err, out, code) => {
             });
         }
-        log(cmdline,cmdline2);
+        log.info(cmdline,cmdline2);
         this._spoofersAdd(mac,ip6Addr,'v6',tellIpAddr, {
             ip6: ip6Addr,
             tellIpAddr: tellIpAddr,
@@ -202,7 +214,7 @@ module.exports = class {
 
     _spoof(ipAddr, tellIpAddr, mac, callback) {
         if (ipAddr == tellIpAddr) {
-            log("Can't spoof self to self", ipAddr, tellIpAddr);
+            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
             if (callback) callback("error", null);
             return;
         }
@@ -214,7 +226,7 @@ module.exports = class {
 
         let cmdline = "../bin/bitbridge4 " + ipAddr + " -t " + tellIpAddr + " -r";
 
-        log("Executing cmdline ", cmdline);
+        log.info("Executing cmdline ", cmdline);
 
         let task = require('child_process').exec(cmdline, (err, out, code) => {
             if (callback)
@@ -243,12 +255,12 @@ module.exports = class {
             this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
         });
 
-        //log("Spoof:Spoof:",ipAddr,tellIpAddr);
+        //log.info("Spoof:Spoof:",ipAddr,tellIpAddr);
     }
 
     _unspoof6(ipAddr, tellIpAddr,mac) {
         let task = this._spoofersFind(mac,ipAddr,'v6',tellIpAddr);
-        log("Spoof:Unspoof6", ipAddr, tellIpAddr,task);
+        log.info("Spoof:Unspoof6", ipAddr, tellIpAddr,task);
         if (task && task.task) {
            task.task.kill('SIGHUP');
         }
@@ -261,7 +273,7 @@ module.exports = class {
 
     _unspoof(ipAddr, tellIpAddr,mac) {
         let task = this._spoofersFind(mac,ipAddr,'v4',tellIpAddr);
-        log("Spoof:Unspoof", ipAddr, tellIpAddr);
+        log.info("Spoof:Unspoof", ipAddr, tellIpAddr);
         if (task != null && task.task != null) {
             task.task.kill('SIGHUP');
             this.clean(task.ip);
@@ -271,18 +283,27 @@ module.exports = class {
             this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
         }
     }
-    unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6) {
-        log("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
-        if (ipAddr && tellIpAddr) {
-           this._unspoof(ipAddr,tellIpAddr,mac);
-        }
-        let maxSpoofer = 5;
-        if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
-            for (let i in ip6Addrs) {
-                this._unspoof6(ip6Addrs[i],gateway6,mac);
-            }
-        }
+  unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
+    callback = callback || function() {}
+
+    if(fConfig.newSpoof) {
+      this.newUnspoof(ipAddr)
+        .then(() => callback(null))
+        .catch((err) => callback(err));
+      return;
     }
+    
+    log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
+    if (ipAddr && tellIpAddr) {
+      this._unspoof(ipAddr,tellIpAddr,mac);
+    }
+    let maxSpoofer = 5;
+    if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
+      for (let i in ip6Addrs) {
+        this._unspoof6(ip6Addrs[i],gateway6,mac);
+      }
+    }
+  }
 
     clean(ip) {
         //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
@@ -290,22 +311,49 @@ module.exports = class {
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
         }
-        console.log("Spoof:Clean:Running commandline: ", cmdline);
+        log.info("Spoof:Clean:Running commandline: ", cmdline);
 
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
+      return new Promise((resolve, reject) => {
+        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+          if (err) {
+            log.error("Failed to clean up spoofing army: " + err);
+          }
+          resolve();
         });
+      });
+    }
+    
+    clean7() {
+      //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
+      let cmdline = 'sudo pkill -f bitbridge7';
+
+      log.info("Spoof:Clean:Running commandline: ", cmdline);
+
+      return new Promise((resolve, reject) => {
+        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
+          if(err) {
+            log.error("Failed to clean up spoofing army: " + err);
+          }
+          resolve();
+        });
+      });
     }
 
     clean6byIp(ip6Addr,tellIpAddr) {
         let cmdline = "sudo pkill -f 'bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr+"'";
         let cmdline2 = "sudo pkill -f 'bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr+"'";
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
-        let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
+      let p = require('child_process').exec(cmdline, (err, out, code) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+        
+      });
+      let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
+        if(err) {
+          log.error("Failed to clean up spoofing army: " + err);
+        }
+        
+      });
     }
 
     clean6(ip) {
@@ -314,14 +362,15 @@ module.exports = class {
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";
         }
-        console.log("Spoof:Clean:Running commandline: ", cmdline);
+        log.info("Spoof:Clean:Running commandline: ", cmdline);
 
         let p = require('child_process').exec(cmdline, (err, out, code) => {
-            console.log("Spoof:Clean up spoofing army", cmdline, err, out);
+            log.info("Spoof:Clean up spoofing army", cmdline, err, out);
         });
     }
 
-    constructor(intf, config, clean, debug) {
+  constructor(intf, config, clean, debug) {
+
         debugging = debug;
 
         // Warning, should not clean default ACL's applied to ip tables

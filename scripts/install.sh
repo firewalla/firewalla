@@ -35,7 +35,7 @@ if [[ -e /etc/NetworkManager/NetworkManager.conf ]]; then
 fi
 
 # Remove all 3rd party apt source
-rm -fr /etc/apt/sources.list.d/*
+# rm -fr /etc/apt/sources.list.d/*
 
 # APT
 apt-get update
@@ -47,7 +47,14 @@ echo "export NODE_PATH=/home/pi/.node_modules:$NODE_PATH" >> /etc/environment
 # Firewalla
 apt-get install -y git
 
-sudo -u pi git clone https://github.com/firewalla/firewalla --branch release_pi_3_0 --single-branch
+if [ -z ${TRAVIS+x} ]; then
+    sudo -u pi git clone https://github.com/firewalla/firewalla --branch release_pi_3_0 --single-branch
+  
+else
+    ln -s $TRAVIS_BUILD_DIR /home/pi/firewalla
+    sudo chmod 777 -R /home/*
+fi
+
 cd /home/pi/firewalla/
 sudo -u pi ./buildraw4
 
@@ -61,7 +68,7 @@ rm ~pi/.ssh/known_hosts
 > /var/log/wtmp
 > /var/log/btmp
 
-
+sudo -u pi mkdir -p /home/pi/logs/
 
 
 

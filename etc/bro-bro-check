@@ -7,3 +7,17 @@ if [[ $bro_process_cnt < 3 ]]; then
     sudo service brofish stop
     sudo service brofish start
 fi
+
+redis_process_cnt=`sudo systemctl status redis-server |grep 'active (running)' | wc -l`
+
+if [[ $redis_process_cnt = 0 ]]; then
+   /usr/bin/logger "FIREWALLA PING: REDIS GOING DOWN"
+   sleep 10
+   redis_process_cnt=`sudo systemctl status redis-server |grep 'active (running)' | wc -l`
+   if [[ $redis_process_cnt = 0 ]]; then
+       sudo rm -r -f /var/log/redis/*
+       /usr/bin/logger "REBOOT: FIREWALLA PING NO REDIS"
+       /home/pi/firewalla/scripts/fire-reboot
+       exit 0
+   fi
+fi

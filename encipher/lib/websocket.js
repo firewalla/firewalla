@@ -2,7 +2,9 @@
 
 var io2 = require('socket.io-client');
 //var socket = io2.connect('https://iox.encipher.io/');
-var socket = io2.connect('https://firewalla.encipher.io/');
+//var socket = io2.connect('https://firewalla.encipher.io/socketio');
+//var socket = io2.connect('https://firewalla.encipher.io/socket.io');
+var socket = io2('https://firewalla.encipher.io',{path: '/socket.io'});
 
 var msg2 = "hello";
 

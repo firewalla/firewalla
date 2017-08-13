@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,7 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+let log = require('./logger.js')(__filename);
+
 var iptool = require('ip');
 var os = require('os');
 var network = require('network');
@@ -26,7 +27,7 @@ var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
 rclient.on("error", function (err) {
-    console.log("Redis(alarm) Error " + err);
+    log.info("Redis(alarm) Error " + err);
 });
 
 var async = require('async');
@@ -36,6 +37,8 @@ var bone = require('../lib/Bone.js');
 var flowUtil = require('../net2/FlowUtil.js');
 
 var hostManager = null;
+
+let Promise = require('bluebird');
 
 const dns = require('dns');
 
@@ -56,7 +59,6 @@ module.exports = class DNSManager {
     constructor(loglevel) {
         if (instance == null) {
             instance = this;
-            log = require("./logger.js")("DNSManager", loglevel);
         }
         return instance;
     }
@@ -147,7 +149,7 @@ module.exports = class DNSManager {
         let H = null;
         //rclient.hgetall(key0, (err, data) => {
         this.resolveLookup(ip,(err,data,ddata)=>{
-            //console.log('resolving ', key0);
+            //log.info('resolving ', key0);
             if (data != null) {
                 H = data['server_name'];
                 let obj = parseX509Subject(data['subject']);
@@ -159,7 +161,7 @@ module.exports = class DNSManager {
                 } else {
                     O = "!";
                 }
-                //console.log("====================== Resolved",ip,data);
+                //log.info("====================== Resolved",ip,data);
             }
             if (H != null) {
                 if (O != null) {
@@ -175,11 +177,6 @@ module.exports = class DNSManager {
                     },ddata);
                 }
             } else {
-                let key1 = "dns:ip:" + ip;
-                //rclient.hgetall(key1, (err, data) => {
-    //                if (ddata && ddata._intel) { 
-                  //      ddata.intel = JSON.parse(ddata._intel);
-                 //   }
                     if (ddata != null) {
                         let d = null;
                         if (O != null) {
@@ -195,29 +192,6 @@ module.exports = class DNSManager {
                             };
                         }
                         callback(null,d,ddata);
-/*
-                        rclient.hgetall(ddata.host, (err, data2) => {
-                            if (data2 != null) {
-                                if (O != null) {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host,
-                                        org: O
-                                    };
-                                } else {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host
-                                    };
-                                }
-                                callback(err, d,ddata);
-                            } else {
-                                callback(err, d,ddata);
-                            }
-                        });
-*/
-     
-
                     } else {
                         callback(null, null,null);
                     }
@@ -228,7 +202,8 @@ module.exports = class DNSManager {
 
     resolvehost(ip, callback) {
         if (ip == null){
-            callback(null,null);
+          callback(null,null);
+          return;
         }
         if (sysManager.isLocalIP(ip)) {
             this.resolveLocalHost(ip, callback);
@@ -237,6 +212,9 @@ module.exports = class DNSManager {
         }
     }
 
+    _getIntel(ip, flow, callback) {
+      
+    }
   getIntel(ip, flow, dnsdata, now, callback) {
         log.debug("Get Intel:",ip);
         if (dnsdata) {
@@ -262,10 +240,10 @@ module.exports = class DNSManager {
                     log.debug("Intel:Cached Passed", ip);
                 } else {
                     log.debug("Intel:Cached Failed", ip,intel,dnsdata);
-                    //console.log("### Intel:Cached Failed", ip,intel,dnsdata);
+                    //log.info("### Intel:Cached Failed", ip,intel,dnsdata);
                 }
             } else {
-                //console.log("### Intel:Cached Failed2", ip,JSON.stringify(dnsdata));
+                //log.info("### Intel:Cached Failed2", ip,JSON.stringify(dnsdata));
             }
         }  else {
             //callback(null,null);
@@ -274,7 +252,7 @@ module.exports = class DNSManager {
         }
 
         let hashdebug = sysManager.isSystemDebugOn();
-        console.log("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
+        log.info("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
         let iplist = [];
@@ -299,29 +277,27 @@ module.exports = class DNSManager {
            callback(null,null);
            return; 
         }
-      
 
         let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
-        //flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
         if (hashdebug == false) {
             flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
         } else {
-            //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
             flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
-//            console.log("######## DEBUG ",JSON.stringify(flowlist));
         }
 
-        console.log("######## Sending:",JSON.stringify(flowlist));
+        log.info("######## Sending:",JSON.stringify(flowlist));
 
         bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
                log.debug("##### MISS",err,data);
                if (data && data.length == 0) {
+                 
+                 // if nothing found, record the timestamp
                    let intel = {ts:Math.floor(Date.now()/1000)};
                    intel.rcount = iplist.length;
                    let key = "dns:ip:"+ip;
-                   //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+                   //log.info("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
                    dnsdata.intel = intel;
                    dnsdata._intel = JSON.stringify(intel);
                    rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
@@ -345,9 +321,9 @@ module.exports = class DNSManager {
                   }
                   dnsdata.intel = r;
                   dnsdata._intel = JSON.stringify(r);
-                  //console.log("##### MISS 2",key,err,JSON.stringify(r));
+                  //log.info("##### MISS 2",key,err,JSON.stringify(r));
                   rclient.hset(key, "_intel", JSON.stringify(r),(err,data)=> {
-                      //console.log("##### MISS 2 SAVED ",key,err,JSON.stringify(r),data);
+                      //log.info("##### MISS 2 SAVED ",key,err,JSON.stringify(r),data);
                       rclient.expireat(key, Math.floor(Date.now()/1000)+43200*2);
                       cb();
                   });
@@ -355,7 +331,7 @@ module.exports = class DNSManager {
                   let intel = {ts:Math.floor(Date.now()/1000)};
                   intel.rcount = iplist.length;
                   let key = "dns:ip:"+ip;
-                  //console.log("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
+                  //log.info("##### MISS 3",key,"error:",err,"intel:",intel,JSON.stringify(r));
                   dnsdata.intel = intel;
                   dnsdata._intel = JSON.stringify(intel);
                   rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
@@ -391,7 +367,7 @@ module.exports = class DNSManager {
                             }
                         }
                         if (data2.appr) {
-                            //console.log("#######################3 APPR ", data2);
+                            //log.info("#######################3 APPR ", data2);
                         }
                         callback(null, data2,false);
                       });
@@ -550,20 +526,22 @@ module.exports = class DNSManager {
         let HostManager = require("../net2/HostManager.js");
         hostManager = new HostManager("cli", 'client', 'info');
     }
+
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {
             callback(null);
+            return;
         }
         let resolve = 0;
         let start = Math.ceil(Date.now()/1000);
-        console.log("Resoving list",list.length);
+        log.info("Resoving list",list.length);
         async.eachLimit(list,20, (o, cb) => {
             // filter out short connections
             let lhost = hostManager.getHostFast(o.lh);
             if (lhost) {
                 if (lhost.isFlowAllowed(o) == false) {
-                     console.log("### NOT LOOKUP6 ==:",o);
+                     log.info("### NOT LOOKUP6 ==:",o);
                      flowUtil.addFlag(o,'l'); // 
                      //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
                      // cb();
@@ -573,33 +551,33 @@ module.exports = class DNSManager {
 
             if (o.fd == "in") {
                 if (o.du && o.du<0.0001) {
-                     //console.log("### NOT LOOKUP 1:",o);
+                     //log.info("### NOT LOOKUP 1:",o);
                      flowUtil.addFlag(o,'x');
                      cb();
                      return;
                 }
                 if (o.ob && o.ob == 0 && o.rb && o.rb<1000) {
-                     //console.log("### NOT LOOKUP 2:",o);
+                     //log.info("### NOT LOOKUP 2:",o);
                      flowUtil.addFlag(o,'x');
                      cb();
                      return;
                 }
                 if (o.rb && o.rb <1500) { // used to be 2500
-                     //console.log("### NOT LOOKUP 3:",o);
+                     //log.info("### NOT LOOKUP 3:",o);
                      flowUtil.addFlag(o,'x');
                      cb();
                      return;
                 }
                 if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0) && o.ct && o.ct<=1) {
                      flowUtil.addFlag(o,'x');
-                     console.log("### NOT LOOKUP 4:",o);
+                     log.info("### NOT LOOKUP 4:",o);
                      cb();
                      return;
                 }
             } else {
                 if (o.pr && o.pr =='tcp' && (o.rb==0 || o.ob==0)) {
                      flowUtil.addFlag(o,'x');
-                     console.log("### NOT LOOKUP 5:",o);
+                     log.info("### NOT LOOKUP 5:",o);
                      cb();
                      return;
                 }
