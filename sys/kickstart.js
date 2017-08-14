@@ -68,6 +68,10 @@ let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
 sysManager.setConfig(firewallaConfig);
 
+let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
+let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
+interfaceDiscoverSensor.run();
+
 let NmapSensor = require('../sensor/NmapSensor');
 let nmapSensor = new NmapSensor();
 nmapSensor.suppressAlarm = true;
