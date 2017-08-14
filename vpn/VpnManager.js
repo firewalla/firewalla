@@ -166,9 +166,14 @@ module.exports = class {
             if (err == null) {
                 publicIp.v4((err, ip) => {
                     if (err != null) {
-                        if (callback) 
-                            callback(err, null);
-                        return;
+                        if (ip == null) {
+                          ip = sysManager.publicIp;
+                        }
+                        if (ip == null) {
+                            if (callback) 
+                                callback(err, null);
+                            return;
+                        }
                     }
 
                     // !! Pay attention to the parameter "-E" which is used to preserve the
