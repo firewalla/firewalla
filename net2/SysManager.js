@@ -112,9 +112,7 @@ module.exports = class {
 
   // config loaded && interface discovered
   isConfigInitialized() {
-    return this.config != null &&
-      this.config.monitoringInterface &&
-      this.config.monitoringInterface in this.config;
+    return this.config != null && this.monitoringInterface();
   }
 
     delayedActions() {
@@ -292,6 +290,8 @@ module.exports = class {
         if (this.config) {
           //log.info(require('util').inspect(this.sysinfo, {depth: null}));
           return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
+        } else {
+          return undefined;
         }
     }
 
