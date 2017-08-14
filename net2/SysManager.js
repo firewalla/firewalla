@@ -97,6 +97,7 @@ module.exports = class {
               this.publicIp = event.ip;
           });
           sem.on("DDNS:Updated", (event) => {
+            log.info("Updating DDNS:", event, {});
             if(event.ddns) {
               this.ddns = event.ddns;
             }

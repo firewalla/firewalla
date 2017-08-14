@@ -22,6 +22,8 @@ let exec = require('child-process-promise').exec;
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+let util = require('util');
+
 class Samba {
   constructor() {
     if (instance == null) {
