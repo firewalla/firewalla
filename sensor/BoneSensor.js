@@ -96,7 +96,8 @@ class BoneSensor extends Sensor {
           type: 'DDNS:Updated',
           toProcess: 'FireApi',
           publicIp: data.publicIp,
-          ddns: data.ddns
+          ddns: data.ddns,
+          message: 'DDNS is updated'
         })
       }
     })();

@@ -144,8 +144,8 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = await (hostTool.getAllMACs());
       macs.forEach((mac) => {
-        this.aggr(mac, ts);
-        this.aggrActivity(mac, ts);
+        await (this.aggr(mac, ts));
+        await (this.aggrActivity(mac, ts));
       })
     })();
   }
