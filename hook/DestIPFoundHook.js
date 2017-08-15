@@ -184,7 +184,7 @@ class DestIPFoundHook extends Hook {
       await (delay(1000)); // sleep for only 1 second
 
       return this.job();
-    })
+    })();
   }
 
   run() {
