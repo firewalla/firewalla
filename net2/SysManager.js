@@ -403,7 +403,7 @@ module.exports = class {
 
     getSysInfo(callback) {
       let serial = null;
-      if (fs.existsSync("/.dockerenv")) {
+      if (f.isDocker() || f.isTravis()) {
         serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
       } else {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
