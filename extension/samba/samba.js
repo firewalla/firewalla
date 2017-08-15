@@ -42,6 +42,11 @@ class Samba {
         return undefined; // empty string means not having samba name or not supported
 
       let result = await (exec(cmd));
+
+      if(result.stdout && result.stdout === "") {
+          return undefined;
+      }
+
       if(result.stdout) {
         let outputs = result.stdout.split("/");
         if(outputs.length >= 2) {

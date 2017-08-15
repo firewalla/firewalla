@@ -196,6 +196,8 @@ class DestIPFoundHook extends Hook {
 
       this.appendNewIP(ip);
     });
+
+    this.job();
   }
 }
 

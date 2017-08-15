@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ class NewDeviceHook extends Hook {
 
     let Discovery = require("../net2/Discovery.js");
     let d = new Discovery("nmap", null, "info", false);
-    
+
     // get ip address and mac vendor
     d.discoverMac(mac, (err, result) => {
       if(err) {
@@ -64,13 +64,13 @@ class NewDeviceHook extends Hook {
       });
       // d.processHost(result, (err, host, newHost) => {
       //   // alarm will be handled and created by "NewDevice" event
-      //  
+      //
       // });
     });
   }
-  
+
   run() {
-    
+
     sem.on('NewDeviceWithMacOnly', (event) => {
 
       let mac = event.mac;
@@ -95,6 +95,7 @@ class NewDeviceHook extends Hook {
           // delay discover, this is to ensure ip address is already allocated
           // to this new device
           setTimeout(() => {
+            log.info(require('util').format("Trying to inspect more info on host %s (%s)", name, mac))
             this.findMac(name, mac);
           }, 5000);
         });
