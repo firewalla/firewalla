@@ -372,7 +372,7 @@ module.exports = class {
                                 value.count = Number(entry.count)+1;
                             }
                         }
-                        rclient.hmset(key, value, (err, value) => {
+                        rclient.hmset(key, value, (err, rvalue) => {
                              //   rclient.hincrby(key, "count", 1, (err, value) => {
                              if (err == null) {
                                  if (this.config.bro.dns.expires) {
