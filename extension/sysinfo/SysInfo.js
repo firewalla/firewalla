@@ -72,21 +72,41 @@ function stopUpdating() {
 
 function getRealMemoryUsage() {
   let spawn = require('child_process').spawn;
-  let prc = spawn('free',  []);
-  
-  prc.stdout.setEncoding('utf8');
-  prc.stdout.on('data', function (data) {
-    var str = data.toString()
-    var lines = str.split(/\n/g);
-    for(var i = 0; i < lines.length; i++) {
-      lines[i] = lines[i].split(/\s+/);
+
+  let prc = null;
+
+  try {
+    prc = spawn('free',  []);
+
+    if (prc == null || prc.stdout == null) {
+        log.error("Failed to spawn process 'free'",{});
+        return;
     }
 
-    usedMem = parseInt(lines[1][2]);
-    allMem = parseInt(lines[1][1]);
-    realMemUsage = 1.0 * usedMem / allMem;
-    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);    
-  });
+    prc.stdout.setEncoding('utf8');
+    prc.stdout.on('data', function (data) {
+      var str = data.toString()
+      var lines = str.split(/\n/g);
+      for(var i = 0; i < lines.length; i++) {
+        lines[i] = lines[i].split(/\s+/);
+      }
+
+      usedMem = parseInt(lines[1][2]);
+      allMem = parseInt(lines[1][1]);
+      realMemUsage = 1.0 * usedMem / allMem;
+      log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
+    });
+    
+  } catch (err) {
+    if(err.code === 'ENOMEM') {
+      log.error("Not enough memory to spawn process 'free':", err, {});
+    } else {
+      log.error("Failed to spawn process 'free':", err, {});
+    }
+    // do nothing
+  }
+
+
 }
 
 function getTemp() {
@@ -126,7 +146,7 @@ function getConns() {
     let countConns = function(key, callback) {
       rclient.zcount(key, '-inf', '+inf', callback);
     }
-    
+
     async.map(keys, countConns, (err, results) => {
       if(results.length > 0) {
         conn = results.reduce((a,b) => (a+b));
@@ -200,7 +220,7 @@ function getRecentLogs(callback) {
       }
     });
   }
-  
+
   async.map(logFiles, tailFunction, callback);
 }
 
@@ -214,7 +234,7 @@ function getTop5Flows(callback) {
       callback(err);
       return;
     }
-    
+
     async.map(results, (flow, callback) => {
       rclient.zcount(flow, "-inf", "+inf", (err, count) => {
         if(err) {

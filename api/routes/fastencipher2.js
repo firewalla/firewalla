@@ -28,45 +28,10 @@ let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
 
-let zlib = require('zlib');
-
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
-function _debugInfo(req, res, next) {
-  if(req.body.message &&
-    req.body.message.obj &&
-    req.body.message.obj.data &&
-    req.body.message.obj.data.item === "ping") {
-    log.debug("Got a ping"); // ping is too frequent, reduce amount of log
-  } else {
-    log.info("================= request from ", req.connection.remoteAddress, " =================");
-    log.info(JSON.stringify(req.body, null, '\t'));
-    log.info("================= request body end =================");
-  }
-  next();
-}
 
-function compressPayloadIfRequired(req, res, next) {
-  let compressed = req.body.compressed;
-
-  if(compressed) { // compress payload to reduce traffic
-    log.debug("encipher uncompressed message size: ", res.body.length, {});
-    let input = new Buffer(res.body, 'utf8');
-    zlib.deflate(input, (err, output) => {
-      if(err) {
-        res.status(500).json({ error: err });
-        return;
-      }
-
-      res.body = JSON.stringify({payload: output.toString('base64')});
-      log.debug("compressed message size: ", res.body.length, {});
-      next();
-    });
-  } else {
-    next();
-  }
-}
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -75,8 +40,7 @@ function compressPayloadIfRequired(req, res, next) {
 router.post('/message/:gid',
     sc.isInitialized,
     encryption.decrypt,
-    _debugInfo,
-    
+    sc.debugInfo,
     (req, res, next) => {
       let gid = req.params.gid;
       
@@ -93,7 +57,7 @@ router.post('/message/:gid',
         });
     },
   
-    compressPayloadIfRequired,
+    sc.compressPayloadIfRequired,
     encryption.encrypt
 );
 

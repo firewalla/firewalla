@@ -31,7 +31,7 @@ let Sensor = class {
   }
   
   setConfig(config) {
-    this.config = config;
+    require('util')._extend(this.config, config);
   }
 
   run() {

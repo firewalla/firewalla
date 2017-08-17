@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,6 +28,9 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let fConfig = require('../net2/config.js').getConfig();
 
 class OldDataCleanSensor extends Sensor {
@@ -39,24 +42,24 @@ class OldDataCleanSensor extends Sensor {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
     let minInterval = 8 * 60 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
-    
+
     return Date.now() / 1000 - expireInterval;
   }
-  
+
   getCount(type) {
     let count = (this.config[type] && this.config[type].count) || 10000;
     return count;
   }
-  
+
   cleanByExpireDate(key, expireDate) {
     return rclient.zremrangebyscoreAsync(key, "-inf", expireDate)
       .then((count) => {
         if(count > 0) {
-          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));  
+          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
         }
       });
   }
-  
+
   cleanToCount(key, leftOverCount) {
     return rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
       .then((count) => {
@@ -69,32 +72,40 @@ class OldDataCleanSensor extends Sensor {
   getKeys(keyPattern) {
     return rclient.keysAsync(keyPattern);
   }
-  
+
   // clean by expired time and count
-  regularClean(type, keyPattern) {
-    return this.getKeys(keyPattern)
-      .then((keys) => {
-        return Promise.all([keys.map((key) => {
-          return Promise.all([
-            this.cleanByExpireDate(key, this.getExpiredDate(type)),
-            this.cleanToCount(key, this.getCount(type))
-          ]);       
-        })]);
+  regularClean(type, keyPattern, ignorePatterns) {
+
+    return async(() => {
+      let keys = await (this.getKeys(keyPattern));
+
+      if(ignorePatterns) {
+        keys = keys.filter((x) => {
+          return ignorePatterns.filter((p) => x.match(p)).length === 0
+        });
+      }
+
+      keys.forEach((key) => {
+        await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
+        await (this.cleanToCount(key, this.getCount(type)));
       })
+
+    })();
+
   }
-  
+
   cleanAlarm() {
     // TODO
   }
-  
+
   cleanPolicy() {
     // TODO
   }
-  
+
   cleanException() {
     // TODO
   }
-  
+
   cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
       rclient.keys("stats:hour*",(err,keys)=> {
@@ -113,10 +124,10 @@ class OldDataCleanSensor extends Sensor {
           });
         }
       });
-      
+
     return Promise.resolve();
   }
-  
+
   cleanUserAgents() {
     // FIXME: not well coded here, deprecated code
       let MAX_AGENT_STORED = 150;
@@ -137,10 +148,10 @@ class OldDataCleanSensor extends Sensor {
           });
         }
       });
-      
+
       return Promise.resolve();
   }
-  
+
   cleanHostData(type, keyPattern, defaultExpireInterval) {
     let expireInterval = (this.config[type] && this.config[type].expires) ||
       defaultExpireInterval;
@@ -170,52 +181,61 @@ class OldDataCleanSensor extends Sensor {
         })
       });
   }
-  
+
   scheduledJob() {
-    log.info("Start cleaning old data in redis")
-    
-    let tasks = [
-      this.regularClean("conn", "flow:conn:*"),
-      this.regularClean("ssl", "flow:ssl:*"),
-      this.regularClean("http", "flow:http:*"),
-      this.regularClean("notice", "notice:*"),
-      this.regularClean("intel", "intel:*"),
-      this.regularClean("software", "software:*"),
-      this.regularClean("monitor", "monitor:flow:*"),
-      this.regularClean("alarm", "alarm:ip4:*"),
-      this.cleanHourlyStats(),
-      this.cleanUserAgents(),
-      this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30),
-      this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30),
-      this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365)
-    ];
-    
-    return Promise.all(tasks)
-      .then(() => {
-        log.info("scheduledJob is executed successfully");
-      });
+    return async(() => {
+      log.info("Start cleaning old data in redis")
+
+      await (this.regularClean("conn", "flow:conn:*"));
+      log.info("1");
+      await (this.regularClean("ssl", "flow:ssl:*"));
+      log.info("2");
+      await (this.regularClean("http", "flow:http:*"));
+      log.info("3");
+      await (this.regularClean("notice", "notice:*"));
+      log.info("4");
+      await (this.regularClean("intel", "intel:*", [/^intel:ip/]));
+      log.info("5");
+      await (this.regularClean("software", "software:*"));
+      log.info("6");
+      await (this.regularClean("monitor", "monitor:flow:*"));
+      log.info("7");
+      await (this.regularClean("alarm", "alarm:ip4:*"));
+      log.info("8");
+      await (this.cleanHourlyStats());
+      log.info("9");
+      await (this.cleanUserAgents());
+      log.info("10");
+      await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
+      log.info("11");
+      await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
+      log.info("12");
+      await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+
+      log.info("scheduledJob is executed successfully");
+    })();
   }
-  
+
   listen() {
     pubClient.on("message", (channel, message) => {
       if(channel === "OldDataCleanSensor" && message === "Start") {
-        this.scheduledJob();  
+        this.scheduledJob();
       }
     });
     pubClient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
   }
-  
+
   run() {
     super.run();
-    
+
     this.listen();
-    
+
     setTimeout(() => {
       this.scheduledJob();
       setInterval(() => {
         this.scheduledJob();
-      }, 1000 * 60 * 60); // cleanup every hour 
+      }, 1000 * 60 * 60); // cleanup every hour
     }, 1000 * 60 * 5); // first time in 5 mins
   }
 }

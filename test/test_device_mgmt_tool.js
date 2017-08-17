@@ -32,8 +32,6 @@ let Promise = require('bluebird');
 Promise.promisifyAll(fs);
 Promise.promisify(muk);
 
-let Bootstrap = require('../net2/Bootstrap');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let async = require('asyncawait/async');
@@ -139,6 +137,8 @@ describe('Test device management tool class', function() {
       }
       try {
         let keys = await (rclient.keysAsync("*"));
+        if(keys.length > 0)
+          console.log(keys);
         expect(keys.length).to.equal(0); // all keys should be gone
       } catch (err) {
         assert.fail('should not cause error when querying redis');

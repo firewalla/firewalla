@@ -1,12 +1,12 @@
 [Unit]
-Description=Firewalla API 
+Description=Firewalla API
 After=network.target
 
 [Service]
 User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/api
-ExecStart=/bin/sh -c '/usr/bin/node --expose-gc bin/www >> /home/pi/.forever/api.log  2>&1'
+ExecStart=/bin/sh -c '/usr/bin/node --expose-gc -max-old-space-size=256 bin/www >> /home/pi/.forever/api.log  2>&1'
 
 [Install]
 WantedBy=multi-user.target

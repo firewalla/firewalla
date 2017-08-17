@@ -53,7 +53,7 @@ describe('Test dnsmasq feature', function() {
 
   beforeEach((done) => {
     async(() => {
-      await (Bootstrap.bootstrap())
+      await (Bootstrap.bootstrap());
       sem.clearAllSubscriptions();
       s.registered = false;
       await (s.run())

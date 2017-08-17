@@ -23,8 +23,6 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 let HostTool = require('../net2/HostTool.js');
 let hostTool = new HostTool();
 
-let async = require('async');
-
 let Promise = require('bluebird');
 
 let extend = require('../util/util.js').extend;
@@ -33,6 +31,11 @@ let bone = require("../lib/Bone.js");
 
 let flowUtil = require("../net2/FlowUtil.js");
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let Samba = require('../extension/samba/samba.js');
+let samba = new Samba();
 
 class DeviceHook extends Hook {
   constructor() {
@@ -47,10 +50,10 @@ class DeviceHook extends Hook {
     //   mac: mac
     //   bname: service.name (optional)
     //   ipv6Addr =  service.ipv6Addrs (optional)
-    
+
     // DeviceUpdate may be triggered by nmap scan, bonjour monitor,
     // dhcp monitor and etc...
-    
+
     sem.on("DeviceUpdate", (event) => {
       let host = event.host;
       let mac = host.mac;
@@ -58,13 +61,14 @@ class DeviceHook extends Hook {
 
       hostTool.macExists(mac)
         .then((found) => {
-        
+
           if(!found) {  // ==============> New Device Found
 
             sem.emitEvent({
               type: "NewDeviceFound",
               message: "A new device (mac address) found @ DeviceHook",
-              host: host
+              host: host,
+              suppressAlarm: event.suppressAlarm
             });
 
           } else {
@@ -81,24 +85,25 @@ class DeviceHook extends Hook {
                   });
 
                 } else {
-                  
+
                   if(mac !== data.mac) { // ========> This MAC Address has taken the IP Address used by another device
-                    
+
                     sem.emitEvent({
                       type: "OldDeviceTakenOverOtherDeviceIP",
                       message: "An old device used IP used to be other device @ DeviceHook",
                       host: host,
                       oldMac: data.mac
                     });
-                    
+
                   } else {  // =======> Regular Device Info Update
-                    
+
                     sem.emitEvent({
                       type: "RegularDeviceInfoUpdate",
                       message: "Refresh device status @ DeviceHook",
+                      suppressEventLogging: true,
                       host: host
                     });
-                    
+
                   }
                 }
               }).catch((err) => {
@@ -109,10 +114,10 @@ class DeviceHook extends Hook {
         log.error("Failed to check if mac address exists:", err, {});
       });
     });
-    
+
     sem.on("NewDeviceFound", (event) => {
       let host = event.host;
-      
+
       log.info(util.format("A new device %s - %s - %s is found!", host.bname, host.ipv4Addr, host.mac));
 
       let enrichedHost = extend({}, host, {
@@ -120,46 +125,53 @@ class DeviceHook extends Hook {
         firstFoundTimestamp: new Date() / 1000,
         lastActiveTimestamp: new Date() / 1000
       });
-      
-      hostTool.updateHost(enrichedHost)
-        .then(() => {
-          log.info("Host entry is created for this new device");
 
-          let mac = enrichedHost.mac;
-          
-          if(!mac)
-            return; // ignore if mac is undefined
+      async(() => {
 
-          this.getVendorInfo(mac, (err, vendor) => {
-            
-            let v = "Unknown";
-            if(err == null && vendor)
-              v = vendor;
-            
-            enrichedHost.macVendor = v;
-            
-            hostTool.updateMACKey(enrichedHost)
-              .then(() => {
-              
-                this.createAlarm(enrichedHost, (err) => {
-                  if(err) {
-                    log.error("Failed to create alarm");
-                  } else {
-                    log.info("New Device Alarm is created successfully");
-                  }
-                });    
-                
-              }).catch((err) => {
-              log.error("Failed to create mac entry:", err, err.stack, {});
-            })
-            
-          });
-          
-        }).catch((err) => {
-          log.error("Failed to create host entry:", err, {});
+        await (hostTool.updateHost(enrichedHost));
+
+        log.info("Host entry is created for this new device");
+
+        let mac = enrichedHost.mac;
+
+        if(!mac)
+          return; // ignore if mac is undefined
+
+        let vendor = null;
+
+        try {
+          await (this.getVendorInfoAsync(mac));
+        } catch(err) {
+          // do nothing
+        }
+
+        let v = "Unknown";
+        if(vendor)
+          v = vendor;
+
+        enrichedHost.macVendor = v;
+
+        if(!enrichedHost.bname) {
+          let sambaName = await (samba.getSambaName(host.ipv4Addr));
+          if(sambaName)
+            enrichedHost.bname = sambaName;
+        }
+
+        enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
+
+        await (hostTool.updateMACKey(enrichedHost));
+
+        if(!event.suppressAlarm) {
+          await (this.createAlarm(enrichedHost));
+        } else {
+          log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
+        }
+
+      })().catch((err) => {
+        log.error("Failed to handle NewDeviceFound event:", err, {});
       });
     });
-    
+
     sem.on("OldDeviceChangedToNewIP", (event) => {
       // FIXME: this is typically old ip is taken by some device else, not going to delete the old ip entry
       let host = event.host;
@@ -177,16 +189,16 @@ class DeviceHook extends Hook {
             firstFoundTimestamp: firstFoundTimestamp,
             lastActiveTimestamp: new Date() / 1000
           });
-          
+
           hostTool.updateHost(enrichedHost)
             .then(() => {
               log.info("New host entry is created for this new device");
 
               hostTool.updateMACKey(enrichedHost)
                 .then(() => {
-                
+
                 log.info("MAC entry is updated with new IP");
-                
+
                 }).catch((err) => {
                 log.error("Failed to create mac entry:", err, err.stack, {});
               })
@@ -194,11 +206,11 @@ class DeviceHook extends Hook {
             }).catch((err) => {
             log.error("Failed to create host entry:", err, {});
           });
-          
+
         });
-      
+
     });
-    
+
     sem.on("OldDeviceTakenOverOtherDeviceIP", (event) => {
       let host = event.host;
 
@@ -215,7 +227,7 @@ class DeviceHook extends Hook {
             firstFoundTimestamp: firstFoundTimestamp,
             lastActiveTimestamp: new Date() / 1000
           });
-          
+
           hostTool.updateHost(enrichedHost)
             .then(() => {
               log.info("New host entry is created for this new device");
@@ -235,7 +247,7 @@ class DeviceHook extends Hook {
 
         });
     });
-    
+
     sem.on("RegularDeviceInfoUpdate", (event) => {
       let host = event.host;
 
@@ -264,6 +276,18 @@ class DeviceHook extends Hook {
     });
   }
 
+  createAlarmAsync(host) {
+    return new Promise((resolve, reject) => {
+      this.createAlarmAsync(host, (err) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      })
+    })
+  }
+
   createAlarm(host, callback) {
     callback = callback || function() {}
 
@@ -288,7 +312,19 @@ class DeviceHook extends Hook {
       callback(err);
     });
   }
-  
+
+  getVendorInfoAsync(mac) {
+    return new Promise((resolve, reject) => {
+      this.getVendorInfo(mac, (err, vendorInfo) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve(vendorInfo);
+        }
+      })
+    })
+  }
+
   getVendorInfo(mac, callback) {
     mac = mac.toUpperCase();
     let rawData = {
@@ -312,6 +348,8 @@ class DeviceHook extends Hook {
       }
     });
   }
+
+
 }
 
 module.exports = DeviceHook;

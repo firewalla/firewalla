@@ -1,6 +1,6 @@
 {
-  "version": 1.85,
-  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v2",
+  "version": 1.86,
+  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "cacheInit": true,
     "discovery": {
@@ -11,8 +11,8 @@
           "sudo sudo iptables -t nat -A POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",    
-          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"    
+          "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",
+          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
        ]
     },
   "monitoringInterface": "eth0",
@@ -50,6 +50,8 @@
     "BoneSensor": {},
     "DNSMASQSensor": {},
     "PublicIPSensor": {},
+    "FlowAggregationSensor": {},
+    "DeviceNameUpdateSensor": {},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,
@@ -105,7 +107,8 @@
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
-    "DeviceHook": {}
+    "DeviceHook": {},
+    "DestIPFoundHook": {}
   },
     "bro": {
       "notice" : {
@@ -130,7 +133,7 @@
       },
       "dns": {
          "path": "/blog/current/dns.log",
-         "expires": 100000 
+         "expires": 100000
       },
       "software": {
          "path": "/blog/current/software.log",
@@ -147,7 +150,7 @@
       "conn": {
          "path": "/blog/current/conn.log",
          "pathdev": "/blog/current/conndev.log",
-         "flowstashExpires": 900, 
+         "flowstashExpires": 900,
          "expires": 86400
       },
       "ssh": {

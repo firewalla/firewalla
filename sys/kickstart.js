@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,25 +15,25 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* 
- * Kickstart()  
- * 
- * Create default endpoints                 
+/*
+ * Kickstart()
+ *
+ * Create default endpoints
  * Create default group
- * 
+ *
  * Launch camera app
  *
  * bonjour endpoint information
- * 
+ *
  * name: 'Encipher:'+eptname
  * type: 'http'
  * port: '80'
  * txt: {
- *         'gid':'group id',   
+ *         'gid':'group id',
  *         'er':'encrypted rendezvous key',
  *         'keyhint':'Please enter the CPU id of your device pasted on a sticker'.
  *      }
- * 
+ *
  * setup redenzvous at rndezvous key
  * query every x min until group is none empty, or first invite
  */
@@ -68,19 +68,13 @@ let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
 sysManager.setConfig(firewallaConfig);
 
-let Discovery = require('../net2/Discovery.js');
-let discovery = new Discovery("Discovery", firewallaConfig, 'info', true);
-
-// This is required to start early so that all other components can use
-// the discovered information as soon as possible
-discovery.startDiscover(true, () => {
-  discovery = null; // invalidate discovery after one-time scan
-});
-
-setTimeout(() => {
-  discovery = null; // code to ensure discovery is set to null finally
-}, 30000);
-
+let NmapSensor = require('../sensor/NmapSensor');
+let nmapSensor = new NmapSensor();
+nmapSensor.suppressAlarm = true;
+nmapSensor.checkAndRunOnce(true)
+.then(() => {
+  nmapSensor = null;
+})
 
 const license = require('../util/license.js');
 
@@ -206,10 +200,10 @@ function displayKey(key) {
 
 }
 
-/* 
+/*
  * This will enable user to scan the QR code
  * bypass the proximity encryption used
- * 
+ *
  * please keep this disabled for production
  */
 
@@ -279,7 +273,7 @@ function openInvite(group,gid,ttl) {
 function postAppLinked() {
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
-  
+
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
 
@@ -325,7 +319,7 @@ function inviteFirstAdmin(gid, callback) {
                 /*
                 eptcloud.eptinviteGroupByRid(gid, obj.r,function(e,r) {
                     log.info("Inviting rid",rid,e,r);
-                });  
+                });
                 */
                 let txtfield = {
                     'gid': gid,
