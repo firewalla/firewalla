@@ -187,29 +187,17 @@ class OldDataCleanSensor extends Sensor {
       log.info("Start cleaning old data in redis")
 
       await (this.regularClean("conn", "flow:conn:*"));
-      log.info("1");
       await (this.regularClean("ssl", "flow:ssl:*"));
-      log.info("2");
       await (this.regularClean("http", "flow:http:*"));
-      log.info("3");
       await (this.regularClean("notice", "notice:*"));
-      log.info("4");
       await (this.regularClean("intel", "intel:*", [/^intel:ip/]));
-      log.info("5");
       await (this.regularClean("software", "software:*"));
-      log.info("6");
       await (this.regularClean("monitor", "monitor:flow:*"));
-      log.info("7");
       await (this.regularClean("alarm", "alarm:ip4:*"));
-      log.info("8");
       await (this.cleanHourlyStats());
-      log.info("9");
       await (this.cleanUserAgents());
-      log.info("10");
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
-      log.info("11");
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
-      log.info("12");
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
 
       log.info("scheduledJob is executed successfully");

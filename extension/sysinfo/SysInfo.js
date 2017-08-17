@@ -22,11 +22,16 @@ let userID = f.getUserID();
 
 let os  = require('os-utils');
 
+let exec = require('child-process-promise').exec;
+
 let redis = require('redis');
 let rclient = redis.createClient();
-let async = require('async');
+let _async = require('async');
 
-var cpuUsage = 0;
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let cpuUsage = 0;
 let memUsage = 0;
 let realMemUsage = 0;
 let usedMem = 0;
@@ -45,6 +50,8 @@ let updateInterval = 30 * 1000; // every 30 seconds
 
 let releaseBranch = null;
 
+let threadInfo = {};
+
 function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
@@ -55,6 +62,7 @@ function update() {
   getTemp();
   getConns();
   getRedisMemoryUsage();
+  getThreadInfo();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -68,6 +76,19 @@ function startUpdating() {
 
 function stopUpdating() {
   updateFlag = 0;
+}
+
+function getThreadInfo() {
+  return async(() => {
+    let count = await (exec("ps -Haux | wc -l", {encoding: 'utf8'}));
+    let mainCount = await (exec("ps -Haux | grep Fi[r]eMain | wc -l", {encoding: 'utf8'}));
+    let apiCount = await (exec("ps -Haux | grep Fi[r]eApi | wc -l", {encoding: 'utf8'}));
+    let monitorCount = await (exec("ps -Haux | grep Fi[r]eMon | wc -l", {encoding: 'utf8'}));
+    threadInfo.count = count.stdout.replace("\n", "");
+    threadInfo.mainCount = mainCount.stdout.replace("\n", "");
+    threadInfo.apiCount = apiCount.stdout.replace("\n", "");
+    threadInfo.monitorCount = monitorCount.stdout.replace("\n", "");
+  })();
 }
 
 function getRealMemoryUsage() {
@@ -96,7 +117,7 @@ function getRealMemoryUsage() {
       realMemUsage = 1.0 * usedMem / allMem;
       log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
     });
-    
+
   } catch (err) {
     if(err.code === 'ENOMEM') {
       log.error("Not enough memory to spawn process 'free':", err, {});
@@ -147,7 +168,7 @@ function getConns() {
       rclient.zcount(key, '-inf', '+inf', callback);
     }
 
-    async.map(keys, countConns, (err, results) => {
+    _async.map(keys, countConns, (err, results) => {
       if(results.length > 0) {
         conn = results.reduce((a,b) => (a+b));
         peakConn = peakConn > conn ? peakConn : conn;
@@ -199,7 +220,8 @@ function getSysInfo() {
     conn: conn + "",
     peakConn: peakConn + "",
     redisMem: redisMemory,
-    releaseType: getReleaseType()
+    releaseType: getReleaseType(),
+    threadInfo: threadInfo
   }
 
   return sysinfo;
@@ -221,7 +243,7 @@ function getRecentLogs(callback) {
     });
   }
 
-  async.map(logFiles, tailFunction, callback);
+  _async.map(logFiles, tailFunction, callback);
 }
 
 function getTopStats() {
@@ -235,7 +257,7 @@ function getTop5Flows(callback) {
       return;
     }
 
-    async.map(results, (flow, callback) => {
+    _async.map(results, (flow, callback) => {
       rclient.zcount(flow, "-inf", "+inf", (err, count) => {
         if(err) {
           callback(err);
@@ -244,7 +266,7 @@ function getTop5Flows(callback) {
         callback(null, {name: flow, count: count});
       });
     }, (err, results) => {
-      async.sortBy(results, (x, callback) => callback(null, x.count * -1), (err, results) => {
+      _async.sortBy(results, (x, callback) => callback(null, x.count * -1), (err, results) => {
         callback(null, results.slice(0, 5));
       });
     });

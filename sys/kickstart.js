@@ -63,18 +63,26 @@ let f = require('../net2/Firewalla.js');
 
 let fConfig = require('../net2/config.js');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager();
 let firewallaConfig = require('../net2/config.js').getConfig();
-sysManager.setConfig(firewallaConfig);
+
+let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
+let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
 
 let NmapSensor = require('../sensor/NmapSensor');
 let nmapSensor = new NmapSensor();
 nmapSensor.suppressAlarm = true;
-nmapSensor.checkAndRunOnce(true)
-.then(() => {
+
+async(() => {
+  await (sysManager.setConfig(firewallaConfig));
+  await (interfaceDiscoverSensor.run());
+  await (nmapSensor.checkAndRunOnce(true));
   nmapSensor = null;
-})
+})();
 
 const license = require('../util/license.js');
 

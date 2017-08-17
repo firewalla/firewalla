@@ -1198,7 +1198,7 @@ module.exports = class {
 
           if(err) {
             // not found, ignore this host
-            log.error("Not able to found mac address for host:",err, ip, mac, {});
+            log.error("Not able to found mac address for host:", ip, mac, {});
             return;
           }
 

@@ -50,11 +50,9 @@ function run0() {
   } else {
     if(!bone.cloudready()) {
       log.info("Connecting to Firewalla Cloud...");
-    }
-    if(!bone.isAppConnected()) {
+    } else if(!bone.isAppConnected()) {
       log.info("Waiting for first app to connect...");
-    }
-    if(!sysManager.isConfigInitialized()) {
+    } else if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
     }
 
@@ -188,7 +186,7 @@ function run() {
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed, RSS is now", process.memoryUsage().rss, {});
+        log.info("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }

@@ -38,6 +38,20 @@ let dnsManager = new DNSManager('info');
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
+let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
+
+let ITEMS_PER_FETCH = 100;
+let QUEUE_SIZE_PAUSE = 1000;
+let QUEUE_SIZE_RESUME = 500;
+
+let MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
+
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -45,6 +59,11 @@ class DestIPFoundHook extends Hook {
 
     this.config.intelExpireTime = 7 * 24 * 3600; // one week
     this.pendingIPs = {};
+  }
+
+  appendNewIP(ip) {
+    log.info("Enqueue new ip for intels", ip, {});
+    return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
   aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
@@ -147,30 +166,63 @@ class DestIPFoundHook extends Hook {
     })()
   }
 
+  job() {
+    return async(() => {
+      log.info("Checking if any IP Addresses pending for intel analysis...")
+      let ips = await (rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH));
+
+      if(ips.length > 0) {
+        let promises = ips.map((ip) => this.processIP(ip));
+
+        await (Promise.all(promises));
+
+        let args = [IP_SET_TO_BE_PROCESSED];
+        args.push.apply(args, ips);
+
+        await (rclient.zremAsync(args));
+
+        log.info(ips.length + "IP Addresses are analyzed with intels");
+      } else {
+//        log.info("No IP Addresses are pending for intels");
+      }
+
+      await (delay(1000)); // sleep for only 1 second
+
+      return this.job();
+    })();
+  }
+
   run() {
     sem.on('DestIPFound', (event) => {
-
       let ip = event.ip;
 
       if(!ip)
         return;
 
-      if(this.pendingIPs[ip])
-        return; // already on the way of getting intel
+      if(this.paused)
+        return;
 
-      this.pendingIPs[ip] = 1;
-
-      this.processIP(ip)
-        .then(() => {
-          if(this.pendingIPs[ip])
-            delete this.pendingIPs[ip];
-        })
-        .catch((err) => {
-          if(this.pendingIPs[ip])
-            delete this.pendingIPs[ip];
-      });
-
+      this.appendNewIP(ip);
     });
+
+    this.job();
+    this.monitorQueue();
+  }
+
+  monitorQueue() {
+    return async(() => {
+      let count = await (rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf"));
+      if(count > QUEUE_SIZE_PAUSE) {
+        this.pause = true;
+      }
+      if(count < QUEUE_SIZE_RESUME) {
+        this.pause = false;
+      }
+
+      await (delay(MONITOR_QUEUE_SIZE_INTERVAL));
+
+      return this.monitorQueue();
+    })();
   }
 }
 

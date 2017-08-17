@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,7 @@ class PublicIPSensor extends Sensor {
   constructor() {
     super();
   }
-  
+
   job() {
     return async(() => {
       try {
@@ -53,18 +53,23 @@ class PublicIPSensor extends Sensor {
             type: "PublicIP:Updated",
             ip: publicIP
           });
+          sem.emitEvent({
+            type: "PublicIP:Updated",
+            ip: publicIP,
+            toProcess: 'FireApi'
+          });
         }
       } catch(err) {
         log.error("Failed to query public ip:", err, {});
       }
     })();
   }
-  
+
   run() {
     this.job();
     setInterval(() => {
       this.job();
-    }, 1000 * 60 * 60 * 24); // check in every day 
+    }, 1000 * 60 * 60 * 24); // check in every day
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -61,7 +61,7 @@ const MAX_CONNS_PER_FLOW = 25000;
 const dns = require('dns');
 
 module.exports = class {
-    constructor(loglevel) {
+    constructor() { // loglevel is already ignored
         if (instance == null) {
             rclient.hdel("sys:network:info", "oper");
             this.multicastlow = iptool.toLong("224.0.0.0");
@@ -103,11 +103,21 @@ module.exports = class {
             }
             this.license = license;
           });
-          
+
           sem.on("PublicIP:Updated", (event) => {
             if(event.ip)
               this.publicIp = event.ip;
           });
+          sem.on("DDNS:Updated", (event) => {
+            log.info("Updating DDNS:", event, {});
+            if(event.ddns) {
+              this.ddns = event.ddns;
+            }
+
+            if(event.publicIp) {
+              this.publicIp = event.publicIp;
+            }
+          })
         }
         this.update(null);
         return instance;
@@ -115,20 +125,18 @@ module.exports = class {
 
   // config loaded && interface discovered
   isConfigInitialized() {
-    return this.config != null && 
-      this.config.monitoringInterface && 
-      this.config[this.config.monitoringInterface] !== null;
+    return this.config != null && this.monitoringInterface();
   }
-  
+
     delayedActions() {
         setTimeout(()=>{
           let SSH = require('../extension/ssh/ssh.js');
           let ssh = new SSH('info');
 
           ssh.getPassword((err, password) => {
-              this.sshPassword = password; 
+              this.sshPassword = password;
           });
-        },2000); 
+        },2000);
     }
 
     version() {
@@ -153,11 +161,11 @@ module.exports = class {
         sclient.quit();
         log.info("Calling release function of SysManager");
     }
-    
+
     debugOn(callback) {
         rclient.set("system:debug", "1", (err) => {
             systemDebug = true;
-            rclient.publish("System:DebugChange", "1"); 
+            rclient.publish("System:DebugChange", "1");
             callback(err);
         });
     }
@@ -165,7 +173,7 @@ module.exports = class {
     debugOff(callback) {
         rclient.set("system:debug", "0", (err) => {
             systemDebug = false;
-            rclient.publish("System:DebugChange", "0"); 
+            rclient.publish("System:DebugChange", "0");
             callback(err);
         });
     }
@@ -176,9 +184,9 @@ module.exports = class {
 
     systemRebootedDueToIssue(reset) {
        try {
-           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) { 
+           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
                log.info("SysManager:RebootDueToIssue");
-               if (reset == true) { 
+               if (reset == true) {
                    require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
                }
                return true;
@@ -202,7 +210,7 @@ module.exports = class {
       callback(err);
     });
   }
-  
+
   setTimezone(timezone, callback) {
     callback = callback || function() {}
 
@@ -215,7 +223,7 @@ module.exports = class {
       callback(err);
     });
   }
-  
+
   update(callback) {
     log.debug("Loading sysmanager data from redis");
     rclient.hgetall("sys:config", (err, results) => {
@@ -228,7 +236,7 @@ module.exports = class {
         this.timezone = results.timezone;
       }
     });
-    
+
         rclient.get("system:debug", (err, result) => {
             if(result) {
                 if(result === "1") {
@@ -277,7 +285,7 @@ module.exports = class {
             this.config = config;
           }).catch((err) => {
             log.error("Failed to set sys:network:info in redis", err, {});
-          });       
+          });
     }
 
     setOperationalState(state, value) {
@@ -295,12 +303,14 @@ module.exports = class {
         if (this.config) {
           //log.info(require('util').inspect(this.sysinfo, {depth: null}));
           return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
+        } else {
+          return undefined;
         }
     }
 
     myIp() {
         if(this.monitoringInterface()) {
-            return this.monitoringInterface().ip_address;            
+            return this.monitoringInterface().ip_address;
         } else {
             return undefined;
         }
@@ -308,7 +318,7 @@ module.exports = class {
 
     myIpMask() {
         if(this.monitoringInterface()) {
-            let mask =  this.monitoringInterface().netmask;            
+            let mask =  this.monitoringInterface().netmask;
             if (mask.startsWith("Mask:")) {
                 mask = mask.substr(5);
             }
@@ -325,7 +335,7 @@ module.exports = class {
             return null;
         }
     }
- 
+
     myDDNS() {
         return this.ddns;
     }
@@ -338,7 +348,7 @@ module.exports = class {
             if (iptool.isV4Format(_dns[i])) {
                 v4dns.push(_dns[i]);
             }
-        } 
+        }
         return v4dns;
     }
 
@@ -381,7 +391,7 @@ module.exports = class {
         return false;
     }
 
-    // hack ... 
+    // hack ...
     debugState(component) {
         if (component == "FW_HASHDEBUG") {
             return true;
@@ -389,11 +399,23 @@ module.exports = class {
         return false;
     }
 
-    // serial may not come back with anything for some platforms 
+    // serial may not come back with anything for some platforms
+
+    getSysInfoAsync() {
+      return new Promise((resolve, reject) => {
+        this.getSysInfo((err, data) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(data);
+          }
+        });
+      });
+    }
 
     getSysInfo(callback) {
       let serial = null;
-      if (fs.existsSync("/.dockerenv")) {
+      if (f.isDocker() || f.isTravis()) {
         serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
       } else {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
@@ -420,7 +442,7 @@ module.exports = class {
         } else {
             dns.resolve4('firewalla.encipher.io', (err, addresses) => {
                  this.serverIps = addresses;
-            }); 
+            });
             setInterval(()=>{
                  this.serverIps = null;
             },1000*60*60*24);

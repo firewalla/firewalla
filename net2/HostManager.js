@@ -1528,6 +1528,22 @@ module.exports = class {
     })
   }
 
+  loadDDNSForInit(json) {
+    log.debug("Reading DDNS");
+
+    return async(() => {
+      let ddnsString = await (rclient.hgetAsync("sys:network:info", "ddns"));
+      if(ddnsString) {
+        try {
+          let ddns = JSON.parse(ddnsString);
+          json.ddns = ddns;
+        } catch(err) {
+          log.error("Failed to parse ddns string:", ddnsString);
+        }
+      }
+    })();
+  }
+
   migrateStats() {
     let ipList = [];
     for(let index in this.hosts.all) {
@@ -1568,6 +1584,8 @@ module.exports = class {
           this.basicDataForInit(json, options);
 
           await (requiredPromises);
+
+          await (this.loadDDNSForInit(json));
 
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
             await (this.legacyStats(json));

@@ -22,6 +22,8 @@ let exec = require('child-process-promise').exec;
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+let util = require('util');
+
 class Samba {
   constructor() {
     if (instance == null) {
@@ -40,6 +42,11 @@ class Samba {
         return undefined; // empty string means not having samba name or not supported
 
       let result = await (exec(cmd));
+
+      if(result.stdout && result.stdout === "") {
+          return undefined;
+      }
+
       if(result.stdout) {
         let outputs = result.stdout.split("/");
         if(outputs.length >= 2) {

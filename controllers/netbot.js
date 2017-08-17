@@ -1386,7 +1386,7 @@ class netBot extends ControllerBot {
 
       default:
         // unsupported action
-        this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+        this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
         break;
     }
   }

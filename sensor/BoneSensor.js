@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,9 +31,14 @@ Promise.promisifyAll(redis.RedisClient.prototype);
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager('info');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let License = require('../util/license');
 
 let fConfig = require('../net2/config.js').getConfig();
+
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class BoneSensor extends Sensor {
   scheduledJob() {
@@ -43,86 +48,77 @@ class BoneSensor extends Sensor {
         .catch((err) => {
         log.error("Failed to check in", err, {});
         })
-      
+
     })
   }
 
   checkIn() {
     let license = License.getLicense();
-    
+
     if(!license) {
       log.error("License file is required!");
       // return Promise.resolve();
     }
-    
-    return new Promise((resolve, reject) => {
-      sysManager.getSysInfo((err,_sysinfo) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-        
-        log.info("Checking in Cloud...");
 
-        Bone.checkin(fConfig, license, _sysinfo, (err,data) => {
-          if(err) {
-            log.error("Failed to checkin:", err, {});
-            reject(err);
-            return;
-          }
-          
-          log.info("Cloud checked in successfully:", JSON.stringify(data));
-          
-          rclient.setAsync("sys:bone:info",JSON.stringify(data))
-            .then(() => {
-              let promises = [];
+    return async(() => {
+      let sysInfo = await (sysManager.getSysInfoAsync());
 
-              if (data.ddns) {
-                sysManager.ddns = data.ddns;
-                promises.push(
-                  rclient.hsetAsync(
-                    "sys:network:info",
-                    "ddns",
-                    JSON.stringify(data.ddns)))
-              }
-              
-              if(data.publicIp) {
-                sysManager.publicIp = data.publicIp;
-                promises.push(
-                  rclient.hsetAsync(
-                    "sys:network:info", 
-                    "publicIp", 
-                    JSON.stringify(data.publicIp)))
-              }
-              
-              return Promise.all(promises)
-                .then(() => {
-                resolve();
-                }).catch((err) => {
-                reject(err);
-                });
-            })           
-          });
-        });
-      });
+      log.info("Checking in Cloud...");
+
+      let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
+
+      log.info("Cloud checked in successfully:", JSON.stringify(data));
+
+      await (rclient.setAsync("sys:bone:info",JSON.stringify(data)));
+
+      let existingDDNS = await (rclient.hgetAsync("sys:network:info", "ddns"));
+      if (data.ddns) {
+        sysManager.ddns = data.ddns;
+        await (rclient.hsetAsync(
+          "sys:network:info",
+          "ddns",
+          JSON.stringify(data.ddns))); // use JSON.stringify for backward compatible
+      }
+
+      let existingPublicIP = await (rclient.hgetAsync("sys:network:info", "publicIp"));
+      if(data.publicIp) {
+        sysManager.publicIp = data.publicIp;
+        await (rclient.hsetAsync(
+            "sys:network:info",
+            "publicIp",
+            JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
+      }
+
+      // broadcast new change
+      if(existingDDNS !== JSON.stringify(data.ddns) ||
+      existingPublicIP !== JSON.stringify(data.publicIp)) {
+        sem.emitEvent({
+          type: 'DDNS:Updated',
+          toProcess: 'FireApi',
+          publicIp: data.publicIp,
+          ddns: data.ddns,
+          message: 'DDNS is updated'
+        })
+      }
+    })();
   }
 
   run() {
     setTimeout(() => {
-      this.scheduledJob();  
+      this.scheduledJob();
     }, 5 * 1000); // in 5 seconds
-    
+
     setInterval(() => {
       this.scheduledJob();
     }, syncInterval);
   }
-  
+
   // make config redis-friendly..
   flattenConfig(config) {
     let sConfig = {};
-    
+
     let keys = ["adblock.dns", "family.dns"];
-    
+
     keys.filter((key) => config[key]).forEach((key) => {
       if (config[key].constructor.name === 'Object' ||
         config[key].constructor.name === 'Array') {
@@ -131,14 +127,14 @@ class BoneSensor extends Sensor {
         sConfig[key] = config[key];
       }
     })
-    
+
     return sConfig;
   }
-  
+
   loadServiceConfig() {
     log.info("Loading service config from cloud...");
     Bone.getServiceConfig((err, config) => {
-      
+
       if(config && config.constructor.name === 'Object') {
         rclient.hmsetAsync(serviceConfigKey, this.flattenConfig(config))
           .then(() => {
@@ -146,7 +142,7 @@ class BoneSensor extends Sensor {
           }).catch((err) => {
           log.error("Failed to store service config in redis:", err, {});
         })
-      }      
+      }
     })
   }
 }
