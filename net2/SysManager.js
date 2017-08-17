@@ -20,6 +20,7 @@ var os = require('os');
 var network = require('network');
 var instance = null;
 var fs = require('fs');
+var license = require('../util/license.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -34,6 +35,16 @@ Promise.promisifyAll(redis.Multi.prototype);
 
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
+
+function setSystemDebug(_systemDebug) {
+    if (license.getLicense() == null) {
+       systemDebug = true;
+    } else {
+       systemDebug = _systemDebug;
+    }
+}
+
+setSystemDebug(systemDebug);
 
 let DNSServers = {
     "75.75.75.75": true,
@@ -70,6 +81,7 @@ module.exports = class {
                 log.error("invalid message for channel: " + channel);
                 return;
               }
+              setSystemDebug(systemDebug);
               log.info("[pubsub] System Debug is changed to " + message);
               break;
             case "System:LanguageChange":
