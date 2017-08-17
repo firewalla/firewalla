@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,7 +29,7 @@ class UPNPSensor extends Sensor {
     super();
     this.upnpClient = natUpnp.createClient();
   }
-  
+
   run() {
     setInterval(() => {
       this.upnpClient.getMappings((err, results) => {
@@ -48,7 +48,7 @@ class UPNPSensor extends Sensor {
           log.info("No upnp mapping found in network");
         }
       });
-    }, 60 * 1000); // check every minute
+    }, 60 * 10 * 1000); // check every 10 minutes
   }
 }
 

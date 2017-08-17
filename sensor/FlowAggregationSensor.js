@@ -277,11 +277,17 @@ class FlowAggregationSensor extends Sensor {
 
       ips.forEach((ip) => {
         let cache = {};
+
         let outgoingFlows = await (flowTool.queryFlows(ip, "in", begin, end)); // in => outgoing
-        let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => this._flowHasActivity(f, cache));
+        let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => {
+          return await (this._flowHasActivity(f, cache));
+        });
         flows.push.apply(flows, outgoingFlowsHavingIntels);
+
         let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
-        let incomingFlowsHavingIntels = incomingFlows.filter((f) => this._flowHasActivity(f, cache));
+        let incomingFlowsHavingIntels = incomingFlows.filter((f) => {
+          return await (this._flowHasActivity(f, cache));
+        });
         flows.push.apply(flows, incomingFlowsHavingIntels);
       });
 

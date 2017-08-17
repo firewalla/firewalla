@@ -41,6 +41,10 @@ let intelTool = new IntelTool();
 let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
 let ITEMS_PER_FETCH = 100;
+let QUEUE_SIZE_PAUSE = 1000;
+let QUEUE_SIZE_RESUME = 500;
+
+let MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -177,9 +181,9 @@ class DestIPFoundHook extends Hook {
 
         await (rclient.zremAsync(args));
 
-        log.info(ips.length, "IP Addresses are analyzed with intels");
+        log.info(ips.length + "IP Addresses are analyzed with intels");
       } else {
-        log.info("No IP Addresses are pending for intels");
+//        log.info("No IP Addresses are pending for intels");
       }
 
       await (delay(1000)); // sleep for only 1 second
@@ -195,10 +199,30 @@ class DestIPFoundHook extends Hook {
       if(!ip)
         return;
 
+      if(this.paused)
+        return;
+
       this.appendNewIP(ip);
     });
 
     this.job();
+    this.monitorQueue();
+  }
+
+  monitorQueue() {
+    return async(() => {
+      let count = await (rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf"));
+      if(count > QUEUE_SIZE_PAUSE) {
+        this.pause = true;
+      }
+      if(count < QUEUE_SIZE_RESUME) {
+        this.pause = false;
+      }
+
+      await (delay(MONITOR_QUEUE_SIZE_INTERVAL));
+
+      return this.monitorQueue();
+    })();
   }
 }
 
