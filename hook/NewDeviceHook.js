@@ -29,6 +29,7 @@ let util = require('util');
 class NewDeviceHook extends Hook {
 
   constructor() {
+    super();
     this.queue = [];
   }
 
