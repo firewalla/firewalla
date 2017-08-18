@@ -1,5 +1,5 @@
 {
-  "version": 1.86,
+  "version": 1.87,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "cacheInit": true,
