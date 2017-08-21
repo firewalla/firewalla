@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC 
-# 
+#    Copyright 2017 Firewalla LLC
+#
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
 #    as published by the Free Software Foundation.
-# 
+#
 #    This program is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -56,7 +56,12 @@ logger `date`
 
 echo "upgrade on branch $branch"
 
-(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
+GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
+eval $GIT_COMMAND ||
+(sleep 3; eval $GIT_COMMAND) ||
+(sleep 3; eval $GIT_COMMAND) || exit 1
+
+#(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
 /usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
