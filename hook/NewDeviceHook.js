@@ -24,7 +24,14 @@ let bone = require("../lib/Bone.js");
 
 let flowUtil = require("../net2/FlowUtil.js");
 
+let util = require('util');
+
 class NewDeviceHook extends Hook {
+
+  constructor() {
+    super();
+    this.queue = [];
+  }
 
   findMac(name, mac, retry) {
 
@@ -42,11 +49,12 @@ class NewDeviceHook extends Hook {
 
       if(!result) {
         // not found... kinda strange, hack??
-        log.warn("New device " + name + " is not found in the network..");
+        let logString = util.format("New device %s (%s) is not found in the network", name, mac);
+        log.warn(logString);
 
         // if first time, try again in another 10 seconds
         if(retry === 0) {
-          setTimeout(() => this.findMac(mac, retry + 1),
+          setTimeout(() => this.findMac(name, mac, retry + 1),
                      10 * 1000);
         }
         return;
