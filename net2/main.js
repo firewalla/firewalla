@@ -19,6 +19,8 @@
 process.title = "FireMain";
 let log = require("./logger.js")(__filename);
 
+let sem = require('../sensor/SensorEventManager.js').getInstance();
+
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -142,13 +144,6 @@ function run() {
   bd.start();
 
 
-  // always create the secondary interface
-  ModeManager.enableSecondaryInterface();
-
-  ModeManager.apply();
-
-  // when mode is changed by anyone else, reapply automatically
-  ModeManager.listenOnChange();
 
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
@@ -166,6 +161,19 @@ function run() {
         log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
         return;
       }
+
+      sem.emitEvent({
+        type: 'IPTABLES_READY'
+      });
+
+      // always create the secondary interface
+      ModeManager.enableSecondaryInterface();
+
+      ModeManager.apply();
+
+      // when mode is changed by anyone else, reapply automatically
+      ModeManager.listenOnChange();
+
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();

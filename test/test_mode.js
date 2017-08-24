@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,9 @@ let Promise = require('bluebird');
 
 let Bootstrap = require('../net2/Bootstrap');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -46,21 +49,22 @@ let s = new DNSMASQSensor();
 
 describe('Test mode feature', function() {
   this.timeout(10000);
-  
+
   beforeEach((done) => {
-    Bootstrap.bootstrap()
-      .then(() => {
-        sem.clearAllSubscriptions();
-        s.registered = false;
-        s.run()
-          .then(() => {
-          done();
-          });
-      }).catch((err) => {
-      log.error("Failed to bootstrap Firwalla", err, {});
-    });
+    async(() => {
+      await (Bootstrap.bootstrap());
+      sem.clearAllSubscriptions();
+      s.registered = false;
+      s.run()
+      sem.emitEvent({
+        type: 'IPTABLES_READY'
+      })
+      await (delay(2000))
+      await (ModeManager.enableSecondaryInterface())
+      done();
+    })();
   });
-  
+
   afterEach((done) => {
     cp.exec("sudo pkill bitbridge7", (err) => {
       s._stop()
@@ -69,10 +73,10 @@ describe('Test mode feature', function() {
         });
     })
   });
-  
+
   it('should enable dhcp and disable spoofing when mode is switched to dhcp', (done) => {
     setTimeout(done, 10000);
-    
+
     delay(0)
       .then(() => {
         ModeManager.switchToDHCP()
@@ -95,7 +99,7 @@ describe('Test mode feature', function() {
         })
       })
   });
-  
+
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
     setTimeout(done, 10000);
 

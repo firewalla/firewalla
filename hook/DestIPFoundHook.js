@@ -168,7 +168,7 @@ class DestIPFoundHook extends Hook {
 
   job() {
     return async(() => {
-      log.info("Checking if any IP Addresses pending for intel analysis...")
+      log.debug("Checking if any IP Addresses pending for intel analysis...")
       let ips = await (rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH));
 
       if(ips.length > 0) {

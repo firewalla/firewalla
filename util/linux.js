@@ -4,13 +4,14 @@ var os    = require('os'),
     ip    = require('ip'),
     exec  = require('child_process').exec,
     async = require('async');
-    
+
 function trim_exec(cmd, cb) {
   exec(cmd, function(err, out) {
-    if (out && out.toString() != '')
+    if (out && out.toString() != '') {
       cb(null, out.toString().trim())
-    else
-      cb(err)
+    } else {
+      cb(null)
+    }
   })
 }
 
@@ -28,7 +29,7 @@ function trim_exec_sync(cmd) {
    let r = require('child_process').execSync(cmd);
    if (r) {
        return r.toString().trim();
-   } 
+   }
    return null;
 }
 
@@ -47,13 +48,17 @@ exports.get_active_network_interface_name = function(cb) {
 };
 
 exports.interface_type_for = function(nic_name, cb) {
-  exec('cat /proc/net/wireless | grep ' + nic_name, function(err, out) {
+  exec('cat /proc/net/wireless | grep ' + nic_name, function(err, out, stderr) {
     return cb(null, err ? 'Wired' : 'Wireless')
   })
 };
 
 exports.mac_address_for = function(nic_name, cb) {
-  var cmd = 'cat /sys/class/net/' + nic_name + '/address';
+  // This is a workaround for nodejs bug
+  // https://github.com/libuv/libuv/commit/f1e0fc43d17d9f2d16b6c4f9da570a4f3f6063ed
+  // eth0:* virtual interface should use same mac address as main interface eth0
+  let n = nic_name.replace(/:.*$/, "");
+  var cmd = 'cat /sys/class/net/' + n + '/address';
   trim_exec(cmd, cb);
 };
 
@@ -105,7 +110,7 @@ exports.get_network_interfaces_list = function(cb) {
       if (results[1]) obj.gateway_ip  = results[1];
       if (results[2]) obj.netmask     = results[2];
       if (results[3]) obj.type        = results[3];
-      
+
       list.push(obj);
       --count || cb(null, list);
     })
@@ -145,4 +150,3 @@ exports.get_network_interfaces_list = function(cb) {
   if (count == 0)
     cb(new Error('No interfaces found.'))
 }
-

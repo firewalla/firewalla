@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,8 @@ var ip = require('ip');
 var spawn = require('child_process').spawn;
 var async = require('async');
 
+let Promise = require('bluebird');
+
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
     if (!rule.action) rule.action = '-A';
@@ -34,15 +36,30 @@ exports.drop = function (rule, callback) {
     newRule(rule, callback);
 }
 
-exports.reject = function (rule, callback) {
+function reject(rule, callback) {
     rule.target = 'REJECT';
     if (!rule.action) rule.action = '-A';
     newRule(rule, callback);
 }
 
+exports.reject = reject
+
+exports.rejectAsync = function (rule) {
+  return new Promise((resolve, r) => {
+    reject(rule, (err) => {
+      if(err) {
+        r(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
+exports.dnsChangeAsync = dnsChangeAsync;
 exports.flush = flush;
 exports.flush6 = flush6;
 exports.run = run;
@@ -94,7 +111,7 @@ function iptables(rule, callback) {
 
         log.info("IPTABLE:DNS:Running commandline: ", cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
-            if (err) {
+            if (err && action !== "-D") {
                 log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
             if (callback) {
@@ -103,6 +120,13 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else {
+      log.error("Invalid rule type:", rule.type);
+      if (callback) {
+          callback(err, null);
+      }
+      running = false;
+      newRule(null, null);
     }
 }
 
@@ -159,6 +183,17 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
+function dnsChangeAsync(ip, dns, state) {
+  return new Promise((resolve, reject) => {
+    dnsChange(ip, dns, state, (err) => {
+      if(err)
+        reject(err)
+      else
+        resolve();
+    })
+  });
+}
+
 function dnsChange(ip, dns, state, callback) {
     newRule({
         type: 'dns',
@@ -185,7 +220,7 @@ function _dnsChange(ip, dns, state, callback) {
 
     log.info("IPTABLE:DNS:Running commandline: ", cmdline);
     this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        if (err) {
+        if (err && action !== "-D") {
             log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
         }
         if (callback) {
