@@ -107,7 +107,25 @@ function iptables(rule, callback) {
         }
 
         let cmd = "iptables";
-        let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+        let cmdline = "";
+
+        let getCommand = function(action, src, dns, protocol) {
+          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} --dport 53 -j DNAT --to-destination ${dns}`
+        }
+
+        switch(action) {
+          case "-A":
+            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} || ${getCommand(action, _src, dns, 'tcp')})`
+            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} || ${getCommand(action, _src, dns, 'udp')})`
+          break;
+          case "-D":
+            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} ; ${getCommand(action, _src, dns, 'tcp')})`
+            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} ; ${getCommand(action, _src, dns, 'udp')})`
+          break;
+          default:
+            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+          break;
+        }
 
         log.info("IPTABLE:DNS:Running commandline: ", cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
@@ -183,10 +201,10 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function dnsChangeAsync(ip, dns, state) {
+function dnsChangeAsync(ip, dns, state, ignoreError) {
   return new Promise((resolve, reject) => {
     dnsChange(ip, dns, state, (err) => {
-      if(err)
+      if(err && !ignoreError)
         reject(err)
       else
         resolve();

@@ -337,6 +337,19 @@ module.exports = class DNSMASQ {
     });
   }
 
+  _remove_iptables_rules() {
+    return async(() => {
+      let subnets = await (networkTool.getLocalNetworkSubnets());
+      let localIP = sysManager.myIp();
+      let dns = `${localIP}:8853`;
+
+      subnets.forEach(subnet => {
+        await (iptables.dnsChangeAsync(subnet, dns, false, true));
+      })
+
+      await (require('../../control/Block.js').unblock(BLACK_HOLE_IP));
+    })();
+  }
 
   remove_iptables_rules(callback) {
     callback = callback || function() {}
@@ -506,8 +519,12 @@ module.exports = class DNSMASQ {
             callback();
           }).catch((err) => {
             this.rawStop();
-            this.remove_iptables_rules();
-            callback(err);
+            this._remove_iptables_rules()
+            .then(() => {
+              callback(err);
+            }).catch(() => {
+              callback(err);
+            })
           })
         });
       });
@@ -520,11 +537,11 @@ module.exports = class DNSMASQ {
     // optional to remove filter file
 
     log.info("Stopping DNSMASQ:", {});
-    this.remove_iptables_rules((err) => {
+    this._remove_iptables_rules()
+    .then(() => {
       this.rawStop((err) => {
         callback(err);
-        }
-      );
+      });
     })
   }
 
