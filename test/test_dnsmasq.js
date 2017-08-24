@@ -78,6 +78,12 @@ describe('Test dnsmasq feature', function() {
 
   it('should translate and create iptables correctly', (done) => {
     dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    dnsmasq._remove_iptables_rules();
     dnsmasq._remove_iptables_rules();
     done();
   })

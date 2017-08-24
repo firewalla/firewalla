@@ -119,8 +119,9 @@ function iptables(rule, callback) {
             cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} || ${getCommand(action, _src, dns, 'udp')})`
           break;
           case "-D":
-            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} ; ${getCommand(action, _src, dns, 'tcp')})`
-            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} ; ${getCommand(action, _src, dns, 'udp')})`
+            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} && ${getCommand(action, _src, dns, 'tcp')})`
+            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} && ${getCommand(action, _src, dns, 'udp')})`
+            cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
             cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
