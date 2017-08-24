@@ -55,6 +55,7 @@ describe('Test dnsmasq feature', function() {
 
   beforeEach((done) => {
     async(() => {
+      require('../control/Block.js').setupBlockChain()
       await (Bootstrap.bootstrap());
       sem.clearAllSubscriptions();
       s.registered = false;
@@ -77,6 +78,7 @@ describe('Test dnsmasq feature', function() {
 
   it('should translate and create iptables correctly', (done) => {
     dnsmasq._add_iptables_rules();
+    dnsmasq._remove_iptables_rules();
     done();
   })
 
@@ -129,7 +131,6 @@ describe('Test dnsmasq feature', function() {
       });
       await (delay(2000))
       cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
-        console.log("xxx", stdout, stderr);
         expect(err).to.not.null;
         done();
       });
