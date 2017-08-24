@@ -1,119 +1,104 @@
 #!/bin/bash
 
+#
+#    Copyright 2017 Firewalla LLC 
+# 
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+# 
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
-IFCONFIG=/sbin/ifconfig
-NSLOOKUP=/usr/bin/nslookup
-IPCMD=/sbin/ip
 
-timeout() {
+get_value() {
     kind=$1
     case $kind in
-        eth) echo 500 ;;
-        *) echo 10 ;;
-    esac
-}
-
-check() {
-    kind=$1
-    rc=1
-    case $kind in
-        eth)
-            eth_carrier=$(cat /sys/class/net/eth0/carrier)
-            [[ "$eth_carrier" -eq 1 ]] && rc=0
-            ;;
         ip)
-            ip_addr=$($IFCONFIG eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}')
-            [[ -n "$ip_addr" ]] && rc=0
+            /sbin/ifconfig eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}'
             ;;
         gw)
-            default_gw=$($IPCMD route | grep default | awk '{print $3}')
-            if [[ -n "$default_gw" ]]
-            then
-                ping -c1 -w3 $default_gw &>/dev/null && rc=0
-            fi
+            /sbin/route -n | awk '$1=="0.0.0.0" {print $2}'
             ;;
         dns)
-            $NSLOOKUP -timeout=1 github.com &>/dev/null && rc=0
-            ;;
-        github)
-            GITHUB_STATUS_API=https://status.github.com/api.json
-            sc=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
-            [[ "$sc" == "200" ]] && rc=0
+            grep nameserver /etc/resolv.conf | awk '{print $2}'
             ;;
     esac
-    return $rc
 }
 
-save() {
-    kind=$1
-    rc=1
-    case $kind in
-        eth) # nothing to save
-            ;;
-        ip)
-            $IFCONFIG eth0 |grep 'inet addr'|awk '{print $2}' | awk -F: '{print $2}' > /var/run/saved_ip
-            ;;
-        gw)
-            $IPCMD route | grep default | awk '{print $3}' > /var/run/saved_gw
-            ;;
-        dns)
-            cp -f /etc/resolv.conf{,.bak}
-            ;;
-        github) # nothing to save
-            ;;
-    esac
-    return $rc
-}
-
-try_saved() {
-    kind=$1
-    rc=1
-    case $kind in
-        eth)
-            /sbin/ifdown eth0
-            sleep 2
-            /sbin/ifup eth0
-            ;;
-        ip)
-            $IFCONFIG eth0 $(cat /var/run/saved_ip)
-            ;;
-        gw)
-            $IPCMD route add default via $(cat /var/run/saved_gw) dev eth0
-            ;;
-        dns)
-            cp -f /etc/resolv.conf{.bak,}
-            ;;
-        github) # nothing to try
-            ;;
-    esac
-    return $rc
-}
-
-# ------
-# MAIN
-# ------
-
-for k in eth ip gw dns github
-do
-    # check timeout
-    t=$(timeout $x)
-    ok=1
-    echo -n "- checking $k ... "
-    while [[ $t -gt 0 ]]
+save_values() {
+    r=0
+    for kind in ip gw dns
     do
-        check $k && { ok=0; break; }
-        (( t=t-1 ))
-        sleep 1
+        value=$(get_value $kind)
+        [[ -n "$value" ]] || continue
+        file=/var/run/saved_${kind}
+        $LOGGER "Save $kind value $value in $file"
+        rm -f $file
+        echo "$value" > $file || r=1
     done
+    return $r
+}
 
-    if [[ $ok -eq 0 ]]
-    then
-        $LOGGER "$k OK, save it"
-        echo OK
-        save $k
-    else
-        $LOGGER "$k fail, try last saved config"
-        echo FAIL
-        try_saved $k
-    fi
-done
+set_value() {
+    kind=$1
+    saved_value=$2
+    case ${kind} in
+        ip)
+            /sbin/ifconfig eth0 ${saved_value}
+            ;;
+        gw)
+            /sbin/route add default gw ${saved_value} eth0
+            ;;
+        dns)
+            echo "nameserver ${saved_value}" >> /etc/resolv.conf
+            ;;
+    esac
+}
+
+restore_values() {
+    r=0
+    for kind in ip gw dns
+    do
+        file=/var/run/saved_${kind}
+        [[ -e "$file" ]] || continue
+        saved_value=$(cat $file)
+        [[ -n "$saved_value" ]] || continue
+        $LOGGER "Restore $kind saved value ${saved_value} from $file"
+        set_value $kind $saved_value || r=1
+    done
+    return $r
+}
+
+sleep ${SLEEP_INTERVAL}
+rc=0
+cmd=$1
+case $cmd in
+    save)
+        save_values
+        ;;
+    restore)
+        restore_values
+        ;;
+    *)
+        # check if current IP exists
+        current_ip=$(get_value ip)
+        if [[ -n "$current_ip" ]]
+        then
+            save_values
+        else
+            restore_values
+        fi
+        ;;
+esac
+sleep ${SLEEP_INTERVAL}
+
+exit $rc
