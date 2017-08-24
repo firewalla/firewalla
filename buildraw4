@@ -146,6 +146,7 @@ function install_walla()
 function post_installation() {
     source $FIREWALLA_HOME/scripts/utils.sh
     setup_folders
+    echo 'export PATH=$PATH:/sbin' >> /home/pi/.bashrc
 }
 
 basedir=`dirname $0`

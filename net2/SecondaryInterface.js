@@ -1,4 +1,4 @@
-/*    Copyright 2017 Firewalla LLC 
+/*    Copyright 2017 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,7 +45,7 @@ function    getSubnet(networkInterface, family) {
 
         return ipSubnets;
 
-    } 
+    }
 
 exports.create = function (config, callback) {
 /*
@@ -70,19 +70,19 @@ exports.create = function (config, callback) {
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
-                    log.warn("Already Created Secondary Interface",list[i]);
+                    log.info("Already Created Secondary Interface",list[i]);
                     callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
-                    return; 
+                    return;
                 }
                 let subnet = getSubnet(list[i].name, 'IPv4');
                 if (subnet == _secondaryIpSubnet) {
                     _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
-                    _secondaryIp = config.secondaryInterface.ip2; 
+                    _secondaryIp = config.secondaryInterface.ip2;
                     _secondaryIpNet = config.secondaryInterface.ipnet2;
                     _secondaryMask = config.secondaryInterface.ipmask2;
                 }
             }
-            require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => { 
+            require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => {
                 if (err!=null) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }

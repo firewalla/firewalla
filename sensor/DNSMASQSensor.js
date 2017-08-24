@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,7 +42,7 @@ class DNSMASQSensor extends Sensor {
     this.dnsMode = false;
     this.registered = false;
   }
-  
+
   _start() {
     return new Promise((resolve, reject) => {
       dnsmasq.install((err) => {
@@ -64,13 +64,16 @@ class DNSMASQSensor extends Sensor {
       })
     });
   }
-  
+
   _stop() {
     return new Promise((resolve, reject) => {
       dnsmasq.stop((err) => {
         if(!err) {
           log.info("dnsmasq service is stopped successfully");
-          resolve();
+          require('../util/delay.js').delay(1000)
+          .then(() => {
+            resolve();
+          })
         } else {
           log.error("Failed to stop dnsmasq: " + err);
           reject(err);
@@ -78,12 +81,18 @@ class DNSMASQSensor extends Sensor {
       })
     });
   }
-  
+
   reload() {
     return flowControl.reload(dnsmasq.reload, dnsmasq);
   }
-  
+
   run() {
+    sem.once('IPTABLES_READY', () => {
+      this._run();
+    })
+  }
+
+  _run() {
     // always start dnsmasq
     return Mode.getSetupMode()
       .then((mode) => {
