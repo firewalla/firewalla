@@ -143,6 +143,27 @@ module.exports = class FlowMonitor {
       }
     }
 
+    checkIntelClass(intel,_class) {
+        if (intel == null || _class == null) {
+            return false;
+        }
+        if (intel.c) {
+            if (intel.c == _class) {
+                return true;
+            }
+        } 
+        if (intel.cs) {
+            let cs = intel.cs;
+            if (!Array.isArray(intel.cs)) {
+                cs = JSON.parse(intel.cs);
+            }
+            if (cs.indexOf(_class)!=-1) {
+                return true;
+            }
+        } 
+        return false;
+    }
+
     flowIntel(flows) {
         for (let i in flows) {
             let flow = flows[i];
@@ -150,6 +171,7 @@ module.exports = class FlowMonitor {
             if (flow['intel'] && flow['intel']['c'] && flowUtil.checkFlag(flow,'l')==false) {
               log.info("########## flowIntel",JSON.stringify(flow),{});
               let c = flow['intel']['c'];
+              let cs = flow['intel']['cs'];
 
               hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
                if (ignore == true) {
@@ -158,7 +180,7 @@ module.exports = class FlowMonitor {
               
                if (ignore == false) {
                 log.info("######## flowIntel Processing",flow);
-                if (c == "av") {
+                if (this.checkIntelClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
@@ -206,9 +228,9 @@ module.exports = class FlowMonitor {
                             // }
                         });
                     }
-                } else if (c=="porn") {
-                  if ((flow.du && Number(flow.du)>60) &&
-                      (flow.rb && Number(flow.rb)>3000000) ||
+                } else if (this.checkIntelClass(flow['intel'],"porn")) {
+                  if ((flow.du && Number(flow.du)>20) &&
+                      (flow.rb && Number(flow.rb)>1000000) ||
                       this.flowIntelRecordFlow(flow,3)) {
 
                     // there should be a unique ID between pi and cloud on websites
@@ -261,7 +283,7 @@ module.exports = class FlowMonitor {
                             // }
                         });
                     }
-                } else if (c=="intel") {
+                } else if (this.checkIntelClass(flow['intel'],"intel")) {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
@@ -327,7 +349,7 @@ module.exports = class FlowMonitor {
                                         });
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
-                } else if (c=="games" && this.flowIntelRecordFlow(flow,3)) {
+                } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
                         let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
