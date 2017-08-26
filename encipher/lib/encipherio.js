@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -85,7 +85,7 @@ let legoEptCloud = class {
             debugging = false;
             this.notifySocket = false;
             this.notifyGids = [];
-            
+
         }
         // NO LONGER create keypair in sync node during constructor
 
@@ -470,7 +470,7 @@ let legoEptCloud = class {
     }
 
 
-    rendezvousMap(rid, callback) {
+   rendezvousMap (rid, callback) {
         let options = {
             uri: this.endpoint + '/ept/rendezvous/' + rid,
             method: 'GET',
@@ -615,7 +615,7 @@ let legoEptCloud = class {
                 let skey = group.symmetricKeys[k];
                 if (skey.eid === self.eid) {
                    sk = skey;
-                   break; 
+                   break;
                 }
             }
             if (sk === null) {
@@ -626,7 +626,7 @@ let legoEptCloud = class {
                   'group': group,
                   'symanttricKey':sk,
                   'key': symmetricKey,
-                  'lastfetch': 0, 
+                  'lastfetch': 0,
                   'pullIntervalInSeconds':0,
                 };
                 callback(null, symmetricKey,self.groupCache[gid]);
@@ -693,7 +693,7 @@ let legoEptCloud = class {
             callback(null, crypted);
         });
     }
-    /* 
+    /*
      * beep is the structure to send a apn notification
      *    - beep content is not encrypted
      */
@@ -712,7 +712,7 @@ let legoEptCloud = class {
 
   _send(gid, msgstr, _beep, mtype, fid, mid, callback) {
     let self = this;
-    
+
     log.info("encipher unencrypted message size: ", msgstr.length, {});
 
     this.getKey(gid, (err, key, cacheGroup) => {
@@ -765,7 +765,7 @@ let legoEptCloud = class {
       });
     });
   }
-  
+
   sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
     log.debug(msg, {});
     let mpackage = {
@@ -789,12 +789,12 @@ let legoEptCloud = class {
           callback(err);
           return;
         }
-        
+
         let payload = {
           compressMode: true,
           data: output.toString('base64')
         };
-        
+
         this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback);
       })
     } else {
@@ -814,19 +814,19 @@ let legoEptCloud = class {
             callback(err, null);
             return;
           }
-          
+
           if(key == null) {
             log.error("encryption key is not found for group: %s", gid);
             callback("key not found, invalid group?", null);
             return;
           }
-          
+
           let decryptedMsg = this.decrypt(msg, key);
           let msgJson = JSON.parse(decryptedMsg);
           callback(null, msgJson);
         });
     }
-    
+
     getMsgFromGroup(gid, timestamp, count, callback) {
         let self = this;
         this.getKey(gid, (err, key, cacheGroup) => {
@@ -870,7 +870,7 @@ let legoEptCloud = class {
                     }
                     let message = JSON.parse(self.decrypt(obj.message, key));
                     messages.push({
-                        'id': obj.id, // id 
+                        'id': obj.id, // id
                         'timestamp': obj.timestamp,
                         'mtype': obj.mtype,
                         'from': obj.fromName,
@@ -1141,7 +1141,7 @@ let legoEptCloud = class {
 
     reKeyForEpt(skey, eid, ept) {
         let publicKey = ept.publicKey;
-        log.info("rekeying with symmetriKey", ept, " and ept ", eid);
+        log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
         let symmetricKey = this.myPrivateKey.decrypt(skey.key, 'base64', 'utf8');
         log.info("Creating peer publicKey: ", publicKey);
         let peerPublicKey = ursa.createPublicKey(publicKey);
@@ -1168,17 +1168,17 @@ let legoEptCloud = class {
         let self = this;
         this.eptFind(eid, function (err, ept) {
             if (ept) {
-                log.info("found ept: ", ept);
+                log.debug("found ept: ", ept);
                 if (ept.publicKey !== null) {
                     self.groupFind(gid, function (err, grp) {
-                        log.info("finding group my eid", self.eid, " inviting ", eid, "grp", grp);
+                        log.debug("finding group my eid", self.eid, " inviting ", eid, "grp", grp);
                         if (grp !== null) {
                             let mykey = null;
                             for (let key in grp.symmetricKeys) {
                                 let sym = grp.symmetricKeys[key];
-                                log.info("searching keys ", key, " sym ", sym);
+                                log.debug("searching keys ", key, " sym ", sym);
                                 if (sym.eid === self.eid) {
-                                    log.info("found my key ", self.eid);
+                                    log.debug("found my key ", self.eid);
                                     mykey = sym;
                                 }
                             }
@@ -1216,15 +1216,15 @@ let legoEptCloud = class {
     }
 
     eptinviteGroupByRid(gid, rid, callback) {
-        log.info("inviting ", rid, " to ", gid);
+        // log.info("inviting ", rid, " to ", gid);
         let self = this;
         this.rendezvousMap(rid, function (err, rinfo) {
             if (err !== null || rinfo === null) {
-                log.error("Error not able to find rinfo");
+                // log.error("Error not able to find rinfo");
                 callback(err, null);
                 return;
             }
-            log.info("found rinfo", rinfo);
+            log.info("found rinfo", rinfo, {});
             if ('value' in rinfo) {
                 self.eptinviteGroup(gid, rinfo.value, callback);
             } else if ('evalue' in rinfo) {
