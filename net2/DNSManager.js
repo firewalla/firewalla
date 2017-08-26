@@ -255,24 +255,31 @@ module.exports = class DNSManager {
         log.info("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
+        let _hlist = [];
+        let hlist = [];
+        let alist = [];
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
             for (let host in flow.af) {
-                iplist.push(host);
-                _iplist = _iplist.concat(flowUtil.hashHost(host));
-                _alist = flowUtil.hashApp(host);
+                _iplist = _iplist.concat(flowUtil.hashHost(host)); // backward compatibility for now
+                _alist = _alist.concat(flowUtil.hashApp(host));
+                alist.push(host);
             }
-        } else if (dnsdata && dnsdata.host) {
-            iplist.push(dnsdata.host);
-            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host));
-            _alist = flowUtil.hashApp(dnsdata.host);
+        } 
+        if (dnsdata && dnsdata.host) {
+            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host)); // backward compatibility for now
+            hlist.push(dnsdata.host);
+            _hlist = _hlist.concat(flowUtil.hashHost(dnsdata.host));
+            _alist = _alist.concat(flowUtil.hashApp(dnsdata.host));
+            alist.push(dnsdata.host);
         } 
 
         iplist.push(ip);
         _iplist = _iplist.concat(flowUtil.hashHost(ip));
 
-        if (iplist.indexOf("firewalla.encipher.io") > -1) {
+        if (iplist.indexOf("firewalla.encipher.io") > -1 ||
+              hlist.indexOf("firewalla.encipher.io")> -1) {
            log.debug("###Intel:DNS:SkipSelf",iplist,flow);
            callback(null,null);
            return; 
@@ -281,9 +288,9 @@ module.exports = class DNSManager {
         let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
         if (hashdebug == false) {
-            flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+            flowlist.push({_iplist:_iplist,_alist:_alist,_hlist:_hlist,flow:_flow});
         } else {
-            flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
+            flowlist.push({iplist:iplist, _iplist:_iplist,alist:alist,_alist:_alist,hlist:hlist, _hlist:_hlist,flow:_flow});
         }
 
         log.info("######## Sending:",JSON.stringify(flowlist));
