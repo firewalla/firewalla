@@ -37,6 +37,8 @@ var sysManager = new SysManager('info');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
+let BoneSensor = require('../sensor/BoneSensor');
+let boneSensor = new BoneSensor();
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
@@ -48,7 +50,12 @@ function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
-    run();
+    boneSensor.checkIn()
+      .then(() => {
+        run() // start running after bone checkin successfully
+      }).catch((err) => {
+        run() // running firewalla in non-license mode if checkin failed
+      });
   } else {
     if(!bone.cloudready()) {
       log.info("Connecting to Firewalla Cloud...");
