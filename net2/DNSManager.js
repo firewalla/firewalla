@@ -38,6 +38,8 @@ var flowUtil = require('../net2/FlowUtil.js');
 
 var hostManager = null;
 
+let Promise = require('bluebird');
+
 const dns = require('dns');
 
 function parseX509Subject(subject) {
@@ -175,11 +177,6 @@ module.exports = class DNSManager {
                     },ddata);
                 }
             } else {
-                let key1 = "dns:ip:" + ip;
-                //rclient.hgetall(key1, (err, data) => {
-    //                if (ddata && ddata._intel) { 
-                  //      ddata.intel = JSON.parse(ddata._intel);
-                 //   }
                     if (ddata != null) {
                         let d = null;
                         if (O != null) {
@@ -195,29 +192,6 @@ module.exports = class DNSManager {
                             };
                         }
                         callback(null,d,ddata);
-/*
-                        rclient.hgetall(ddata.host, (err, data2) => {
-                            if (data2 != null) {
-                                if (O != null) {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host,
-                                        org: O
-                                    };
-                                } else {
-                                    d = {
-                                        ip: ip,
-                                        name: data2.host
-                                    };
-                                }
-                                callback(err, d,ddata);
-                            } else {
-                                callback(err, d,ddata);
-                            }
-                        });
-*/
-     
-
                     } else {
                         callback(null, null,null);
                     }
@@ -281,39 +255,42 @@ module.exports = class DNSManager {
         log.info("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
+        let _hlist = [];
+        let hlist = [];
+        let alist = [];
         let iplist = [];
         let flowlist = [];
         if (flow.af && Object.keys(flow.af).length>0) {
             for (let host in flow.af) {
-                iplist.push(host);
-                _iplist = _iplist.concat(flowUtil.hashHost(host));
-                _alist = flowUtil.hashApp(host);
+                _iplist = _iplist.concat(flowUtil.hashHost(host)); // backward compatibility for now
+                _alist = _alist.concat(flowUtil.hashApp(host));
+                alist.push(host);
             }
-        } else if (dnsdata && dnsdata.host) {
-            iplist.push(dnsdata.host);
-            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host));
-            _alist = flowUtil.hashApp(dnsdata.host);
+        } 
+        if (dnsdata && dnsdata.host) {
+            _iplist = _iplist.concat(flowUtil.hashHost(dnsdata.host)); // backward compatibility for now
+            hlist.push(dnsdata.host);
+            _hlist = _hlist.concat(flowUtil.hashHost(dnsdata.host));
+            _alist = _alist.concat(flowUtil.hashApp(dnsdata.host));
+            alist.push(dnsdata.host);
         } 
 
         iplist.push(ip);
         _iplist = _iplist.concat(flowUtil.hashHost(ip));
 
-        if (iplist.indexOf("firewalla.encipher.io") > -1) {
+        if (iplist.indexOf("firewalla.encipher.io") > -1 ||
+              hlist.indexOf("firewalla.encipher.io")> -1) {
            log.debug("###Intel:DNS:SkipSelf",iplist,flow);
            callback(null,null);
            return; 
         }
-      
 
         let _flow = flowUtil.hashFlow(flow,!hashdebug);
 
-        //flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
         if (hashdebug == false) {
-            flowlist.push({_iplist:_iplist,_alist:_alist,flow:_flow});
+            flowlist.push({_iplist:_iplist,_alist:_alist,_hlist:_hlist,flow:_flow});
         } else {
-            //flowlist.push({ _iplist:_iplist,_alist:_alist,flow:_flow});
-            flowlist.push({iplist:iplist, _iplist:_iplist,_alist:_alist,flow:_flow});
-//            log.info("######## DEBUG ",JSON.stringify(flowlist));
+            flowlist.push({iplist:iplist, _iplist:_iplist,alist:alist,_alist:_alist,hlist:hlist, _hlist:_hlist,flow:_flow});
         }
 
         log.info("######## Sending:",JSON.stringify(flowlist));
@@ -556,6 +533,7 @@ module.exports = class DNSManager {
         let HostManager = require("../net2/HostManager.js");
         hostManager = new HostManager("cli", 'client', 'info');
     }
+
     let now = Date.now(); 
     
         if (list == null || list.length == 0) {

@@ -75,6 +75,7 @@ if(!firewalla.isProduction()) {
   enableSubPath('system');
   enableSubPath('mac');
   enableSubPath('encipher');
+  enableSubPath('intel');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);
@@ -93,7 +94,7 @@ if(!firewalla.isProduction()) {
   if(firewalla.isDocker()) {
     domain = "127.0.0.1"
   }
-  
+
 
   let applicationUrl = 'http://' + domain + "/v1";
   swagger.configureSwaggerPaths('', '/docs/', '');
@@ -105,7 +106,7 @@ if(!firewalla.isProduction()) {
     termsOfServiceUrl: "",
     contact: "tt@firewalla.com",
     license: "",
-    licenseUrl: "",    
+    licenseUrl: "",
   });
 
 
@@ -146,10 +147,3 @@ app.use(function(err, req, res, next) {
 
 
 module.exports = app;
-
-
-
-
-
-
-

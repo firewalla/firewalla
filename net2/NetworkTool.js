@@ -26,6 +26,9 @@ let os = require('os');
 let ip = require('ip');
 let dns = require('dns');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let instance = null;
 class NetworkTool {
   constructor() {
@@ -60,10 +63,10 @@ class NetworkTool {
     return ipSubnets;
 
   }
-  
+
   listInterfaces() {
     return new Promise((resolve, reject) => {
-      
+
       linux.get_network_interfaces_list((err, list) => {
         if (list == null || list.length <= 0) {
           log.error("Discovery::Interfaces", "No interfaces found");
@@ -84,18 +87,18 @@ class NetworkTool {
           }
           i.dns = dns.getServers();
         });
-      
+
         resolve(list);
       });
     });
   }
-  
+
   getLocalNetworkInterface() {
     let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
     if(!intfs) {
       return Promise.resolve(null);
     }
-    
+
     return this.listInterfaces()
       .then((list) => {
         let list2 = list.filter((x) => {
@@ -107,6 +110,14 @@ class NetworkTool {
           return list2;
         }
       });
+  }
+
+  getLocalNetworkSubnets() {
+    return async(() => {
+      let interfaces = await (this.getLocalNetworkInterface());
+      // a very hard code for 16 subnet
+      return interfaces && interfaces.map( x => x.subnet ).map(subnet => subnet.replace('/16', '/24'));
+    })();
   }
 }
 

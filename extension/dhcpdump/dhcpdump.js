@@ -53,7 +53,7 @@ module.exports = class {
 
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
     log.info("Command to check dnsmasq: ", cmd);
-    
+
     require('child_process').exec(cmd, (err, stdout, stderr) => {
       if(stdout !== "") {
         callback(true);
@@ -65,7 +65,7 @@ module.exports = class {
 
   processData(data, callback) {
     callback = callback || function() {}
-    
+
   }
 
 /*
@@ -84,7 +84,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
         if (j == -1) j = output.length;
         let str = output.substr(i,j-1);
         i = j+1;
-     } 
+     }
   }
 
   normalizeMac(mac) {
@@ -99,7 +99,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     });
     return items2.join(":");
   }
-  
+
   parse(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
@@ -137,14 +137,14 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     let StringDecoder = require('string_decoder').StringDecoder;
     let decoder = new StringDecoder('utf8');
 
-    log.info("DHCPDump started with PID: ", pid); 
+    log.info("DHCPDump started with PID: ", pid);
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
       log.debug("Found a dhcpdiscover request");
       var message = decoder.write(data);
-      let obj = this.parse(message); 
+      let obj = this.parse(message);
       if (obj && obj.mac) {
-        callback(obj); 
+        callback(obj);
       }
     });
 
@@ -162,15 +162,15 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
 
     //to be safe, kill all dhcpdumps
     require('child_process').exec("sudo pkill dhcpdump", (errorCode, stdout, stderr) => {
-    });    
+    });
   }
 
   start(force, callback) {
     let cmdline = 'sudo pkill -f dhcpdump';
     let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
-        if(err) {
-          log.error("Failed to clean up spoofing army: " + err);
-        }
+        // if(err) {
+        //   log.error("Failed to clean up spoofing army: " + err);
+        // }
         this.rawStart(callback);
     });
   }

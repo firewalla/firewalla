@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,11 +16,13 @@
 'use strict'
 
 let spawn = require('child_process').spawn;
-//let mac = require('mac-lookup')
 let log = require('../net2/logger.js')(__filename);
 
+let _SimpleCache = require('../util/SimpleCache.js')
+let SimpleCache = new _SimpleCache("macCache",60*10);
+
 function getMACAndVendor(ipaddress, cb) {
-  
+
   // get MAC Address first
   let mac_address = null;
   let mac_address_vendor = null;
@@ -32,10 +34,10 @@ function getMACAndVendor(ipaddress, cb) {
     } else {
       mac_address = result;
     }
-    
+
     // get MAC OU company
     cb(err, {mac_address: mac_address});
-    /* 
+    /*
     mac.lookup(mac_address, (err, result) => {
       if(err) {
         log.error("Failed to get vendor info for MAC " + mac_address + ", err: " + err);
@@ -48,16 +50,21 @@ function getMACAndVendor(ipaddress, cb) {
     */
   });
 }
-              
+
 
 function getMAC(ipaddress, cb) {
 
+  let _mac = SimpleCache.lookup(ipaddress);
+  if (_mac != null) {
+      cb(false,_mac);
+      return;
+  }
   // ping the ip address to encourage the kernel to populate the arp tables
   let ping = spawn("ping", ["-c", "1", ipaddress ]);
-  
+
   ping.on('exit', function (code) {
     // not bothered if ping did not work
-    
+
     let arp = spawn("cat", ["/proc/net/arp"] );
     let buffer = '';
     let errstream = '';
@@ -67,7 +74,7 @@ function getMAC(ipaddress, cb) {
     arp.stderr.on('data', function (data) {
       errstream += data;
     });
-    
+
     arp.on('close', function (code) {
       if (code != 0) {
 	      log.info("Error running arp " + code + " " + errstream);
@@ -75,16 +82,17 @@ function getMAC(ipaddress, cb) {
       }
       let table = buffer.split('\n');
       for ( let l = 0; l < table.length; l++) {
-	
+
 	// parse this format
 	//IP address       HW type     Flags       HW address            Mask     Device
 	//192.168.1.1      0x1         0x2         50:67:f0:8c:7a:3f     *        em1
-	
+
         if (l == 0) continue;
-        
+
         if (table[l].indexOf(ipaddress + " ") == 0) {
-          let mac = table[l].substring(41, 58);
-          cb(false, mac.toUpperCase());
+          let mac = table[l].substring(41, 58).toUpperCase();
+          SimpleCache.insert(ipaddress,mac); 
+          cb(false, mac);
           return;
         }
       }

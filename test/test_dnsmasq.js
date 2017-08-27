@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,22 +41,29 @@ let ModeManager = require('../net2/ModeManager');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ();
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
   });
 }
 
-
 describe('Test dnsmasq feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
     async(() => {
-      await (Bootstrap.bootstrap())
+      require('../control/Block.js').setupBlockChain()
+      await (Bootstrap.bootstrap());
       sem.clearAllSubscriptions();
       s.registered = false;
-      await (s.run())
+      s.run()
+      sem.emitEvent({
+        type: 'IPTABLES_READY'
+      })
+      await (delay(2000))
       await (ModeManager.enableSecondaryInterface())
       done();
     })();
@@ -68,6 +75,18 @@ describe('Test dnsmasq feature', function() {
         done();
       });
   });
+
+  it('should translate and create iptables correctly', (done) => {
+    dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._add_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    dnsmasq._remove_iptables_rules();
+    done();
+  })
 
   it('should reload correctly even multiple reload requests arrive at the same time', (done) => {
     sem.emitEvent({
@@ -82,7 +101,7 @@ describe('Test dnsmasq feature', function() {
     sem.emitEvent({
       type: 'ReloadDNSRule'
     });
-    
+
     delay(5000)
       .then(() => {
         cp.exec("ps aux | grep dnsmasq", (err) => {
@@ -96,7 +115,7 @@ describe('Test dnsmasq feature', function() {
     sem.emitEvent({
       type: 'StartDHCP'
     });
-    
+
     async(() => {
       await (delay(2000))
       cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
@@ -105,12 +124,12 @@ describe('Test dnsmasq feature', function() {
       });
     })();
   });
-  
+
   it('should NOT enable dhcp mode if dhcp mode is not enable', (done) => {
     sem.emitEvent({
       type: 'StartDHCP'
     });
-    
+
     async(() => {
       await (delay(2000))
       sem.emitEvent({
@@ -122,6 +141,6 @@ describe('Test dnsmasq feature', function() {
         done();
       });
     })();
-    
+
   });
 });

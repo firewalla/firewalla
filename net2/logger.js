@@ -111,27 +111,51 @@ module.exports = function (component, loglevel, filename) {
                 return format;
               }
             });
+  
     var fileTransport = new (winston.transports.File)({level:_loglevel,
                                                        name:'log-file',
                                                        filename: filename,
+                                                       json: false,
                                                        dirname: "/home/pi/logs",
-                                                       maxsize: 100000,
+                                                       maxsize: 1000000,
                                                        maxFiles: 3,
                                                        timestamp:true });
   
     let transports = [fileTransport];
  
-    if (production == false) {
+    if (production == false && process.env.NODE_ENV !== 'test') {
 //        console.log("Adding Console Transports",component);
         transports.push(consoleTransport);
-    } 
-
-
-    var logger = new(winston.Logger)({
+    }
+    
+    if(process.env.NODE_ENV === 'test') {
+      let transport = new (winston.transports.File)
+      ({level:_loglevel,
+        name:'log-file-test',
+        filename: "test.log",
+        dirname: "/home/pi/.forever",
+        maxsize: 100000,
+        maxFiles: 1,
+        json: false,
+        timestamp:true,
+        colorize: true,
+        formatter: (options) => {
+          let format = require('util').format("%s %s %s: %s",
+            options.level.toUpperCase(),
+            new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''),
+            component,
+            options.message);
+          return format;
+        }});
+      
+      transports.push(transport);
+    }
+  
+    let logger = new(winston.Logger)({
         transports: transports
     });
 
-    if (production == false) {
+    if (production == false && logger.transports.console) {
         logger.transports.console.level = _loglevel;
     }
 
@@ -140,6 +164,7 @@ module.exports = function (component, loglevel, filename) {
         winston.loggers.loggers[key].remove(winston.transports.Console);
       }
     }
+
     debugMap[component]=logger;
     return logger;
 };

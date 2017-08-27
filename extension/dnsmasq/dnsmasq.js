@@ -34,6 +34,13 @@ let fConfig = require('../../net2/config.js').getConfig();
 
 let bone = require("../../lib/Bone.js");
 
+let iptables = require('../../net2/Iptables');
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let networkTool = require('../../net2/NetworkTool')();
+
 let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
@@ -88,7 +95,7 @@ module.exports = class DNSMASQ {
       log.info("upstreamdns is same as dns, ignored. (" + dns + ")");
       return;
     }
-    
+
     log.info("upstream dns is set to", dns);
     upstreamDNS = dns;
 
@@ -106,10 +113,10 @@ module.exports = class DNSMASQ {
       }
     });
   }
-  
+
   updateResolvConf(callback) {
     callback = callback || function() {}
-    
+
     var nameservers = defaultNameServers;
     if(!nameservers) {
       nameservers = sysManager.myDNS();
@@ -118,13 +125,13 @@ module.exports = class DNSMASQ {
     if(!nameservers || nameservers.length === 0) {
       nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
-    
+
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
     fs.writeFileSync(dnsmasqResolvFile, config);
     callback(null);
   }
-  
+
   updateFilter(force, callback) {
     callback = callback || function() {}
 
@@ -138,47 +145,47 @@ module.exports = class DNSMASQ {
         // need update
         log.debug("filterFile is ", filterFile);
         log.debug("tmpFilterFile is ", tmpFilterFile);
-        fs.rename(tmpFilterFile, filterFile, callback);      
+        fs.rename(tmpFilterFile, filterFile, callback);
       } else {
         // no need to update
         callback(null);
       }
     });
   }
-  
+
   cleanUpADBlockFilter() {
     return fs.unlinkAsync(adBlockFilterFile);
   }
-  
+
   cleanUpFamilyFilter() {
     return fs.unlinkAsync(familyFilterFile);
   }
-  
+
   cleanUpPolicyFilter() {
     return fs.unlinkAsync(policyFilterFile);
   }
-  
+
   addPolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP);
-    
+
     return fs.appendFileAsync(policyFilterFile, entry);
   }
-  
+
   removePolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
-    
+
     if(this.deleteInProgress) {
         return this.delay(1000)  // try again later
           .then(() => {
             return this.removePolicyFilterEntry(domain);
           })
     }
-    
+
     this.deleteInProgress = true;
-    
+
     return fs.readFileAsync(policyFilterFile, 'utf8')
       .then((data) => {
-      
+
       let newData = data.split("\n")
         .filter((line) => line !== entry)
         .join("\n");
@@ -192,7 +199,7 @@ module.exports = class DNSMASQ {
           });
       })
   }
-  
+
   addPolicyFilterEntries(domains) {
     let entries = domains.map((domain) => util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP));
     let data = entries.join("");
@@ -208,7 +215,7 @@ module.exports = class DNSMASQ {
       setTimeout(resolve, t)
     });
   }
-  
+
   reload() {
     return new Promise((resolve, reject) => {
       this.start(false, (err) => {
@@ -218,17 +225,17 @@ module.exports = class DNSMASQ {
       });
     }).bind(this);
   }
-  
+
   updateTmpFilter(force, callback) {
     callback = callback || function() {}
 
     let mkdirp = require('mkdirp');
     mkdirp(dnsFilterDir, (err) => {
-      
+
       if(err) {
         callback(err);
         return;
-      }      
+      }
 
       // Check if the filter file is older enough that needs to refresh
       fs.stat(filterFile, (err, stats) => {
@@ -244,7 +251,7 @@ module.exports = class DNSMASQ {
                 callback(err);
                 return;
               }
-              
+
               this.loadFilterFromBone((err, hashes) => {
                 if(err) {
                   callback(err);
@@ -255,7 +262,7 @@ module.exports = class DNSMASQ {
                     callback(err);
                   } else {
                     callback(null, 1);
-                  }                  
+                  }
                 });
               });
             });
@@ -281,7 +288,7 @@ module.exports = class DNSMASQ {
       });
     });
   }
-  
+
   loadFilterFromBone(callback) {
     callback = callback || function() {}
 
@@ -294,7 +301,21 @@ module.exports = class DNSMASQ {
       }
     });
   }
-  
+
+  _add_iptables_rules() {
+    return async(() => {
+      let subnets = await (networkTool.getLocalNetworkSubnets());
+      let localIP = sysManager.myIp();
+      let dns = `${localIP}:8853`;
+
+      subnets.forEach(subnet => {
+        await (iptables.dnsChangeAsync(subnet, dns, true));
+      })
+
+      await (require('../../control/Block.js').block(BLACK_HOLE_IP));
+    })();
+  }
+
   add_iptables_rules(callback) {
     callback = callback || function() {}
 
@@ -316,6 +337,19 @@ module.exports = class DNSMASQ {
     });
   }
 
+  _remove_iptables_rules() {
+    return async(() => {
+      let subnets = await (networkTool.getLocalNetworkSubnets());
+      let localIP = sysManager.myIp();
+      let dns = `${localIP}:8853`;
+
+      subnets.forEach(subnet => {
+        await (iptables.dnsChangeAsync(subnet, dns, false, true));
+      })
+
+      await (require('../../control/Block.js').unblock(BLACK_HOLE_IP));
+    })();
+  }
 
   remove_iptables_rules(callback) {
     callback = callback || function() {}
@@ -339,8 +373,8 @@ module.exports = class DNSMASQ {
 
   writeHashFilterFile(hashes, file, callback) {
     callback = callback || function() {}
-    
-  
+
+
     let writer = fs.createWriteStream(file);
 
     hashes.forEach((hash) => {
@@ -350,16 +384,16 @@ module.exports = class DNSMASQ {
 
     writer.end((err) => {
       callback(err);
-    });    
+    });
   }
-  
+
 
   checkStatus(callback) {
     callback = callback || function() {}
 
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
     log.info("Command to check dnsmasq: ", cmd);
-    
+
     require('child_process').exec(cmd, (err, stdout, stderr) => {
       if(stdout !== "") {
         callback(true);
@@ -368,7 +402,7 @@ module.exports = class DNSMASQ {
       }
     });
   }
-  
+
   rawStart(callback) {
     callback = callback || function() {}
 
@@ -392,7 +426,7 @@ module.exports = class DNSMASQ {
       let rangeBegin = util.format("%s.10", sysManager.secondaryIpnet);
       let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
       let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
-      
+
       cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
                         cmd,
                         rangeBegin,
@@ -403,7 +437,7 @@ module.exports = class DNSMASQ {
 
       // By default, dnsmasq sends some standard options to DHCP clients,
       // the netmask and broadcast address are set to the same as the host running dnsmasq
-      // and the DNS server and default route are set to the address of the machine running dnsmasq. 
+      // and the DNS server and default route are set to the address of the machine running dnsmasq.
       cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
 
       sysManager.myDNS().forEach((dns) => {
@@ -470,7 +504,7 @@ module.exports = class DNSMASQ {
         callback(err);
         return;
       }
-      
+
       this.rawStop((err) => {
         this.rawStart((err) => {
           if(err) {
@@ -479,15 +513,19 @@ module.exports = class DNSMASQ {
             return;
           }
 
-          this.add_iptables_rules((err) => {
-            if(err) {
-              this.rawStop();
-              this.remove_iptables_rules();
-            } else {
-              log.info("DNSMASQ is started successfully");
-            }
-            callback(err);
-          });
+          this._add_iptables_rules()
+          .then(() => {
+            log.info("DNSMASQ is started successfully");
+            callback();
+          }).catch((err) => {
+            this.rawStop();
+            this._remove_iptables_rules()
+            .then(() => {
+              callback(err);
+            }).catch(() => {
+              callback(err);
+            })
+          })
         });
       });
     });
@@ -499,11 +537,11 @@ module.exports = class DNSMASQ {
     // optional to remove filter file
 
     log.info("Stopping DNSMASQ:", {});
-    this.remove_iptables_rules((err) => {
+    this._remove_iptables_rules()
+    .then(() => {
       this.rawStop((err) => {
         callback(err);
-        }
-      );
+      });
     })
   }
 
@@ -524,7 +562,7 @@ module.exports = class DNSMASQ {
         if(err) {
           log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
           reject(err);
-          return;          
+          return;
         }
 
         resolve();
@@ -539,18 +577,18 @@ module.exports = class DNSMASQ {
         if(err) {
           log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
           reject(err);
-          return;          
+          return;
         }
-        
+
         resolve();
       });
-    });    
+    });
   }
 
   dhcp() {
     return dhcpFeature;
   }
-  
+
   setDHCPFlag(flag) {
     dhcpFeature = flag;
   }

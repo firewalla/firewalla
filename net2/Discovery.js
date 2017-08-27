@@ -240,7 +240,7 @@ module.exports = class {
                         uid:list[i].ip_address,
                         mac:list[i].mac_address.toUpperCase(),
                         ipv4Addr:list[i].ip_address,
-                        ipv6Addr:list[i].ip6_addresses,
+                        ipv6Addr:list[i].ip6_addresses || JSON.stringify([]),
                     };
                     this.processHost(host);
                 }

@@ -1,3 +1,18 @@
+/*    Copyright 2017 Firewalla LLC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 var linux = require('../util/linux.js');
 var ip = require('ip');
@@ -30,7 +45,7 @@ function    getSubnet(networkInterface, family) {
 
         return ipSubnets;
 
-    } 
+    }
 
 exports.create = function (config, callback) {
 /*
@@ -55,22 +70,24 @@ exports.create = function (config, callback) {
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
-                    log.error("SecondaryInterface: Already Created Secondary Interface",list[i]);
+                    log.info("Already Created Secondary Interface",list[i]);
                     callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
-                    return; 
+                    return;
                 }
                 let subnet = getSubnet(list[i].name, 'IPv4');
                 if (subnet == _secondaryIpSubnet) {
                     _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
-                    _secondaryIp = config.secondaryInterface.ip2; 
+                    _secondaryIp = config.secondaryInterface.ip2;
                     _secondaryIpNet = config.secondaryInterface.ipnet2;
                     _secondaryMask = config.secondaryInterface.ipmask2;
                 }
             }
-            require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => { 
+            require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => {
                 if (err!=null) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
                 }
+                require('child_process').exec("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh "+_secondaryIp,(err,out,code)=>{
+                });
                 if (callback) {
                     callback(err,_secondaryIp, _secondaryIpSubnet, _secondaryIpNet, _secondaryMask);
                 }
