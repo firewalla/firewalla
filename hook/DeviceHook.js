@@ -308,7 +308,7 @@ class DeviceHook extends Hook {
       name,
       {
         "p.device.id": name,
-        "p.device.name": name
+        "p.device.name": name,
         "p.device.ip": host.ipv4Addr,
         "p.device.mac": host.mac,
         "p.device.vendor": host.macVendor
