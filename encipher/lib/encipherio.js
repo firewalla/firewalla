@@ -1162,6 +1162,16 @@ let legoEptCloud = class {
         return keyforept;
     }
 
+    eptinviteGroupAsync(gid, eid) {
+      return new Promise((resolve, reject) => {
+        this.eptinviteGroup(gid, eid, (err, result) => {
+          if(err)
+            reject(err)
+          else
+            resolve(result);
+        })
+      })
+    }
 
     eptinviteGroup(gid, eid, callback) {
         log.info("eptinviteGroup:  Inviting ", eid, " to ", gid);
@@ -1215,6 +1225,17 @@ let legoEptCloud = class {
         });
     }
 
+    eptinviteGroupByRidAsync(gid, rid) {
+      return new Promise((resolve, reject) => {
+        this.eptinviteGroupByRid(gid, rid, (err, result) => {
+          if(err)
+            reject(err)
+          else
+            resolve(result)
+        })
+      });
+    }
+
     eptinviteGroupByRid(gid, rid, callback) {
         // log.info("inviting ", rid, " to ", gid);
         let self = this;
@@ -1225,18 +1246,7 @@ let legoEptCloud = class {
                 return;
             }
             log.info("found rinfo", rinfo, {});
-            if ('value' in rinfo) {
-                self.eptinviteGroup(gid, rinfo.value, callback);
-            } else if ('evalue' in rinfo) {
-                let eid = this.myPrivateKey.decrypt(rinfo.evalue, 'base64', 'utf8');
-                if (eid == null) {
-                    callback("invalid evalue", null);
-                    return;
-                }
-                self.eptinviteGroup(gid, rinfo.value, callback);
-            } else {
-                callback("500", null);
-            }
+            callback(null, rinfo);
         });
     }
 

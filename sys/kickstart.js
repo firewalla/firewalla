@@ -99,7 +99,7 @@ if (program.config == null) {
     log.info("config file is required");
     process.exit(1);
 }
-let _license = license.getLicense();
+let _license = license.getLicenseSync();
 
 let configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
@@ -135,7 +135,7 @@ if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath);
 }
 
-let symmetrickey = generateEncryptionKey();
+let symmetrickey = generateEncryptionKey(_license);
 
 
 let eptcloud = new cloud(eptname, null);
@@ -152,7 +152,8 @@ function pad(value, length) {
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one
-  let userKey = license != null ? license.SUUID : "cybersecuritymadesimple";
+  let userKey = (license != null ? (license.SUUID || license.DATA.SUUID) : "cybersecuritymadesimple");
+//  log.info(`User Key is: ${userKey}`);
   let seed = mathuuid.uuidshort(32 - userKey.length);
 
   return {
@@ -271,6 +272,7 @@ function inviteFirstAdmin(gid, callback) {
             }
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+            fwInvitation.firstTime = false; // not first time any more
 
             let onSuccess = function(payload) {
               return async(() => {

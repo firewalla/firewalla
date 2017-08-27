@@ -23,10 +23,16 @@ let utils = require('../lib/utils.js');
 let network = require('network');
 let qrcode = require('qrcode-terminal');
 
+let bone = require("../lib/Bone.js");
+
 let Promise = require('bluebird');
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
+
+let networkTool = require('../net2/NetworkTool')();
+
+let license = require('../util/license.js');
 
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
@@ -43,6 +49,7 @@ class FWInvitation {
     this.symmetrickey = symmetrickey
     this.totalTimeout = defaultTotalTimeout;
     this.checkInterval = defaultCheckInterval;
+    this.firstTime = true;
   }
 
   displayKey(key) {
@@ -70,31 +77,71 @@ class FWInvitation {
       qrcode.generate(str);
   }
 
+  validateLicense(license) {
+
+  }
+
   checkInvitation(rid) {
-    return new Promise((resolve, reject) => {
-      log.info(`Inviting ${rid} to group ${this.gid}`);
-      this.cloud.eptinviteGroupByRid(this.gid, rid, (e, r) => {
-
+    return async(() => {
+      log.info(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
+      try {
         this.leftCheckCount--;
-
-        if (!e) {
-          log.info(`Invitation Success! Linked to App: ${require('util').inspect(r)}`)
-          resolve({
-            status: "success",
-            payload: r
-          });
-        } else if (this.leftCheckCount <= 0) {
-          log.info("Invitation is expired! No App Linked");
-          resolve({
-            status: "expired",
-          });
-        } else {
-          resolve({
-            status: "pending"
-          });
+        let rinfo = await (this.cloud.eptinviteGroupByRidAsync(this.gid, rid));
+        if(!rinfo || !rinfo.value) {
+          throw new Error("Invalid rinfo");
         }
-      });
-    });
+
+        if(!rinfo.evalue) {
+          // FIXME: might enforce license in the future
+          log.error("License info is not provided by App");
+        }
+
+        let eid = rinfo.value;
+        let userInfoString = rinfo.evalue;
+        let userInfo = JSON.parse(userInfoString);
+
+        if(userInfo && userInfo.license) {
+          // validate license first
+          await (bone.waitUntilCloudReadyAsync());
+          let infs = await (networkTool.getLocalNetworkInterface())
+          if(infs.length > 0) {
+            let mac = infs[0].mac_address;
+            let result = await (bone.getLicenseAsync(userInfo.license, mac));
+            let jsonObj = JSON.parse(result);
+            let lic = jsonObj.license;
+            if(lic) {
+              log.info("Got a new license:", lic, {});
+              await (license.writeLicense(lic));
+            }
+          }
+        }
+
+        let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
+
+        log.info(`Linked App ${eid} to this device successfully`);
+
+        return {
+          status: "success",
+          payload: inviteResult
+        };
+
+      } catch(err) {
+        if(err != "404") {
+          log.error(err, {});
+        }
+
+        if (this.leftCheckCount <= 0) {
+          log.info("Invitation is expired! No App Linked");
+          return {
+            status: "expired",
+          };
+        } else {
+          return {
+            status: "pending"
+          };
+        }
+      }
+    })();
   }
 
   broadcast(onSuccess, onTimeout) {
@@ -111,12 +158,13 @@ class FWInvitation {
 
     let txtfield = {
         'gid': this.gid,
-        'seed': this.symmetrickey,
+        'seed': this.symmetrickey.seed,
         'keyhint': 'You will find the key on the back of your device',
         'service': FW_SERVICE,
         'type': FW_SERVICE_TYPE,
         'mid': uuid.v4(),
         'exp': Date.now() / 1000 + this.totalTimeout,
+        'licensemode': '1',
     };
 
     if (intercomm.bcapable()==false) {
@@ -125,7 +173,9 @@ class FWInvitation {
       intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
     }
 
-    txtfield.licenseMode = true;
+    if(this.firstTime) {
+      txtfield.firsttime = '1'
+    }
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
@@ -134,6 +184,8 @@ class FWInvitation {
 
     network.get_private_ip((err, ip) => {
         txtfield.ipaddress = ip;
+
+        log.info("TXT:", txtfield, {});
         this.service = intercomm.publish(null, FW_ENDPOINT_NAME + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
     });
 
