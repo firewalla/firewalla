@@ -302,11 +302,13 @@ class DeviceHook extends Hook {
     let AM2 = require('../alarm/AlarmManager2.js');
     let am2 = new AM2();
 
+    let name = host.bname || host.ipv4Addr;
+
     let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-      host.bname,
+      name,
       {
-        "p.device.id": host.bname,
-        "p.device.name": host.bname,
+        "p.device.id": name,
+        "p.device.name": name
         "p.device.ip": host.ipv4Addr,
         "p.device.mac": host.mac,
         "p.device.vendor": host.macVendor
