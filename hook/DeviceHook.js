@@ -143,6 +143,7 @@ class DeviceHook extends Hook {
           await (this.getVendorInfoAsync(mac));
         } catch(err) {
           // do nothing
+          log.error("Failed to get vendor info for mac address:", mac, {});
         }
 
         let v = "Unknown";
@@ -157,8 +158,10 @@ class DeviceHook extends Hook {
             enrichedHost.bname = sambaName;
         }
 
-        if(!enrichedHost.bname) {
-          enrichedHost.bname = enrichedHost.macVendor || "Unknown"; // finally, use macVendor if no name
+        if(!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
+          // finally, use macVendor if no name
+          // if macVendor is not available, don't set the bname
+          enrichedHost.bname = enrichedHost.macVendor;
         }
 
         enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);

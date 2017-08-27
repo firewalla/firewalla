@@ -16,7 +16,7 @@ let await = require('asyncawait/await');
 let license = null;
 let signature = null;
 
-function getLicense() {
+function getLicenseAsync() {
   return async(() => {
     try {
       return await (jsReadFile(licensePath));
@@ -28,6 +28,10 @@ function getLicense() {
       }
     }
   })();
+}
+
+function getLicense() {
+  return getLicenseSync();
 }
 
 function getLicenseSync() {
