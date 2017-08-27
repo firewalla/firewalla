@@ -96,7 +96,7 @@ if (program.config == null) {
     log.info("config file is required");
     process.exit(1);
 }
-let _license = license.getLicense();
+let _license = license.getLicenseLicense();
 
 let configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
