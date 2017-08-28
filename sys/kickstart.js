@@ -44,14 +44,11 @@ let log = require("../net2/logger.js")(__filename);
 let fs = require('fs');
 let cloud = require('../encipher');
 let program = require('commander');
-let qrcode = require('qrcode-terminal');
 let storage = require('node-persist');
 let mathuuid = require('../lib/Math.uuid.js');
 let utils = require('../lib/utils.js');
 let uuid = require("uuid");
 let forever = require('forever-monitor');
-let intercomm = require('../lib/intercomm.js');
-let network = require('network');
 let redis = require("redis");
 let rclient = redis.createClient();
 let SSH = require('../extension/ssh/ssh.js');
@@ -62,6 +59,10 @@ let util = require('util');
 let f = require('../net2/Firewalla.js');
 
 let fConfig = require('../net2/config.js');
+
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -76,6 +77,8 @@ let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
 // let NmapSensor = require('../sensor/NmapSensor');
 // let nmapSensor = new NmapSensor();
 // nmapSensor.suppressAlarm = true;
+
+let FWInvitation = require('./invitation.js');
 
 async(() => {
   await (sysManager.setConfig(firewallaConfig));
@@ -96,7 +99,8 @@ if (program.config == null) {
     log.info("config file is required");
     process.exit(1);
 }
-let _license = license.getLicenseLicense();
+
+let _license = license.getLicenseSync();
 
 let configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
@@ -118,10 +122,6 @@ if (config.endpoint_name != null) {
     eptname = program.endpoint_name;
 }
 
-let adminInviteInterval = 2; // default 3 seconds, make it sooner
-let adminTotalInterval = 60*60;
-let adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 1 hour
-
 function getUserHome() {
     return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
@@ -136,7 +136,7 @@ if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath);
 }
 
-let symmetrickey = generateEncryptionKey();
+let symmetrickey = generateEncryptionKey(_license);
 
 
 let eptcloud = new cloud(eptname, null);
@@ -151,25 +151,17 @@ function pad(value, length) {
     return (value.toString().length < length) ? pad("0" + value, length) : value;
 }
 
+function generateEncryptionKey(license) {
+  // when there is no local license file, use default one
+  let userKey = (license != null ? (license.SUUID || license.DATA.SUUID) : "cybersecuritymadesimple");
+//  log.info(`User Key is: ${userKey}`);
+  let seed = mathuuid.uuidshort(32 - userKey.length);
 
-function generateEncryptionKey() {
-    let cpuid = null;
-    if (_license && _license.SUUID) {
-        cpuid = _license.SUUID;
-    } else {
-        cpuid = utils.getCpuId();
-    }
-    if (cpuid) {
-        let seed = mathuuid.uuidshort(32 - cpuid.length);
-        let key = cpuid + seed;
-        let userkey = cpuid;
-        return {
-            'key': key,
-            'seed': seed,
-            'userkey': userkey
-        };
-    }
-    return null;
+  return {
+      'key': userKey + seed,
+      'seed': seed,
+      'userkey': userKey
+  };
 }
 
 function initializeGroup(callback) {
@@ -196,87 +188,6 @@ function initializeGroup(callback) {
     });
 }
 
-function displayKey(key) {
-    log.info("\n\n-------------------------------\n");
-    log.info("If asked by APP type in this key: ", key);
-    log.info("\n-------------------------------");
-    log.info("\n\nOr Scan this");
-    log.info("\n");
-
-    let qrcode = require('qrcode-terminal');
-    qrcode.generate(key);
-
-}
-
-/*
- * This will enable user to scan the QR code
- * bypass the proximity encryption used
- *
- * please keep this disabled for production
- */
-
-function displayInvite(obj) {
-    log.info("\n\n-------------------------------\n");
-    log.info("Please scan this to get the invite directly.\n\n");
-    log.info("\n\n-------------------------------\n");
-    let str = JSON.stringify(obj);
-    qrcode.generate(str);
-}
-
-function openInvite(group,gid,ttl) {
-  log.info("Opening invite for group",gid);
-
-                let obj = eptcloud.eptGenerateInvite(gid);
-                let txtfield = {
-                    'gid': gid,
-                    'seed': symmetrickey.seed,
-                    'keyhint': 'You will find the key on the back of your device',
-                    'service': config.service,
-                    'type': config.serviceType,
-                    'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminInviteInterval*ttl,
-                };
-                if (intercomm.bcapable()==false) {
-                    txtfield.verifymode = "qr";
-                }
-                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                displayKey(symmetrickey.userkey);
-                displayInvite(obj);
-
-                network.get_private_ip(function(err, ip) {
-                    txtfield.ipaddress = ip;
-                    let name = config.endpoint_name + gid.substring(0, 8);
-                    service = intercomm.publish(null, name, 'devhi', 8833, 'tcp', txtfield);
-                });
-
-                intercomm.bpublish(gid, obj.r, config.serviceType);
-
-                let timer = setInterval(function () {
-                    log.info("Open Invite Start Interal", ttl , "Inviting rid", obj.r);
-                    eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
-                        ttl--;
-                        if (!e) {
-                          clearInterval(timer);
-                          intercomm.stop(service);
-                          intercomm.bstop();
-
-                          log.info("EXIT KICKSTART AFTER JOIN");
-                          require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
-                          });
-                        }
-                        if (ttl <= 0) {
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                            intercomm.bstop();
-                            log.info("EXIT KICKSTART");
-                            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
-                            });
-                        }
-                    });
-                }, adminInviteInterval * 1000);
-
-}
 
 function postAppLinked() {
   // When app is linked, to secure device, ssh password will be
@@ -319,67 +230,71 @@ function inviteFirstAdmin(gid, callback) {
       if (group.symmetricKeys) {
         // number of key sym keys equals to number of members in this group
         // set this number to redis so that other js processes get this info
-        rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length);
+        let count = group.symmetricKeys.length;
 
-            if (group.symmetricKeys.length === 1) {
-//            if (group.symmetricKeys.length > 0) { //uncomment to add more users
-                let obj = eptcloud.eptGenerateInvite(gid);
-                /*
-                eptcloud.eptinviteGroupByRid(gid, obj.r,function(e,r) {
-                    log.info("Inviting rid",rid,e,r);
+        rclient.hset("sys:ept", "group_member_cnt", count);
+
+          // new group without any apps bound;
+          if (count === 1) {
+            let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+
+            let onSuccess = function(payload) {
+              return async(() => {
+                log.info("some license stuff on device:", payload, {});
+                await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
+
+                postAppLinked(); // app linked, do any post-link tasks
+                callback(null, true);
+
+                log.info("EXIT KICKSTART AFTER JOIN");
+                require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
-                */
-                let txtfield = {
-                    'gid': gid,
-                    'seed': symmetrickey.seed,
-                    'keyhint': 'You will find the key on the back of your device',
-                    'service': config.service,
-                    'type': config.serviceType,
-                    'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminTotalInterval,
-                };
-                if (intercomm.bcapable()==false) {
-                    txtfield.verifymode = "qr";
-                }
-                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                displayKey(symmetrickey.userkey);
-                displayInvite(obj);
-
-                network.get_private_ip(function(err, ip) {
-                    txtfield.ipaddress = ip;
-                    service = intercomm.publish(null, config.endpoint_name + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
-                });
-
-                intercomm.bpublish(gid, obj.r, config.serviceType);
-
-                let timer = setInterval(function () {
-                    log.info("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
-                    eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                      log.info("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
-                      adminInviteTtl--;
-                      if (!e) {
-                        postAppLinked(); // a new member (app) joined
-                        rclient.hset("sys:ept", "group_member_cnt", group.symmetricKeys.length + 1);
-                        callback(null, true);
-                        clearInterval(timer);
-                        intercomm.stop(service);
-                      }
-                      if (adminInviteTtl <= 0) {
-                        callback("404", false);
-                        clearInterval(timer);
-                        intercomm.stop(service);
-                        intercomm.bstop();
-                      }
-                    });
-                }, adminInviteInterval * 1000);
-
-
-            } else {
-              postAppLinked(); // already linked
-              openInvite(group,gid,90);
-              log.info("Found Group ", gid, "with", group.symmetricKeys.length, "members");
-              callback(null, true);
+              })();
             }
+
+            let onTimeout = function() {
+              callback("404", false);
+
+              log.info("EXIT KICKSTART AFTER TIMEOUT");
+              require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+              });
+            }
+
+            fwInvitation.broadcast(onSuccess, onTimeout);
+
+          } else {
+            log.info(`Found existing group ${gid} with ${count} members`);
+
+            postAppLinked(); // already linked
+
+            // broadcast message should already be updated, a new encryption message should be used instead of default one
+            if(symmetrickey.userKey === "cybersecuritymadesimple") {
+              log.error("Encryption key should NOT be default after app linked");
+            }
+
+            let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+            fwInvitation.firstTime = false; // not first time any more
+
+            let onSuccess = function(payload) {
+              return async(() => {
+                await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
+
+                log.info("EXIT KICKSTART AFTER JOIN");
+                require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                });
+              })();
+            }
+
+            let onTimeout = function() {
+              log.info("EXIT KICKSTART AFTER TIMEOUT");
+              require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+              });
+            }
+
+            fwInvitation.broadcast(onSuccess, onTimeout);
+
+            callback(null, true);
+          }
         }
     });
 }
@@ -426,8 +341,6 @@ function login() {
 
           inviteFirstAdmin(gid, function (err, status) {
             if (status) {
-              intercomm.stop(service);
-              intercomm.bye();
               launchService2(groupid, null);
             }
           });
@@ -450,16 +363,7 @@ eptcloud.loadKeys()
 
 process.stdin.resume();
 
-intercomm.discover(null, ['devhi', 'devinfo'], function (type, name, txt) {
-    // log.info("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
-    // log.info(type, name, txt);
-    // if (type == 'devinfo') {
-    //     if ('sensor' in txt) {}
-    // }
-});
-
 function exitHandler(options, err) {
-    intercomm.stop(service);
     if (err) log.info(err.stack);
     if (options.exit) process.exit();
 }
