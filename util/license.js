@@ -21,11 +21,21 @@ function getLicense() {
     return licenseobj;
 }
 
+function getLicenseLicense() {
+    let licenseobj = getLicense();
+    if (licenseobj) {
+        return licenseobj.DATA;
+    } else {
+        return null;
+    }
+}
+
 function verifyLicense(license) {
 }
 
 module.exports = {
    getLicense: getLicense,
-   verifyLicense: verifyLicense
+   verifyLicense: verifyLicense,
+   getLicenseLicense: getLicenseLicense
 }
 

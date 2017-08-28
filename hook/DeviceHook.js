@@ -140,9 +140,10 @@ class DeviceHook extends Hook {
         let vendor = null;
 
         try {
-          await (this.getVendorInfoAsync(mac));
+          vendor = await (this.getVendorInfoAsync(mac));
         } catch(err) {
           // do nothing
+          log.error("Failed to get vendor info from cloud", err, {});
         }
 
         let v = "Unknown";
@@ -157,8 +158,10 @@ class DeviceHook extends Hook {
             enrichedHost.bname = sambaName;
         }
 
-        if(!enrichedHost.bname) {
-          enrichedHost.bname = enrichedHost.macVendor || "Unknown"; // finally, use macVendor if no name
+        if(!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
+          // finally, use macVendor if no name
+          // if macVendor is not available, don't set the bname
+          enrichedHost.bname = enrichedHost.macVendor;
         }
 
         enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
@@ -299,11 +302,13 @@ class DeviceHook extends Hook {
     let AM2 = require('../alarm/AlarmManager2.js');
     let am2 = new AM2();
 
+    let name = host.bname || host.ipv4Addr;
+
     let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-      host.bname,
+      name,
       {
-        "p.device.id": host.bname,
-        "p.device.name": host.bname,
+        "p.device.id": name,
+        "p.device.name": name,
         "p.device.ip": host.ipv4Addr,
         "p.device.mac": host.mac,
         "p.device.vendor": host.macVendor
