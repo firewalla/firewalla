@@ -140,9 +140,10 @@ class DeviceHook extends Hook {
         let vendor = null;
 
         try {
-          await (this.getVendorInfoAsync(mac));
+          vendor = await (this.getVendorInfoAsync(mac));
         } catch(err) {
           // do nothing
+          log.error("Failed to get vendor info from cloud", err, {});
         }
 
         let v = "Unknown";
