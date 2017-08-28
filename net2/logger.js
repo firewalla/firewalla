@@ -115,8 +115,9 @@ module.exports = function (component, loglevel, filename) {
     var fileTransport = new (winston.transports.File)({level:_loglevel,
                                                        name:'log-file',
                                                        filename: filename,
+                                                       json: false,
                                                        dirname: "/home/pi/logs",
-                                                       maxsize: 100000,
+                                                       maxsize: 1000000,
                                                        maxFiles: 3,
                                                        timestamp:true });
   
