@@ -21,7 +21,16 @@ sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 sync
 sync
-logger "REBOOT: User REBOOT"
-: ${FIREWALLA_REBOOT_NORMAL_SCRIPT:=/home/pi/firewalla/scripts/fire-reboot-normal}
+: ${FIREWALLA_POST_RESET_OP:-'reboot'}
 
-$FIREWALLA_REBOOT_NORMAL_SCRIPT
+if [[ $FIREWALLA_POST_RESET_OP == 'shutdown' ]]; then
+    logger "SHUTDOWN: User SHUTDOWN"
+    : ${FIREWALLA_SHUTDOWN_NORMAL_SCRIPT:=/home/pi/firewalla/scripts/fire-shutdown-normal}
+
+    $FIREWALLA_SHUTDOWN_NORMAL_SCRIPT
+else
+    logger "REBOOT: User REBOOT"
+    : ${FIREWALLA_REBOOT_NORMAL_SCRIPT:=/home/pi/firewalla/scripts/fire-reboot-normal}
+
+    $FIREWALLA_REBOOT_NORMAL_SCRIPT
+fi
