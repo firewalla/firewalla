@@ -104,9 +104,9 @@ class BoneSensor extends Sensor {
   }
 
   run() {
-    setTimeout(() => {
-      this.scheduledJob();
-    }, 5 * 1000); // in 5 seconds
+    // setTimeout(() => {
+    //   this.scheduledJob();
+    // }, 5 * 1000); // in 5 seconds
 
     setInterval(() => {
       this.scheduledJob();

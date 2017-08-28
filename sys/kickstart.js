@@ -73,15 +73,15 @@ let firewallaConfig = require('../net2/config.js').getConfig();
 let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
 
-let NmapSensor = require('../sensor/NmapSensor');
-let nmapSensor = new NmapSensor();
-nmapSensor.suppressAlarm = true;
+// let NmapSensor = require('../sensor/NmapSensor');
+// let nmapSensor = new NmapSensor();
+// nmapSensor.suppressAlarm = true;
 
 async(() => {
   await (sysManager.setConfig(firewallaConfig));
   await (interfaceDiscoverSensor.run());
-  await (nmapSensor.checkAndRunOnce(true));
-  nmapSensor = null;
+  // await (nmapSensor.checkAndRunOnce(true));
+  // nmapSensor = null;
 })();
 
 const license = require('../util/license.js');
@@ -96,7 +96,7 @@ if (program.config == null) {
     log.info("config file is required");
     process.exit(1);
 }
-let _license = license.getLicense();
+let _license = license.getLicenseLicense();
 
 let configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {

@@ -62,7 +62,7 @@ class DestIPFoundHook extends Hook {
   }
 
   appendNewIP(ip) {
-    log.info("Enqueue new ip for intels", ip, {});
+    log.debug("Enqueue new ip for intels", ip, {});
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
@@ -181,7 +181,7 @@ class DestIPFoundHook extends Hook {
 
         await (rclient.zremAsync(args));
 
-        log.info(ips.length + "IP Addresses are analyzed with intels");
+        log.debug(ips.length + "IP Addresses are analyzed with intels");
       } else {
 //        log.info("No IP Addresses are pending for intels");
       }
