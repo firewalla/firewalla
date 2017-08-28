@@ -31,7 +31,7 @@ module.exports =  class {
             }
         }
         for (let key in expiredKeys) {
-            console.log("SimpleCache:",this.name," Expiring Key: ",key,this.cache[expiredKeys[key]]);
+            //console.log("SimpleCache:",this.name," Expiring Key: ",key,this.cache[expiredKeys[key]]);
             delete this.cache[expiredKeys[key]]; 
         }
     }
@@ -41,14 +41,14 @@ module.exports =  class {
            'expire':new Date()/1000+this.expirelimit,
            'data': data
         }
-        console.log("SimpleCache:",this.name," inserted ",key,data);
+        //console.log("SimpleCache:",this.name," inserted ",key,data);
         this.expireCache();
     }
 
     lookup(key) {
         this.expireCache();
         let obj = this.cache[key];
-        console.log("SimpleCache:",this.name," lookup ",key,obj);
+        //console.log("SimpleCache:",this.name," lookup ",key,obj);
         if (obj) {
             return obj.data;
         }
