@@ -47,7 +47,7 @@ save_values() {
         rm -f $file
         echo "$value" > $file || r=1
     done
-    [[ -e /etc/resolv.conf.bak ]] || /bin/cp /etc/resolv.conf{,.bak}
+    /bin/cp -f /etc/resolv.conf /var/run/saved_resolv.conf
     return $r
 }
 
@@ -75,8 +75,8 @@ restore_values() {
         [[ -n "$saved_value" ]] || continue
         set_value $kind $saved_value || r=1
     done
-    if [[ -e /etc/resolv.conf.bak ]]; then
-        /bin/cp -f /etc/resolv.conf.bak /etc/resolv.conf
+    if [[ -e /var/run/saved_resolv.conf ]]; then
+        /bin/cp -f /var/run/saved_resolv.conf /etc/resolv.conf
     else
         r=1
     fi
@@ -102,7 +102,7 @@ ethernet_ip() {
 }
 
 gateway_pingable() {
-    gw=$(ip route show dev eth0 | awk '/default/ {print $NF}')
+    gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
         ping -c1 -w3 $gw >/dev/null
     else
@@ -122,6 +122,8 @@ if [[ $(id -u) != $(id -u root) ]]; then
     err "Only root can run this script"
     exit 1
 fi
+
+restored=0
 
 echo -n "checking ethernet connection ... "
 tmout=99999
@@ -145,13 +147,13 @@ while ! ethernet_ip ; do
         echo "fail - restore"
         $LOGGER "failed to get IP, restore network configurations"
         restore_values
+        restored=1
         break
     fi
     sleep 1
 done
 echo OK
 
-restored=0
 while true; do
     echo -n "checking gateway ... "
     tmout=15
