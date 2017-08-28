@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,8 @@
 
 let Promise = require('bluebird');
 
+let log = require("../net2/logger.js")(__filename);
+
 let cw = require("../net2/FWCloudWrapper");
 
 let SysManager = require('../net2/SysManager.js');
@@ -30,6 +32,9 @@ let Discovery = require("./Discovery.js");
 let d = new Discovery("bootstrap", firewallaConfig, "info", false);
 
 let bone = require('../lib/Bone');
+
+let license = require('../util/license.js');
+
 
 let bootstrapped = false;
 
@@ -45,12 +50,15 @@ let await = require('asyncawait/await');
 function bootstrap() {
   if(bootstrapped)
     return Promise.resolve();
-  
+
   return async(() => {
     await (cw.getCloud().loadKeys());
     await (cw.login());
     await (bone.waitUntilCloudReadyAsync());
     await (sysManager.setConfig(firewallaConfig));
+    let sysInfo = await (sysManager.getSysInfoAsync());
+    log.debug("License:", license.getLicense(), {});
+    await (bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo));
   })()
 
     .then(() => {
@@ -71,7 +79,7 @@ function getGroup() {
 }
 
 function login() {
- 
+
 }
 
 function groupReady() {

@@ -1,5 +1,7 @@
 'use strict'
 
+let log = require("../net2/logger.js")(__filename);
+
 let fs = require('fs');
 let Firewalla = require('../net2/Firewalla.js');
 let path = Firewalla.getEncipherConfigFolder() + '/license';
@@ -38,6 +40,7 @@ function getLicenseSync() {
   try {
     return jsonfile.readFileSync(licensePath)
   } catch(err) {
+    log.error(`Failed to read license from ${licensePath}, ERROR: ${err}`);
     return getLegacyLicense();
   }
 }
@@ -60,7 +63,12 @@ function verifyLicense(license) {
 }
 
 function writeLicense(license) {
+  console.log(license);
   return jsWriteFile(licensePath, license, {spaces: 2}) // ~/.firewalla/license
+}
+
+function writeLicenseAsync(license) {
+  return writeLicense(license);
 }
 
 module.exports = {
@@ -68,5 +76,7 @@ module.exports = {
    verifyLicense: verifyLicense,
    writeLicense: writeLicense,
    licensePath: licensePath,
-   getLicenseSync:getLicenseSync
+   getLicenseSync:getLicenseSync,
+   getLicenseAsync: getLicenseAsync,
+   writeLicenseAsync: writeLicenseAsync
 }

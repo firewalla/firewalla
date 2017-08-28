@@ -129,6 +129,7 @@ class IntelTool {
         _hList = _hList.concat(hds);
     });
 
+    _ipList.push.apply(_ipList, _hList);
 
     if(this.debugMode) {
        flowList.push({iplist:ipList, hlist:domainList, _iplist:_ipList,_hlist:_hList, flow:{fd:'in'}});

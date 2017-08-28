@@ -34,6 +34,8 @@ let license = require('../util/license.js');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+let sample = require('./sample_data');
+
 describe('License', function() {
 
   describe('.writeLicense', () => {
@@ -67,23 +69,7 @@ describe('License', function() {
         let l = await(license.getLicenseAsync());
         expect(l.test).to.equal(1);
 
-        let testLicense = { DATA:
-                             { ORG: 'firewalla',
-                               LOCATION: 'usa',
-                               LVERSION: '1.0',
-                               BVERSION: '1.0',
-                             APPID: 'com.rottiesoft.pi',
-                               APPSECRET: '4137f1d7-f28e-469e-b045-70e1d393ca4b',
-                               UUID: '81244056-90b9-43f3-a5ae-8681bde09e58',
-                               SUUID: '81244056',
-                               LICENSE: 'A',
-                               LID: '9c3b43c3-0f94-44aa-9ecb-8a18d48f5c89',
-                               MAC: '02:84:95:00:c7:b7',
-                               TS: 1503827787,
-                               EID: '1FrEr-XKsFjlPM_K2iUJhg' },
-                            SIGNATURE: 'jq+825WZyhJvBHMuCaHFGjsLABV7GKXO2/xxQo6zvWxmyE2c89vklBIQ2eh7YZeY7oXaEEXXSkUYSzw/sP8WyBmiKCsXHs4/PnJjflMvIi0rshvGWGYJgwe9FTkUVGDDmy2Ef8MW/3TGTNxXZ9vLEtrTwi2d5QFL2ZBc0/LQOp8C8Tt7Zztbd3raUuyV8yscFM1i9B8D7PshSCfNKItN7o7ViIDZtSfsAPupg4B365weIjNUFkpd36PZjGE4GJ7UlrjxXmw1zOkUWOA+l/ezOecjQ0mGq0fdRSuMF5t7p5kykxRTiY6lCIYdOXbyZHRAjrCw8nCrN/pP0L+X+HNuCg4ZPvqp1rSc2Gzvt5v+AQJH0HNE4sLsyUpg2zj4bArIzml1E+q68CYNgjiuTTx9QRWLXRj1noz+kw5gFkfN2abNqAZQJ027AsELnJCEsJVC+I7y/EjI4LKyinkaVE5vJTiNqrlouzbnobx8hbWZIvU7KMnyQOEpO9pL7rvXJCELjkYM73GxfI15v6UGTFsxGf/aNXaBvOAf7zgy0/zvW0Vyktj2I/DMZiiDYrc5EVgnpLKW4ysEuGgaty262AonWa+K3S7EB0UFCp9n2eZzMioC9KDNpfCoJn5WZ9C16ftOz9Xuqr6FhmVPgUWfHmLsvXMUyzsowVw5Kqanxkj7plY=' }
-
-
+        let testLicense = sample.sampleLicense;
         await (license.writeLicense(testLicense));
         let ll = await(license.getLicenseAsync());
         expect(ll.DATA.UUID).to.equal('81244056-90b9-43f3-a5ae-8681bde09e58');
