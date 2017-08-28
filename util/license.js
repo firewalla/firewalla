@@ -59,6 +59,15 @@ function getLegacyLicense() {
     return licenseobj;
 }
 
+function getLicenseLicense() {
+    let licenseobj = getLicense();
+    if (licenseobj) {
+        return licenseobj.DATA;
+    } else {
+        return null;
+    }
+}
+
 function verifyLicense(license) {
 }
 
@@ -78,5 +87,6 @@ module.exports = {
    licensePath: licensePath,
    getLicenseSync:getLicenseSync,
    getLicenseAsync: getLicenseAsync,
-   writeLicenseAsync: writeLicenseAsync
+   writeLicenseAsync: writeLicenseAsync,
+   getLicenseLicense: getLicenseLicense
 }

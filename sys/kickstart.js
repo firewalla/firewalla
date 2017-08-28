@@ -99,6 +99,7 @@ if (program.config == null) {
     log.info("config file is required");
     process.exit(1);
 }
+
 let _license = license.getLicenseSync();
 
 let configfile = fs.readFileSync(program.config, 'utf8');
