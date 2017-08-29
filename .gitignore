@@ -99,3 +99,4 @@ flycheck_*.el
 /tmp/
 
 api/db/token.json
+/test/sample_license.json
