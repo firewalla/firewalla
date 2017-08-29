@@ -88,19 +88,29 @@ class FlowAggregationSensor extends Sensor {
         let destIP = flowTool.getDestIP(flow);
         let intel = await (intelTool.getIntel(destIP));
 
-        if(!(intel && intel.app))
+        // skip if no app or category intel
+        if(!(intel && (intel.app || intel.category)))
           return;
 
-        let app = intel.app;
-        let t = traffic[app];
+        let appInfos = [];
 
-        if(typeof t === 'undefined') {
-          traffic[app] = {duration: 0};
-          t = traffic[app];
-        }
+        if(intel.app)
+          appInfos.push(intel.app)
 
-        // FIXME: Should have more accurate calculation here
-        t.duration = Math.max(flow.du, t.duration);
+        if(intel.category)
+          appInfos.push(intel.category)
+
+        appInfos.forEach((app) => {
+          let t = traffic[app];
+
+          if(typeof t === 'undefined') {
+            traffic[app] = {duration: 0};
+            t = traffic[app];
+          }
+
+          // FIXME: Should have more accurate calculation here
+          t.duration = Math.max(flow.du, t.duration);
+        })
       });
 
       return traffic;
