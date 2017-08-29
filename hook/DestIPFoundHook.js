@@ -38,6 +38,8 @@ let dnsManager = new DNSManager('info');
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
+let flowUtil = require('../net2/FlowUtil.js');
+
 let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
 let ITEMS_PER_FETCH = 100;
@@ -80,7 +82,15 @@ class DestIPFoundHook extends Hook {
 
     // app
     cloudIntelInfos.forEach((info) => {
-      if(info.ip === ip || info.ip === intel.host) {
+
+      let hashes = [intel.ip, intel.host].map(
+        x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
+      )
+
+      hashes = [].concat.apply([], hashes);
+
+      // check if the host matches the result from cloud
+      if(hashes.filter(x => x === info.ip).length > 0) {
         if(info.apps) {
           intel.apps = JSON.stringify(info.apps);
           let keys = Object.keys(info.apps);
