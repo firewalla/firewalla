@@ -127,14 +127,28 @@ class IntelTool {
     domainList.forEach((d) => {
         let hds = flowUtil.hashHost(d);
         _hList = _hList.concat(hds);
+
+        let ads = flowUtil.hashApp(d);
+        _aList = _aList.concat(ads);
     });
 
     _ipList.push.apply(_ipList, _hList);
 
     if(this.debugMode) {
-       flowList.push({iplist:ipList, hlist:domainList, _iplist:_ipList,_hlist:_hList, flow:{fd:'in'}});
+       flowList.push({
+         iplist:ipList,
+         hlist:domainList,
+         alist:domainList,
+         _iplist:_ipList,
+         _hlist:_hList,
+         _alist:_aList,
+         flow:{fd:'in'}});
     } else {
-       flowList.push({ _iplist:_ipList,_hlist:_hList, flow:{fd:'in'}});
+       flowList.push({
+         _iplist:_ipList,
+         _hlist:_hList,
+         _alist:_aList,
+         flow:{fd:'in'}});
     }
 
     let data = {flowlist:flowList, hashed:1};
