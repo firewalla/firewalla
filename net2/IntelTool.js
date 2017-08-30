@@ -132,6 +132,7 @@ class IntelTool {
         _aList = _aList.concat(ads);
     });
 
+    _ipList.push.apply(_ipList, _hList);
 
     if(this.debugMode) {
        flowList.push({

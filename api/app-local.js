@@ -56,7 +56,8 @@ subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 function enableSubPath(path, lib) {
   lib = lib || path;
-  subpath_v1.use("/" + path, require('./routes/' + lib));
+  let r = require(`./routes/${lib}.js`);
+  subpath_v1.use("/" + path, r);
 }
 
 if(!firewalla.isProduction()) {
@@ -76,6 +77,7 @@ if(!firewalla.isProduction()) {
   enableSubPath('mac');
   enableSubPath('encipher');
   enableSubPath('intel');
+  enableSubPath('sensor');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

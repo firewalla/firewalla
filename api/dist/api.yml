@@ -300,6 +300,16 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
+  /sensor/run/{name}:
+    post:
+      summary: Run a specific sensor
+      tags:
+        - Sensor
+      parameters:
+        - $ref: '#/parameters/namePath'
+      responses:
+        200:
+          description: Success
   /items:
     x-swagger-router-controller: ItemController
     get:
@@ -480,6 +490,12 @@ parameters:
   name:
     name: name
     in: query
+    required: true
+    description: description
+    type: string
+  namePath:
+    name: name
+    in: path
     required: true
     description: description
     type: string
