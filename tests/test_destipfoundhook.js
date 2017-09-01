@@ -54,7 +54,7 @@ describe('DestIPFoundHook', () => {
 
       let cloudIntelInfos = [
         {
-          ip: 'www.google.com',
+          ip: 'Vqe3pGQi4q/8PQyOIALyDDNR9Eg66ZEa1f4B/EF30bk=',
           apps: {
             'search_engine': '100'
           }

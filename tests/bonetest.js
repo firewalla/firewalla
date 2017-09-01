@@ -1,5 +1,5 @@
 'use strict'
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,6 +13,11 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+if(typeof global.it === 'function') {
+  return;
+}
+
 var bone = require("../lib/Bone.js");
 let fConfig = require('../net2/config.js').getConfig();
 let License = require('../util/license');
@@ -56,7 +61,7 @@ setTimeout(()=>{
         console.log("Checking in Cloud...");
 
         bone.checkin(fConfig, license, _sysinfo, (err,data) => {
-            console.log(data,err);         
+            console.log(data,err);
             let mac = "9C:AD:EF:01:02:03";
             let rawData = {
                 ou: mac.slice(0,13), // use 0,13 for better OU compatibility
@@ -64,10 +69,10 @@ setTimeout(()=>{
             };
             bone.device("identify", rawData,(err,data)=>{
                 console.log(data);
-              //  bone.getLicense("81244056-90b9-43f3-a5ae-8681bde09e58","thisismac",(err,data)=>{ 
+              //  bone.getLicense("81244056-90b9-43f3-a5ae-8681bde09e58","thisismac",(err,data)=>{
               //      console.log(err,data);
               //  });
-                   
+
                  let sdata = {flowlist:sampledata.netflix, hashed:1};
 
                  bone.intel("*","check", sdata, (err, data) => {
@@ -75,8 +80,8 @@ setTimeout(()=>{
                  });
 
             });
-        
-                 
+
+
         });
       });
 },2000);

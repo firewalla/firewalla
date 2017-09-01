@@ -43,6 +43,30 @@ let bootstrap = require('../net2/Bootstrap');
 describe('Bone', function () {
   this.timeout(10000);
 
+  describe('.getLicense', function() {
+    before((done) => {
+      async(() => {
+        await (license.writeLicenseAsync(sample.sampleLicense));
+        await (Bootstrap.bootstrap());
+        done();
+      })();
+    })
+
+    it('should issue license correctly', (done) => {
+      let licenseKey = "17f4c217-4508-4d05-9891-fe400e9ca0a6";
+      let macAddress = "AA:BB:CC:AA:BB:DD";
+
+      let bone = require("../lib/Bone.js");
+
+      async(() => {
+        let result = await (bone.getLicenseAsync(licenseKey, macAddress));
+        expect(result.DATA).to.not.equal(undefined)
+        expect(result.DATA.MAC).to.equal(macAddress);
+        done();
+      })();
+    })
+  })
+
   describe('.intel', function () {
     before((done) => {
       async(() => {
@@ -58,7 +82,9 @@ describe('Bone', function () {
 
       async(() => {
         let intelResult = await (bone.intelAsync("*", "check", sampleData));
-        console.log(intelResult);
+        let intel = intelResult[0];
+        expect(intel.c).to.equal('av');
+        expect(intel.apps.netflix).to.equal('100');
         done();
       })();
     })
@@ -69,7 +95,9 @@ describe('Bone', function () {
 
       async(() => {
         let intelResult = await (bone.intelAsync("*", "check", sampleData));
-        console.log(intelResult);
+        let intel = intelResult[0];
+        expect(intel.c).to.equal('social');
+        expect(intel.apps.pinterest).to.equal('100');
         done();
       })();
     })
