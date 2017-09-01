@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,7 @@ let util = require('util');
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
 let _isProduction = null;
 let _isDocker = null;
-let _platform = null; 
+let _platform = null;
 let _isOverlayFS = null;
 
 let version = null;
@@ -44,7 +44,7 @@ function getPlatform() {
   if(_platform === null) {
     _platform = require('child_process').execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
   }
-  
+
   return _platform;
 }
 
@@ -94,14 +94,14 @@ function isOverlayFS() {
   if(_isOverlayFS === null) {
     let result = true;
     try {
-      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");  
+      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");
     } catch(err) {
       result = false;
     }
-    
+
     _isOverlayFS = result;
   }
-  
+
   return _isOverlayFS;
 }
 
@@ -124,29 +124,29 @@ function getEncipherConfigFolder() {
 // Get config data from fishbone
 var _boneInfo = null;
 function getBoneInfo(callback) {
-    rclient.get("sys:bone:info",(err,data)=>{
-        if (data) {
-            _boneInfo = JSON.parse(data);
-            if (callback) {
-                callback(null, JSON.parse(data));
-            }
-        } else {
-            if (callback) {
-                callback(null,null);
-            }
-        }
-    });
+  rclient.get("sys:bone:info", (err, data) => {
+    if (data) {
+      _boneInfo = JSON.parse(data);
+      if (callback) {
+        callback(null, JSON.parse(data));
+      }
+    } else {
+      if (callback) {
+        callback(null, null);
+      }
+    }
+  });
 }
 
 function getBoneInfoSync() {
-    return _boneInfo;
+  return _boneInfo;
 }
 
 function getVersion() {
   if(!version) {
     let cmd = "git describe --tags";
     let versionElements = [];
-    
+
     try {
       versionElements = require('child_process').execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
@@ -169,7 +169,7 @@ var __constants = {
 };
 
 function constants(name) {
-    return __constants[name] 
+  return __constants[name]
 }
 
 module.exports = {
@@ -194,4 +194,3 @@ module.exports = {
   getOverlayUpperDirPartition:getOverlayUpperDirPartition,
   getEncipherConfigFolder: getEncipherConfigFolder
 }
-

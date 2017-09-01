@@ -76,13 +76,13 @@ class IntelTool {
     let key = this.getIntelKey(ip);
 
     return rclient.hgetAsync(key, "app")
-    .then((result) => {
-      if(result == null) {
-        return false;
-      } else {
-        return true;
-      }
-    });
+      .then((result) => {
+        if (result == null) {
+          return false;
+        } else {
+          return true;
+        }
+      });
   }
 
   getIntel(ip) {
@@ -121,34 +121,34 @@ class IntelTool {
     let hList = [];
 
     ipList.forEach((ip)=>{
-         _ipList = _ipList.concat(flowUtil.hashHost(ip));
+      _ipList = _ipList.concat(flowUtil.hashHost(ip));
     });
 
     domainList.forEach((d) => {
-        let hds = flowUtil.hashHost(d);
-        _hList = _hList.concat(hds);
+      let hds = flowUtil.hashHost(d);
+      _hList = _hList.concat(hds);
 
-        let ads = flowUtil.hashApp(d);
-        _aList = _aList.concat(ads);
+      let ads = flowUtil.hashApp(d);
+      _aList = _aList.concat(ads);
     });
 
     _ipList.push.apply(_ipList, _hList);
 
     if(this.debugMode) {
-       flowList.push({
-         iplist:ipList,
-         hlist:domainList,
-         alist:domainList,
-         _iplist:_ipList,
-         _hlist:_hList,
-         _alist:_aList,
-         flow:{fd:'in'}});
+      flowList.push({
+        iplist:ipList,
+        hlist:domainList,
+        alist:domainList,
+        _iplist:_ipList,
+        _hlist:_hList,
+        _alist:_aList,
+        flow:{fd:'in'}});
     } else {
-       flowList.push({
-         _iplist:_ipList,
-         _hlist:_hList,
-         _alist:_aList,
-         flow:{fd:'in'}});
+      flowList.push({
+        _iplist:_ipList,
+        _hlist:_hList,
+        _alist:_aList,
+        flow:{fd:'in'}});
     }
 
     let data = {flowlist:flowList, hashed:1};
