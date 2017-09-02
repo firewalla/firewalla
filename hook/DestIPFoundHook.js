@@ -193,7 +193,7 @@ class DestIPFoundHook extends Hook {
 
         log.debug(ips.length + "IP Addresses are analyzed with intels");
       } else {
-//        log.info("No IP Addresses are pending for intels");
+        // log.info("No IP Addresses are pending for intels");
       }
 
       await (delay(1000)); // sleep for only 1 second
