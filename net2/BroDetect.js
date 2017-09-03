@@ -1251,9 +1251,12 @@ module.exports = class {
                 });
                 let lh = null;
                 if (sysManager.isLocalIP(obj.src)) {
-                    lh = obj.src;
+                  // this is just a temporary workaround, some intel alarm doesn't involve specific local IP
+                  // in this case, the remote IP address will be used.                  
+                    lh = obj.src || obj.dst;
                 } else if (sysManager.isLocalIP(obj.dst)) {
-                    lh = obj.dst;
+                  // this is just a temporary workaround, some intel alarm doesn't involve specific local IP
+                    lh = obj.dst || obj.src;
                 } else {
                     lh = "0.0.0.0";
                 }

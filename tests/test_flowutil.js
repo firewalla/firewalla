@@ -19,8 +19,12 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
+let Bootstrap = require('../net2/Bootstrap');
+
 let redis = require('redis');
 let rclient = redis.createClient();
+
+let license = require('../util/license');
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -28,51 +32,38 @@ let await = require('asyncawait/await');
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
+let intelSample = require('./sample_data_intel');
 
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-let DestIPFoundHook = require('../hook/DestIPFoundHook');
-let destIPFoundHook = new DestIPFoundHook();
+let flowUtil = require('../net2/FlowUtil.js');
 
 
-describe('DestIPFoundHook', () => {
+describe('FlowUtil', function () {
 
-  describe('.aggregateIntelResult', () => {
+  describe('.hashApp', function () {
 
-    it('should provide right aggregation info', (done) => {
-      let sslInfo = {
-        server_name: 'www.google.com',
-        CN: '*.google.com',
-        OU: 'ABCD'
-      };
-
-      let dnsInfo = {
-        host: 'www2.google.com'
-      };
-
-      let cloudIntelInfos = [
-        {
-          ip: 'www.google.com',
-          apps: {
-            'search_engine': '100'
-          }
-        }
-      ];
-
-      let result = destIPFoundHook.aggregateIntelResult(sample.hostIP, sslInfo, dnsInfo, cloudIntelInfos);
-
-      expect(result.ip).to.equal(sample.hostIP);
-      expect(result.host).to.equal('www.google.com');
-
-      expect(typeof result.apps).to.equal('string');
-      let apps = JSON.parse(result.apps);
-      expect(apps.search_engine).to.equal('100');
-
+    it('should hash app correctly (netflix)', (done) => {
+      let host = "api-global.latency.prodaa.netflix.com";
+      let alist = flowUtil.hashApp(host);
+      expect(alist.length).to.equal(3);
+      expect(alist[0]).to.equal('fq787vyvqNs/FZVEQj2x/u8AQ7y/bnULrU9KlZboJUA=')
+      expect(alist[1]).to.equal('881O2BHs1IblNU3yjYaS21YWdlJFP/tH32u3WZ+bun0=')
+      expect(alist[2]).to.equal('oSRIwiHv3zgeC+XXVUm4PiQHNB58pqOk6F93nxQ4NQM=')
       done();
     })
 
-  });
+    it('should hash app correctly (pinterest)', (done) => {
+      let host = "log.pinterest.com";
+      let alist = flowUtil.hashApp(host);
+      console.log(alist);
+      expect(alist.length).to.equal(2);
+      expect(alist[0]).to.equal('bnmxO/hXWYl/0dXnynv9J1ZGQulFv1iar+eeLEBPEQk=')
+      expect(alist[1]).to.equal('DTeOz77UssjWXsGTBKZQ7pR+TiXxB6DurYBP+/UzlMY=')
+      done();
+    })
+  })
 
 });

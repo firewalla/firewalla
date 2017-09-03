@@ -72,7 +72,7 @@ describe('License', function() {
         let testLicense = sample.sampleLicense;
         await (license.writeLicense(testLicense));
         let ll = await(license.getLicenseAsync());
-        expect(ll.DATA.UUID).to.equal('81244056-90b9-43f3-a5ae-8681bde09e58');
+        expect(ll.DATA.UUID).to.equal('4dfb749e-94a1-4756-867b-4cf2c3e292db');
         done();
       })();
     })

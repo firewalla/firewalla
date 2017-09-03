@@ -90,19 +90,26 @@ class DestIPFoundHook extends Hook {
       hashes = [].concat.apply([], hashes);
 
       // check if the host matches the result from cloud
-      if(hashes.filter(x => x === info.ip).length > 0) {
-        if(info.apps) {
-          intel.apps = JSON.stringify(info.apps);
-          let keys = Object.keys(info.apps);
-          if(keys && keys[0]) {
-            intel.app = keys[0];
-          }
-        }
 
-        if(info.c) {
-          intel.category = info.c;
+      // FIXME: ignore IP check because intel result from cloud does
+      // NOT have "ip" all the time.
+
+      // In the future, intel result needs to be enhanced to support
+      // batch query
+
+      // if(hashes.filter(x => x === info.ip).length > 0) {
+      if(info.apps) {
+        intel.apps = JSON.stringify(info.apps);
+        let keys = Object.keys(info.apps);
+        if(keys && keys[0]) {
+          intel.app = keys[0];
         }
       }
+
+      if(info.c) {
+        intel.category = info.c;
+      }
+      //      }
     });
 
     return intel;
@@ -173,15 +180,21 @@ class DestIPFoundHook extends Hook {
       }
 
       return aggrIntelInfo;
-    })()
+
+    })().catch((err) => {
+      log.error(`Failed to process IP ${ip}, error: ${err}`);
+      return null;
+    })
   }
 
   job() {
     return async(() => {
       log.debug("Checking if any IP Addresses pending for intel analysis...")
+
       let ips = await (rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH));
 
       if(ips.length > 0) {
+
         let promises = ips.map((ip) => this.processIP(ip));
 
         await (Promise.all(promises));
@@ -192,8 +205,9 @@ class DestIPFoundHook extends Hook {
         await (rclient.zremAsync(args));
 
         log.debug(ips.length + "IP Addresses are analyzed with intels");
+
       } else {
-//        log.info("No IP Addresses are pending for intels");
+        // log.info("No IP Addresses are pending for intels");
       }
 
       await (delay(1000)); // sleep for only 1 second

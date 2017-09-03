@@ -106,12 +106,15 @@ class FWInvitation {
           let infs = await (networkTool.getLocalNetworkInterface())
           if(infs.length > 0) {
             let mac = infs[0].mac_address;
-            let result = await (bone.getLicenseAsync(userInfo.license, mac));
-            let jsonObj = JSON.parse(result);
-            let lic = jsonObj.license;
-            if(lic) {
-              log.info("Got a new license:", lic, {});
-              await (license.writeLicense(lic));
+
+            try {
+              let lic = await (bone.getLicenseAsync(userInfo.license, mac));
+              if(lic) {
+                log.info("Got a new license:", lic, {});
+                await (license.writeLicense(lic));
+              }
+            } catch(err) {
+              log.error("Invalid license");
             }
           }
         }

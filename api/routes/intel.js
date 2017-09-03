@@ -29,25 +29,29 @@ let await = require('asyncawait/await');
 
 
 router.get('/:ip',
-           (req, res, next) => {
-             let ip = req.params.ip
-             let force = req.query.force
+  (req, res, next) => {
+    let ip = req.params.ip
+    let force = req.query.force
 
-             let options = {skipUpdate: true};
+    let options = {skipUpdate: true};
 
-             if(force) {
-               options = {forceUpdate: true};
-             }
+    if (force) {
+      options = {
+        forceUpdate: true
+      };
+    }
 
-             let DestIPFoundHook = require('../../hook/DestIPFoundHook');
-             let destIPFoundHook = new DestIPFoundHook();
+    let DestIPFoundHook = require('../../hook/DestIPFoundHook');
+    let destIPFoundHook = new DestIPFoundHook();
 
-             destIPFoundHook.processIP(ip, options) // do not store result in redis
-             .then((json) => {
-                res.json(json);
-             }).catch((err) => {
-               res.status(500).json({error: err});
-             });
-           });
+    destIPFoundHook.processIP(ip, options) // do not store result in redis
+      .then((json) => {
+        res.json(json);
+      }).catch((err) => {
+        res.status(500).json({
+          error: err
+        });
+      });
+  });
 
 module.exports = router;
