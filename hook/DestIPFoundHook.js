@@ -173,15 +173,21 @@ class DestIPFoundHook extends Hook {
       }
 
       return aggrIntelInfo;
-    })()
+
+    })().catch((err) => {
+      log.error(`Failed to process IP ${ip}, error: ${err}`);
+      return null;
+    })
   }
 
   job() {
     return async(() => {
       log.debug("Checking if any IP Addresses pending for intel analysis...")
+
       let ips = await (rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH));
 
       if(ips.length > 0) {
+
         let promises = ips.map((ip) => this.processIP(ip));
 
         await (Promise.all(promises));
@@ -192,6 +198,7 @@ class DestIPFoundHook extends Hook {
         await (rclient.zremAsync(args));
 
         log.debug(ips.length + "IP Addresses are analyzed with intels");
+
       } else {
         // log.info("No IP Addresses are pending for intels");
       }

@@ -98,6 +98,8 @@ class IntelTool {
 
     log.info("Storing intel for ip", ip);
 
+    intel.updateTime = `${new Date() / 1000}`
+
     return rclient.hmsetAsync(key, intel)
       .then(() => {
         return rclient.expireAsync(key, expire);

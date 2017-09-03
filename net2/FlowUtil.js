@@ -11,7 +11,13 @@ module.exports = {
 // Take host and return hashed
 // [[a,a'],[b,b']]
 function hashHost(_domain) {
-    return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
+  let results = urlHash.canonicalizeAndHashExpressions(_domain);
+  if(results) {
+    return results.map(x => x.slice(1,3))
+  } else {
+    return null;
+  }
+//    return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
 }
 
 function hashMac(_mac) {
@@ -76,7 +82,7 @@ function hashFlow(_flow, clean) {
     if (flow!=null && flow.af!=null && Object.keys(flow.af).length>0) {
         let _af = {};
         for (let key in flow.af) {
-            let afe = flow.af[key]; 
+            let afe = flow.af[key];
             let hashedKey = urlHash.hashBase64(key);
             _af[hashedKey] = afe;
             afe.uri = urlHash.canonicalizeAndHashExpressions(key+afe.uri).map(x => x.slice(1,3) ); // remove original url
@@ -117,7 +123,7 @@ function hashFlow(_flow, clean) {
 }
 
 // x: not a valid flow, only need to record length
-//    not to be presented to user or do security lookup.  
+//    not to be presented to user or do security lookup.
 
 function addFlag(flow,flag) {
     if (flow == null || flag == null) {
@@ -129,7 +135,7 @@ function addFlag(flow,flag) {
         } else {
             flow.f = flow.f+flag;
         }
-    } 
+    }
     return flow.f;
 }
 
@@ -153,7 +159,7 @@ function checkFlag(flow,flag) {
     "_sh"
 
 */
-    
+
 
 
 
