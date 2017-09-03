@@ -90,19 +90,26 @@ class DestIPFoundHook extends Hook {
       hashes = [].concat.apply([], hashes);
 
       // check if the host matches the result from cloud
-      if(hashes.filter(x => x === info.ip).length > 0) {
-        if(info.apps) {
-          intel.apps = JSON.stringify(info.apps);
-          let keys = Object.keys(info.apps);
-          if(keys && keys[0]) {
-            intel.app = keys[0];
-          }
-        }
 
-        if(info.c) {
-          intel.category = info.c;
+      // FIXME: ignore IP check because intel result from cloud does
+      // NOT have "ip" all the time.
+
+      // In the future, intel result needs to be enhanced to support
+      // batch query
+
+      // if(hashes.filter(x => x === info.ip).length > 0) {
+      if(info.apps) {
+        intel.apps = JSON.stringify(info.apps);
+        let keys = Object.keys(info.apps);
+        if(keys && keys[0]) {
+          intel.app = keys[0];
         }
       }
+
+      if(info.c) {
+        intel.category = info.c;
+      }
+      //      }
     });
 
     return intel;
