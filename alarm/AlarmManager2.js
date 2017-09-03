@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -129,7 +129,7 @@ module.exports = class {
     });
   }
 
-  validateAlarm(alarm) {    
+  validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
       let k = keys[i];
@@ -161,7 +161,7 @@ module.exports = class {
         }
 
         resolve(alarm);
-      });      
+      });
     });
   }
 
@@ -178,15 +178,15 @@ module.exports = class {
         if(alarm.result_method === "auto") {
           data.autoblock = true;
         }
-        
+
         this.publisher.publish("ALARM",
                                "ALARM:CREATED",
                                alarm.device,
                                data);
-        
+
       }).catch((err) => Promise.reject(err));
   }
-  
+
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
 
@@ -215,8 +215,8 @@ module.exports = class {
             setTimeout(() => {
               this.notifAlarm(alarm.aid);
             }, 3000);
-          }         
-          
+          }
+
           callback(err, alarm.aid);
         });
       });
@@ -230,11 +230,11 @@ module.exports = class {
           reject(err);
           return;
         }
-        
+
         let dups = existingAlarms
                             .filter((a) => a != null)
                             .filter((a) => alarm.isDup(a));
-        
+
         if(dups.length > 0) {
           resolve(true);
         } else {
@@ -255,17 +255,17 @@ module.exports = class {
       })
     })
   }
-  
+
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
-    
+
     let verifyResult = this.validateAlarm(alarm);
     if(!verifyResult) {
       callback(new Error("invalid alarm, failed to pass verification"));
       return;
     }
 
-    let dedupResult = this.dedup(alarm).then((dup) => {   
+    let dedupResult = this.dedup(alarm).then((dup) => {
 
       if(dup) {
         log.warn("Same alarm is already generated, skipped this time");
@@ -273,8 +273,8 @@ module.exports = class {
         log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
         callback(new Error("duplicated with existing alarms"));
         return;
-      } 
-      
+      }
+
       exceptionManager.match(alarm, (err, result, matches) => {
         if(err) {
           callback(err);
@@ -297,8 +297,8 @@ module.exports = class {
 
           if(alarm.type === "ALARM_INTEL") {
             let num = parseInt(alarm["p.security.numOfReportSources"]);
-            if(fConfig && fConfig.policy && 
-              fConfig.policy.autoBlock && 
+            if(fConfig && fConfig.policy &&
+              fConfig.policy.autoBlock &&
               num > AUTO_BLOCK_THRESHOLD) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
@@ -316,7 +316,7 @@ module.exports = class {
   jsonToAlarm(json) {
     if(!json)
       return null;
-    
+
     let proto = Alarm.mapping[json.type];
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -325,7 +325,7 @@ module.exports = class {
       if(obj["p.flow"]) {
         delete obj["p.flow"];
       }
-      
+
       return obj;
     } else {
       log.error("Unsupported alarm type: " + json.type);
@@ -352,28 +352,28 @@ module.exports = class {
   }
     idsToAlarms(ids, callback) {
       let multi = rclient.multi();
-      
+
       ids.forEach((aid) => {
         multi.hgetall(alarmPrefix + aid);
       });
-      
+
       multi.exec((err, results) => {
         if(err) {
           log.error("Failed to load active alarms (hgetall): " + err);
           callback(err);
-          return;          
+          return;
         }
         callback(null, results.map((r) => this.jsonToAlarm(r)));
       });
     }
-    
+
     loadRecentAlarms(duration, callback) {
       if(typeof(duration) == 'function') {
         callback = duration;
         duration = 10 * 60; // 10 minutes
 //        duration = 86400;
       }
-      
+
       callback = callback || function() {}
 
       let scoreMax = new Date() / 1000 + 1;
@@ -389,7 +389,7 @@ module.exports = class {
             callback(err);
             return;
           }
-          
+
           results = results.filter((a) => a != null);
           callback(err, results);
         });
@@ -417,7 +417,7 @@ module.exports = class {
       callback = number;
       number = 20;
     }
-    
+
     callback = callback || function() {}
 
     rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
@@ -455,7 +455,7 @@ module.exports = class {
           callback(new Error("Invalid alarm ID: " + alarmID));
           return;
         }
-        
+
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
           type = "mac";
@@ -471,7 +471,7 @@ module.exports = class {
           callback(new Error("invalid block"));
           return;
         }
-        
+
         let p = new Policy(type, target);
         p.aid = alarmID;
         p.reason = alarm.type;
@@ -492,7 +492,7 @@ module.exports = class {
 
         if(info.method)
           p.method = info.method;
-        
+
         // FIXME: make it transactional
         // set alarm handle result + add policy
         pm2.checkAndSave(p, (err) => {
@@ -516,7 +516,7 @@ module.exports = class {
         });
       }).catch((err) => {
         callback(err);
-      });   
+      });
   }
 
   allowFromAlarm(alarmID, info, callback) {
@@ -610,7 +610,7 @@ module.exports = class {
     log.info("Going to unblock alarm " + alarmID);
 
     let alarmInfo = info.info; // not used by now
-    
+
      this.getAlarm(alarmID)
       .then((alarm) => {
 
@@ -620,7 +620,7 @@ module.exports = class {
           return;
         }
 
-        
+
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
@@ -630,7 +630,7 @@ module.exports = class {
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
-        
+
         pm2.disableAndDeletePolicy(pid)
           .then(() => {
             alarm.result = "";
@@ -643,17 +643,17 @@ module.exports = class {
           }).catch((err) => {
             callback(err);
           });
-        
+
       }).catch((err) => {
         callback(err);
-      });   
+      });
   }
-  
+
   unallowFromAlarm(alarmID, info, callback) {
     log.info("Going to unallow alarm " + alarmID);
 
      let alarmInfo = info.info; // not used by now
-    
+
      this.getAlarm(alarmID)
       .then((alarm) => {
 
@@ -672,7 +672,7 @@ module.exports = class {
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
-        
+
         exceptionManager.deleteException(eid)
           .then(() => {
             alarm.result = "";
@@ -684,30 +684,35 @@ module.exports = class {
           }).catch((err) => {
             callback(err);
           });
-        
+
       }).catch((err) => {
         callback(err);
       });
   }
 
-    
+
     enrichDeviceInfo(alarm) {
       let deviceIP = alarm["p.device.ip"];
       if(!deviceIP) {
         return Promise.reject(new Error("requiring p.device.ip"));
       }
 
+      if(deviceIP === "0.0.0.0") {
+        // do nothing for 0.0.0.0
+        return Promise.resolve(alarm);
+      }
+
       return new Promise((resolve, reject) => {
         dnsManager.resolveLocalHost(deviceIP, (err, result) => {
-          
+
           if(err ||result == null) {
             log.error("Failed to find host " + deviceIP + " in database: " + err);
             if(err)
               reject(err);
             reject(new Error("host " + deviceIP + " not found"));
-            return;                          
+            return;
           }
-          
+
           let deviceName = dnsManager.name(result);
           let deviceID = result.mac;
 
@@ -722,7 +727,7 @@ module.exports = class {
         });
       });
     }
-    
+
     enrichDestInfo(alarm) {
       if(alarm["p.transfer.outbound.size"]) {
         alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
@@ -745,7 +750,7 @@ module.exports = class {
           let ll = location.split(",");
           if(ll.length === 2) {
             alarm["p.dest.latitude"] = parseFloat(ll[0]);
-            alarm["p.dest.longitude"] = parseFloat(ll[1]);        
+            alarm["p.dest.longitude"] = parseFloat(ll[1]);
           }
           alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
 
@@ -754,4 +759,3 @@ module.exports = class {
       });
     }
   }
-

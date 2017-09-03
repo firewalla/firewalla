@@ -35,7 +35,7 @@ class Alarm {
 
     // check schema, minimal required key/value pairs in payloads
 //    this.validate(type);
-    
+
 
     return;
   }
@@ -48,15 +48,15 @@ class Alarm {
       return "NOTIF_" + this.getI18NCategory();
     }
   }
-  
+
   getI18NCategory() {
     return this.type;
   }
-  
+
   getInfoCategory() {
     return "INFO_" + this.getI18NCategory();
   }
-  
+
   localizedMessage() {
     return i18n.__(this.getI18NCategory(), this);
   }
@@ -64,12 +64,12 @@ class Alarm {
   localizedNotification() {
     return i18n.__(this.getNotificationCategory(), this);
   }
-  
+
   localizedInfo() {
     if(this.timestamp)
       //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
       this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
-    
+
     return i18n.__(this.getInfoCategory(), this);
   }
 
@@ -90,11 +90,11 @@ class Alarm {
   }
 
 
-  
+
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
-    
-    this.requiredKeys().forEach((v) => {      
+
+    this.requiredKeys().forEach((v) => {
       if(!this[v]) {
         log.error("Invalid payload for " + this.type + ", missing " + v);
         throw new Error("Invalid alarm object");
@@ -107,11 +107,11 @@ class Alarm {
   keysToCompareForDedup() {
     return [];
   }
-  
+
   isDup(alarm) {
     let alarm2 = this;
     let keysToCompare = this.keysToCompareForDedup();
-    
+
     if(alarm.type !== alarm2.type)
       return false;
 
@@ -133,7 +133,7 @@ class NewDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
   }
-  
+
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
@@ -152,11 +152,11 @@ class VulnerabilityAlarm extends Alarm {
   isDup(alarm) {
     if(!super.isDup(alarm))
       return false;
-    
+
     if(alarm["p.vid"] === this["p.vid"]) {
       return true;
-    } 
-    
+    }
+
     return false;
   }
 }
@@ -167,9 +167,13 @@ class BroNoticeAlarm extends Alarm {
     this["p.noticeType"] = notice;
     this["p.message"] = message;
   }
-  
+
   keysToCompareForDedup() {
     return ["p.message", "p.device.name"];
+  }
+
+  requiredKeys() {
+    return [];
   }
 }
 
@@ -197,7 +201,7 @@ class OutboundAlarm extends Alarm {
   //   destinationID
   //   destinationName
   //   destinationHostname
-  
+
   constructor(type, timestamp, device, destinationID, info) {
     super(type, timestamp ,device, info);
     this["p.dest.id"] = destinationID;
@@ -237,7 +241,7 @@ class OutboundAlarm extends Alarm {
   getSimpleOutboundTrafficSize() {
     return formatBytes(this["p.transfer.outbound.size"]);
   }
-  
+
   keysToCompareForDedup() {
     return ["p.device.mac", "p.dest.id"];
   }
