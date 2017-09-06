@@ -78,4 +78,5 @@ sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
+sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
