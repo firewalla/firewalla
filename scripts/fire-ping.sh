@@ -34,6 +34,15 @@ if [[ $api_process_cnt > 0 ]]; then
    exit 0
 fi
 
+FOUND=`grep "eth0:" /proc/net/dev`
+if [ -n "$FOUND" ] ; then
+   echo found
+else
+   /usr/bin/logger "REBOOT: FIREWALLA PING MISSING ETH0 Local Network REBOOT "
+   /home/pi/firewalla/scripts/fire-rebootf 
+   exit 0
+fi
+
 #sudo touch /dev/watchdog
 /usr/bin/logger "FIREWALLA PING WRITE2"
 
