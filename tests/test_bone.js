@@ -101,6 +101,17 @@ describe('Bone', function () {
         done();
       })();
     })
+
+    it('should return xx if there is no intel about the ip address', (done) => {
+      let sampleData = {flowlist:intelSample.unknown, hashed: 1};
+      let bone = require("../lib/Bone.js");
+
+      async(() => {
+        let intelResult = await (bone.intelAsync("*", "check", sampleData));
+        console.log(intelResult);
+        done();
+      })();
+    })
   })
 
 });

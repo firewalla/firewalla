@@ -55,6 +55,7 @@ router.get('/info',
                subnet: sysManager.mySubnet(),
                dns: sysManager.myDNS(),
                ddns: sysManager.myDDNS(),
+               info: sysInfo.getSysInfo()
              });
            });
 
