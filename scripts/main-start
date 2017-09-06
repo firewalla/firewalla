@@ -19,17 +19,6 @@
 #  When this scirpt is started, we are guranteed to have a stable network
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-logger `date`
-
-if [[ ! -f /.dockerenv ]]; then
-    sudo ntpdate -b -u -s time.nist.gov
-    logger "FIREWALLA.DATE.SYNC"
-    sudo systemctl start ntp
-    sudo ntpd -gq
-    sudo systemctl start ntp
-    sync
-fi
-logger `date`
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -243,13 +232,16 @@ sudo /usr/local/bro/bin/broctl cron
 sudo /usr/local/bro/bin/broctl cron enable
 sync
 
-if [[ ! -f /.dockerenv ]]; then
-    sudo systemctl start ntp
-    sudo ntpd -gq
-    sudo ntpdate -b -u -s time.nist.gov
-    sudo systemctl start ntp
-    sync
-fi
+#if [[ ! -f /.dockerenv ]]; then
+#    logger "FIREWALLA.DATE.SYNC"
+#    sudo systemctl stop ntp
+#    sudo ntpdate -b -u -s time.nist.gov
+#    sudo ntpd -gq
+#    sudo systemctl start ntp
+#    sudo systemctl start ntp
+#    logger "FIREWALLA.DATE.SYNC.DONE"
+#    sync
+#fi
 
 DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 #sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1

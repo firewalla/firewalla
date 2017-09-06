@@ -1,6 +1,12 @@
 #!/bin/bash -
+logger 'FIREWALLA.BROFISH Start '
 mkdir /firewalla
 chmod 777 /firewalla
+
+logger "FIREWALLA.BRO.DATE.SYNC"
+/home/pi/firewalla/scripts/fire-time.sh
+logger "FIREWALLA.BRO.DATE.SYNC.DONE"
+
 if [ -f  /bspool/tmp/post-term* ]; then
     echo "bro crashed, reboot"
     logger 'FIREWALLA: restart due to bro crashed'
@@ -17,14 +23,8 @@ for i in `seq 1 10`; do
     /usr/bin/logger "FIREWALLA.BRO NO Network"
     sleep 1
 done
-if [[ ! -f /.dockerenv ]]; then
-    sudo ntpdate -s time.nist.gov
-    logger "FIREWALLA.BRO.DATE.SYNC"
-    sudo systemctl start ntp
-    sudo ntpd -gq
-    sudo systemctl start ntp
-    sync
-fi
+
+
 rm -r -f /blog/*
 rm -r -f /bspool/*
 umount /bspool

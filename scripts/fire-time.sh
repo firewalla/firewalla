@@ -20,19 +20,23 @@
 #
 #
 
-logger "FIREWALLA.MAIN-RUN.START"
-
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-sudo $FIREWALLA_HOME/scripts/check_reset.sh
+ntp_process_cnt=`sudo systemctl status ntp |grep 'active (running)' | wc -l`
+logger "FIREWALLA.FIRETIME.ENTER "+`date`
 
-# Enable zram to increase memory
-logger "FIREWALLA:MAIN:FIREZRAM"
-sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
-logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
-sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
-logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
-$FIREWALLA_HOME/scripts/fire-time.sh
-logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
-logger "FIREWALLA:MAIN:START"
-$FIREWALLA_HOME/scripts/main-start
+if [[ $ntp_process_cnt == 0 ]]; then
+    logger `date`
+    if [[ ! -f /.dockerenv ]]; then
+        logger "FIREWALLA.DATE.SYNC"
+        sudo systemctl stop ntp
+        sudo ntpdate -b -u -s time.nist.gov
+        sudo ntpd -gq
+        sudo systemctl start ntp
+        logger "FIREWALLA.DATE.SYNC.DONE"
+        sync
+    fi
+    logger `date`
+else
+    logger "FIREWALLA.DATE.SYNC.NTPSTARTED"
+fi

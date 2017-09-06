@@ -1,6 +1,6 @@
 [Unit]
 Description=BroFish
-After=dhcpcd.service 
+After=dhcpcd.service fireupgrade.service 
 Requires=network-online.target 
 #Before=firewalla.service
 
