@@ -1250,15 +1250,16 @@ module.exports = class {
                     }
                 });
                 let lh = null;
+                let dh = null;
                 if (sysManager.isLocalIP(obj.src)) {
-                  // this is just a temporary workaround, some intel alarm doesn't involve specific local IP
-                  // in this case, the remote IP address will be used.                  
-                    lh = obj.src || obj.dst;
+                    lh = obj.src || "0.0.0.0";
+                    dh = obj.dst || "0.0.0.0";
                 } else if (sysManager.isLocalIP(obj.dst)) {
-                  // this is just a temporary workaround, some intel alarm doesn't involve specific local IP
-                    lh = obj.dst || obj.src;
+                    lh = obj.dst || "0.0.0.0";
+                    dh = obj.src || "0.0.0.0";
                 } else {
                     lh = "0.0.0.0";
+                    dh = "0.0.0.0";
                 }
 
                 let actionobj = {
@@ -1284,6 +1285,7 @@ module.exports = class {
 
                       let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
                         "p.device.ip": localIP,
+                        "p.dest.ip": dh
                       });
 
                       am2.enrichDeviceInfo(alarm).then((alarm) => {

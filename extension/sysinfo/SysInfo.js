@@ -234,7 +234,8 @@ function getSysInfo() {
     peakConn: peakConn + "",
     redisMem: redisMemory,
     releaseType: getReleaseType(),
-    threadInfo: threadInfo
+    threadInfo: threadInfo,
+    intelQueueSize: intelQueueSize
   }
 
   return sysinfo;

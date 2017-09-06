@@ -92,6 +92,7 @@ class IntelTool {
   }
 
   addIntel(ip, intel, expire) {
+    intel = intel || {}
     expire = expire || 7 * 24 * 3600; // one week by default
 
     let key = this.getIntelKey(ip);

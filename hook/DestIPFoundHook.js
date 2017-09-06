@@ -68,16 +68,29 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
+  isFirewalla(host) {
+    let patterns = [/\.encipher\.io$/,
+      /^encipher\.io$/,
+      /^firewalla\.com$/,
+      /\.firewalla\.com$/];
+
+    return patterns.filter(p => host.match(p)).length > 0;
+  }
+
   aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
     let intel = {
       ip: ip
     };
 
     // dns
+    if(dnsInfo && dnsInfo.host) {
+      intel.host = dnsInfo.host;
+      intel.dnsHost = dnsInfo.host;
+    }
+
     if(sslInfo && sslInfo.server_name) {
       intel.host = sslInfo.server_name
-    } else if(dnsInfo && dnsInfo.host) {
-      intel.host = dnsInfo.host;
+      intel.sslHost = sslInfo.server_name
     }
 
     // app
@@ -163,7 +176,12 @@ class DestIPFoundHook extends Hook {
       let domains = this.getDomains(sslInfo, dnsInfo);
       let ips = [ip];
 
-      let cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
+      let cloudIntelInfo = [];
+
+      // ignore if domain contain firewalla domain
+      if(domains.filter(d => this.isFirewalla(d)).length === 0) {
+        cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
+      }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       if(!skipRedisUpdate) {
