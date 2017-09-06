@@ -28,7 +28,7 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '/inet / {print $2}'| grep -v 169.254
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | grep -v 169.254
             ;;
         gw)
             /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
@@ -84,6 +84,7 @@ restore_values() {
 }
 
 ethernet_connected() {
+    [[ -e /sys/class/net/eth0/carrier ]] || return 1
     carrier=$(cat /sys/class/net/eth0/carrier)
     test $carrier -eq 1
 }
@@ -111,7 +112,7 @@ gateway_pingable() {
 }
 
 dns_resolvable() {
-    host -W3 github.com >/dev/null
+    nslookup -timeout=10 github.com >/dev/null
 }
 
 github_api_ok() {
@@ -165,7 +166,7 @@ while true; do
                 echo "fail - restore"
                 $LOGGER "failed to ping gateway, restore network configurations"
                 restore_values
-                restored=1
+                restored=2
                 break;
             else
                 echo "fail - reboot"
@@ -175,7 +176,7 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    [[ $restored -eq 2 ]] && continue
     echo OK
 
     echo -n "checking DNS ... "
@@ -188,7 +189,7 @@ while true; do
                 echo "fail - restore"
                 $LOGGER "failed to resolve DNS, restore network configurations"
                 restore_values
-                restored=1
+                restored=2
                 break
             else
                 echo "fail - reboot"
@@ -198,7 +199,7 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    [[ $restored -eq 2 ]] && continue
     echo OK
 
     echo -n "checking github REST API ... "
@@ -211,7 +212,7 @@ while true; do
                 echo "fail - restore"
                 $LOGGER "failed to reach github API, restore network configurations"
                 restore_values
-                restored=1
+                restored=2
                 break
             else
                 $LOGGER "failed to reach github API, even after restore, reboot"
@@ -221,7 +222,7 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    [[ $restored -eq 2 ]] && continue
     echo OK
     break
 
