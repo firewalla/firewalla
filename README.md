@@ -5,6 +5,7 @@
 </a>
 ## Firewalla  (Pre-Alpha)
 Support (email help@firewalla.com or jerry@firewalla.com)
+https://forum.firewalla.com/
 
 We do have developers units avaliable for early trials and write code on.  The quantity is limited, and they will carry a developers license and in price range of 45 dollars.  The case will be 3D printed until we get the real plastic.  If interested, please email jerry@firewalla.com  These units will ship in September.
 ## Install From Image
