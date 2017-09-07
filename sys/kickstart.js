@@ -274,7 +274,6 @@ function inviteFirstAdmin(gid, callback) {
             }
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
-            fwInvitation.firstTime = false; // not first time any more
 
             let onSuccess = function(payload) {
               return async(() => {
