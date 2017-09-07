@@ -49,7 +49,14 @@ class FWInvitation {
     this.symmetrickey = symmetrickey
     this.totalTimeout = defaultTotalTimeout;
     this.checkInterval = defaultCheckInterval;
-    this.firstTime = true;
+
+    // in noLicenseMode, a default password will be used, a flag 'firstTime' needs to be used to tell app side to use default password
+    if(symmetrickey.noLicenseMode) {
+      this.firstTime = true;
+    } else {
+      this.firstTime = false;
+    }
+
   }
 
   displayKey(key) {
