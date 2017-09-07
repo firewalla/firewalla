@@ -43,11 +43,11 @@ save_values() {
     do
         value=$(get_value $kind)
         [[ -n "$value" ]] || continue
-        file=/var/run/saved_${kind}
+        file=/home/pi/.firewalla/run/saved_${kind}
         rm -f $file
         echo "$value" > $file || r=1
     done
-    /bin/cp -f /etc/resolv.conf /var/run/saved_resolv.conf
+    /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf
     return $r
 }
 
@@ -69,17 +69,18 @@ restore_values() {
     $LOGGER "Restore saved values of ip/gw/dns"
     for kind in ip gw
     do
-        file=/var/run/saved_${kind}
+        file=/home/pi/.firewalla/run/saved_${kind}
         [[ -e "$file" ]] || continue
         saved_value=$(cat $file)
         [[ -n "$saved_value" ]] || continue
         set_value $kind $saved_value || r=1
     done
-    if [[ -e /var/run/saved_resolv.conf ]]; then
-        /bin/cp -f /var/run/saved_resolv.conf /etc/resolv.conf
+    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
+        /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
     else
         r=1
     fi
+    sleep 3
     return $r
 }
 
@@ -228,7 +229,7 @@ while true; do
             else
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
                 echo "fail - reboot"
-#                reboot
+# comment out on purpose                reboot
             fi
         fi
         sleep 1
