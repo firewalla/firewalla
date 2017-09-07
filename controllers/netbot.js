@@ -1190,6 +1190,7 @@ class netBot extends ControllerBot {
    */
 
   cmdHandler(gid, msg, callback) {
+    log.info("API: CmdHandler ",gid,msg,{});
     if (msg.data.item === "reboot") {
       log.info("Rebooting");
       let datamodel = {
@@ -1204,6 +1205,7 @@ class netBot extends ControllerBot {
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
     } else if (msg.data.item === "reset") {
+      log.info("System Reset");
       DeviceMgmtTool.resetDevice()
         .then(() => {
           this.simpleTxData(msg, null, null, callback);
@@ -1382,6 +1384,8 @@ class netBot extends ControllerBot {
           }).catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         });
+        break;
+      case "reset":
         break;
 
       default:
