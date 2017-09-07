@@ -38,7 +38,7 @@ if [[ ! -f /.dockerenv ]]; then
     logger "FIREWALLA.UPGRADE.DATE.SYNC"
     sudo systemctl stop ntp
     sudo ntpdate -b -u -s time.nist.gov
-    sudo ntpd -gq
+    sudo timeout 30 ntpd -gq
     sudo systemctl start ntp
     logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
     sync
