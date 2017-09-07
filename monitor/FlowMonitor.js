@@ -53,6 +53,8 @@ let sysManager = new SysManager('info');
 let DNSManager = require('../net2/DNSManager.js');
 let dnsManager = new DNSManager('info');
 
+let fConfig = require('../net2/config.js').getConfig();
+
 const flowUtil = require('../net2/FlowUtil.js');
 
 function getDomain(ip) {
@@ -516,6 +518,8 @@ module.exports = class FlowMonitor {
              }
              rclient.hmset(key,savedData,(err,d)=>{
                  log.debug("Set Host Summary",key,savedData,d);
+                 let expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24*60*60*7;  // seven days
+                 rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
              });
         });
     }
