@@ -31,7 +31,7 @@ if [[ $ntp_process_cnt == 0 ]]; then
         logger "FIREWALLA.DATE.SYNC"
         sudo systemctl stop ntp
         sudo ntpdate -b -u -s time.nist.gov
-        sudo ntpd -gq
+        sudo timeout 30 ntpd -gq
         sudo systemctl start ntp
         logger "FIREWALLA.DATE.SYNC.DONE"
         sync

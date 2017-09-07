@@ -127,12 +127,13 @@ fi
 restored=0
 
 echo -n "checking ethernet connection ... "
-tmout=99999
+tmout=60
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))
     else
         echo "fail - reboot"
+        $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
         reboot
     fi
     sleep 1
@@ -146,7 +147,7 @@ while ! ethernet_ip ; do
         (( tmout-- ))
     else
         echo "fail - restore"
-        $LOGGER "failed to get IP, restore network configurations"
+        $LOGGER "FIREWALLA:failed to get IP, restore network configurations"
         restore_values
         restored=1
         break
@@ -170,7 +171,7 @@ while true; do
                 break;
             else
                 echo "fail - reboot"
-                $LOGGER "failed to ping gateway, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
                 reboot
             fi
         fi
@@ -193,7 +194,7 @@ while true; do
                 break
             else
                 echo "fail - reboot"
-                $LOGGER "failed to resolve DNS, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
                 reboot
             fi
         fi
@@ -215,9 +216,9 @@ while true; do
                 restored=2
                 break
             else
-                $LOGGER "failed to reach github API, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
                 echo "fail - reboot"
-                reboot
+#                reboot
             fi
         fi
         sleep 1
