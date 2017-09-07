@@ -54,7 +54,7 @@ class FlowAggregationSensor extends Sensor {
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
     this.config.flowRange = 24 * 3600 // 24 hours
     this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
-    this.config.aggrFlowExpireTime = 48 * 3600 // 48 hours
+    this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
   }
 
   scheduledJob() {
