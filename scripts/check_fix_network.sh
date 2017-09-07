@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC 
-# 
+#    Copyright 2017 Firewalla LLC
+#
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
 #    as published by the Free Software Foundation.
-# 
+#
 #    This program is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -124,24 +124,28 @@ if [[ $(id -u) != $(id -u root) ]]; then
     exit 1
 fi
 
-restored=0
+NOT_RESTORED=0
+RESTORED_AND_NEED_START_OVER=1
+RESTORED=2
+
+restored=$NOT_RESTORED
 
 echo -n "checking ethernet connection ... "
-tmout=60
+tmout=15
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))
     else
         echo "fail - reboot"
         $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
-        reboot
+        reboot now
     fi
     sleep 1
 done
 echo OK
 
 echo -n "checking ethernet IP ... "
-tmout=15
+tmout=60
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))
@@ -149,7 +153,7 @@ while ! ethernet_ip ; do
         echo "fail - restore"
         $LOGGER "FIREWALLA:failed to get IP, restore network configurations"
         restore_values
-        restored=1
+        restored=$RESTORED
         break
     fi
     sleep 1
@@ -163,11 +167,11 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to ping gateway, restore network configurations"
                 restore_values
-                restored=2
+                restored=$RESTORED_AND_NEED_START_OVER
                 break;
             else
                 echo "fail - reboot"
@@ -177,7 +181,10 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 2 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
 
     echo -n "checking DNS ... "
@@ -186,11 +193,11 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to resolve DNS, restore network configurations"
                 restore_values
-                restored=2
+                restored=$RESTORED_AND_NEED_START_OVER
                 break
             else
                 echo "fail - reboot"
@@ -200,7 +207,10 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 2 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
 
     echo -n "checking github REST API ... "
@@ -209,11 +219,11 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to reach github API, restore network configurations"
                 restore_values
-                restored=2
+                restored=$RESTORED_AND_NEED_START_OVER
                 break
             else
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
@@ -223,8 +233,12 @@ while true; do
         fi
         sleep 1
     done
-    [[ $restored -eq 2 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
+
     break
 
 done

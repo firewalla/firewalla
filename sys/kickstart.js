@@ -268,7 +268,7 @@ function inviteFirstAdmin(gid, callback) {
             postAppLinked(); // already linked
 
             // broadcast message should already be updated, a new encryption message should be used instead of default one
-            if(symmetrickey.userKey === "cybersecuritymadesimple") {
+            if(symmetrickey.userkey === "cybersecuritymadesimple") {
               log.error("Encryption key should NOT be default after app linked");
             }
 
