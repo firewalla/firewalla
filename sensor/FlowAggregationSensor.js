@@ -202,7 +202,7 @@ class FlowAggregationSensor extends Sensor {
         begin: begin,
         end: end,
         interval: this.config.interval,
-        expireTime: 36 * 3600, // keep for 36 hours
+        expireTime: 24 * 3600, // keep for 36 hours
         skipIfExists: skipIfExists
       }
 

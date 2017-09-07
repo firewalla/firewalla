@@ -76,7 +76,7 @@ class FlowAggrTool {
   }
 
   addActivityFlows(mac, interval, ts, traffics, expire) {
-    expire = expire || 48 * 3600; // by default keep 48 hours
+    expire = expire || 24 * 3600; // by default keep 48 hours
 
     let key = this.getFlowKey(mac, "app", interval, ts);
     let args = [key];
@@ -99,7 +99,7 @@ class FlowAggrTool {
   }
 
   addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
-    expire = expire || 48 * 3600; // by default keep 48 hours
+    expire = expire || 24 * 3600; // by default keep 48 hours
 
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
     let args = [key];
