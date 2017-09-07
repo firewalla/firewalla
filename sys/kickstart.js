@@ -160,7 +160,8 @@ function generateEncryptionKey(license) {
   return {
       'key': userKey + seed,
       'seed': seed,
-      'userkey': userKey
+      'userkey': userKey,
+      'noLicenseMode': license == null
   };
 }
 
