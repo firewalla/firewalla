@@ -156,6 +156,9 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
+  // always create the secondary interface
+  ModeManager.enableSecondaryInterface();
+
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager('info');
@@ -172,9 +175,6 @@ function run() {
       sem.emitEvent({
         type: 'IPTABLES_READY'
       });
-
-      // always create the secondary interface
-      ModeManager.enableSecondaryInterface();
 
       ModeManager.apply();
 

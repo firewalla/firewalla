@@ -58,6 +58,10 @@
         "expires": 604800,
         "count": 1000
       },
+      "neighbor" : {
+        "expires": 604800,
+        "count": 1000
+      },
       "notice" : {
         "expires": 604800,
         "count": 10000
