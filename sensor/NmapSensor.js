@@ -37,6 +37,9 @@ class NmapSensor extends Sensor {
     this.networkInterface = networkTool.getLocalNetworkInterface();
     // this.networkRange = this.networkInterface && this.networkInterface.subnet;
     this.enabled = true; // very basic feature, always enabled
+
+    let p = require('../net2/MessageBus.js');
+    this.publisher = new p(loglevel);
   }
 
   static _handleAddressEntry(address, host) {
@@ -226,6 +229,11 @@ class NmapSensor extends Sensor {
             log.info("Found device:", h.ipv4Addr, {});
             this._processHost(h);
           })
+
+          setTimeout(() => {
+            // trigger scan done event to refresh host/mac/ipv4
+            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+          }, 10* 1000) // 10 seconds
         }).catch((err) => {
         log.error("Failed to scan:", err, {});
       });
