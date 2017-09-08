@@ -100,12 +100,20 @@ class FWInvitation {
 
         if(!rinfo.evalue) {
           // FIXME: might enforce license in the future
-          log.error("License info is not provided by App");
+          log.error("License info is not provided by App, maybe app version is too old");
         }
 
         let eid = rinfo.value;
         let userInfoString = rinfo.evalue;
-        let userInfo = JSON.parse(userInfoString);
+        let userInfo = null
+
+        if(userInfoString) {
+          try {
+            userInfo = JSON.parse(userInfoString);
+          } catch(err) {
+            log.error(`Failed to parse userInfo ${userInfoString} from app side: ${err}`);
+          }
+        }
 
         if(userInfo && userInfo.license) {
           // validate license first
