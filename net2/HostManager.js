@@ -1627,6 +1627,8 @@ module.exports = class {
     }
 
     getHost(ip, callback) {
+      callback = callback || function() {}
+
         dnsManager.resolveLocalHost(ip, (err, o) => {
             if (o == null) {
                 callback(err, null);
