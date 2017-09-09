@@ -39,7 +39,7 @@ class NmapSensor extends Sensor {
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
-    this.publisher = new p('info');
+    this.publisher = new p('info','Scan:Done', 10);
   }
 
   static _handleAddressEntry(address, host) {
@@ -230,10 +230,7 @@ class NmapSensor extends Sensor {
             this._processHost(h);
           })
 
-          setTimeout(() => {
-            // trigger scan done event to refresh host/mac/ipv4
-            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-          }, 10* 1000) // 10 seconds
+          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
         }).catch((err) => {
         log.error("Failed to scan:", err, {});
       });
