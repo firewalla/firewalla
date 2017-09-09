@@ -39,7 +39,7 @@ class NmapSensor extends Sensor {
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
-    this.publisher = new p(loglevel);
+    this.publisher = new p('info');
   }
 
   static _handleAddressEntry(address, host) {
