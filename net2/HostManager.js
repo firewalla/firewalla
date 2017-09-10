@@ -1160,6 +1160,8 @@ class Host {
 module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
+      loglevel = loglevel || 'info';
+      
       if (instances[name] == null) {
 
         this.instanceName = name;
