@@ -270,10 +270,11 @@ function inviteFirstAdmin(gid, callback) {
 
             // broadcast message should already be updated, a new encryption message should be used instead of default one
             if(symmetrickey.userkey === "cybersecuritymadesimple") {
-              log.error("Encryption key should NOT be default after app linked");
+              log.warn("Encryption key should NOT be default after app linked");
             }
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+            fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
 
             let onSuccess = function(payload) {
               return async(() => {
