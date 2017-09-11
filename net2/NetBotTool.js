@@ -44,6 +44,9 @@ let hostTool = new HostTool();
 
 let instance = null;
 
+function toInt(n){ return Math.floor(Number(n)); };
+
+
 class NetBotTool {
   constructor() {
     if(!instance) {
@@ -142,6 +145,20 @@ class NetBotTool {
     })();
   }
 
+  // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
+  _getTimestamps(sumFlowKey) {
+    let pattern = /:([^:]*):([^:]*)$/
+    let result = sumFlowKey.match(pattern)
+    if(!result) {
+      return null
+    }
+
+    return {
+      begin: toInt(result[1]),
+      end: toInt(result[2])
+    }
+  }
+
   _prepareTopFlowsForHost(json, mac, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
@@ -153,6 +170,8 @@ class NetBotTool {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
       if (flowKey) {
         let traffic = await (flowAggrTool.getTopSumFlowByKey(flowKey,20)) // get top 20
+
+
 
         let promises = Promise.all(traffic.map((f) => {
           return intelTool.getIntel(f.ip)
