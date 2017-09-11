@@ -1158,6 +1158,11 @@ module.exports = class {
                 return;
             }
 
+            if (obj["certificate.subject"] && obj["certificate.subject"] === "CN=firewalla.encipher.io") {
+                log.debug("X509:Self Ignoring",data);
+                return;
+            }
+
             let key = "flow:x509:" + obj['id'];
             log.debug("X509:Save", key, obj);
 
