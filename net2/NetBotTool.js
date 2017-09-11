@@ -171,6 +171,14 @@ class NetBotTool {
       if (flowKey) {
         let traffic = await (flowAggrTool.getTopSumFlowByKey(flowKey,20)) // get top 20
 
+        let ts = this._getTimestamps(flowKey)
+
+        if(ts) {
+          traffic.map((f) => {
+            f.begin = ts.begin
+            f.end = ts.end
+          })
+        }
 
 
         let promises = Promise.all(traffic.map((f) => {
