@@ -1,0 +1,17 @@
+#!/bin/bash
+#
+# -t 'debug' or 'cloud'
+# -m message
+#
+
+while getopts t:m: option
+do
+ case "${option}"
+ in
+ t) DEBUG=${OPTARG};;
+ m) MESSAGE=$OPTARG;;
+ esac
+done
+
+/usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
+
