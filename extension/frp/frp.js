@@ -116,7 +116,8 @@ module.exports = class {
         this._stop();
       });
 
-      delay(5000).then(() => {
+      // wait for 15 seconds
+      delay(15000).then(() => {
         if(!this.started) {
           log.error("Timeout, failed to start frp")
           reject(new Error("Failed to start frp"))
