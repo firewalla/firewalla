@@ -1394,7 +1394,7 @@ class netBot extends ControllerBot {
       frp.start()
         .then(() => {
           let getPasswordAsync = Promise.promisify(ssh.getPassword)
-          getPasswordAsync.then((password) => {
+          getPasswordAsync().then((password) => {
             this.simpleTxData(msg, {
               port: frp.port,
               password: password,
