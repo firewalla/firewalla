@@ -69,6 +69,9 @@ let await = require('asyncawait/await');
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
 
+let FRP = require('../extension/frp/frp.js')
+let frp = new FRP();
+
 let f = require('../net2/Firewalla.js');
 
 let flowTool = require('../net2/FlowTool')();
@@ -1387,7 +1390,31 @@ class netBot extends ControllerBot {
         break;
       case "reset":
         break;
-
+    case "startSupport":
+      frp.start()
+        .then(() => {
+          let getPasswordAsync = Promise.promisify(ssh.getPassword)
+          getPasswordAsync.then((password) => {
+            this.simpleTxData(msg, {
+              port: frp.port,
+              password: password,
+              host: frp.server,
+              user: frp.user
+            }, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+      break;
+    case "stopSupport":
+      frp.stop()
+        .then(() => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
       default:
         // unsupported action
         this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
