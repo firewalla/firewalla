@@ -18,6 +18,7 @@ fi
 (( mem <= 30 )) && logger "FIREWALLA: Memory reboot"+$mem
 (( mem <= 30 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 30 )) && free -m 2>&1 >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) && echo $mem >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
 (( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
 
