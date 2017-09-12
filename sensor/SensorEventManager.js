@@ -28,6 +28,7 @@ class SensorEventManager extends EventEmitter {
   constructor() {
     super();
     this.setMaxListeners(0);
+    this.subscribeEvent();
   }
 
   getRemoteChannel(title) {
