@@ -48,7 +48,7 @@ router.post('/message/:gid',
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete
-        log.error(err)
+        log.error(err, {})
         res.status(503);
         res.json({error: 'Initializing Firewalla Device, please try later'});
       });
