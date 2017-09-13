@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,6 +48,7 @@ router.post('/message/:gid',
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete
+        log.error(err)
         res.status(503);
         res.json({error: 'Initializing Firewalla Device, please try later'});
       });
