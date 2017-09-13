@@ -967,7 +967,10 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-      default:
+    case "getFRPConfig":
+      this.simpleTxData(msg, frp.getConfig(), err, callback);
+      break;
+    default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
   }
@@ -1393,14 +1396,11 @@ class netBot extends ControllerBot {
     case "startSupport":
       frp.start()
         .then(() => {
+          let config = frp.getConfig();
           let getPasswordAsync = Promise.promisify(ssh.getPassword)
           getPasswordAsync().then((password) => {
-            this.simpleTxData(msg, {
-              port: frp.port,
-              password: password,
-              host: frp.server,
-              user: frp.user
-            }, null, callback);
+            config.password = password
+            this.simpleTxData(msg, config, null, callback);
           }).catch((err) => {
             this.simpleTxData(msg, null, err, callback);
           })

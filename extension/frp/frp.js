@@ -74,6 +74,15 @@ module.exports = class {
     return "pi"
   }
 
+  getConfig() {
+    return {
+      started: this.started,
+      port: this.port,
+      server: this.server,
+      user: this.user
+    }
+  }
+
   start() {
     return async(() => {
       await(this._prepareConfiguration())
