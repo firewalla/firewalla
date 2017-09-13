@@ -967,8 +967,8 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-    case "getFRPConfig":
-      this.simpleTxData(msg, frp.getConfig(), err, callback);
+    case "frpConfig":
+      this.simpleTxData(msg, frp.getConfig(), null, callback);
       break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
