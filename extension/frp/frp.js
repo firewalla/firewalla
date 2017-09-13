@@ -47,6 +47,7 @@ module.exports = class {
     if (instance == null) {
       instance = this;
       this.cp = null;
+      this.started = false;
       // FIXME: possible port conflict
       this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
     }
@@ -78,8 +79,8 @@ module.exports = class {
     return {
       started: this.started,
       port: this.port,
-      server: this.server,
-      user: this.user
+      server: this.server(),
+      user: this.user()
     }
   }
 
