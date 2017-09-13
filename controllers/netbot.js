@@ -69,6 +69,9 @@ let await = require('asyncawait/await');
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
 
+let FRP = require('../extension/frp/frp.js')
+let frp = new FRP();
+
 let f = require('../net2/Firewalla.js');
 
 let flowTool = require('../net2/FlowTool')();
@@ -964,7 +967,21 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-      default:
+    case "frpConfig":
+      let _config = frp.getConfig()
+      if(_config.started) {
+        let getPasswordAsync = Promise.promisify(ssh.getPassword)
+        getPasswordAsync().then((password) => {
+          _config.password = password
+          this.simpleTxData(msg, _config, null, callback);
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+      } else {
+        this.simpleTxData(msg, _config, null, callback);
+      }
+      break;
+    default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
   }
@@ -1387,11 +1404,33 @@ class netBot extends ControllerBot {
         break;
       case "reset":
         break;
-
-      default:
-        // unsupported action
-        this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
-        break;
+    case "startSupport":
+      frp.start()
+        .then(() => {
+          let config = frp.getConfig();
+          let getPasswordAsync = Promise.promisify(ssh.getPassword)
+          getPasswordAsync().then((password) => {
+            config.password = password
+            this.simpleTxData(msg, config, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+      break;
+    case "stopSupport":
+      frp.stop()
+        .then(() => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+      break;
+    default:
+      // unsupported action
+      this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
+      break;
     }
   }
 
