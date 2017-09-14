@@ -1422,7 +1422,7 @@ class netBot extends ControllerBot {
     case "stopSupport":
       frp.stop()
         .then(() => {
-          this.simpleTxData(msg, null, null, callback);
+          this.simpleTxData(msg, {}, null, callback);
         }).catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })

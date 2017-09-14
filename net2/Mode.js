@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,7 +35,7 @@ function getSetupMode() {
 }
 
 function reloadSetupMode() {
-   return rclient.getAsync("mode")
+  return rclient.getAsync("mode")
     .then((mode) => {
       if(mode) {
         _setupMode = mode;
@@ -84,7 +84,7 @@ function isSpoofModeOn() {
   return getSetupMode()
     .then((mode) => {
       return mode === "spoof";
-    });  
+    });
 }
 
 module.exports = {
