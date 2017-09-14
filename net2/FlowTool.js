@@ -246,6 +246,10 @@ class FlowTool {
         return b.ts - a.ts;
       })
 
+      allFlows.map((flow) => {
+        flow.device = mac
+      })
+
       Array.prototype.push.apply(json.flows.recent, allFlows);
     })();
   }
@@ -372,6 +376,10 @@ class FlowTool {
           options.mac = ips_mac.mac;
           let flows = await (this.getRecentConnections(ip, direction, options));
           allFlows.push.apply(allFlows, flows);
+
+          allFlows.map((flow) => {
+            flow.device = mac
+          })
         })
       });
 
