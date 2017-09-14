@@ -1405,27 +1405,28 @@ class netBot extends ControllerBot {
       case "reset":
         break;
     case "startSupport":
-      frp.start()
-        .then(() => {
-          let config = frp.getConfig();
-          let getPasswordAsync = Promise.promisify(ssh.getPassword)
-          getPasswordAsync().then((password) => {
-            config.password = password
-            this.simpleTxData(msg, config, null, callback);
-          }).catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          })
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
+      async(() => {
+        await (frp.start())
+        let config = frp.getConfig();
+        let resetPasswordAsync = Promise.promisify(ssh.resetRandomPassword)
+        let newPassword = await(resetPasswordAsync)
+        sysManager.sshPassword = newPassword // in-memory update
+        config.password = newPassword
+        this.simpleTxData(msg, config, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
       break;
     case "stopSupport":
-      frp.stop()
-        .then(() => {
-          this.simpleTxData(msg, {}, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
+      async(() => {
+        await (frp.stop())
+        let resetPasswordAsync = Promise.promisify(ssh.resetRandomPassword)
+        let newPassword = await(resetPasswordAsync)
+        sysManager.sshPassword = newPassword // in-memory update
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
       break;
     default:
       // unsupported action
