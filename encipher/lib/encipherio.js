@@ -894,11 +894,9 @@ let legoEptCloud = class {
         let self = this;
         let inactivityTimeout = 5 * 60; //5 min
         this.getKey(gid, (err, key, cacheGroup) => {
-
             if (this.socket == null) {
                 this.notifyGids.push(gid);
-                //this.socket = io2.connect('https://firewalla.encipher.io/');
-                this.socket = io2('https://firewalla.encipher.io',{path: '/socket.io'});
+                this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
                 this.socket.on('disconnect', ()=>{
                     this.notifySocket = false;
                 });
@@ -906,7 +904,6 @@ let legoEptCloud = class {
                      log.info("SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
-                     log.info("New message from web socket");
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {
                          cacheGroup.lastfetch = Date.now() / 1000;
                          callback(err,messages);
