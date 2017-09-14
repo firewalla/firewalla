@@ -63,6 +63,18 @@ module.exports = class {
     });
   }
 
+  resetRandomPasswordAsync() {
+    return new Promise((resolve, reject) => {
+      this.resetRandomPassword((err, data) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+    })
+  }
+  
     resetRandomPassword(callback) {
       var newPassword = key.randomPassword(8);
 
