@@ -21,6 +21,8 @@ let Alarm = require('./Alarm.js');
 let redis = require('redis');
 let rclient = redis.createClient();
 
+var bone = require("../lib/Bone.js");
+
 let flat = require('flat');
 
 let audit = require('../util/audit.js');
@@ -305,6 +307,9 @@ module.exports = class {
               num > AUTO_BLOCK_THRESHOLD) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+              if (alarm['p.dest.ip']) {
+                bone.intel(alarm['p.dest.ip'],"autoblock",alarm,(err)=>{});
+              }
               return;
             }
           }

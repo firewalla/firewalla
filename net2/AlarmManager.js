@@ -154,7 +154,7 @@ module.exports = class {
         log.info("alarm:ip4:", key, actionobj);
 
         if (alarmtype == 'intel') {
-            bone.intel(hip, "check", {});
+            //bone.intel(hip, "alarm", {});
         }
         this.alarmCheck(hip, obj, (err, alarmobj, action)=>{ 
             if (alarmobj == null ) {
