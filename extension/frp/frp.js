@@ -48,8 +48,7 @@ module.exports = class {
       instance = this;
       this.cp = null;
       this.started = false;
-      // FIXME: possible port conflict
-      this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
+      this.randomizePort();
     }
     return instance;
   }
@@ -84,8 +83,14 @@ module.exports = class {
     }
   }
 
+  randomizePort() {
+    // FIXME: possible port conflict
+    this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
+  }
+
   start() {
     return async(() => {
+      this.randomizePort();
       await(this._prepareConfiguration())
       return this._start();
     })()
