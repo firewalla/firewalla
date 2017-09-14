@@ -1286,7 +1286,7 @@ module.exports = class {
     json.ddns = sysManager.ddns;
     json.remoteSupport = frp.started;
     if(frp.started) {
-      json.remoteSupportConnID = frp.port
+      json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
