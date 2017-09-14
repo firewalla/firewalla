@@ -1408,8 +1408,7 @@ class netBot extends ControllerBot {
       async(() => {
         await (frp.start())
         let config = frp.getConfig();
-        let resetPasswordAsync = Promise.promisify(ssh.resetRandomPassword)
-        let newPassword = await(resetPasswordAsync)
+        let newPassword = await(ssh.resetRandomPasswordAsync())
         sysManager.sshPassword = newPassword // in-memory update
         config.password = newPassword
         this.simpleTxData(msg, config, null, callback)
@@ -1420,8 +1419,7 @@ class netBot extends ControllerBot {
     case "stopSupport":
       async(() => {
         await (frp.stop())
-        let resetPasswordAsync = Promise.promisify(ssh.resetRandomPassword)
-        let newPassword = await(resetPasswordAsync)
+        let newPassword = await(ssh.resetRandomPasswordAsync())
         sysManager.sshPassword = newPassword // in-memory update
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
