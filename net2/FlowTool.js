@@ -374,11 +374,13 @@ class FlowTool {
         ips.forEach((ip) => {
           options.mac = ips_mac.mac;
           let flows = await (this.getRecentConnections(ip, direction, options));
-          allFlows.push.apply(allFlows, flows);
-
-          allFlows.map((flow) => {
+          flows.map((flow) => {
             flow.device = ips_mac.mac
           })
+          
+          allFlows.push.apply(allFlows, flows);
+
+
         })
       });
 
