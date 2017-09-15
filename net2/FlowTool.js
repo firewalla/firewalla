@@ -239,15 +239,14 @@ class FlowTool {
       let allFlows = [];
       ips.forEach((ip) => {
         let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}));
+        flows.forEach((f) => {
+          f.device = mac;
+        });
         allFlows.push.apply(allFlows, flows);
       })
 
       allFlows.sort((a, b) => {
         return b.ts - a.ts;
-      })
-
-      allFlows.map((flow) => {
-        flow.device = mac
       })
 
       Array.prototype.push.apply(json.flows.recent, allFlows);
@@ -378,7 +377,7 @@ class FlowTool {
           allFlows.push.apply(allFlows, flows);
 
           allFlows.map((flow) => {
-            flow.device = mac
+            flow.device = ips_mac.mac
           })
         })
       });
