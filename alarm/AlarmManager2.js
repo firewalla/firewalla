@@ -752,16 +752,18 @@ module.exports = class {
 
       return new Promise((resolve, reject) => {
         im._location(destIP, (err, loc) => {
-          if(err)
+          if(err) {
             reject(err);
-          let location = loc.loc;
-          let ll = location.split(",");
-          if(ll.length === 2) {
-            alarm["p.dest.latitude"] = parseFloat(ll[0]);
-            alarm["p.dest.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-
+          if (loc && loc.loc) {
+            let location = loc.loc;
+            let ll = location.split(",");
+            if(ll.length === 2) {
+              alarm["p.dest.latitude"] = parseFloat(ll[0]);
+              alarm["p.dest.longitude"] = parseFloat(ll[1]);
+            }
+            alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+          }
           resolve(alarm);
         });
       });
