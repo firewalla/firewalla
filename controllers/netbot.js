@@ -1381,7 +1381,7 @@ class netBot extends ControllerBot {
           }
 
           pm2.checkAndSave(policy, (err, policyID) => {
-            this.simpleTxData(msg, null, err, callback);
+            this.simpleTxData(msg, policy, err, callback);
           });
         });
         break;
