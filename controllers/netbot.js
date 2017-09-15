@@ -31,7 +31,7 @@ let FlowManager = require('../net2/FlowManager.js');
 let flowManager = new FlowManager('info');
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('info');
-let sysmanager = new SysManager();
+let sysManager = new SysManager();
 let VpnManager = require("../vpn/VpnManager.js");
 let vpnManager = new VpnManager('info');
 let IntelManager = require('../net2/IntelManager.js');
@@ -368,12 +368,12 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
-    // sysmanager.setConfig(this.sensorConfig);
-    sysmanager.update((err, data) => {
+    // sysManager.setConfig(this.sensorConfig);
+    sysManager.update((err, data) => {
     });
 
     setInterval(() => {
-      sysmanager.update((err, data) => {
+      sysManager.update((err, data) => {
       });
     }, 1000 * 60 * 60 * 10);
 
@@ -507,7 +507,7 @@ class netBot extends ControllerBot {
 
     setTimeout(() => {
       this.scanStart();
-      if (sysmanager.systemRebootedDueToIssue(true) == false) {
+      if (sysManager.systemRebootedDueToIssue(true) == false) {
         if (nm.canNotify() == true) {
           this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
         }
@@ -749,7 +749,7 @@ class netBot extends ControllerBot {
 
         // TODO validate input?
         if (v2.language) {
-          sysmanager.setLanguage(v2.language, (err) => {
+          sysManager.setLanguage(v2.language, (err) => {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
@@ -758,7 +758,7 @@ class netBot extends ControllerBot {
         let v3 = msg.data.value;
 
         if (v3.timezone) {
-          sysmanager.setTimezone(v3, (err) => {
+          sysManager.setTimezone(v3, (err) => {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
@@ -1287,18 +1287,18 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "debugOn":
-        sysmanager.debugOn((err) => {
+        sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "debugOff":
-        sysmanager.debugOff((err) => {
+        sysManager.debugOff((err) => {
           this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "resetSSHPassword":
         ssh.resetRandomPassword((err, password) => {
-          sysmanager.sshPassword = password;
+          sysManager.sshPassword = password;
           this.simpleTxData(msg, null, err, callback);
         });
         break;
@@ -1405,27 +1405,26 @@ class netBot extends ControllerBot {
       case "reset":
         break;
     case "startSupport":
-      frp.start()
-        .then(() => {
-          let config = frp.getConfig();
-          let getPasswordAsync = Promise.promisify(ssh.getPassword)
-          getPasswordAsync().then((password) => {
-            config.password = password
-            this.simpleTxData(msg, config, null, callback);
-          }).catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          })
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
+      async(() => {
+        await (frp.start())
+        let config = frp.getConfig();
+        let newPassword = await(ssh.resetRandomPasswordAsync())
+        sysManager.sshPassword = newPassword // in-memory update
+        config.password = newPassword
+        this.simpleTxData(msg, config, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
       break;
     case "stopSupport":
-      frp.stop()
-        .then(() => {
-          this.simpleTxData(msg, null, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
+      async(() => {
+        await (frp.stop())
+        let newPassword = await(ssh.resetRandomPasswordAsync())
+        sysManager.sshPassword = newPassword // in-memory update
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
       break;
     default:
       // unsupported action
@@ -1654,7 +1653,7 @@ class netBot extends ControllerBot {
   }
 
   helpString() {
-    return "Bot version " + sysmanager.version() + "\n\nCli interface is no longer useful, please type 'system reset' after update to new encipher app on iOS\n";
+    return "Bot version " + sysManager.version() + "\n\nCli interface is no longer useful, please type 'system reset' after update to new encipher app on iOS\n";
   }
 
   setupDialog() {
@@ -1680,7 +1679,7 @@ process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {
     program: 'ui',
-    version: sysmanager.version(),
+    version: sysManager.version(),
     type: 'exception',
     msg: err.message,
     stack: err.stack

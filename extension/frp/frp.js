@@ -48,8 +48,7 @@ module.exports = class {
       instance = this;
       this.cp = null;
       this.started = false;
-      // FIXME: possible port conflict
-      this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
+      this.randomizePort();
     }
     return instance;
   }
@@ -84,8 +83,14 @@ module.exports = class {
     }
   }
 
+  randomizePort() {
+    // FIXME: possible port conflict
+    this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
+  }
+
   start() {
     return async(() => {
+      this.randomizePort();
       await(this._prepareConfiguration())
       return this._start();
     })()
@@ -105,10 +110,13 @@ module.exports = class {
     this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8'});
 
     return new Promise((resolve, reject) => {
+      let hasTimeout = true;
+
       this.cp.stdout.on('data', (data) => {
         log.info(data.toString())
         if(data.toString().match(/start proxy success/)) {
           this.started = true
+          hasTimeout = false;
           log.info("frp is started successfully")
           resolve();
         }
@@ -128,7 +136,7 @@ module.exports = class {
 
       // wait for 15 seconds
       delay(15000).then(() => {
-        if(!this.started) {
+        if(hasTimeout) {
           log.error("Timeout, failed to start frp")
           reject(new Error("Failed to start frp"))
         }

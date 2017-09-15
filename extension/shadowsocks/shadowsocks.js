@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -82,7 +82,7 @@ module.exports = class {
 
       this._stop(callback);
     }
-    
+
     _stop(callback) {
       callback = callback || function() {}
 
@@ -101,25 +101,25 @@ module.exports = class {
 
     start(callback) {
       callback = callback || function() {}
-      
+
       // always stop first before start
       this._stop(() => {
         this._start(callback);
       })
     }
-    
+
     _start(callback) {
       callback = callback || function() {}
-      
+
       if (this.started) {
         log.info("Shadowsocks::StartedAlready");
         if (callback)
           callback(null, this.portmapped, this.portmapped);
         return;
       }
-      
+
       log.info("Starting shadowsocks server...");
-      
+
       let outputStream = fs.createWriteStream(ssLogFile, {flags: 'a'});
 
       let args = util.format("-c %s -v",
@@ -132,7 +132,7 @@ module.exports = class {
 
       ss.stdout.pipe(outputStream);
       ss.stderr.pipe(outputStream);
-      
+
       ss.on('exit', (code) => {
         if(code) {
           log.error("Shadowsocks server exited with error code", code);
@@ -140,7 +140,7 @@ module.exports = class {
           log.info("Shadowsocks server exited successfully");
         }
       });
-      
+
       this.started = true;
 
       this.addPortMapping(1000);
@@ -173,7 +173,7 @@ module.exports = class {
     setConfigFileLocation(location) {
         configFileLocation = location;
     }
-    
+
     readConfig() {
         try {
           let config = jsonfile.readFileSync(configFileLocation);
@@ -186,7 +186,7 @@ module.exports = class {
     configExists() {
         return this.readConfig() !== null;
     }
-    
+
     refreshConfig(password) {
         if(password == null) {
             password = key.randomPassword(8);
