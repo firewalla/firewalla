@@ -890,7 +890,7 @@ let legoEptCloud = class {
     //
     // if 0 is passed in intervalInSeconds, pulling will stop
 
-    pullMsgFromGroup(gid, intervalInSeconds, callback) {
+    pullMsgFromGroup(gid, intervalInSeconds, callback,boneCallback) {
         let self = this;
         let inactivityTimeout = 5 * 60; //5 min
         this.getKey(gid, (err, key, cacheGroup) => {
@@ -908,6 +908,12 @@ let legoEptCloud = class {
                          cacheGroup.lastfetch = Date.now() / 1000;
                          callback(err,messages);
                      });
+                });
+                this.socket.on("boneMsg",(data)=> {
+                     console.log("SOCKET boneMsg ");
+                     if (boneCallback && data) {
+                         boneCallback(null,data.type,data);
+                     }
                 });
                 this.socket.on('connect', ()=>{
                     this.notifySocket = true;
