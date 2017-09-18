@@ -465,10 +465,11 @@ module.exports = class DNSMASQ {
         log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
       } else {
         log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
+      }
 
-        if(this.shouldStart) {
-          this.rawStart() // auto restart if failed unexpectedly
-        }
+      if(this.shouldStart) {
+        log.info("Restarting dnsmasq...")
+        this.rawStart() // auto restart if failed unexpectedly
       }
     })
 
