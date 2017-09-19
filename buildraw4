@@ -124,6 +124,7 @@ function install_walla()
     if [[ $? -ne 0 ]]; then
         sudo echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
         modprobe tcp_bbr
+        sysctl -p
     fi
 
     echo "Setting up encipher..."
