@@ -119,6 +119,13 @@ function install_walla()
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
     crontab $basedir/etc/brotab || perr_and_exit "Failed to install user bro cronjobs."
 
+    # Enable BBR TCP congestion control
+    grep "tcp_bbr" /etc/modules-load.d/modules.conf >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        sudo echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
+        modprobe tcp_bbr
+    fi
+
     echo "Setting up encipher..."
     sudo mkdir -p /encipher.config || perr_and_exit "Failed to create /encipher.config/"
     sudo cp $basedir/config/netbot.config /encipher.config/ || perr_and_exit "Failed top copy encipher config."

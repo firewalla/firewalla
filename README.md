@@ -64,7 +64,7 @@ docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
 docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
 ```
 
-### Get IPhone Software
+### Get iPhone Software
 
 Encipher Connect is a secure messenger used to talk to Raspberry Pi.
 
