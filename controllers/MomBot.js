@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ var commondialog = require('../lib/commondialog.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration')
+    .option('--lconfig [lconfig]', 'local configuration')
     .option('--name [name]', '(optional) name')
     .option('--endpoint_name [endpoint_name]', '(optional) endpoint')
     .option('--gid [gid]', '(optional) group id')
@@ -69,12 +70,20 @@ if (config.gid != null) {
     gid = program.gid;
 }
 
+if (program.lconfig) {
+    let f = fs.readFileSync(program.lconfig,'utf8');
+    let parsed = JSON.parse(f);
+    gid = parsed.gid;
+}
+
 if (gid == null) {
     console.log("default gid is null");
     process.exit(1);
 }
 
+console.log("---------------------------------");
 console.log("Initializing Service ", config.service, config.version, "end point ", eptname);
+console.log("---------------------------------");
 
 var eptcloud = new cloud(eptname, config.eptdir);
 
@@ -104,3 +113,4 @@ eptcloud.eptlogin(config.appId, config.appSecret, null, eptname, function (err, 
         process.exit(1);
     }
 });
+

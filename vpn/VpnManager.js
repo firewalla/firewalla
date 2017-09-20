@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,9 +18,7 @@ var instance = null;
 var log = null;
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
-var Firewalla = require('../net2/Firewalla.js');
-//TODO: support real config file for Firewalla class
-var firewalla = new Firewalla('/path/to/config', 'info');
+var firewalla = require('../net2/Firewalla.js');
 var fHome = firewalla.getFirewallaHome();
 
 var redis = require("redis");
@@ -33,13 +31,15 @@ var fs = require('fs');
 var network = require('network');
 var natpmp = require('nat-pmp');
 var natupnp = require('nat-upnp');
-var ip = require('ip');
+var ipTool = require('ip');
 var async = require('async');
 
 var util = require('util');
 
+var linux = require('../util/linux');
 
-var ttlExpire = 60*60*1;
+
+var ttlExpire = 12*60*60;
 
 module.exports = class {
     constructor(path, loglevel) {
@@ -59,10 +59,13 @@ module.exports = class {
       
         let replied = false;
         // returns the IP of the gateway that your active network interface is linked to
-        network.get_gateway_ip((err, gateway) => {
+        linux.gateway_ip((err, gateway) => {
             if (err) return error(err)
-            if (ip.isPublic(gateway))
+            log.info("VpnManager:PublicGateway Checking",gateway,gateway.trim(),gateway.length);
+            if (ipTool.isPublic(gateway.trim())==true) {
+                log.info("VpnManager:PublicGateway True",gateway);
                 return success(gateway)
+            }
 
             if (this.upnpClient == null) {
                 this.upnpClient = natupnp.createClient();
@@ -81,8 +84,14 @@ module.exports = class {
                         error(err);
                     }
                 }
-                this.upnpClient.close();
-                this.upnpClient = null;
+                setTimeout(() => {
+                    if (this.upnpClient) {
+                        this.upnpClient.close();
+                        this.upnpClient = null;
+                    } else {
+                        log.error("VpnManager:NatUPNP resetupnp client null");
+                    }
+                },1000);
             });
         });
     }
@@ -93,12 +102,18 @@ module.exports = class {
             this.upnpClient = natupnp.createClient();
         }
         this.upnpClient.portUnmapping(opts,(err)=>{
-            this.upnpClient.close();
-            this.upnpClient = null;
             this.portmapped = false;
             if (callback) {
                 callback(err);
             }
+            setTimeout(() => {
+                if (this.upnpClient) {
+                    this.upnpClient.close();
+                    this.upnpClient = null;
+                } else {
+                    log.error("VpnManager:NatUPNP unmap resetupnp client null");
+                }
+            },1000);
         });
     }
 
@@ -111,7 +126,7 @@ module.exports = class {
             if (err) return error(err)
 
             // use regex to check if ip address is public
-            if (ip.isPublic(gateway))
+            if (ipTool.isPublic(gateway))
                 return success(gateway)
 
             var strategies = {
@@ -151,9 +166,16 @@ module.exports = class {
             if (err == null) {
                 publicIp.v4((err, ip) => {
                     if (err != null) {
-                        if (callback) 
-                            callback(err, null);
-                        return;
+                        log.error("VPNManager:INSTALL:Error IP",ip,err);
+                        ip = sysManager.myDDNS();
+                        if (ip == null) {
+                             ip = sysManager.publicIp;
+                        }
+                        if (ip == null) {
+                            if (callback) 
+                                callback(err, null);
+                            return;
+                        }
                     }
 
                     // !! Pay attention to the parameter "-E" which is used to preserve the
@@ -210,7 +232,7 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: 0,
+            ttl: ttlExpire,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
@@ -273,6 +295,8 @@ module.exports = class {
     getOvpnFile(clientname, password, regenerate, callback) {
         let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
         let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
+
+        log.info("Reading ovpn file", ovpn_file,ovpn_password,regenerate);
         
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
             if (ovpn != null && regenerate == false) {

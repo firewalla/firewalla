@@ -1,70 +1,64 @@
-"use strict"
-var express = require('express');
-var router = express.Router();
-const passport = require('passport')
+/*    Copyright 2016 Firewalla LLC 
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict';
+let express = require('express');
+let router = express.Router();
 
-var Encryption = require('../lib/Encryption'); // encryption middleware
-var encryption = new Encryption();
+let Encryption = require('../lib/Encryption'); // encryption middleware
+let encryption = new Encryption();
 
-var CloudWrapper = require('../lib/CloudWrapper');
-var cloudWrapper = new CloudWrapper();
+let CloudWrapper = require('../lib/CloudWrapper');
+let cloudWrapper = new CloudWrapper();
 
-/* fast encipher api */
-router.get('/ping', 
-    passport.authenticate('bearer', { session: false }),
-    function(req, res, next) {
-        res.send("pong!");
-    });
+let f = require('../../net2/Firewalla.js');
+
+let log = require('../../net2/logger.js')(__filename, "info");
+
+let sc = require('../lib/SystemCheck.js');
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
  * -- message is encrypted already 
  */
-router.post('/message/:gid', 
+router.post('/message/:gid',
+    sc.isInitialized,
     encryption.decrypt,
-    function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
-        console.log("================= request body =================");
-        console.log(req.body);
-        console.log("================= request body end =================");
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                res.body = JSON.stringify(response);
-                next();
-            }
+    sc.debugInfo,
+    (req, res, next) => {
+      let gid = req.params.gid;
+      
+      async(() => {
+        let controller = await(cloudWrapper.getNetBotController(gid));
+        let response = await(controller.msgHandlerAsync(gid, req.body));
+        res.body = JSON.stringify(response);
+        next();
+      })()
+        .catch((err) => {
+          // netbot controller is not ready yet, waiting for init complete
+          res.status(503);
+          res.json({error: 'Initializing Firewalla Device, please try later'});
         });
     },
+  
+    sc.compressPayloadIfRequired,
     encryption.encrypt
-);
-
-router.post('/message/cleartext/:gid', 
-    passport.authenticate('bearer', { session: false }),
-    function(req, res, next) {
-        var gid = req.params.gid;
-        let controller = cloudWrapper.getNetBotController(gid);
-
-        var alreadySent = false;
-
-        controller.msgHandler(gid, req.body, (err, response) => {
-            if(alreadySent) {
-                return;
-            }
-
-            alreadySent = true;
-            
-            if(err) {
-                res.json({ error: err });
-                return;
-            } else {
-                console.log("got response: " + JSON.stringify(response));
-                res.json(response);
-            }
-        });
-    }
 );
 
 module.exports = router;

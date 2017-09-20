@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,7 +13,9 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var log;
+
+let log = require('./logger.js')(__filename);
+
 var redis = require("redis");
 var rclient = redis.createClient();
 var sclient = redis.createClient();
@@ -30,30 +32,51 @@ sclient.setMaxListeners(0);
  *
  */
 
-var instance = null;
+var instances = {};
 
 module.exports = class {
-    constructor(loglevel) {
+    constructor(loglevel,instanceId, throttle) {
+        let instance = null;
+        if (instanceId == null) {
+            instanceId = 'default'; 
+        }        
+        instance = instances[instanceId];
         if (instance == null) {
-            log = require("./logger.js")("MessageBus", loglevel);
-            instance = this;
-            this.callbacks = {};
-            sclient.on("message", (channel, message) => {
-                let m = JSON.parse(message);
-                console.log("Reciving Msg:", m);
-                let notified = 0;
-                if (m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
-                    this.callbacks[channel + "." + m.type + "." + m.ip](channel, m.type, m.ip, m.msg);
-                    notified += 1;
-                }
-                if (this.callbacks[channel + "." + m.type]) {
-                    this.callbacks[channel + "." + m.type](channel, m.type, m.ip, m.msg);
-                    notified += 1;
-                }
-                console.log("Notified ", notified);
-            });
+          instance = this;
+          instances[instanceId]=instance;
+          this.callbacks = {};
+          this.throttle = 1;
+          if (throttle) {
+              this.throttle =throttle;
+          }
+          this.sending = false;
+          sclient.on("message", (channel, message) => {
+            let m = JSON.parse(message);
+            log.debug("Reciving Msg:", m, {});
+            let notified = 0;
+            let cbs = null;
+            if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
+              cbs = this.callbacks[channel + "." + m.type + "." + m.ip];
+              if(cbs) {
+                cbs.forEach((cb) => {
+                  cb(channel, m.type, m.ip, m.msg);
+                  notified += 1;
+                });
+              }
+            }
+            if (this.callbacks[channel + "." + m.type]) {
+              cbs = this.callbacks[channel + "." + m.type]
+              if(cbs) {
+                cbs.forEach((cb) => {
+                  cb(channel, m.type, m.ip, m.msg);
+                  notified += 1;
+                });
+              }
+            }
+            log.debug("Notified ", notified);
+          });
         }
-        return instance;
+      return instance;
     }
 
     publish(channel, type, ip, msg) {
@@ -62,18 +85,38 @@ module.exports = class {
             ip: ip,
             msg: msg
         };
-        log.debug("MBus:Publish", channel, o);
-        rclient.publish(channel, JSON.stringify(o));
+      log.debug("MBus:Publish", channel, o, {});
+      rclient.publish(channel, JSON.stringify(o));
     }
 
+    publishCompressed(channel, type, ip, msg) {
+        if (this.sending == true) {
+            return;
+        }
+        this.sending = true;
+       
+        setTimeout(()=>{
+            this.sending = false;
+            this.publish(channel,type,ip,msg);
+        }, this.throttle*1000);
+    }
+
+  _subscribe(key, callback) {
+    let cbs = this.callbacks[key];
+    if(!cbs) {
+      this.callbacks[key] = [];
+      cbs = this.callbacks[key];
+    }
+    cbs.push(callback);
+  }
+      
     subscribe(channel, type, ip, callback) {
         //log.debug("MBus:Subscribe",channel,type,ip);
-        sclient.subscribe(channel);
-        if (ip == null) {
-            this.callbacks[channel + "." + type] = callback;
-        } else {
-            this.callbacks[channel + "." + type + "." + ip] = callback;
-        }
-
+      sclient.subscribe(channel);
+      if (ip == null) {
+        this._subscribe(channel + "." + type, callback);
+      } else {
+        this._subscribe(channel + "." + type + "." + ip, callback);
+      }
     }
 };

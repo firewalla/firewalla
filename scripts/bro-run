@@ -1,17 +1,34 @@
 #!/bin/bash -
+logger 'FIREWALLA.BROFISH Start '
 mkdir /firewalla
 chmod 777 /firewalla
+
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
+/home/pi/firewalla/scripts/fire-time.sh
+logger "FIREWALLA.BRO.DATE.SYNC.DONE"
+
 if [ -f  /bspool/tmp/post-term* ]; then
     echo "bro crashed, reboot"
-    logger 'restart due to bro crashed'
+    logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
-    sudo reboot
+    /home/pi/firewalla/scripts/fire-reboot
 fi
+GITHUB_STATUS_API=https://status.github.com/api.json
+for i in `seq 1 10`; do
+    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+    if [[ $HTTP_STATUS_CODE == "200" ]]; then
+      break
+    fi
+    /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
+    sleep 1
+done
+
+
 rm -r -f /blog/*
 rm -r -f /bspool/*
 umount /bspool
-mount -t tmpfs -o size=70m tmpfs /bspool
+mount -t tmpfs -o size=30m tmpfs /bspool
 cd /home/pi/firewalla
 cd .git
 sudo chown -R pi *
@@ -21,8 +38,8 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 sleep 3
 if [[ $branch =~ release.* ]]
   then
-    sudo -u pi git fetch origin release_pi_1_0
-    sudo -u pi git reset --hard origin/release_pi_1_0
+    sudo -u pi git fetch origin $branch
+    sudo -u pi git reset --hard origin/$branch
 #    sudo /opt/vc/bin/tvservice -o
     echo "on release"
   else
@@ -30,25 +47,26 @@ if [[ $branch =~ release.* ]]
   fi
 sudo -u pi git pull
 sudo cp etc/bro-cron /etc/cron.hourly/.
-cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
-cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
+sudo systemctl reenable firewalla
+sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
+sudo systemctl reenable fireupgrade
 sudo systemctl daemon-reload
 sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
 sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
 sync
-#cd /home/pi/firewalla/imports
-#curl -O https://s3-us-west-2.amazonaws.com/firewalla.io/cstack/cstack.tar.gz
-#if [ ! -f /home/pi/firewalla/imports/cstack.tar.gz ]; then
-#    echo "File not found!"
-#    logger 'cstack file not found'
-#    exit 1
-#fi
-#tar -zxvf cstack.tar.gz
-#cd /home/pi/firewalla
-#cp -r -f imports/cstack/* /opt/critical-stack/.
 /usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
-cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
-sudo -u pi crontab -r
-sudo -u pi crontab /home/pi/firewalla/etc/brotab
-sudo dhclient -6 eth0 &
+logger "FIREWALLA: Deployed BRO using BROCTL"
+sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo sysctl -p
 
+sudo dhclient -6 eth0 &
+sudo dhclient -4 eth0 &
+logger "FIREWALLA: BRO-RUN Finished"
+#(sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&

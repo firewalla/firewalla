@@ -1,5 +1,5 @@
 'use strict'
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,12 @@
  */
 var winston = require('winston');
 
+let path = require('path');
+
+String.prototype.capitalizeFirstLetter = function() {
+    return this.charAt(0).toUpperCase() + this.slice(1);
+}
+
 var devDebug = {
    'BroDetect': 'info',
    'HostManager': 'info',
@@ -29,7 +35,7 @@ var devDebug = {
    'SysManager':'info',
    'PolicyManager':'info',
    'main':'info',
-   'FlowMonitory':'info'
+   'FlowMonitor':'info'
 };
   
 var productionDebug = {
@@ -46,39 +52,119 @@ var productionDebug = {
    'SysManager':'error',
    'PolicyManager':'error',
    'main':'error',
-   'FlowMonitory':'error'
+   'FlowMonitor':'error'
 };
-  
 
 var debugMapper = devDebug;
+var production = false;
+var debugMap = {};
+
 if (process.env.FWPRODUCTION) {
     debugMapper = productionDebug; 
     console.log("FWDEBUG SET TO PRODUCTION");
+    production = true;
 }
 
-module.exports = function (component, loglevel) {
+if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
+    debugMapper = productionDebug; 
+    console.log("FWDEBUG SET TO PRODUCTION");
+    production = true;
+}
+
+module.exports = function (component, loglevel, filename) {
+  component = path.basename(component).split(".")[0].capitalizeFirstLetter();
+  
+  if(!loglevel) {
+    loglevel = "info"; // default level info
+  }
+
+  if (debugMap[component]!=null) {
+    return debugMap[component];
+  }
+
+  if(!filename) {
+    filename = process.title+".log";
+  }
+  
     let _loglevel = debugMapper[component];
     if (_loglevel==null) {
         _loglevel = loglevel;
     }
-    var logger = new(winston.Logger)({
-        transports: [
-            new(winston.transports.Console)({
-                level: _loglevel,
-                'timestamp': true
-            }),
-            /*
-            new (winston.transports.File)({level:fileloglevel,
-                                       name:'log-file',
-                                       filename: 'net.log',
-                                       dirname: ".",
-                                       maxsize: 1000,
-                                       maxFiles: 10,
-                                       timestamp:true })
-*/
-        ]
+    let consoleLogLevel = _loglevel;
+    let fileLogLevel = _loglevel;
+   
+    if (production){
+       consoleLogLevel = 'error';
+    }
+    var consoleTransport = new(winston.transports.Console)({
+              level: consoleLogLevel,
+              timestamp: function() {
+                let d = new Date();
+                return d.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+              },
+              formatter: function(options) {
+                let format = require('util').format("%s %s %s: %s",
+                                                    options.level.toUpperCase(),
+                                                    options.timestamp(),
+                                                    component,
+                                                    options.message);
+                return format;
+              }
+            });
+  
+    var fileTransport = new (winston.transports.File)({level:_loglevel,
+                                                       name:'log-file',
+                                                       filename: filename,
+                                                       json: false,
+                                                       dirname: "/home/pi/logs",
+                                                       maxsize: 1000000,
+                                                       maxFiles: 3,
+                                                       timestamp:true });
+  
+    let transports = [fileTransport];
+ 
+    if (production == false && process.env.NODE_ENV !== 'test') {
+//        console.log("Adding Console Transports",component);
+        transports.push(consoleTransport);
+    }
+    
+    if(process.env.NODE_ENV === 'test') {
+      let transport = new (winston.transports.File)
+      ({level:_loglevel,
+        name:'log-file-test',
+        filename: "test.log",
+        dirname: "/home/pi/.forever",
+        maxsize: 100000,
+        maxFiles: 1,
+        json: false,
+        timestamp:true,
+        colorize: true,
+        formatter: (options) => {
+          let format = require('util').format("%s %s %s: %s",
+            options.level.toUpperCase(),
+            new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''),
+            component,
+            options.message);
+          return format;
+        }});
+      
+      transports.push(transport);
+    }
+  
+    let logger = new(winston.Logger)({
+        transports: transports
     });
 
-    logger.transports.console.level = _loglevel;
+    if (production == false && logger.transports.console) {
+        logger.transports.console.level = _loglevel;
+    }
+
+    if (production == true) {
+      for (key in winston.loggers.loggers) {
+        winston.loggers.loggers[key].remove(winston.transports.Console);
+      }
+    }
+
+    debugMap[component]=logger;
     return logger;
 };

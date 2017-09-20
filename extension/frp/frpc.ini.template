@@ -1,0 +1,10 @@
+[common]
+server_addr = support.firewalla.com
+server_port = 8999
+
+[FRP_SERVICE_NAME]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = FRP_SERVICE_PORT
+use_encryption = true

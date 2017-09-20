@@ -1,3 +1,8 @@
+/*
+ * This app will provide API for external calls
+ */
+'use strict';
+
 var express = require('express');
 var path = require('path');
 var favicon = require('serve-favicon');
@@ -5,10 +10,12 @@ var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var argv = require('minimist')(process.argv.slice(2));
-var swagger = require("swagger-node-express");
 const passport = require('passport');
 var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
+
+let firewalla = require('../net2/Firewalla.js');
+let log = require('../net2/logger.js')(__filename, 'info')
 
 passport.use(new Strategy(
   function(token, cb) {
@@ -19,11 +26,11 @@ passport.use(new Strategy(
     });
   }));
 
-
-var system = require('./routes/system');
-var message = require('./routes/message');
-var shadowsocks = require('./routes/shadowsocks');
 var encipher = require('./routes/fastencipher2');
+
+// periodically update cpu usage, so that latest info can be pulled at any time
+let si = require('../extension/sysinfo/SysInfo.js');
+si.startUpdating();
 
 var app = express();
 
@@ -45,16 +52,8 @@ subpath_v1.use(passport.initialize());
 subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
-subpath_v1.use('/sys', system);
-subpath_v1.use('/message', message);
-subpath_v1.use('/ss', shadowsocks);
+
 subpath_v1.use('/encipher', encipher);
-
-var subpath_docs = express();
-app.use("/docs", subpath_docs);
-subpath_docs.use("/", express.static('dist'));
-
-swagger.setAppHandler(subpath_docs);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -69,6 +68,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
+    log.error("Got error when handling request: " + err, err.stack, {});
     res.status(err.status || 500);
     res.render('error', {
       message: err.message,
@@ -80,6 +80,7 @@ if (app.get('env') === 'development') {
 // production error handler
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
+  log.error("Got error when handling request: " + err, err.stack, {});
   res.status(err.status || 500);
   res.render('error', {
     message: err.message,
@@ -90,27 +91,14 @@ app.use(function(err, req, res, next) {
 
 module.exports = app;
 
-swagger.setApiInfo({
-    title: "Firewalla API",
-    description: "API to do something, manage something...",
-    termsOfServiceUrl: "",
-    contact: "tt@firewalla.com",
-    license: "",
-    licenseUrl: ""
-});
 
 
-subpath_docs.get('/', function (req, res) {
-    res.sendfile(__dirname + '/dist/index.html');
-});
 
-swagger.configureSwaggerPaths('', '/docs/api-docs', '');
 
 var domain = 'localhost';
 if(argv.domain !== undefined)
     domain = argv.domain;
 else
-    console.log('No --domain=xxx specified, taking default hostname "localhost".');
+    log.info('No --domain=xxx specified, taking default hostname "localhost".');
 var applicationUrl = 'http://' + domain;
-swagger.configure(applicationUrl, '1.0.0');
 

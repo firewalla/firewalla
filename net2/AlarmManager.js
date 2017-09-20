@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,7 +29,7 @@ var uuid = require('uuid');
 
 var bone = require("../lib/Bone.js");
 
-            var hostManager = null;
+var hostManager = null;
 
 
 /* alarms:
@@ -91,7 +91,7 @@ module.exports = class {
             }  else {
                 for (let i in alarms) {
                     let alarm = JSON.parse(alarms[i]);
-                    console.log("alarm:check:iterating",alarm.actionobj.src,alarmObj.actionobj.src, alarm.actionobj.dst,alarmObj.actionobj.dst, alarm.alarmtype,alarmObj.alarmtype); 
+//                    console.log("alarm:check:iterating",alarm.actionobj.src,alarmObj.actionobj.src, alarm.actionobj.dst,alarmObj.actionobj.dst, alarm.alarmtype,alarmObj.alarmtype); 
                     if (alarm.actionobj && alarmObj.actionobj) {
                         if (alarm.actionobj.src == alarmObj.actionobj.src &&
                             alarm.actionobj.dst == alarmObj.actionobj.dst &&
@@ -154,7 +154,7 @@ module.exports = class {
         log.info("alarm:ip4:", key, actionobj);
 
         if (alarmtype == 'intel') {
-            bone.intel(hip, "check", {});
+            //bone.intel(hip, "alarm", {});
         }
         this.alarmCheck(hip, obj, (err, alarmobj, action)=>{ 
             if (alarmobj == null ) {

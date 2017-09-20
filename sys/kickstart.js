@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,39 +15,79 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* 
- * Kickstart()  
- * 
- * Create default endpoints                 
+/*
+ * Kickstart()
+ *
+ * Create default endpoints
  * Create default group
- * 
+ *
  * Launch camera app
  *
  * bonjour endpoint information
- * 
+ *
  * name: 'Encipher:'+eptname
  * type: 'http'
  * port: '80'
  * txt: {
- *         'gid':'group id',   
+ *         'gid':'group id',
  *         'er':'encrypted rendezvous key',
  *         'keyhint':'Please enter the CPU id of your device pasted on a sticker'.
  *      }
- * 
+ *
  * setup redenzvous at rndezvous key
  * query every x min until group is none empty, or first invite
  */
 
-var fs = require('fs');
-var cloud = require('../encipher');
-var program = require('commander');
-var qrcode = require('qrcode-terminal');
-var storage = require('node-persist');
-var mathuuid = require('../lib/Math.uuid.js');
-var utils = require('../lib/utils.js');
-var uuid = require("uuid");
-var forever = require('forever-monitor');
-var intercomm = require('../lib/intercomm.js');
+process.title = "FireKick";
+let log = require("../net2/logger.js")(__filename);
+
+let fs = require('fs');
+let cloud = require('../encipher');
+let program = require('commander');
+let storage = require('node-persist');
+let mathuuid = require('../lib/Math.uuid.js');
+let utils = require('../lib/utils.js');
+let uuid = require("uuid");
+let forever = require('forever-monitor');
+let redis = require("redis");
+let rclient = redis.createClient();
+let SSH = require('../extension/ssh/ssh.js');
+let ssh = new SSH('info');
+
+let util = require('util');
+
+let f = require('../net2/Firewalla.js');
+
+let fConfig = require('../net2/config.js');
+
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager();
+let firewallaConfig = require('../net2/config.js').getConfig();
+
+let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
+let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
+
+// let NmapSensor = require('../sensor/NmapSensor');
+// let nmapSensor = new NmapSensor();
+// nmapSensor.suppressAlarm = true;
+
+let FWInvitation = require('./invitation.js');
+
+async(() => {
+  await (sysManager.setConfig(firewallaConfig));
+  await (interfaceDiscoverSensor.run());
+  // await (nmapSensor.checkAndRunOnce(true));
+  // nmapSensor = null;
+})();
+
+const license = require('../util/license.js');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -56,41 +96,38 @@ program.version('0.0.2')
 program.parse(process.argv);
 
 if (program.config == null) {
-    console.log("config file is required");
+    log.info("config file is required");
     process.exit(1);
 }
 
-var configfile = fs.readFileSync(program.config, 'utf8');
+let _license = license.getLicenseSync();
+
+let configfile = fs.readFileSync(program.config, 'utf8');
 if (configfile == null) {
-    console.log("Unable to read config file");
+    log.info("Unable to read config file");
 }
-var config = JSON.parse(configfile);
+let config = JSON.parse(configfile);
 if (!config) {
-    console.log("Error processing configuration information");
+    log.info("Error processing configuration information");
 }
 if (!config.controllers) {
-    console.log("Controller missing from configuration file");
+    log.info("Controller missing from configuration file");
     process.exit(1);
 }
 
-
-var eptname = config.endpoint_name;
+let eptname = config.endpoint_name;
 if (config.endpoint_name != null) {
     eptname = config.endpoint_name;
 } else if (program.endpoint_name != null) {
     eptname = program.endpoint_name;
 }
 
-var adminInviteInterval = 5; // default 15 min
-var adminTotalInterval = 60*60;
-var adminInviteTtl= adminTotalInterval / adminInviteInterval; // default 15 min
-
 function getUserHome() {
     return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
 
-var dbPath = getUserHome() + "/.encipher/db";
-var configPath = getUserHome() + "/.encipher";
+let dbPath = getUserHome() + "/.encipher/db";
+let configPath = getUserHome() + "/.encipher";
 
 if (!fs.existsSync(configPath)) {
     fs.mkdirSync(configPath);
@@ -99,52 +136,52 @@ if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath);
 }
 
-var symmetrickey = generateEncryptionKey();
+let symmetrickey = generateEncryptionKey(_license);
+
+
+let eptcloud = new cloud(eptname, null);
+eptcloud.debug(false);
+let service = null;
 
 storage.initSync({
     'dir': dbPath
 });
 
-var eptcloud = new cloud(eptname, null);
-eptcloud.debug(false);
-var service = null;
-
 function pad(value, length) {
     return (value.toString().length < length) ? pad("0" + value, length) : value;
 }
 
+function generateEncryptionKey(license) {
+  // when there is no local license file, use default one
+  let userKey = (license != null ? (license.SUUID || license.DATA.SUUID) : "cybersecuritymadesimple");
+//  log.info(`User Key is: ${userKey}`);
+  let seed = mathuuid.uuidshort(32 - userKey.length);
 
-function generateEncryptionKey() {
-    var cpuid = utils.getCpuId();
-    if (cpuid) {
-        var seed = mathuuid.uuidshort(32 - cpuid.length);
-        var key = cpuid + seed;
-        var userkey = cpuid;
-        return {
-            'key': key,
-            'seed': seed,
-            'userkey': userkey
-        };
-    }
-    return null;
+  return {
+      'key': userKey + seed,
+      'seed': seed,
+      'userkey': userKey,
+      'noLicenseMode': license == null
+  };
 }
 
 function initializeGroup(callback) {
 
     let groupId = storage.getItemSync('groupId');
     if (groupId != null) {
-        console.log("Found stored group x", groupId);
+        log.info("Found stored group x", groupId);
         callback(null, groupId);
         return;
     }
 
-    console.log("Creating new group ", config.service, config.endpoint_name);
-    var meta = JSON.stringify({
+    log.info("Using identity:", eptcloud.eid);
+    log.info("Creating new group ", config.service, config.endpoint_name);
+    let meta = JSON.stringify({
         'type': config.serviceType,
         'member': config.memberType,
     });
     eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
-        console.log(r);
+        log.info(r);
         if (e == null && r != null) {
             storage.setItemSync('groupId', r);
         }
@@ -152,75 +189,36 @@ function initializeGroup(callback) {
     });
 }
 
-function displayKey(key) {
-    console.log("\n\n-------------------------------\n");
-    console.log("If asked by APP type in this key: ", key);
-    console.log("\n-------------------------------");
-    console.log("\n\nOr Scan this");
-    console.log("\n");
 
-    var qrcode = require('qrcode-terminal');
-    qrcode.generate(key);
+function postAppLinked() {
+  // When app is linked, to secure device, ssh password will be
+  // automatically reset when boot up every time
 
-}
+  // only do this in production and always do after 15 seconds ...
+  // the 15 seconds wait is for the process to wake up
 
-/* 
- * This will enable user to scan the QR code
- * bypass the proximity encryption used
- * 
- * please keep this disabled for production
- */
-
-function displayInvite(obj) {
-    console.log("\n\n-------------------------------\n");
-    console.log("Please scan this to get the invite directly.\n\n");
-    console.log("\n\n-------------------------------\n");
-    var str = JSON.stringify(obj);
-    qrcode.generate(str);
-}
-
-function openInvite(group,gid,ttl) {
-                var obj = eptcloud.eptGenerateInvite(gid);
-                var txtfield = {
-                    'gid': gid,
-                    'seed': symmetrickey.seed,
-                    'keyhint': 'You will find the key on the back of your device',
-                    'service': config.service,
-                    'type': config.serviceType,
-                    'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminInviteInterval*ttl,
-                };
-                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                displayKey(symmetrickey.userkey);
-                displayInvite(obj);
-
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
-                intercomm.bpublish(gid, obj.r, config.serviceType);
-
-                var timer = setInterval(function () {
-                    console.log("Open Invite Start Interal", ttl , "Inviting rid", obj.r);
-                    eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        console.log("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
-                        ttl--;
-                        if (!e) {
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                        }
-                        if (ttl <= 0) {
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                            intercomm.bstop();
-                        }
-                    });
-                }, adminInviteInterval * 1000);
-
+  if(f.isProduction() &&
+      // resetPassword by default unless resetPassword flag is explictly set to false
+    (typeof fConfig.resetPassword === 'undefined' ||
+    fConfig.resetPassword === true)) {
+    setTimeout(()=> {
+      ssh.resetRandomPassword((err,password) => {
+        if(err) {
+          log.info("Failed to reset ssh password");
+        } else {
+          log.info("A new random SSH password is used!");
+          sysManager.sshPassword = password;
+        }
+      });
+    }, 15000);
+  }
 }
 
 function inviteFirstAdmin(gid, callback) {
-    console.log("Initializing first admin");
+    log.info("Initializing first admin:", gid);
     eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
-            console.log("Error lookiong up group", err);
+            log.info("Error looking up group", err, err.stack, {});
             callback(err, false);
             return;
         }
@@ -230,128 +228,144 @@ function inviteFirstAdmin(gid, callback) {
             return;
         }
 
-        if (group.symmetricKeys) {
-            if (group.symmetricKeys.length === 1) {
-//            if (group.symmetricKeys.length > 0) { //uncomment to add more users
-                var obj = eptcloud.eptGenerateInvite(gid);
-                /*
-                eptcloud.eptinviteGroupByRid(gid, obj.r,function(e,r) {
-                    console.log("Inviting rid",rid,e,r);
-                });  
-                */
-                var txtfield = {
-                    'gid': gid,
-                    'seed': symmetrickey.seed,
-                    'keyhint': 'You will find the key on the back of your device',
-                    'service': config.service,
-                    'type': config.serviceType,
-                    'mid': uuid.v4(),
-                    'exp': Date.now() / 1000 + adminTotalInterval,
-                };
-                txtfield.ek = eptcloud.encrypt(obj.r, symmetrickey.key);
-                    displayKey(symmetrickey.userkey);
-                displayInvite(obj);
+      if (group.symmetricKeys) {
+        // number of key sym keys equals to number of members in this group
+        // set this number to redis so that other js processes get this info
+        let count = group.symmetricKeys.length;
 
-                service = intercomm.publish(null, config.endpoint_name+utils.getCpuId(), 'devhi', 80, 'tcp', txtfield);
-                intercomm.bpublish(gid, obj.r, config.serviceType);
+        rclient.hset("sys:ept", "group_member_cnt", count);
 
-                var timer = setInterval(function () {
-                    console.log("Start Interal", adminInviteTtl, "Inviting rid", obj.r);
-                    eptcloud.eptinviteGroupByRid(gid, obj.r, function (e, r) {
-                        console.log("Interal", adminInviteTtl, "gid", gid, "Inviting rid", obj.r, e, r);
-                        adminInviteTtl--;
-                        if (!e) {
-                            callback(null, true);
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                        }
-                        if (adminInviteTtl <= 0) {
-                            callback("404", false);
-                            clearInterval(timer);
-                            intercomm.stop(service);
-                            intercomm.bstop();
-                        }
-                    });
-                }, adminInviteInterval * 1000);
+          // new group without any apps bound;
+          if (count === 1) {
+            let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
 
+            let onSuccess = function(payload) {
+              return async(() => {
+                log.info("some license stuff on device:", payload, {});
+                await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
 
-            } else {
-                openInvite(group,gid,60);
-                console.log("Found Group ", gid, "with", group.symmetricKeys.length, "members");
+                postAppLinked(); // app linked, do any post-link tasks
                 callback(null, true);
+
+                log.info("EXIT KICKSTART AFTER JOIN");
+                require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                });
+              })();
             }
+
+            let onTimeout = function() {
+              callback("404", false);
+
+              log.info("EXIT KICKSTART AFTER TIMEOUT");
+              require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+              });
+            }
+
+            fwInvitation.broadcast(onSuccess, onTimeout);
+
+          } else {
+            log.info(`Found existing group ${gid} with ${count} members`);
+
+            postAppLinked(); // already linked
+
+            // broadcast message should already be updated, a new encryption message should be used instead of default one
+            if(symmetrickey.userkey === "cybersecuritymadesimple") {
+              log.warn("Encryption key should NOT be default after app linked");
+            }
+
+            let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+            fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+
+            let onSuccess = function(payload) {
+              return async(() => {
+                await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
+
+                log.info("EXIT KICKSTART AFTER JOIN");
+                require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                });
+              })();
+            }
+
+            let onTimeout = function() {
+              log.info("EXIT KICKSTART AFTER TIMEOUT");
+              require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+              });
+            }
+
+            fwInvitation.broadcast(onSuccess, onTimeout);
+
+            callback(null, true);
+          }
         }
     });
 }
 
-//forever start raspberrycamera.js --interval 1800 --gid 383fa681-1e0d-4542-99c4-47f3c80e5462 --appid com.rottiesoft.circle --secre
-//t fbb05afa-9145-41f1-8076-9de8be56f104 --endpoint_name "raspberry3 monitor" --path /tmp/image2.jpg --beepmsg 'rasbot got image'
-function launchService(gid, callback) {
-    var args = ['--gid', gid, '--config', program.config];
-    console.log("Launching Service", gid, config.appId, config.appSecret, config.endpoint_name, 'args', args);
+function launchService2(gid,callback) {
+  fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
 
-    var child = new(forever.Monitor)('../controllers/MomBot.js', {
-        max: 30,
-        silent: false,
-        outFile: "/tmp/forever.out",
-        logFile: "/tmp/forever.log",
-        errFile: "/tmp/forever.err",
-        args: args
-    });
+  // don't start bro until app is linked
+  require('child_process').exec("sudo systemctl start brofish");
+  require('child_process').exec("sudo systemctl enable brofish"); // even auto-start for future reboots
 
-
-    child.on('watch:restart', function (info) {
-        console.error('Restaring script because ' + info.file + ' changed');
-    });
-
-    child.on('restart', function () {
-        console.error('Forever restarting script for ' + child.times + ' time');
-    });
-
-    child.on('exit:code', function (code) {
-        console.error('Forever detected script exited with code ' + code);
-    });
-
-
-    child.start();
-
+  // start fire api
+   if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
+       require('child_process').exec("sudo systemctl start fireapi");
+   } else {
+     if (fs.existsSync("/.dockerenv")) {
+       require('child_process').exec("cd api; forever start -a --uid api bin/www");
+     } else {
+       require('child_process').exec("sudo systemctl start fireapi");
+     }
+   }
 }
 
-eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
+function login() {
+  eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
     if (err == null) {
-        initializeGroup(function (err, gid) {
-            var groupid = gid;
-            if (gid) {
-                inviteFirstAdmin(gid, function (err, status) {
-                    if (status) {
-                        intercomm.stop(service);
-                        intercomm.bye();
-                        launchService(groupid, null);
-                    }
-                });
-            } else {
-                process.exit();
+      initializeGroup(function (err, gid) {
+        let groupid = gid;
+        if (gid) {
+          // TODO: This should be the only code to update sys:ept to avoid race condition
+          log.info("Storing Firewalla Cloud Token info to redis");
+          // log.info("EID:", eptcloud.eid);
+          // log.info("GID:", gid);
+          // log.info("TOKEN:", eptcloud.token);
+          rclient.hmset("sys:ept", {
+            eid: eptcloud.eid,
+            token: eptcloud.token,
+            gid: gid
+          }, (err, data) => {
+            if (err) {
             }
-        });
+            log.info("Set SYS:EPT", err, data, eptcloud.eid, eptcloud.token, gid);
+          });
+
+          inviteFirstAdmin(gid, function (err, status) {
+            if (status) {
+              launchService2(groupid, null);
+            }
+          });
+        } else {
+          process.exit();
+        }
+      });
     } else {
-        console.log("Unable to login", err);
-        process.exit();
+      log.info("Unable to login", err);
+      process.exit();
     }
-});
+  });
+}
+
+eptcloud.loadKeys()
+  .then(() => {
+    log.info("Logging in cloud");
+    login();
+  })
 
 process.stdin.resume();
 
-intercomm.discover(null, ['devhi', 'devinfo'], function (type, name, txt) {
-    console.log("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDdd");
-    console.log(type, name, txt);
-    if (type == 'devinfo') {
-        if ('sensor' in txt) {}
-    }
-});
-
 function exitHandler(options, err) {
-    intercomm.stop(service);
-    if (err) console.log(err.stack);
+    if (err) log.info(err.stack);
     if (options.exit) process.exit();
 }
 

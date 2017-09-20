@@ -1,15 +1,21 @@
 #!/bin/bash -
-forever stop main
-forever stop monitor
-forever stop ui
-rm ~/.forever/*
+sudo systemctl stop firemain
+sudo systemctl stop firemon
+sudo systemctl stop fireui
+sudo systemctl stop fireapi
+sudo systemctl stop firekick
+sync
 redis-cli flushall
-cd /home/pi/firewalla/net2
-forever start --uid main main.js
-cd ..
-cd sys
-forever start --uid ui kickstart.js --config /encipher.config/netbot.config
-cd ..
-cd monitor
-forever start --uid monitor MonitorMain.js
+sudo rm -r -f /tmp/*
+sudo rm -r -f ~/.forever/*
+sudo rm -r -f /blog/*
+sudo rm -r -f /bspool/*
+sudo rm -r -f ~/ovpns/*
+#sudo rm -r -f ~/.encipher/*
+#sudo rm -r -f ~/.firewalla/*
+sudo find /var/log -type f -exec /bin/cp /dev/null {} \;
+sync
+sync
+logger "REBOOT: Reset Data"
+/home/pi/firewalla/scripts/fire-reboot-normal
 

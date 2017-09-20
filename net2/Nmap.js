@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,19 +13,30 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+var ip = require('ip');
+
+let util = require('util');
+
+let Firewalla = require('../net2/Firewalla');
 
 var debugging = false;
-var log = function () {
-    if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
-    }
-};
+// var log = function () {
+//     if (debugging) {
+//         log.info(Array.prototype.slice.call(arguments));
+//     }
+// };
+
+let log = require('./logger.js')(__filename, 'info');
+
+let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
+
 
 module.exports = class {
 
     // ID can be port
     constructor(range, debug) {
         this.range = range;
+        this.scanQ = [];
         debugging = debug;
     }
 
@@ -46,37 +57,88 @@ module.exports = class {
         return port;
     }
 
-    scan(range, fast, callback) {
-        let cmdline = 'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 --disable-arp-ping ' + range + ' -oX - | xml-json host';
-        if (fast == true) {
-            cmdline = 'sudo nmap -sn -PO --host-timeout 20s  --disable-arp-ping ' + range + ' -oX - | xml-json host';
+    scanQueue(obj) {
+        if (obj) {
+            this.nmapScan(obj.cmdline,true,(err,hosts,ports)=>{
+                obj.callback(err,hosts,ports);
+                log.info("NMAP:ScanQUEUE",this.scanQ); 
+                this.scanQueue(this.scanQ.pop()); 
+            });
         }
-        console.log("Running commandline: ", cmdline);
+    }
 
-        if (this.process) {
-            console.log("======================= Warning Previous instance running====");
+    scan(range, fast, callback) {
+      
+        if (false == ip.isV4Format(range)) {
+          // workaround for docker enviornment, replace 16 to 24
+          range = range.replace('/16', '/24');
+
+          try {
+               let ip_info = ip.cidrSubnet(range);
+               if (ip_info) {                  
+                 if(ip_info.subnetMaskLength<24) {
+                   callback(null,[], []); 
+                   return;
+                 }
+               }
+            } catch(e) {
+              log.error("Nmap:Scan:Error",range,fast,e, {});
+              callback(e);
+              return;
+            }
+        }
+        let cmdline = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
+        if (fast == true) {
+            cmdline = util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary);
+        }
+        log.info("Running commandline: ", cmdline);
+
+        if (this.scanQ.length>3) {
+            callback("Queuefull", null,null);
+            log.info("======================= Warning Previous instance running====");
             return;
         }
 
-        this.nmapScan(cmdline,true,callback);
+        this.scanQ.push({"cmdline":cmdline,"fast":fast,"callback":callback});
+
+        let obj = this.scanQ.pop();
+        this.scanQueue(obj);
      }
 
      nmapScan(cmdline,requiremac,callback) {
+        this.process = require('child_process').exec(cmdline, (err, stdout, code) => {
 
-        this.process = require('child_process').exec(cmdline, (err, out, code) => {
-            let outarray = out.split("\n");
+          let findings = null;
+          try {
+            findings = JSON.parse(stdout);
+          } catch (err) {
+            callback(err);
+            return;
+          }
+
+          if(!findings) {
+            callback(null, [], []);
+            return;
+          }
+
+          let hostsJSON = findings.nmaprun && findings.nmaprun.host;
+
+          if(hostsJSON.constructor !== Array) {
+            hostsJSON = [hostsJSON];
+          }
+          
             let hosts = [];
             let ports = [];
-            for (let a in outarray) {
+            for (let a in hostsJSON) {
                 try {
-                    let hostjson = JSON.parse(outarray[a]);
+                    let hostjson = hostsJSON[a];
                     let host = {};
                     if (hostjson.hostnames && hostjson.hostnames.constructor == Object) {
                         host.hostname = hostjson.hostnames.hostname.name;
                         host.hostnameType = hostjson.hostnames.hostname.type;
                     }
                     /*
-                    console.log(hostjson.hostnames);
+                    log.info(hostjson.hostnames);
                     if (hostjson.hostnames && Array.isArray(hostjson.hostname) && hostjson.hostname.length>0) {
                         host.hostname = hostjson.hostnames[0].hostname.name;
                         host.hostnameType = hostjson.hostnames[0].hostname.type;
@@ -93,12 +155,14 @@ module.exports = class {
                             host.mac = addr.addr;
                             if (addr.vendor != null) {
                                 host.macVendor = addr.vendor;
+                            } else {
+                              host.macVendor = "Unknown";
                             }
                         }
                     }
 
                     if (host.mac == null && requiremac == true) {
-                        console.log("skipping host, no mac address", host);
+                        log.info("skipping host, no mac address", host);
                         continue;
                     }
 
@@ -151,7 +215,7 @@ module.exports = class {
                             }
                         }
                     } catch(e) {
-                        console.log("Discovery:Nmap:Netbios:Error",e,host);
+                        log.info("Discovery:Nmap:Netbios:Error",e,host);
                     }
 
                     hosts.push(host);
@@ -160,7 +224,7 @@ module.exports = class {
             callback(null, hosts, ports);
         });
         this.process.on('close', (code, signal) => {
-            console.log("NMAP Closed");
+            log.info("NMAP Closed");
             this.process = null;
         });
     }

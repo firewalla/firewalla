@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,29 +14,45 @@
  */
 'use strict';
 
-var ursa = require('ursa');
-var crypto = require('crypto');
-var fs = require('fs');
-var path = require('path');
+let ursa = require('ursa');
+let crypto = require('crypto');
+let fs = require('fs');
+let path = require('path');
 let request = require('request');
-var uuid = require("uuid");
-var io2 = require('socket.io-client');
+let uuid = require("uuid");
+let io2 = require('socket.io-client');
 
+let log = require('../../net2/logger')(__filename);
 
-var debugging = false;
-var log = function () {
-    if (debugging) {
-        console.log(Array.prototype.slice.call(arguments));
-    }
-};
+let Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
+let zlib = require('zlib');
+let License = require('../../util/license.js');
+
+let debugging = false;
+
+let fConfig = require('../../net2/config.js').getConfig();
+
+let exec = require('child-process-promise').exec;
+
 
 let instance = {};
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 function getUserHome() {
     return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
 
-var legoEptCloud = class {
+let legoEptCloud = class {
 
     constructor(name, pathname) {
         if (pathname == null) {
@@ -45,6 +61,8 @@ var legoEptCloud = class {
                 fs.mkdirSync(pathname);
             }
         }
+        this.keyPath = pathname;
+
         if (!instance[name]) {
             instance[name] = this;
             this.myPublicKey = null;
@@ -57,7 +75,7 @@ var legoEptCloud = class {
             this.appSecret = null;
             this.info = null; // to be encrypted
             this.signature = "";
-            this.endpoint = "https://firewalla.encipher.io/iot/api/v2";
+            this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
             this.token = null;
             this.eid = null;
             this.groupCache = {};
@@ -67,11 +85,121 @@ var legoEptCloud = class {
             debugging = false;
             this.notifySocket = false;
             this.notifyGids = [];
-            
-        }
-        this.keypair(name, pathname);
 
-        return instance[name];
+        }
+        // NO LONGER create keypair in sync node during constructor
+
+        // if (true == this.keypair(name, pathname)) {
+        //     return instance[name];
+        // } else {
+        //     log.info("ENCIPHER.IO Failed to create keys");
+        //     instance[name] = null;
+        //     return null;
+        // }
+    }
+
+    keyReady() {
+      log.info("Checking whether key pair exists already");
+
+      return async(() => {
+
+        try {
+          await(fs.accessAsync(this.getPublicKeyPath()));
+          await(fs.accessAsync(this.getPrivateKeyPath()));
+        } catch(err) {
+          if(err) {
+            return Promise.resolve(null);
+          }
+        }
+
+        let pubFile = await(fs.readFileAsync(this.getPublicKeyPath()));
+        let priFile = await(fs.readFileAsync(this.getPrivateKeyPath()));
+        if(pubFile.length < 10 || priFile.length < 10) {
+          log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
+          await(this.cleanupKeys());
+          return Promise.resolve(null);
+        } else {
+          log.info("Key pair exists");
+          return Promise.resolve({pub: pubFile, pri: priFile});
+        }
+
+      })();
+    }
+
+    utilKeyReady() {
+      return async(() => {
+        let result = await(this.keyReady());
+        if(!result) {
+          log.info("Checking if keys are ready...");
+          await(delay(3000)); // wait for three seconds
+          return await(this.utilKeyReady());
+        }
+        return true;
+      })();
+    }
+
+    cleanupKeys() {
+      log.info("Cleaning up key pairs");
+
+      this.myprivkeyfile = null;
+      this.mypubkeyfile = null;
+      this.myPublicKey = null;
+      this.myPrivateKey = null;
+
+      return async(() => {
+        await(exec("sudo rm -f "+pathname+"/db/groupId"));
+        await(exec("sync"));
+        return Promise.resolve();
+      })();
+    }
+
+    getPrivateKeyPath() {
+      return this.keyPath + this.name + ".privkey.pem";
+    }
+
+    getPublicKeyPath() {
+      return this.keyPath + this.name + ".pubkey.pem";
+    }
+
+    loadKeys() {
+      log.info("Loading or creating keys");
+      return async(() => {
+        if(this.myPublicKey && this.myPrivateKey) {
+          return Promise.resolve();
+        }
+        if(this.myprivkeyfile && this.mypubkeyfile) {
+          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+          return Promise.resolve();
+        }
+
+        let keys = await(this.keyReady());
+        if(keys) {
+          this.mypubkeyfile = keys.pub;
+          this.myprivkeyfile = keys.pri;
+          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+          return Promise.resolve();
+        } else {
+          return this.createKeyPair();
+        }
+      })();
+    }
+
+    createKeyPair() {
+      let key = ursa.generatePrivateKey(2048, 65537);
+      let privateKeyPem = key.toPrivatePem();
+      let pubKeyPem = key.toPublicPem();
+
+      return async(() => {
+
+        await(fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii'));
+        await(fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii'));
+        await(exec("sync"));
+
+        this.myPublicKey = ursa.createPublicKey(pubKeyPem);
+        this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+      })();
     }
 
     debug(state) {
@@ -79,18 +207,36 @@ var legoEptCloud = class {
     }
 
     keypair(name, pathname) {
-        try {
-            log("Reading pem from ", pathname + name + ".privkey.pem");
-            this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
-            this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
-        } catch (err) {}
-        if (this.myprivkeyfile == null && this.mypubkeyfile == null) {
-            var key = ursa.generatePrivateKey(2048, 65537);
-            var privateKeyPem = key.toPrivatePem();
-            var pubKeyPem = key.toPublicPem();
+        log.info("Reading pem from ", pathname + name + ".privkey.pem");
+        if (fs.existsSync(pathname + name + ".privkey.pem") && fs.existsSync(pathname + name + ".pubkey.pem")) {
+            try {
+                this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
+                this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
+                if (this.myprivkeyfile.length<10 || this.mypubkeyfile.length<10) {
+                    log.info("ENCIPHER.IO Unable to read keys, keylength error", this.myprivkeyfile.length, this.mypubkeyfile.length);
+                    this.myprivkeyfile = null;
+                    this.mypubkeyfile = null;
+                    require('child_process').execSync("sudo rm -f "+pathname+"/db/groupId");
+                    require('child_process').execSync("sync");
+                }
+            } catch (err) {
+                log.info("ENCIPHER.IO Unable to read keys");
+                return false;
+            }
+        }
+        if (this.myprivkeyfile == null || this.mypubkeyfile == null) {
+            let key = ursa.generatePrivateKey(2048, 65537);
+            let privateKeyPem = key.toPrivatePem();
+            let pubKeyPem = key.toPublicPem();
 
-            fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
-            fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
+            try {
+                fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
+                fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
+                require('child_process').execSync("sync");
+            } catch (err) {
+                log.info("ENCIPHER.IO Unable to write keys");
+                return false;
+            }
 
             this.myPublicKey = ursa.createPublicKey(pubKeyPem);
             this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
@@ -98,6 +244,7 @@ var legoEptCloud = class {
             this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
             this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
         }
+        return true;
     }
 
     addPeer(publicKey, pid) {
@@ -114,13 +261,14 @@ var legoEptCloud = class {
         this.eptInfo = eptInfo;
         this.tag = tag;
         this.info = eptInfo;
-        var assertion = {
+        let assertion = {
             'assertion': {
                 'name': this.tag,
                 'publicKey': this.myPublicKey.toPublicPem('utf8'),
                 'appId': this.appId,
                 'appSecret': this.appSecret,
                 'signature': this.signature,
+                'license': License.getLicense()
             }
         };
         if (this.info) {
@@ -128,17 +276,18 @@ var legoEptCloud = class {
         }
 
         //log("Assertion"+JSON.stringify(assertion));
-        var options = {
+        let options = {
             uri: this.endpoint + '/login/eptoken',
             method: 'POST',
 
             json: assertion
         };
-        var self = this;
+
+        let self = this;
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -151,13 +300,13 @@ var legoEptCloud = class {
                 callback(httpResponse.statusCode, null);
                 return;
             }
-            //  log(body.access_token);
+            //  log.info(body.access_token);
             if (err === null) {
                 self.token = body.access_token;
                 self.eid = body.eid;
                 self.groups = body.groups;
                 self.aid = body.aid;
-                log("------------------------------------");
+                log.info("------------------------------------");
                 //log(JSON.stringify(self.groups));
             }
             callback(err, self.eid);
@@ -191,9 +340,9 @@ var legoEptCloud = class {
     }
 
     eptcreateGroup(name, info, alias, callback) {
-        var symmetricKey = this.keygen();
-        var group = {};
-        var encryptedSymmetricKey = this.myPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
+        let symmetricKey = this.keygen();
+        let group = {};
+        let encryptedSymmetricKey = this.myPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
 
         if (info) {
             group.info = this.encrypt(info, symmetricKey);
@@ -212,7 +361,7 @@ var legoEptCloud = class {
             group.symmetricKey.name = this.encrypt(alias, symmetricKey);
         }
 
-        var options = {
+        let options = {
             uri: this.endpoint + '/group/' + this.appId,
             method: 'POST',
             auth: {
@@ -222,11 +371,11 @@ var legoEptCloud = class {
         };
 
         request(options, (err, httpResponse, body) => {
-            log("created group ", body);
-            log(body);
+            log.debug("created group ", body);
+            log.debug(body);
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -247,7 +396,7 @@ var legoEptCloud = class {
     }
 
     eptFind(eid, callback) {
-        var options = {
+        let options = {
             uri: this.endpoint + '/ept/' + encodeURIComponent(eid),
             method: 'GET',
             auth: {
@@ -258,7 +407,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.info("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -278,7 +427,7 @@ var legoEptCloud = class {
     }
 
     eptGroupList(eid, callback) {
-        var options = {
+        let options = {
             uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
             method: 'GET',
             auth: {
@@ -286,13 +435,13 @@ var legoEptCloud = class {
             }
         };
 
-        log("Group search ", options.uri);
-        var self = this;
+        log.debug("Group search ", options.uri);
+        let self = this;
 
         request(options, function (err, httpResponse, body) {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.error("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -301,12 +450,12 @@ var legoEptCloud = class {
                 callback(httpResponse.statusCode, null);
             } else {
                 if (body !== null && body !== undefined) {
-                    var groups = JSON.parse(body);
-                    for (var i = 0; i < groups['groups'].length; i++) {
-                        var group = groups['groups'][i];
+                    let groups = JSON.parse(body);
+                    for (let i = 0; i < groups['groups'].length; i++) {
+                        let group = groups['groups'][i];
                         group.gid = group._id;
                         if (group["xname"]) {
-                            var gg = self.parseGroup(group);
+                            let gg = self.parseGroup(group);
                             if (gg && gg.key) {
                                 group['name'] = self.decrypt(group['xname'], gg.key);
                             }
@@ -321,8 +470,8 @@ var legoEptCloud = class {
     }
 
 
-    rendezvousMap(rid, callback) {
-        var options = {
+   rendezvousMap (rid, callback) {
+        let options = {
             uri: this.endpoint + '/ept/rendezvous/' + rid,
             method: 'GET',
             auth: {
@@ -333,7 +482,7 @@ var legoEptCloud = class {
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.error("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -355,7 +504,7 @@ var legoEptCloud = class {
             callback("parameter error", null);
             return;
         }
-        var options = {
+        let options = {
             uri: this.endpoint + '/group/' + this.appId + "/" + gid,
             method: 'GET',
             auth: {
@@ -363,14 +512,14 @@ var legoEptCloud = class {
             }
         };
 
-        log("group find ", options);
+        log.debug("group find ", options);
 
-        var self = this;
+        let self = this;
 
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.error("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -384,7 +533,7 @@ var legoEptCloud = class {
                     callback("invalid group id", null);
                     return;
                 }
-                var b = null;
+                let b = null;
                 try {
                     b = JSON.parse(body);
                     self.groupCache[gid] = self.parseGroup(b);
@@ -404,7 +553,7 @@ var legoEptCloud = class {
         let sk = null;
         let kcache = {};
         for (let k in group.symmetricKeys) {
-            var skey = group.symmetricKeys[k];
+            let skey = group.symmetricKeys[k];
             if (skey.eid === this.eid) {
                 sk = skey;
                 break;
@@ -438,14 +587,14 @@ var legoEptCloud = class {
     }
 
     getKey(gid, callback) {
-        var g = this.groupCache[gid];
+        let g = this.groupCache[gid];
         if (g) { // and check valid later
             //log('cache hit', gid);
             callback(null, g.key, g);
             return g.key;
         }
 
-        var self = this;
+        let self = this;
 
         this.groupFind(gid, function (err, group) {
             if (err == null && group != null) {
@@ -460,24 +609,24 @@ var legoEptCloud = class {
             }
 
             /*
-            var sk = null;
-            var kcache = {};
-            for (var k in group.symmetricKeys) {
-                var skey = group.symmetricKeys[k];
+            let sk = null;
+            let kcache = {};
+            for (let k in group.symmetricKeys) {
+                let skey = group.symmetricKeys[k];
                 if (skey.eid === self.eid) {
                    sk = skey;
-                   break; 
+                   break;
                 }
             }
             if (sk === null) {
                 callback(null, null,null);
             } else {
-                var symmetricKey = self.myPrivateKey.decrypt(sk.key,'base64','utf8');
+                let symmetricKey = self.myPrivateKey.decrypt(sk.key,'base64','utf8');
                 self.groupCache[gid] = {
                   'group': group,
                   'symanttricKey':sk,
                   'key': symmetricKey,
-                  'lastfetch': 0, 
+                  'lastfetch': 0,
                   'pullIntervalInSeconds':0,
                 };
                 callback(null, symmetricKey,self.groupCache[gid]);
@@ -489,44 +638,44 @@ var legoEptCloud = class {
     }
 
     encrypt(text, key) {
-        var iv = new Buffer(16);
+        let iv = new Buffer(16);
         iv.fill(0);
-        var bkey = new Buffer(key.substring(0, 32), "utf8");
-        var cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
-        var crypted = cipher.update(text, 'utf8', 'base64');
+        let bkey = new Buffer(key.substring(0, 32), "utf8");
+        let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
+        let crypted = cipher.update(text, 'utf8', 'base64');
         crypted += cipher.final('base64');
         return crypted;
     }
 
     encryptBinary(data, key) {
         if (data == null) {
-            log("Error data is null");
+            log.error("Error data is null");
             return;
         }
-        log('encryting data with size', data.length, data.constructor.name);
-        var iv = new Buffer(16);
+        log.debug('encryting data with size', data.length, data.constructor.name);
+        let iv = new Buffer(16);
         iv.fill(0);
-        var bkey = new Buffer(key.substring(0, 32), "utf8");
-        var cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
-        var crypted = cipher.update(data);
+        let bkey = new Buffer(key.substring(0, 32), "utf8");
+        let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
+        let crypted = cipher.update(data);
 
         crypted = Buffer.concat([crypted, cipher.final()]);
-        log('encryted data with size', crypted.length, crypted.constructor.name);
+        log.debug('encryted data with size', crypted.length, crypted.constructor.name);
         return crypted;
     }
 
     decrypt(text, key) {
-        var iv = new Buffer(16);
+        let iv = new Buffer(16);
         iv.fill(0);
-        var bkey = new Buffer(key.substring(0, 32), "utf8");
-        var decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
-        var dec = decipher.update(text, 'base64', 'utf8');
+        let bkey = new Buffer(key.substring(0, 32), "utf8");
+        let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
+        let dec = decipher.update(text, 'base64', 'utf8');
         dec += decipher.final('utf8');
         return dec;
     }
 
     keygen() {
-        var k = uuid.v4();
+        let k = uuid.v4();
         return k.replace('-', '');
     }
 
@@ -539,12 +688,12 @@ var legoEptCloud = class {
                 callback(err, null)
                 return;
             }
-            var crypted = this.encrypt(msg, key);
-            log('encrypted text ', crypted);
+            let crypted = this.encrypt(msg, key);
+            //log.info('encrypted text ', crypted);
             callback(null, crypted);
         });
     }
-    /* 
+    /*
      * beep is the structure to send a apn notification
      *    - beep content is not encrypted
      */
@@ -561,101 +710,132 @@ var legoEptCloud = class {
     // VALID MTYPE:  jsondata
 
 
-    sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
-        var self = this;
-        var mpackage = {
-            'random': self.keygen(),
-            'message': msg,
-        };
-        if (fid === null) {
-            fid = undefined;
+  _send(gid, msgstr, _beep, mtype, fid, mid, callback) {
+    let self = this;
+
+    log.info("encipher unencrypted message size: ", msgstr.length, {});
+
+    this.getKey(gid, (err, key, cacheGroup) => {
+      if (err != null && key == null) {
+        callback(err, null)
+        return;
+      }
+      log.debug('tag is ', self.tag, 'key is ', key);
+      let crypted = self.encrypt(msgstr, key);
+
+      if (_beep && 'encrypted' in _beep) {
+        _beep.encrypted = self.encrypt(JSON.stringify(_beep.encrypted), key);
+        // _beep.encrypted = self.encrypt((_beep.encrypted),key);
+      }
+
+      // log.info('encrypted text ', crypted);
+      let options = {
+        uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
+        method: 'POST',
+        auth: {
+          bearer: self.token
+        },
+        json: {
+          'timestamp': Math.floor(Date.now() / 1000),
+          'message': crypted,
+          'beep': _beep,
+          'mtype': mtype,
+          'fid': fid,
+          'mid': mid,
         }
-        if (mid === null) {
-            mid = undefined;
+      };
+
+      request(options, (err2, httpResponse, body) => {
+        if (err2 != null) {
+          let stack = new Error().stack;
+          log.error("Error while requesting ", err2, stack);
+          callback(err2, null);
+          return;
         }
-        var msgstr = JSON.stringify(mpackage);
-        this.getKey(gid, (err, key, cacheGroup) => {
-            if (err != null && key == null) {
-                callback(err, null)
-                return;
-            }
-            log('tag is ', self.tag, 'key is ', key);
-            var crypted = self.encrypt(msgstr, key);
+        if (httpResponse.statusCode < 200 ||
+          httpResponse.statusCode > 299) {
+          this.eptHandleError(httpResponse.statusCode, (code, p) => {
+            callback(httpResponse.statusCode, null);
+          });
+        } else {
+          log.debug("send message to group ", body);
+          log.debug(body);
+          callback(null, body);
+        }
+      });
+    });
+  }
 
-            if (_beep && 'encrypted' in _beep) {
-                _beep.encrypted = self.encrypt(JSON.stringify(_beep.encrypted), key);
-                // _beep.encrypted = self.encrypt((_beep.encrypted),key);
-            }
-
-            log('encrypted text ', crypted);
-            var options = {
-                uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
-                method: 'POST',
-                auth: {
-                    bearer: self.token
-                },
-                json: {
-                    'timestamp': Math.floor(Date.now() / 1000),
-                    'message': crypted,
-                    'beep': _beep,
-                    'mtype': mtype,
-                    'fid': fid,
-                    'mid': mid,
-                }
-            };
-
-            request(options, (err2, httpResponse, body) => {
-                if (err2 != null) {
-                    let stack = new Error().stack;
-                    console.log("Error while requesting ", err2, stack);
-                    callback(err2, null);
-                    return;
-                }
-                if (httpResponse.statusCode < 200 ||
-                    httpResponse.statusCode > 299) {
-                    this.eptHandleError(httpResponse.statusCode, (code, p) => {
-                        callback(httpResponse.statusCode, null);
-                    });
-                } else {
-                    log("send message to group ", body);
-                    log(body);
-                    callback(null, body);
-                }
-            });
-        });
+  sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
+    log.debug(msg, {});
+    let mpackage = {
+      'random': this.keygen(),
+      'message': msg,
+    };
+    if (fid === null) {
+      fid = undefined;
     }
+    if (mid === null) {
+      mid = undefined;
+    }
+    let msgstr = JSON.stringify(mpackage);
+
+    if(msg.data && msg.data.compressMode) {
+      // compress before encrypt
+      let input = new Buffer(msgstr, 'utf8');
+      zlib.deflate(input, (err, output) => {
+        if(err) {
+          log.error("Failed to compress payload:", err, {});
+          callback(err);
+          return;
+        }
+
+        let payload = {
+          compressMode: true,
+          data: output.toString('base64')
+        };
+
+        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback);
+      })
+    } else {
+      this._send(gid, msgstr, _beep, mtype, fid, mid, callback);
+    }
+
+  }
 
     // Direct one-to-one message handling
     receiveMessage(gid, msg, callback) {
-        let logMessage = require('util').format("Got encrytped message from group %s", gid);
-        console.log(logMessage);
+        let logMessage = require('util').format("Got encrypted message from group %s", gid);
+      log.debug(logMessage);
 
         this.getKey(gid, (err, key, cacheGroup) => {
-            if (err != null && key == null) {
-                callback(err, null);
-                return;
-            }
+          if (err != null && key == null) {
+            log.error("Got error when fetching key: %s", key);
+            callback(err, null);
+            return;
+          }
 
-            if(key == null) {
-                callback("key not found, invalid group?", null);
-                return;
-            }
+          if(key == null) {
+            log.error("encryption key is not found for group: %s", gid);
+            callback("key not found, invalid group?", null);
+            return;
+          }
 
-            let decryptedMsg = this.decrypt(msg, key);
-            let msgJson = JSON.parse(decryptedMsg);
-            callback(null, msgJson);
+          let decryptedMsg = this.decrypt(msg, key);
+          let msgJson = JSON.parse(decryptedMsg);
+          callback(null, msgJson);
         });
     }
-    
+
     getMsgFromGroup(gid, timestamp, count, callback) {
-        var self = this;
+        let self = this;
         this.getKey(gid, (err, key, cacheGroup) => {
             if (err != null && key == null) {
                 callback(err, null);
                 return;
             }
 
-            var options = {
+            let options = {
                 uri: self.endpoint + '/service/message/' + self.appId + "/" + gid + '/eptgroup/' + encodeURIComponent(self.eid) + '?count=' + count + '&peerId=' + gid + '&since=' + timestamp,
                 method: 'GET',
                 auth: {
@@ -667,14 +847,14 @@ var legoEptCloud = class {
 
             request(options, (err2, httpResponse, body) => {
                 if (err2 != null) {
-                    let stack = new Error().stack;
-                    console.log("Error while requesting ", err2, stack);
+                  let stack = new Error().stack;
+                    log.error("Error while requesting ", err2, stack);
                     callback(err2, null);
                     return;
                 }
                 if (httpResponse.statusCode < 200 ||
                     httpResponse.statusCode > 299) {
-                    log('get msg from group error ', httpResponse.statusCode);
+                    log.error('get msg from group error ', httpResponse.statusCode);
                     this.eptHandleError(httpResponse.statusCode, (code, p) => {
                         callback(httpResponse.statusCode, null);
                     });
@@ -690,7 +870,7 @@ var legoEptCloud = class {
                     }
                     let message = JSON.parse(self.decrypt(obj.message, key));
                     messages.push({
-                        'id': obj.id, // id 
+                        'id': obj.id, // id
                         'timestamp': obj.timestamp,
                         'mtype': obj.mtype,
                         'from': obj.fromName,
@@ -710,30 +890,34 @@ var legoEptCloud = class {
     //
     // if 0 is passed in intervalInSeconds, pulling will stop
 
-    pullMsgFromGroup(gid, intervalInSeconds, callback) {
-        var self = this;
+    pullMsgFromGroup(gid, intervalInSeconds, callback,boneCallback) {
+        let self = this;
         let inactivityTimeout = 5 * 60; //5 min
         this.getKey(gid, (err, key, cacheGroup) => {
-
             if (this.socket == null) {
                 this.notifyGids.push(gid);
-                this.socket = io2.connect('https://firewalla.encipher.io/');
+                this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
                 this.socket.on('disconnect', ()=>{
                     this.notifySocket = false;
                 });
                 this.socket.on("glisten200",(data)=>{
-                     console.log("SOCKET Glisten 200 group indicator");
+                     log.info("SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
-                     console.log("SOCKET newMsg From Group indicator");
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {
                          cacheGroup.lastfetch = Date.now() / 1000;
                          callback(err,messages);
                      });
                 });
+                this.socket.on("boneMsg",(data)=> {
+                     console.log("SOCKET boneMsg ");
+                     if (boneCallback && data) {
+                         boneCallback(null,data.type,data);
+                     }
+                });
                 this.socket.on('connect', ()=>{
                     this.notifySocket = true;
-                    console.log("Socket:Connect");
+                    log.info("[Web Socket] Connecting to Firewalla Cloud");
                     if (this.notifyGids.length>0) {
                         this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
                     }
@@ -838,7 +1022,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log.debug("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -859,7 +1043,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log.debug("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -879,9 +1063,10 @@ var legoEptCloud = class {
                 msg: beepmsg,
                 data: beepdata
             };
+          log.info("APN notification payload: ", beep, {});
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log.debug("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -905,7 +1090,7 @@ var legoEptCloud = class {
             };
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            console.log("sending logs ", e, r);
+            log.debug("sending logs ", e, r);
             if (callback) {
                 callback(e);
             }
@@ -948,7 +1133,7 @@ var legoEptCloud = class {
                             beep['sound'] = sound;
                         }
                         self.sendMsgToGroup(gid, msg, beep, "file", url.key, mid, (e, r) => {
-                            console.log("sending messages", e, r);
+                            log.debug("sending messages", e, r);
                             callback(e, r);
                         });
                     }
@@ -958,13 +1143,13 @@ var legoEptCloud = class {
     }
 
     reKeyForEpt(skey, eid, ept) {
-        var publicKey = ept.publicKey;
-        log("rekeying with symmetriKey", ept, " and ept ", eid);
-        var symmetricKey = this.myPrivateKey.decrypt(skey.key, 'base64', 'utf8');
-        log("Creating peer publicKey: ", publicKey);
-        var peerPublicKey = ursa.createPublicKey(publicKey);
-        var encryptedSymmetricKey = peerPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
-        var keyforept = {
+        let publicKey = ept.publicKey;
+        log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
+        let symmetricKey = this.myPrivateKey.decrypt(skey.key, 'base64', 'utf8');
+        log.info("Creating peer publicKey: ", publicKey);
+        let peerPublicKey = ursa.createPublicKey(publicKey);
+        let encryptedSymmetricKey = peerPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
+        let keyforept = {
             eid: eid,
             key: encryptedSymmetricKey,
             effective: skey.effective,
@@ -976,36 +1161,46 @@ var legoEptCloud = class {
         }
 
 
-        log("new key created for ept ", eid, " : ", keyforept);
+        log.info("new key created for ept ", eid, " : ", keyforept);
         return keyforept;
     }
 
+    eptinviteGroupAsync(gid, eid) {
+      return new Promise((resolve, reject) => {
+        this.eptinviteGroup(gid, eid, (err, result) => {
+          if(err)
+            reject(err)
+          else
+            resolve(result);
+        })
+      })
+    }
 
     eptinviteGroup(gid, eid, callback) {
-        log("eptinviteGroup:  Inviting ", eid, " to ", gid);
-        var self = this;
+        log.info("eptinviteGroup:  Inviting ", eid, " to ", gid);
+        let self = this;
         this.eptFind(eid, function (err, ept) {
             if (ept) {
-                log("found ept: ", ept);
+                log.debug("found ept: ", ept);
                 if (ept.publicKey !== null) {
                     self.groupFind(gid, function (err, grp) {
-                        log("finding group my eid", self.eid, " inviting ", eid, "grp", grp);
+                        log.debug("finding group my eid", self.eid, " inviting ", eid, "grp", grp);
                         if (grp !== null) {
-                            var mykey = null;
-                            for (var key in grp.symmetricKeys) {
-                                var sym = grp.symmetricKeys[key];
-                                log("searching keys ", key, " sym ", sym);
+                            let mykey = null;
+                            for (let key in grp.symmetricKeys) {
+                                let sym = grp.symmetricKeys[key];
+                                log.debug("searching keys ", key, " sym ", sym);
                                 if (sym.eid === self.eid) {
-                                    log("found my key ", self.eid);
+                                    log.debug("found my key ", self.eid);
                                     mykey = sym;
                                 }
                             }
                             if (mykey == null) {
                                 callback("404", null);
                             } else {
-                                var peerKey = self.reKeyForEpt(mykey, eid, ept);
+                                let peerKey = self.reKeyForEpt(mykey, eid, ept);
                                 if (peerKey != null) {
-                                    var options = {
+                                    let options = {
                                         uri: self.endpoint + '/group/' + self.appId + "/" + grp._id + "/" + encodeURIComponent(eid),
                                         method: 'POST',
                                         auth: {
@@ -1022,7 +1217,7 @@ var legoEptCloud = class {
                             }
 
                         } else {
-                            log("ERR not able to find group");
+                            log.error("Not able to find group");
                             callback(err, null);
                         }
                     });
@@ -1033,34 +1228,34 @@ var legoEptCloud = class {
         });
     }
 
+    eptinviteGroupByRidAsync(gid, rid) {
+      return new Promise((resolve, reject) => {
+        this.eptinviteGroupByRid(gid, rid, (err, result) => {
+          if(err)
+            reject(err)
+          else
+            resolve(result)
+        })
+      });
+    }
+
     eptinviteGroupByRid(gid, rid, callback) {
-        log("inviting ", rid, " to ", gid);
-        var self = this;
+        // log.info("inviting ", rid, " to ", gid);
+        let self = this;
         this.rendezvousMap(rid, function (err, rinfo) {
             if (err !== null || rinfo === null) {
-                log("Error not able to find rinfo");
+                // log.error("Error not able to find rinfo");
                 callback(err, null);
                 return;
             }
-            log("found rinfo", rinfo);
-            if ('value' in rinfo) {
-                self.eptinviteGroup(gid, rinfo.value, callback);
-            } else if ('evalue' in rinfo) {
-                var eid = this.myPrivateKey.decrypt(rinfo.evalue, 'base64', 'utf8');
-                if (eid == null) {
-                    callback("invalid evalue", null);
-                    return;
-                }
-                self.eptinviteGroup(gid, rinfo.value, callback);
-            } else {
-                callback("500", null);
-            }
+            log.info("found rinfo", rinfo, {});
+            callback(null, rinfo);
         });
     }
 
 
     eptGenerateInvite(gid) {
-        var k = uuid.v4();
+        let k = uuid.v4();
         //return {'r':k,'e':this.myPrivateKey.hashAndSign('sha256',k,'utf8','base64')};
         return {
             'r': k,
@@ -1069,7 +1264,7 @@ var legoEptCloud = class {
     }
 
     getStorage(gid, size, expires, callback) {
-        var options = {
+        let options = {
             uri: this.endpoint + '/service/message/storage/' + gid + '?size=' + size + '&expires=' + expires,
             method: 'GET',
             auth: {
@@ -1077,12 +1272,12 @@ var legoEptCloud = class {
             }
         };
 
-        log("group find ", options);
+        log.info("group find ", options);
 
         request(options, (err, httpResponse, body) => {
             if (err != null) {
                 let stack = new Error().stack;
-                console.log("Error while requesting ", err, stack);
+                log.error("Error while requesting ", err, stack);
                 callback(err, null);
                 return;
             }
@@ -1098,16 +1293,16 @@ var legoEptCloud = class {
     }
 
     _uploadFile(gid, url, filepath, callback) {
-        log("Uploading file ", filepath, " to ", url);
-        var self = this;
+        log.info("Uploading file ", filepath, " to ", url);
+        let self = this;
         this.getKey(gid, function (err, key, cacheGroup) {
             if (err != null && key == null) {
                 callback(err, null);
                 return;
             }
-            log('tag is ', self.tag, 'key is ', key);
+            log.info('tag is ', self.tag, 'key is ', key);
             fs.readFile(filepath, (err, data) => {
-                var crypted = self.encryptBinary(data, key);
+                let crypted = self.encryptBinary(data, key);
                 request({
                         method: 'PUT',
                         url: url,
@@ -1115,10 +1310,10 @@ var legoEptCloud = class {
                     },
                     function (error, response, body) {
                         if (response.statusCode === 200) {
-                            log("Upload done ");
+                            log.info("Upload done ");
                             callback(null, null);
                         } else {
-                            log("Upload fail ");
+                            log.error("Upload fail ");
                             callback(response.statusCode, null);
                         }
 
@@ -1129,7 +1324,7 @@ var legoEptCloud = class {
     }
 
     uploadFile(gid, filepath, callback) {
-        var self = this;
+        let self = this;
         if (filepath == null) {
             callback(null, null);
             return;

@@ -1,0 +1,4 @@
+#!/bin/bash -
+logger "FIREWALLA: REDIS DATA CLEAN"
+redis-cli publish "OldDataCleanSensor" "Start"
+sync

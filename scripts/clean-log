@@ -1,19 +1,18 @@
 #!/bin/bash -
 cd /home/pi/firewalla
 
-branch=$(git rev-parse --abbrev-ref HEAD)
-sleep 1
-if [[ $branch =~ release.* ]]
-  then
-    cp /home/pi/.forever/main.log /home/pi/.forever/main_last.log
-    cp /home/pi/.forever/ui.log /home/pi/.forever/ui_last.log
-    cp /home/pi/.forever/monitor.log /home/pi/.forever/monitor_last.log
-    cat /dev/null > /home/pi/.forever/main.log
-    cat /dev/null > /home/pi/.forever/ui.log
-    cat /dev/null > /home/pi/.forever/monitor.log
-    cat /dev/null > /tmp/forever.out
-    cat /dev/null > /tmp/forever.log
-    cat /dev/null > /tmp/forever.err
-  else
-    echo "on devbranch, skip cleaning"
-  fi
+cp /home/pi/.forever/main.log /home/pi/.forever/main_last.log
+cp /home/pi/.forever/ui.log /home/pi/.forever/ui_last.log
+cp /home/pi/.forever/monitor.log /home/pi/.forever/monitor_last.log
+cp /home/pi/.forever/api.log /home/pi/.forever/api_last.log
+cp /home/pi/.forever/dns.log /home/pi/.forever/dns_last.log
+cat /dev/null > /home/pi/.forever/main.log
+cat /dev/null > /home/pi/.forever/kickui.log
+cat /dev/null > /home/pi/.forever/ui.log
+cat /dev/null > /home/pi/.forever/monitor.log
+cat /dev/null > /home/pi/.forever/api.log
+cat /dev/null > /home/pi/.forever/dns.log
+cat /dev/null > /home/pi/.forever/spoof.log
+cat /dev/null > /tmp/forever.out
+cat /dev/null > /tmp/forever.log
+cat /dev/null > /tmp/forever.err

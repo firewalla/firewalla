@@ -1,17 +1,15 @@
 [Unit]
 Description=firewalla
-After=syslog.target network.target brofish.service
-Wants=brofish.service
+After=dhcpcd.service redis.service
+Requires=network-online.target redis.service
+After=fireupgrade.service
+#Wants=brofish.service
 
 [Service]
 User=pi
-Type=forking
-PIDFile=/home/pi/.forever/pids/main.pid
+Type=oneshot
 ExecStart=/home/pi/firewalla/scripts/main-run
 ExecStop=/home/pi/firewalla/scripts/main-stop
-Restart=always
-RestartSec=30
-TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

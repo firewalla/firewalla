@@ -1,4 +1,4 @@
-/*    Copyright 2016 Rottiesoft LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,9 +13,14 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+
+let log = require('./logger.js')(__filename);
+
 var ip = require('ip');
 var spawn = require('child_process').spawn;
 var async = require('async');
+
+let Promise = require('bluebird');
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -31,15 +36,30 @@ exports.drop = function (rule, callback) {
     newRule(rule, callback);
 }
 
-exports.reject = function (rule, callback) {
+function reject(rule, callback) {
     rule.target = 'REJECT';
     if (!rule.action) rule.action = '-A';
     newRule(rule, callback);
 }
 
+exports.reject = reject
+
+exports.rejectAsync = function (rule) {
+  return new Promise((resolve, r) => {
+    reject(rule, (err) => {
+      if(err) {
+        r(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
+exports.dnsChangeAsync = dnsChangeAsync;
 exports.flush = flush;
 exports.flush6 = flush6;
 exports.run = run;
@@ -58,13 +78,13 @@ function iptables(rule, callback) {
             args = ['iptables', '-w'].concat(args);
         }
 
-        console.log("IPTABLE4:", cmd, JSON.stringify(args), workqueue.length);
+        log.info("IPTABLE4:", cmd, JSON.stringify(args), workqueue.length);
         let proc = spawn(cmd, args);
         proc.stderr.on('data', function (buf) {
             console.error("IPTABLE4:", buf.toString());
         });
         proc.on('exit', (code) => {
-            console.log("IPTABLE4:EXIT", cmd, JSON.stringify(args), workqueue.length);
+            log.info("IPTABLE4:EXIT", cmd, JSON.stringify(args), workqueue.length);
             if (callback) {
                 callback(null, code);
             }
@@ -87,12 +107,31 @@ function iptables(rule, callback) {
         }
 
         let cmd = "iptables";
-        let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+        let cmdline = "";
 
-        console.log("IPTABLE:DNS:Running commandline: ", cmdline);
+        let getCommand = function(action, src, dns, protocol) {
+          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} --dport 53 -j DNAT --to-destination ${dns}`
+        }
+
+        switch(action) {
+          case "-A":
+            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} || ${getCommand(action, _src, dns, 'tcp')})`
+            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} || ${getCommand(action, _src, dns, 'udp')})`
+          break;
+          case "-D":
+            cmdline += `(${getCommand("-C", _src, dns, 'tcp')} && ${getCommand(action, _src, dns, 'tcp')})`
+            cmdline += ` ; (${getCommand("-C", _src, dns, 'udp')} && ${getCommand(action, _src, dns, 'udp')})`
+            cmdline += ` ; true` // delete always return true FIXME
+          break;
+          default:
+            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+          break;
+        }
+
+        log.info("IPTABLE:DNS:Running commandline: ", cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
-            if (err) {
-                console.log("IPTABLE:DNS:Error unable to set", cmdline, err);
+            if (err && action !== "-D") {
+                log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
             if (callback) {
                 callback(err, null);
@@ -100,6 +139,13 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else {
+      log.error("Invalid rule type:", rule.type);
+      if (callback) {
+          callback(err, null);
+      }
+      running = false;
+      newRule(null, null);
     }
 }
 
@@ -122,6 +168,7 @@ function iptablesArgs(rule) {
     if (rule.out) args = args.concat(["-o", rule.out]);
     if (rule.target) args = args.concat(["-j", rule.target]);
     if (rule.list) args = args.concat(["-n", "-v"]);
+    if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
 
     return args;
 }
@@ -155,6 +202,17 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
+function dnsChangeAsync(ip, dns, state, ignoreError) {
+  return new Promise((resolve, reject) => {
+    dnsChange(ip, dns, state, (err) => {
+      if(err && !ignoreError)
+        reject(err)
+      else
+        resolve();
+    })
+  });
+}
+
 function dnsChange(ip, dns, state, callback) {
     newRule({
         type: 'dns',
@@ -179,10 +237,10 @@ function _dnsChange(ip, dns, state, callback) {
     let cmd = "iptables";
     let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
 
-    console.log("IPTABLE:DNS:Running commandline: ", cmdline);
+    log.info("IPTABLE:DNS:Running commandline: ", cmdline);
     this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        if (err) {
-            console.log("IPTABLE:DNS:Error unable to set", cmdline, err);
+        if (err && action !== "-D") {
+            log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
         }
         if (callback) {
             callback(err, null);
@@ -193,7 +251,7 @@ function _dnsChange(ip, dns, state, callback) {
 function flush(callback) {
     this.process = require('child_process').exec("sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F ", (err, out, code) => {
         if (err) {
-            console.log("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err, {});
         }
         if (callback) {
             callback(err, null);
@@ -204,7 +262,7 @@ function flush(callback) {
 function flush6(callback) {
     this.process = require('child_process').exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat", (err, out, code) => {
         if (err) {
-            console.log("IPTABLE:DNS:Error unable to set", err);
+            log.error("IPTABLE:DNS:Error unable to set", err, {});
         }
         if (callback) {
             callback(err, null);
@@ -214,10 +272,10 @@ function flush6(callback) {
 
 function run(listofcmds, callback) {
     async.eachLimit(listofcmds, 1, (cmd, cb) => {
-        console.log("IPTABLE:DNS:RUNCOMMAND", cmd);
+        log.info("IPTABLE:DNS:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
-                console.log("IPTABLE:DNS:Error unable to set", err);
+                log.error("IPTABLE:DNS:Error unable to set", err, {});
             }
             if (callback) {
                 callback(err, null);

@@ -173,7 +173,6 @@ function flows(listip, direction) {
 }
 
 setTimeout(() => {
-    sysmanager.redisclean();
     if (program.host == null) {
         watcher.getHosts((err, result) => {
             let listip = [];
