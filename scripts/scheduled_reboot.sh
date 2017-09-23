@@ -2,7 +2,7 @@
 
 
 if [[ -e "/home/pi/.firewalla/config/.no_scheduled_reboot" ]]; then
-  /usr/bin/logger "FIREWALLA.REBOOT SCHEDULED REBOOT IS DISABLED"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA.REBOOT SCHEDULED REBOOT IS DISABLED"
   exit 0
 fi
 

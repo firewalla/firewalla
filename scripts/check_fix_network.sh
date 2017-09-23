@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC 
-# 
+#    Copyright 2017 Firewalla LLC
+#
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
 #    as published by the Free Software Foundation.
-# 
+#
 #    This program is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -28,7 +28,7 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '/inet / {print $2}'| grep -v 169.254
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | grep -v 169.254
             ;;
         gw)
             /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
@@ -43,11 +43,11 @@ save_values() {
     do
         value=$(get_value $kind)
         [[ -n "$value" ]] || continue
-        file=/var/run/saved_${kind}
+        file=/home/pi/.firewalla/run/saved_${kind}
         rm -f $file
         echo "$value" > $file || r=1
     done
-    /bin/cp -f /etc/resolv.conf /var/run/saved_resolv.conf
+    /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf
     return $r
 }
 
@@ -69,21 +69,23 @@ restore_values() {
     $LOGGER "Restore saved values of ip/gw/dns"
     for kind in ip gw
     do
-        file=/var/run/saved_${kind}
+        file=/home/pi/.firewalla/run/saved_${kind}
         [[ -e "$file" ]] || continue
         saved_value=$(cat $file)
         [[ -n "$saved_value" ]] || continue
         set_value $kind $saved_value || r=1
     done
-    if [[ -e /var/run/saved_resolv.conf ]]; then
-        /bin/cp -f /var/run/saved_resolv.conf /etc/resolv.conf
+    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
+        /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
     else
         r=1
     fi
+    sleep 3
     return $r
 }
 
 ethernet_connected() {
+    [[ -e /sys/class/net/eth0/carrier ]] || return 1
     carrier=$(cat /sys/class/net/eth0/carrier)
     test $carrier -eq 1
 }
@@ -111,11 +113,11 @@ gateway_pingable() {
 }
 
 dns_resolvable() {
-    host -W3 github.com >/dev/null
+    nslookup -timeout=10 github.com >/dev/null
 }
 
 github_api_ok() {
-    curl -L -m3 https://api.github.com/zen &> /dev/null
+    curl -L -m10 https://api.github.com/zen &> /dev/null
 }
 
 if [[ $(id -u) != $(id -u root) ]]; then
@@ -123,31 +125,36 @@ if [[ $(id -u) != $(id -u root) ]]; then
     exit 1
 fi
 
-restored=0
+NOT_RESTORED=0
+RESTORED_AND_NEED_START_OVER=1
+RESTORED=2
+
+restored=$NOT_RESTORED
 
 echo -n "checking ethernet connection ... "
-tmout=99999
+tmout=15
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))
     else
         echo "fail - reboot"
-        reboot
+        $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
+        reboot now
     fi
     sleep 1
 done
 echo OK
 
 echo -n "checking ethernet IP ... "
-tmout=15
+tmout=60
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))
     else
         echo "fail - restore"
-        $LOGGER "failed to get IP, restore network configurations"
+        $LOGGER "FIREWALLA:failed to get IP, restore network configurations"
         restore_values
-        restored=1
+        restored=$RESTORED
         break
     fi
     sleep 1
@@ -161,21 +168,24 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to ping gateway, restore network configurations"
                 restore_values
-                restored=1
+                restored=$RESTORED_AND_NEED_START_OVER
                 break;
             else
                 echo "fail - reboot"
-                $LOGGER "failed to ping gateway, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
                 reboot
             fi
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
 
     echo -n "checking DNS ... "
@@ -184,21 +194,24 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to resolve DNS, restore network configurations"
                 restore_values
-                restored=1
+                restored=$RESTORED_AND_NEED_START_OVER
                 break
             else
                 echo "fail - reboot"
-                $LOGGER "failed to resolve DNS, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
                 reboot
             fi
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
 
     echo -n "checking github REST API ... "
@@ -207,22 +220,26 @@ while true; do
         if [[ $tmout -gt 0 ]]; then
             (( tmout-- ))
         else
-            if [[ $restored -eq 0 ]]; then 
+            if [[ $restored -eq $NOT_RESTORED ]]; then
                 echo "fail - restore"
                 $LOGGER "failed to reach github API, restore network configurations"
                 restore_values
-                restored=1
+                restored=$RESTORED_AND_NEED_START_OVER
                 break
             else
-                $LOGGER "failed to reach github API, even after restore, reboot"
+                $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
                 echo "fail - reboot"
-                reboot
+# comment out on purpose                reboot
             fi
         fi
         sleep 1
     done
-    [[ $restored -eq 1 ]] && continue
+    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+      restored=$RESTORED
+      continue
+    fi
     echo OK
+
     break
 
 done

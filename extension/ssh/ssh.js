@@ -16,8 +16,6 @@ var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
 var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
-
-
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
@@ -47,20 +45,36 @@ module.exports = class {
       };
 
       jsonfile.writeFile(tempSSHPasswordLocation, json, {spaces: 2}, (err)=>{
-          callback(err,password); 
+          callback(err,password);
       });
     }
 
-    getPassword(callback) {
-      jsonfile.readFile(tempSSHPasswordLocation, (err, obj) => {
-        if(err) {
-          callback(err);
+  getPassword(callback) {
+    jsonfile.readFile(tempSSHPasswordLocation, (err, obj) => {
+      if(err) {
+        if(err.code === 'ENOENT') {
+          callback(null, 'firewalla')
         } else {
-          callback(null, obj.password);
+          callback(err);
         }
-      });
-    }
+      } else {
+        callback(null, obj.password);
+      }
+    });
+  }
 
+  resetRandomPasswordAsync() {
+    return new Promise((resolve, reject) => {
+      this.resetRandomPassword((err, data) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+    })
+  }
+  
     resetRandomPassword(callback) {
       var newPassword = key.randomPassword(8);
 
@@ -75,7 +89,7 @@ module.exports = class {
 
       passwd.stderr.on('data', (data) => {
         switch(data.toString('utf8')) {
-          case "Enter new UNIX password: ": 
+          case "Enter new UNIX password: ":
           case "Retype new UNIX password: ":
             passwd.stdin.write(newPassword+"\n");
             break;
@@ -105,8 +119,8 @@ module.exports = class {
     verifyPassword(password, callback) {
 
       var pty = require('pty.js');
-      const su = pty.spawn('bash', 
-          ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"], 
+      const su = pty.spawn('bash',
+          ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
           {
             name: 'xterm-color',
             cols: 80,
@@ -120,7 +134,7 @@ module.exports = class {
 
       su.on('data', (data) => {
         switch(data.toString('utf8')) {
-          case "Password: ": 
+          case "Password: ":
             su.write(password+"\n");
             break;
           case "su: Authentication failure":
@@ -162,7 +176,7 @@ module.exports = class {
             callback(err);
           })
         })
-        
+
       });
     }
 

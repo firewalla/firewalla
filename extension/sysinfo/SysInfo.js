@@ -28,6 +28,10 @@ let redis = require('redis');
 let rclient = redis.createClient();
 let _async = require('async');
 
+let Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
@@ -52,6 +56,8 @@ let releaseBranch = null;
 
 let threadInfo = {};
 
+let intelQueueSize = 0;
+
 function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
@@ -63,6 +69,7 @@ function update() {
   getConns();
   getRedisMemoryUsage();
   getThreadInfo();
+  getIntelQueueSize()
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -91,6 +98,12 @@ function getThreadInfo() {
   })();
 }
 
+function getIntelQueueSize() {
+  return async(() => {
+    intelQueueSize = await( rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf") )
+  })();
+}
+
 function getRealMemoryUsage() {
   let spawn = require('child_process').spawn;
 
@@ -100,8 +113,8 @@ function getRealMemoryUsage() {
     prc = spawn('free',  []);
 
     if (prc == null || prc.stdout == null) {
-        log.error("Failed to spawn process 'free'",{});
-        return;
+      log.error("Failed to spawn process 'free'",{});
+      return;
     }
 
     prc.stdout.setEncoding('utf8');
@@ -221,7 +234,8 @@ function getSysInfo() {
     peakConn: peakConn + "",
     redisMem: redisMemory,
     releaseType: getReleaseType(),
-    threadInfo: threadInfo
+    threadInfo: threadInfo,
+    intelQueueSize: intelQueueSize
   }
 
   return sysinfo;

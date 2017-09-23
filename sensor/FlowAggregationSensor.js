@@ -42,6 +42,9 @@ let hostTool = new HostTool();
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
+let HostManager = require('../net2/HostManager.js');
+let hostManager = new HostManager('cli', 'server');
+
 function toFloorInt(n){ return Math.floor(Number(n)); };
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -54,7 +57,7 @@ class FlowAggregationSensor extends Sensor {
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
     this.config.flowRange = 24 * 3600 // 24 hours
     this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
-    this.config.aggrFlowExpireTime = 48 * 3600 // 48 hours
+    this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
   }
 
   scheduledJob() {
@@ -152,12 +155,17 @@ class FlowAggregationSensor extends Sensor {
     }
 
     return async(() => {
-      let macs = await (hostTool.getAllMACs());
+      let macs = this.getQualifiedDevices();
       macs.forEach((mac) => {
         await (this.aggr(mac, ts));
         await (this.aggrActivity(mac, ts));
       })
     })();
+  }
+
+  // return a list of mac addresses that's active in last xx days
+  getQualifiedDevices() {
+    return hostManager.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -202,7 +210,7 @@ class FlowAggregationSensor extends Sensor {
         begin: begin,
         end: end,
         interval: this.config.interval,
-        expireTime: 36 * 3600, // keep for 36 hours
+        expireTime: 24 * 3600, // keep for 36 hours
         skipIfExists: skipIfExists
       }
 
@@ -235,7 +243,7 @@ class FlowAggregationSensor extends Sensor {
         expireTime: this.config.sumFlowExpireTime,
       }
 
-      let macs = await (hostTool.getAllMACs());
+      let macs = this.getQualifiedDevices();
       macs.forEach((mac) => {
         options.mac = mac;
         await (flowAggrTool.addSumFlow("download", options));

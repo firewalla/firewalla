@@ -20,14 +20,20 @@
 #
 #
 
+logger "FIREWALLA.MAIN-RUN.START"
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-logger `date`
 
 sudo $FIREWALLA_HOME/scripts/check_reset.sh
 
 # Enable zram to increase memory
+logger "FIREWALLA:MAIN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
-
+logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
-
+logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
+sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
+$FIREWALLA_HOME/scripts/fire-time.sh
+logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
+logger "FIREWALLA:MAIN:START"
 $FIREWALLA_HOME/scripts/main-start

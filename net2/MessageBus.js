@@ -32,13 +32,24 @@ sclient.setMaxListeners(0);
  *
  */
 
-var instance = null;
+var instances = {};
 
 module.exports = class {
-    constructor(loglevel) {
+    constructor(loglevel,instanceId, throttle) {
+        let instance = null;
+        if (instanceId == null) {
+            instanceId = 'default'; 
+        }        
+        instance = instances[instanceId];
         if (instance == null) {
           instance = this;
+          instances[instanceId]=instance;
           this.callbacks = {};
+          this.throttle = 1;
+          if (throttle) {
+              this.throttle =throttle;
+          }
+          this.sending = false;
           sclient.on("message", (channel, message) => {
             let m = JSON.parse(message);
             log.debug("Reciving Msg:", m, {});
@@ -76,6 +87,18 @@ module.exports = class {
         };
       log.debug("MBus:Publish", channel, o, {});
       rclient.publish(channel, JSON.stringify(o));
+    }
+
+    publishCompressed(channel, type, ip, msg) {
+        if (this.sending == true) {
+            return;
+        }
+        this.sending = true;
+       
+        setTimeout(()=>{
+            this.sending = false;
+            this.publish(channel,type,ip,msg);
+        }, this.throttle*1000);
     }
 
   _subscribe(key, callback) {

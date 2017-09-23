@@ -76,7 +76,7 @@ class FlowAggrTool {
   }
 
   addActivityFlows(mac, interval, ts, traffics, expire) {
-    expire = expire || 48 * 3600; // by default keep 48 hours
+    expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = this.getFlowKey(mac, "app", interval, ts);
     let args = [key];
@@ -94,12 +94,12 @@ class FlowAggrTool {
 
     return rclient.zaddAsync(args)
       .then(() => {
-      return rclient.expireAsync(key, expire)
+        return rclient.expireAsync(key, expire)
       });
   }
 
   addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
-    expire = expire || 48 * 3600; // by default keep 48 hours
+    expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
     let args = [key];
@@ -118,7 +118,7 @@ class FlowAggrTool {
 
     return rclient.zaddAsync(args)
       .then(() => {
-      return rclient.expireAsync(key, expire)
+        return rclient.expireAsync(key, expire)
       });
   }
 
@@ -156,7 +156,9 @@ class FlowAggrTool {
 
     let begin = options.begin;
     let end = options.end;
-    let expire = options.expireTime || 2 * 3600; // by default expire in two hours
+
+    // if working properly, sumflow should be refreshed in every 10 minutes
+    let expire = options.expireTime || 30 * 60; // by default expire in 30 minutes
     let interval = options.interval || 600; // by default 10 mins
 
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines

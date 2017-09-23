@@ -58,6 +58,10 @@
         "expires": 604800,
         "count": 1000
       },
+      "neighbor" : {
+        "expires": 604800,
+        "count": 1000
+      },
       "notice" : {
         "expires": 604800,
         "count": 10000
@@ -91,7 +95,7 @@
         "count": 10000
       },
       "x509": {
-        "expires": 7200,
+        "expires": 600,
         "count": 10000
       },
       "knownHosts": {
@@ -160,7 +164,7 @@
       },
       "x509": {
          "path": "/blog/current/x509.log",
-         "expires": 7200
+         "expires": 600
       },
       "knownHosts": {
          "path": "/blog/current/known_hosts.log",

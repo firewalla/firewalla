@@ -160,7 +160,8 @@ function generateEncryptionKey(license) {
   return {
       'key': userKey + seed,
       'seed': seed,
-      'userkey': userKey
+      'userkey': userKey,
+      'noLicenseMode': license == null
   };
 }
 
@@ -268,12 +269,12 @@ function inviteFirstAdmin(gid, callback) {
             postAppLinked(); // already linked
 
             // broadcast message should already be updated, a new encryption message should be used instead of default one
-            if(symmetrickey.userKey === "cybersecuritymadesimple") {
-              log.error("Encryption key should NOT be default after app linked");
+            if(symmetrickey.userkey === "cybersecuritymadesimple") {
+              log.warn("Encryption key should NOT be default after app linked");
             }
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
-            fwInvitation.firstTime = false; // not first time any more
+            fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
 
             let onSuccess = function(payload) {
               return async(() => {

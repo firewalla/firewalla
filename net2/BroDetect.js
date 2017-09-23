@@ -1158,6 +1158,11 @@ module.exports = class {
                 return;
             }
 
+            if (obj["certificate.subject"] && obj["certificate.subject"] === "CN=firewalla.encipher.io") {
+                log.debug("X509:Self Ignoring",data);
+                return;
+            }
+
             let key = "flow:x509:" + obj['id'];
             log.debug("X509:Save", key, obj);
 
@@ -1250,12 +1255,16 @@ module.exports = class {
                     }
                 });
                 let lh = null;
+                let dh = null;
                 if (sysManager.isLocalIP(obj.src)) {
-                    lh = obj.src;
+                    lh = obj.src || "0.0.0.0";
+                    dh = obj.dst || "0.0.0.0";
                 } else if (sysManager.isLocalIP(obj.dst)) {
-                    lh = obj.dst;
+                    lh = obj.dst || "0.0.0.0";
+                    dh = obj.src || "0.0.0.0";
                 } else {
                     lh = "0.0.0.0";
+                    dh = "0.0.0.0";
                 }
 
                 let actionobj = {
@@ -1281,6 +1290,7 @@ module.exports = class {
 
                       let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
                         "p.device.ip": localIP,
+                        "p.dest.ip": dh
                       });
 
                       am2.enrichDeviceInfo(alarm).then((alarm) => {

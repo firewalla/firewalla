@@ -37,6 +37,8 @@ let await = require('asyncawait/await');
 let Samba = require('../extension/samba/samba.js');
 let samba = new Samba();
 
+let HostManager = require('../net2/HostManager.js');
+
 class DeviceHook extends Hook {
   constructor() {
     super();
@@ -205,6 +207,10 @@ class DeviceHook extends Hook {
                 .then(() => {
 
                 log.info("MAC entry is updated with new IP");
+
+                let hostManager= new HostManager("cli",'server','debug');
+                log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
+                hostManager.getHost(host.ipv4Addr);
 
                 }).catch((err) => {
                 log.error("Failed to create mac entry:", err, err.stack, {});

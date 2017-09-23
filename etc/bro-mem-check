@@ -1,22 +1,27 @@
 #!/bin/bash
 sync
 
-mem=$(free -m | awk '/-/{print $4}')
+#mem=$(free -m | awk '/-/{print $4}')
+mem=0
 
 /home/pi/firewalla/scripts/free-memory-process
 
 SWAP_LIST=$(swapon -s | wc -l)
 
-if (( $SWAP_LIST > 2 )); then
+if [[ $SWAP_LIST -gt 2 ]]; then
   (( mem <= 0 )) && mem=$(free -m | awk '/Swap:/{print $4}')
+  (( mem <= 30 )) && echo swap $mem >> /home/pi/.forever/top_before_reboot.log
 else
   (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+  (( mem <= 30 )) && echo real mem $mem >> /home/pi/.forever/top_before_reboot.log
 fi
 
 #(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 (( mem <= 511 )) && logger "FIREWALLA: Memeory Critical Simulation "+$mem
 (( mem <= 30 )) && logger "FIREWALLA: Memory reboot"+$mem
 (( mem <= 30 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) && free -m 2>&1 >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) && echo $mem >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
 (( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
 

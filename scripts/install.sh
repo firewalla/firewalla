@@ -70,10 +70,3 @@ rm ~pi/.ssh/known_hosts
 
 sudo -u pi mkdir -p /home/pi/logs/
 
-
-
-
-
-
-
-

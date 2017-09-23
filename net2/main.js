@@ -35,7 +35,7 @@ let ModeManager = require('./ModeManager.js');
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var fs = require('fs');
-var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
@@ -156,6 +156,9 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
+  // always create the secondary interface
+  ModeManager.enableSecondaryInterface();
+
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager('info');
@@ -172,9 +175,6 @@ function run() {
       sem.emitEvent({
         type: 'IPTABLES_READY'
       });
-
-      // always create the secondary interface
-      ModeManager.enableSecondaryInterface();
 
       ModeManager.apply();
 

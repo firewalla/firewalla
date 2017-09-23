@@ -18,6 +18,34 @@
 
 # This script should only handle upgrade, nothing else
 
+
+/usr/bin/logger "FIREWALLA.UPGRADE Starting FIRST "+`date`
+
+GITHUB_STATUS_API=https://status.github.com/api.json
+
+logger `date`
+for i in `seq 1 10`; do
+    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+    if [[ $HTTP_STATUS_CODE == "200" ]]; then
+      break
+    fi
+    /usr/bin/logger "FIREWALLA.UPGRADE NO Network"
+    sleep 1
+done
+
+
+if [[ ! -f /.dockerenv ]]; then
+    logger "FIREWALLA.UPGRADE.DATE.SYNC"
+    sudo systemctl stop ntp
+    sudo ntpdate -b -u -s time.nist.gov
+    sudo timeout 30 ntpd -gq
+    sudo systemctl start ntp
+    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
+    sync
+fi
+
+/usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
+
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   /usr/bin/logger "FIREWALLA.UPGRADE NO UPGRADE"
   exit 0
@@ -28,27 +56,6 @@ cd .git
 sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
-
-GITHUB_STATUS_API=https://status.github.com/api.json
-
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
-    if [[ $HTTP_STATUS_CODE == "200" ]]; then
-      break
-    fi
-    /usr/bin/logger "FIREWALLA.UPGRADE NO Network"
-    sleep 1
-done
-
-if [[ ! -f /.dockerenv ]]; then
-    sudo ntpdate -s time.nist.gov
-    logger "FIREWALLA.UPGRADE.DATE.SYNC"
-    sudo systemctl start ntp
-    sudo ntpd -gq
-    sudo systemctl start ntp
-    sync
-fi
-logger `date`
 
 
 # continue to try upgrade even github api is not successfully.
@@ -68,6 +75,8 @@ eval $GIT_COMMAND ||
 # all the rest services will be updated (in case) via firewalla.service
 sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
+sudo systemctl reenable brofish

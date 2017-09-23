@@ -28,6 +28,7 @@ class SensorEventManager extends EventEmitter {
   constructor() {
     super();
     this.setMaxListeners(0);
+    this.subscribeEvent();
   }
 
   getRemoteChannel(title) {
@@ -37,8 +38,9 @@ class SensorEventManager extends EventEmitter {
   subscribeEvent() {
     rclient.on("message", (channel, message) => {
       if(channel === this.getRemoteChannel(process.title)) {
+        log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
-          let m = JSON.parse()
+          let m = JSON.parse(message)
           this.emitEvent(m);
         } catch (err) {
           log.error("Failed to parse channel message:", err, {});

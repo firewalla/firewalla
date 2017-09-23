@@ -38,7 +38,7 @@ let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
 
-let defaultCheckInterval = 2; // 2 seconds
+let defaultCheckInterval = 3; // 3 seconds
 let defaultTotalTimeout = 60*60;
 
 class FWInvitation {
@@ -49,17 +49,23 @@ class FWInvitation {
     this.symmetrickey = symmetrickey
     this.totalTimeout = defaultTotalTimeout;
     this.checkInterval = defaultCheckInterval;
-    this.firstTime = true;
+
+    // in noLicenseMode, a default password will be used, a flag 'firstTime' needs to be used to tell app side to use default password
+    if(symmetrickey.noLicenseMode) {
+      this.firstTime = true;
+    } else {
+      this.firstTime = false;
+    }
   }
 
   displayKey(key) {
-      log.info("\n\n-------------------------------\n");
-      log.info("If asked by APP type in this key: ", key);
-      log.info("\n-------------------------------");
-      log.info("\n\nOr Scan this");
-      log.info("\n");
+    log.info("\n\n-------------------------------\n");
+    log.info("If asked by APP type in this key: ", key);
+    log.info("\n-------------------------------");
+    log.info("\n\nOr Scan this");
+    log.info("\n");
 
-      qrcode.generate(key);
+    qrcode.generate(key);
   }
 
   /*
@@ -93,25 +99,38 @@ class FWInvitation {
 
         if(!rinfo.evalue) {
           // FIXME: might enforce license in the future
-          log.error("License info is not provided by App");
+          log.error("License info is not provided by App, maybe app version is too old");
         }
 
         let eid = rinfo.value;
         let userInfoString = rinfo.evalue;
-        let userInfo = JSON.parse(userInfoString);
+        let userInfo = null
 
-        if(userInfo && userInfo.license) {
+        if(userInfoString) {
+          try {
+            userInfo = JSON.parse(userInfoString);
+          } catch(err) {
+            log.error(`Failed to parse userInfo ${userInfoString} from app side: ${err}`);
+          }
+        }
+
+        // for backward compatibility, if license length is not greater than 8,
+        // it is old license mode, ignore license registration process
+        if(userInfo && userInfo.license && userInfo.license.length > 8) {
           // validate license first
           await (bone.waitUntilCloudReadyAsync());
           let infs = await (networkTool.getLocalNetworkInterface())
           if(infs.length > 0) {
             let mac = infs[0].mac_address;
-            let result = await (bone.getLicenseAsync(userInfo.license, mac));
-            let jsonObj = JSON.parse(result);
-            let lic = jsonObj.license;
-            if(lic) {
-              log.info("Got a new license:", lic, {});
-              await (license.writeLicense(lic));
+
+            try {
+              let lic = await (bone.getLicenseAsync(userInfo.license, mac));
+              if(lic) {
+                log.info("Got a new license:", lic, {});
+                await (license.writeLicense(lic));
+              }
+            } catch(err) {
+              log.error("Invalid license");
             }
           }
         }
