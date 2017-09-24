@@ -915,7 +915,8 @@ module.exports = class FlowMonitor {
           "p.dest.name": remoteHostname,
           "p.dest.port": this.getRemotePort(flowObj),
           "p.security.reason": reason,
-          "p.security.numOfReportSources": iobj.count
+          "p.security.numOfReportSources": iobj.count,
+          "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
         });
 
         alarmManager2.enrichDeviceInfo(alarm)
