@@ -295,6 +295,7 @@ module.exports = class FlowMonitor {
                         intelobj = {
                             uid: uuid.v4(),
                             ts: flow.ts,
+                            fd: flow.fd,
                             "id.orig_h": flow.sh,
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
