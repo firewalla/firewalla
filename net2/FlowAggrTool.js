@@ -75,10 +75,18 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  addActivityFlows(mac, interval, ts, traffics, expire) {
+  addAppActivityFlows(mac, interval, ts, traffics, expire) {
+    return this.addXActivityFlows(mac, "app", interval, ts, traffics, expire)
+  }
+
+  addCategoryActivityFlows(mac, interval, ts, traffics, expire) {
+    return this.addXActivityFlows(mac, "category", interval, ts, traffics, expire)
+  }
+
+  addXActivityFlows(mac, x, interval, ts, traffics, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    let key = this.getFlowKey(mac, "app", interval, ts);
+    let key = this.getFlowKey(mac, x, interval, ts);
     let args = [key];
     for(let app in traffics) {
       let duration = (traffics[app] && traffics[app]['duration']) || 0;

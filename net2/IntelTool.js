@@ -89,7 +89,7 @@ class IntelTool {
     let key = this.getIntelKey(ip);
 
     return rclient.hgetallAsync(key);
-  }
+  }  
 
   addIntel(ip, intel, expire) {
     intel = intel || {}
