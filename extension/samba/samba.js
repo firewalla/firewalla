@@ -27,7 +27,7 @@ let util = require('util');
 class Samba {
   constructor() {
     if (instance == null) {
-        instance = this;
+      instance = this;
     }
     return instance;
   }
@@ -44,13 +44,18 @@ class Samba {
       let result = await (exec(cmd));
 
       if(result.stdout && result.stdout === "") {
-          return undefined;
+        return undefined;
       }
 
       if(result.stdout) {
         let outputs = result.stdout.split("/");
         if(outputs.length >= 2) {
-          return outputs[1];
+          let output = outputs[1]
+          if(output === '<unknown>') {
+            return undefined
+          } else {
+            return outputs[1];
+          }
         } else {
           log.error("Invalid nbtscan output:", result.stdout, {});
           return undefined;
