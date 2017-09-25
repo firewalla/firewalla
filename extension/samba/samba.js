@@ -33,7 +33,7 @@ class Samba {
   }
 
   getSambaName(ip) {
-    let cmd = util.format("nbtscan -s / %s", ip);
+    let cmd = util.format("nbtscan -e %s | head -n 1 | awk '{print $2}'", ip);
     log.info("Running command:", cmd, {});
 
     return async(() => {
@@ -43,27 +43,19 @@ class Samba {
 
       let result = await (exec(cmd));
 
-      if(result.stdout && result.stdout === "") {
+      if(!result.stdout) {
         return undefined;
       }
 
-      if(result.stdout) {
-        let outputs = result.stdout.split("/");
-        if(outputs.length >= 2) {
-          let output = outputs[1]
-          if(output === '<unknown>') {
-            return undefined
-          } else {
-            return outputs[1];
-          }
-        } else {
-          log.error("Invalid nbtscan output:", result.stdout, {});
-          return undefined;
-        }
+      let output = result.stdout
+      output = output.trim()
+
+      if(output === '<unknown>') {
+        return undefined
       } else {
-        log.error("Invalid nbtscan output:", result.stderr, {});
-        return undefined;
+        return output
       }
+      
     })();
   }
 
