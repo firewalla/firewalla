@@ -21,6 +21,8 @@ let Alarm = require('./Alarm.js');
 let redis = require('redis');
 let rclient = redis.createClient();
 
+var bone = require("../lib/Bone.js");
+
 let flat = require('flat');
 
 let audit = require('../util/audit.js');
@@ -305,6 +307,9 @@ module.exports = class {
               num > AUTO_BLOCK_THRESHOLD) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+              if (alarm['p.dest.ip']) {
+                bone.intel(alarm['p.dest.ip'],"autoblock",alarm,(err)=>{});
+              }
               return;
             }
           }
@@ -747,16 +752,18 @@ module.exports = class {
 
       return new Promise((resolve, reject) => {
         im._location(destIP, (err, loc) => {
-          if(err)
+          if(err) {
             reject(err);
-          let location = loc.loc;
-          let ll = location.split(",");
-          if(ll.length === 2) {
-            alarm["p.dest.latitude"] = parseFloat(ll[0]);
-            alarm["p.dest.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-
+          if (loc && loc.loc) {
+            let location = loc.loc;
+            let ll = location.split(",");
+            if(ll.length === 2) {
+              alarm["p.dest.latitude"] = parseFloat(ll[0]);
+              alarm["p.dest.longitude"] = parseFloat(ll[1]);
+            }
+            alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+          }
           resolve(alarm);
         });
       });

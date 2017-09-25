@@ -4,5 +4,5 @@ if [[ $branch =~ release.* ]]; then
     touch /home/pi/.firewalla/managed_reboot
     sync
 fi
-logger "FIREWALLA REBOOT FORCED"
+/home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA REBOOT FORCED"
 /home/pi/firewalla/scripts/fire-reboot-normalf

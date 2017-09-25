@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,18 +63,20 @@ module.exports = class {
       rclient.saddAsync(unmonitoredKey, address)
     ]);
   }
- 
+
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
 
     callback = callback || function() {}
-    
+
     if(fConfig.newSpoof) {
       this.newSpoof(ipAddr)
-        .then(() => callback(null))
-        .catch((err) => callback(err));
+        .then(() => {
+          spoofMac6(mac,ipv6Addrs,gateway,null)
+          callback(null)
+        }).catch((err) => callback(err));
       return;
     }
-      
+
       log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
@@ -98,8 +100,8 @@ module.exports = class {
                 this._spoof(ipAddr, tellIpAddr, mac, callback);
             } else {
                 // this will be better to tie up with nmap,
-                // scans.  then msg through a channel 
-                // 
+                // scans.  then msg through a channel
+                //
                 //log.info("Host not there exist, waiting", ipAddr,err,mac);
                 if (_mac != mac) {
                     log.info("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
@@ -110,7 +112,7 @@ module.exports = class {
             }
         });
       }
-      
+
       this.spoofMac6(mac,ip6Addrs,gateway6,callback);
     }
 
@@ -131,6 +133,8 @@ module.exports = class {
     }
 
     spoofMac6(mac,ipv6Addrs,gateway,callback) {
+      callback = callback || function() {}
+
         let newips = [];
         let removals = [];
         let ipv6db = {};
@@ -139,7 +143,7 @@ module.exports = class {
         }
 
         for (let i in ipv6Addrs) {
-            ipv6db[ipv6Addrs[i]]=1; 
+            ipv6db[ipv6Addrs[i]]=1;
             if (null == this._spoofersFind(mac,ipv6Addrs[i],'v6',gateway)) {
                 newips.push(ipv6Addrs[i]);
                 log.info("Spoof:AddNew",ipv6Addrs[i]);
@@ -185,7 +189,7 @@ module.exports = class {
             log.info("Can't spoof self to self", ip6Addr, tellIpAddr);
             if (callback) callback("error", null);
             return;
-        }         
+        }
         if (this._spoofersFind(mac,ip6Addr,'v6',tellIpAddr) != null) {
             if (callback) callback("error", null);
             return;
@@ -198,7 +202,7 @@ module.exports = class {
         }
         let taskr = null;
         let cmdline2 = "../bin/bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr;
-        if (!ip6Addr.startsWith("fe80")) { 
+        if (!ip6Addr.startsWith("fe80")) {
             let taskr = require('child_process').exec(cmdline2, (err, out, code) => {
             });
         }
@@ -288,11 +292,18 @@ module.exports = class {
 
     if(fConfig.newSpoof) {
       this.newUnspoof(ipAddr)
-        .then(() => callback(null))
-        .catch((err) => callback(err));
+        .then(() => {
+          let maxSpoofer = 5;
+          if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
+            for (let i in ip6Addrs) {
+              this._unspoof6(ip6Addrs[i],gateway6,mac);
+            }
+          }
+          callback(null);
+        }).catch((err) => callback(err));
       return;
     }
-    
+
     log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
     if (ipAddr && tellIpAddr) {
       this._unspoof(ipAddr,tellIpAddr,mac);
@@ -322,7 +333,7 @@ module.exports = class {
         });
       });
     }
-    
+
     clean7() {
       //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
       let cmdline = 'sudo pkill -f bitbridge7';
@@ -346,13 +357,13 @@ module.exports = class {
         if(err) {
           log.error("Failed to clean up spoofing army: " + err);
         }
-        
+
       });
       let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
         if(err) {
           log.error("Failed to clean up spoofing army: " + err);
         }
-        
+
       });
     }
 

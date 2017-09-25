@@ -39,6 +39,9 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+let FRP = require('../extension/frp/frp.js')
+let frp = new FRP();
+
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
@@ -1160,6 +1163,8 @@ class Host {
 module.exports = class {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
+      loglevel = loglevel || 'info';
+
       if (instances[name] == null) {
 
         this.instanceName = name;
@@ -1279,6 +1284,11 @@ module.exports = class {
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
+    json.remoteSupport = frp.started;
+    if(frp.started) {
+      json.remoteSupportConnID = frp.port + ""
+      json.remoteSupportPassword = json.ssh
+    }
     json.license = sysManager.license;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;

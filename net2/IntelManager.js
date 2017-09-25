@@ -92,7 +92,7 @@ module.exports = class {
                         obj.lobj = lobj;
                         log.info("Intel:Location",ip,obj.lobj);
 
-                        bone.intel(ip, "check", {cobj:obj},(err,data)=>{
+                        bone.intel(ip, "iinfo", {cobj:obj},(err,data)=>{
                             this._packageCymon(ip, obj);
                             callback(err, obj, weburl);
                         });
@@ -270,7 +270,7 @@ module.exports = class {
                         this._location(ip,(err,lobj)=>{ 
                             obj.lobj = lobj;
                             log.info("Intel:Location",ip,obj.lobj);
-                            bone.intel(ip, "check", {cobj:obj},(err,data)=>{
+                            bone.intel(ip, "iinfo", {cobj:obj},(err,data)=>{
                                 this._packageCymon(ip, obj);
                                 callback(err, obj, obj.weburl);
                             });

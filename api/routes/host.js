@@ -119,7 +119,7 @@ router.get('/:host/topDownload',
     let json = {};
 
     return async(() => {
-      let h = hostManager.getHostAsync(host);
+      let h = await (hostManager.getHostAsync(host));
       let mac = h.o && h.o.mac;
       if(!mac) {
         return;
@@ -140,7 +140,7 @@ router.get('/:host/topUpload',
     let json = {};
 
     return async(() => {
-      let h = hostManager.getHostAsync(host);
+      let h = await (hostManager.getHostAsync(host));
       let mac = h.o && h.o.mac;
       if(!mac) {
         return;

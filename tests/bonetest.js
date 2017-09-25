@@ -23,7 +23,7 @@ let fConfig = require('../net2/config.js').getConfig();
 let License = require('../util/license');
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager('info');
-let sampledata = require("../test/sample_data_intel.js");
+let sampledata = require("../tests/sample_data_intel.js");
 
 
 /*
@@ -67,6 +67,9 @@ setTimeout(()=>{
                 ou: mac.slice(0,13), // use 0,13 for better OU compatibility
                 uuid: flowUtil.hashMac(mac)
             };
+    bone.log("error", {
+        msg: "Bone Log Test"
+    }, (err,data)=> {
             bone.device("identify", rawData,(err,data)=>{
                 console.log(data);
               //  bone.getLicense("81244056-90b9-43f3-a5ae-8681bde09e58","thisismac",(err,data)=>{
@@ -80,6 +83,7 @@ setTimeout(()=>{
                  });
 
             });
+    }); 
 
 
         });

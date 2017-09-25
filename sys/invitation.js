@@ -38,9 +38,8 @@ let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
 
-let defaultCheckInterval = 3; // 2 seconds
+let defaultCheckInterval = 3; // 3 seconds
 let defaultTotalTimeout = 60*60;
-let additionBindingTotalTimeout = 60*10;  // 10 min only
 
 class FWInvitation {
 
@@ -57,22 +56,16 @@ class FWInvitation {
     } else {
       this.firstTime = false;
     }
-
-    // any additional binding is only 10 min window
-    if (this.firstTime == false) {
-        this.totalTimeout = additionBindingTotalTimeout;
-    }
-
   }
 
   displayKey(key) {
-      log.info("\n\n-------------------------------\n");
-      log.info("If asked by APP type in this key: ", key);
-      log.info("\n-------------------------------");
-      log.info("\n\nOr Scan this");
-      log.info("\n");
+    log.info("\n\n-------------------------------\n");
+    log.info("If asked by APP type in this key: ", key);
+    log.info("\n-------------------------------");
+    log.info("\n\nOr Scan this");
+    log.info("\n");
 
-      qrcode.generate(key);
+    qrcode.generate(key);
   }
 
   /*
@@ -121,7 +114,9 @@ class FWInvitation {
           }
         }
 
-        if(userInfo && userInfo.license) {
+        // for backward compatibility, if license length is not greater than 8,
+        // it is old license mode, ignore license registration process
+        if(userInfo && userInfo.license && userInfo.license.length > 8) {
           // validate license first
           await (bone.waitUntilCloudReadyAsync());
           let infs = await (networkTool.getLocalNetworkInterface())

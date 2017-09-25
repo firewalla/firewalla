@@ -35,7 +35,7 @@ let ModeManager = require('./ModeManager.js');
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 var fs = require('fs');
-var config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
