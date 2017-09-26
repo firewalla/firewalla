@@ -248,8 +248,11 @@ function inviteFirstAdmin(gid, callback) {
                 callback(null, true);
 
                 log.info("EXIT KICKSTART AFTER JOIN");
-                require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
-                });
+                 
+                setTimeout(()=> {
+                   require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+                   });
+                },20000);
               })();
             }
 
