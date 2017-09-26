@@ -30,6 +30,7 @@ expand_partition() {
 }
 
 if [[ -e $RESIZE_MARKER ]]
+then
     logger "INFO: After initial boot, NO need to resize partition any more"
 else
     logger "INFO: Initial boot, resize partitions now ..."
