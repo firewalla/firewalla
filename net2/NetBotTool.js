@@ -42,6 +42,12 @@ let destIPFoundHook = new DestIPFoundHook();
 let HostTool = require('../net2/HostTool');
 let hostTool = new HostTool();
 
+let AppFlowTool = require('../flow/AppFlowTool.js')
+let appFlowTool = new AppFlowTool()
+
+let CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+let categoryFlowTool = new CategoryFlowTool()
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); };
@@ -63,6 +69,40 @@ class NetBotTool {
     return this._prepareTopFlows(json, "upload", options);
   }
 
+  prepareCategoryActivitiesFlows(json, options) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(util.format("Getting category flows between %s and %s", beginString, endString));
+
+    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
+
+    return async(() => {
+      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      traffic.forEach((t) => {
+        let mac = t.device;
+        let host = await (hostTool.getMACEntry(mac));
+        let name = hostTool.getHostname(host);
+        t.deviceName = name;
+      });
+
+      json.flows.categories = traffic;
+    })();
+  }
+
+  // app
   prepareActivitiesFlows(json, options) {
     if (!("flows" in json)) {
       json.flows = {};
@@ -227,7 +267,74 @@ class NetBotTool {
     return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
-  prepareActivitiesFlowsForHost(json, mac, options) {
+  prepareDetailedAppFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps(mac))
+
+      let allFlows = {}
+
+      apps.forEach((app) => {
+        let appFlows = await (appFlowTool.getAppFlow(mac, app))
+        allFlows[app] = appFlows
+      })
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareDetailedCategoryFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categories = await (categoryFlowTool.getCategories(mac))
+
+      let allFlows = {}
+
+      categories.forEach((category) => {
+        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category))
+        allFlows[category] = categoryFlows
+      })
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareCategoryActivityFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    json.flows.categories = [];
+
+    return async(() => {
+      let flowKey = await (flowAggrTool.getLastSumFlow(mac, "category"));
+      if (flowKey) {
+        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+
+        traffic.sort((a,b) => {
+          return b.count - a.count;
+        });
+
+        json.flows.categories = traffic;
+      }
+    })();
+  }
+
+  prepareAppActivityFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }

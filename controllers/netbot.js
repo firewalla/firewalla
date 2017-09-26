@@ -1006,10 +1006,11 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options));
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options));
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
-      await (netBotTool.prepareActivitiesFlows(jsonobj, options));
+      await (flowTool.prepareRecentFlows(jsonobj, options))
+      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
+      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
+      await (netBotTool.prepareActivitiesFlows(jsonobj, options))
+      await (netBotTool.prepareCategoryActivitiesFlows(jsonobj, options))
 
       return jsonobj;
     })();
@@ -1042,7 +1043,9 @@ class netBot extends ControllerBot {
         await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac))
+
       }
 
       return jsonobj;

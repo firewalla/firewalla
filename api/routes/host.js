@@ -80,7 +80,8 @@ router.get('/:host',
                        flowTool.prepareRecentFlowsForHost(jsonObj, h.getAllIPs()),
                        netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
                        netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareActivitiesFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac),
+                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac)
                    ]).then(() => {
                        res.json(jsonObj);
                      });

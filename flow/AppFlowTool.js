@@ -63,10 +63,35 @@ class AppFlowTool {
     })()
   }
 
+  delAllApps(mac) {
+    return async(() => {
+      let apps = await (this.getApps(mac))
+      apps.forEach((app) => {
+        await (this.delAppFlow(mac, app))
+      })
+    })()
+  }
+
   delAppFlow(mac, app) {
     let key = this.getAppFlowKey(mac, app)
 
     return rclient.delAsync(key)
+  }
+
+  getApps(mac) {
+    mac = mac || '*' // match all mac addresses if mac is not defined
+    let keyPattern = this.getAppFlowKey(mac, '*')
+    return async(() => {
+      let keys = await (rclient.keysAsync(keyPattern))
+      return keys.map((key) => {
+        let result = key.match(/[^:]*$/)
+        if(result) {
+          return result[0]
+        } else {
+          return null
+        }
+      }).filter((x) => x != null)
+    })()
   }
 
   getAppFlow(mac, app) {
