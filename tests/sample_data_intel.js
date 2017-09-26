@@ -258,6 +258,7 @@ exports.porndata4 = [{
   }
 }];
 
+exports.malware1 =  [{"_iplist":[["lljWzw==","lljWz+2lwGW1w4oWl29ztpZpRoeX/uNJH4qXpMSxT0U="],["OMCrcg==","OMCrcrk6QlSbvzGP9/e4XJE/kzMLG5Fp0aB0VQLVrjE="]],"_alist":["f8/eN6tTzcaJGFtrxXr56+m+Zeqb48vsNOHX7OmG928="],"_hlist":[["lljWzw==","lljWz+2lwGW1w4oWl29ztpZpRoeX/uNJH4qXpMSxT0U="]],"flow":{"ts":1506239081.511192,"sh":"BIsMAz2V/PV3/YOI4mmYJVWGe6gM6RKNhgGfHirRi8E=","_ts":1506239091,"dh":"OMCrcrk6QlSbvzGP9/e4XJE/kzMLG5Fp0aB0VQLVrjE=","ob":10838,"rb":35096,"ct":107,"fd":"in","lh":"BIsMAz2V/PV3/YOI4mmYJVWGe6gM6RKNhgGfHirRi8E=","du":10.723972,"pr":"tcp","sp":54608,"dp":80}}];
 
 exports.porndata5 = [{
   iplist: ['69.172.201.153'],
