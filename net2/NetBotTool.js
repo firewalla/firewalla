@@ -329,6 +329,10 @@ class NetBotTool {
           return b.count - a.count;
         });
 
+        traffic.forEach((t) => {
+          delete t.device // no need to keep this record since single host data has same device info
+        })
+
         json.flows.categories = traffic;
       }
     })();
@@ -349,6 +353,10 @@ class NetBotTool {
         traffic.sort((a,b) => {
           return b.count - a.count;
         });
+
+        traffic.forEach((t) => {
+          delete t.device
+        })
 
         json.flows.apps = traffic;
       }
