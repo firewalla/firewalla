@@ -69,6 +69,11 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
+
+      process.on('exit', () => {
+        this.shouldStart = false;
+        this.stop();
+      });
     }
     return instance;
   }
@@ -473,10 +478,7 @@ module.exports = class DNSMASQ {
       }
     })
 
-    process.on('exit', () => {
-      this.shouldStart = false;
-      this.stop();
-    });
+
 
     callback(null)
   }
@@ -524,7 +526,7 @@ module.exports = class DNSMASQ {
     // 3. update iptables rule
     log.info("Starting DNSMASQ...", {});
 
-    this.shouldStart = true;
+    this.shouldStart = false
 
     this.updateResolvConf((err) => {
       if(err) {
@@ -543,6 +545,7 @@ module.exports = class DNSMASQ {
           this._add_iptables_rules()
           .then(() => {
             log.info("DNSMASQ is started successfully");
+            this.shouldStart = true
             callback();
           }).catch((err) => {
             this.rawStop();
