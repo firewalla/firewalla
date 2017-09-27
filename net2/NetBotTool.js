@@ -160,15 +160,20 @@ class NetBotTool {
         allFlows[app] = []
 
         let macs = await (appFlowTool.getAppMacAddresses(app))
-        macs.forEach((mac) => {
-          let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
-          appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-          appFlows.forEach((f) => {
-            f.device = mac
-          })
 
-          allFlows[app].push.apply(allFlows[app], appFlows)
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+            appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            appFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[app].push.apply(allFlows[app], appFlows)
+          })()
         })
+
+        await (Promise.all(promises))
       })
 
       json.flows[key] = allFlows
