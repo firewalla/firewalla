@@ -85,7 +85,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+      let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -119,7 +119,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+      let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -325,7 +325,7 @@ class NetBotTool {
     return async(() => {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, "category"));
       if (flowKey) {
-        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+        let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(flowKey,20)) // get top 20
 
         traffic.sort((a,b) => {
           return b.count - a.count;
@@ -357,7 +357,7 @@ class NetBotTool {
     return async(() => {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, "app"));
       if (flowKey) {
-        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+        let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(flowKey,20)) // get top 20
 
         traffic.sort((a,b) => {
           return b.count - a.count;
