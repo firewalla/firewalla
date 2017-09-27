@@ -335,6 +335,13 @@ class NetBotTool {
           delete t.device // no need to keep this record since single host data has same device info
         })
 
+        let categoryTraffics = {}
+
+        traffic.forEach((t) => {
+          categoryTraffics[t.category] = t
+          delete t.category
+        })
+
         json.flows.categories = traffic;
       }
     })();
@@ -358,6 +365,13 @@ class NetBotTool {
 
         traffic.forEach((t) => {
           delete t.device
+        })
+
+        let appTraffics = {}
+
+        traffic.forEach((t) => {
+          appTraffics[t.app] = t
+          delete t.app
         })
 
         json.flows.apps = traffic;
