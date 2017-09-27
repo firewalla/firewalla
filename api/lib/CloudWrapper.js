@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -65,7 +65,7 @@ module.exports = class {
 
       eptcloud = new cloud(eptname);
       this.eptcloud = eptcloud;
-      
+
       async(() => {
 
         log.info("[Boot] Waiting for security keys to be ready");
@@ -96,11 +96,11 @@ module.exports = class {
       };
     })();
   }
-  
+
   isGroupLoaded(gid) {
     return nbControllers[gid];
   }
-  
+
   init() {
     log.info("Initializing Cloud Wrapper...");
 

@@ -1009,7 +1009,7 @@ class netBot extends ControllerBot {
       await (flowTool.prepareRecentFlows(jsonobj, options))
       await (netBotTool.prepareTopUploadFlows(jsonobj, options))
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
-      await (netBotTool.prepareActivitiesFlows(jsonobj, options))
+      await (netBotTool.prepareAppActivitiesFlows(jsonobj, options))
       await (netBotTool.prepareCategoryActivitiesFlows(jsonobj, options))
 
       return jsonobj;

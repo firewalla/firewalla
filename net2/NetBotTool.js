@@ -103,7 +103,7 @@ class NetBotTool {
   }
 
   // app
-  prepareActivitiesFlows(json, options) {
+  prepareAppActivitiesFlows(json, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -133,6 +133,46 @@ class NetBotTool {
       });
 
       json.flows.apps = traffic;
+    })();
+  }
+
+  prepareDetailedAppFlows(json, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    options = options || {}
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let allFlows = {}
+
+      apps.forEach((app) => {
+        allFlows[app] = []
+
+        let macs = await (appFlowTool.getAppMacAddresses(app))
+        macs.forEach((mac) => {
+          let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+          appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+
+          allFlows[app].push.apply(allFlows[app], appFlows)
+        })
+      })
+
+      json.flows[key] = allFlows
     })();
   }
 

@@ -152,14 +152,20 @@ router.get('/apps',
     let end = Math.floor(now / 3600) * 3600;
     let begin = end - 3600;
     let json = {};
-    netBotTool.prepareActivitiesFlows(json, {
-      begin: begin,
-      end: end
-    }).then(() => {
-      res.json(json);
-    }).catch((err) => {
+
+    async(() => {
+      await (netBotTool.prepareAppActivitiesFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      await (netBotTool.prepareDetailedAppFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      res.json(json)
+    })().catch((err) => {
       res.status(500).send({error: err});
-    })
+    })    
   }
 );
 
