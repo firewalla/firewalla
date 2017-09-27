@@ -182,6 +182,52 @@ class NetBotTool {
     })();
   }
 
+  prepareDetailedCategoryFlows(json, options) {
+    options = options || {}
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting category detail flows between ${beginString} and ${endString}`)
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = categorys.map((category) => {
+        allFlows[category] = []
+
+        let macs = await (categoryFlowTool.getCategoryMacAddresses(category))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+            categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            categoryFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[category].push.apply(allFlows[category], categoryFlows)
+          })()
+        })
+
+        return Promise.all(promises)
+      })
+
+      await (Promise.all(allPromises))
+
+      json.flows[key] = allFlows
+    })();
+  }
+
   // Top Download/Upload in the entire network
   _prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {

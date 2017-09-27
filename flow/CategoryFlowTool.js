@@ -91,7 +91,7 @@ class CategoryFlowTool {
   delAllCategories(mac) {
     return async(() => {
       let categories = await (this.getCategories(mac))
-      apps.forEach((category) => {
+      categories.forEach((category) => {
         await (this.delCategoryFlow(mac, category))
       })
     })()
@@ -106,6 +106,22 @@ class CategoryFlowTool {
         let result = key.match(/[^:]*$/)
         if(result) {
           return result[0]
+        } else {
+          return null
+        }
+      }).filter((x) => x != null)
+    })()
+  }
+
+  getCategoryMacAddresses(category) {
+    let keyPattern = this.getCategoryFlowKey('*', category)
+
+    return async(() => {
+      let keys = await (rclient.keysAsync(keyPattern))
+      return keys.map((key) => {
+        let result = key.match(/categoryflow:(.*):[^:]*/) // locate mac address
+        if(result) {
+          return result[1]
         } else {
           return null
         }
