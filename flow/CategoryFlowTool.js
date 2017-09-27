@@ -69,7 +69,7 @@ class CategoryFlowTool {
     return rclient.delAsync(key)
   }
 
-  getCategoryFlow(mac, category, option) {
+  getCategoryFlow(mac, category, options) {
     let key = this.getCategoryFlowKey(mac, category)
 
     options = options || {}
