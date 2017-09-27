@@ -69,14 +69,16 @@ class CategoryFlowTool {
     return rclient.delAsync(key)
   }
 
-  getCategoryFlow(mac, category) {
+  getCategoryFlow(mac, category, option) {
     let key = this.getCategoryFlowKey(mac, category)
 
-    let now = new Date() / 1000
-    let _24hoursAgo = now - 3600 * 24
+    options = options || {}
+
+    let end = options.end || new Date() / 1000;
+    let begin = options.begin || (end - 3600 * 24)
 
     return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync(key, now, _24hoursAgo))
+      let results = await (rclient.zrevrangebyscoreAsync(key, end, begin))
       return results.map((jsonString) => {
         try {
           return JSON.parse(jsonString)
