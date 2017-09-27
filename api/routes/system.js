@@ -164,8 +164,9 @@ router.get('/apps',
       }))
       res.json(json)
     })().catch((err) => {
+      log.error("Failed to process /apps: ", err, err.stack, {})
       res.status(500).send({error: err});
-    })    
+    })
   }
 );
 

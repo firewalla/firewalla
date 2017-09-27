@@ -137,10 +137,6 @@ class NetBotTool {
   }
 
   prepareDetailedAppFlows(json, options) {
-    if(!mac) {
-      return Promise.reject("Invalid MAC Address");
-    }
-
     options = options || {}
 
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)

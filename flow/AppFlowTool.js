@@ -95,7 +95,8 @@ class AppFlowTool {
   }
 
   getAppMacAddresses(app) {
-    let keyPattern = this.getAppFlow('*', app)
+    let keyPattern = this.getAppFlowKey('*', app)
+
     return async(() => {
       let keys = await (rclient.keysAsync(keyPattern))
       return keys.map((key) => {
