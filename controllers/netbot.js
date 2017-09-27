@@ -1006,10 +1006,11 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options));
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options));
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
-      await (netBotTool.prepareActivitiesFlows(jsonobj, options));
+      await (flowTool.prepareRecentFlows(jsonobj, options))
+      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
+      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
+      await (netBotTool.prepareActivitiesFlows(jsonobj, options))
+      await (netBotTool.prepareCategoryActivitiesFlows(jsonobj, options))
 
       return jsonobj;
     })();
@@ -1042,7 +1043,10 @@ class netBot extends ControllerBot {
         await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
         await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac));
+        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac))
+        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac))
+        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac))
       }
 
       return jsonobj;
@@ -1675,7 +1679,7 @@ class netBot extends ControllerBot {
 }
 
 process.on("unhandledRejection", function (r, e) {
-  log.info("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
+  log.info("Oh No! Unhandled rejection!! \nr::", r, r.stack, "\ne::", e, {});
 });
 
 let bone = require('../lib/Bone.js');

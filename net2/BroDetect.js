@@ -601,6 +601,9 @@ module.exports = class {
                 return;
             }
 
+            // fd: in, this flow initiated from inside
+            // fd: out, this flow initated from outside, it is more dangerous
+
             if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
                 flowdir = 'local';
                 lhost = host;
@@ -915,6 +918,9 @@ module.exports = class {
 
     }
 
+/*
+{"ts":1506304095.747873,"uid":"CgTsJH3vHBNpMIREU9","id.orig_h":"192.168.2.227","id.orig_p":47292,"id.resp_h":"103.224.182.240","id.resp_p":80,"trans_depth":1,"method":"GET","host":"goooogleadsence.biz","uri":"/","user_agent":"Wget/1.16 (linux-gnueabihf)","request_body_len":0,"response_body_len":0,"status_code":302,"status_msg":"Found","tags":[]}
+*/
     processHttpData(data) {
         try {
             let obj = JSON.parse(data);
@@ -1012,6 +1018,38 @@ module.exports = class {
                 }
             });
 
+            /* this piece of code uses http to map dns */
+            if (flowdir === "in" && obj.host) {
+                let key = "dns:ip:" + dst;
+                let value = {
+                    'host': obj.host,
+                    'lastActive': Math.ceil(Date.now() / 1000),
+                    'count': 1
+                }
+                log.debug("HTTP:Dns:values",key,value,{});
+                rclient.hgetall(key,(err,entry)=>{
+                    if (entry && entry.host) {
+                        return;
+                    }
+                    if (entry) {
+                        rclient.hdel(key,"_intel");
+                        if (entry.count) {
+                            value.count = Number(entry.count)+1;
+                        }
+                    }
+                    rclient.hmset(key, value, (err, rvalue) => {
+                        if (err == null) {
+                            if (this.config.bro.dns.expires) {
+                               rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
+                            }
+                            log.error("HTTP:Dns:Set",rvalue,value);
+                        } else {
+                            log.error("HTTP:Dns:Error", "unable to update count", err, {});
+                        }
+                              //  });
+                   });
+                });
+            }
         } catch (e) {
             log.error("HTTP:Error Unable to save", e, data, e.stack, {});
         }
@@ -1069,6 +1107,9 @@ module.exports = class {
       }
     }
 
+/*
+{"ts":1506313273.469781,"uid":"CX5UTb3cZi0zJdeQqe","id.orig_h":"192.168.2.191","id.orig_p":57334,"id.resp_h":"45.57.26.133","id.resp_p":443,"version":"TLSv12","cipher":"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256","server_name":"ipv4_1-lagg0-c004.1.sjc005.ix.nflxvideo.net","resumed":true,"established":true}
+*/
     processSslData(data) {
         try {
             let obj = JSON.parse(data);
@@ -1084,6 +1125,7 @@ module.exports = class {
             let key = "host:ext.x509:" + dst;
             let cert_chain_fuids = obj['cert_chain_fuids'];
             let cert_id = null;
+            let flowdir = "in";
             if (cert_chain_fuids != null && cert_chain_fuids.length > 0) {
                 cert_id = cert_chain_fuids[0];
                 log.debug("SSL:CERT_ID ", cert_id, subject, dst);
@@ -1143,6 +1185,51 @@ module.exports = class {
                 });
 
             }
+            // Cache
+            let appCacheObj = {
+                uid: obj.uid,
+                host: obj.server_name,
+                ssl: obj.established,
+                rqbl: 0,
+                rsbl: 0,
+            };
+
+            this.addAppMap(appCacheObj.uid, appCacheObj);
+            /* this piece of code uses http to map dns */
+            if (flowdir === "in" && obj.server_name) {
+                let key = "dns:ip:" + dst;
+                let value = {
+                    'host': obj.server_name,
+                    'lastActive': Math.ceil(Date.now() / 1000),
+                    'count': 1,
+                    'ssl':1,
+                    'established':obj.established
+                }
+                log.debug("SSL:Dns:values",key,value,{});
+                rclient.hgetall(key,(err,entry)=>{
+                    if (entry && entry.host && entry.ssl) {
+                        return;
+                    }
+                    if (entry) {
+                        rclient.hdel(key,"_intel");
+                        if (entry.count) {
+                            value.count = Number(entry.count)+1;
+                        }
+                    }
+                    rclient.hmset(key, value, (err, rvalue) => {
+                        if (err == null) {
+                            if (this.config.bro.dns.expires) {
+                               rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
+                            }
+                            log.debug("SSL:Dns:Set",key,rvalue,value);
+                        } else {
+                            log.error("SSL:Dns:Error", "unable to update count", err, {});
+                        }
+                              //  });
+                   });
+                });
+            }
+
 
         } catch (e) {
           log.error("SSL:Error Unable to save", e, e.stack, data, {});

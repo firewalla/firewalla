@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,29 +27,37 @@ let modeManager = require('../../net2/ModeManager.js');
 
 // this is only for debugging purpose
 router.post('/apply',
-            (req, res, next) => {
-              modeManager.apply()
-                .then(() => res.json({status: "success"}))
-                .catch((err) => res.status(500).send(err))
-            });
+  (req, res, next) => {
+    modeManager.apply()
+      .then(() => res.json({
+        status: "success"
+      }))
+      .catch((err) => res.status(500).send(err))
+  });
 
 router.post('/dhcp',
-            (req, res, next) => {
-              modeManager.setDHCPAndPublish();
-              res.json({status: "success"});
-            });
+  (req, res, next) => {
+    modeManager.setDHCPAndPublish();
+    res.json({
+      status: "success"
+    });
+  });
 
 router.post('/spoof',
-            (req, res, next) => {
-              modeManager.setSpoofAndPublish();
-              res.json({status: "success"});
-            });
+  (req, res, next) => {
+    modeManager.setSpoofAndPublish();
+    res.json({
+      status: "success"
+    });
+  });
 
 router.get('/mode',
-           (req, res, next) => {
-             modeManager.mode()
-               .then((mode) => res.json({mode: mode}))
-               .catch((err) => res.status(500).send(err))             
-           });
+  (req, res, next) => {
+    modeManager.mode()
+      .then((mode) => res.json({
+        mode: mode
+      }))
+      .catch((err) => res.status(500).send(err))
+  });
 
 module.exports = router;
