@@ -170,6 +170,30 @@ router.get('/apps',
   }
 );
 
+router.get('/categories',
+  (req, res, next) => {
+    let now = new Date() / 1000;
+    let end = Math.floor(now / 3600) * 3600;
+    let begin = end - 3600;
+    let json = {};
+
+    async(() => {
+      await (netBotTool.prepareCategoryActivitiesFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      await (netBotTool.prepareDetailedCategoryFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      res.json(json)
+    })().catch((err) => {
+      log.error("Failed to process /categories: ", err, err.stack, {})
+      res.status(500).send({error: err});
+    })
+  }
+);
+
 router.get('/perfstat',
           function(req, res, next) {
             sysInfo.getPerfStats((err, stat) => {
