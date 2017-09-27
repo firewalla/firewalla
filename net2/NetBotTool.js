@@ -85,7 +85,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+      let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -119,7 +119,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+      let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -283,6 +283,7 @@ class NetBotTool {
 
       apps.forEach((app) => {
         let appFlows = await (appFlowTool.getAppFlow(mac, app))
+        appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         allFlows[app] = appFlows
       })
 
@@ -306,6 +307,7 @@ class NetBotTool {
 
       categories.forEach((category) => {
         let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category))
+        categoryFlows = categoryFlows.filter((f) => f.duration >= 5)
         allFlows[category] = categoryFlows
       })
 
@@ -323,7 +325,7 @@ class NetBotTool {
     return async(() => {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, "category"));
       if (flowKey) {
-        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+        let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(flowKey,20)) // get top 20
 
         traffic.sort((a,b) => {
           return b.count - a.count;
@@ -333,7 +335,14 @@ class NetBotTool {
           delete t.device // no need to keep this record since single host data has same device info
         })
 
-        json.flows.categories = traffic;
+        let categoryTraffics = {}
+
+        traffic.forEach((t) => {
+          categoryTraffics[t.category] = t
+          delete t.category
+        })
+
+        json.flows.categories = categoryTraffics;
       }
     })();
   }
@@ -348,7 +357,7 @@ class NetBotTool {
     return async(() => {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, "app"));
       if (flowKey) {
-        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+        let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(flowKey,20)) // get top 20
 
         traffic.sort((a,b) => {
           return b.count - a.count;
@@ -358,7 +367,14 @@ class NetBotTool {
           delete t.device
         })
 
-        json.flows.apps = traffic;
+        let appTraffics = {}
+
+        traffic.forEach((t) => {
+          appTraffics[t.app] = t
+          delete t.app
+        })
+
+        json.flows.apps = appTraffics;
       }
     })();
   }
