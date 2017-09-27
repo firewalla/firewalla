@@ -174,6 +174,11 @@ class NetBotTool {
         })
 
         return Promise.all(promises)
+          .then(() => {
+            allFlows[app].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
       })
 
       await (Promise.all(allPromises))
@@ -220,6 +225,11 @@ class NetBotTool {
         })
 
         return Promise.all(promises)
+          .then(() => {
+            allFlows[category].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
       })
 
       await (Promise.all(allPromises))

@@ -154,10 +154,6 @@ router.get('/apps',
     let json = {};
 
     async(() => {
-      await (netBotTool.prepareAppActivitiesFlows(json, {
-        begin: begin,
-        end: end
-      }))
       await (netBotTool.prepareDetailedAppFlows(json, {
         begin: begin,
         end: end
@@ -178,10 +174,6 @@ router.get('/categories',
     let json = {};
 
     async(() => {
-      await (netBotTool.prepareCategoryActivitiesFlows(json, {
-        begin: begin,
-        end: end
-      }))
       await (netBotTool.prepareDetailedCategoryFlows(json, {
         begin: begin,
         end: end
