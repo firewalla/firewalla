@@ -107,7 +107,7 @@ class AppFlowTool {
           return null
         }
       }).filter((x) => x != null)
-    })
+    })()
   }
 
   getAppFlow(mac, app, options) {
