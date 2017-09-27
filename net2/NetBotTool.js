@@ -342,7 +342,7 @@ class NetBotTool {
           delete t.category
         })
 
-        json.flows.categories = traffic;
+        json.flows.categories = categoryTraffics;
       }
     })();
   }
@@ -374,7 +374,7 @@ class NetBotTool {
           delete t.app
         })
 
-        json.flows.apps = traffic;
+        json.flows.apps = appTraffics;
       }
     })();
   }
