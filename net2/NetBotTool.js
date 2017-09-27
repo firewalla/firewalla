@@ -156,7 +156,7 @@ class NetBotTool {
 
       let allFlows = {}
 
-      apps.forEach((app) => {
+      let allPromises = apps.map((app) => {
         allFlows[app] = []
 
         let macs = await (appFlowTool.getAppMacAddresses(app))
@@ -173,8 +173,10 @@ class NetBotTool {
           })()
         })
 
-        await (Promise.all(promises))
+        return Promise.all(promises)
       })
+
+      await (Promise.all(allPromises))
 
       json.flows[key] = allFlows
     })();
