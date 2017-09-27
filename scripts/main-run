@@ -40,3 +40,8 @@ $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 logger "FIREWALLA:MAIN:START"
 $FIREWALLA_HOME/scripts/main-start
+
+# cleanup overlay backups from a previous reset
+# should be safe at current stage of boot
+sudo rm -rf /media/root-rw/overlay.bak
+sudo rm -rf /media/root-rw/overlay-workdir.bak

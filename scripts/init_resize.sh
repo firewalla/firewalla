@@ -21,7 +21,7 @@ expand_partition() {
         return 1
     fi
 
-    if ! parted -m $DEVICE_PATH u s resizepart ${part_num} $TARGET_END; then
+    if ! parted -m $DEVICE_PATH u s resizepart ${part_num} yes $TARGET_END; then
         logger "ERROR: Parition ${part_num} resize failed"
         return 1
     fi
@@ -31,7 +31,7 @@ expand_partition() {
 
 if [[ -e $RESIZE_MARKER ]]
 then
-    logger "INFO: After initial boot, NO need to resize partition any more"
+    logger "INFO: Resize done before, bypass"
 else
     logger "INFO: Initial boot, resize partitions now ..."
     expand_partition 4
