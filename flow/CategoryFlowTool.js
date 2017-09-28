@@ -69,14 +69,16 @@ class CategoryFlowTool {
     return rclient.delAsync(key)
   }
 
-  getCategoryFlow(mac, category) {
+  getCategoryFlow(mac, category, options) {
     let key = this.getCategoryFlowKey(mac, category)
 
-    let now = new Date() / 1000
-    let _24hoursAgo = now - 3600 * 24
+    options = options || {}
+
+    let end = options.end || new Date() / 1000;
+    let begin = options.begin || (end - 3600 * 24)
 
     return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync(key, now, _24hoursAgo))
+      let results = await (rclient.zrevrangebyscoreAsync(key, end, begin))
       return results.map((jsonString) => {
         try {
           return JSON.parse(jsonString)
@@ -91,7 +93,7 @@ class CategoryFlowTool {
   delAllCategories(mac) {
     return async(() => {
       let categories = await (this.getCategories(mac))
-      apps.forEach((category) => {
+      categories.forEach((category) => {
         await (this.delCategoryFlow(mac, category))
       })
     })()
@@ -106,6 +108,22 @@ class CategoryFlowTool {
         let result = key.match(/[^:]*$/)
         if(result) {
           return result[0]
+        } else {
+          return null
+        }
+      }).filter((x) => x != null)
+    })()
+  }
+
+  getCategoryMacAddresses(category) {
+    let keyPattern = this.getCategoryFlowKey('*', category)
+
+    return async(() => {
+      let keys = await (rclient.keysAsync(keyPattern))
+      return keys.map((key) => {
+        let result = key.match(/categoryflow:(.*):[^:]*/) // locate mac address
+        if(result) {
+          return result[1]
         } else {
           return null
         }
