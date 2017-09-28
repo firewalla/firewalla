@@ -103,7 +103,7 @@ class NetBotTool {
   }
 
   // app
-  prepareActivitiesFlows(json, options) {
+  prepareAppActivitiesFlows(json, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -133,6 +133,116 @@ class NetBotTool {
       });
 
       json.flows.apps = traffic;
+    })();
+  }
+
+  prepareDetailedAppFlows(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = apps.map((app) => {
+        allFlows[app] = []
+
+        let macs = await (appFlowTool.getAppMacAddresses(app))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+            appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            appFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[app].push.apply(allFlows[app], appFlows)
+          })()
+        })
+
+        return Promise.all(promises)
+          .then(() => {
+            allFlows[app].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
+      })
+
+      await (Promise.all(allPromises))
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareDetailedCategoryFlows(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting category detail flows between ${beginString} and ${endString}`)
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = categorys.map((category) => {
+        allFlows[category] = []
+
+        let macs = await (categoryFlowTool.getCategoryMacAddresses(category))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+            categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            categoryFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[category].push.apply(allFlows[category], categoryFlows)
+          })()
+        })
+
+        return Promise.all(promises)
+          .then(() => {
+            allFlows[category].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
+      })
+
+      await (Promise.all(allPromises))
+
+      json.flows[key] = allFlows
     })();
   }
 
@@ -282,7 +392,7 @@ class NetBotTool {
       let allFlows = {}
 
       apps.forEach((app) => {
-        let appFlows = await (appFlowTool.getAppFlow(mac, app))
+        let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
         appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         allFlows[app] = appFlows
       })
@@ -303,10 +413,13 @@ class NetBotTool {
 
       let categories = await (categoryFlowTool.getCategories(mac))
 
+      // ignore intel category, intel is only for internal logic
+      categories = categories.filter((x) => x !== "intel")
+
       let allFlows = {}
 
       categories.forEach((category) => {
-        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category))
+        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
         categoryFlows = categoryFlows.filter((f) => f.duration >= 5)
         allFlows[category] = categoryFlows
       })
