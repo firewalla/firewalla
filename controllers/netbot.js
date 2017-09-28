@@ -1024,6 +1024,16 @@ class netBot extends ControllerBot {
         return this.systemFlowHandler(msg);
       }
 
+      let begin = msg.data && msg.data.start;
+      //let end = msg.data && msg.data.end;
+      let end = begin && (begin + 3600);
+
+      options = {}
+      if(begin && end) {
+        options.begin = begin
+        options.end = end
+      }
+
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
         let error = new Error("Invalide Host");
@@ -1040,13 +1050,13 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac))
-        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac))
-        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac))
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
+        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
+        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
       }
 
       return jsonobj;
