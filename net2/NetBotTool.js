@@ -392,7 +392,7 @@ class NetBotTool {
       let allFlows = {}
 
       apps.forEach((app) => {
-        let appFlows = await (appFlowTool.getAppFlow(mac, app))
+        let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
         appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         allFlows[app] = appFlows
       })
@@ -419,7 +419,7 @@ class NetBotTool {
       let allFlows = {}
 
       categories.forEach((category) => {
-        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category))
+        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
         categoryFlows = categoryFlows.filter((f) => f.duration >= 5)
         allFlows[category] = categoryFlows
       })
