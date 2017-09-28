@@ -139,6 +139,10 @@ class NetBotTool {
   prepareDetailedAppFlows(json, options) {
     options = options || {}
 
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
@@ -189,6 +193,10 @@ class NetBotTool {
 
   prepareDetailedCategoryFlows(json, options) {
     options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
 
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
