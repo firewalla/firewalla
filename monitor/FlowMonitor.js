@@ -181,7 +181,7 @@ module.exports = class FlowMonitor {
                }
 
                if (ignore == false) {
-                log.info("######## flowIntel Processing",flow);
+                log.info("######## flowIntel Processing",JSON.stringify(flow));
                 if (this.checkIntelClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
@@ -302,6 +302,9 @@ module.exports = class FlowMonitor {
                           "id.resp_p": flow.dp,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
+                        if (flow.intel && flow.intel.action ) {
+                            intelobj.action = flow.intel.action;
+                        }
                         if (flow.dhname) {
                             intelobj['seen.indicator'] = flow.dhname;
                         } else {
@@ -324,6 +327,10 @@ module.exports = class FlowMonitor {
                           "id.resp_p": flow.sp,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
+
+                        if (flow.intel && flow.intel.action ) {
+                            intelobj.action = flow.intel.action;
+                        }
                         if (flow.shname) {
                             intelobj['seen.indicator'] = flow.shname;
                         } else {
@@ -338,7 +345,7 @@ module.exports = class FlowMonitor {
                         }
                     }
 
-                    log.debug("Intel:Flow Sending Intel", intelobj);
+                    log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj),{});
 
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
@@ -919,6 +926,13 @@ module.exports = class FlowMonitor {
           "p.security.numOfReportSources": iobj.count,
           "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
         });
+  
+
+        if (flowObj && flowObj.action) {
+          alarm["p.action.block"]=flowObj.action.block;
+        }
+
+        log.info("Host:ProcessIntelFlow:Alarm",alarm);
 
         alarmManager2.enrichDeviceInfo(alarm)
           .then(alarmManager2.enrichDestInfo)
