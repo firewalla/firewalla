@@ -18,8 +18,9 @@
 
 # This script should only handle upgrade, nothing else
 
+mode=${1:-'normal'}
 
-/usr/bin/logger "FIREWALLA.UPGRADE Starting FIRST "+`date`
+/usr/bin/logger "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
@@ -57,16 +58,19 @@ sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
 
 echo "upgrade on branch $branch"
 
+commit_before=$(git rev-parse HEAD)
+
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
 (sleep 3; eval $GIT_COMMAND) ||
 (sleep 3; eval $GIT_COMMAND) || exit 1
+
+commit_after=$(git rev-parse HEAD)
 
 #(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
 /usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
@@ -80,3 +84,22 @@ sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
+
+case $mode in
+    normal)
+        logger "INFO: Upgrade completed in normal mode"
+        ;;
+    hard)
+        logger "INFO: Upgrade completed with reboot in hard mode"
+        sudo reboot now
+        ;;
+    soft)
+        logger "INFO: Upgrade completed with services restart in soft mode"
+        if [[ "$commit_before" != "$commit_after" ]];  then
+            for svc in api main mon
+            do
+                sudo systemctl restart fire${svc}
+            done
+        fi
+        ;;
+esac
