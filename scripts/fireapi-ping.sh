@@ -4,7 +4,7 @@
 # In case fireapi hangs, need to restart it.
 # -----------------------------------------
 
-TOTAL_RETRIES=5
+TOTAL_RETRIES=10
 SLEEP_TIMEOUT=10
 
 IP_ADDRESS=$(ifconfig eth0|awk '/inet /{print $2}'| awk -F: '{print $2}')
