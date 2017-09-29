@@ -88,13 +88,14 @@ class FlowAggrTool {
 
     let key = this.getFlowKey(mac, x, interval, ts);
     let args = [key];
-    for(let app in traffics) {
-      let duration = (traffics[app] && traffics[app]['duration']) || 0;
+    for(let t in traffics) {
+      let duration = (traffics[t] && traffics[t]['duration']) || 0;
       args.push(duration)
-      args.push(JSON.stringify({
-        device: mac,
-        app: app
-      }))
+
+      let payload = {}
+      payload.device = mac
+      payload[x] = t
+      args.push(JSON.stringify(payload))
     }
 
     args.push(0);
@@ -278,7 +279,15 @@ class FlowAggrTool {
     })();
   }
 
-  getActivitySumFlowByKey(key, count) {
+  getAppActivitySumFlowByKey(key, count) {
+    return this.getXActivitySumFlowByKey(key, 'app', count)
+  }
+
+  getCategoryActivitySumFlowByKey(key, count) {
+    return this.getXActivitySumFlowByKey(key, 'category', count)
+  }
+
+  getXActivitySumFlowByKey(key, x, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     return async(() => {
       let appAndScores = await (rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count));
@@ -290,7 +299,11 @@ class FlowAggrTool {
           if(payload !== '_' && count !== 0) {
             try {
               let json = JSON.parse(payload);
-              results.push({app: json.app, device: json.device, count: count});
+              let result = {}
+              result[x] = json[x]
+              result.device = json.device
+              result.count = count
+              results.push(result)
             } catch(err) {
               log.error("Failed to parse payload: ", payload, {});
             }

@@ -227,7 +227,7 @@ class FlowTool {
     })();
   }
 
-  prepareRecentFlowsForHost(json, mac) {
+  prepareRecentFlowsForHost(json, mac, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -238,7 +238,7 @@ class FlowTool {
       let ips = await (hostTool.getIPsByMac(mac));
       let allFlows = [];
       ips.forEach((ip) => {
-        let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}));
+        let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}, options));
         flows.forEach((f) => {
           f.device = mac;
         });
@@ -377,7 +377,7 @@ class FlowTool {
           flows.map((flow) => {
             flow.device = ips_mac.mac
           })
-          
+
           allFlows.push.apply(allFlows, flows);
 
 

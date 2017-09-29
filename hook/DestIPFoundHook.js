@@ -96,11 +96,13 @@ class DestIPFoundHook extends Hook {
     // app
     cloudIntelInfos.forEach((info) => {
 
+/*
       let hashes = [intel.ip, intel.host].map(
         x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
       )
 
       hashes = [].concat.apply([], hashes);
+*/
 
       // check if the host matches the result from cloud
 
