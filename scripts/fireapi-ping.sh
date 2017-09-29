@@ -4,11 +4,12 @@
 # In case fireapi hangs, need to restart it.
 # -----------------------------------------
 
-TOTAL_RETRIES=10
+TOTAL_RETRIES=6
 SLEEP_TIMEOUT=10
 
 IP_ADDRESS=$(ifconfig eth0|awk '/inet /{print $2}'| awk -F: '{print $2}')
 FIREAPI_GID=$(redis-cli hget sys:ept gid)
+FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
 FIREAPI_URL="http://${IP_ADDRESS}:8834/v1/encipher/message/$FIREAPI_GID"
 FIREAPI_REQ=$'{
     "message": {
@@ -44,6 +45,8 @@ fireapi_ping() {
    echo $resp | egrep -q '"code": *200'
 }
 
+test "$FIREAPI_GROUP_MEMBER_COUNT" -gt 1 || exit 0
+
 retry=1
 ping_ok=0
 while (( $retry <= $TOTAL_RETRIES ))
@@ -58,7 +61,7 @@ done
 
 if [[ $ping_ok -ne 1 ]]; then
     logger "FireAPI ping FAILED, reboot now"
-    sudo reboot now
+    sudo systemctl restart fireapi
 fi
 
 
