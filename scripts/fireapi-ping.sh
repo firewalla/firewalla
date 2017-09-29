@@ -60,7 +60,7 @@ do
 done
 
 if [[ $ping_ok -ne 1 ]]; then
-    logger "FireAPI ping FAILED, reboot now"
+    logger "FireAPI ping FAILED, restart FireAPI now"
     sudo systemctl restart fireapi
 fi
 
