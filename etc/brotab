@@ -10,5 +10,6 @@
 * * * * * ( sleep 40 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
 * * * * * ( sleep 50 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
 */2 * * * * ( /home/pi/firewalla/scripts/fireapi-ping.sh  >/dev/null 2>&1 )
+1 1 1-31/5 * * ( /home/pi/firewalla/scripts/fireupgrade.sh  >/tmp/fireupgrade.log 2>&1 )
 */5 * * * * logger "Firewalla checkpoint every 5 mins" &>/dev/null
 */30 * * * * /home/pi/firewalla/scripts/free-memory &>/dev/null

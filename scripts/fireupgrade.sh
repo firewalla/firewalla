@@ -18,8 +18,9 @@
 
 # This script should only handle upgrade, nothing else
 
+mode=${1:-'normal'}
 
-/usr/bin/logger "FIREWALLA.UPGRADE Starting FIRST "+`date`
+/usr/bin/logger "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
@@ -80,3 +81,23 @@ sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
+
+pull_has_change=1
+case $mode in
+    normal)
+        logger "INFO: Upgrade completed in normal mode"
+        ;;
+    hard)
+        logger "INFO: Upgrade completed with reboot in hard mode"
+        sudo reboot now
+        ;;
+    soft)
+        logger "INFO: Upgrade completed with services restart in soft mode"
+        if [[ $pull_has_change -eq 1 ]];  then
+            for svc in api main mon
+            do
+                sudo systemctl restart fire${svc}
+            done
+        fi
+        ;;
+esac
