@@ -106,7 +106,7 @@ class CategoryFlowTool {
       let keys = await (rclient.keysAsync(keyPattern))
       return keys.map((key) => {
         let result = key.match(/[^:]*$/)
-        if(result) {
+        if(result && result !== 'intel') {
           return result[0]
         } else {
           return null
