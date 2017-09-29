@@ -18,9 +18,14 @@
 
 # This script should only handle upgrade, nothing else
 
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  exit 0
+fi
+
 mode=${1:-'normal'}
 
-/usr/bin/logger "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
@@ -46,11 +51,6 @@ if [[ ! -f /.dockerenv ]]; then
 fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
-
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /usr/bin/logger "FIREWALLA.UPGRADE NO UPGRADE"
-  exit 0
-fi
 
 cd /home/pi/firewalla
 cd .git
