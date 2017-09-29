@@ -1399,13 +1399,19 @@ class netBot extends ControllerBot {
           });
         });
         break;
-      case "policy:delete":
+    case "policy:delete":
+      let policy = pm2.getPolicy(msg.data.value.policyID)
+      if(policy) {
         pm2.disableAndDeletePolicy(msg.data.value.policyID)
           .then(() => {
-            this.simpleTxData(msg, null, null, callback);
+            policy.deleted = true; // mark as deleted
+            this.simpleTxData(msg, policy, null, callback);
           }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
+            this.simpleTxData(msg, null, err, callback);
+          })
+      } else {
+        this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+      }
         break;
 
       case "exception:delete":
