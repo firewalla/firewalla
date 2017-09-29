@@ -58,16 +58,19 @@ sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
 
 echo "upgrade on branch $branch"
 
+commit_before=$(git rev-parse HEAD)
+
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
 (sleep 3; eval $GIT_COMMAND) ||
 (sleep 3; eval $GIT_COMMAND) || exit 1
+
+commit_after=$(git rev-parse HEAD)
 
 #(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
 /usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
@@ -82,7 +85,6 @@ sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
 
-pull_has_change=1
 case $mode in
     normal)
         logger "INFO: Upgrade completed in normal mode"
@@ -93,7 +95,7 @@ case $mode in
         ;;
     soft)
         logger "INFO: Upgrade completed with services restart in soft mode"
-        if [[ $pull_has_change -eq 1 ]];  then
+        if [[ "$commit_before" != "$commit_after" ]];  then
             for svc in api main mon
             do
                 sudo systemctl restart fire${svc}
