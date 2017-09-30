@@ -18,11 +18,6 @@
 
 # This script should only handle upgrade, nothing else
 
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
-  exit 0
-fi
-
 mode=${1:-'normal'}
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
@@ -52,6 +47,7 @@ fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 
+
 cd /home/pi/firewalla
 cd .git
 sudo chown -R pi *
@@ -64,6 +60,16 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 echo "upgrade on branch $branch"
 
 commit_before=$(git rev-parse HEAD)
+current_tag=$(git describe --tags)
+
+echo $commit_before > /tmp/REPO_HEAD
+echo $current_tag > /tmp/REPO_TAG
+echo $branch > /tmp/REPO_BRANCH
+
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  exit 0
+fi
 
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
@@ -71,9 +77,14 @@ eval $GIT_COMMAND ||
 (sleep 3; eval $GIT_COMMAND) || exit 1
 
 commit_after=$(git rev-parse HEAD)
+current_tag=$(git describe --tags)
+
+echo $commit_after > /tmp/REPO_HEAD
+echo $current_tag > /tmp/REPO_TAG
+
 
 #(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
-/usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
+/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
@@ -87,14 +98,15 @@ sudo systemctl reenable brofish
 
 case $mode in
     normal)
-        logger "INFO: Upgrade completed in normal mode"
+        /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed in normal mode"
         ;;
     hard)
-        logger "INFO: Upgrade completed with reboot in hard mode"
-        sudo reboot now
+        /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed with reboot in hard mode"
+        /home/pi/firewalla/scripts/fire-reboot
         ;;
     soft)
-        logger "INFO: Upgrade completed with services restart in soft mode"
+        /home/pi/firewalla/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode"
+        touch /tmp/FWUPGRADING
         if [[ "$commit_before" != "$commit_after" ]];  then
             for svc in api main mon
             do

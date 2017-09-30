@@ -63,7 +63,7 @@ class BoneSensor extends Sensor {
     return async(() => {
       let sysInfo = await (sysManager.getSysInfoAsync());
 
-      log.info("Checking in Cloud...");
+      log.info("Checking in Cloud...",sysInfo);
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 
@@ -99,6 +99,19 @@ class BoneSensor extends Sensor {
           ddns: data.ddns,
           message: 'DDNS is updated'
         })
+      }
+
+      if (data && data.upgrade) {
+          log.info("Bone:Upgrade", data.upgrade);
+          if (data.upgrade.type == "soft") {
+             log.info("Bone:Upgrade:Soft", data.upgrade);
+             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft', (err, out, code) => {
+             });
+          } else if (data.upgrade.type == "hard") {
+             log.info("Bone:Upgrade:Hard", data.upgrade);
+             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
+             });
+          }
       }
     })();
   }
