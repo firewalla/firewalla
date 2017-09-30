@@ -18,8 +18,14 @@
 
 # This script should only handle upgrade, nothing else
 
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  exit 0
+fi
 
-/usr/bin/logger "FIREWALLA.UPGRADE Starting FIRST "+`date`
+mode=${1:-'normal'}
+
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
@@ -46,27 +52,25 @@ fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /usr/bin/logger "FIREWALLA.UPGRADE NO UPGRADE"
-  exit 0
-fi
-
 cd /home/pi/firewalla
 cd .git
 sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
 
 echo "upgrade on branch $branch"
 
+commit_before=$(git rev-parse HEAD)
+
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
 (sleep 3; eval $GIT_COMMAND) ||
 (sleep 3; eval $GIT_COMMAND) || exit 1
+
+commit_after=$(git rev-parse HEAD)
 
 #(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
 /usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
@@ -80,3 +84,22 @@ sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
+
+case $mode in
+    normal)
+        logger "INFO: Upgrade completed in normal mode"
+        ;;
+    hard)
+        logger "INFO: Upgrade completed with reboot in hard mode"
+        sudo reboot now
+        ;;
+    soft)
+        logger "INFO: Upgrade completed with services restart in soft mode"
+        if [[ "$commit_before" != "$commit_after" ]];  then
+            for svc in api main mon
+            do
+                sudo systemctl restart fire${svc}
+            done
+        fi
+        ;;
+esac
