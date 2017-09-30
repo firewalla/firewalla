@@ -1025,8 +1025,7 @@ class netBot extends ControllerBot {
       }
 
       let begin = msg.data && msg.data.start;
-      //let end = msg.data && msg.data.end;
-      let end = begin && (begin + 3600);
+      let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
       let options = {}
       if(begin && end) {

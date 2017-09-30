@@ -238,7 +238,7 @@ class FlowTool {
       let ips = await (hostTool.getIPsByMac(mac));
       let allFlows = [];
       ips.forEach((ip) => {
-        let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}, options));
+        let flows = await(this.getRecentOutgoingConnections(ip, options));
         flows.forEach((f) => {
           f.device = mac;
         });
