@@ -211,7 +211,7 @@ module.exports = class {
         return;
       }
 
-      alarm.aid = id;
+      alarm.aid = id + ""; // covnert to string to make it consistent
 
       let alarmKey = alarmPrefix + id;
 

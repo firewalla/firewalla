@@ -132,7 +132,7 @@ class PolicyManager2 {
         return;
       }
 
-      policy.pid = id;
+      policy.pid = id + ""; // convert to string
 
       let policyKey = policyPrefix + id;
 
