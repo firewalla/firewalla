@@ -6,36 +6,37 @@
 
 TOTAL_RETRIES=6
 SLEEP_TIMEOUT=10
-
-FIREAPI_GID=$(redis-cli hget sys:ept gid)
 FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
-FIREAPI_URL="http://127.0.0.1:8834/v1/encipher/message/$FIREAPI_GID"
-FIREAPI_REQ=$'{
-    "message": {
-        "from": "Unamed",
-        "obj" : {
-            "mtype": "cmd",
-            "id": "53D8D66E-02BC-44A7-B7C5-B7668FBCC4BA",
-            "data": {
-                "item": "ping"
-            },
-            "type": "jsonmsg",
-            "target": "0.0.0.0"
-        },
-        "appInfo": {
-            "appID": "com.rottiesoft.circle",
-            "version": "1.18",
-            "platform": "ios"
-        },
-        "msg": "",
-        "type": "jsondata",
-        "compressMode": 1,
-        "mtype": "msg"
-    },
-    "mtype": "msg"
-}'
 
 fireapi_ping() {
+    FIREAPI_GID=$(redis-cli hget sys:ept gid)
+    FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
+    FIREAPI_URL="http://127.0.0.1:8834/v1/encipher/message/$FIREAPI_GID"
+    FIREAPI_REQ=$'{
+        "message": {
+            "from": "Unamed",
+            "obj" : {
+                "mtype": "cmd",
+                "id": "53D8D66E-02BC-44A7-B7C5-B7668FBCC4BA",
+                "data": {
+                    "item": "ping"
+                },
+                "type": "jsonmsg",
+                "target": "0.0.0.0"
+            },
+            "appInfo": {
+                "appID": "com.rottiesoft.circle",
+                "version": "1.18",
+                "platform": "ios"
+            },
+            "msg": "",
+            "type": "jsondata",
+            "compressMode": 1,
+            "mtype": "msg"
+        },
+        "mtype": "msg"
+    }'
+
     resp=$(curl -s $FIREAPI_URL \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json' \
@@ -59,7 +60,7 @@ do
 done
 
 if [[ $ping_ok -ne 1 ]]; then
-    logger "FireAPI ping FAILED, restart FireAPI now"
+    /home/pi/firewalla/scripts/firelog -t cloud -m "FireAPI ping FAILED, restart FireAPI now $FIREAPI_GID"
     sudo systemctl restart fireapi
 fi
 
