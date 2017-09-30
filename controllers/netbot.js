@@ -1409,9 +1409,9 @@ class netBot extends ControllerBot {
         } else {
           this.simpleTxData(msg, null, new Error("invalid policy"), callback);
         }
-      }().catch((err) => {
+      })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
-      })
+      })                 
       break;
 
       case "exception:delete":
