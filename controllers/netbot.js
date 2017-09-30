@@ -1400,19 +1400,19 @@ class netBot extends ControllerBot {
         });
         break;
     case "policy:delete":
-      let policy = pm2.getPolicy(msg.data.value.policyID)
-      if(policy) {
-        pm2.disableAndDeletePolicy(msg.data.value.policyID)
-          .then(() => {
-            policy.deleted = true; // mark as deleted
-            this.simpleTxData(msg, policy, null, callback);
-          }).catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          })
-      } else {
-        this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-      }
-        break;
+      async(() => {
+        let policy = await (pm2.getPolicy(msg.data.value.policyID))
+        if(policy) {
+          await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+          policy.deleted = true // policy is marked ask deleted
+          this.simpleTxData(msg, policy, null, callback);
+        } else {
+          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+        }
+      }().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break;
 
       case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
