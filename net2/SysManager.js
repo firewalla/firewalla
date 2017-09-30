@@ -413,6 +413,12 @@ module.exports = class {
       });
     }
 
+/* 
+-rw-rw-r-- 1 pi pi  7 Sep 30 06:53 REPO_BRANCH
+-rw-rw-r-- 1 pi pi 41 Sep 30 06:55 REPO_HEAD
+-rw-rw-r-- 1 pi pi 19 Sep 30 06:55 REPO_TAG
+*/
+
     getSysInfo(callback) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
@@ -420,6 +426,10 @@ module.exports = class {
       } else {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
       }
+
+      let repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
+      let repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
+      let repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
 
         if (serial != null) {
             serial = serial.trim();
@@ -430,6 +440,9 @@ module.exports = class {
                ip: this.myIp(),
                mac: this.myMAC(),
                serial: serial,
+               repoBranch: repoBranch,
+               repoHead: repoHead,
+               repoTag: repoTag,
                memory: data
             });
         });
