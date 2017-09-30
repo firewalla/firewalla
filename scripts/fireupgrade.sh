@@ -18,11 +18,6 @@
 
 # This script should only handle upgrade, nothing else
 
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
-  exit 0
-fi
-
 mode=${1:-'normal'}
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
@@ -51,6 +46,11 @@ if [[ ! -f /.dockerenv ]]; then
 fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
+
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  exit 0
+fi
 
 cd /home/pi/firewalla
 cd .git
@@ -95,6 +95,7 @@ case $mode in
         ;;
     soft)
         logger "INFO: Upgrade completed with services restart in soft mode"
+        touch /tmp/FWUPGRADING
         if [[ "$commit_before" != "$commit_after" ]];  then
             for svc in api main mon
             do
