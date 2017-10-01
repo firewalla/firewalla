@@ -427,9 +427,17 @@ module.exports = class {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
       }
 
-      let repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
-      let repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
-      let repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
+      let repoBranch = ""
+      let repoHead = ""
+      let repoTag = ""
+      
+      try {        
+        repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
+        repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
+        repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
+      } catch (err) {
+        log.error("Failed to load repo info from /tmp");
+      }
 
         if (serial != null) {
             serial = serial.trim();

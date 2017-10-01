@@ -174,22 +174,35 @@ module.exports = class DNSMASQ {
   }
 
   addPolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP);
+    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    
+    return async(() => {
+      if(this.workingInProgress) {
+        await (this.delay(1000))  // try again later
+        return this.addPolicyFilterEntry(domain);
+      }
 
+      this.workingInProgress = true
+      await (fs.appendFileAsync(policyFilterFile, entry))
+      this.workingInProgress = false
+    })().catch((err) => {
+      this.workingInProgress = false
+    })
+    
     return fs.appendFileAsync(policyFilterFile, entry);
   }
 
   removePolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
 
-    if(this.deleteInProgress) {
+    if(this.workingInProgress) {
         return this.delay(1000)  // try again later
           .then(() => {
             return this.removePolicyFilterEntry(domain);
           })
     }
 
-    this.deleteInProgress = true;
+    this.workingInProgress = true;
 
     return fs.readFileAsync(policyFilterFile, 'utf8')
       .then((data) => {
@@ -200,10 +213,10 @@ module.exports = class DNSMASQ {
 
         return fs.writeFileAsync(policyFilterFile, newData)
           .then(() => {
-            this.deleteInProgress = false;
+            this.workingInProgress = false;
           }).catch((err) => {
             log.error("Failed to write policy data file:", err, {});
-            this.deleteInProgress = false; // make sure the flag is reset back
+            this.workingInProgress = false; // make sure the flag is reset back
           });
       })
   }
