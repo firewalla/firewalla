@@ -45,6 +45,15 @@ fi
 CPU_PLATFORM=$(uname -m)
 
 
+branch=$(git rev-parse --abbrev-ref HEAD)
+commit_before=$(git rev-parse HEAD)
+current_tag=$(git describe --tags)
+
+echo $commit_before > /tmp/REPO_HEAD
+echo $current_tag > /tmp/REPO_TAG
+echo $branch > /tmp/REPO_BRANCH
+
+
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
     setup_folders
