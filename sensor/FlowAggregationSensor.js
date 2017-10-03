@@ -320,7 +320,7 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     let msg = util.format("Aggregating %s activities between %s and %s", macAddress, beginString, endString)
-    log.info(msg);
+    log.debug(msg);
 
     return async(() => {
       let ips = await (hostTool.getIPsByMac(macAddress));
