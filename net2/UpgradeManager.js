@@ -6,7 +6,9 @@ function isUpgrading() {
 }
 
 function finishUpgrade() {
-    require("fs").unlinkSync("/tmp/FWUPGRADING");
+    if (require('fs').existsSync("/tmp/FWUPGRADING")) {
+        require("fs").unlinkSync("/tmp/FWUPGRADING");
+    }
 }
 
 module.exports = {
