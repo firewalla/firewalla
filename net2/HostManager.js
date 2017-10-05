@@ -1246,6 +1246,8 @@ module.exports = class {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
     json.network = networkinfo;
 
+    sysManager.updateInfo();
+
     if(f.isDocker() &&
       ! options.simulator &&
         fConfig.docker &&
@@ -1290,6 +1292,7 @@ module.exports = class {
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
+    json.ept = sysManager.ept;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
     }

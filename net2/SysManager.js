@@ -96,13 +96,7 @@ module.exports = class {
 
           this.delayedActions();
 
-          fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
-            let license = null;
-            if (_data) {
-              license = JSON.parse(_data);
-            }
-            this.license = license;
-          });
+          this.license = license.getLicense();
 
           sem.on("PublicIP:Updated", (event) => {
             if(event.ip)
@@ -121,6 +115,10 @@ module.exports = class {
         }
         this.update(null);
         return instance;
+    }
+
+    updateInfo() {
+        this.ept = bone.getSysept();
     }
 
   // config loaded && interface discovered

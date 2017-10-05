@@ -17,6 +17,9 @@
 #
 
 # This script should only handle upgrade, nothing else
+#
+# WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
+# WILL PREVENT UPGRADES!
 
 mode=${1:-'normal'}
 
@@ -98,20 +101,14 @@ sudo systemctl reenable brofish
 
 case $mode in
     normal)
-        /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed in normal mode"
+        /home/pi/firewalla/scripts/fireupgrade_normal.sh
         ;;
     hard)
-        /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed with reboot in hard mode"
-        /home/pi/firewalla/scripts/fire-reboot
+        /home/pi/firewalla/scripts/fireupgrade_hard.sh
         ;;
     soft)
-        /home/pi/firewalla/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode"
-        touch /tmp/FWUPGRADING
         if [[ "$commit_before" != "$commit_after" ]];  then
-            for svc in api main mon
-            do
-                sudo systemctl restart fire${svc}
-            done
+            /home/pi/firewalla/scripts/fireupgrade_soft.sh 
         fi
         ;;
 esac
