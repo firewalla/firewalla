@@ -3,7 +3,7 @@
   <img alt="Coverity Scan Build Status"
        src="https://scan.coverity.com/projects/11583/badge.svg"/>
 </a>
-## Firewalla  (Pre-Alpha)
+## Firewalla  (Beta)
 Support (email help@firewalla.com or jerry@firewalla.com)
 https://forum.firewalla.com/
 
