@@ -17,6 +17,7 @@
 #
 
 # This script should only handle upgrade, nothing else
+# This script must be called from fireupgrade.sh
 
 /home/pi/firewalla/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
 touch /tmp/FWUPGRADING

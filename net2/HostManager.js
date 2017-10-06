@@ -1296,6 +1296,9 @@ module.exports = class {
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
     }
+    if (sysManager.upgradeEvent) {
+      json.upgradeEvent = sysManager.upgradeEvent;
+    }
   }
 
 
