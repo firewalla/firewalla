@@ -39,6 +39,7 @@ sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 logger "FIREWALLA:MAIN:START"
+redis-cli del sys:upgrade
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset

@@ -21,6 +21,7 @@ var network = require('network');
 var instance = null;
 var fs = require('fs');
 var license = require('../util/license.js');
+var upgradeManager = require("./UpgradeManager.js");
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -70,8 +71,15 @@ module.exports = class {
             this.lastIPTime = 0;
             instance = this;
 
-          sclient.on("message", function(channel, message) {
+          this.ts = Date.now() / 1000;
+          log.info("Init",this.ts);
+          sclient.on("message", (channel, message)=> {
+            log.info("Msg",this.ts,channel,message);
             switch(channel) {
+            case "System:Upgrade:Hard":
+              this.upgradeEvent = message;
+              log.info("[pubsub] System:Upgrade:Hard",this.ts,this.upgradeEvent);
+              break;
             case "System:DebugChange":
               if(message === "1") {
                 systemDebug = true;
@@ -93,6 +101,10 @@ module.exports = class {
             }
           });
           sclient.subscribe("System:DebugChange");
+          sclient.subscribe("System:LanguageChange");
+          sclient.subscribe("System:TimezoneChange");
+          sclient.subscribe("System:Upgrade:Hard");
+          sclient.subscribe("System:Upgrade:Soft");
 
           this.delayedActions();
 
@@ -112,6 +124,12 @@ module.exports = class {
               this.publicIp = event.publicIp;
             }
           })
+ 
+          upgradeManager.getUpgradeInfo((err,data)=>{
+              if (data) {
+                  this.upgradeEvent = data;
+              }
+          });
         }
         this.update(null);
         return instance;
