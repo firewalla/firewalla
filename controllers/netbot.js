@@ -43,6 +43,9 @@ let Promise = require('bluebird');
 
 let redis = require('redis');
 let rclient = redis.createClient();
+var sclient = redis.createClient();
+sclient.setMaxListeners(0);
+
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -459,6 +462,7 @@ class netBot extends ControllerBot {
        */
     });
 
+
     this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
       if (msg) {
         let notifMsg = msg.notif;
@@ -529,6 +533,52 @@ class netBot extends ControllerBot {
         this.scanning = true;
       }
     });
+
+    sclient.on("message", (channel, msg)=> {
+       log.info("Msg",channel,msg);
+       switch(channel) {
+         case "System:Upgrade:Hard":
+             if (msg) {
+                let notifyMsg = {
+                   title: "Firewalla version "+msg+" avaliable, please upgrade",
+                   body: ""
+                   } 
+                let data = {
+                   gid: this.primarygid,
+                };
+                this.tx2(this.primarygid, "", notifyMsg, data);
+             }
+             break;
+         case "System:Upgrade:Soft":
+             if (msg) {
+                let notifyMsg = {
+                   title: "Firewalla version "+msg+" upgraded",
+                   body: ""
+                   } 
+                let data = {
+                   gid: this.primarygid,
+                };
+                this.tx2(this.primarygid, "", notifyMsg, data);
+             }
+             break;
+       }
+    });
+    sclient.subscribe("System:Upgrade:Hard");
+    sclient.subscribe("System:Upgrade:Soft");
+  }
+
+  boneMsgHandler(msg) {
+      if (msg.type == "MSG" && msg.message) {
+          let notifyMsg = {
+             title: msg.message,
+             body: ""
+          } 
+          let data = {
+             gid: this.primarygid,
+             data: msg
+          };
+          this.tx2(this.primarygid, "", notifyMsg, data);
+      }
   }
 
   scanStart(callback) {
