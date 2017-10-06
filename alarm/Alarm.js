@@ -265,6 +265,7 @@ class LargeTransferAlarm extends OutboundAlarm {
 class VideoAlarm extends OutboundAlarm {
   constructor(timestamp, device, videoID, info) {
     super("ALARM_VIDEO", timestamp, device, videoID, info);
+    this["p.showMap"] = false;
     this.notifType = "activity";
   }
 }
@@ -272,6 +273,7 @@ class VideoAlarm extends OutboundAlarm {
 class GameAlarm extends OutboundAlarm {
   constructor(timestamp, device, gameID, info) {
     super("ALARM_GAME", timestamp, device, gameID, info);
+    this["p.showMap"] = false;
     this.notifType = "activity";
 
   }
@@ -280,6 +282,7 @@ class GameAlarm extends OutboundAlarm {
 class PornAlarm extends OutboundAlarm {
   constructor(timestamp, device, pornID, info) {
     super("ALARM_PORN", timestamp, device, pornID, info);
+    this["p.showMap"] = false;
     this.notifType = "activity";
   }
 }

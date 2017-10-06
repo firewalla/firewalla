@@ -305,6 +305,9 @@ module.exports = class FlowMonitor {
                         if (flow.intel && flow.intel.action ) {
                             intelobj.action = flow.intel.action;
                         }
+                        if (flow.intel && flow.intel.cc) {
+                            intelobj.categoryArray = flow.intel.cc;
+                        }
                         if (flow.dhname) {
                             intelobj['seen.indicator'] = flow.dhname;
                         } else {
@@ -330,6 +333,9 @@ module.exports = class FlowMonitor {
 
                         if (flow.intel && flow.intel.action ) {
                             intelobj.action = flow.intel.action;
+                        }
+                        if (flow.intel && flow.intel.cc) {
+                            intelobj.categoryArray = flow.intel.cc;
                         }
                         if (flow.shname) {
                             intelobj['seen.indicator'] = flow.shname;
@@ -930,6 +936,10 @@ module.exports = class FlowMonitor {
 
         if (flowObj && flowObj.action) {
           alarm["p.action.block"]=flowObj.action.block;
+        }
+
+        if (flowObj && flowObj.categoryArray) {
+          alarm['p.security.category']=flowObj.categoryArray;
         }
 
         log.info("Host:ProcessIntelFlow:Alarm",alarm);

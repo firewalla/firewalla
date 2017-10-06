@@ -187,9 +187,9 @@ class FlowAggrTool {
       let beginString = new Date(begin * 1000).toLocaleTimeString();
 
       if(mac) {
-        log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+        log.debug(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
       } else {
-        log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+        log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
       }
 
       let ticks = this.getTicks(begin, end, interval);
@@ -201,7 +201,7 @@ class FlowAggrTool {
         // * is a hack code here, in redis, it means matching everything during keys command
         tickKeys = ticks.map((tick) => {
           let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
-          log.info("Checking key pattern:", keyPattern);
+          log.debug("Checking key pattern:", keyPattern);
           let keys = await (rclient.keysAsync(keyPattern));
           return keys;
         }).reduce((a,b) => a.concat(b), []); // reduce version of flatMap

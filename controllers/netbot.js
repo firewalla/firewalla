@@ -1025,8 +1025,7 @@ class netBot extends ControllerBot {
       }
 
       let begin = msg.data && msg.data.start;
-      //let end = msg.data && msg.data.end;
-      let end = begin && (begin + 3600);
+      let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
       let options = {}
       if(begin && end) {
@@ -1399,14 +1398,20 @@ class netBot extends ControllerBot {
           });
         });
         break;
-      case "policy:delete":
-        pm2.disableAndDeletePolicy(msg.data.value.policyID)
-          .then(() => {
-            this.simpleTxData(msg, null, null, callback);
-          }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+    case "policy:delete":
+      async(() => {
+        let policy = await (pm2.getPolicy(msg.data.value.policyID))
+        if(policy) {
+          await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+          policy.deleted = true // policy is marked ask deleted
+          this.simpleTxData(msg, policy, null, callback);
+        } else {
+          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })                 
+      break;
 
       case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)

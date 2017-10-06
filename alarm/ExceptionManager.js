@@ -135,7 +135,7 @@ module.exports = class {
         return;
       }
 
-      exception.eid = id;
+      exception.eid = id + ""; // convert it to string to make it consistent with redis
 
       let exceptionKey = exceptionPrefix + id;
 
