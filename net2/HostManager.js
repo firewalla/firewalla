@@ -421,6 +421,9 @@ class Host {
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
+        if (this.o.ipv4Addr == gateway) {
+          return;
+        }
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
