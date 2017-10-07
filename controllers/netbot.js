@@ -1721,8 +1721,8 @@ class netBot extends ControllerBot {
 
   }
 
-    boneMsgHandler(type,msg) {
-        console.log("Bone Message Received ",type,msg);
+    boneMsgHandler(msg) {
+        console.log("Bone Message Received ",msg,msg.type);
     }
 
   helpString() {
