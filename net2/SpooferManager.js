@@ -88,19 +88,13 @@ function startSpoofing() {
         binary = getBinary();
         args = [ifName, routerIP, myIP,'-m','-q','-n'];
       }
-      spawnProcess = spawn(binary, args);
-      log.info("starting new spoofing: ", binary, args, {});
 
-      spawnProcess.stdout.pipe(logStream);
-      spawnProcess.stderr.pipe(logStream);
-
-      spawnProcess.on('exit', (code) => {
-        log.info("spoofing binary exited with code " + code);
-      });
-
+      let cmd = binary+" "+args.join(" ")
+      log.info("Lanching Bitbridge4 ", cmd);
+      require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/bin/bitbridge4.sh");
+      require('child_process').execSync("sudo service bitbridge4 restart");
       spoofStarted = true;
       return Promise.resolve();
-
     });
   
 }
@@ -108,14 +102,10 @@ function startSpoofing() {
 function stopSpoofing() {
   return new Promise((resolve, reject) => {
     spoofStarted = false;
-    
-    // if(spawnProcess) {
-    //   spawnProcess.kill();
-    // }
-    cp.exec("sudo pkill bitbridge7", (err) => {
-      // ignore err, since bitbridge7 may not exist
+    log.info("Killing Bitbridge4");
+    require('child_process').exec("sudo service bitbridge4 stop",(err)=>{
       resolve();
-    })
+    });
   }).catch((err) => {
     //catch everything here
   })
