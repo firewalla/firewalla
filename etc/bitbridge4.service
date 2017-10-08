@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla BitBridge4
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/bin
+ExecStart=/bin/sh /home/pi/firewalla/bin/bitbridge4.sh
+
+[Install]
+WantedBy=multi-user.target
