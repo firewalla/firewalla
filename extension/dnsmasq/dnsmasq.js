@@ -466,6 +466,9 @@ module.exports = class DNSMASQ {
 
     log.debug("Command to start dnsmasq: ", cmd);
 
+    require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    require('child_process').execSync("sudo service firemasq restart");
+    /*
     const p = spawn('/bin/bash', ['-c', cmd])
 
     p.stdout.on('data', (data) => {
@@ -489,6 +492,7 @@ module.exports = class DNSMASQ {
       }
     })
 
+    */
 
 
     callback(null)
@@ -497,7 +501,8 @@ module.exports = class DNSMASQ {
   rawStop(callback) {
     callback = callback || function() {}
 
-    let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+  //  let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    let cmd = "sudo service firemasq stop";
     log.debug("Command to stop dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
@@ -513,7 +518,7 @@ module.exports = class DNSMASQ {
   rawRestart(callback) {
     callback = callback || function() {}
 
-    let cmd = "sudo systemctl restart dnsmasq";
+    let cmd = "sudo systemctl restart firemasq";
 
     if(require('fs').existsSync("/.dockerenv")) {
       cmd = "sudo service dnsmasq restart";
@@ -591,7 +596,7 @@ module.exports = class DNSMASQ {
   }
 
   restart(callback) {
-    require('child_process').exec("sudo systemctl restart dnsmasq", (err, out, code) => {
+    require('child_process').exec("sudo systemctl restart firemasq", (err, out, code) => {
       if(err) {
         log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
       }

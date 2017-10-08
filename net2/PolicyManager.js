@@ -91,6 +91,11 @@ module.exports = class {
     // this should flush ip6tables as well
   flush(config, callback) {
     callback = callback || function() {}
+
+    if (require('./UpgradeManager.js').isUpgrading()==true) {
+       callback(null);
+       return;
+    }
     
        iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {

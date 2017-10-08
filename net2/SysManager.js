@@ -21,6 +21,7 @@ var network = require('network');
 var instance = null;
 var fs = require('fs');
 var license = require('../util/license.js');
+var upgradeManager = require("./UpgradeManager.js");
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -70,8 +71,15 @@ module.exports = class {
             this.lastIPTime = 0;
             instance = this;
 
-          sclient.on("message", function(channel, message) {
+          this.ts = Date.now() / 1000;
+          log.info("Init",this.ts);
+          sclient.on("message", (channel, message)=> {
+            log.info("Msg",this.ts,channel,message);
             switch(channel) {
+            case "System:Upgrade:Hard":
+              this.upgradeEvent = message;
+              log.info("[pubsub] System:Upgrade:Hard",this.ts,this.upgradeEvent);
+              break;
             case "System:DebugChange":
               if(message === "1") {
                 systemDebug = true;
@@ -93,16 +101,14 @@ module.exports = class {
             }
           });
           sclient.subscribe("System:DebugChange");
+          sclient.subscribe("System:LanguageChange");
+          sclient.subscribe("System:TimezoneChange");
+          sclient.subscribe("System:Upgrade:Hard");
+          sclient.subscribe("System:Upgrade:Soft");
 
           this.delayedActions();
 
-          fs.readFile('/encipher.config/license','utf8',(err,_data)=> {
-            let license = null;
-            if (_data) {
-              license = JSON.parse(_data);
-            }
-            this.license = license;
-          });
+          this.license = license.getLicense();
 
           sem.on("PublicIP:Updated", (event) => {
             if(event.ip)
@@ -118,9 +124,19 @@ module.exports = class {
               this.publicIp = event.publicIp;
             }
           })
+ 
+          upgradeManager.getUpgradeInfo((err,data)=>{
+              if (data) {
+                  this.upgradeEvent = data;
+              }
+          });
         }
         this.update(null);
         return instance;
+    }
+
+    updateInfo() {
+        this.ept = bone.getSysept();
     }
 
   // config loaded && interface discovered
@@ -427,16 +443,15 @@ module.exports = class {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
       }
 
-      let repoBranch = ""
-      let repoHead = ""
-      let repoTag = ""
-      
-      try {        
-        repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
-        repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
-        repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
-      } catch (err) {
-        log.error("Failed to load repo info from /tmp");
+      let repoBranch = null;
+      let repoHead = null;
+      let repoTag = null; 
+      try {
+          repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
+          repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
+          repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
+      } catch(e) {
+          log.error("GetSysInfo:GIT unable to read git repo data",e);
       }
 
         if (serial != null) {

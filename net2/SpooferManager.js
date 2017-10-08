@@ -79,13 +79,17 @@ function startSpoofing() {
       }
 
       let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
-      
+      let binary = null, args = null;
+
       if(firewalla.isDocker() || firewalla.isTravis()) {
-        spawnProcess = spawn("sudo", [getBinary(), ifName, routerIP, myIP,'-m','-q','-n'])
+        binary = "sudo";
+        args = [getBinary(), ifName, routerIP, myIP,'-m','-q','-n'];
       } else {
-        spawnProcess = spawn(getBinary(), [ifName, routerIP, myIP,'-m','-q','-n']);
+        binary = getBinary();
+        args = [ifName, routerIP, myIP,'-m','-q','-n'];
       }
-      log.info("starting new spoofing: ", getBinary(), [ifName, routerIP, myIP], {});
+      spawnProcess = spawn(binary, args);
+      log.info("starting new spoofing: ", binary, args, {});
 
       spawnProcess.stdout.pipe(logStream);
       spawnProcess.stderr.pipe(logStream);
