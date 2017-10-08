@@ -430,9 +430,6 @@ class Host {
         if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
           return;
         }
-        if (this.o.mac.startsWith("C2") || this.o.mac.startsWith("02")) {
-          return;
-        }
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
