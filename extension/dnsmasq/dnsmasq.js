@@ -188,8 +188,6 @@ module.exports = class DNSMASQ {
     })().catch((err) => {
       this.workingInProgress = false
     })
-    
-    return fs.appendFileAsync(policyFilterFile, entry);
   }
 
   removePolicyFilterEntry(domain) {
