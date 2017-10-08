@@ -89,7 +89,7 @@ function startSpoofing() {
         args = [ifName, routerIP, myIP,'-m','-q','-n'];
       }
       spawnProcess = spawn(binary, args);
-      log.info("starting new spoofing: ", binary, args);
+      log.info("starting new spoofing: ", binary, args, {});
 
       spawnProcess.stdout.pipe(logStream);
       spawnProcess.stderr.pipe(logStream);
