@@ -70,7 +70,7 @@ class FlowAggregationSensor extends Sensor {
   scheduledJob() {
     log.info("Generating summarized flows info...")
     return async(() => {
-      let ts = new Date() / 1000 - 180; // 3 minutes ago
+      let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
       await (this.aggrAll(ts));
       await (this.sumAll(ts));
       await (this.updateAllHourlySummedFlows(ts));
@@ -190,7 +190,9 @@ class FlowAggregationSensor extends Sensor {
       let macs = this.getQualifiedDevices();
       macs.forEach((mac) => {
         await (this.aggr(mac, ts));
+        await (this.aggr(mac, ts + this.config.interval));
         await (this.aggrActivity(mac, ts));
+        await (this.aggrActivity(mac, ts + this.config.interval));
       })
     })();
   }
@@ -236,6 +238,10 @@ class FlowAggregationSensor extends Sensor {
     let end = ts;
     let begin = end - 3600;
     let skipIfExists = options && options.skipIfExists;
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    log.info(`Aggregating hourly flows for ${beginString} - ${endString}, skipIfExists flag: ${skipIfExists}`)
 
     return async(() => {
       let options = {
