@@ -424,6 +424,12 @@ class Host {
         if (this.o.ipv4Addr == gateway) {
           return;
         }
+        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+          return;
+        }
+        if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
+          return;
+        }
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
