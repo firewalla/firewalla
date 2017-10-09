@@ -117,10 +117,16 @@ class HostTool {
   }
 
   updateMACKey(host, skipUpdatingExpireTime) {
-    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+   
+    if(host.mac && host.mac === "00:00:00:00:00:00") {
+      log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
+      return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
     }
 
+    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
+      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    }    
+    
     this.cleanupData(host);
 
     let key = this.getMacKey(host.mac);
