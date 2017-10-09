@@ -60,6 +60,14 @@ class HostTool {
     return rclient.hgetallAsync(key);
   }
 
+  getIPv6Entry(ip) {
+    if(!ip)
+      return Promise.reject("invalid ip addr");
+
+    let key = "host:ip6:" + ip;
+    return rclient.hgetallAsync(key);
+  }
+
   getMACEntry(mac) {
     if(!mac)
       return Promise.reject("invalid mac address");
