@@ -48,20 +48,20 @@ class IPv6DiscoverySensor extends Sensor {
 
   run() {
     process.nextTick(() => {
-       this.checkAndRunOnce(true);
+      this.checkAndRunOnce(true);
     });
     setInterval(() => {
-       this.checkAndRunOnce(true);
+      this.checkAndRunOnce(true);
     }, 1000 * 60 * 120); // every 120 minutes, slow scan
     setInterval(() => {
-       this.checkAndRunOnce(true);
+      this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
   }
 
   getNetworkRanges() {
     return this.networkInterface
       .then((results) => {
-      return results;
+        return results;
       });
   }
 
@@ -71,17 +71,17 @@ class IPv6DiscoverySensor extends Sensor {
         if(result) {
           return this.networkInterface
             .then((results) => {
-                if (results) {
-                    for (let i in results) {
-                       let intf = results[i];
-                       this.neighborDiscoveryV6(intf.name,intf);
-                    }
+              if (results) {
+                for (let i in results) {
+                  let intf = results[i];
+                  this.neighborDiscoveryV6(intf.name,intf);
                 }
+              }
             })
         }
       }).catch((err) => {
-      log.error("Failed to check if sensor is enabled", err, {});
-    })
+        log.error("Failed to check if sensor is enabled", err, {});
+      })
   }
 
   isSensorEnable() {
@@ -90,71 +90,71 @@ class IPv6DiscoverySensor extends Sensor {
 
 
   ping6ForDiscovery(intf,obj,callback) {
-      this.process = require('child_process').exec("ping6 -c2 -I eth0 ff02::1", (err, out, code) => {
-          async.eachLimit(obj.ip6_addresses, 5, (o, cb) => {
-             let pcmd = "ping6 -B -c 2 -I eth0 -I "+o+"  ff02::1";
-             log.info("Discovery:v6Neighbor:Ping6",pcmd);
-             require('child_process').exec(pcmd,(err)=>{
-                cb();
-             });
-          }, (err)=>{
-              callback(err);
-          });
+    this.process = require('child_process').exec("ping6 -c2 -I eth0 ff02::1", (err, out, code) => {
+      async.eachLimit(obj.ip6_addresses, 5, (o, cb) => {
+        let pcmd = "ping6 -B -c 2 -I eth0 -I "+o+"  ff02::1";
+        log.info("Discovery:v6Neighbor:Ping6",pcmd);
+        require('child_process').exec(pcmd,(err)=>{
+          cb();
+        });
+      }, (err)=>{
+        callback(err);
       });
+    });
   }
 
-/* WARNING NOT SENDING SEM */
-/* !!!!!!!!!!!!!!!!!!!!!!! */
+  /* WARNING NOT SENDING SEM */
+  /* !!!!!!!!!!!!!!!!!!!!!!! */
   addV6Host(v6addr,mac,callback) {
-      log.info("Found V6 Address ",v6addr,mac);
-      callback(null);
-      return;
-      sem.emitEvent({
-        type: "DeviceUpdate",
-        message: "A new device found @ NewDeviceHook",
-        suppressEventLogging: true,
-        suppressAlarm: this.suppressAlarm,
-        host:  {
-          ipv6: v6addr,
-          ipv6Addr: v6addr,
-          mac: mac.toUpperCase();
-        }
-      });
-      callback(null);
+    log.info("Found V6 Address ",v6addr,mac);
+    callback(null);
+    return;
+    sem.emitEvent({
+      type: "DeviceUpdate",
+      message: "A new device found @ NewDeviceHook",
+      suppressEventLogging: true,
+      suppressAlarm: this.suppressAlarm,
+      host:  {
+        ipv6: v6addr,
+        ipv6Addr: v6addr,
+        mac: mac.toUpperCase()
+      }
+    });
+    callback(null);
   }
 
   neighborDiscoveryV6(intf,obj) {
-     if (obj.ip6_addresses==null || obj.ip6_addresses.length<=1) {
-         log.info("Discovery:v6Neighbor:NoV6",intf,obj);
-         return;
-     }
-     this.ping6ForDiscovery(intf,obj,(err) => {
-         let cmdline = 'ip -6 neighbor show';
-         log.info("Running commandline: ", cmdline);
-
-         this.process = require('child_process').exec(cmdline, (err, out, code) => {
-            let lines = out.split("\n");
-            async.eachLimit(lines, 1, (o, cb) => {
-                log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
-                let parts = o.split(" ");
-                if (parts[2] == intf) {
-                    let v6addr = parts[0];
-                    let mac = parts[4].toUpperCase();
-                    if (mac == "FAILED" || mac.length < 16) {
-                        cb();
-                    } else {
-                        this.addV6Host(v6addr, mac, (err) => {
-                            cb();
-                        });
-                    }
-                } else {
-                    cb();
-                }
-            }, (err) => {});
-            });
-        });
-
+    if (obj.ip6_addresses==null || obj.ip6_addresses.length<=1) {
+      log.info("Discovery:v6Neighbor:NoV6",intf,obj);
+      return;
     }
+    this.ping6ForDiscovery(intf,obj,(err) => {
+      let cmdline = 'ip -6 neighbor show';
+      log.info("Running commandline: ", cmdline);
+
+      this.process = require('child_process').exec(cmdline, (err, out, code) => {
+        let lines = out.split("\n");
+        async.eachLimit(lines, 1, (o, cb) => {
+          log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
+          let parts = o.split(" ");
+          if (parts[2] == intf) {
+            let v6addr = parts[0];
+            let mac = parts[4].toUpperCase();
+            if (mac == "FAILED" || mac.length < 16) {
+              cb();
+            } else {
+              this.addV6Host(v6addr, mac, (err) => {
+                cb();
+              });
+            }
+          } else {
+            cb();
+          }
+        }, (err) => {});
+      });
+    });
+
+  }
 
   isSensorEnable() {
     return Promise.resolve(this.enabled);
