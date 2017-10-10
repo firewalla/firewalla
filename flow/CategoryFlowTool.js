@@ -114,7 +114,7 @@ class CategoryFlowTool {
       }).filter((x) => x != null)
 
       return categories.filter((elem, pos) => {
-        return .indexOf(elem) == pos;
+        return categories.indexOf(elem) == pos;
       })
       
     })()
