@@ -16,16 +16,11 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# This script should only handle upgrade, nothing else
-# This script must be called from fireupgrade.sh
+# 
+#  this is the post soft upgrade script. It should contain anything that will
+#  prevent a reboot 
+#
 
-# call post upgrade
-/home/pi/firewalla/scripts/fireupgrade_post.sh 
+sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
 
-# call upgrade
-/home/pi/firewalla/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
-touch /tmp/FWUPGRADING
-for svc in api main mon
-  do
-      sudo systemctl restart fire${svc}
-done
