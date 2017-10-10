@@ -42,6 +42,12 @@ let destIPFoundHook = new DestIPFoundHook();
 let HostTool = require('../net2/HostTool');
 let hostTool = new HostTool();
 
+let AppFlowTool = require('../flow/AppFlowTool.js')
+let appFlowTool = new AppFlowTool()
+
+let CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+let categoryFlowTool = new CategoryFlowTool()
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); };
@@ -63,7 +69,41 @@ class NetBotTool {
     return this._prepareTopFlows(json, "upload", options);
   }
 
-  prepareActivitiesFlows(json, options) {
+  prepareCategoryActivitiesFlows(json, options) {
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(util.format("Getting category flows between %s and %s", beginString, endString));
+
+    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
+
+    return async(() => {
+      let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(sumFlowKey, 50));
+
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      traffic.forEach((t) => {
+        let mac = t.device;
+        let host = await (hostTool.getMACEntry(mac));
+        let name = hostTool.getHostname(host);
+        t.deviceName = name;
+      });
+
+      json.flows.categories = traffic;
+    })();
+  }
+
+  // app
+  prepareAppActivitiesFlows(json, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -79,7 +119,7 @@ class NetBotTool {
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
 
     return async(() => {
-      let traffic = await (flowAggrTool.getActivitySumFlowByKey(sumFlowKey, 50));
+      let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(sumFlowKey, 50));
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -93,6 +133,116 @@ class NetBotTool {
       });
 
       json.flows.apps = traffic;
+    })();
+  }
+
+  prepareDetailedAppFlows(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = apps.map((app) => {
+        allFlows[app] = []
+
+        let macs = await (appFlowTool.getAppMacAddresses(app))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+            appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            appFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[app].push.apply(allFlows[app], appFlows)
+          })()
+        })
+
+        return Promise.all(promises)
+          .then(() => {
+            allFlows[app].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
+      })
+
+      await (Promise.all(allPromises))
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareDetailedCategoryFlows(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Getting category detail flows between ${beginString} and ${endString}`)
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = categorys.map((category) => {
+        allFlows[category] = []
+
+        let macs = await (categoryFlowTool.getCategoryMacAddresses(category))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+            categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            categoryFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[category].push.apply(allFlows[category], categoryFlows)
+          })()
+        })
+
+        return Promise.all(promises)
+          .then(() => {
+            allFlows[category].sort((a, b) => {
+              return b.ts - a.ts;
+            });
+          })
+      })
+
+      await (Promise.all(allPromises))
+
+      json.flows[key] = allFlows
     })();
   }
 
@@ -227,7 +377,90 @@ class NetBotTool {
     return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
-  prepareActivitiesFlowsForHost(json, mac, options) {
+  prepareDetailedAppFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps(mac))
+
+      let allFlows = {}
+
+      apps.forEach((app) => {
+        let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+        appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+        allFlows[app] = appFlows
+      })
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareDetailedCategoryFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categories = await (categoryFlowTool.getCategories(mac))
+
+      // ignore intel category, intel is only for internal logic
+      categories = categories.filter((x) => x !== "intel")
+
+      let allFlows = {}
+
+      categories.forEach((category) => {
+        let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+        categoryFlows = categoryFlows.filter((f) => f.duration >= 5)
+        allFlows[category] = categoryFlows
+      })
+
+      json.flows[key] = allFlows
+    })();
+  }
+
+  prepareCategoryActivityFlowsForHost(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    json.flows.categories = [];
+
+    return async(() => {
+      let flowKey = await (flowAggrTool.getLastSumFlow(mac, "category"));
+      if (flowKey) {
+        let traffic = await (flowAggrTool.getCategoryActivitySumFlowByKey(flowKey,20)) // get top 20
+
+        traffic.sort((a,b) => {
+          return b.count - a.count;
+        });
+
+        traffic.forEach((t) => {
+          delete t.device // no need to keep this record since single host data has same device info
+        })
+
+        let categoryTraffics = {}
+
+        traffic.forEach((t) => {
+          categoryTraffics[t.category] = t
+          delete t.category
+        })
+
+        json.flows.categories = categoryTraffics;
+      }
+    })();
+  }
+
+  prepareAppActivityFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
@@ -237,13 +470,24 @@ class NetBotTool {
     return async(() => {
       let flowKey = await (flowAggrTool.getLastSumFlow(mac, "app"));
       if (flowKey) {
-        let traffic = await (flowAggrTool.getActivitySumFlowByKey(flowKey,20)) // get top 20
+        let traffic = await (flowAggrTool.getAppActivitySumFlowByKey(flowKey,20)) // get top 20
 
         traffic.sort((a,b) => {
           return b.count - a.count;
         });
 
-        json.flows.apps = traffic;
+        traffic.forEach((t) => {
+          delete t.device
+        })
+
+        let appTraffics = {}
+
+        traffic.forEach((t) => {
+          appTraffics[t.app] = t
+          delete t.app
+        })
+
+        json.flows.apps = appTraffics;
       }
     })();
   }

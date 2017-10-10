@@ -3,9 +3,11 @@
   <img alt="Coverity Scan Build Status"
        src="https://scan.coverity.com/projects/11583/badge.svg"/>
 </a>
-## Firewalla  (Pre-Alpha)
+## Firewalla  (Beta)
 Support (email help@firewalla.com or jerry@firewalla.com)
 https://forum.firewalla.com/
+
+*WARNING* Until the middle of November, we will be focusing pushing out the Firewalla Device.  During this period, we absolutely have no time to make Raspberry pi or Docker images perfectly working.  This means, unless you are using 'master' or 'release_5_0' branch, the image may or may not work with the iOS / Android App.  Please send us help@firewalla.com a email to request beta images.  Yes, we are excited! (and nervous and many other crazy feelings)
 
 We do have developers units avaliable for early trials and write code on.  The quantity is limited, and they will carry a developers license and in price range of 45 dollars.  The case will be 3D printed until we get the real plastic.  If interested, please email jerry@firewalla.com  These units will ship in September.
 ## Install From Image

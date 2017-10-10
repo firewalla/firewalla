@@ -53,6 +53,7 @@
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
+    "IPv6DiscoverySensor":{},
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,

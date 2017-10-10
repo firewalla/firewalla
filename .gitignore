@@ -100,5 +100,8 @@ flycheck_*.el
 
 api/db/token.json
 /test/sample_license.json
-/test
+#/test
 /tests/sample_license.json
+/test
+/.gitmodules
+/extension/frp/frpc.ini

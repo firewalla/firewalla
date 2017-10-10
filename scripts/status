@@ -1,5 +1,16 @@
-sudo service firemain status
-sudo service firemon status
-sudo service firekick status
-sudo service fireapi status
-sudo service fireupgrade status
+echo "Main"
+sudo service firemain status | grep Active
+echo "Monitor"
+sudo service firemon status | grep Active
+echo "Kick"
+sudo service firekick status | grep Active
+echo "API"
+sudo service fireapi status | grep Active
+echo "Upgrade"
+sudo service fireupgrade status | grep Active
+echo "DNSMasq"
+sudo service firemasq status | grep Active
+echo "Bitbridge4"
+sudo service bitbridge4 status | grep Active
+echo "Bitbridge6"
+sudo service bitbridge6 status | grep Active

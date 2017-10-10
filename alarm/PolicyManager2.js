@@ -132,7 +132,7 @@ class PolicyManager2 {
         return;
       }
 
-      policy.pid = id;
+      policy.pid = id + ""; // convert to string
 
       let policyKey = policyPrefix + id;
 
@@ -234,6 +234,10 @@ class PolicyManager2 {
   }
 
   jsonToPolicy(json) {
+    if(!json) {
+      return null;
+    }
+    
     let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -259,7 +263,7 @@ class PolicyManager2 {
           callback(err);
           return;
         }
-
+        
         callback(null, results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null));
       });
     }

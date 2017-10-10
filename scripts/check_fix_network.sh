@@ -117,7 +117,7 @@ dns_resolvable() {
 }
 
 github_api_ok() {
-    curl -L -m3 https://api.github.com/zen &> /dev/null
+    curl -L -m10 https://api.github.com/zen &> /dev/null
 }
 
 if [[ $(id -u) != $(id -u root) ]]; then

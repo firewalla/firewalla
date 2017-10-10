@@ -75,18 +75,27 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  addActivityFlows(mac, interval, ts, traffics, expire) {
-    expire = expire || 24 * 3600; // by default keep 48 hours
+  addAppActivityFlows(mac, interval, ts, traffics, expire) {
+    return this.addXActivityFlows(mac, "app", interval, ts, traffics, expire)
+  }
 
-    let key = this.getFlowKey(mac, "app", interval, ts);
+  addCategoryActivityFlows(mac, interval, ts, traffics, expire) {
+    return this.addXActivityFlows(mac, "category", interval, ts, traffics, expire)
+  }
+
+  addXActivityFlows(mac, x, interval, ts, traffics, expire) {
+    expire = expire || 24 * 3600; // by default keep 24 hours
+
+    let key = this.getFlowKey(mac, x, interval, ts);
     let args = [key];
-    for(let app in traffics) {
-      let duration = (traffics[app] && traffics[app]['duration']) || 0;
+    for(let t in traffics) {
+      let duration = (traffics[t] && traffics[t]['duration']) || 0;
       args.push(duration)
-      args.push(JSON.stringify({
-        device: mac,
-        app: app
-      }))
+
+      let payload = {}
+      payload.device = mac
+      payload[x] = t
+      args.push(JSON.stringify(payload))
     }
 
     args.push(0);
@@ -94,12 +103,12 @@ class FlowAggrTool {
 
     return rclient.zaddAsync(args)
       .then(() => {
-      return rclient.expireAsync(key, expire)
+        return rclient.expireAsync(key, expire)
       });
   }
 
   addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
-    expire = expire || 24 * 3600; // by default keep 48 hours
+    expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
     let args = [key];
@@ -118,7 +127,7 @@ class FlowAggrTool {
 
     return rclient.zaddAsync(args)
       .then(() => {
-      return rclient.expireAsync(key, expire)
+        return rclient.expireAsync(key, expire)
       });
   }
 
@@ -156,7 +165,9 @@ class FlowAggrTool {
 
     let begin = options.begin;
     let end = options.end;
-    let expire = options.expireTime || 2 * 3600; // by default expire in two hours
+
+    // if working properly, sumflow should be refreshed in every 10 minutes
+    let expire = options.expireTime || 30 * 60; // by default expire in 30 minutes
     let interval = options.interval || 600; // by default 10 mins
 
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
@@ -176,9 +187,9 @@ class FlowAggrTool {
       let beginString = new Date(begin * 1000).toLocaleTimeString();
 
       if(mac) {
-        log.info(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+        log.debug(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
       } else {
-        log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+        log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
       }
 
       let ticks = this.getTicks(begin, end, interval);
@@ -190,7 +201,7 @@ class FlowAggrTool {
         // * is a hack code here, in redis, it means matching everything during keys command
         tickKeys = ticks.map((tick) => {
           let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
-          log.info("Checking key pattern:", keyPattern);
+          log.debug("Checking key pattern:", keyPattern);
           let keys = await (rclient.keysAsync(keyPattern));
           return keys;
         }).reduce((a,b) => a.concat(b), []); // reduce version of flatMap
@@ -268,7 +279,15 @@ class FlowAggrTool {
     })();
   }
 
-  getActivitySumFlowByKey(key, count) {
+  getAppActivitySumFlowByKey(key, count) {
+    return this.getXActivitySumFlowByKey(key, 'app', count)
+  }
+
+  getCategoryActivitySumFlowByKey(key, count) {
+    return this.getXActivitySumFlowByKey(key, 'category', count)
+  }
+
+  getXActivitySumFlowByKey(key, x, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     return async(() => {
       let appAndScores = await (rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count));
@@ -280,7 +299,11 @@ class FlowAggrTool {
           if(payload !== '_' && count !== 0) {
             try {
               let json = JSON.parse(payload);
-              results.push({app: json.app, device: json.device, count: count});
+              let result = {}
+              result[x] = json[x]
+              result.device = json.device
+              result.count = count
+              results.push(result)
             } catch(err) {
               log.error("Failed to parse payload: ", payload, {});
             }

@@ -193,6 +193,7 @@ function run() {
           log.error("Failed to apply some policy rules: ", err, {});
         });
       }, 1000 * 10); // delay for 10 seconds
+      require('./UpgradeManager').finishUpgrade();
     });
 
   },1000*2);

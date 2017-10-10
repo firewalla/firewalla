@@ -421,6 +421,15 @@ class Host {
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
+        if (this.o.ipv4Addr == gateway || this.o.mac == null || this.o.ipv4Addr == sysManager.myIp()) {
+          return;
+        }
+        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+          return;
+        }
+        if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
+          return;
+        }
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
@@ -1246,6 +1255,8 @@ module.exports = class {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
     json.network = networkinfo;
 
+    sysManager.updateInfo();
+
     if(f.isDocker() &&
       ! options.simulator &&
         fConfig.docker &&
@@ -1290,8 +1301,12 @@ module.exports = class {
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
+    json.ept = sysManager.ept;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
+    }
+    if (sysManager.upgradeEvent) {
+      json.upgradeEvent = sysManager.upgradeEvent;
     }
   }
 

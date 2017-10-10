@@ -55,10 +55,12 @@ function block(destination) {
   } else {
     cmd = "sudo ipset add -! blocked_ip_set6 " + destination;
   }
+  log.info("Control:Block:",cmd);
 
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
+        log.error("Unable to ipset add ",cmd);
         reject(err);
         return;
       }
@@ -76,9 +78,12 @@ function unblock(destination) {
     cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
   }
 
+  log.info("Control:UnBlock:",cmd);
+
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
+        log.error("Unable to ipset remove ",cmd);
         reject(err);
         return;
       }

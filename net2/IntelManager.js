@@ -91,11 +91,8 @@ module.exports = class {
                     this._location(ip,(err,lobj)=>{ 
                         obj.lobj = lobj;
                         log.info("Intel:Location",ip,obj.lobj);
-
-                        bone.intel(ip, "iinfo", {cobj:obj},(err,data)=>{
-                            this._packageCymon(ip, obj);
-                            callback(err, obj, weburl);
-                        });
+                        this._packageCymon(ip, obj);
+                        callback(err, obj, weburl);
                     });
                 } else {
                     //            callback(null,null,null);
@@ -270,10 +267,8 @@ module.exports = class {
                         this._location(ip,(err,lobj)=>{ 
                             obj.lobj = lobj;
                             log.info("Intel:Location",ip,obj.lobj);
-                            bone.intel(ip, "iinfo", {cobj:obj},(err,data)=>{
-                                this._packageCymon(ip, obj);
-                                callback(err, obj, obj.weburl);
-                            });
+                            this._packageCymon(ip, obj);
+                            callback(err, obj, obj.weburl);
                         });
                     }
                 } else {
