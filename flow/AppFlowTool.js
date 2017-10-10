@@ -83,7 +83,7 @@ class AppFlowTool {
     let keyPattern = this.getAppFlowKey(mac, '*')
     return async(() => {
       let keys = await (rclient.keysAsync(keyPattern))
-      return keys.map((key) => {
+      let apps = keys.map((key) => {
         let result = key.match(/[^:]*$/)
         if(result) {
           return result[0]
@@ -91,6 +91,11 @@ class AppFlowTool {
           return null
         }
       }).filter((x) => x != null)
+      
+      return apps.filter((elem, pos) => {
+        return apps.indexOf(elem) == pos;
+      })
+
     })()
   }
 
