@@ -49,7 +49,12 @@ class FlowUploadSensor extends Sensor {
             try {
                 let flows = await(this.getAllFlows(this.startTime, endTime))
                 if (flows != null && Object.keys(flows).length > 0) {
-                    log.info("get flows:" + JSON.stringify(flows));
+                    let data = {
+                        start : this.startTime,
+                        end : endTime,
+                        flows : flows
+                    }
+                    let compressedData = this.compressData(data)
                     this.startTime = endTime + 0.001
                 }
             } catch (err) {
@@ -59,7 +64,7 @@ class FlowUploadSensor extends Sensor {
     }
 
     compressData(data) {
-        
+        log.info(JSON.stringify(data))
     }
 
     getAllFlows(start, end) {
