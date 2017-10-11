@@ -31,6 +31,8 @@ let firewalla = require('./Firewalla.js');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+let monitoredKey6 = "monitored_hosts6";
+let unmonitoredKey6 = "unmonitored_hosts6";
 
 
 let fConfig = require('./config.js').getConfig();
@@ -63,6 +65,23 @@ module.exports = class {
       rclient.saddAsync(unmonitoredKey, address)
     ]);
   }
+
+  /* spoof6 is different than ipv4.  Some hosts may take on random addresses
+   * hence storing a unmonitoredKey list does not make sense.
+   */
+
+  newSpoof6(address) {
+    return Promise.all([
+      rclient.saddAsync(monitoredKey6, address)
+      ]);
+  }
+
+  newUnspoof6(address) {
+    return Promise.all([
+      rclient.sremAsync(monitoredKey6, address)
+    ]);
+  }
+  
 
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
 
