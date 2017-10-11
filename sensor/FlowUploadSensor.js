@@ -10,6 +10,13 @@ let Sensor = require('./Sensor.js').Sensor
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager('cli', 'server');
 
+let HostTool = require('../net2/HostTool')
+let hostTool = new HostTool();
+
+let flowTool = require('../net2/FlowTool')();
+
+let Promise = require('bluebird');
+
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
@@ -27,11 +34,11 @@ class FlowUploadSensor extends Sensor {
         }
         log.info("schedule started with interval " + this.config.interval + " seconds")
         setInterval(() => {
-            this.uploadFlow();
+            this.schedule();
           }, this.config.interval * 1000)
     }
 
-    uploadFlow() {
+    schedule() {
         let endTime = new Date() / 1000
         //upload flow to cloud
         log.info("start to upload flow from "
@@ -40,25 +47,50 @@ class FlowUploadSensor extends Sensor {
 
          return async(() => {
             try {
-                await(this.getFlow(this.startTime, endTime))
-                log.info("Upload flow to cloud complete");
-                this.startTime = endTime + 0.001
+                let flows = await(this.getAllFlows(this.startTime, endTime))
+                if (flows != null && Object.keys(flows).length > 0) {
+                    log.info("get flows:" + JSON.stringify(flows));
+                    this.startTime = endTime + 0.001
+                }
             } catch (err) {
                 log.error("something wrong when getting flow" + err.toString())
             }
           })();
     }
 
-    getFlow(start, end) {
+    compressData(data) {
+        
+    }
+
+    getAllFlows(start, end) {
         if (end - start < INTERVAL_MIN) {
             return Promise.reject(new Error("Get flow too soon ("  + (end - start) + " seconds)"));
         }
         return async(() => {
             let macs = this.getQualifiedDevices();
+            let flows = {}
             macs.forEach((mac) => {
-              
+                let flow = await(this.getFlowByMac(mac, start, end))
+                if (flow != null && flow.length > 0) {
+                    flows[mac] = flow
+                }
             })
+            return flows
           })();
+    }
+
+    getFlowByMac(mac, start, end) {
+        return async(() => {
+            let ips = await (hostTool.getIPsByMac(mac));
+            let flows = [];
+            ips.forEach((ip) => {
+                let outgoingFlows = await (flowTool.queryFlows(ip, "in", start, end)); // in => outgoing
+                flows.push.apply(flows, outgoingFlows);
+                let incomingFlows = await (flowTool.queryFlows(ip, "out", start, end)); // out => incoming
+                flows.push.apply(flows, incomingFlows);
+            });
+            return flows
+        })();
     }
 
     // return a list of mac addresses that's active in last xx days
