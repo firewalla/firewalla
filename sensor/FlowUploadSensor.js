@@ -1,21 +1,18 @@
 'use strict';
 
 let util = require('util')
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+let async = require('asyncawait/async')
+let await = require('asyncawait/await')
+let zlib = require('zlib')
+let Promise = require('bluebird')
 
 let log = require('../net2/logger.js')(__filename)
 let Sensor = require('./Sensor.js').Sensor
-
-let HostManager = require('../net2/HostManager.js');
-let hostManager = new HostManager('cli', 'server');
-
+let HostManager = require('../net2/HostManager.js')
+let hostManager = new HostManager('cli', 'server')
 let HostTool = require('../net2/HostTool')
-let hostTool = new HostTool();
-
-let flowTool = require('../net2/FlowTool')();
-
-let Promise = require('bluebird');
+let hostTool = new HostTool()
+let flowTool = require('../net2/FlowTool')()
 
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
@@ -48,14 +45,12 @@ class FlowUploadSensor extends Sensor {
          return async(() => {
             try {
                 let flows = await(this.getAllFlows(this.startTime, endTime))
-                if (flows != null && Object.keys(flows).length > 0) {
-                    let data = {
-                        start : this.startTime,
-                        end : endTime,
-                        flows : flows
-                    }
-                    let compressedData = this.compressData(data)
+                if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
+                    let compressedData = await(this.compressData(JSON.stringify(flows)))
+                    log.info("compressed:" + compressedData)
                     this.startTime = endTime + 0.001
+                } else {
+                    log.info("empty flows, wait to next round")
                 }
             } catch (err) {
                 log.error("something wrong when getting flow" + err.toString())
@@ -64,13 +59,29 @@ class FlowUploadSensor extends Sensor {
     }
 
     compressData(data) {
-        log.info(JSON.stringify(data))
+        return async(() => {
+            return new Promise(function (resolve, reject) {
+                let input = new Buffer(data, 'utf8');
+                zlib.deflate(input, (err, output) => {
+                    if(err) {
+                        reject(err)
+                    } else {
+                        resolve(output.toString('base64'))
+                    }
+                })
+            })
+        })();
     }
 
     getAllFlows(start, end) {
         if (end - start < INTERVAL_MIN) {
             return Promise.reject(new Error("Get flow too soon ("  + (end - start) + " seconds)"));
         }
+
+        if (end - start > INTERVAL_MAX) {
+            return Promise.reject(new Error("Time range too wide(" + (end - start) + " seconds)"))
+        }
+
         return async(() => {
             let macs = this.getQualifiedDevices();
             let flows = {}
@@ -80,7 +91,11 @@ class FlowUploadSensor extends Sensor {
                     flows[mac] = flow
                 }
             })
-            return flows
+            return {
+                start : start,
+                end : end,
+                flows : flows
+            }
           })();
     }
 
