@@ -279,14 +279,14 @@ class HostTool {
         rclient.hmset(v6key, data, (err, result) => {
           log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
           let mackey = "host:mac:" + mac;
-          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
+          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
           rclient.hgetall(mackey, (err, data) => {
-            log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
+            log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
             if (err == null) {
               if (data != null) {
                 let ipv6array = [];
-                if (data.ipv6) {
-                  ipv6array = JSON.parse(data.ipv6);
+                if (data.ipv6Addr) {
+                  ipv6array = JSON.parse(data.ipv6Addr);
                 }
 
                 // only keep around 5 ipv6 around
@@ -298,7 +298,6 @@ class HostTool {
                 ipv6array.unshift(v6addr);
 
                 data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify(ipv6array);
                 data.ipv6Addr = JSON.stringify(ipv6array);
                 //v6 at times will discver neighbors that not there ...
                 //so we don't update last active here
@@ -306,12 +305,11 @@ class HostTool {
               } else {
                 data = {};
                 data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify([v6addr]);;
                 data.ipv6Addr = JSON.stringify([v6addr]);;
                 data.lastActiveTimestamp = Date.now() / 1000;
                 data.firstFoundTimestamp = data.lastActiveTimestamp;
               }
-              log.debug("Wring Data:", mackey, data);
+              log.info("HostTool:Writing Data:", mackey, data,{});
               rclient.hmset(mackey, data, (err, result) => {
                 callback(err, null);
               });
