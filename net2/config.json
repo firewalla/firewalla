@@ -55,7 +55,7 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
     "FlowUploadSensor" : {
-      "interval" : 9
+      "interval" : 900
     },
     "OldDataCleanSensor": {
       "alarm" : {
