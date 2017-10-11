@@ -1,4 +1,18 @@
-'use strict';
+/*    Copyright 2016 Firewalla LLC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict'
 
 let util = require('util')
 let async = require('asyncawait/async')
@@ -13,17 +27,24 @@ let hostManager = new HostManager('cli', 'server')
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool()
 let flowTool = require('../net2/FlowTool')()
+let Bone = require('../lib/Bone.js')
 
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
+let MAX_UPLOAD_SIZE = 1024 * 1024 * 1024 //1G
 
 class FlowUploadSensor extends Sensor {
     constructor() {
         super()
+        
     }
 
     run() {
+        
+        this.validateConfig()
+        log.info(JSON.stringify(this.config))
+
         this.startTime = new Date() / 1000
         //do some protection if interval configured by mistake
         if (this.config.interval < INTERVAL_MIN || this.config.interval > INTERVAL_MAX) {
@@ -35,27 +56,71 @@ class FlowUploadSensor extends Sensor {
           }, this.config.interval * 1000)
     }
 
+    validateConfig(){
+        if (this.config == null) {
+            this.config = {}
+        }
+        if (this.config.interval == null) {
+            this.config.interval = INTERVAL_DEFAULT
+        } else if (this.config.interval < INTERVAL_MIN) {
+            this.config.interval = INTERVAL_MIN
+        } else if (this.config.interval > INTERVAL_MAX) {
+            this.config.interval = INTERVAL_MAX
+        }
+
+        if (this.config.maxLength == null || this.config.maxLength > MAX_UPLOAD_SIZE) {
+            this.config.maxLength = MAX_UPLOAD_SIZE
+        }
+    }
+
     schedule() {
         let endTime = new Date() / 1000
         //upload flow to cloud
-        log.info("start to upload flow from "
-         + this.startTime + "(" + new Date(this.startTime * 1000).toTimeString() + ")" + 
+        log.info("try to upload flows from "
+         + this.startTime + "(" + new Date(this.startTime * 1000).toUTCString() + ")" + 
          " to " + endTime + "(" + new Date(endTime * 1000).toUTCString() + ")")
 
          return async(() => {
             try {
                 let flows = await(this.getAllFlows(this.startTime, endTime))
+                //set next start point
+                this.startTime = endTime + 0.001
                 if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
-                    let compressedData = await(this.compressData(JSON.stringify(flows)))
-                    log.info("compressed:" + compressedData)
-                    this.startTime = endTime + 0.001
+                    let data = JSON.stringify(flows)
+                    log.info("data length before compressing:" + data.length)
+                    let compressedData = await(this.compressData(data))
+                    let length = compressedData.length
+                    log.info("compressed data length:" + length)
+                    if (length > this.config.maxLength) {
+                        log.warn("data length " + length + " exceeded max length " + this.config.maxLength + ", abort uploading to cloud")
+                    } else {
+                        await(this.uploadData(compressedData))
+                        log.info("upload flows to cloud complete")
+                    }
                 } else {
                     log.info("empty flows, wait to next round")
                 }
             } catch (err) {
-                log.error("something wrong when getting flow" + err.toString())
+                log.error("upload flows failed:" + err.toString())
+                //skip this time range, set next start point
+                this.startTime = endTime + 0.001
             }
           })();
+    }
+
+    uploadData(data) {
+        return async(() => {
+            let toUpload = {
+                payload : data
+            }    
+            await(Bone.flowgraph('flow', toUpload, function(err, response){
+                if (err) {
+                    log.error("upload to cloud failed:" + err)
+                } else {
+                    log.info("upload to cloud success:" + JSON.stringify(response))
+                }
+            }))
+        })();
     }
 
     compressData(data) {
@@ -74,14 +139,6 @@ class FlowUploadSensor extends Sensor {
     }
 
     getAllFlows(start, end) {
-        if (end - start < INTERVAL_MIN) {
-            return Promise.reject(new Error("Get flow too soon ("  + (end - start) + " seconds)"));
-        }
-
-        if (end - start > INTERVAL_MAX) {
-            return Promise.reject(new Error("Time range too wide(" + (end - start) + " seconds)"))
-        }
-
         return async(() => {
             let macs = this.getQualifiedDevices();
             let flows = {}
