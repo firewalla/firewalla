@@ -29,6 +29,9 @@ let sysManager = new SysManager();
 
 let Promise = require('bluebird');
 
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let redis = require('redis');
 let rclient = redis.createClient();
 
@@ -54,26 +57,28 @@ function startSpoofing() {
     return Promise.resolve();
   }
   
-  // clean up redis key
-  log.info("startSpoofing is called");
-  
-  return rclient.delAsync(monitoredKey)
-    .then(() => rclient.delAsync(unmonitoredKey))
-    .then(() => {
-      let ifName = sysManager.monitoringInterface().name;
-      let routerIP = sysManager.myGateway();
-      let myIP = sysManager.myIp();
-      
-      if(!ifName || !myIP || !routerIP) {
-        return Promise.reject("require valid interface name, ip address and gateway ip address");
-      }
+  log.info("start spoofing")
 
-      let b7 = new BitBridge(ifName, routerIP, myIP)
-      b7.start()
+  return async(() => {
+    // clean up redis key
+    
+    await (rclient.delAsync(monitoredKey))
+    await (rclient.delAsync(unmonitoredKey))
 
-      spoofStarted = true;
-      return Promise.resolve();
-    });
+    let ifName = sysManager.monitoringInterface().name;
+    let routerIP = sysManager.myGateway();
+    let myIP = sysManager.myIp();
+    
+    if(!ifName || !myIP || !routerIP) {
+      return Promise.reject("require valid interface name, ip address and gateway ip address");
+    }
+    
+    let b7 = new BitBridge(ifName, routerIP, myIP)
+    b7.start()
+    
+    spoofStarted = true;
+    return Promise.resolve();
+  })()
   
 }
 
