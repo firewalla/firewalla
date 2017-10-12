@@ -86,6 +86,7 @@ var flowUtil = require('../net2/FlowUtil.js');
 let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
+
 /* alarms:
     alarmtype:  intel/newhost/scan/log
     severityscore: out of 100
@@ -446,6 +447,28 @@ class Host {
             }).catch((err) => {
             log.error("Failed to unspoof", this.o.ipv4Addr);
           })
+        }
+
+        /* put a safety on the spoof */
+        let myIp6 = sysManager.myIp6();
+        if (this.ipv6Addr && this.ipv6Addr.length>0) {
+            for (let i in this.ipv6Addr) {
+                if (this.ipv6Addr[i] == gateway6) {
+                    continue; 
+                }
+                if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
+                    continue;
+                }
+                spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
+                     log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                }).catch((err)=>{
+                     log.error("Failed to spoof", this.ipv6Addr);
+                })
+                if (i>10) {
+                     log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
+                     break;
+                }
+            }
         }
       } else {
         if (state === true && this.spoofing === false) {
@@ -1861,9 +1884,18 @@ module.exports = class {
                         }
                     }
 */
+                    let allIPv6Addrs = [];
+
+                    let myIp = sysManager.myIp();
+
                     for (let h in this.hostsdb) {
                         let hostbymac = this.hostsdb[h];
-                        if (hostbymac) {
+                        if (hostbymac && h.startsWith("host:mac")) {
+                            if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
+                                if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
+                                    allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
+                                }
+                            }
                         }
                         if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
                             let index = this.hosts.all.indexOf(this.hostsdb[h]);
@@ -1886,12 +1918,15 @@ module.exports = class {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
                     this.getHostsActive = false;
-                    log.info("hostmanager:gethosts:done");
+                    if (this.type === "server") {
+                       spoofer.validateV6Spoofs(allIPv6Addrs);
+                    }
+                    log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
                     callback(err, this.hosts.all);
                 });
             });
         });
-    }
+    } 
 
   appendACL(name, data) {
     if (this.policy.acl == null) {
