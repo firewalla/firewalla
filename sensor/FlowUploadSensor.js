@@ -34,6 +34,7 @@ let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
 let MAX_UPLOAD_SIZE = 1024 * 1024 * 1024 //1G
+let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
     constructor() {
@@ -44,7 +45,7 @@ class FlowUploadSensor extends Sensor {
     run() {
         this.validateConfig()
         log.info(JSON.stringify(this.config))
-        this.startTime = new Date() / 1000
+        this.startTime = new Date() / 1000 - this.config.offset
         setInterval(() => {
             this.schedule();
           }, this.config.interval * 1000)
@@ -65,10 +66,14 @@ class FlowUploadSensor extends Sensor {
         if (this.config.maxLength == null || this.config.maxLength > MAX_UPLOAD_SIZE) {
             this.config.maxLength = MAX_UPLOAD_SIZE
         }
+
+        if (this.config.offset == null || this.config.offset < 0) {
+            this.config.offset = TIME_OFFSET
+        }
     }
 
     schedule() {
-        let endTime = new Date() / 1000
+        let endTime = new Date() / 1000 - this.config.offset
         //upload flow to cloud
         log.info("try to upload flows from "
          + this.startTime + "(" + new Date(this.startTime * 1000).toUTCString() + ")" + 
