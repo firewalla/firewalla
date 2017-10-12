@@ -1698,12 +1698,12 @@ module.exports = class {
                     callback(err, null);
                     return;
                 }
-                if (data.ipv6 == null) {
+                if (data.ipv6Addr == null) {
                     callback(null, null);
                     return;
                 }
 
-                let ipv6array = JSON.parse(data.ipv6);
+                let ipv6array = JSON.parse(data.ipv6Addr);
                 if (host.ipv6Addr == null) {
                     host.ipv6Addr = [];
                 }
