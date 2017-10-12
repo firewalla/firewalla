@@ -33,7 +33,7 @@ let Bone = require('../lib/Bone.js')
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
-let MAX_UPLOAD_SIZE = 1024 * 1024 * 1024 //1G
+let MAX_UPLOAD_SIZE = 1073741824 //1G
 let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
@@ -141,7 +141,7 @@ class FlowUploadSensor extends Sensor {
 
     getAllFlows(start, end) {
         return async(() => {
-            let macs = this.getQualifiedDevices();
+            let macs = await(this.getAllMacs())
             let flows = {}
             macs.forEach((mac) => {
                 let flow = await(this.getFlowByMac(mac, start, end))
@@ -166,9 +166,9 @@ class FlowUploadSensor extends Sensor {
                 flows.push.apply(flows, outgoingFlows);
                 let incomingFlows = await (flowTool.queryFlows(ip, "out", start, end)); // out => incoming
                 flows.push.apply(flows, incomingFlows);
-            });
+            })
             return this.processFlow(flows, true)
-        })();
+        })()
     }
 
     processFlow(flows, clean) {
@@ -178,7 +178,7 @@ class FlowUploadSensor extends Sensor {
 
             //hash
             let r = flowUtil.hashFlow(f, clean)
-            
+
             //remove key with empty value
             Object.keys(r).forEach(k => {
                 if (r[k] == null) {
@@ -194,8 +194,18 @@ class FlowUploadSensor extends Sensor {
     }
 
     // return a list of mac addresses that's active in last xx days
-    getQualifiedDevices() {
-        return hostManager.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+    getAllMacs() {
+        return async(() => {
+            return new Promise(function (resolve, reject) {
+                hostManager.getHosts(function(err, hosts){
+                    if(err) {
+                        reject(err)
+                    } else {
+                        resolve(hosts.map(h => h.o.mac).filter(mac => mac != null))
+                    }
+                })
+            })
+        })()
     }
 }
 
