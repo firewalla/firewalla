@@ -90,7 +90,11 @@ function getMAC(ipaddress, cb) {
         if (l == 0) continue;
 
         if (table[l].indexOf(ipaddress + " ") == 0) {
-          let mac = table[l].substring(41, 58).toUpperCase();
+          let mac = table[l].substring(41, 58).toUpperCase().trim();
+          if (mac == "00:00:00:00:00:00") {
+             cb(false,null);
+             return;
+          }
           SimpleCache.insert(ipaddress,mac); 
           cb(false, mac);
           return;
