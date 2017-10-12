@@ -27,6 +27,7 @@ let hostManager = new HostManager('cli', 'server')
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool()
 let flowTool = require('../net2/FlowTool')()
+let flowUtil = require('../net2/FlowUtil')
 let Bone = require('../lib/Bone.js')
 
 let INTERVAL_MIN = 10 //10 seconds
@@ -41,16 +42,9 @@ class FlowUploadSensor extends Sensor {
     }
 
     run() {
-        
         this.validateConfig()
         log.info(JSON.stringify(this.config))
-
         this.startTime = new Date() / 1000
-        //do some protection if interval configured by mistake
-        if (this.config.interval < INTERVAL_MIN || this.config.interval > INTERVAL_MAX) {
-            this.config.interval = INTERVAL_DEFAULT
-        }
-        log.info("schedule started with interval " + this.config.interval + " seconds")
         setInterval(() => {
             this.schedule();
           }, this.config.interval * 1000)
@@ -87,10 +81,12 @@ class FlowUploadSensor extends Sensor {
                 this.startTime = endTime + 0.001
                 if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
                     let data = JSON.stringify(flows)
-                    log.info("data length before compressing:" + data.length)
+                    log.info("original:" + data)
+                    log.info("original length:" + data.length)
                     let compressedData = await(this.compressData(data))
+                    //log.info("compressed:" + compressedData)
                     let length = compressedData.length
-                    log.info("compressed data length:" + length)
+                    log.info("compressed length:" + length)
                     if (length > this.config.maxLength) {
                         log.warn("data length " + length + " exceeded max length " + this.config.maxLength + ", abort uploading to cloud")
                     } else {
@@ -145,7 +141,7 @@ class FlowUploadSensor extends Sensor {
             macs.forEach((mac) => {
                 let flow = await(this.getFlowByMac(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    flows[mac] = flow
+                    flows[flowUtil.hashMac(mac)] = flow
                 }
             })
             return {
@@ -166,8 +162,26 @@ class FlowUploadSensor extends Sensor {
                 let incomingFlows = await (flowTool.queryFlows(ip, "out", start, end)); // out => incoming
                 flows.push.apply(flows, incomingFlows);
             });
-            return flows
+            return this.processFlow(flows, true)
         })();
+    }
+
+    processFlow(flows, clean) {
+        return flows.map(f => {
+            //hash
+            let r = flowUtil.hashFlow(f, clean)
+            //remove key with empty value
+            Object.keys(r).forEach(k => {
+                if (r[k] == null) {
+                    delete r[k]
+                } else if (Array.isArray(r[k]) && r[k].length == 0) {
+                    delete r[k]
+                } else if (typeof r[k] === 'object' && Object.keys(r[k]).length == 0) {
+                    delete r[k]
+                }
+            })
+            return r
+        })
     }
 
     // return a list of mac addresses that's active in last xx days
