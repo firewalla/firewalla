@@ -381,6 +381,18 @@ class FlowAggregationSensor extends Sensor {
     return recentActivity      
   }
 
+  getIntel(flow) {
+    return async(() => {
+      let destIP = flowTool.getDestIP(flow)
+      let intel = await (intelTool.getIntel(destIP))
+      return {
+        ts: flow.ts,
+        app: intel && intel.app,
+        category: intel && intel.category
+      }
+    })()
+  }
+
   recordApp(mac, traffic) {
     return async(() => {
       for(let app in traffic) {
