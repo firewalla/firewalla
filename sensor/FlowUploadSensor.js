@@ -173,8 +173,12 @@ class FlowUploadSensor extends Sensor {
 
     processFlow(flows, clean) {
         return flows.map(f => {
+            //enrich
+            flowTool._enrichCountryInfo(f)
+
             //hash
             let r = flowUtil.hashFlow(f, clean)
+            
             //remove key with empty value
             Object.keys(r).forEach(k => {
                 if (r[k] == null) {
