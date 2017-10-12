@@ -255,6 +255,13 @@ class HostTool {
     })();
   }
 
+  updateRecentActivity(mac, activity) {
+    let key = this.getMacKey(mac)
+    let string = JSON.stringify(activity)
+    
+    return rclient.hsetAsync(key, "recentActivity", string)
+  }
+
   //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
   //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
