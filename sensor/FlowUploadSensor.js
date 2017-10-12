@@ -86,7 +86,7 @@ class FlowUploadSensor extends Sensor {
                 this.startTime = endTime + 0.001
                 if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
                     let data = JSON.stringify(flows)
-                    log.info("original:" + data)
+                    //log.info("original:" + data)
                     log.info("original length:" + data.length)
                     let compressedData = await(this.compressData(data))
                     //log.info("compressed:" + compressedData)
@@ -95,8 +95,7 @@ class FlowUploadSensor extends Sensor {
                     if (length > this.config.maxLength) {
                         log.warn("data length " + length + " exceeded max length " + this.config.maxLength + ", abort uploading to cloud")
                     } else {
-                        await(this.uploadData(compressedData))
-                        log.info("upload flows to cloud complete")
+                        this.uploadData(compressedData)
                     }
                 } else {
                     log.info("empty flows, wait to next round")
@@ -110,18 +109,16 @@ class FlowUploadSensor extends Sensor {
     }
 
     uploadData(data) {
-        return async(() => {
-            let toUpload = {
-                payload : data
-            }    
-            await(Bone.flowgraph('flow', toUpload, function(err, response){
-                if (err) {
-                    log.error("upload to cloud failed:" + err)
-                } else {
-                    log.info("upload to cloud success:" + JSON.stringify(response))
-                }
-            }))
-        })();
+        let toUpload = {
+            payload : data
+        }    
+        Bone.flowgraph('flow', toUpload, function(err, response){
+            if (err) {
+                log.error("upload to cloud failed:" + err)
+            } else {
+                log.info("upload to cloud success:" + JSON.stringify(response))
+            }
+        })
     }
 
     compressData(data) {
@@ -146,7 +143,7 @@ class FlowUploadSensor extends Sensor {
             macs.forEach((mac) => {
                 let flow = await(this.getFlowByMac(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    flows[flowUtil.hashMac(mac)] = flow
+                    flows[flowUtil.hashMac(mac)] = this.processFlow(flow, true)
                 }
             })
             return {
@@ -167,7 +164,7 @@ class FlowUploadSensor extends Sensor {
                 let incomingFlows = await (flowTool.queryFlows(ip, "out", start, end)); // out => incoming
                 flows.push.apply(flows, incomingFlows);
             })
-            return this.processFlow(flows, true)
+            return flows
         })()
     }
 

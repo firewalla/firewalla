@@ -55,7 +55,7 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
     "FlowUploadSensor" : {
-      "interval":10,
+      "interval":900,
       "maxLength": 1073741824,
       "offset": 90
     },
