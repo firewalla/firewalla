@@ -9,28 +9,6 @@ install:
 - sudo -u pi /home/pi/firewalla/scripts/travis_setup.sh
 - cd /home/pi/firewalla/ ; git rev-parse --abbrev-ref HEAD; cd -
 
-#env:
-#  global:
-   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
-   #   via the "travis encrypt" command using the project repo's public key
-#   - secure: "Qbhmf3pSN9NaqGgt1MNYtm060Mkgvj5qqsDFjX3/vAFRjjikN7r6/u4kuxzSQrGoEsxMK/o9S7Qb4RcpdHmkeQfmjs5fkF/m1LJla84Vr8G3r8dlG2Vw1EKB/pboJPUf5/uRpiJmeJUjdDLwVn0ZPKC1USRfkWu0+LTzr++WGAo/S8ConlxoGs0dhsE9hlUX6zCS2iPlz6/HnepTPmHs0qdIw6OexHMmjXPKn3a2BWxLok2dQOOwa7OK/0ScCaxbEhK9gNnz5VB1mCGacGpvrNh0GcRmUkhoF6ibjFBsQYyfGxut3Dr8tAfIvz4SWbfqlarA8Bizk/4NB8WqH77yNML29CYPW7xP0G5Gbxwk+fpuKYSff5/Ci6s8tBwEN6BOF5FaFfGSssy8UDKRyc0Gou9tanzasp/fOefl8z1anqLWUgm7RPza16/1saHE3kXjo5hjPb79zF374vkEB3F4vnsffHEJwNgaE9u1FIA4evXoSSiyOPd5FVqkdBZ8b8BBXf+TAj3J0mx8qItxTh+WwRr6b0ugNfVSxdjxomoy2fTrXRJUcFVtlsGjBOAoc3R+7upE9l93mL60SQpcezQ3tHkCXiAaMDp45RKupiEjmE5HyJ+szzsiNDtdkyjvas7Dg9f3LaivJfSr14cmA6Y5tHdsah1Ro3nXo1SskdfrVXE="
-
-
-secure: "kd7P9+JvCtAel2rzDKBf87D/0eJF15fxc//N3jHdVdsvEvE7qlVOQ0y+/7LV07CngoRey67H8SbDjH0Za12vIdSyNeh767G0JDGJ3J7c4W26wrwSPGtHynLr9B3ToYiJth44LcD6NJFPTDnRaEXZnHSdpIYzyBB3U0vmpnp5jVkM0rEBjZ8buwbGVb9/YukF6Sf7Rn974tECm6IOWpLdRQ8JASEihacsg00cbOz8IhCbVdF+MbSLW/NF8PEKcixYjMUIiYyDpebfKWFFF4aM4qHCLQ9QHFL27lgmezFDhgkQtuVVLoQnIIM0HG1LdgyUTc9PZEJuCdmiVcAniakDtSpjGnr6tSzgUkLWxrFhS7pyQiQ+wf5bgugH3NAywP3TGL7nLpKVx33a4OKzFhYM52sN+t6V+YJDf8SD7CFBpluTwQqdtfKNIk8/pJnE+N52yRzj5TvwDeNpehQ+iQzbYhuMYKDD/JF81g1K+MgJvJhI9awAMFjZ5+vlX7q6cruBT9/pqT0+/pAlP5EYLASEdymDnJgGPUCAIFq8XMinW2SNRtkayvTPjUuTA+e/eJ0SbPHwpA79JI1lxyujQ4suEcoHqEThf/Z744StkNtvktOGKduS5zFSh5cyYdrXx7entowCz3lqFufTvi2K39lVPWFx3j4K6qxLXLNDcPT3ehs="
-
-before_install:
-      - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
-
-addons:
-  coverity_scan:
-    project:
-      name: "xuanxuandog/firewalla"
-      description: "Build submitted via Travis CI"
-    notification_email: 1762175@qq.com
-    build_command_prepend: ""
-    build_command:   "BUILD_ONLY=1 ./buildraw"
-    branch_pattern: coverity_scan
-
 script:
 - HOME=/home/pi NODE_PATH=/home/pi/.node_modules:$NODE_PATH NODE_ENV=test sudo -E -u pi mocha
 
