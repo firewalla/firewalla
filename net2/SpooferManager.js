@@ -29,6 +29,9 @@ let sysManager = new SysManager();
 
 let Promise = require('bluebird');
 
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let redis = require('redis');
 let rclient = redis.createClient();
 

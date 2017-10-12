@@ -328,7 +328,7 @@ class FlowAggregationSensor extends Sensor {
 
       let flows = [];
 
-      let recentActivity = null;
+      let recentFlow = null;
 
       ips.forEach((ip) => {
         let cache = {};
@@ -339,7 +339,7 @@ class FlowAggregationSensor extends Sensor {
         });
 
         flows.push.apply(flows, outgoingFlowsHavingIntels);
-        recentActivity = this.selectVeryRecentActivity(recentActivity, outgoingFlowsHavingIntels)
+        recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
 
 
         let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
@@ -347,7 +347,7 @@ class FlowAggregationSensor extends Sensor {
           return await (this._flowHasActivity(f, cache));
         });
         flows.push.apply(flows, incomingFlowsHavingIntels);
-        recentActivity = this.selectVeryRecentActivity(recentActivity, incomingFlowsHavingIntels)
+        recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
       });
 
       // now flows array should only contain flows having intels
@@ -364,6 +364,7 @@ class FlowAggregationSensor extends Sensor {
       await(this.recordApp(macAddress, appTraffic))
       await(this.recordCategory(macAddress, categoryTraffic))
 
+      let recentActivity = this.getIntel(recentFlow)
       await(hostTool.updateRecentActivity(macAddress, recentActivity))
 
     })();
