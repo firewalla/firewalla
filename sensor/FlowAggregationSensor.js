@@ -187,7 +187,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     return async(() => {
-      let macs = this.getQualifiedDevices();
+      let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
         await (this.aggr(mac, ts));
         await (this.aggr(mac, ts + this.config.interval));
@@ -195,11 +195,6 @@ class FlowAggregationSensor extends Sensor {
         await (this.aggrActivity(mac, ts + this.config.interval));
       })
     })();
-  }
-
-  // return a list of mac addresses that's active in last xx days
-  getQualifiedDevices() {
-    return hostManager.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -281,7 +276,7 @@ class FlowAggregationSensor extends Sensor {
         expireTime: this.config.sumFlowExpireTime,
       }
 
-      let macs = this.getQualifiedDevices();
+      let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
         options.mac = mac;
         await (flowAggrTool.addSumFlow("download", options));
@@ -333,6 +328,8 @@ class FlowAggregationSensor extends Sensor {
 
       let flows = [];
 
+      let recentActivity = null;
+
       ips.forEach((ip) => {
         let cache = {};
 
@@ -340,13 +337,17 @@ class FlowAggregationSensor extends Sensor {
         let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => {
           return await (this._flowHasActivity(f, cache));
         });
+
         flows.push.apply(flows, outgoingFlowsHavingIntels);
+        recentActivity = this.selectVeryRecentActivity(recentActivity, outgoingFlowsHavingIntels)
+
 
         let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
         let incomingFlowsHavingIntels = incomingFlows.filter((f) => {
           return await (this._flowHasActivity(f, cache));
         });
         flows.push.apply(flows, incomingFlowsHavingIntels);
+        recentActivity = this.selectVeryRecentActivity(recentActivity, incomingFlowsHavingIntels)
       });
 
       // now flows array should only contain flows having intels
@@ -363,7 +364,21 @@ class FlowAggregationSensor extends Sensor {
       await(this.recordApp(macAddress, appTraffic))
       await(this.recordCategory(macAddress, categoryTraffic))
 
+      await(hostTool.updateRecentActivity(macAddress, recentActivity))
+
     })();
+  }
+
+  selectVeryRecentActivity(recentActivity, flows) {
+    if(flows.length > 0) {
+      // assume it's ordered
+      let lastOne = flows[flows.length - 1]
+      if(recentActivity == null || recentActivity.ts < lastOne.ts) {
+        return lastOne
+      }
+    }
+    
+    return recentActivity      
   }
 
   recordApp(mac, traffic) {

@@ -887,13 +887,14 @@ class Host {
 
     toJson() {
         let json = {
-            dtype: this.dtype,
-            ip: this.o.ipv4Addr,
-            ipv6: this.ipv6Addr,
-            mac: this.o.mac,
-            lastActive: this.o.lastActiveTimestamp,
-            firstFound: this.firstFoundTimestamp,
-            macVendor: this.o.macVendor
+          dtype: this.dtype,
+          ip: this.o.ipv4Addr,
+          ipv6: this.ipv6Addr,
+          mac: this.o.mac,
+          lastActive: this.o.lastActiveTimestamp,
+          firstFound: this.firstFoundTimestamp,
+          macVendor: this.o.macVendor,
+          recentActivity: this.o.recentActivity
         }
 
         if (this.o.ipv4Addr == null) {
@@ -2144,4 +2145,10 @@ module.exports = class {
             callback(null,ignored );
         });
     }
+  
+  // return a list of mac addresses that's active in last xx days
+  getActiveMACs() {
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+  }
+  
 }

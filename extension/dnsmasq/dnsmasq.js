@@ -467,42 +467,52 @@ module.exports = class DNSMASQ {
     log.debug("Command to start dnsmasq: ", cmd);
 
     require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    require('child_process').execSync("sudo service firemasq restart");
-    /*
-    const p = spawn('/bin/bash', ['-c', cmd])
 
-    p.stdout.on('data', (data) => {
-      log.info("DNSMASQ STDOUT:", data.toString(), {})
-    })
+    if(f.isDocker()) {
+      const p = spawn('/bin/bash', ['-c', cmd])
 
-    p.stderr.on('data', (data) => {
-      log.info("DNSMASQ STDERR:", data.toString(), {})
-    })
+      p.stdout.on('data', (data) => {
+        log.info("DNSMASQ STDOUT:", data.toString(), {})
+      })
 
-    p.on('exit', (code, signal) => {
-      if(code === 0) {
-        log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      } else {
-        log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      }
+      p.stderr.on('data', (data) => {
+        log.info("DNSMASQ STDERR:", data.toString(), {})
+      })
 
-      if(this.shouldStart) {
-        log.info("Restarting dnsmasq...")
-        this.rawStart() // auto restart if failed unexpectedly
-      }
-    })
+      p.on('exit', (code, signal) => {
+        if(code === 0) {
+          log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
+        } else {
+          log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
+        }
 
-    */
+        if(this.shouldStart) {
+          log.info("Restarting dnsmasq...")
+          this.rawStart() // auto restart if failed unexpectedly
+        }
+      })
+
+      setTimeout(() => {
+        callback(null)
+      }, 1000)
+    } else {
+      require('child_process').execSync("sudo systemctl restart firemasq");
+      callback(null)
+    }
 
 
-    callback(null)
   }
 
   rawStop(callback) {
     callback = callback || function() {}
 
-  //  let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
-    let cmd = "sudo service firemasq stop";
+    let cmd = null;
+    if(f.isDocker()) {
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    } else {
+      cmd = "sudo service firemasq stop";
+    }
+
     log.debug("Command to stop dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
