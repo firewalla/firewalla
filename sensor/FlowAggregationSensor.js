@@ -364,7 +364,7 @@ class FlowAggregationSensor extends Sensor {
       await(this.recordApp(macAddress, appTraffic))
       await(this.recordCategory(macAddress, categoryTraffic))
 
-      let recentActivity = this.getIntel(recentFlow)
+      let recentActivity = await (this.getIntel(recentFlow))
       await(hostTool.updateRecentActivity(macAddress, recentActivity))
 
     })();
