@@ -16,6 +16,8 @@
 
 let firewalla = require('./Firewalla.js');
 
+let BitBridge = require('../extension/bitbridge/bitbridge.js')
+
 var spawn = require('child_process').spawn;
 
 let spawnProcess = null;
@@ -45,14 +47,6 @@ let spoofStarted = false;
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-function getBinary() {
-  if(firewalla.getPlatform() === "x86_64") {
-    return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge7";
-  }
-  
-  return firewalla.getFirewallaHome() + "/bin/bitbridge7";
-}
-
 // WORKAROUND VERSION HERE, will move to a better place
 function startSpoofing() {
 
@@ -74,25 +68,9 @@ function startSpoofing() {
         return Promise.reject("require valid interface name, ip address and gateway ip address");
       }
 
-      if (firewalla.isProduction()) {
-          spoofLogFile="/dev/null";
-      }
+      let b7 = new BitBridge(ifName, routerIP, myIP)
+      b7.start()
 
-      let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
-      let binary = null, args = null;
-
-      if(firewalla.isDocker() || firewalla.isTravis()) {
-        binary = "sudo";
-        args = [getBinary(), ifName, routerIP, myIP,'-m','-q','-n'];
-      } else {
-        binary = getBinary();
-        args = [ifName, routerIP, myIP,'-m','-q','-n'];
-      }
-
-      let cmd = binary+" "+args.join(" ")
-      log.info("Lanching Bitbridge4 ", cmd);
-      require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/bin/bitbridge4.sh");
-      require('child_process').execSync("sudo service bitbridge4 restart");
       spoofStarted = true;
       return Promise.resolve();
     });
@@ -102,12 +80,23 @@ function startSpoofing() {
 function stopSpoofing() {
   return new Promise((resolve, reject) => {
     spoofStarted = false;
-    log.info("Killing Bitbridge4");
-    require('child_process').exec("sudo service bitbridge4 stop",(err)=>{
-      resolve();
-    });
+    
+    let ifName = sysManager.monitoringInterface().name;
+    let routerIP = sysManager.myGateway();
+    let myIP = sysManager.myIp();
+
+    if(!ifName || !myIP || !routerIP) {
+      return Promise.reject("require valid interface name, ip address and gateway ip address");
+    }
+    
+    let b7 = new BitBridge(ifName, routerIP, myIP)
+    b7.stop()
+      .then(() => {
+        resolve()
+      })
   }).catch((err) => {
     //catch everything here
+    log.error("Failed to stop spoofing:", err, {})
   })
 }
 

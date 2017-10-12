@@ -2145,4 +2145,10 @@ module.exports = class {
             callback(null,ignored );
         });
     }
+  
+  // return a list of mac addresses that's active in last xx days
+  getActiveMACs() {
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+  }
+  
 }
