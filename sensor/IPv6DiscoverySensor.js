@@ -31,6 +31,8 @@ let Sensor = require('./Sensor.js').Sensor;
 let networkTool = require('../net2/NetworkTool')();
 let cp = require('child_process');
 
+let HostTool = require('../net2/HostTool.js');
+let hostTool = new HostTool();
 let Firewalla = require('../net2/Firewalla');
 
 let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
@@ -47,12 +49,9 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   run() {
-    process.nextTick(() => {
+    setTimeout(()=> {
       this.checkAndRunOnce(true);
-    });
-    setInterval(() => {
-      this.checkAndRunOnce(true);
-    }, 1000 * 60 * 120); // every 120 minutes, slow scan
+    },1000*60*3);
     setInterval(() => {
       this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
@@ -66,6 +65,7 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   checkAndRunOnce(fastMode) {
+    log.info("Starting IPv6DiscoverySensor Scanning",new Date()/1000);
     return this.isSensorEnable()
       .then((result) => {
         if(result) {
@@ -105,18 +105,15 @@ class IPv6DiscoverySensor extends Sensor {
 
   /* WARNING NOT SENDING SEM */
   /* !!!!!!!!!!!!!!!!!!!!!!! */
-  addV6Host(v6addr,mac,callback) {
+  addV6Host(v6addrs,mac,callback) {
     log.info("Found V6 Address ",v6addr,mac);
-    callback(null);
-    return;
     sem.emitEvent({
       type: "DeviceUpdate",
       message: "A new device found @ NewDeviceHook",
       suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
-        ipv6: v6addr,
-        ipv6Addr: v6addr,
+        ipv6Addr: v6addrs,
         mac: mac.toUpperCase()
       }
     });
@@ -134,6 +131,7 @@ class IPv6DiscoverySensor extends Sensor {
 
       this.process = require('child_process').exec(cmdline, (err, out, code) => {
         let lines = out.split("\n");
+        let macHostMap = {};
         async.eachLimit(lines, 1, (o, cb) => {
           log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
           let parts = o.split(" ");
@@ -143,14 +141,29 @@ class IPv6DiscoverySensor extends Sensor {
             if (mac == "FAILED" || mac.length < 16) {
               cb();
             } else {
-              this.addV6Host(v6addr, mac, (err) => {
-                cb();
-              });
+/* 
+               hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
+                   cb();
+               });
+*/
+               let _host = macHostMap[mac];
+               if (_host) {
+                   _host.push(v6addr);
+               } else {
+                   _host = [v6addr];
+                   macHostMap[mac]=_host;
+               }
             }
           } else {
             cb();
           }
-        }, (err) => {});
+        }, (err) => {
+           for (let mac in macHostMap) {
+               this.addV6Host(macHostMap[mac],mac,callback) {
+           }
+           log.info("IPv6 Scan:Done");
+           this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+        });
       });
     });
 

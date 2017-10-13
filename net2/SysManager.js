@@ -332,6 +332,15 @@ module.exports = class {
         }
     }
 
+    // This returns an array
+    myIp6() {
+        if(this.monitoringInterface()) {
+           return this.monitoringInterface().ip6_addresses;
+        } else {
+            return undefined;
+        }
+    }
+
     myIpMask() {
         if(this.monitoringInterface()) {
             let mask =  this.monitoringInterface().netmask;

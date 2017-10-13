@@ -31,6 +31,8 @@ let firewalla = require('./Firewalla.js');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+let monitoredKey6 = "monitored_hosts6";
+let unmonitoredKey6 = "unmonitored_hosts6";
 
 
 let fConfig = require('./config.js').getConfig();
@@ -62,6 +64,42 @@ module.exports = class {
       rclient.sremAsync(monitoredKey, address),
       rclient.saddAsync(unmonitoredKey, address)
     ]);
+  }
+
+  /* spoof6 is different than ipv4.  Some hosts may take on random addresses
+   * hence storing a unmonitoredKey list does not make sense.
+   */
+
+  newSpoof6(address) {
+    return Promise.all([
+      rclient.saddAsync(monitoredKey6, address)
+      ]);
+  }
+
+  newUnspoof6(address) {
+    return Promise.all([
+      rclient.sremAsync(monitoredKey6, address)
+    ]);
+  }
+  
+
+  /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
+   */
+  validateV6Spoofs(ipv6Addrs) {
+    let v6db = {};
+    for (let i in ipv6Addrs) {
+      v6db[ipv6Addrs[i]] = true;
+    }
+    rclient.smembers(monitoredKey6,(err,datas)=>{
+      if (datas) {
+        for (let i in datas) {
+          if (v6db[datas[i]] == null) {
+              log.info("Spoof:Remove:By:Check", datas[i]);
+              rclient.srem(monitoredKey6, datas[i]);
+          }         
+        }
+      }
+    });
   }
 
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
