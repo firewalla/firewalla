@@ -27,6 +27,9 @@ let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
 let SysManager = require("./SysManager.js");
 let sysManager = new SysManager();
 
+let HostManager = require('./HostManager.js')
+let hostManager = new HostManager('cli', 'server')
+
 let Promise = require('bluebird');
 
 const async = require('asyncawait/async')
@@ -44,6 +47,10 @@ let cp = require('child_process');
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
 
+let HostTool = require('../net2/HostTool')
+let hostTool = new HostTool();
+
+
 let spoofStarted = false;
 
 // add promises to all redis functions
@@ -60,11 +67,8 @@ function startSpoofing() {
   log.info("start spoofing")
 
   return async(() => {
-    // clean up redis key
+    await (this.emptySpoofSet())
     
-    await (rclient.delAsync(monitoredKey))
-    await (rclient.delAsync(unmonitoredKey))
-
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();
     let myIP = sysManager.myIp();
@@ -105,7 +109,35 @@ function stopSpoofing() {
   })
 }
 
+function emptySpoofSet() {
+  return async(() => {
+    // clean up redis key
+    await (rclient.delAsync(monitoredKey))
+    await (rclient.delAsync(unmonitoredKey))
+  })()
+}
+
+function loadManualSpoofs() {
+  let activeMACs = hostManager.getActiveMACs()
+
+  return async(() => {
+    
+    activeMACs.forEach((mac) => {
+      let key = hostTool.getMacKey(mac)
+      let host = await (rclient.hgetallAsync(key))
+      let manualSpoof = (host.manualSpoof === '1' ? true : false)
+      if(manualSpoof) {
+        await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+      }
+    })
+    
+  })()
+
+}
+
 module.exports = {
   startSpoofing: startSpoofing,
-  stopSpoofing: stopSpoofing
+  stopSpoofing: stopSpoofing,
+  loadManualSpoofs: loadManualSpoofs,
+  emptySpoofSet: emptySpoofSet
 }
