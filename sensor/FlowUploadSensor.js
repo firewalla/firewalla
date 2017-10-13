@@ -100,11 +100,15 @@ class FlowUploadSensor extends Sensor {
                     limitedFlows.end = end
 
                     let data = JSON.stringify(limitedFlows)
-                    log.info("original:" + data)
+                    if (debug) {
+                        log.debug("original:" + data)
+                    }
                     log.info("original length:" + data.length)
                     
                     let compressedData = await(this.compressData(data))
-                    //log.info("compressed:" + compressedData)
+                    if (debug) {
+                        log.debug("compressed:" + compressedData)
+                    }
                     log.info("compressed length:" + compressedData.length)
                     log.info("compress ratio:" + data.length / compressedData.length)
 
