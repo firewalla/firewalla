@@ -1042,7 +1042,7 @@ module.exports = class {
                             if (this.config.bro.dns.expires) {
                                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                             }
-                            log.error("HTTP:Dns:Set",rvalue,value);
+                            log.debug("HTTP:Dns:Set",rvalue,value);
                         } else {
                             log.error("HTTP:Dns:Error", "unable to update count", err, {});
                         }
