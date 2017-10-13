@@ -22,6 +22,8 @@ let Promise = require('bluebird')
 
 let log = require('../net2/logger.js')(__filename)
 let Sensor = require('./Sensor.js').Sensor
+let SysManager = require('../net2/SysManager')
+let sysManager = new SysManager()
 let HostManager = require('../net2/HostManager.js')
 let hostManager = new HostManager('cli', 'server')
 let HostTool = require('../net2/HostTool')
@@ -33,7 +35,7 @@ let Bone = require('../lib/Bone.js')
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
-let MAX_UPLOAD_SIZE = 1073741824 //1G
+let MAX_UPLOAD_SIZE = 20971520 //20mb
 let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
@@ -149,7 +151,13 @@ class FlowUploadSensor extends Sensor {
             macs.forEach((mac) => {
                 let flow = await(this.getFlows(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    flows[flowUtil.hashMac(mac)] = this.aggregateFlow(this.processFlow(flow, true))
+                    let debug = sysManager.isSystemDebugOn()
+                    let retFlow = this.processFlow(flow, !debug)
+                    if (!debug) {
+                        flows[flowUtil.hashMac(mac)] = retFlow
+                    } else {
+                        flows[mac] = retFlow
+                    }
                 }
             })
             return {
@@ -174,32 +182,47 @@ class FlowUploadSensor extends Sensor {
         })()
     }
 
-    aggregateFlow(flows) {
+    aggregateFlows(flows) {
         return flows
     }
 
-    processFlow(flows, clean) {
-        return flows.map(f => {
-            //enrich
-            flowTool._enrichCountryInfo(f)
-            f.lo = f.country
-            delete f.country
-
-            //hash
-            let r = flowUtil.hashFlow(f, clean)
-
-            //remove key with empty value
-            Object.keys(r).forEach(k => {
-                if (r[k] == null) {
-                    delete r[k]
-                } else if (Array.isArray(r[k]) && r[k].length == 0) {
-                    delete r[k]
-                } else if (typeof r[k] === 'object' && Object.keys(r[k]).length == 0) {
-                    delete r[k]
-                }
-            })
-            return r
+    cleanFlow(flow) {
+        //remove key with empty value
+        Object.keys(flow).forEach(k => {
+            if (flow[k] == null) {
+                delete flow[k]
+            } else if (Array.isArray(flow[k]) && flow[k].length == 0) {
+                delete flow[k]
+            } else if (typeof flow[k] === 'object' && Object.keys(flow[k]).length == 0) {
+                delete flow[k]
+            }
         })
+        return flow
+    }
+
+    enrichFlow(flow) {
+        //add location
+        flowTool._enrichCountryInfo(flow)
+        flow.lo = flow.country
+        delete flow.country
+        return flow
+    }
+
+    processFlow(flows, needHash) {
+
+        //clean and hash
+        var _flows = flows.map(flow => {
+            this.cleanFlow(flow)
+            if (needHash) {
+                return flowUtil.hashFlow(flow, true)
+            } else {
+                return flow
+            }
+        })
+
+        //aggregate and enrich
+        return this.aggregateFlows(_flows).map(flow => this.enrichFlow(flow))
+        
     }
 }
 

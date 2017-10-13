@@ -56,7 +56,7 @@
     "IPv6DiscoverySensor":{},
     "FlowUploadSensor" : {
       "interval":10,
-      "maxLength": 1073741824,
+      "maxLength": 20971520,
       "offset": 90
     },
     "OldDataCleanSensor": {
