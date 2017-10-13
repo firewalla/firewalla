@@ -105,7 +105,7 @@ class IPv6DiscoverySensor extends Sensor {
 
   /* WARNING NOT SENDING SEM */
   /* !!!!!!!!!!!!!!!!!!!!!!! */
-  addV6Host(v6addr,mac,callback) {
+  addV6Host(v6addrs,mac,callback) {
     log.info("Found V6 Address ",v6addr,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
@@ -113,7 +113,7 @@ class IPv6DiscoverySensor extends Sensor {
       suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
-        ipv6: v6addr,
+        ipv6Addr: v6addrs,
         mac: mac.toUpperCase()
       }
     });
@@ -131,6 +131,7 @@ class IPv6DiscoverySensor extends Sensor {
 
       this.process = require('child_process').exec(cmdline, (err, out, code) => {
         let lines = out.split("\n");
+        let macHostMap = {};
         async.eachLimit(lines, 1, (o, cb) => {
           log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
           let parts = o.split(" ");
@@ -140,14 +141,26 @@ class IPv6DiscoverySensor extends Sensor {
             if (mac == "FAILED" || mac.length < 16) {
               cb();
             } else {
+/* 
                hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
                    cb();
                });
+*/
+               let _host = macHostMap[mac];
+               if (_host) {
+                   _host.push(v6addr);
+               } else {
+                   _host = [v6addr];
+                   macHostMap[mac]=_host;
+               }
             }
           } else {
             cb();
           }
         }, (err) => {
+           for (let mac in macHostMap) {
+               this.addV6Host(macHostMap[mac],mac,callback) {
+           }
            log.info("IPv6 Scan:Done");
            this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
         });

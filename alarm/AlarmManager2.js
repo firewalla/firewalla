@@ -618,7 +618,7 @@ module.exports = class {
           break;
           case "domain":
             e["p.dest.id"] = alarm["p.dest.id"];
-            e["target_name"] = alarm["p.dest.id"];
+            e["target_name"] = alarm["p.dest.name"];
             e["target_ip"] = alarm["p.dest.ip"];
             break;
           default:

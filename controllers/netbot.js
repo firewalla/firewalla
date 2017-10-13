@@ -819,13 +819,20 @@ class netBot extends ControllerBot {
         if (v4.mode) {
           let modeManager = require('../net2/ModeManager.js');
           switch (v4.mode) {
-            case "spoof":
-              modeManager.setSpoofAndPublish();
-              break;
-            case "dhcp":
-              modeManager.setDHCPAndPublish();
-              break;
-            default:
+          case "spoof":
+          case "autoSpoof":
+            modeManager.setAutoSpoofAndPublish()
+            break;
+          case "manualSpoof":
+            modeManager.setManualSpoofAndPublish()
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish()
+            break;
+          case "none":
+            modeManager.setNoneAndPublish()
+            break;
+          default:
               log.error("unsupported mode: " + v4.mode);
               err = new Error("unsupport mode: " + v4.mode);
               break;
