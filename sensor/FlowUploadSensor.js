@@ -35,7 +35,7 @@ let Bone = require('../lib/Bone.js')
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
-let MAX_FLOWS = 5000
+let MAX_FLOWS = 50000 //can upload at most 50000 flows(after aggregation) to cloud, about 20 mb after compress
 let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
@@ -92,7 +92,8 @@ class FlowUploadSensor extends Sensor {
                     log.info("host manager not ready, wait to next round")
                     return
                 }
-                let flows = await(this.getAllFlows(macs, start, end))
+                let debug = sysManager.isSystemDebugOn()
+                let flows = await(this.getAllFlows(macs, start, end, !debug))
                 if (flows != null && Object.keys(flows).length > 0) {
                     let limitedFlows = this.limitFlows(flows)
                     limitedFlows.start = start
@@ -105,9 +106,9 @@ class FlowUploadSensor extends Sensor {
                     let compressedData = await(this.compressData(data))
                     //log.info("compressed:" + compressedData)
                     log.info("compressed length:" + compressedData.length)
-    
-                    //TODO:uncomment this
-                    //await(this.uploadData(compressedData))
+                    log.info("compress ratio:" + data.length / compressedData.length)
+
+                    this.uploadData(compressedData)
                 } else {
                     log.info("empty flows, wait to next round")
                 }
@@ -169,15 +170,14 @@ class FlowUploadSensor extends Sensor {
         }
     }
 
-    getAllFlows(macs, start, end) {
+    getAllFlows(macs, start, end, needHash) {
         return async(() => {
             let flows = {}
             macs.forEach((mac) => {
                 let flow = await(this.getFlows(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    let debug = sysManager.isSystemDebugOn()
-                    let retFlow = this.processFlow(flow, !debug)
-                    if (!debug) {
+                    let retFlow = this.processFlow(flow, needHash)
+                    if (needHash) {
                         flows[flowUtil.hashMac(mac)] = retFlow
                     } else {
                         flows[mac] = retFlow
@@ -211,7 +211,93 @@ class FlowUploadSensor extends Sensor {
     }
 
     aggregateFlows(flows) {
-        return flows
+        /**
+         * input flows sample:  18 fields in each object
+         * [
+         *  {
+         *     "ts":"", start time
+         *     "_ts":"", end time
+         *     "sh":"", source host
+         *     "dh":"", destination host
+         *     "lh":"", local host
+         *     "sp":"", source port
+         *     "dp":"", destination port, deprecated by pf?
+         *     "af":{}, application flow
+         *     "flows":[]  flow details
+         *     "pf":{}, destination port flows
+         *     "bl":"" response body length?
+         *     "ob":"" total orig bytes
+         *     "rb":"" total response bytes
+         *     "ct":"" count
+         *     "lo":"" location
+         *     "pr":"" protocol, deprecated by pf?
+         *     "du":"" duration,
+         *     "fd":"" direction, in/out
+         *  }
+         *  {...}
+         *  {...}
+         * ]
+         * 
+         *  aggregate by sh,dh,lh,fd, then copy "lo" at first level, and put the others to second nested array
+         * 
+         *  output flows sample: 5 fields in first level, 13 fields in second level
+         * [
+         *  {
+         *     "sh":"",
+         *     "dh":"",
+         *     "lh":"",
+         *     "fd":"",
+         *     "lo":"",
+         *     "agg":[
+         *       {
+         *         "ts":"",
+         *         "_ts":"",
+         *         "sp":"",
+         *         "dp":"",
+         *         "af":{},
+         *         "pf":{},
+         *         "flows":[],
+         *         "bl":"",
+         *         "ob":"",   
+         *         "rb":"",
+         *         "ct":"",
+         *         "pr":"",
+         *         "du":"",
+         *       }
+         *     ]
+         *  },
+         *  {...},
+         *  {...}
+         * ]
+         * */
+
+        let aggs = {} 
+        for(var i = 0; i < flows.length; i++) {
+            let flow = flows[i]
+            let key = flow.sh + "," + flow.dh + "," + flow.lh + "," + flow.fd
+            if (aggs[key] == null) {
+                aggs[key] = {
+                    sh : flow.sh,
+                    dh : flow.dh,
+                    fd : flow.fd,
+                    lh : flow.lh,
+                    lo : flow.lo,
+                    agg : []
+                }
+            } 
+            //merge other fields to agg
+            let agg = {}
+            let allFields = Object.keys(flow)
+            allFields.forEach(function(f){
+                if (f != 'sh' && f != 'dh' && f != 'lh' && f != 'lo' && f != 'fd') {
+                    agg[f] = flow[f]
+                }
+            })
+            aggs[key].agg.push(agg)
+        }
+        let result = Object.keys(aggs).map(k => aggs[k])
+        log.info("size before agg:" + flows.length + ", after agg:" + result.length)
+        return result
     }
 
     cleanFlow(flow) {
