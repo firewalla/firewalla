@@ -250,6 +250,11 @@ class HostTool {
   }
 
   updateRecentActivity(mac, activity) {
+    if(!activity || !mac) {
+      // do nothing if activity or mac is null
+      return Promise.resolve()
+    }
+    
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
     
