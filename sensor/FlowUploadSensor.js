@@ -81,12 +81,18 @@ class FlowUploadSensor extends Sensor {
 
          return async(() => {
             try {
-                let flows = await(this.getAllFlows(this.startTime, endTime))
+                let macs = hostManager.getActiveMACs()
+                if (macs == null || macs.length == 0) {
+                    //host manager may not ready
+                    log.info("host manager not ready, wait to next round")
+                    return
+                }
+                let flows = await(this.getAllFlows(macs, this.startTime, endTime))
                 //set next start point
                 this.startTime = endTime + 0.001
                 if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
                     let data = JSON.stringify(flows)
-                    //log.info("original:" + data)
+                    log.info("original:" + data)
                     log.info("original length:" + data.length)
                     let compressedData = await(this.compressData(data))
                     //log.info("compressed:" + compressedData)
@@ -95,7 +101,8 @@ class FlowUploadSensor extends Sensor {
                     if (length > this.config.maxLength) {
                         log.warn("data length " + length + " exceeded max length " + this.config.maxLength + ", abort uploading to cloud")
                     } else {
-                        this.uploadData(compressedData)
+                        //TODO:uncomment this
+                        //this.uploadData(compressedData)
                     }
                 } else {
                     log.info("empty flows, wait to next round")
@@ -136,14 +143,13 @@ class FlowUploadSensor extends Sensor {
         })();
     }
 
-    getAllFlows(start, end) {
+    getAllFlows(macs, start, end) {
         return async(() => {
-            let macs = await(this.getAllMacs())
             let flows = {}
             macs.forEach((mac) => {
-                let flow = await(this.getFlowByMac(mac, start, end))
+                let flow = await(this.getFlows(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    flows[flowUtil.hashMac(mac)] = this.processFlow(flow, true)
+                    flows[flowUtil.hashMac(mac)] = this.aggregateFlow(this.processFlow(flow, true))
                 }
             })
             return {
@@ -154,7 +160,7 @@ class FlowUploadSensor extends Sensor {
           })();
     }
 
-    getFlowByMac(mac, start, end) {
+    getFlows(mac, start, end) {
         return async(() => {
             let ips = await (hostTool.getIPsByMac(mac));
             let flows = [];
@@ -168,10 +174,16 @@ class FlowUploadSensor extends Sensor {
         })()
     }
 
+    aggregateFlow(flows) {
+        return flows
+    }
+
     processFlow(flows, clean) {
         return flows.map(f => {
             //enrich
             flowTool._enrichCountryInfo(f)
+            f.lo = f.country
+            delete f.country
 
             //hash
             let r = flowUtil.hashFlow(f, clean)
@@ -188,21 +200,6 @@ class FlowUploadSensor extends Sensor {
             })
             return r
         })
-    }
-
-    // return a list of mac addresses that's active in last xx days
-    getAllMacs() {
-        return async(() => {
-            return new Promise(function (resolve, reject) {
-                hostManager.getHosts(function(err, hosts){
-                    if(err) {
-                        reject(err)
-                    } else {
-                        resolve(hosts.map(h => h.o.mac).filter(mac => mac != null))
-                    }
-                })
-            })
-        })()
     }
 }
 
