@@ -35,7 +35,7 @@ let Bone = require('../lib/Bone.js')
 let INTERVAL_MIN = 10 //10 seconds
 let INTERVAL_MAX = 3600 //1 hour
 let INTERVAL_DEFAULT = 900 //15 minutes
-let MAX_UPLOAD_SIZE = 20971520 //20mb
+let MAX_FLOWS = 5000
 let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
@@ -65,8 +65,8 @@ class FlowUploadSensor extends Sensor {
             this.config.interval = INTERVAL_MAX
         }
 
-        if (this.config.maxLength == null || this.config.maxLength > MAX_UPLOAD_SIZE) {
-            this.config.maxLength = MAX_UPLOAD_SIZE
+        if (this.config.maxFlows == null || this.config.maxFlows > MAX_FLOWS) {
+            this.config.maxFlows = MAX_FLOWS
         }
 
         if (this.config.offset == null || this.config.offset < 0) {
@@ -75,44 +75,44 @@ class FlowUploadSensor extends Sensor {
     }
 
     schedule() {
-        let endTime = new Date() / 1000 - this.config.offset
+        let start = this.startTime
+        let end = new Date() / 1000 - this.config.offset
         //upload flow to cloud
         log.info("try to upload flows from "
-         + this.startTime + "(" + new Date(this.startTime * 1000).toUTCString() + ")" + 
-         " to " + endTime + "(" + new Date(endTime * 1000).toUTCString() + ")")
+         + start + "(" + new Date(start * 1000).toUTCString() + ")" + 
+         " to " + end + "(" + new Date(end * 1000).toUTCString() + ")")
 
          return async(() => {
             try {
+                //set next start point
+                this.startTime = end + 0.001
+                
                 let macs = hostManager.getActiveMACs()
                 if (macs == null || macs.length == 0) {
-                    //host manager may not ready
                     log.info("host manager not ready, wait to next round")
                     return
                 }
-                let flows = await(this.getAllFlows(macs, this.startTime, endTime))
-                //set next start point
-                this.startTime = endTime + 0.001
-                if (flows != null && flows.flows != null && Object.keys(flows.flows).length > 0) {
-                    let data = JSON.stringify(flows)
+                let flows = await(this.getAllFlows(macs, start, end))
+                if (flows != null && Object.keys(flows).length > 0) {
+                    let limitedFlows = this.limitFlows(flows)
+                    limitedFlows.start = start
+                    limitedFlows.end = end
+
+                    let data = JSON.stringify(limitedFlows)
                     log.info("original:" + data)
                     log.info("original length:" + data.length)
+                    
                     let compressedData = await(this.compressData(data))
                     //log.info("compressed:" + compressedData)
-                    let length = compressedData.length
-                    log.info("compressed length:" + length)
-                    if (length > this.config.maxLength) {
-                        log.warn("data length " + length + " exceeded max length " + this.config.maxLength + ", abort uploading to cloud")
-                    } else {
-                        //TODO:uncomment this
-                        //this.uploadData(compressedData)
-                    }
+                    log.info("compressed length:" + compressedData.length)
+    
+                    //TODO:uncomment this
+                    //await(this.uploadData(compressedData))
                 } else {
                     log.info("empty flows, wait to next round")
                 }
             } catch (err) {
                 log.error("upload flows failed:" + err.toString())
-                //skip this time range, set next start point
-                this.startTime = endTime + 0.001
             }
           })();
     }
@@ -145,6 +145,30 @@ class FlowUploadSensor extends Sensor {
         })();
     }
 
+    limitFlows(flows) {
+        //limit flows for upload
+        let total = this.getSize(flows)
+        var uploaded = total
+        if (total > this.config.maxFlows) {
+            let ks = Object.keys(flows)
+            log.info("number of flows(" + total + ") exceeded limit(" + this.config.maxFlows + "), need cut off")
+            let avgLimit = this.config.maxFlows / ks.length
+            //avgLimit means the number limit of flows for each mac
+            ks.map(mac => {
+                if (flows[mac].length > avgLimit) {
+                    flows[mac] = flows[mac].slice(0, avgLimit)
+                }
+            })
+            uploaded = this.getSize(flows)
+        }
+        log.info("will upload " + uploaded + " flows")
+        return {
+            flows : flows,
+            total : total,
+            uploaded : uploaded
+        }
+    }
+
     getAllFlows(macs, start, end) {
         return async(() => {
             let flows = {}
@@ -160,12 +184,16 @@ class FlowUploadSensor extends Sensor {
                     }
                 }
             })
-            return {
-                start : start,
-                end : end,
-                flows : flows
-            }
+            return flows
           })();
+    }
+
+    getSize(flows) {
+        if (flows == null || flows.length == 0) {
+            return 0
+        } else {
+            return Object.keys(flows).map(k => flows[k].length).reduce((a,b) => a + b)
+        }
     }
 
     getFlows(mac, start, end) {
@@ -209,20 +237,21 @@ class FlowUploadSensor extends Sensor {
     }
 
     processFlow(flows, needHash) {
+        return this.aggregateFlows(flows.map(flow => {
 
-        //clean and hash
-        var _flows = flows.map(flow => {
+            //enrich
+            this.enrichFlow(flow)
+
+            //clean
             this.cleanFlow(flow)
+
+            //hash
             if (needHash) {
                 return flowUtil.hashFlow(flow, true)
             } else {
                 return flow
             }
-        })
-
-        //aggregate and enrich
-        return this.aggregateFlows(_flows).map(flow => this.enrichFlow(flow))
-        
+        }))
     }
 }
 
