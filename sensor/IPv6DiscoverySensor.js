@@ -105,7 +105,7 @@ class IPv6DiscoverySensor extends Sensor {
 
   /* WARNING NOT SENDING SEM */
   /* !!!!!!!!!!!!!!!!!!!!!!! */
-  addV6Host(v6addrs,mac,callback) {
+  addV6Host(v6addrs,mac) {
     log.info("Found V6 Address ",v6addr,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
@@ -117,7 +117,6 @@ class IPv6DiscoverySensor extends Sensor {
         mac: mac.toUpperCase()
       }
     });
-    callback(null);
   }
 
   neighborDiscoveryV6(intf,obj) {
@@ -160,10 +159,16 @@ class IPv6DiscoverySensor extends Sensor {
           }
         }, (err) => {
           for (let mac in macHostMap) {
-            this.addV6Host(macHostMap[mac],mac,callback)
+            this.addV6Host(macHostMap[mac],mac)
           }
-          log.info("IPv6 Scan:Done");
-          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+
+          // FIXME
+          // This is a very workaround activity to send scan done out in 5 seconds
+          // several seconds is necesary to ensure new ip addresses are added
+          setTimeout(() => {
+            log.info("IPv6 Scan:Done");
+            this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+          }, 5000)
         });
       });
     });
