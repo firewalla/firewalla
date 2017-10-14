@@ -111,20 +111,22 @@ class HostTool {
   }
 
   updateMACKey(host, skipUpdatingExpireTime) {
-   
-    if(host.mac && host.mac === "00:00:00:00:00:00") {
+
+    let hostCopy = JSON.parse(JSON.stringify(host))
+
+    if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
       log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
       return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
     }
 
-    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
+      hostCopy.ipv6Addr = JSON.stringify(hostCopy.ipv6Addr);
     }    
     
-    this.cleanupData(host);
+    this.cleanupData(hostCopy);
 
-    let key = this.getMacKey(host.mac);
-    return rclient.hmsetAsync(key, host)
+    let key = this.getMacKey(hostCopy.mac);
+    return rclient.hmsetAsync(key, hostCopy)
       .then(() => {
         if(skipUpdatingExpireTime) {
           return;
@@ -185,6 +187,10 @@ class HostTool {
     return async(() => {
       let ips = [];
       let macObject = await(this.getMACEntry(mac));
+      if(!macObject) {
+        return ips
+      }
+      
       if(macObject.ipv4Addr) {
         ips.push(macObject.ipv4Addr);
       }
