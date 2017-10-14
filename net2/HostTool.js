@@ -308,7 +308,7 @@ class HostTool {
           }
 
           await (rclient.hmsetAsync(key, data))
-          await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30))
+          await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7))
           
         })
       }
