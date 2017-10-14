@@ -105,11 +105,11 @@ class IPv6DiscoverySensor extends Sensor {
 
   /* WARNING NOT SENDING SEM */
   /* !!!!!!!!!!!!!!!!!!!!!!! */
-  addV6Host(v6addrs,mac,callback) {
-    log.info("Found V6 Address ",v6addr,mac);
+  addV6Host(v6addrs,mac) {
+    log.info("Found V6 Address ",v6addrs,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
-      message: "A new device found @ NewDeviceHook",
+      message: "A new ipv6 is found @ IPv6DisocverySensor",
       suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
@@ -117,7 +117,6 @@ class IPv6DiscoverySensor extends Sensor {
         mac: mac.toUpperCase()
       }
     });
-    callback(null);
   }
 
   neighborDiscoveryV6(intf,obj) {
@@ -141,28 +140,35 @@ class IPv6DiscoverySensor extends Sensor {
             if (mac == "FAILED" || mac.length < 16) {
               cb();
             } else {
-/* 
-               hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
-                   cb();
-               });
-*/
-               let _host = macHostMap[mac];
-               if (_host) {
-                   _host.push(v6addr);
-               } else {
-                   _host = [v6addr];
-                   macHostMap[mac]=_host;
-               }
+              /* 
+                 hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
+                 cb();
+                 });
+              */
+              let _host = macHostMap[mac];
+              if (_host) {
+                _host.push(v6addr);
+              } else {
+                _host = [v6addr];
+                macHostMap[mac]=_host;
+              }
+              cb()
             }
           } else {
             cb();
           }
         }, (err) => {
-           for (let mac in macHostMap) {
-               this.addV6Host(macHostMap[mac],mac,callback) {
-           }
-           log.info("IPv6 Scan:Done");
-           this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+          for (let mac in macHostMap) {
+            this.addV6Host(macHostMap[mac],mac)
+          }
+
+          // FIXME
+          // This is a very workaround activity to send scan done out in 5 seconds
+          // several seconds is necesary to ensure new ip addresses are added
+          setTimeout(() => {
+            log.info("IPv6 Scan:Done");
+            this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+          }, 5000)
         });
       });
     });

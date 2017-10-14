@@ -66,14 +66,6 @@ class HostTool {
     return rclient.hgetallAsync(key);
   }
 
-  getIPv6Entry(ip) {
-    if(!ip)
-      return Promise.reject("invalid ip addr");
-
-    let key = "host:ip6:" + ip;
-    return rclient.hgetallAsync(key);
-  }
-
   getMACEntry(mac) {
     if(!mac)
       return Promise.reject("invalid mac address");
@@ -94,13 +86,6 @@ class HostTool {
     return hostEntry.ipv4;
   }
 
-  ipv6Exists(ip) {
-    return rclient.keysAsync("host:ip6:" + ip)
-      .then((results) => {
-        return results.length > 0;
-      });
-  }
-
   updateBackupName(mac, name) {
     log.info("Updating backup name", name, "for mac:", mac, {});
     let key = "host:mac:" + mac;
@@ -110,33 +95,38 @@ class HostTool {
   updateHost(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
-    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+
+    let hostCopy = JSON.parse(JSON.stringify(host))
+    
+    if(hostCopy.ipv6Addr) {
+      delete hostCopy.ipv6Addr
     }
 
-    this.cleanupData(host);
+    this.cleanupData(hostCopy);
 
-    return rclient.hmsetAsync(key, host)
+    return rclient.hmsetAsync(key, hostCopy)
       .then(() => {
         return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
       });
   }
 
   updateMACKey(host, skipUpdatingExpireTime) {
-   
-    if(host.mac && host.mac === "00:00:00:00:00:00") {
+
+    let hostCopy = JSON.parse(JSON.stringify(host))
+
+    if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
       log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
       return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
     }
 
-    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
+      hostCopy.ipv6Addr = JSON.stringify(hostCopy.ipv6Addr);
     }    
     
-    this.cleanupData(host);
+    this.cleanupData(hostCopy);
 
-    let key = this.getMacKey(host.mac);
-    return rclient.hmsetAsync(key, host)
+    let key = this.getMacKey(hostCopy.mac);
+    return rclient.hmsetAsync(key, hostCopy)
       .then(() => {
         if(skipUpdatingExpireTime) {
           return;
@@ -197,6 +187,10 @@ class HostTool {
     return async(() => {
       let ips = [];
       let macObject = await(this.getMACEntry(mac));
+      if(!macObject) {
+        return ips
+      }
+      
       if(macObject.ipv4Addr) {
         ips.push(macObject.ipv4Addr);
       }
@@ -266,6 +260,62 @@ class HostTool {
     
     return rclient.hsetAsync(key, "recentActivity", string)
   }
+
+
+  ////////////// IPV6 /////////////////////
+
+  getIPv6Entry(ip) {
+    if(!ip)
+      return Promise.reject("invalid ip addr");
+    
+    let key = this.getIPv6HostKey(ip)
+    return rclient.hgetallAsync(key);
+  }
+  
+  getIPv6HostKey(ip) {
+    let key = "host:ip6:" + ip;
+    return key
+  }
+
+  ipv6Exists(ip) {
+    let key = this.getIPv6HostKey(ip)
+    return rclient.keysAsync(key)
+      .then((results) => {
+        return results.length > 0;
+      });
+  }
+
+  updateIPv6Host(host) {
+    return async(() => {
+      if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
+        host.ipv6Addr.forEach((addr) => {
+          let key = this.getIPv6HostKey(addr)
+
+          let existingData = await (rclient.hgetallAsync(key))
+          let data = null
+          
+          if(existingData && existingData.mac === host.mac) {
+            // just update last timestamp for existing device
+            data = {
+              lastActiveTimestamp: Date.now() / 1000
+            }
+          } else {
+            data = {
+              mac: host.mac,
+              firstFoundTimestamp: host.firstFoundTimestamp || Date.now() / 1000,
+              lastActiveTimestamp: Date.now() / 1000
+            }
+          }
+
+          await (rclient.hmsetAsync(key, data))
+          await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30))
+          
+        })
+      }
+    })()   
+  }
+
+  ////////////////// END OF IPV6 ////////////////
 
   //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
   //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
@@ -384,6 +434,24 @@ class HostTool {
         callback(null, null);
       }
     });
+  }
+
+  getIPv6AddressesByMAC(mac) {
+    return async(() => {
+      let key = this.getMacKey(mac)
+      let v6String = await (rclient.hgetAsync(key, "ipv6Addr"))
+      if(!v6String) {
+        return []
+      }
+      
+      try {
+        let v6Addrs = JSON.parse(v6String)
+        return v6Addrs
+      } catch(err) {
+        log.error(`Failed to parse v6 addrs: ${v6String}`)
+        return []
+      }
+    })()
   }
 }
 
