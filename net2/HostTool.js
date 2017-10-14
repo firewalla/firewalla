@@ -95,18 +95,16 @@ class HostTool {
   updateHost(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
+
+    let hostCopy = JSON.parse(JSON.stringify(host))
     
-    if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-      host.ipv6Addr = JSON.stringify(host.ipv6Addr);
+    if(hostCopy.ipv6Addr) {
+      delete hostCopy.ipv6Addr
     }
 
-    if(host.ipv6Addr) {
-      delete host.ipv6Addr
-    }
+    this.cleanupData(hostCopy);
 
-    this.cleanupData(host);
-
-    return rclient.hmsetAsync(key, host)
+    return rclient.hmsetAsync(key, hostCopy)
       .then(() => {
         return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
       });
