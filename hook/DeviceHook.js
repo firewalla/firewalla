@@ -109,7 +109,13 @@ class DeviceHook extends Hook {
         // 5. if this is an existing mac address, and it has no ipv4 address (only ipv6 addresses)
 
         // Then just update the ipv6 entries
-        await (hostTool.updateIPv6Host(host))
+        if(ipv6Addr) {
+          await (hostTool.updateIPv6Host(host)) // v6
+          let newIPv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          let newHost = extend({}, host, {ipv6Addr: newIPv6Addr})
+          
+          await (hostTool.updateMACKey(newHost)) // mac
+        }
       }
       
     })().catch((err) => {
@@ -241,6 +247,10 @@ class DeviceHook extends Hook {
 
         log.info("New host entry is created for this old device");
 
+        if(enrichedHost.ipv6Addr) {
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+        }        
+
         await (hostTool.updateMACKey(enrichedHost)) // mac
         
 
@@ -275,6 +285,10 @@ class DeviceHook extends Hook {
         await (hostTool.updateHost(enrichedHost))
         await (hostTool.updateIPv6Host(enrichedHost)) //v6
 
+        if(enrichedHost.ipv6Addr) {
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+        }
+
         await (hostTool.updateMACKey(enrichedHost))
         
         log.info("MAC entry is updated with new IP");
@@ -301,16 +315,7 @@ class DeviceHook extends Hook {
         // For ipv6, need to load existing ip6 address from redis, and merge together
         // One device may have multiple ipv6 addresses
         if(enrichedHost.ipv6Addr) {
-          let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
-          enrichedHost.ipv6Addr.forEach((addr) => {
-            if(existingIPv6Addresses.indexOf(addr) === -1) {
-              existingIPv6Addresses.push(addr) // found new ip address
-              if(existingIPv6Addresses.length > MAX_IPV6_ADDRESSES) {
-                existingIPv6Addresses.shift()
-              }
-            }
-          })
-          enrichedHost.ipv6Addr = existingIPv6Addresses
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
         }
 
         // FIXME: shoud not keep minimal info for host key, not all
@@ -350,6 +355,21 @@ class DeviceHook extends Hook {
     
       
     });
+  }
+
+  updateIPv6EntriesForMAC(ipv6Addr, mac) {
+    return async(() => {
+      let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
+      ipv6Addr.forEach((addr) => {
+        if(existingIPv6Addresses.indexOf(addr) === -1) {
+          existingIPv6Addresses.push(addr) // found new ip address
+          if(existingIPv6Addresses.length > MAX_IPV6_ADDRESSES) {
+            existingIPv6Addresses.shift()
+          }
+        }
+      })
+      return existingIPv6Addresses
+    })()
   }
 
   createAlarmAsync(host) {
