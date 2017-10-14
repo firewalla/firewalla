@@ -141,28 +141,29 @@ class IPv6DiscoverySensor extends Sensor {
             if (mac == "FAILED" || mac.length < 16) {
               cb();
             } else {
-/* 
-               hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
-                   cb();
-               });
-*/
-               let _host = macHostMap[mac];
-               if (_host) {
-                   _host.push(v6addr);
-               } else {
-                   _host = [v6addr];
-                   macHostMap[mac]=_host;
-               }
+              /* 
+                 hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
+                 cb();
+                 });
+              */
+              let _host = macHostMap[mac];
+              if (_host) {
+                _host.push(v6addr);
+              } else {
+                _host = [v6addr];
+                macHostMap[mac]=_host;
+              }
+              cb()
             }
           } else {
             cb();
           }
         }, (err) => {
-           for (let mac in macHostMap) {
-               this.addV6Host(macHostMap[mac],mac,callback)
-           }
-           log.info("IPv6 Scan:Done");
-           this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+          for (let mac in macHostMap) {
+            this.addV6Host(macHostMap[mac],mac,callback)
+          }
+          log.info("IPv6 Scan:Done");
+          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
         });
       });
     });

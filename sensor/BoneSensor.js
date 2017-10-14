@@ -67,7 +67,7 @@ class BoneSensor extends Sensor {
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 
-      log.info("Cloud checked in successfully:", JSON.stringify(data));
+      log.info("Cloud checked in successfully:")//, JSON.stringify(data));
 
       await (rclient.setAsync("sys:bone:info",JSON.stringify(data)));
 

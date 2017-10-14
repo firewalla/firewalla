@@ -90,7 +90,7 @@ class BonjourSensor extends Sensor {
     }
     
     if(this.hostCache[key]) {
-      log.info("Ignoring duplicated bonjour services from same ip:", key, {});
+      log.debug("Ignoring duplicated bonjour services from same ip:", key, {});
       return true;
     }
 
