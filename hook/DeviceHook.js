@@ -48,76 +48,75 @@ class DeviceHook extends Hook {
     super();
   }
 
-  deviceUpdateHook(event) {
-    let host = event.host;
-    let mac = host.mac;
-    let ipv4Addr = host.ipv4Addr;
+  processDeviceUpdate(event) {
+    let host = event.host
+    let mac = host.mac
+    let ipv4Addr = host.ipv4Addr
+    let ipv6Addr = host.ipv6Addr
 
-    hostTool.macExists(mac)
-      .then((found) => {
+    return async(() => {
+      
+      // 1. if this is a brand new mac address => NewDeviceFound
+      let found = await (hostTool.macExists(mac))
+      if(!found) {
+        sem.emitEvent({
+          type: "NewDeviceFound",
+          message: "A new device (mac address) found @ DeviceHook",
+          host: host,
+          suppressAlarm: event.suppressAlarm
+        })
+        return
+      }
 
-        if(!found) {  // ==============> New Device Found
-
+      // 2. if this is an existing mac address, and it has same ipv4 address => RegularDeviceInfoUpdate
+      // it may update redis ip6 keys if additional ip addresses are added
+      if(ipv4Addr) {
+        let data = await(hostTool.getIPv4Entry(ipv4Addr))
+        if(data && data.mac === mac) {
           sem.emitEvent({
-            type: "NewDeviceFound",
-            message: "A new device (mac address) found @ DeviceHook",
-            host: host,
-            suppressAlarm: event.suppressAlarm
+            type: "RegularDeviceInfoUpdate",
+            message: "Refresh device status @ DeviceHook",
+            suppressEventLogging: true,
+            host: host
           });
+          return
+        }        
 
-        } else {
-          if (ipv4Addr) {
-            hostTool.getIPv4Entry(ipv4Addr)
-              .then((data) => {
-
-                if(!data) {      // =========> This MAC Address has changed to new unrecorded IP Address
-
-                  sem.emitEvent({
-                    type: "OldDeviceChangedToNewIP",
-                    message: "An old device used a new IP @ DeviceHook",
-                    host: host
-                  });
-                  
-                } else {
-                  
-                  if(mac !== data.mac) { // ========> This MAC Address has taken the IP Address used by another device
-                    
-                    sem.emitEvent({
-                      type: "OldDeviceTakenOverOtherDeviceIP",
-                      message: "An old device used IP used to be other device @ DeviceHook",
-                      host: host,
-                      oldMac: data.mac
-                    });
-                    
-                  } else {  // =======> Regular Device Info Update
-                    
-                    sem.emitEvent({
-                      type: "RegularDeviceInfoUpdate",
-                      message: "Refresh device status @ DeviceHook",
-                      suppressEventLogging: true,
-                      host: host
-                    });
-
-                  }
-                }
-              }).catch((err) => {
-                log.error("Failed to get host:ip4 entry:", err, {});
-              })
-          } else if (host.ipv6Addr) {
-            sem.emitEvent({
-              type: "IPv6DeviceInfoUpdate",
-              message: "IPv6 Device Update @ DeviceHook",
-              suppressEventLogging: true,
-              host: host
-            });
-            
-          }
+        // 3. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
+        // it may update redis ip6 keys if additional ip addresses are added
+        if(!data) {
+          sem.emitEvent({
+            type: "OldDeviceChangedToNewIP",
+            message: "An old device used a new IP @ DeviceHook",
+            host: host
+          })
+          return
         }
-      }).catch((err) => {
-        log.error("Failed to check if mac address exists:", err, {});
-      });    
+
+        // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is already owned by someone in redis) => OldDeviceTakenOverOtherDeviceIP
+        // it may update redis ip6 keys if additional ip addresses are added
+        if(data && data.mac !== mac) {
+          sem.emitEvent({
+            type: "OldDeviceTakenOverOtherDeviceIP",
+            message: "An old device used IP used to be other device @ DeviceHook",
+            host: host,
+            oldMac: data.mac
+          })
+          return
+        }
+
+      } else {
+        // 5. if this is an existing mac address, and it has no ipv4 address (only ipv6 addresses)
+
+        // Then just update the ipv6 entries
+        await (hostTool.updateIPv6Host(host))
+      }
+      
+    })().catch((err) => {
+      log.error("Failed to process DeviceUpdate event:", err, {});
+    })
   }
-  
+
   run() {
 
     // DeviceUpdate event format:
@@ -133,7 +132,7 @@ class DeviceHook extends Hook {
     sem.on("DeviceUpdate", (event) => {
       let mac = event.mac;
 
-      this.deviceUpdateHook(event)
+      this.processDeviceUpdate(event)
     });
 
     sem.on("IPv6DeviceInfoUpdate",(event)=>{
@@ -162,7 +161,12 @@ class DeviceHook extends Hook {
 
       async(() => {
 
+
+        // v4
         await (hostTool.updateHost(enrichedHost));
+
+        // v6
+        await (hostTool.updateIPv6Host(enrichedHost));
 
         log.info("Host entry is created for this new device");
 
@@ -219,41 +223,35 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      hostTool.getMACEntry(host.mac)
-        .then((macData) => {
-          let firstFoundTimestamp = macData.firstFoundTimestamp;
-          if(!firstFoundTimestamp)
-            firstFoundTimestamp = new Date() / 1000;
-
-          let enrichedHost = extend({}, host, {
-            uid: host.ipv4Addr,
-            firstFoundTimestamp: firstFoundTimestamp,
-            lastActiveTimestamp: new Date() / 1000
-          });
-
-          hostTool.updateHost(enrichedHost)
-            .then(() => {
-              log.info("New host entry is created for this new device");
-
-              hostTool.updateMACKey(enrichedHost)
-                .then(() => {
-
-                  log.info("MAC entry is updated with new IP");
-
-                  let hostManager= new HostManager("cli",'server','debug');
-                  log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-                  hostManager.getHost(host.ipv4Addr);
-
-                }).catch((err) => {
-                  log.error("Failed to create mac entry:", err, err.stack, {});
-                })
-
-            }).catch((err) => {
-              log.error("Failed to create host entry:", err, {});
-            });
-
+      async(() => {
+        let macData = await(hostTool.getMACEntry(host.mac))
+        
+        let firstFoundTimestamp = macData.firstFoundTimestamp;
+        if(!firstFoundTimestamp)
+          firstFoundTimestamp = new Date() / 1000;
+        
+        let enrichedHost = extend({}, host, {
+          uid: host.ipv4Addr,
+          firstFoundTimestamp: firstFoundTimestamp,
+          lastActiveTimestamp: new Date() / 1000
         });
 
+        await (hostTool.updateHost(enrichedHost)) //v4
+        await (hostTool.updateIPv6Host(enrichedHost)) //v6
+
+        log.info("New host entry is created for this old device");
+
+        await (hostTool.updateMACKey(enrichedHost)) // mac
+        
+
+        log.info("MAC entry is updated with new IP");
+        
+        let hostManager= new HostManager("cli",'server','debug');
+        log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
+        hostManager.getHost(host.ipv4Addr);                                     
+      })().catch((err) => {
+        log.error("Failed to process OldDeviceChangedToNewIP event:", err, {})
+      })
     });
 
     sem.on("OldDeviceTakenOverOtherDeviceIP", (event) => {
@@ -261,36 +259,32 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      hostTool.getMACEntry(host.mac)
-        .then((macData) => {
-          let firstFoundTimestamp = macData.firstFoundTimestamp;
-          if(!firstFoundTimestamp)
-            firstFoundTimestamp = new Date() / 1000;
-
-          let enrichedHost = extend({}, host, {
-            uid: host.ipv4Addr,
-            firstFoundTimestamp: firstFoundTimestamp,
-            lastActiveTimestamp: new Date() / 1000
-          });
-
-          hostTool.updateHost(enrichedHost)
-            .then(() => {
-              log.info("New host entry is created for this new device");
-
-              hostTool.updateMACKey(enrichedHost)
-                .then(() => {
-
-                  log.info("MAC entry is updated with new IP");
-
-                }).catch((err) => {
-                  log.error("Failed to create mac entry:", err, err.stack, {});
-                })
-
-            }).catch((err) => {
-              log.error("Failed to create host entry:", err, {});
-            });
-
+      async(() => {
+        let macData = await (hostTool.getMACEntry(host.mac))
+        
+        let firstFoundTimestamp = macData.firstFoundTimestamp;
+        if(!firstFoundTimestamp)
+          firstFoundTimestamp = new Date() / 1000;
+        
+        let enrichedHost = extend({}, host, {
+          uid: host.ipv4Addr,
+          firstFoundTimestamp: firstFoundTimestamp,
+          lastActiveTimestamp: new Date() / 1000
         });
+
+        await (hostTool.updateHost(enrichedHost))
+        await (hostTool.updateIPv6Host(enrichedHost)) //v6
+
+        await (hostTool.updateMACKey(enrichedHost))
+        
+        log.info("MAC entry is updated with new IP");
+
+        let hostManager= new HostManager("cli",'server','debug');
+        log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
+        hostManager.getHost(host.ipv4Addr);                  
+      })().catch((err) => {
+        log.error("Failed to process OldDeviceTakenDOverOtherDeivceIP event:", err, {})
+      })
     });
 
     sem.on("RegularDeviceInfoUpdate", (event) => {
