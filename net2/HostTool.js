@@ -288,7 +288,7 @@ class HostTool {
           let existingData = await (rclient.hgetallAsync(key))
           let data = null
           
-          if(existingData && exitingData.mac === host.mac) {
+          if(existingData && existingData.mac === host.mac) {
             // just update last timestamp for existing device
             data = {
               lastActiveTimestamp: Date.now() / 1000
