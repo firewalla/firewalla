@@ -84,9 +84,9 @@ class BoneSensor extends Sensor {
       if(data.publicIp) {
         sysManager.publicIp = data.publicIp;
         await (rclient.hsetAsync(
-            "sys:network:info",
-            "publicIp",
-            JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
+          "sys:network:info",
+          "publicIp",
+          JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
       }
 
       // broadcast new change

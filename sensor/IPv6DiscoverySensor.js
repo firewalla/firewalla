@@ -109,7 +109,7 @@ class IPv6DiscoverySensor extends Sensor {
     log.info("Found V6 Address ",v6addr,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
-      message: "A new device found @ NewDeviceHook",
+      message: "A new ipv6 is found @ IPv6DisocverySensor",
       suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
