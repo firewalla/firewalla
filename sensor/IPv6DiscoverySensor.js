@@ -159,7 +159,7 @@ class IPv6DiscoverySensor extends Sensor {
           }
         }, (err) => {
            for (let mac in macHostMap) {
-               this.addV6Host(macHostMap[mac],mac,callback) {
+               this.addV6Host(macHostMap[mac],mac,callback)
            }
            log.info("IPv6 Scan:Done");
            this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
