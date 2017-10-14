@@ -30,6 +30,12 @@ let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
 let instance = null;
+
+let maxV6Addr = 8;
+
+var _async = require('async');
+
+
 class HostTool {
   constructor() {
     if(!instance) {
@@ -249,12 +255,57 @@ class HostTool {
     })();
   }
 
+  updateRecentActivity(mac, activity) {
+    if(!activity || !mac) {
+      // do nothing if activity or mac is null
+      return Promise.resolve()
+    }
+    
+    let key = this.getMacKey(mac)
+    let string = JSON.stringify(activity)
+    
+    return rclient.hsetAsync(key, "recentActivity", string)
+  }
+
   //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
   //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
   // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
   // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
 
+  /* 
+   * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
+   * in very short term.  It is pretty hard to detect how long these will be used, so 
+   * we just hard code max number of ipv6 address
+   * 
+   * we will use 8 for now
+   */
+
+  ipv6Insert(ipv6array,v6addr,unspoof,callback) {
+      let removed = ipv6array.splice(maxV6Addr,1000);
+      log.info("V6 Overflow Check: ", ipv6array, v6addr);
+      if (v6addr) {
+          let oldindex = ipv6array.indexOf(v6addr);
+          if (oldindex != -1) {
+             ipv6array.splice(oldindex,1);
+          }
+          ipv6array.unshift(v6addr);
+      }
+      log.info("V6 Overflow Check Removed: ", removed,{});
+ 
+      if (unspoof && removed && removed.length>0) {
+          _async.eachLimit(removed, 10, (ip6, cb) => {
+              rclient.srem("monitored_hosts6", ip6,(err)=>{
+                  log.info("V6 Overflow Removed for real", ip6,err,{});
+                  cb();
+              });
+          }, (err) => {
+              callback(removed);
+          });
+      } else {
+          callback(null);
+      }
+  }
 
   linkMacWithIPv6(v6addr, mac, callback) {
     require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
@@ -290,15 +341,23 @@ class HostTool {
                 }
 
                 // only keep around 5 ipv6 around
+                /*
                 ipv6array = ipv6array.slice(0,8)
                 let oldindex = ipv6array.indexOf(v6addr);
                 if (oldindex != -1) {
                   ipv6array.splice(oldindex,1);
                 }
                 ipv6array.unshift(v6addr);
-
-                data.mac = mac.toUpperCase();
-                data.ipv6Addr = JSON.stringify(ipv6array);
+                */
+                this.ipv6Insert(ipv6array,v6addr,true,(removed)=>{
+                  data.mac = mac.toUpperCase();
+                  data.ipv6Addr = JSON.stringify(ipv6array);
+                  data.lastActiveTimestamp = Date.now() / 1000;
+                  log.info("HostTool:Writing Data:", mackey, data,{});
+                  rclient.hmset(mackey, data, (err, result) => {
+                    callback(err, null);
+                  });
+                });
                 //v6 at times will discver neighbors that not there ...
                 //so we don't update last active here
                 //data.lastActiveTimestamp = Date.now() / 1000;
@@ -308,11 +367,11 @@ class HostTool {
                 data.ipv6Addr = JSON.stringify([v6addr]);;
                 data.lastActiveTimestamp = Date.now() / 1000;
                 data.firstFoundTimestamp = data.lastActiveTimestamp;
+                log.info("HostTool:Writing Data:", mackey, data,{});
+                rclient.hmset(mackey, data, (err, result) => {
+                  callback(err, null);
+                });
               }
-              log.info("HostTool:Writing Data:", mackey, data,{});
-              rclient.hmset(mackey, data, (err, result) => {
-                callback(err, null);
-              });
             } else {
               log.error("Discover:v6Neighbor:Scan:Find:Error", err);
               callback(null, null);

@@ -83,6 +83,25 @@ module.exports = class {
   }
   
 
+  /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
+   */
+  validateV6Spoofs(ipv6Addrs) {
+    let v6db = {};
+    for (let i in ipv6Addrs) {
+      v6db[ipv6Addrs[i]] = true;
+    }
+    rclient.smembers(monitoredKey6,(err,datas)=>{
+      if (datas) {
+        for (let i in datas) {
+          if (v6db[datas[i]] == null) {
+              log.info("Spoof:Remove:By:Check", datas[i]);
+              rclient.srem(monitoredKey6, datas[i]);
+          }         
+        }
+      }
+    });
+  }
+
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
 
     callback = callback || function() {}

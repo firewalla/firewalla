@@ -58,6 +58,8 @@ module.exports = class {
         return;
       }
 
+      results.reverse();
+
       let multi = rclient.multi();
 
       results.forEach((eid) => {
