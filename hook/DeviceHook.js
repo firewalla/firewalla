@@ -307,7 +307,7 @@ class DeviceHook extends Hook {
         // For ipv6, need to load existing ip6 address from redis, and merge together
         // One device may have multiple ipv6 addresses
         if(enrichedHost.ipv6Addr) {
-          let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac))
+          let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
           enrichedHost.ipv6Addr.forEach((addr) => {
             if(existingIPv6Addresses.indexOf(addr) === -1) {
               existingIPv6Addresses.push(addr) // found new ip address

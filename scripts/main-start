@@ -57,6 +57,11 @@ echo $branch > /tmp/REPO_BRANCH
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
     setup_folders
+
+    # add alias source to ~/.bashrc
+    if ! grep "source ~/firewalla/scripts/alias.sh" ~/.bashrc; then
+      echo "source ~/firewalla/scripts/alias.sh" >> ~/.bashrc
+    fi
 }
 
 logger "FIREWALLA: Main-Run Start Update Modules"

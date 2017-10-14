@@ -58,7 +58,10 @@ module.exports = class {
         return;
       }
 
-      results.reverse();
+      // recent first
+      results.sort((a, b) => {
+        return b.timestamp > a.timestamp
+      })
 
       let multi = rclient.multi();
 
