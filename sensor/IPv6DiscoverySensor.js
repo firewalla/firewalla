@@ -106,7 +106,7 @@ class IPv6DiscoverySensor extends Sensor {
   /* WARNING NOT SENDING SEM */
   /* !!!!!!!!!!!!!!!!!!!!!!! */
   addV6Host(v6addrs,mac) {
-    log.info("Found V6 Address ",v6addr,mac);
+    log.info("Found V6 Address ",v6addrs,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
       message: "A new ipv6 is found @ IPv6DisocverySensor",
