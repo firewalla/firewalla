@@ -284,10 +284,21 @@ class HostTool {
       if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
         host.ipv6Addr.forEach((addr) => {
           let key = this.getIPv6HostKey(addr)
-          let data = {
-            mac: host.mac,
-            firstFoundTimestamp: host.firstFoundTimestamp || Date.now() / 1000,
-            lastActiveTimestamp: host.lastActiveTimestamp || Date.now() / 1000
+
+          let existingData = await (rclient.hgetallAsync(key))
+          let data = null
+          
+          if(existingData && exitingData.mac === host.mac) {
+            // just update last timestamp for existing device
+            data = {
+              lastActiveTimestamp: Date.now() / 1000
+            }
+          } else {
+            data = {
+              mac: host.mac,
+              firstFoundTimestamp: host.firstFoundTimestamp || Date.now() / 1000,
+              lastActiveTimestamp: Date.now() / 1000
+            }
           }
 
           await (rclient.hmsetAsync(key, data))
