@@ -525,7 +525,7 @@ module.exports = class {
           target = alarm["p.dest.ip"];
 
           if(alarmInfo && alarmInfo.type === "dns") {
-            type = dns
+            type = "dns"
             target = alarmInfo.target
           }
           break;
