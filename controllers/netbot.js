@@ -541,7 +541,7 @@ class netBot extends ControllerBot {
              if (msg) {
                 let notifyMsg = {
                    title: "Upgrade Needed",
-                   body: "Firewalla version "+msg+" avaliable, please open firewalla app then tap on settings->upgrade.",
+                   body: "Firewalla new version "+msg+" is avaliable, please open firewalla app then tap on settings->upgrade.",
                    } 
                 let data = {
                    gid: this.primarygid,
@@ -552,11 +552,11 @@ class netBot extends ControllerBot {
          case "System:Upgrade:Soft":
              if (msg) {
                 let notifyMsg = {
-                   title: "Firewalla version "+msg+" upgraded",
-                   body: ""
-                   } 
+                  title: `Firewalla is upgraded to ${msg}`,
+                  body: ""
+                }
                 let data = {
-                   gid: this.primarygid,
+                  gid: this.primarygid,
                 };
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
