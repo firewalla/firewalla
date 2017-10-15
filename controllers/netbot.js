@@ -541,7 +541,7 @@ class netBot extends ControllerBot {
              if (msg) {
                 let notifyMsg = {
                    title: "Upgrade Needed",
-                   body: "Firewalla version "+msg+" avaliable, please open firewalla app then tap on settings->upgrade.",
+                   body: "Firewalla new version "+msg+" is avaliable, please open firewalla app then tap on settings->upgrade.",
                    } 
                 let data = {
                    gid: this.primarygid,
@@ -552,11 +552,11 @@ class netBot extends ControllerBot {
          case "System:Upgrade:Soft":
              if (msg) {
                 let notifyMsg = {
-                   title: "Firewalla version "+msg+" upgraded",
-                   body: ""
-                   } 
+                  title: `Firewalla is upgraded to ${msg}`,
+                  body: ""
+                }
                 let data = {
-                   gid: this.primarygid,
+                  gid: this.primarygid,
                 };
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
@@ -1406,24 +1406,24 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
-      case "alarm:block":
-        am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "alarm:allow":
-        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "alarm:unblock":
+    case "alarm:block":
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy) => {
+        this.simpleTxData(msg, policy, err, callback);
+      });
+      break;
+    case "alarm:allow":
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
+        this.simpleTxData(msg, exception, err, callback);
+      });
+      break;
+    case "alarm:unblock":
         am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "alarm:unallow":
         am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
 
@@ -1431,7 +1431,7 @@ class netBot extends ControllerBot {
         am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
           if (err) {
             log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
-            this.simpleTxData(msg, null, err, callback);
+            this.simpleTxData(msg, {}, err, callback);
             return;
           }
 
@@ -1439,7 +1439,7 @@ class netBot extends ControllerBot {
             if (err) {
               log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
             }
-            this.simpleTxData(msg, null, err, callback);
+            this.simpleTxData(msg, {}, err, callback);
           });
         });
 

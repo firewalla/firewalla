@@ -503,9 +503,10 @@ class FlowTool {
   }
 
   getDestIP(flow) {
-    if (!flow) {
-        return null;
+    if(!flow) {
+      return null
     }
+    
     if(flow.lh === flow.sh) {
       return flow.dh;
     } else {

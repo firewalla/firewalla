@@ -484,10 +484,24 @@ module.exports = class {
     });
   }
 
+  // parseDomain(alarm) {
+  //   if(!alarm["p.dest.name"] ||
+  //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
+  //     return null // not support ip only alarm
+  //   }
+
+  //   let fullName = alarm["p.dest.name"]
+
+  //   let items = fullName.split(".")
+
+    
+    
+  // }
+  
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
 
-    let alarmInfo = info.info; // not used by now
+    let alarmInfo = info.info;
 
     let target = null;
     let type = null;
@@ -509,6 +523,11 @@ module.exports = class {
         default:
           type = "ip";
           target = alarm["p.dest.ip"];
+
+          if(alarmInfo && alarmInfo.type === "dns") {
+            type = "dns"
+            target = alarmInfo.target
+          }
           break;
         }
 
@@ -528,6 +547,7 @@ module.exports = class {
           p.target_ip = alarm["p.device.ip"];
           break;
         case "ip":
+        case "dns":
           p.target_name = alarm["p.dest.name"];
           p.target_ip = alarm["p.dest.ip"];
           break;
@@ -553,7 +573,7 @@ module.exports = class {
 
             this.updateAlarm(alarm)
               .then(() => {
-                callback(null);
+                callback(null, p);
               }).catch((err) => {
                 callback(err);
               });
@@ -567,7 +587,7 @@ module.exports = class {
   allowFromAlarm(alarmID, info, callback) {
     log.info("Going to allow alarm " + alarmID);
 
-    let alarmInfo = info.info; // not used by now
+    let alarmInfo = info.info;
 
     let target = null;
     let type = null;
@@ -589,6 +609,21 @@ module.exports = class {
         default:
           type = "domain";
           target = alarm["p.dest.id"];
+
+          if(alarmInfo) {
+            switch(alarmInfo.type) {
+            case "dns":
+              type = "dns"
+              target = alarmInfo.target
+              break
+            case "ip":
+              type = "ip"
+              target = alarmInfo.target
+              break
+            default:
+              break
+            }
+          }
           break;
         }
 
@@ -616,12 +651,13 @@ module.exports = class {
           e["target_name"] = alarm["p.dest.name"];
           e["target_ip"] = alarm["p.dest.ip"];
           break;
-          case "domain":
-            e["p.dest.id"] = alarm["p.dest.id"];
-            e["target_name"] = alarm["p.dest.name"];
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          default:
+        case "domain":
+        case "dns":
+          e["p.dest.id"] = alarm["p.dest.id"];
+          e["target_name"] = alarm["p.dest.name"];
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
+        default:
           // not supported
           break;
         }
@@ -636,12 +672,12 @@ module.exports = class {
             return;
           }
 
-          alarm.result_exception = e.aid;
+          alarm.result_exception = e.eid;
           alarm.result = "allow";
 
           this.updateAlarm(alarm)
             .then(() => {
-              callback(null);
+              callback(null, e);
             }).catch((err) => {
               callback(err);
             });

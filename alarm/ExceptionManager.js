@@ -58,10 +58,6 @@ module.exports = class {
         return;
       }
 
-      // recent first
-      results.sort((a, b) => {
-        return b.timestamp > a.timestamp
-      })
 
       let multi = rclient.multi();
 
@@ -76,7 +72,15 @@ module.exports = class {
           callback(err);
         }
 
-        callback(null, results.map((r) => Object.assign(Object.create(Exception.prototype), r)));
+        let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
+
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
 
     });
