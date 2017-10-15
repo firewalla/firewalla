@@ -1502,6 +1502,24 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })
       break;
+    case "setManualSpoof":
+      async(() => {
+        let mac = msg.data.value.mac
+        let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
+
+        if(!mac) {
+          this.simpleTxData(msg, null, new Error("invalid request"), callback)
+          return
+        }
+        
+        await (hostTool.updateMACKey({
+          mac: mac,
+          manualSpoof: manualSpoof
+        }))
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);

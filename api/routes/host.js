@@ -30,6 +30,10 @@ let flowManager = new FlowManager();
 let FlowTool = require('../../net2/FlowTool');
 let flowTool = new FlowTool();
 
+let HostTool = require('../../net2/HostTool');
+let hostTool = new HostTool();
+
+
 let Promise = require('bluebird');
 
 let NetBotTool = require('../../net2/NetBotTool');
@@ -104,6 +108,39 @@ router.get('/:host',
   }
 )
 
+router.post('/:host/manualSpoofOn',
+           (req, res, next) => {
+             let host = req.params.host;
+             async(() => {
+               let h = await (hostTool.getIPv4Entry(host))
+               let mac = h.mac
+               await (hostTool.updateMACKey({
+                 mac: mac,
+                 manualSpoof: "1"
+               }))
+               res.json({})
+             })().catch((err) => {
+             res.status(500).json({error: err});
+             })
+           })
+
+router.post('/:host/manualSpoofOff',
+           (req, res, next) => {
+             let host = req.params.host;
+             async(() => {
+               let h = await (hostTool.getIPv4Entry(host))
+               let mac = h.mac
+               await (hostTool.updateMACKey({
+                 mac: mac,
+                 manualSpoof: "0"
+               }))
+               res.json({})
+             })().catch((err) => {
+               res.status(500).json({error: err});
+             })
+           })
+
+
 router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
@@ -115,6 +152,7 @@ router.get('/:host/recentFlow',
       res.status(500).json({error: err});
     })
   });
+
 
 router.get('/:host/topDownload',
   (req, res, next) => {

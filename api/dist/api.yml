@@ -150,6 +150,28 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
+  /host/{id}/manualSpoofOn:
+    post:
+      summary: turn manual spoof on
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
+  /host/{id}/manualSpoofOff:
+    post:
+      summary: turn manual spoof on
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
   /host/{id}/recentFlow:
     get:
       summary: Get flow info of given host
