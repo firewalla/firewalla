@@ -573,7 +573,7 @@ module.exports = class {
 
             this.updateAlarm(alarm)
               .then(() => {
-                callback(null);
+                callback(null, p);
               }).catch((err) => {
                 callback(err);
               });
@@ -672,12 +672,12 @@ module.exports = class {
             return;
           }
 
-          alarm.result_exception = e.aid;
+          alarm.result_exception = e.eid;
           alarm.result = "allow";
 
           this.updateAlarm(alarm)
             .then(() => {
-              callback(null);
+              callback(null, e);
             }).catch((err) => {
               callback(err);
             });

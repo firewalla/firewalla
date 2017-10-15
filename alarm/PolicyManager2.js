@@ -185,8 +185,8 @@ class PolicyManager2 {
         }
 
         if(results == null || results.length === 0) {
-          reject(new Error("policy not exists"));
-          return;
+          resolve(null)
+          return
         }
 
         resolve(results[0]);
@@ -197,6 +197,10 @@ class PolicyManager2 {
   disableAndDeletePolicy(policyID) {
     let p = this.getPolicy(policyID);
 
+    if(!p) {
+      return Promise.resolve()
+    }
+    
     return p.then((policy) => {
       this.unenforce(policy)
         .then(() => {
