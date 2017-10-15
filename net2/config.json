@@ -54,6 +54,11 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
+    "FlowUploadSensor" : {
+      "interval":900,
+      "maxFlows": 50000,
+      "offset": 90
+    },
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,
