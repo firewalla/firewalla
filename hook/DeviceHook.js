@@ -357,15 +357,23 @@ class DeviceHook extends Hook {
     });
   }
 
+  /* 
+   * ipv6 address fields works like a queue.  oldest discovered ipv6 address
+   * at index 0.  any newly discovered ip must be placed at the end by taking
+   * out from its old possition
+   */
+
   updateIPv6EntriesForMAC(ipv6Addr, mac) {
     return async(() => {
       let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
       ipv6Addr.forEach((addr) => {
-        if(existingIPv6Addresses.indexOf(addr) === -1) {
-          existingIPv6Addresses.push(addr) // found new ip address
-          if(existingIPv6Addresses.length > MAX_IPV6_ADDRESSES) {
+        let index = existingIPv6Addresses.indexOf(addr);
+        if(index > -1) {
+          existingIPv6Addresses.splice(index,1);
+        }
+        existingIPv6Addresses.push(addr) // found new ip address
+        if(existingIPv6Addresses.length > MAX_IPV6_ADDRESSES) {
             existingIPv6Addresses.shift()
-          }
         }
       })
       return existingIPv6Addresses
