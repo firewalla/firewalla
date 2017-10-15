@@ -268,7 +268,15 @@ class PolicyManager2 {
           return;
         }
         
-        callback(null, results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null));
+        let rr = results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null)
+
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
     }
 
