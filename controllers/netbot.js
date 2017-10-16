@@ -1519,7 +1519,10 @@ class netBot extends ControllerBot {
           manualSpoof: manualSpoof
         }))
 
-        await (spooferManager.loadManualSpoof(mac))
+        let mode = require('../net2/Mode.js')
+        if(mode.isManualSpoofModeOn()) {
+          await (spooferManager.loadManualSpoof(mac))
+        }
         
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
