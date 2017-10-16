@@ -199,7 +199,7 @@ class FWInvitation {
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
     this.displayKey(this.symmetrickey.userkey);
-    this.displayInvite(obj);
+//    this.displayInvite(obj); // no need to display invite in firewalla any more
 
     network.get_private_ip((err, ip) => {
         txtfield.ipaddress = ip;

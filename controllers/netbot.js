@@ -89,6 +89,8 @@ let hostTool = new HostTool();
 
 let appTool = require('../net2/AppTool')();
 
+let spooferManager = require('../net2/SpooferManager.js')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1502,6 +1504,45 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })
       break;
+    case "setManualSpoof":
+      async(() => {
+        let mac = msg.data.value.mac
+        let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
+
+        if(!mac) {
+          this.simpleTxData(msg, null, new Error("invalid request"), callback)
+          return
+        }
+        
+        await (hostTool.updateMACKey({
+          mac: mac,
+          manualSpoof: manualSpoof
+        }))
+
+        let mode = require('../net2/Mode.js')
+        if(mode.isManualSpoofModeOn()) {
+          await (spooferManager.loadManualSpoof(mac))
+        }
+        
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
+    case "validateSpoof": {
+      async(() => {
+        let ip = msg.data.value.ip
+
+        let result = await (spooferManager.isSpoof(ip))
+        this.simpleTxData(msg, {
+          result: result
+        }, null, callback)
+
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
