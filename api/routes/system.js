@@ -152,12 +152,35 @@ router.get('/apps',
     let end = Math.floor(now / 3600) * 3600;
     let begin = end - 3600;
     let json = {};
-    netBotTool.prepareActivitiesFlows(json, {
-      begin: begin,
-      end: end
-    }).then(() => {
-      res.json(json);
-    }).catch((err) => {
+
+    async(() => {
+      await (netBotTool.prepareDetailedAppFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      res.json(json)
+    })().catch((err) => {
+      log.error("Failed to process /apps: ", err, err.stack, {})
+      res.status(500).send({error: err});
+    })
+  }
+);
+
+router.get('/categories',
+  (req, res, next) => {
+    let now = new Date() / 1000;
+    let end = Math.floor(now / 3600) * 3600;
+    let begin = end - 3600;
+    let json = {};
+
+    async(() => {
+      await (netBotTool.prepareDetailedCategoryFlows(json, {
+        begin: begin,
+        end: end
+      }))
+      res.json(json)
+    })().catch((err) => {
+      log.error("Failed to process /categories: ", err, err.stack, {})
       res.status(500).send({error: err});
     })
   }

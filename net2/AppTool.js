@@ -42,7 +42,7 @@ class AppTool {
   }
 
   isAppReadyForNewDeviceHandler(appInfo) {
-    if(appInfo && appInfo.version && appInfo.version >= "1.18")
+    if(appInfo && appInfo.version && appInfo.version >= "1.17")
       return true
     else
       return false;
@@ -50,7 +50,7 @@ class AppTool {
 
   // when app supports providing app info, it means legacy flow info can be discarded
   isAppReadyToDiscardLegacyFlowInfo(appInfo) {
-    if(appInfo && appInfo.version && appInfo.version >= "1.18")
+    if(appInfo && appInfo.version && appInfo.version >= "1.17")
       return true
     else
       return false;

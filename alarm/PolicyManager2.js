@@ -132,7 +132,7 @@ class PolicyManager2 {
         return;
       }
 
-      policy.pid = id;
+      policy.pid = id + ""; // convert to string
 
       let policyKey = policyPrefix + id;
 
@@ -185,8 +185,8 @@ class PolicyManager2 {
         }
 
         if(results == null || results.length === 0) {
-          reject(new Error("policy not exists"));
-          return;
+          resolve(null)
+          return
         }
 
         resolve(results[0]);
@@ -197,6 +197,10 @@ class PolicyManager2 {
   disableAndDeletePolicy(policyID) {
     let p = this.getPolicy(policyID);
 
+    if(!p) {
+      return Promise.resolve()
+    }
+    
     return p.then((policy) => {
       this.unenforce(policy)
         .then(() => {
@@ -234,6 +238,10 @@ class PolicyManager2 {
   }
 
   jsonToPolicy(json) {
+    if(!json) {
+      return null;
+    }
+    
     let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -259,8 +267,16 @@ class PolicyManager2 {
           callback(err);
           return;
         }
+        
+        let rr = results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null)
 
-        callback(null, results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null));
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
     }
 

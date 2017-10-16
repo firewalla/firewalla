@@ -17,9 +17,13 @@
 #
 
 # This script should only handle upgrade, nothing else
+#
+# WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
+# WILL PREVENT UPGRADES!
 
+mode=${1:-'normal'}
 
-/usr/bin/logger "FIREWALLA.UPGRADE Starting FIRST "+`date`
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 GITHUB_STATUS_API=https://status.github.com/api.json
 
@@ -46,10 +50,6 @@ fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /usr/bin/logger "FIREWALLA.UPGRADE NO UPGRADE"
-  exit 0
-fi
 
 cd /home/pi/firewalla
 cd .git
@@ -57,19 +57,37 @@ sudo chown -R pi *
 cd ..
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
 
 echo "upgrade on branch $branch"
+
+commit_before=$(git rev-parse HEAD)
+current_tag=$(git describe --tags)
+
+echo $commit_before > /tmp/REPO_HEAD
+echo $current_tag > /tmp/REPO_TAG
+echo $branch > /tmp/REPO_BRANCH
+
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  exit 0
+fi
 
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
 (sleep 3; eval $GIT_COMMAND) ||
 (sleep 3; eval $GIT_COMMAND) || exit 1
 
+commit_after=$(git rev-parse HEAD)
+current_tag=$(git describe --tags)
+
+echo $commit_after > /tmp/REPO_HEAD
+echo $current_tag > /tmp/REPO_TAG
+
+
 #(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
-/usr/bin/logger "FIREWALLA.UPGRADE Done $branch"
+/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
@@ -80,3 +98,17 @@ sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
 sudo systemctl reenable fireupgrade
 sudo systemctl reenable brofish
+
+case $mode in
+    normal)
+        /home/pi/firewalla/scripts/fireupgrade_normal.sh
+        ;;
+    hard)
+        /home/pi/firewalla/scripts/fireupgrade_hard.sh
+        ;;
+    soft)
+        if [[ "$commit_before" != "$commit_after" ]];  then
+            /home/pi/firewalla/scripts/fireupgrade_soft.sh 
+        fi
+        ;;
+esac

@@ -86,6 +86,7 @@ var flowUtil = require('../net2/FlowUtil.js');
 let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
+
 /* alarms:
     alarmtype:  intel/newhost/scan/log
     severityscore: out of 100
@@ -421,6 +422,15 @@ class Host {
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
+        if (this.o.ipv4Addr == gateway || this.o.mac == null || this.o.ipv4Addr == sysManager.myIp()) {
+          return;
+        }
+        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+          return;
+        }
+        if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
+          return;
+        }
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
@@ -437,6 +447,28 @@ class Host {
             }).catch((err) => {
             log.error("Failed to unspoof", this.o.ipv4Addr);
           })
+        }
+
+        /* put a safety on the spoof */
+        let myIp6 = sysManager.myIp6();
+        if (this.ipv6Addr && this.ipv6Addr.length>0) {
+            for (let i in this.ipv6Addr) {
+                if (this.ipv6Addr[i] == gateway6) {
+                    continue; 
+                }
+                if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
+                    continue;
+                }
+                spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
+                     log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                }).catch((err)=>{
+                     log.error("Failed to spoof", this.ipv6Addr);
+                })
+                if (i>10) {
+                     log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
+                     break;
+                }
+            }
         }
       } else {
         if (state === true && this.spoofing === false) {
@@ -878,13 +910,14 @@ class Host {
 
     toJson() {
         let json = {
-            dtype: this.dtype,
-            ip: this.o.ipv4Addr,
-            ipv6: this.ipv6Addr,
-            mac: this.o.mac,
-            lastActive: this.o.lastActiveTimestamp,
-            firstFound: this.firstFoundTimestamp,
-            macVendor: this.o.macVendor
+          dtype: this.dtype,
+          ip: this.o.ipv4Addr,
+          ipv6: this.ipv6Addr,
+          mac: this.o.mac,
+          lastActive: this.o.lastActiveTimestamp,
+          firstFound: this.firstFoundTimestamp,
+          macVendor: this.o.macVendor,
+          recentActivity: this.o.recentActivity
         }
 
         if (this.o.ipv4Addr == null) {
@@ -1246,6 +1279,8 @@ module.exports = class {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
     json.network = networkinfo;
 
+    sysManager.updateInfo();
+
     if(f.isDocker() &&
       ! options.simulator &&
         fConfig.docker &&
@@ -1290,8 +1325,12 @@ module.exports = class {
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
+    json.ept = sysManager.ept;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
+    }
+    if (sysManager.upgradeEvent) {
+      json.upgradeEvent = sysManager.upgradeEvent;
     }
   }
 
@@ -1682,12 +1721,12 @@ module.exports = class {
                     callback(err, null);
                     return;
                 }
-                if (data.ipv6 == null) {
+                if (data.ipv6Addr == null) {
                     callback(null, null);
                     return;
                 }
 
-                let ipv6array = JSON.parse(data.ipv6);
+                let ipv6array = JSON.parse(data.ipv6Addr);
                 if (host.ipv6Addr == null) {
                     host.ipv6Addr = [];
                 }
@@ -1846,9 +1885,18 @@ module.exports = class {
                         }
                     }
 */
+                    let allIPv6Addrs = [];
+
+                    let myIp = sysManager.myIp();
+
                     for (let h in this.hostsdb) {
                         let hostbymac = this.hostsdb[h];
-                        if (hostbymac) {
+                        if (hostbymac && h.startsWith("host:mac")) {
+                            if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
+                                if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
+                                    allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
+                                }
+                            }
                         }
                         if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
                             let index = this.hosts.all.indexOf(this.hostsdb[h]);
@@ -1871,12 +1919,15 @@ module.exports = class {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
                     this.getHostsActive = false;
-                    log.info("hostmanager:gethosts:done");
+                    if (this.type === "server") {
+                       spoofer.validateV6Spoofs(allIPv6Addrs);
+                    }
+                    log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
                     callback(err, this.hosts.all);
                 });
             });
         });
-    }
+    } 
 
   appendACL(name, data) {
     if (this.policy.acl == null) {
@@ -2129,4 +2180,10 @@ module.exports = class {
             callback(null,ignored );
         });
     }
+  
+  // return a list of mac addresses that's active in last xx days
+  getActiveMACs() {
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+  }
+  
 }

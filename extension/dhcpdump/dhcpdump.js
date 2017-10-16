@@ -141,7 +141,10 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
       log.debug("Found a dhcpdiscover request");
-      var message = decoder.write(data);
+      let message = decoder.write(data);
+
+      // TODO: message may contain multiple DHCP events
+      
       let obj = this.parse(message);
       if (obj && obj.mac) {
         callback(obj);

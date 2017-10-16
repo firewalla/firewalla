@@ -16,6 +16,8 @@
 
 let firewalla = require('./Firewalla.js');
 
+let BitBridge = require('../extension/bitbridge/bitbridge.js')
+
 var spawn = require('child_process').spawn;
 
 let spawnProcess = null;
@@ -25,7 +27,13 @@ let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
 let SysManager = require("./SysManager.js");
 let sysManager = new SysManager();
 
+let HostManager = require('./HostManager.js')
+let hostManager = new HostManager('cli', 'server')
+
 let Promise = require('bluebird');
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 let redis = require('redis');
 let rclient = redis.createClient();
@@ -39,19 +47,15 @@ let cp = require('child_process');
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
 
+let HostTool = require('../net2/HostTool')
+let hostTool = new HostTool();
+
+
 let spoofStarted = false;
 
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
-
-function getBinary() {
-  if(firewalla.getPlatform() === "x86_64") {
-    return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge7";
-  }
-  
-  return firewalla.getFirewallaHome() + "/bin/bitbridge7";
-}
 
 // WORKAROUND VERSION HERE, will move to a better place
 function startSpoofing() {
@@ -60,44 +64,25 @@ function startSpoofing() {
     return Promise.resolve();
   }
   
-  // clean up redis key
-  log.info("startSpoofing is called");
-  
-  return rclient.delAsync(monitoredKey)
-    .then(() => rclient.delAsync(unmonitoredKey))
-    .then(() => {
-      let ifName = sysManager.monitoringInterface().name;
-      let routerIP = sysManager.myGateway();
-      let myIP = sysManager.myIp();
-      
-      if(!ifName || !myIP || !routerIP) {
-        return Promise.reject("require valid interface name, ip address and gateway ip address");
-      }
+  log.info("start spoofing")
 
-      if (firewalla.isProduction()) {
-          spoofLogFile="/dev/null";
-      }
-
-      let logStream = fs.createWriteStream(spoofLogFile, {flags: 'a'});
-      
-      if(firewalla.isDocker() || firewalla.isTravis()) {
-        spawnProcess = spawn("sudo", [getBinary(), ifName, routerIP, myIP,'-m','-q'])
-      } else {
-        spawnProcess = spawn(getBinary(), [ifName, routerIP, myIP,'-m','-q']);
-      }
-      log.info("starting new spoofing: ", getBinary(), [ifName, routerIP, myIP], {});
-
-      spawnProcess.stdout.pipe(logStream);
-      spawnProcess.stderr.pipe(logStream);
-
-      spawnProcess.on('exit', (code) => {
-        log.info("spoofing binary exited with code " + code);
-      });
-
-      spoofStarted = true;
-      return Promise.resolve();
-
-    });
+  return async(() => {
+    await (this.emptySpoofSet())
+    
+    let ifName = sysManager.monitoringInterface().name;
+    let routerIP = sysManager.myGateway();
+    let myIP = sysManager.myIp();
+    
+    if(!ifName || !myIP || !routerIP) {
+      return Promise.reject("require valid interface name, ip address and gateway ip address");
+    }
+    
+    let b7 = new BitBridge(ifName, routerIP, myIP)
+    b7.start()
+    
+    spoofStarted = true;
+    return Promise.resolve();
+  })()
   
 }
 
@@ -105,19 +90,54 @@ function stopSpoofing() {
   return new Promise((resolve, reject) => {
     spoofStarted = false;
     
-    // if(spawnProcess) {
-    //   spawnProcess.kill();
-    // }
-    cp.exec("sudo pkill bitbridge7", (err) => {
-      // ignore err, since bitbridge7 may not exist
-      resolve();
-    })
+    let ifName = sysManager.monitoringInterface().name;
+    let routerIP = sysManager.myGateway();
+    let myIP = sysManager.myIp();
+
+    if(!ifName || !myIP || !routerIP) {
+      return Promise.reject("require valid interface name, ip address and gateway ip address");
+    }
+    
+    let b7 = new BitBridge(ifName, routerIP, myIP)
+    b7.stop()
+      .then(() => {
+        resolve()
+      })
   }).catch((err) => {
     //catch everything here
+    log.error("Failed to stop spoofing:", err, {})
   })
+}
+
+function emptySpoofSet() {
+  return async(() => {
+    // clean up redis key
+    await (rclient.delAsync(monitoredKey))
+    await (rclient.delAsync(unmonitoredKey))
+  })()
+}
+
+function loadManualSpoofs() {
+  let activeMACs = hostManager.getActiveMACs()
+
+  return async(() => {
+    
+    activeMACs.forEach((mac) => {
+      let key = hostTool.getMacKey(mac)
+      let host = await (rclient.hgetallAsync(key))
+      let manualSpoof = (host.manualSpoof === '1' ? true : false)
+      if(manualSpoof) {
+        await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+      }
+    })
+    
+  })()
+
 }
 
 module.exports = {
   startSpoofing: startSpoofing,
-  stopSpoofing: stopSpoofing
+  stopSpoofing: stopSpoofing,
+  loadManualSpoofs: loadManualSpoofs,
+  emptySpoofSet: emptySpoofSet
 }

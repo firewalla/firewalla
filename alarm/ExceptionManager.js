@@ -58,6 +58,7 @@ module.exports = class {
         return;
       }
 
+
       let multi = rclient.multi();
 
       results.forEach((eid) => {
@@ -70,10 +71,18 @@ module.exports = class {
           log.error("Fail to load exceptions: " + err);
           callback(err);
         }
-        
-        callback(null, results.map((r) => Object.assign(Object.create(Exception.prototype), r)));
+
+        let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
+
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
-      
+
     });
   }
 
@@ -124,7 +133,7 @@ module.exports = class {
       callback(err);
     });
   }
-  
+
   saveException(exception, callback) {
     callback = callback || function() {}
 
@@ -135,7 +144,7 @@ module.exports = class {
         return;
       }
 
-      exception.eid = id;
+      exception.eid = id + ""; // convert it to string to make it consistent with redis
 
       let exceptionKey = exceptionPrefix + id;
 
@@ -151,7 +160,7 @@ module.exports = class {
             audit.trace("Created exception", exception.eid);
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
           }
-          
+
           callback(err);
         });
       });
@@ -170,7 +179,7 @@ module.exports = class {
       });
     });
   }
-  
+
   deleteException(exceptionID) {
     log.info("Trying to delete exception " + exceptionID);
     return this.exceptionExists(exceptionID)
@@ -195,16 +204,16 @@ module.exports = class {
             resolve();
           })
         });
-      });        
+      });
   }
-  
+
   match(alarm, callback) {
     this.loadExceptions((err, results) => {
       if(err) {
         callback(err);
         return;
       }
-      
+
       let matches = results.filter((e) => e.match(alarm));
       if(matches.length > 0) {
         log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
@@ -217,7 +226,7 @@ module.exports = class {
 
   createExceptionFromJson(json, callback) {
     callback = callback || function() {}
-    
+
     callback(null, this.jsonToException(json));
   }
 
@@ -233,5 +242,3 @@ module.exports = class {
   }
 
 }
-
-

@@ -36,6 +36,12 @@ let flowTool = require('../net2/FlowTool')();
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
 
+let AppFlowTool = require('../flow/AppFlowTool.js')
+let appFlowTool = new AppFlowTool()
+
+let CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+let categoryFlowTool = new CategoryFlowTool()
+
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
@@ -55,6 +61,7 @@ class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
+    this.config.cleanupInterval = 60 * 60 // default one hour
     this.config.flowRange = 24 * 3600 // 24 hours
     this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
     this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
@@ -63,12 +70,20 @@ class FlowAggregationSensor extends Sensor {
   scheduledJob() {
     log.info("Generating summarized flows info...")
     return async(() => {
-      let ts = new Date() / 1000 - 180; // 3 minutes ago
+      let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
       await (this.aggrAll(ts));
       await (this.sumAll(ts));
       await (this.updateAllHourlySummedFlows(ts));
       log.info("Summarized flow generation is complete");
     })();
+  }
+
+  cleanupJob() {
+    log.info("Cleaning up app/category flows...")
+    return async(() => {
+      await (appFlowTool.cleanupAppFlow())
+      await (categoryFlowTool.cleanupCategoryFlow())
+    })()
   }
 
   run() {
@@ -79,10 +94,14 @@ class FlowAggregationSensor extends Sensor {
     // TODO: Need to ensure all ticks will be processed and stored in redis
     setInterval(() => {
       this.scheduledJob();
-    }, this.config.interval * 1000);
+    }, this.config.interval * 1000)
+
+    setInterval(() => {
+      this.cleanupJob()
+    }, this.config.cleanupInterval * 1000)
   }
 
-  trafficGroupByApp(flows) {
+  trafficGroupByX(flows, x) {
     let traffic = {};
 
     return async(() => {
@@ -97,27 +116,40 @@ class FlowAggregationSensor extends Sensor {
 
         let appInfos = [];
 
-        if(intel.app)
-          appInfos.push(intel.app)
-
-        if(intel.category)
-          appInfos.push(intel.category)
+        if(intel[x])
+          appInfos.push(intel[x])
 
         appInfos.forEach((app) => {
           let t = traffic[app];
 
           if(typeof t === 'undefined') {
-            traffic[app] = {duration: 0};
+            traffic[app] = {
+              duration: 0,
+              ts: new Date() / 100,
+              download: 0,
+              upload: 0
+            };
             t = traffic[app];
           }
 
           // FIXME: Should have more accurate calculation here
-          t.duration = Math.max(flow.du, t.duration);
+          t.duration = Math.max(flow.du, t.duration || 0)
+          t.ts = Math.min(flow.ts, t.ts || new Date() / 1000)
+          t.download += flow.rb || 0
+          t.upload += flow.ob || 0
         })
       });
 
       return traffic;
     })();
+  }
+
+  trafficGroupByApp(flows) {
+    return this.trafficGroupByX(flows, "app")
+  }
+
+  trafficGroupByCategory(flows) {
+    return this.trafficGroupByX(flows, "category")
   }
 
   // flows => { ip1 => 100KB, ip2 => 2MB }
@@ -155,17 +187,14 @@ class FlowAggregationSensor extends Sensor {
     }
 
     return async(() => {
-      let macs = this.getQualifiedDevices();
+      let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
         await (this.aggr(mac, ts));
+        await (this.aggr(mac, ts + this.config.interval));
         await (this.aggrActivity(mac, ts));
+        await (this.aggrActivity(mac, ts + this.config.interval));
       })
     })();
-  }
-
-  // return a list of mac addresses that's active in last xx days
-  getQualifiedDevices() {
-    return hostManager.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -205,6 +234,10 @@ class FlowAggregationSensor extends Sensor {
     let begin = end - 3600;
     let skipIfExists = options && options.skipIfExists;
 
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    log.info(`Aggregating hourly flows for ${beginString} - ${endString}, skipIfExists flag: ${skipIfExists}`)
+
     return async(() => {
       let options = {
         begin: begin,
@@ -243,12 +276,13 @@ class FlowAggregationSensor extends Sensor {
         expireTime: this.config.sumFlowExpireTime,
       }
 
-      let macs = this.getQualifiedDevices();
+      let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
         options.mac = mac;
         await (flowAggrTool.addSumFlow("download", options));
         await (flowAggrTool.addSumFlow("upload", options));
         await (flowAggrTool.addSumFlow("app", options));
+        await (flowAggrTool.addSumFlow("category", options));
       })
     })();
   }
@@ -268,7 +302,8 @@ class FlowAggregationSensor extends Sensor {
 
     return async(() => {
       let intel = await (intelTool.getIntel(destIP));
-      if(intel == null) {
+      if(intel == null ||
+        (!intel.app && !intel.category)) {
         cache[destIP] = 0;
         return false;
       } else {
@@ -286,12 +321,14 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     let msg = util.format("Aggregating %s activities between %s and %s", macAddress, beginString, endString)
-    log.info(msg);
+    log.debug(msg);
 
     return async(() => {
       let ips = await (hostTool.getIPsByMac(macAddress));
 
       let flows = [];
+
+      let recentFlow = null;
 
       ips.forEach((ip) => {
         let cache = {};
@@ -300,21 +337,87 @@ class FlowAggregationSensor extends Sensor {
         let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => {
           return await (this._flowHasActivity(f, cache));
         });
+
         flows.push.apply(flows, outgoingFlowsHavingIntels);
+        recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
+
 
         let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
         let incomingFlowsHavingIntels = incomingFlows.filter((f) => {
           return await (this._flowHasActivity(f, cache));
         });
         flows.push.apply(flows, incomingFlowsHavingIntels);
+        recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
       });
 
       // now flows array should only contain flows having intels
-      let traffic = await (this.trafficGroupByApp(flows));
 
-      await (flowAggrTool.addActivityFlows(macAddress, this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
+      // record app/category flows by duration
+      let appTraffic = await (this.trafficGroupByApp(flows));
+      await (flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime));
+
+      let categoryTraffic = await (this.trafficGroupByCategory(flows))
+      await (flowAggrTool.addCategoryActivityFlows(macAddress, this.config.interval, end, categoryTraffic, this.config.aggrFlowExpireTime));
+
+      // record detail app/category flows by upload/download/ts/duration
+
+      await(this.recordApp(macAddress, appTraffic))
+      await(this.recordCategory(macAddress, categoryTraffic))
+
+      if(recentFlow) {
+        let recentActivity = await (this.getIntel(recentFlow))
+        if(recentActivity) {
+          await(hostTool.updateRecentActivity(macAddress, recentActivity))
+        }
+      }
 
     })();
+  }
+
+  selectVeryRecentActivity(recentActivity, flows) {
+    if(flows.length > 0) {
+      // assume it's ordered
+      let lastOne = flows[flows.length - 1]
+      if(recentActivity == null || recentActivity.ts < lastOne.ts) {
+        return lastOne
+      }
+    }
+    
+    return recentActivity      
+  }
+
+  getIntel(flow) {
+    return async(() => {
+      if(!flow) {
+        return null
+      }
+      
+      let destIP = flowTool.getDestIP(flow)
+      let intel = await (intelTool.getIntel(destIP))
+      return {
+        ts: flow.ts,
+        app: intel && intel.app,
+        category: intel && intel.category
+      }
+    })()
+  }
+
+  recordApp(mac, traffic) {
+    return async(() => {
+      for(let app in traffic) {
+        let object = traffic[app]
+        await (appFlowTool.addAppFlowObject(mac, app, object))
+      }
+    })()
+  }
+
+  recordCategory(mac, traffic) {
+    return async(() => {
+      for(let category in traffic) {
+        let object = traffic[category]
+        await (categoryFlowTool.addCategoryFlowObject(mac, category, object))
+      }
+    })()
   }
 
   aggr(macAddress, ts) {

@@ -25,6 +25,9 @@ let sysManager = new SysManager('info');
 
 let Promise = require('bluebird');
 
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let util = require('util');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -33,6 +36,8 @@ let curMode = null;
 
 let redis = require('redis');
 let rclient = redis.createClient();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
 
 function _enforceSpoofMode() {
   if(fConfig.newSpoof) {
@@ -109,16 +114,22 @@ function apply() {
   return Mode.getSetupMode()
     .then((mode) => {
       curMode = mode;
+
+      log.info("Applying mode", mode, "...", {})
       
       switch(mode) {
-      case "dhcp":
+      case Mode.MODE_DHCP:
         return _enableSecondaryInterface()
           .then(() => {
             return _enforceDHCPMode();
           });
         break;
-      case "spoof":
+      case Mode.MODE_AUTO_SPOOF:
+      case Mode.MODE_MANUAL_SPOOF:
         return _enforceSpoofMode();
+        break;
+      case Mode.MODE_NONE:
+        // no thing
         break;
       default:
         // not supported
@@ -129,6 +140,8 @@ function apply() {
 }
 
 function switchToDHCP() {
+  log.info("Switching to DHCP")
+  
   return Mode.dhcpModeOn()
     .then(() => {
       return _disableSpoofMode()
@@ -139,7 +152,13 @@ function switchToDHCP() {
 }
 
 function switchToSpoof() {
-  return Mode.spoofModeOn()
+  log.info("Switching to legacy spoof")
+  return switchToAutoSpoof()
+}
+
+function switchToAutoSpoof() {
+  log.info("Switching to auto spoof")
+  return Mode.autoSpoofModeOn()
     .then(() => {
       return _disableDHCPMode()
         .then(() => {
@@ -148,22 +167,52 @@ function switchToSpoof() {
     });
 }
 
+function switchToManualSpoof() {
+  log.info("Switching to manual spoof")
+  return Mode.manualSpoofModeOn()
+    .then(() => {
+      return _disableDHCPMode()
+        .then(() => {
+          return apply();
+        });
+    });  
+}
+
+function switchToNone() {
+  log.info("Switching to none")
+  return async(() => {
+    await (Mode.noneModeOn())
+    await (_disableDHCPMode())
+    await (_disableSpoofMode())
+    return apply()
+  })()
+}
+
 function reapply() {
-  Mode.reloadSetupMode()
-    .then((mode) => {
-      switch(mode) {
-      case "spoof":
-        return switchToSpoof();
-        break;
-      case "dhcp":
-        return switchToDHCP();
-        break;
-      default:
-        // not supported
-        return Promise.reject(util.format("mode %s is not supported", mode));
-        break;
-      }
-    });
+  return async(() => {
+    let lastMode = await (Mode.getSetupMode())
+    log.info("Old mode is", lastMode)
+
+    switch(lastMode) {
+    case "spoof":
+    case "autoSpoof":
+    case "manualSpoof":
+      _disableSpoofMode()
+      break;
+    case "dhcp":
+      _disableDHCPMode()
+      break;
+    case "none":
+      // do nothing
+      break;
+    default:
+      break;
+    }
+    
+    await (Mode.reloadSetupMode())
+    return apply()
+  })()
+  
 }
 
 function mode() {
@@ -187,31 +236,55 @@ function listenOnChange() {
 // this function can only used by non-main.js process
 // it is used to notify main.js that mode has been changed
 function publish(mode) {
-  rclient.publish("Mode:Change", mode);
+  return rclient.publishAsync("Mode:Change", mode);
 }
 
 function setSpoofAndPublish() {
-  Mode.spoofModeOn()
+  setAutoSpoofAndPublish()
+}
+
+function setAutoSpoofAndPublish() { 
+  Mode.autoSpoofModeOn()
     .then(() => {
-      publish("spoof");
+      publish(Mode.MODE_AUTO_SPOOF);
+    });
+}
+
+function setManualSpoofAndPublish() { 
+  Mode.manualSpoofModeOn()
+    .then(() => {
+      publish(Mode.MODE_MANUAL_SPOOF);
     });
 }
 
 function setDHCPAndPublish() {
   Mode.dhcpModeOn()
     .then(() => {
-      publish("dhcp");
+      publish(Mode.MODE_DHCP);
     });
+}
+
+function setNoneAndPublish() {
+  async(() => {
+    await (Mode.noneModeOn())
+    await (publish(Mode.MODE_NONE))
+  })()
 }
 
 module.exports = {
   apply:apply,
   switchToDHCP:switchToDHCP,
   switchToSpoof:switchToSpoof,
+  switchToManualSpoof: switchToManualSpoof,
+  switchToAutoSpoof: switchToAutoSpoof,
+  switchToNone: switchToNone,
   mode: mode,
   listenOnChange: listenOnChange,
   publish: publish,
   setDHCPAndPublish: setDHCPAndPublish,
   setSpoofAndPublish: setSpoofAndPublish,
+  setAutoSpoofAndPublish: setAutoSpoofAndPublish,
+  setManualSpoofAndPublish: setManualSpoofAndPublish,
+  setNoneAndPublish: setNoneAndPublish,
   enableSecondaryInterface:_enableSecondaryInterface
 }

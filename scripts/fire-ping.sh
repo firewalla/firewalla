@@ -15,7 +15,7 @@ for i in `seq 1 5`; do
     if ping -c 1 $DEFAULT_ROUTE &> /dev/null
     then
 #      sudo touch /dev/watchdog
-       /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
+#      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
     else
        echo "Ping Failed"

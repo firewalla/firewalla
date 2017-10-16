@@ -27,13 +27,13 @@ let util = require('util');
 class Samba {
   constructor() {
     if (instance == null) {
-        instance = this;
+      instance = this;
     }
     return instance;
   }
 
   getSambaName(ip) {
-    let cmd = util.format("nbtscan -s / %s", ip);
+    let cmd = util.format("nbtscan -e %s | head -n 1 | awk '{print $2}'", ip);
     log.info("Running command:", cmd, {});
 
     return async(() => {
@@ -43,22 +43,19 @@ class Samba {
 
       let result = await (exec(cmd));
 
-      if(result.stdout && result.stdout === "") {
-          return undefined;
-      }
-
-      if(result.stdout) {
-        let outputs = result.stdout.split("/");
-        if(outputs.length >= 2) {
-          return outputs[1];
-        } else {
-          log.error("Invalid nbtscan output:", result.stdout, {});
-          return undefined;
-        }
-      } else {
-        log.error("Invalid nbtscan output:", result.stderr, {});
+      if(!result.stdout) {
         return undefined;
       }
+
+      let output = result.stdout
+      output = output.trim()
+
+      if(output === '<unknown>') {
+        return undefined
+      } else {
+        return output
+      }
+      
     })();
   }
 

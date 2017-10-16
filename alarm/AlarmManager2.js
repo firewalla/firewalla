@@ -28,6 +28,9 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
+let async = require('asyncawait/async');
+let await = require('asyncawait/await');
+
 let Promise = require('bluebird');
 
 let IM = require('../net2/IntelManager.js')
@@ -131,6 +134,10 @@ module.exports = class {
     });
   }
 
+  removeFromActiveQueueAsync(alarmID) {
+    return rclient.zremAsync(alarmActiveKey, alarmID)
+  }
+
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
@@ -170,6 +177,11 @@ module.exports = class {
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
+        if(!alarm) {
+          log.error(`Invalid Alarm (id: ${alarmID})`)
+          return
+        }
+        
         let data = {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
@@ -199,7 +211,7 @@ module.exports = class {
         return;
       }
 
-      alarm.aid = id;
+      alarm.aid = id + ""; // covnert to string to make it consistent
 
       let alarmKey = alarmPrefix + id;
 
@@ -226,6 +238,17 @@ module.exports = class {
         });
       });
     });
+  }
+
+  removeAlarmAsync(alarmID, callback) {
+    callback = callback || function() {}
+
+    return async(() => {
+      await (this.removeFromActiveQueueAsync(alarmID))
+
+      let alarmKey = alarmPrefix + alarmID
+      await (rclient.delAsync(alarmKey))
+    })()
   }
 
   dedup(alarm) {
@@ -301,10 +324,11 @@ module.exports = class {
           }
 
           if(alarm.type === "ALARM_INTEL") {
+            log.info("AlarmManager:Check:AutoBlock",alarm);
             let num = parseInt(alarm["p.security.numOfReportSources"]);
             if(fConfig && fConfig.policy &&
               fConfig.policy.autoBlock &&
-              num > AUTO_BLOCK_THRESHOLD) {
+              num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               if (alarm['p.dest.ip']) {
@@ -374,6 +398,19 @@ module.exports = class {
         callback(null, results.map((r) => this.jsonToAlarm(r)));
       });
     }
+
+  loadRecentAlarmsAsync(duration) {
+    duration = duration || 10 * 60;
+    return new Promise((resolve, reject) => {
+      this.loadRecentAlarms(duration, (err, results) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(results)
+        }
+      })
+    })
+  }
 
     loadRecentAlarms(duration, callback) {
       if(typeof(duration) == 'function') {
@@ -447,10 +484,24 @@ module.exports = class {
     });
   }
 
+  // parseDomain(alarm) {
+  //   if(!alarm["p.dest.name"] ||
+  //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
+  //     return null // not support ip only alarm
+  //   }
+
+  //   let fullName = alarm["p.dest.name"]
+
+  //   let items = fullName.split(".")
+
+    
+    
+  // }
+  
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
 
-    let alarmInfo = info.info; // not used by now
+    let alarmInfo = info.info;
 
     let target = null;
     let type = null;
@@ -472,6 +523,11 @@ module.exports = class {
         default:
           type = "ip";
           target = alarm["p.dest.ip"];
+
+          if(alarmInfo && alarmInfo.type === "dns") {
+            type = "dns"
+            target = alarmInfo.target
+          }
           break;
         }
 
@@ -491,6 +547,7 @@ module.exports = class {
           p.target_ip = alarm["p.device.ip"];
           break;
         case "ip":
+        case "dns":
           p.target_name = alarm["p.dest.name"];
           p.target_ip = alarm["p.dest.ip"];
           break;
@@ -516,7 +573,7 @@ module.exports = class {
 
             this.updateAlarm(alarm)
               .then(() => {
-                callback(null);
+                callback(null, p);
               }).catch((err) => {
                 callback(err);
               });
@@ -530,7 +587,7 @@ module.exports = class {
   allowFromAlarm(alarmID, info, callback) {
     log.info("Going to allow alarm " + alarmID);
 
-    let alarmInfo = info.info; // not used by now
+    let alarmInfo = info.info;
 
     let target = null;
     let type = null;
@@ -552,6 +609,21 @@ module.exports = class {
         default:
           type = "domain";
           target = alarm["p.dest.id"];
+
+          if(alarmInfo) {
+            switch(alarmInfo.type) {
+            case "dns":
+              type = "dns"
+              target = alarmInfo.target
+              break
+            case "ip":
+              type = "ip"
+              target = alarmInfo.target
+              break
+            default:
+              break
+            }
+          }
           break;
         }
 
@@ -579,12 +651,13 @@ module.exports = class {
           e["target_name"] = alarm["p.dest.name"];
           e["target_ip"] = alarm["p.dest.ip"];
           break;
-          case "domain":
-            e["p.dest.id"] = alarm["p.dest.id"];
-            e["target_name"] = alarm["p.dest.id"];
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          default:
+        case "domain":
+        case "dns":
+          e["p.dest.id"] = alarm["p.dest.id"];
+          e["target_name"] = alarm["p.dest.name"];
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
+        default:
           // not supported
           break;
         }
@@ -599,12 +672,12 @@ module.exports = class {
             return;
           }
 
-          alarm.result_exception = e.aid;
+          alarm.result_exception = e.eid;
           alarm.result = "allow";
 
           this.updateAlarm(alarm)
             .then(() => {
-              callback(null);
+              callback(null, e);
             }).catch((err) => {
               callback(err);
             });
@@ -707,6 +780,13 @@ module.exports = class {
 
       if(deviceIP === "0.0.0.0") {
         // do nothing for 0.0.0.0
+        extend(alarm, {
+          "p.device.name": "0.0.0.0",
+          "p.device.id": "0.0.0.0",
+          "p.device.mac": "00:00:00:00:00:00",
+          "p.device.macVendor": "Unknown"
+        });
+
         return Promise.resolve(alarm);
       }
 

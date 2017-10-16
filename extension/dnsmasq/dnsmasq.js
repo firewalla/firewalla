@@ -69,6 +69,11 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
+
+      process.on('exit', () => {
+        this.shouldStart = false;
+        this.stop();
+      });
     }
     return instance;
   }
@@ -169,22 +174,33 @@ module.exports = class DNSMASQ {
   }
 
   addPolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP);
+    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    
+    return async(() => {
+      if(this.workingInProgress) {
+        await (this.delay(1000))  // try again later
+        return this.addPolicyFilterEntry(domain);
+      }
 
-    return fs.appendFileAsync(policyFilterFile, entry);
+      this.workingInProgress = true
+      await (fs.appendFileAsync(policyFilterFile, entry))
+      this.workingInProgress = false
+    })().catch((err) => {
+      this.workingInProgress = false
+    })
   }
 
   removePolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
 
-    if(this.deleteInProgress) {
+    if(this.workingInProgress) {
         return this.delay(1000)  // try again later
           .then(() => {
             return this.removePolicyFilterEntry(domain);
           })
     }
 
-    this.deleteInProgress = true;
+    this.workingInProgress = true;
 
     return fs.readFileAsync(policyFilterFile, 'utf8')
       .then((data) => {
@@ -195,10 +211,10 @@ module.exports = class DNSMASQ {
 
         return fs.writeFileAsync(policyFilterFile, newData)
           .then(() => {
-            this.deleteInProgress = false;
+            this.workingInProgress = false;
           }).catch((err) => {
             log.error("Failed to write policy data file:", err, {});
-            this.deleteInProgress = false; // make sure the flag is reset back
+            this.workingInProgress = false; // make sure the flag is reset back
           });
       })
   }
@@ -450,41 +466,53 @@ module.exports = class DNSMASQ {
 
     log.debug("Command to start dnsmasq: ", cmd);
 
-    const p = spawn('/bin/bash', ['-c', cmd])
+    require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
-    p.stdout.on('data', (data) => {
-      log.info("DNSMASQ STDOUT:", data.toString(), {})
-    })
+    if(f.isDocker()) {
+      const p = spawn('/bin/bash', ['-c', cmd])
 
-    p.stderr.on('data', (data) => {
-      log.info("DNSMASQ STDERR:", data.toString(), {})
-    })
+      p.stdout.on('data', (data) => {
+        log.info("DNSMASQ STDOUT:", data.toString(), {})
+      })
 
-    p.on('exit', (code, signal) => {
-      if(code === 0) {
-        log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      } else {
-        log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      }
+      p.stderr.on('data', (data) => {
+        log.info("DNSMASQ STDERR:", data.toString(), {})
+      })
 
-      if(this.shouldStart) {
-        log.info("Restarting dnsmasq...")
-        this.rawStart() // auto restart if failed unexpectedly
-      }
-    })
+      p.on('exit', (code, signal) => {
+        if(code === 0) {
+          log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
+        } else {
+          log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
+        }
 
-    process.on('exit', () => {
-      this.shouldStart = false;
-      this.stop();
-    });
+        if(this.shouldStart) {
+          log.info("Restarting dnsmasq...")
+          this.rawStart() // auto restart if failed unexpectedly
+        }
+      })
 
-    callback(null)
+      setTimeout(() => {
+        callback(null)
+      }, 1000)
+    } else {
+      require('child_process').execSync("sudo systemctl restart firemasq");
+      callback(null)
+    }
+
+
   }
 
   rawStop(callback) {
     callback = callback || function() {}
 
-    let cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    let cmd = null;
+    if(f.isDocker()) {
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+    } else {
+      cmd = "sudo service firemasq stop";
+    }
+
     log.debug("Command to stop dnsmasq: ", cmd);
 
     require('child_process').exec(cmd, (err, out, code) => {
@@ -500,7 +528,7 @@ module.exports = class DNSMASQ {
   rawRestart(callback) {
     callback = callback || function() {}
 
-    let cmd = "sudo systemctl restart dnsmasq";
+    let cmd = "sudo systemctl restart firemasq";
 
     if(require('fs').existsSync("/.dockerenv")) {
       cmd = "sudo service dnsmasq restart";
@@ -524,7 +552,7 @@ module.exports = class DNSMASQ {
     // 3. update iptables rule
     log.info("Starting DNSMASQ...", {});
 
-    this.shouldStart = true;
+    this.shouldStart = false
 
     this.updateResolvConf((err) => {
       if(err) {
@@ -543,6 +571,7 @@ module.exports = class DNSMASQ {
           this._add_iptables_rules()
           .then(() => {
             log.info("DNSMASQ is started successfully");
+            this.shouldStart = true
             callback();
           }).catch((err) => {
             this.rawStop();
@@ -577,7 +606,7 @@ module.exports = class DNSMASQ {
   }
 
   restart(callback) {
-    require('child_process').exec("sudo systemctl restart dnsmasq", (err, out, code) => {
+    require('child_process').exec("sudo systemctl restart firemasq", (err, out, code) => {
       if(err) {
         log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
       }

@@ -912,7 +912,7 @@ let legoEptCloud = class {
                 this.socket.on("boneMsg",(data)=> {
                      console.log("SOCKET boneMsg ");
                      if (boneCallback && data) {
-                         boneCallback(null,data.type,data);
+                         boneCallback(null,data);
                      }
                 });
                 this.socket.on('connect', ()=>{

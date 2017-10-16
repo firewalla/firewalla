@@ -43,6 +43,9 @@ let Promise = require('bluebird');
 
 let redis = require('redis');
 let rclient = redis.createClient();
+var sclient = redis.createClient();
+sclient.setMaxListeners(0);
+
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -459,6 +462,7 @@ class netBot extends ControllerBot {
        */
     });
 
+
     this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
       if (msg) {
         let notifMsg = msg.notif;
@@ -529,6 +533,52 @@ class netBot extends ControllerBot {
         this.scanning = true;
       }
     });
+
+    sclient.on("message", (channel, msg)=> {
+       log.info("Msg",channel,msg);
+       switch(channel) {
+         case "System:Upgrade:Hard":
+             if (msg) {
+                let notifyMsg = {
+                   title: "Upgrade Needed",
+                   body: "Firewalla new version "+msg+" is avaliable, please open firewalla app then tap on settings->upgrade.",
+                   } 
+                let data = {
+                   gid: this.primarygid,
+                };
+                this.tx2(this.primarygid, "", notifyMsg, data);
+             }
+             break;
+         case "System:Upgrade:Soft":
+             if (msg) {
+                let notifyMsg = {
+                  title: `Firewalla is upgraded to ${msg}`,
+                  body: ""
+                }
+                let data = {
+                  gid: this.primarygid,
+                };
+                this.tx2(this.primarygid, "", notifyMsg, data);
+             }
+             break;
+       }
+    });
+    sclient.subscribe("System:Upgrade:Hard");
+    sclient.subscribe("System:Upgrade:Soft");
+  }
+
+  boneMsgHandler(msg) {
+      if (msg.type == "MSG" && msg.title) {
+          let notifyMsg = {
+             title: msg.title,
+             body: msg.body 
+          } 
+          let data = {
+             gid: this.primarygid,
+             data: msg.data
+          };
+          this.tx2(this.primarygid, "", notifyMsg, data);
+      }
   }
 
   scanStart(callback) {
@@ -769,13 +819,20 @@ class netBot extends ControllerBot {
         if (v4.mode) {
           let modeManager = require('../net2/ModeManager.js');
           switch (v4.mode) {
-            case "spoof":
-              modeManager.setSpoofAndPublish();
-              break;
-            case "dhcp":
-              modeManager.setDHCPAndPublish();
-              break;
-            default:
+          case "spoof":
+          case "autoSpoof":
+            modeManager.setAutoSpoofAndPublish()
+            break;
+          case "manualSpoof":
+            modeManager.setManualSpoofAndPublish()
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish()
+            break;
+          case "none":
+            modeManager.setNoneAndPublish()
+            break;
+          default:
               log.error("unsupported mode: " + v4.mode);
               err = new Error("unsupport mode: " + v4.mode);
               break;
@@ -1006,10 +1063,11 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options));
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options));
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options));
-      await (netBotTool.prepareActivitiesFlows(jsonobj, options));
+      await (flowTool.prepareRecentFlows(jsonobj, options))
+      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
+      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
+      await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
+      await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
 
       return jsonobj;
     })();
@@ -1021,6 +1079,15 @@ class netBot extends ControllerBot {
     return async(() => {
       if(ip === '0.0.0.0') {
         return this.systemFlowHandler(msg);
+      }
+
+      let begin = msg.data && msg.data.start;
+      let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+      let options = {}
+      if(begin && end) {
+        options.begin = begin
+        options.end = end
       }
 
       let host = await (this.hostManager.getHostAsync(ip));
@@ -1039,10 +1106,13 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac));
-        await (netBotTool.prepareActivitiesFlowsForHost(jsonobj, mac));
+        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
+        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
+        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
+        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
       }
 
       return jsonobj;
@@ -1336,24 +1406,24 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
-      case "alarm:block":
-        am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "alarm:allow":
-        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "alarm:unblock":
+    case "alarm:block":
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy) => {
+        this.simpleTxData(msg, policy, err, callback);
+      });
+      break;
+    case "alarm:allow":
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
+        this.simpleTxData(msg, exception, err, callback);
+      });
+      break;
+    case "alarm:unblock":
         am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "alarm:unallow":
         am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, null, err, callback);
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
 
@@ -1361,7 +1431,7 @@ class netBot extends ControllerBot {
         am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
           if (err) {
             log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
-            this.simpleTxData(msg, null, err, callback);
+            this.simpleTxData(msg, {}, err, callback);
             return;
           }
 
@@ -1369,7 +1439,7 @@ class netBot extends ControllerBot {
             if (err) {
               log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
             }
-            this.simpleTxData(msg, null, err, callback);
+            this.simpleTxData(msg, {}, err, callback);
           });
         });
 
@@ -1385,14 +1455,20 @@ class netBot extends ControllerBot {
           });
         });
         break;
-      case "policy:delete":
-        pm2.disableAndDeletePolicy(msg.data.value.policyID)
-          .then(() => {
-            this.simpleTxData(msg, null, null, callback);
-          }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+    case "policy:delete":
+      async(() => {
+        let policy = await (pm2.getPolicy(msg.data.value.policyID))
+        if(policy) {
+          await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+          policy.deleted = true // policy is marked ask deleted
+          this.simpleTxData(msg, policy, null, callback);
+        } else {
+          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })                 
+      break;
 
       case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
@@ -1652,8 +1728,8 @@ class netBot extends ControllerBot {
 
   }
 
-    boneMsgHandler(type,msg) {
-        console.log("Bone Message Received ",type,msg);
+    boneMsgHandler(msg) {
+        console.log("Bone Message Received ",msg,msg.type);
     }
 
   helpString() {
@@ -1675,7 +1751,7 @@ class netBot extends ControllerBot {
 }
 
 process.on("unhandledRejection", function (r, e) {
-  log.info("Oh No! Unhandled rejection!! \nr::", r, "\ne::", e);
+  log.info("Oh No! Unhandled rejection!! \nr::", r, r.stack, "\ne::", e, {});
 });
 
 let bone = require('../lib/Bone.js');
