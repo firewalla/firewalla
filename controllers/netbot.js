@@ -1516,6 +1516,7 @@ class netBot extends ControllerBot {
           mac: mac,
           manualSpoof: manualSpoof
         }))
+        this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
       })
