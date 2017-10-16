@@ -102,6 +102,8 @@ api/db/token.json
 /test/sample_license.json
 #/test
 /tests/sample_license.json
+
+/.idea/
 /test
 /.gitmodules
 /extension/frp/frpc.ini
