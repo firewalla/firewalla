@@ -1526,9 +1526,23 @@ class netBot extends ControllerBot {
         
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
+    case "validateSpoof": {
+      async(() => {
+        let ip = msg.data.value.ip
+
+        let result = spooferManager.isSpoof(ip)
+        this.simpleTxData(msg, {
+          result: result
+        }, null, callback)
+
+      })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
       })
-      break;
+      break
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);

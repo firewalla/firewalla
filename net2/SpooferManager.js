@@ -142,10 +142,27 @@ function loadManualSpoofs() {
   })()
 }
 
+function isSpoof(ip) {
+  return async(() => {
+    let instance = BitBridge.getInstance()
+    if(!instance) {
+      return false
+    }
+
+    let started = instance.started
+    if(!started) {
+      return false
+    }
+    
+    return await (rclient.sismemberAsync(monitoredKey, ip))
+  })()
+}
+
 module.exports = {
   startSpoofing: startSpoofing,
   stopSpoofing: stopSpoofing,
   loadManualSpoofs: loadManualSpoofs,
   loadManualSpoof: loadManualSpoof,
+  isSpoof: isSpoof,
   emptySpoofSet: emptySpoofSet
 }
