@@ -1533,7 +1533,7 @@ class netBot extends ControllerBot {
       async(() => {
         let ip = msg.data.value.ip
 
-        let result = spooferManager.isSpoof(ip)
+        let result = await (spooferManager.isSpoof(ip))
         this.simpleTxData(msg, {
           result: result
         }, null, callback)
