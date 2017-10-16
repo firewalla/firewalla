@@ -117,27 +117,52 @@ function emptySpoofSet() {
   })()
 }
 
+function loadManualSpoof(mac) {
+  return async(() => {
+    let key = hostTool.getMacKey(mac)
+    let host = await (rclient.hgetallAsync(key))
+    let manualSpoof = (host.manualSpoof === '1' ? true : false)
+    if(manualSpoof) {
+      await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+    } else {
+      await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
+    }    
+  })()
+}
+
 function loadManualSpoofs() {
   let activeMACs = hostManager.getActiveMACs()
 
   return async(() => {
     
     activeMACs.forEach((mac) => {
-      let key = hostTool.getMacKey(mac)
-      let host = await (rclient.hgetallAsync(key))
-      let manualSpoof = (host.manualSpoof === '1' ? true : false)
-      if(manualSpoof) {
-        await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
-      }
+      await (this.loadManualSpoof(mac))
     })
     
   })()
+}
 
+function isSpoof(ip) {
+  return async(() => {
+    let instance = BitBridge.getInstance()
+    if(!instance) {
+      return false
+    }
+
+    let started = instance.started
+    if(!started) {
+      return false
+    }
+    
+    return await (rclient.sismemberAsync(monitoredKey, ip))
+  })()
 }
 
 module.exports = {
   startSpoofing: startSpoofing,
   stopSpoofing: stopSpoofing,
   loadManualSpoofs: loadManualSpoofs,
+  loadManualSpoof: loadManualSpoof,
+  isSpoof: isSpoof,
   emptySpoofSet: emptySpoofSet
 }
