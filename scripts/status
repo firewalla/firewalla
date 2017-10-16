@@ -6,7 +6,7 @@ echo "Kick"
 sudo service firekick status | grep Active
 echo "API"
 sudo service fireapi status | grep Active
-ehco "Upgrade"
+echo "Upgrade"
 sudo service fireupgrade status | grep Active
 echo "DNSMasq"
 sudo service firemasq status | grep Active

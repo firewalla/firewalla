@@ -67,7 +67,7 @@ class BoneSensor extends Sensor {
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 
-      log.info("Cloud checked in successfully:", JSON.stringify(data));
+      log.info("Cloud checked in successfully:")//, JSON.stringify(data));
 
       await (rclient.setAsync("sys:bone:info",JSON.stringify(data)));
 
@@ -84,9 +84,9 @@ class BoneSensor extends Sensor {
       if(data.publicIp) {
         sysManager.publicIp = data.publicIp;
         await (rclient.hsetAsync(
-            "sys:network:info",
-            "publicIp",
-            JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
+          "sys:network:info",
+          "publicIp",
+          JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
       }
 
       // broadcast new change
