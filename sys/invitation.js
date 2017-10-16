@@ -127,22 +127,31 @@ class FWInvitation {
               let lic = await (bone.getLicenseAsync(userInfo.license, mac));
               if(lic) {
                 log.info("Got a new license:", lic, {});
-                await (license.writeLicense(lic));
+                try {
+                  await (license.writeLicense(lic));
+                } catch (err) {
+                  log.error("failed to write license file")
+                  log.error(err, {})
+                }
+                
+                try {
+                  let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
+                  log.info(`Linked App ${eid} to this device successfully`);
+                  return {
+                    status: "success",
+                    payload: inviteResult
+                  };
+                } catch (err) {
+                  log.error("failed to get invite result")
+                  log.error(err, {})
+                }
               }
             } catch(err) {
               log.error("Invalid license");
             }
           }
         }
-
-        let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
-
-        log.info(`Linked App ${eid} to this device successfully`);
-
-        return {
-          status: "success",
-          payload: inviteResult
-        };
+        
 
       } catch(err) {
         if(err != "404") {
@@ -154,11 +163,10 @@ class FWInvitation {
           return {
             status: "expired",
           };
-        } else {
-          return {
-            status: "pending"
-          };
-        }
+        } 
+      }
+      return {
+        status : "pending"
       }
     })();
   }
