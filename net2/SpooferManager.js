@@ -117,27 +117,35 @@ function emptySpoofSet() {
   })()
 }
 
+function loadManualSpoof(mac) {
+  return async(() => {
+    let key = hostTool.getMacKey(mac)
+    let host = await (rclient.hgetallAsync(key))
+    let manualSpoof = (host.manualSpoof === '1' ? true : false)
+    if(manualSpoof) {
+      await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+    } else {
+      await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
+    }    
+  })()
+}
+
 function loadManualSpoofs() {
   let activeMACs = hostManager.getActiveMACs()
 
   return async(() => {
     
     activeMACs.forEach((mac) => {
-      let key = hostTool.getMacKey(mac)
-      let host = await (rclient.hgetallAsync(key))
-      let manualSpoof = (host.manualSpoof === '1' ? true : false)
-      if(manualSpoof) {
-        await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
-      }
+      await (this.loadManualSpoof(mac))
     })
     
   })()
-
 }
 
 module.exports = {
   startSpoofing: startSpoofing,
   stopSpoofing: stopSpoofing,
   loadManualSpoofs: loadManualSpoofs,
+  loadManualSpoof: loadManualSpoof,
   emptySpoofSet: emptySpoofSet
 }

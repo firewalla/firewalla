@@ -89,6 +89,8 @@ let hostTool = new HostTool();
 
 let appTool = require('../net2/AppTool')();
 
+let spooferManager = require('../net2/SpooferManager.js')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1516,6 +1518,9 @@ class netBot extends ControllerBot {
           mac: mac,
           manualSpoof: manualSpoof
         }))
+
+        await (spooferManager.loadManualSpoof(mac))
+        
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
