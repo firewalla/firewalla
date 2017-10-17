@@ -5,6 +5,7 @@ let log = require('../net2/logger.js')(__filename, 'info');
 let async = require('async');
 
 let Exception = require('./Exception.js');
+let Bone = require('../lib/Bone.js');
 
 let redis = require('redis');
 let rclient = redis.createClient();
@@ -148,12 +149,36 @@ module.exports = class {
 
       let exceptionKey = exceptionPrefix + id;
 
+
+      /*
+      {
+        "i.type": "domain",
+        "reason": "ALARM_GAME",
+        "type": "ALARM_GAME",
+        "timestamp": "1500913117.175",
+        "p.dest.id": "battle.net",
+        "target_name": "battle.net",
+        "target_ip": destIP,
+      }*/
+
       rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
         if(err) {
           log.error("Failed to set exception: " + err);
           callback(err);
           return;
         }
+
+        let policy = {
+          policis: [
+            {
+              action: 'allow',
+              type:  exception.i.type,
+              value: exception.p.dest.id
+            }
+          ]
+        };
+
+        Bone.submitUserPolicyAsync(policy).resolve();
 
         this.enqueue(exception, (err) => {
           if(!err) {
@@ -241,4 +266,4 @@ module.exports = class {
     }
   }
 
-}
+};
