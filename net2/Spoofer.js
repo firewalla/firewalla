@@ -117,7 +117,7 @@ module.exports = class {
     }
 */
 
-      log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
+      log.debug("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
             log.info("Can't spoof self to self", ipAddr, tellIpAddr);
