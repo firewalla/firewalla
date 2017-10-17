@@ -108,6 +108,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
@@ -115,6 +116,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6a $FIREWALLA_HOME/bin/.
+     cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      mkdir /home/pi/.forever
      rm /tmp/FWPRODUCTION
   fi
