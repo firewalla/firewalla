@@ -567,6 +567,8 @@ class netBot extends ControllerBot {
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
+
+
   }
 
   boneMsgHandler(msg) {
