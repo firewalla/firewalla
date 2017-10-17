@@ -410,7 +410,7 @@ class Host {
   }
 
     spoof(state) {
-        log.debug("Spoofing ", this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+        log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
             log.info("Host:Spoof:NoIP", this.o);
             return;
@@ -450,6 +450,7 @@ class Host {
         }
 
         /* put a safety on the spoof */
+        log.info("Spoof For IPv6",this.ipv6Addr,this.o.ipv6Addr,{});
         let myIp6 = sysManager.myIp6();
         if (this.ipv6Addr && this.ipv6Addr.length>0) {
             for (let i in this.ipv6Addr) {
@@ -459,18 +460,34 @@ class Host {
                 if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
                     continue;
                 }
-                spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
-                     log.info("Starting v6 spoofing", this.ipv6Addr[i]);
-                }).catch((err)=>{
-                     log.error("Failed to spoof", this.ipv6Addr);
-                })
-                if (i>10) {
-                     log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
-                     break;
+                if (state == true) {
+                    spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
+                         log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                    }).catch((err)=>{
+                         log.error("Failed to spoof", this.ipv6Addr);
+                    })
+                    if (i>10) {
+                         log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
+                         break;
+                    }
+                    // prototype
+                 //   log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+                 //   spoofer.spoof(null, null, this.o.mac, this.ipv6Addr,gateway6);
+                 //   this.spoofing = true;
+                } else {
+                    spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
+                         log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                    }).catch((err)=>{
+                         log.error("Failed to spoof", this.ipv6Addr);
+                    })
+                //    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+                //    spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
+                //    this.spoofing = false;
                 }
-            }
+           }
         }
       } else {
+/*
         if (state === true && this.spoofing === false) {
           log.info("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
           spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
@@ -480,6 +497,7 @@ class Host {
           spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
           this.spoofing = false;
         }
+*/
       }
     }
 

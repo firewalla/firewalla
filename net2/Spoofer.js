@@ -111,6 +111,7 @@ module.exports = class {
 
     callback = callback || function() {}
 
+/* Jerry
     if(fConfig.newSpoof) {
       this.newSpoof(ipAddr)
         .then(() => {
@@ -119,8 +120,9 @@ module.exports = class {
         }).catch((err) => callback(err));
       return;
     }
+*/
 
-      log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
+      log.debug("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
             log.info("Can't spoof self to self", ipAddr, tellIpAddr);
@@ -214,14 +216,14 @@ module.exports = class {
                 maxv6spoof-- ;
                 if (maxv6spoof==0) {
                     if (callback) {
-                        callback(err);
+                        callback(null);
                     }
                     return;
                 }
             }
         }
         if (callback) {
-            callback(err);
+            callback();
         }
     }
 
@@ -333,6 +335,7 @@ module.exports = class {
   unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
     callback = callback || function() {}
 
+/* Jerry
     if(fConfig.newSpoof) {
       this.newUnspoof(ipAddr)
         .then(() => {
@@ -346,6 +349,7 @@ module.exports = class {
         }).catch((err) => callback(err));
       return;
     }
+*/
 
     log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
     if (ipAddr && tellIpAddr) {

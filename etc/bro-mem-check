@@ -8,9 +8,10 @@ mem=0
 
 swapmem=$(free -m | awk '/Swap:/{print $4}')
 realmem=$(free -m | awk '/Mem:/{print $7}')
+totalmem=$(( swapmem + realmem ))
 
 if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
-  mem=$swapmem
+  mem=$totalmem
   (( mem <= 30 )) && echo swap $mem >> /home/pi/.forever/top_before_reboot.log
 else
   mem=$realmem
