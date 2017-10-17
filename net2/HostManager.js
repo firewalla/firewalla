@@ -471,7 +471,7 @@ class Host {
                          break;
                     }
                     // prototype
-                    log.info("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+                    log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
                     spoofer.spoof(null, null, this.o.mac, this.ipv6Addr,gateway6);
                     this.spoofing = true;
                 } else {
@@ -480,7 +480,7 @@ class Host {
                     }).catch((err)=>{
                          log.error("Failed to spoof", this.ipv6Addr);
                     })
-                    log.info("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+                    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
                     spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
                     this.spoofing = false;
                 }
