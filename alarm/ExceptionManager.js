@@ -178,23 +178,23 @@ module.exports = class {
         });
       });
 
-
       log.info("Exception:", exception, {});
 
       let policy = {
         policies: [
           {
             action: 'allow',
-            type:  exception['i.type'],
+            type: exception['i.type'],
             value: exception['p.dest.id']
           }
         ]
       };
-    
+
       log.info("submit policy");
       Bone.submitUserPolicy(policy, (err) => {
         log.error("Error: ", err, {});
-        });
+      });
+
     });
   }
 
@@ -223,18 +223,53 @@ module.exports = class {
         return new Promise((resolve, reject) => {
           let multi = rclient.multi();
 
-          multi.zrem(exceptionQueue, exceptionID);
-          multi.del(exceptionPrefix + exceptionID);
-          multi.exec((err) => {
-            if(err) {
-              log.error("Fail to delete exception: " + err);
-              reject(err);
+          rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
+            log.info("Exception in CB: ", obj, {});
+            let exception = obj;
+
+            multi.zrem(exceptionQueue, exceptionID);
+            multi.del(exceptionPrefix + exceptionID);
+            multi.exec((err) => {
+              if (err) {
+                log.error("Fail to delete exception: " + err);
+                reject(err);
+              }
+
+            });
+
+            log.info("Exception:", exception, {});
+
+            if (!exception) {
+              resolve();
               return;
             }
+            //else
+            let policy = {
+              policies: [
+                {
+                  action: 'unallow',
+                  type: exception['i.type'],
+                  value: exception['p.dest.id']
+                }
+              ]
+            };
 
-            resolve();
-          })
+            log.info("submit policy");
+            Bone.submitUserPolicy(policy, (err) => {
+              if (!err) {
+                log.info("Submit user policy successful");
+                resolve();
+                return;
+              }
+              log.error("Submit user policy w/ error: ", err, {});
+              reject(err);
+            });
+
+
+          });
+
         });
+
       });
   }
 
