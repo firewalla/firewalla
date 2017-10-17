@@ -167,7 +167,6 @@ module.exports = class {
           callback(err);
           return;
         }
-        
 
         this.enqueue(exception, (err) => {
           if(!err) {
