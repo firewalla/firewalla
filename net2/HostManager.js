@@ -935,7 +935,8 @@ class Host {
           lastActive: this.o.lastActiveTimestamp,
           firstFound: this.firstFoundTimestamp,
           macVendor: this.o.macVendor,
-          recentActivity: this.o.recentActivity
+          recentActivity: this.o.recentActivity,
+          manualSpoof: this.o.manualSpoof
         }
 
         if (this.o.ipv4Addr == null) {
