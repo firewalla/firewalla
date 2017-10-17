@@ -85,7 +85,7 @@ module.exports = class {
   }
 
   newUnspoof6(address) {
-    rclient.sremAsync(monitoredKey6, address)
+    return rclient.sremAsync(monitoredKey6, address)
   }
   
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
