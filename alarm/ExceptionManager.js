@@ -178,7 +178,7 @@ module.exports = class {
           ]
         };
 
-        Bone.submitUserPolicyAsync(policy).resolve();
+        Bone.submitUserPolicy(policy);
 
         this.enqueue(exception, (err) => {
           if(!err) {
