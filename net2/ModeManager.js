@@ -125,6 +125,7 @@ function apply() {
       break;
     case Mode.MODE_AUTO_SPOOF:
       await (_enforceSpoofMode())
+      await (hostManager.getHostsAsync())
       break;
     case Mode.MODE_MANUAL_SPOOF:
       await (_enforceSpoofMode())
