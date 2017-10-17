@@ -27,9 +27,6 @@ let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
 let SysManager = require("./SysManager.js");
 let sysManager = new SysManager();
 
-let HostManager = require('./HostManager.js')
-let hostManager = new HostManager('cli', 'server')
-
 let Promise = require('bluebird');
 
 const async = require('asyncawait/async')
@@ -130,7 +127,7 @@ function loadManualSpoof(mac) {
   })()
 }
 
-function loadManualSpoofs() {
+function loadManualSpoofs(hostManager) {
   let activeMACs = hostManager.getActiveMACs()
 
   return async(() => {
