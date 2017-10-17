@@ -95,10 +95,10 @@ module.exports = app;
 
 
 
-var domain = 'localhost';
-if(argv.domain !== undefined)
-    domain = argv.domain;
-else
-    log.info('No --domain=xxx specified, taking default hostname "localhost".');
-var applicationUrl = 'http://' + domain;
+// var domain = 'localhost';
+// if(argv.domain !== undefined)
+//     domain = argv.domain;
+// else
+//     log.info('No --domain=xxx specified, taking default hostname "localhost".');
+// var applicationUrl = 'http://' + domain;
 

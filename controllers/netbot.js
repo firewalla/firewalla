@@ -567,6 +567,8 @@ class netBot extends ControllerBot {
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
+
+
   }
 
   boneMsgHandler(msg) {
@@ -1524,6 +1526,15 @@ class netBot extends ControllerBot {
           await (spooferManager.loadManualSpoof(mac))
         }
         
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
+    case "manualSpoofUpdate":
+      async(() => {
+        let modeManager = require('../net2/ModeManager.js');
+        await (modeManager.publishManualSpoofUpdate())
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)

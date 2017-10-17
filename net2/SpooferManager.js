@@ -128,14 +128,14 @@ function loadManualSpoof(mac) {
 }
 
 function loadManualSpoofs(hostManager) {
+  log.info("Reloading manual spoof configurations...")
   let activeMACs = hostManager.getActiveMACs()
 
   return async(() => {
-    
+    await (emptySpoofSet()) // this is to ensure no other ip addresses are added to the list    
     activeMACs.forEach((mac) => {
       await (this.loadManualSpoof(mac))
     })
-    
   })()
 }
 
