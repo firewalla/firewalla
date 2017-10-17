@@ -1781,6 +1781,18 @@ module.exports = class {
     }
 
 
+  getHostsAsync() {
+    return new Promise((resolve,reject) => {
+      this.getHosts((err, hosts) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(hosts)
+        }
+      })
+    })
+  }
+  
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started");
