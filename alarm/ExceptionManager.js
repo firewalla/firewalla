@@ -167,18 +167,7 @@ module.exports = class {
           callback(err);
           return;
         }
-
-        let policy = {
-          policis: [
-            {
-              action: 'allow',
-              type:  exception.i.type,
-              value: exception.p.dest.id
-            }
-          ]
-        };
-
-        Bone.submitUserPolicy(policy);
+        
 
         this.enqueue(exception, (err) => {
           if(!err) {
@@ -189,6 +178,24 @@ module.exports = class {
           callback(err);
         });
       });
+
+
+      log.info("Exception:", exception, {});
+
+      let policy = {
+        policies: [
+          {
+            action: 'allow',
+            type:  exception['i.type'],
+            value: exception['p.dest.id']
+          }
+        ]
+      };
+    
+      log.info("submit policy");
+      Bone.submitUserPolicy(policy, (err) => {
+        log.error("Error: ", err, {});
+        });
     });
   }
 
