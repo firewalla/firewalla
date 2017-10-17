@@ -1531,6 +1531,15 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback)
       })
       break
+    case "manualSpoofUpdate":
+      async(() => {
+        let modeManager = require('../net2/ModeManager.js');
+        await (modeManager.publishManualSpoofUpdate())
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
     case "validateSpoof": {
       async(() => {
         let ip = msg.data.value.ip
