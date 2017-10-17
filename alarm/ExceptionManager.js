@@ -169,7 +169,7 @@ module.exports = class {
         }
 
         let policy = {
-          policis: [
+          policies: [
             {
               action: 'allow',
               type:  exception.i.type,
@@ -178,6 +178,7 @@ module.exports = class {
           ]
         };
 
+        log.info("Submit user policy: ", policy);
         Bone.submitUserPolicy(policy);
 
         this.enqueue(exception, (err) => {
