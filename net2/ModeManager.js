@@ -131,6 +131,7 @@ function apply() {
       let HostManager = require('./HostManager.js')
       let hostManager = new HostManager('cli', 'server', 'info')
       let sm = require('./SpooferManager.js')
+      await (hostManager.getHostsAsync())
       await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
       break;
     case Mode.MODE_NONE:

@@ -121,8 +121,10 @@ function loadManualSpoof(mac) {
     let manualSpoof = (host.manualSpoof === '1' ? true : false)
     if(manualSpoof) {
       await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+      await (rclient.sremAsync(unmonitoredKey, host.ipv4Addr))
     } else {
       await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
+      await (rclient.saddAsync(unmonitoredKey, host.ipv4Addr))
     }    
   })()
 }
