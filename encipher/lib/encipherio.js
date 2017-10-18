@@ -306,7 +306,7 @@ let legoEptCloud = class {
                 self.eid = body.eid;
                 self.groups = body.groups;
                 self.aid = body.aid;
-                log.info("------------------------------------");
+//                log.info("------------------------------------");
                 //log(JSON.stringify(self.groups));
             }
             callback(err, self.eid);

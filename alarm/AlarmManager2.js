@@ -520,19 +520,23 @@ module.exports = class {
           type = "mac";
           target = alarm["p.device.mac"];
           break;
-        default:
+          case "ALARM_VIDEO":
+            type = "domain";
+            target = alarm["p.dest.id"];
+            break;
+          default:
           type = "ip";
           target = alarm["p.dest.ip"];
 
           if(alarmInfo && alarmInfo.type === "dns") {
-            type = "dns"
+            type = "dns";
             target = alarmInfo.target
           }
           break;
         }
 
         if(!type || !target) {
-          callback(new Error("invalid block"));
+          callback(new Error("invalid block: type:" + type + ", target: " + target));
           return;
         }
 

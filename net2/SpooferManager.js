@@ -27,9 +27,6 @@ let spoofLogFile = firewalla.getLogFolder() + "/spoof.log";
 let SysManager = require("./SysManager.js");
 let sysManager = new SysManager();
 
-let HostManager = require('./HostManager.js')
-let hostManager = new HostManager('cli', 'server')
-
 let Promise = require('bluebird');
 
 const async = require('asyncawait/async')
@@ -124,21 +121,23 @@ function loadManualSpoof(mac) {
     let manualSpoof = (host.manualSpoof === '1' ? true : false)
     if(manualSpoof) {
       await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+      await (rclient.sremAsync(unmonitoredKey, host.ipv4Addr))
     } else {
       await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
+      await (rclient.saddAsync(unmonitoredKey, host.ipv4Addr))
     }    
   })()
 }
 
-function loadManualSpoofs() {
+function loadManualSpoofs(hostManager) {
+  log.info("Reloading manual spoof configurations...")
   let activeMACs = hostManager.getActiveMACs()
 
   return async(() => {
-    
+    await (emptySpoofSet()) // this is to ensure no other ip addresses are added to the list    
     activeMACs.forEach((mac) => {
       await (this.loadManualSpoof(mac))
     })
-    
   })()
 }
 
