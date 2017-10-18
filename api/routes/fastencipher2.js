@@ -61,4 +61,8 @@ router.post('/message/:gid',
     encryption.encrypt
 );
 
+log.info("==============================")
+log.info("FireAPI started successfully")
+log.info("==============================")
+
 module.exports = router;
