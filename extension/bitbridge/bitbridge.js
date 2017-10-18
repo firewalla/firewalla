@@ -1,3 +1,4 @@
+
 /*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -32,7 +33,11 @@ function delay(t) {
 
 
 class BitBridge {
-  constructor(intf, routerIP, selfIP) {
+  static getInstance() {
+    return instance
+  }
+  
+  constructor(intf, routerIP, selfIP, selfMac, selfIP6, routerIP6) {
     if(!instance) {
       this.intf = intf
       this.routerIP = routerIP
@@ -40,6 +45,9 @@ class BitBridge {
       this.spawnProcess = null
       this.started = false
       this.subscribeOnProcessExit()
+      this.selfMac = selfMac
+      this.selfIP6 = selfIP6
+      this.routerIP6 = routerIP6 
       instance = this
     }
 
@@ -85,9 +93,18 @@ class BitBridge {
       args = [this.intf, this.routerIP, this.selfIP, '-m','-q','-n'];
 
       let cmd = binary+" "+args.join(" ")
-      log.info("Lanching Bitbridge7 ", cmd);
+      log.info("Lanching Bitbridge4 ", cmd);
       require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/bin/bitbridge4.sh");
       require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
+
+
+      binary = this.getBinary6()
+      args = [this.intf, this.routerIP6, this.selfIP, this.selfMac,'-m','-q','-n'];
+
+      cmd = binary+" "+args.join(" ")
+      log.info("Lanching bitbridge6", cmd);
+      require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/bin/bitbridge6.sh");
+      require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
     }
 
     this.started = true
@@ -99,8 +116,10 @@ class BitBridge {
     try {
       if(firewalla.isDocker() || firewalla.isTravis()) {
         require('child_process').execSync("sudo pkill bitbridge7")
+        require('child_process').execSync("sudo pkill bitbridge6")
       } else {
         require('child_process').execSync("sudo service bitbridge4 stop") // legacy issue to use bitbridge4
+        require('child_process').execSync("sudo service bitbridge6 stop") // legacy issue to use bitbridge4
       }
     } catch(err) {
       // ignore error
@@ -117,6 +136,14 @@ class BitBridge {
     }
     
     return firewalla.getFirewallaHome() + "/bin/bitbridge7";
+  }
+
+  getBinary6() {
+    if(firewalla.getPlatform() === "x86_64") {
+      return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge6";
+    }
+    
+    return firewalla.getFirewallaHome() + "/bin/bitbridge6";
   }
 
 }

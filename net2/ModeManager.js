@@ -111,32 +111,38 @@ function _disableDHCPMode() {
 }
 
 function apply() {
-  return Mode.getSetupMode()
-    .then((mode) => {
-      curMode = mode;
+  return async(() => {
+    let mode = await (Mode.getSetupMode())
 
-      log.info("Applying mode", mode, "...", {})
-      
-      switch(mode) {
-      case Mode.MODE_DHCP:
-        return _enableSecondaryInterface()
-          .then(() => {
-            return _enforceDHCPMode();
-          });
-        break;
-      case Mode.MODE_AUTO_SPOOF:
-      case Mode.MODE_MANUAL_SPOOF:
-        return _enforceSpoofMode();
-        break;
-      case Mode.MODE_NONE:
-        // no thing
-        break;
-      default:
-        // not supported
-        return Promise.reject(util.format("mode %s is not supported", mode));
-        break;
-      }
-    });
+    curMode = mode;
+    
+    log.info("Applying mode", mode, "...", {})
+    
+    switch(mode) {
+    case Mode.MODE_DHCP:
+      await (_enableSecondaryInterface())
+      await (_enforceDHCPMode())
+      break;
+    case Mode.MODE_AUTO_SPOOF:
+      await (_enforceSpoofMode())
+      break;
+    case Mode.MODE_MANUAL_SPOOF:
+      await (_enforceSpoofMode())
+      let HostManager = require('./HostManager.js')
+      let hostManager = new HostManager('cli', 'server', 'info')
+      let sm = require('./SpooferManager.js')
+      await (hostManager.getHostsAsync())
+      await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
+      break;
+    case Mode.MODE_NONE:
+      // no thing
+      break;
+    default:
+      // not supported
+      return Promise.reject(util.format("mode %s is not supported", mode));
+      break;
+    }
+  })()
 }
 
 function switchToDHCP() {
@@ -146,7 +152,7 @@ function switchToDHCP() {
     .then(() => {
       return _disableSpoofMode()
         .then(() => {
-        return apply();
+          return apply();
         });
     });
 }
@@ -228,15 +234,25 @@ function listenOnChange() {
         // mode is changed
         reapply();
       }
+    } else if (channel === "ManualSpoof:Update") {
+      let HostManager = require('./HostManager.js')
+      let hostManager = new HostManager('cli', 'server', 'info')
+      let sm = require('./SpooferManager.js')
+      sm.loadManualSpoofs(hostManager)
     }
   });
   rclient.subscribe("Mode:Change");
+  rclient.subscribe("ManualSpoof:Update");
 }
 
 // this function can only used by non-main.js process
 // it is used to notify main.js that mode has been changed
 function publish(mode) {
   return rclient.publishAsync("Mode:Change", mode);
+}
+
+function publishManualSpoofUpdate() {
+  return rclient.publishAsync("ManualSpoof:Update", "1")
 }
 
 function setSpoofAndPublish() {
@@ -286,5 +302,6 @@ module.exports = {
   setAutoSpoofAndPublish: setAutoSpoofAndPublish,
   setManualSpoofAndPublish: setManualSpoofAndPublish,
   setNoneAndPublish: setNoneAndPublish,
+  publishManualSpoofUpdate: publishManualSpoofUpdate,
   enableSecondaryInterface:_enableSecondaryInterface
 }

@@ -27,13 +27,10 @@ let log = require("./logger.js")(__filename, 'info');
 
 let firewalla = require('./Firewalla.js');
 
-
-
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
-
 
 let fConfig = require('./config.js').getConfig();
 
@@ -44,45 +41,53 @@ let rclient = redis.createClient();
 
 let cp = require('child_process');
 
+let mode = require('./Mode.js')
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-
 module.exports = class {
 
   newSpoof(address) {
-    return Promise.all([
-      rclient.saddAsync(monitoredKey, address),
-      rclient.sremAsync(unmonitoredKey, address),
-      ]);
+    return async(() => {
+
+      // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
+      let flag = await (mode.isSpoofModeOn())
+
+      if(flag) {
+        await (rclient.saddAsync(monitoredKey, address))
+        await (rclient.sremAsync(unmonitoredKey, address))
+      }
+    })()
   }
 
   newUnspoof(address) {
-    return Promise.all([
-      rclient.sremAsync(monitoredKey, address),
-      rclient.saddAsync(unmonitoredKey, address)
-    ]);
-  }
+    return async(() => {
+      let flag = await (mode.isSpoofModeOn())
+      
+      if(flag) {
+        await (rclient.sremAsync(monitoredKey, address))
+        await (rclient.saddAsync(unmonitoredKey, address))
+      }
+    })()
+  }  
 
   /* spoof6 is different than ipv4.  Some hosts may take on random addresses
    * hence storing a unmonitoredKey list does not make sense.
    */
 
-  newSpoof6(address) {
-    return Promise.all([
-      rclient.saddAsync(monitoredKey6, address)
-      ]);
+  newSpoof6(address) {  
+    return rclient.saddAsync(monitoredKey6, address)
   }
 
   newUnspoof6(address) {
-    return Promise.all([
-      rclient.sremAsync(monitoredKey6, address)
-    ]);
+    return rclient.sremAsync(monitoredKey6, address)
   }
   
-
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
    */
   validateV6Spoofs(ipv6Addrs) {
@@ -94,8 +99,8 @@ module.exports = class {
       if (datas) {
         for (let i in datas) {
           if (v6db[datas[i]] == null) {
-              log.info("Spoof:Remove:By:Check", datas[i]);
-              rclient.srem(monitoredKey6, datas[i]);
+            log.info("Spoof:Remove:By:Check", datas[i]);
+            rclient.srem(monitoredKey6, datas[i]);
           }         
         }
       }
@@ -106,6 +111,7 @@ module.exports = class {
 
     callback = callback || function() {}
 
+/* Jerry
     if(fConfig.newSpoof) {
       this.newSpoof(ipAddr)
         .then(() => {
@@ -114,8 +120,9 @@ module.exports = class {
         }).catch((err) => callback(err));
       return;
     }
+*/
 
-      log.info("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
+      log.debug("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
             log.info("Can't spoof self to self", ipAddr, tellIpAddr);
@@ -209,14 +216,14 @@ module.exports = class {
                 maxv6spoof-- ;
                 if (maxv6spoof==0) {
                     if (callback) {
-                        callback(err);
+                        callback(null);
                     }
                     return;
                 }
             }
         }
         if (callback) {
-            callback(err);
+            callback();
         }
     }
 
@@ -328,6 +335,7 @@ module.exports = class {
   unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
     callback = callback || function() {}
 
+/* Jerry
     if(fConfig.newSpoof) {
       this.newUnspoof(ipAddr)
         .then(() => {
@@ -341,6 +349,7 @@ module.exports = class {
         }).catch((err) => callback(err));
       return;
     }
+*/
 
     log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
     if (ipAddr && tellIpAddr) {
