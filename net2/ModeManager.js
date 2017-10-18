@@ -117,6 +117,9 @@ function apply() {
     curMode = mode;
     
     log.info("Applying mode", mode, "...", {})
+
+    let HostManager = require('./HostManager.js')
+    let hostManager = new HostManager('cli', 'server', 'info')
     
     switch(mode) {
     case Mode.MODE_DHCP:
@@ -125,11 +128,10 @@ function apply() {
       break;
     case Mode.MODE_AUTO_SPOOF:
       await (_enforceSpoofMode())
+      await (hostManager.getHostsAsync())
       break;
     case Mode.MODE_MANUAL_SPOOF:
       await (_enforceSpoofMode())
-      let HostManager = require('./HostManager.js')
-      let hostManager = new HostManager('cli', 'server', 'info')
       let sm = require('./SpooferManager.js')
       await (hostManager.getHostsAsync())
       await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
