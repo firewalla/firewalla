@@ -72,6 +72,9 @@ module.exports = class {
       if(flag) {
         await (rclient.sremAsync(monitoredKey, address))
         await (rclient.saddAsync(unmonitoredKey, address))
+        setTimeout(() => {
+          rclient.sremAsync(unmonitoredKey, address)
+        }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
       }
     })()
   }  
