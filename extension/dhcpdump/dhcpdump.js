@@ -103,6 +103,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
   parse(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
+     var foundMac = null
     for (let i in o) {
       let line = o[i];
 
@@ -110,21 +111,27 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
       let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
       if(match) {
-        obj.mac = this.normalizeMac(match[1]);
+        foundMac = this.normalizeMac(match[1])
       }
 
       // locate hostname
       let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
       if(match2) {
-        obj.name = match2[1];
+        if (foundMac != null) {
+          obj[foundMac] = match2[1];
+        }
+      }
+
+      //for multiple events,
+      //when match the split line '---------------------------' between two adjacent events,
+      //need reset the foundMac in case one dhcp event has mac without hostname,
+      //then the next event has hostname without mac
+      if (line.indexOf("------------------------------------------------") >= 0) {
+        foundMac = null
       }
     }
 
-    if(obj.mac && obj.name) {
-      return obj;
-    } else {
-      return {};
-    }
+    return obj
   }
 
   rawStart(callback) {
@@ -143,11 +150,9 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       log.debug("Found a dhcpdiscover request");
       let message = decoder.write(data);
 
-      // TODO: message may contain multiple DHCP events
-      
       let obj = this.parse(message);
-      if (obj && obj.mac) {
-        callback(obj);
+      if (obj) {
+        Object.keys(obj).map(mac => callback({mac : mac, name : obj[mac]}))
       }
     });
 
