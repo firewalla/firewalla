@@ -563,18 +563,26 @@ module.exports = class {
                 }
             }
 
-            let flag = null;
+            /*
+             * the s flag is a short packet flag,
+             * meaning the flow was not detect complete.  This can happen due to pcap runs before
+             * the firewall, and due to how spoof working, there are periods that packets may 
+             * leak, which causes the strange detection.  This need to be look at later.
+             *
+             * this problem does not exist in DHCP mode.
+             *
+             * when flag is set to 's', intel should ignore 
+             */
+            let flag;
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
                 if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.debug("Conn:Drop:State",obj.conn_state,obj);
+                        log.info("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
                         flag = 's';
-               //         return;
                 }
             }
-
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
@@ -622,6 +630,20 @@ module.exports = class {
             } else {
                 log.error("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
                 return;
+            }
+
+            // Mark all flows that are partially completed.  
+            // some of these flows may be valid
+            //
+            //  flag == s 
+            if (obj.proto == "tcp") {
+                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
+                    obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                    obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+                    obj.conn_state == "S0") {
+                        log.info("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
+                        flag = 's';
+                }
             }
 
             if (obj.orig_bytes == null) {
@@ -691,6 +713,10 @@ module.exports = class {
                 flowspec._ts = now;
                 flowspec.du += obj.duration;
                 flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]);
+                
+                if (flag) {
+                    flowspec.f = flag;
+                }
             }
 
             let tmpspec = {
