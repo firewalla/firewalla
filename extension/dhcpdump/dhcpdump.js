@@ -100,10 +100,17 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     return items2.join(":");
   }
 
-  parse(output) {
+  parseEvents(output) {
+    if (output == null) return []
+    return output.split(/------------------------------------------------------------------------/)
+                 .map(e => this.parseEvent(e))
+                 .filter(e => e && e.mac)
+  }
+
+  parseEvent(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
-     var foundMac = null
+
     for (let i in o) {
       let line = o[i];
 
@@ -111,27 +118,21 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
       let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
       if(match) {
-        foundMac = this.normalizeMac(match[1])
+        obj.mac = this.normalizeMac(match[1])
       }
 
       // locate hostname
       let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
       if(match2) {
-        if (foundMac != null) {
-          obj[foundMac] = match2[1];
-        }
-      }
-
-      //for multiple events,
-      //when match the split line '---------------------------' between two adjacent events,
-      //need reset the foundMac in case one dhcp event has mac without hostname,
-      //then the next event has hostname without mac
-      if (line.indexOf("------------------------------------------------") >= 0) {
-        foundMac = null
-      }
+        obj.name = match2[1]
+      } 
     }
 
-    return obj
+    if (obj.mac && obj.name) {
+      return obj
+    } else {
+      return {}
+    }
   }
 
   rawStart(callback) {
@@ -150,10 +151,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       log.debug("Found a dhcpdiscover request");
       let message = decoder.write(data);
 
-      let obj = this.parse(message);
-      if (obj) {
-        Object.keys(obj).map(mac => callback({mac : mac, name : obj[mac]}))
-      }
+      this.parseEvents(message).map(e => callback(e))
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {
