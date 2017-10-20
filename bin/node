@@ -1,11 +1,13 @@
 #!/bin/bash
 
 if [[ -d ~/.nvm ]]; then
-   . ~/.nvm/nvm.sh
-
-   # FIXME
-   nvm which current
+  . ~/.nvm/nvm.sh
+  
+  # FIXME
+  NODE=$(nvm which current)
+  $NODE "%@"
 else
-   # Use system one
-   which node
+  # Use system one
+  NODE=$(which node)
+  $NODE "%@"
 fi
