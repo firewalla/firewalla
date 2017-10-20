@@ -520,10 +520,6 @@ module.exports = class {
           type = "mac";
           target = alarm["p.device.mac"];
           break;
-          case "ALARM_VIDEO":
-            type = "domain";
-            target = alarm["p.dest.id"];
-            break;
           default:
           type = "ip";
           target = alarm["p.dest.ip"];
