@@ -3,7 +3,6 @@
 if [[ -d ~/.nvm ]]; then
   . ~/.nvm/nvm.sh
   
-  # FIXME
   NODE=$(nvm which current)
   $NODE "$@"
 else
