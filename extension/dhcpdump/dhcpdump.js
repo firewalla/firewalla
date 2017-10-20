@@ -100,9 +100,17 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     return items2.join(":");
   }
 
-  parse(output) {
+  parseEvents(output) {
+    if (output == null) return []
+    return output.split(/------------------------------------------------------------------------/)
+                 .map(e => this.parseEvent(e))
+                 .filter(e => e && e.mac)
+  }
+
+  parseEvent(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
+
     for (let i in o) {
       let line = o[i];
 
@@ -110,20 +118,20 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
       let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
       if(match) {
-        obj.mac = this.normalizeMac(match[1]);
+        obj.mac = this.normalizeMac(match[1])
       }
 
       // locate hostname
       let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
       if(match2) {
-        obj.name = match2[1];
-      }
+        obj.name = match2[1]
+      } 
     }
 
-    if(obj.mac && obj.name) {
-      return obj;
+    if (obj.mac && obj.name) {
+      return obj
     } else {
-      return {};
+      return {}
     }
   }
 
@@ -143,12 +151,7 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       log.debug("Found a dhcpdiscover request");
       let message = decoder.write(data);
 
-      // TODO: message may contain multiple DHCP events
-      
-      let obj = this.parse(message);
-      if (obj && obj.mac) {
-        callback(obj);
-      }
+      this.parseEvents(message).map(e => callback(e))
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {
