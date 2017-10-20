@@ -5,9 +5,9 @@ if [[ -d ~/.nvm ]]; then
   
   # FIXME
   NODE=$(nvm which current)
-  $NODE "%@"
+  $NODE "$@"
 else
   # Use system one
   NODE=$(which node)
-  $NODE "%@"
+  $NODE "$@"
 fi
