@@ -1,0 +1,11 @@
+#!/bin/bash
+
+if [[ -d ~/.nvm ]]; then
+   . ~/.nvm/nvm.sh
+
+   # FIXME
+   nvm which current
+else
+   # Use system one
+   which node
+fi
