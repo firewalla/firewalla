@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [[ -d ~/.nvm ]]; then
+  . ~/.nvm/nvm.sh
+  
+  NODE=$(nvm which current)
+  $NODE "$@"
+else
+  # Use system one
+  NODE=$(which node)
+  $NODE "$@"
+fi
