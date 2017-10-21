@@ -24,6 +24,7 @@ let flat = require('flat');
 
 let audit = require('../util/audit.js');
 let util = require('util');
+let Bone = require('../lib/Bone.js');
 
 let Promise = require('bluebird');
 
@@ -125,6 +126,8 @@ class PolicyManager2 {
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
+    log.info("In save policy:", policy);
+
     this.getNextID((err, id) => {
       if(err) {
         log.error("Failed to get next ID: " + err);
@@ -153,6 +156,8 @@ class PolicyManager2 {
               callback(null, policy.pid);
             }).catch((err) => callback(err));
         });
+
+        Bone.submitPolicy('block', policy);
       });
     });
   }
@@ -218,6 +223,12 @@ class PolicyManager2 {
           log.error("policy " + policyID + " doesn't exists");
           return Promise.reject("policy " + policyID + " doesn't exists");
         }
+
+        this.getPolicy(policyID).then((policy) => {
+          Bone.submitPolicy('unblock', policy);
+        }).catch((err) => {
+          // null
+        });
 
         return new Promise((resolve, reject) => {
           let multi = rclient.multi();

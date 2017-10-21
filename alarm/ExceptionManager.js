@@ -178,8 +178,9 @@ module.exports = class {
         });
       });
 
-      Bone.submitException('allow', exception);
+      Bone.submitException('ignore', exception);
 
+      callback(err);
     });
   }
 
@@ -222,7 +223,7 @@ module.exports = class {
 
             });
 
-            Bone.submitException('unallow', exception);
+            Bone.submitException('unignore', exception);
 
             resolve();
           });
