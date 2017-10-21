@@ -131,6 +131,9 @@ class FWInvitation {
               }
             } catch(err) {
               log.error("Invalid license");
+              return {
+                status : "pending"
+              }
             }
           }
         }

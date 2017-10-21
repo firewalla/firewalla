@@ -289,6 +289,12 @@ module.exports = class FlowMonitor {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
+                    // ignore partial flows initiated from outside.  They are blocked by firewall and we 
+                    // see the packet before that due to how libpcap works
+
+                    if (flowUtil.checkFlag(flow,'s') && flow.fd==="out") {
+                       log.info("Intel:On:Partial:Flows", flow,{});
+                    } else {
                     let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
                   let intelobj = null;
                     if (flow.fd == "in") {
@@ -365,6 +371,7 @@ module.exports = class FlowMonitor {
                                         });
                     alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
                     */
+                  }
                 } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
                         let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
