@@ -1,6 +1,6 @@
 {
   "version": 1.87,
-  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
+  "firewallaBoneServerURL": "http://192.168.2.1:6000/api/v3",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL":"https://firewalla.encipher.io/license/api/v1",
   "cacheInit": true,
@@ -179,5 +179,9 @@
       "userAgent": {
          "expires": 604800
       }
+    },
+    "features": {
+      "user:intel:submit": true
     }
+
 }
