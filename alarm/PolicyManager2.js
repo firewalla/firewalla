@@ -157,7 +157,7 @@ class PolicyManager2 {
             }).catch((err) => callback(err));
         });
 
-        Bone.submitPolicy('block', policy);
+        Bone.submitUserIntel('block', policy);
       });
     });
   }
@@ -225,7 +225,7 @@ class PolicyManager2 {
         }
 
         this.getPolicy(policyID).then((policy) => {
-          Bone.submitPolicy('unblock', policy);
+          Bone.submitUserIntel('unblock', policy);
         }).catch((err) => {
           // null
         });
