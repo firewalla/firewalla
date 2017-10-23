@@ -822,7 +822,8 @@ class netBot extends ControllerBot {
       let err = null;
       
       if (v4.mode) {
-        
+
+        let mode = require('../net2/Mode.js')
         let curMode = await (mode.getSetupMode())        
         if(v4.mode === curMode) {
           this.simpleTxData(msg, {}, err, callback);
