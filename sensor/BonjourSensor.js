@@ -127,6 +127,7 @@ class BonjourSensor extends Sensor {
         ipv4Addr: ipv4Addr,
         mac: mac,
         bname: service.name,
+        from: "bonjour"
       };
       
       if(service.ipv6Addrs)

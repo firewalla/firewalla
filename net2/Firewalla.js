@@ -29,8 +29,15 @@ let _isOverlayFS = null;
 
 let version = null;
 
+let Promise = require('bluebird');
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let redis = require('redis');
 let rclient = redis.createClient();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -103,6 +110,21 @@ function isOverlayFS() {
   }
 
   return _isOverlayFS;
+}
+
+function isBootingComplete() {
+  return async(() => {
+    let keys = await (rclient.keysAsync("bootingComplete"))
+    return keys && keys.length > 0
+  })()
+}
+
+function setBootingComplete() {
+  return rclient.setAsync("bootingComplete", "1")
+}
+
+function resetBootingComplete() {
+  return rclient.delAsync("bootingComplete")
 }
 
 function getRuntimeInfoFolder() {

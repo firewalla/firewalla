@@ -1655,6 +1655,8 @@ module.exports = class {
 
           await (this.loadDDNSForInit(json));
 
+          json.bootingComplete = await (f.isBootingComplete())
+
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
             await (this.legacyStats(json));
           }
