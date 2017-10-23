@@ -25,6 +25,9 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
