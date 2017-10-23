@@ -58,7 +58,7 @@ class PolicyManager2 {
 
   registerPolicyEnforcementListener() {
     log.info("register policy enforcement listener")
-    sem.on("PolicyEnforement", (event) => {
+    sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
 
@@ -81,7 +81,7 @@ class PolicyManager2 {
       log.info("try policy enforcement:" + action + ":" + policy.pid)
 
       sem.emitEvent({
-        type: 'PolicyEnforement',
+        type: 'PolicyEnforcement',
         toProcess: 'FireMain',//make sure firemain process handle enforce policy event
         message: 'Policy Enforcement:' + action,
         action : action, //'enforce', 'unenforce'
