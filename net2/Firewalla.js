@@ -214,5 +214,6 @@ module.exports = {
   isTravis: isTravis,
   isOverlayFS: isOverlayFS,
   getOverlayUpperDirPartition:getOverlayUpperDirPartition,
-  getEncipherConfigFolder: getEncipherConfigFolder
+  getEncipherConfigFolder: getEncipherConfigFolder,
+  isBootingComplete:isBootingComplete
 }
