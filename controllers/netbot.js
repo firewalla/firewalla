@@ -1572,7 +1572,7 @@ class netBot extends ControllerBot {
     }
     case "bootingComplete":
       async(() => {
-        await (f.bootingComplete())
+        await (f.setBootingComplete())
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);

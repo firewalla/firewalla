@@ -215,5 +215,7 @@ module.exports = {
   isOverlayFS: isOverlayFS,
   getOverlayUpperDirPartition:getOverlayUpperDirPartition,
   getEncipherConfigFolder: getEncipherConfigFolder,
-  isBootingComplete:isBootingComplete
+  isBootingComplete:isBootingComplete,
+  setBootingComplete:setBootingComplete,
+  resetBootingComplete:resetBootingComplete
 }
