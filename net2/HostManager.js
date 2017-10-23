@@ -936,7 +936,10 @@ class Host {
           firstFound: this.firstFoundTimestamp,
           macVendor: this.o.macVendor,
           recentActivity: this.o.recentActivity,
-          manualSpoof: this.o.manualSpoof
+          manualSpoof: this.o.manualSpoof,
+          dhcpName: this.o.dhcpName,
+          bonjourName: this.o.bonjourName,
+          nmapName: this.o.nmapName
         }
 
         if (this.o.ipv4Addr == null) {
