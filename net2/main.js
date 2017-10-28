@@ -200,6 +200,7 @@ function run() {
 
 
       async(() => {
+        await (mode.reloadSetupMode()) // make sure get latest mode from redis
         await (ModeManager.apply())
         
         // when mode is changed by anyone else, reapply automatically
