@@ -1244,6 +1244,7 @@ module.exports = class {
         // ONLY register for these events if hostmanager type IS server
         if(this.type === "server") {
 
+          log.info("Subscribing Scan:Done event...")
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
                 this.getHosts((err, result) => {
