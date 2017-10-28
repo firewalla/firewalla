@@ -51,7 +51,7 @@ class BonjourSensor extends Sensor {
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
-//         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+        //         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
       });
       this.bonjourBrowserUdp = bonjour.find({
         protocol: 'udp'
@@ -127,6 +127,7 @@ class BonjourSensor extends Sensor {
         ipv4Addr: ipv4Addr,
         mac: mac,
         bname: service.name,
+        from: "bonjour"
       };
       
       if(service.ipv6Addrs)

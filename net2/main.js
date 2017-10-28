@@ -25,11 +25,16 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
 
-let ModeManager = require('./ModeManager.js');
+let ModeManager = require('./ModeManager.js')
+
+let mode = require('./Mode.js')
 
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
@@ -44,9 +49,11 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
+resetModeInInitStage()
+
 run0();
 
-function run0() {
+function run0() {  
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
@@ -89,6 +96,21 @@ if(firewalla.isProduction()) {
 
 let hl = null;
 let sl = null;
+
+function resetModeInInitStage() {
+  // this needs to be execute early!!
+  return async(() => {
+    let bootingComplete = await (firewalla.isBootingComplete())
+    
+    // always reset to none mode if bootingComplete flag is off
+    // this is to ensure a safe launch
+    // in case something wrong with the spoof, firemain will not
+    // start spoofing again when restarting
+    if(!bootingComplete) {
+      await (mode.noneModeOn())
+    }
+  })()  
+}
 
 function run() {
 
@@ -176,11 +198,14 @@ function run() {
         type: 'IPTABLES_READY'
       });
 
-      ModeManager.apply();
 
-      // when mode is changed by anyone else, reapply automatically
-      ModeManager.listenOnChange();
-
+      async(() => {
+        await (mode.reloadSetupMode()) // make sure get latest mode from redis
+        await (ModeManager.apply())
+        
+        // when mode is changed by anyone else, reapply automatically
+        ModeManager.listenOnChange();        
+      })()     
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
@@ -191,8 +216,8 @@ function run() {
           .then(() => {
             log.info("All existing policy rules are applied");
           }).catch((err) => {
-          log.error("Failed to apply some policy rules: ", err, {});
-        });
+            log.error("Failed to apply some policy rules: ", err, {});
+          });
       }, 1000 * 10); // delay for 10 seconds
       require('./UpgradeManager').finishUpgrade();
     });
@@ -254,7 +279,7 @@ function run() {
       }
     });
 
-  },30000);
+  },20 * 1000);
 
 
 }
