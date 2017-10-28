@@ -54,6 +54,8 @@ let policyManager2 = new PolicyManager2();
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 
+let spooferManager = require('./SpooferManager.js')
+
 let modeManager = require('./ModeManager.js');
 
 let async = require('asyncawait/async');
@@ -2059,12 +2061,20 @@ module.exports = class {
     });
   }
 
-    spoof(state) {
-        log.debug("System:Spoof:", state, this.spoofing);
-        let gateway = sysManager.monitoringInterface().gateway;
-        if (state == false) {} else {}
-    }
-
+  spoof(state) {
+    return async(() => {
+      log.debug("System:Spoof:", state, this.spoofing);
+      let gateway = sysManager.monitoringInterface().gateway;
+      if (state == false) {
+        // flush all ip addresses
+        log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
+        return spooferManager.emptySpoofSet()
+      } else {
+        // do nothing if state is true
+      }
+    })()
+  }
+  
     policyToString() {
         if (this.policy == null || Object.keys(this.policy).length == 0) {
             return "No policy defined";
