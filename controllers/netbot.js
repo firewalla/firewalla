@@ -1557,11 +1557,20 @@ class netBot extends ControllerBot {
         let begin = new Date() / 1000;
 
         let result = false
+
+        let delayFunction = function(t) {
+          return new Promise(function(resolve) {
+            setTimeout(resolve, t)
+          });
+        }
+        
         while(new Date() / 1000 < begin + timeout) {
+          log.info(`Checking if IP ${ip} is being spoofed`)
           result = await (spooferManager.isSpoof(ip))
           if(result) {
             break
           }
+          await(delayFunction(500))
         }
         
         this.simpleTxData(msg, {

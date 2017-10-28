@@ -97,6 +97,19 @@ let sl = null;
 
 function run() {
 
+  // this needs to be execute early!!
+  async(() => {
+    let bootingComplete = await (firewalla.isBootingComplete())
+    
+    // always reset to none mode if bootingComplete flag is off
+    // this is to ensure a safe launch
+    // in case something wrong with the spoof, firemain will not
+    // start spoofing again when restarting
+    if(!bootingComplete) {
+      await (mode.noneModeOn())
+    }
+  })()
+
   hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
@@ -183,15 +196,6 @@ function run() {
 
 
       async(() => {
-        let bootingComplete = await (firewalla.isBootingComplete())
-
-        // always reset to none mode if bootingComplete flag is off
-        // this is to ensure a safe launch
-        // in case something wrong with the spoof, firemain will not
-        // start spoofing again when restarting
-        if(!bootingComplete) {
-          await (mode.noneModeOn())
-        }
         await (ModeManager.apply())
         
         // when mode is changed by anyone else, reapply automatically
