@@ -1552,8 +1552,27 @@ class netBot extends ControllerBot {
     case "validateSpoof": {
       async(() => {
         let ip = msg.data.value.ip
+        let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
 
-        let result = await (spooferManager.isSpoof(ip))
+        let begin = new Date() / 1000;
+
+        let result = false
+
+        let delayFunction = function(t) {
+          return new Promise(function(resolve) {
+            setTimeout(resolve, t)
+          });
+        }
+        
+        while(new Date() / 1000 < begin + timeout) {
+          log.info(`Checking if IP ${ip} is being spoofed`)
+          result = await (spooferManager.isSpoof(ip))
+          if(result) {
+            break
+          }
+          await(delayFunction(1000))
+        }
+        
         this.simpleTxData(msg, {
           result: result
         }, null, callback)
