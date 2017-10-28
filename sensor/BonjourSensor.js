@@ -51,7 +51,7 @@ class BonjourSensor extends Sensor {
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
-//         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+        //         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
       });
       this.bonjourBrowserUdp = bonjour.find({
         protocol: 'udp'
