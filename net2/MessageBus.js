@@ -85,7 +85,7 @@ module.exports = class {
             ip: ip,
             msg: msg
         };
-      log.debug("MBus:Publish", channel, o, {});
+      log.info("MBus:Publish", channel, o, {});
       rclient.publish(channel, JSON.stringify(o));
     }
 
