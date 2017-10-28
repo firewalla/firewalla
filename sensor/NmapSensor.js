@@ -230,12 +230,25 @@ class NmapSensor extends Sensor {
             this._processHost(h);
           })
 
-          log.info("publish Scan:Done after scan is finished")
-          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
         }).catch((err) => {
-        log.error("Failed to scan:", err, {});
-      });
-    }));
+          log.error("Failed to scan:", err, {});
+        });
+    })).then(() => {
+      setTimeout(() => {
+        log.info("publish Scan:Done after scan is finished")
+        this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+      }, 3 * 1000)
+
+      Firewalla.isBootingComplete()
+        .then((result) => {
+          if(!result) {
+            setTimeout(() => {
+              log.info("publish Scan:Done after scan is finished")
+              this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+            }, 7 * 1000)
+          }
+        })      
+    });
   }
 
   _processHost(host) {
