@@ -76,8 +76,9 @@ fi
 
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
-(sleep 3; eval $GIT_COMMAND) ||
-(sleep 3; eval $GIT_COMMAND) || exit 1
+  (sleep 3; eval $GIT_COMMAND) ||
+  (sleep 3; eval $GIT_COMMAND) ||
+  (sleep 3; eval $GIT_COMMAND) || (date >> ~/.fireupgrade.failed; exit 1)
 
 commit_after=$(git rev-parse HEAD)
 current_tag=$(git describe --tags)
