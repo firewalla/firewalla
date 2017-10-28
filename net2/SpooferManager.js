@@ -43,6 +43,8 @@ let cp = require('child_process');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+let monitoredKey6 = "monitored_hosts6";
+let unmonitoredKey6 = "unmonitored_hosts6";
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
@@ -111,6 +113,8 @@ function emptySpoofSet() {
     // clean up redis key
     await (rclient.delAsync(monitoredKey))
     await (rclient.delAsync(unmonitoredKey))
+    await (rclient.delAsync(monitoredKey6))
+    await (rclient.delAsync(unmonitoredKey6))    
   })()
 }
 

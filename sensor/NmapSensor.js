@@ -248,7 +248,8 @@ class NmapSensor extends Sensor {
           ipv4: host.ipv4Addr,
           ipv4Addr: host.ipv4Addr,
           mac: host.mac,
-          macVendor: host.macVendor
+          macVendor: host.macVendor,
+          from: "nmap"
         }
       });
     }
