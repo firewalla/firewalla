@@ -49,9 +49,11 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
+resetModeInInitStage()
+
 run0();
 
-function run0() {
+function run0() {  
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
@@ -95,10 +97,9 @@ if(firewalla.isProduction()) {
 let hl = null;
 let sl = null;
 
-function run() {
-
+function resetModeInInitStage() {
   // this needs to be execute early!!
-  async(() => {
+  return async(() => {
     let bootingComplete = await (firewalla.isBootingComplete())
     
     // always reset to none mode if bootingComplete flag is off
@@ -108,7 +109,10 @@ function run() {
     if(!bootingComplete) {
       await (mode.noneModeOn())
     }
-  })()
+  })()  
+}
+
+function run() {
 
   hl = require('../hook/HookLoader.js');
   hl.initHooks();
