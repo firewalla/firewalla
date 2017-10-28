@@ -237,7 +237,17 @@ class NmapSensor extends Sensor {
       setTimeout(() => {
         log.info("publish Scan:Done after scan is finished")
         this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-      }, 5 * 1000)
+      }, 3 * 1000)
+
+      Firewalla.isBootingComplete()
+        .then((result) => {
+          if(!result) {
+            setTimeout(() => {
+              log.info("publish Scan:Done after scan is finished")
+              this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+            }, 7 * 1000)
+          }
+        })      
     });
   }
 
