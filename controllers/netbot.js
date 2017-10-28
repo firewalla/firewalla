@@ -1570,7 +1570,7 @@ class netBot extends ControllerBot {
           if(result) {
             break
           }
-          await(delayFunction(500))
+          await(delayFunction(1000))
         }
         
         this.simpleTxData(msg, {
