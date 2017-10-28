@@ -231,7 +231,7 @@ class NmapSensor extends Sensor {
           })
 
           log.info("publish Scan:Done after scan is finished")
-          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+          this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
         }).catch((err) => {
         log.error("Failed to scan:", err, {});
       });
