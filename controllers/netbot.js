@@ -1626,7 +1626,7 @@ class netBot extends ControllerBot {
       break
     case "joinBeta":
       async(() => {
-        await exec(`${f.getFirewallaHome()}/scripts/join_beta.sh}`)
+        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh}`))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
@@ -1634,7 +1634,7 @@ class netBot extends ControllerBot {
       break;
     case "leaveBeta":
       async(() => {
-        await exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh}`)
+        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh}`))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
