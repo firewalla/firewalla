@@ -254,12 +254,6 @@ class PolicyManager2 {
           return Promise.reject("policy " + policyID + " doesn't exists");
         }
 
-        this.getPolicy(policyID).then((policy) => {
-          Bone.submitUserIntel('unblock', policy);
-        }).catch((err) => {
-          // null
-        });
-
         return new Promise((resolve, reject) => {
           let multi = rclient.multi();
 
