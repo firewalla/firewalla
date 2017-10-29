@@ -237,6 +237,16 @@ paths:
       responses:
         200:
           description: Success
+  /system/info:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
   /system/status:
     get:
       summary: Load current device status

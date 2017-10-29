@@ -43,10 +43,13 @@ let cp = require('child_process');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+let monitoredKey6 = "monitored_hosts6";
+let unmonitoredKey6 = "unmonitored_hosts6";
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
+let exec = require('child-process-promise').exec
 
 let spoofStarted = false;
 
@@ -111,6 +114,8 @@ function emptySpoofSet() {
     // clean up redis key
     await (rclient.delAsync(monitoredKey))
     await (rclient.delAsync(unmonitoredKey))
+    await (rclient.delAsync(monitoredKey6))
+    await (rclient.delAsync(unmonitoredKey6))    
   })()
 }
 
@@ -141,8 +146,20 @@ function loadManualSpoofs(hostManager) {
   })()
 }
 
+
+// TODO support ipv6
 function isSpoof(ip) {
   return async(() => {
+
+    try {
+      await (exec("ps aux | grep bitbridge7"))
+    } catch(err) {      
+      // error means no bitbridge7 is available
+      return false
+    }
+    
+    // BitBridge.getInstance() is not available for other nodejs processes than FireMain
+    /*    
     let instance = BitBridge.getInstance()
     if(!instance) {
       return false
@@ -152,6 +169,7 @@ function isSpoof(ip) {
     if(!started) {
       return false
     }
+    */
     
     return await (rclient.sismemberAsync(monitoredKey, ip))
   })()

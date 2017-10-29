@@ -54,6 +54,8 @@ let policyManager2 = new PolicyManager2();
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 
+let spooferManager = require('./SpooferManager.js')
+
 let modeManager = require('./ModeManager.js');
 
 let async = require('asyncawait/async');
@@ -936,7 +938,10 @@ class Host {
           firstFound: this.firstFoundTimestamp,
           macVendor: this.o.macVendor,
           recentActivity: this.o.recentActivity,
-          manualSpoof: this.o.manualSpoof
+          manualSpoof: this.o.manualSpoof,
+          dhcpName: this.o.dhcpName,
+          bonjourName: this.o.bonjourName,
+          nmapName: this.o.nmapName
         }
 
         if (this.o.ipv4Addr == null) {
@@ -1239,6 +1244,7 @@ module.exports = class {
         // ONLY register for these events if hostmanager type IS server
         if(this.type === "server") {
 
+          log.info("Subscribing Scan:Done event...")
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
                 this.getHosts((err, result) => {
@@ -1655,6 +1661,8 @@ module.exports = class {
 
           await (this.loadDDNSForInit(json));
 
+          json.bootingComplete = await (f.isBootingComplete())
+
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
             await (this.legacyStats(json));
           }
@@ -2054,12 +2062,20 @@ module.exports = class {
     });
   }
 
-    spoof(state) {
-        log.debug("System:Spoof:", state, this.spoofing);
-        let gateway = sysManager.monitoringInterface().gateway;
-        if (state == false) {} else {}
-    }
-
+  spoof(state) {
+    return async(() => {
+      log.debug("System:Spoof:", state, this.spoofing);
+      let gateway = sysManager.monitoringInterface().gateway;
+      if (state == false) {
+        // flush all ip addresses
+        log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
+        return spooferManager.emptySpoofSet()
+      } else {
+        // do nothing if state is true
+      }
+    })()
+  }
+  
     policyToString() {
         if (this.policy == null || Object.keys(this.policy).length == 0) {
             return "No policy defined";

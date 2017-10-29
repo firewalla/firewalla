@@ -235,7 +235,8 @@ function getSysInfo() {
     redisMem: redisMemory,
     releaseType: getReleaseType(),
     threadInfo: threadInfo,
-    intelQueueSize: intelQueueSize
+    intelQueueSize: intelQueueSize,
+    nodeVersion: process.version
   }
 
   return sysinfo;

@@ -13,11 +13,21 @@ sudo ipset flush blocked_ip_port_set
 #FIXME: ignore if failed or not
 sudo iptables -N FW_BLOCK &>/dev/null
 sudo iptables -F FW_BLOCK
+
+# return everything
 sudo iptables -C FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null || sudo iptables -A FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+
+# drop non-tcp
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_set dst -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_set dst -j DROP
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_set src -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_set src -j DROP
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_port_set dst,dst -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_port_set dst,dst -j DROP
 
+# reject tcp
+sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set dst -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set dst -j REJECT
+sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set src -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set src -j REJECT
+sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set dst,dst -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set dst,dst -j REJECT
+
+# forward to fw_block
 sudo iptables -C FORWARD -p all -j FW_BLOCK &>/dev/null || sudo iptables -A FORWARD -p all -j FW_BLOCK
 
 
@@ -35,9 +45,20 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ip6tables -N FW_BLOCK &>/dev/null
   sudo ip6tables -F FW_BLOCK
+
+  # return everything
   sudo ip6tables -C FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -A FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+
+  # drop non-tcp
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_set6 dst -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_set6 dst -j DROP
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_set6 src -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_set6 src -j DROP
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_port_set6 dst,dst -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_port_set6 dst,dst -j DROP
+
+  # reject tcp
+  sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 dst -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 dst -j REJECT
+  sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 src -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 src -j REJECT
+  sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set6 dst,dst -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set6 dst,dst -j REJECT
+
+  # forward to fw_block
   sudo ip6tables -C FORWARD -p all -j FW_BLOCK &>/dev/null ||   sudo ip6tables -A FORWARD -p all -j FW_BLOCK
 fi
