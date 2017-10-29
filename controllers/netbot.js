@@ -46,6 +46,7 @@ let rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+let exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -1623,6 +1624,22 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })      
       break
+    case "joinBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
+    case "leaveBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
