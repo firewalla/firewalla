@@ -68,7 +68,7 @@ function pre_main() {
 }
 
 function use_right_node_modules() {
-  
+  return 0
 }
 
 function record_latest_production_branch() {
