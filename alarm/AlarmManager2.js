@@ -516,20 +516,20 @@ module.exports = class {
           return;
         }
 
-        switch(alarm.type) {
-        case "ALARM_NEW_DEVICE":
-          type = "mac";
-          target = alarm["p.device.mac"];
-          break;
+        switch (alarm.type) {
+          case "ALARM_NEW_DEVICE":
+            type = "mac";
+            target = alarm["p.device.mac"];
+            break;
           default:
-          type = "ip";
-          target = alarm["p.dest.ip"];
+            type = "ip";
+            target = alarm["p.dest.ip"];
 
-          if(alarmInfo && alarmInfo.type === "dns") {
-            type = "dns";
-            target = alarmInfo.target
-          }
-          break;
+            if (alarmInfo && alarmInfo.type === "dns") {
+              type = "dns";
+              target = alarmInfo.target
+            }
+            break;
         }
 
         if(!type || !target) {
@@ -587,6 +587,7 @@ module.exports = class {
 
   allowFromAlarm(alarmID, info, callback) {
     log.info("Going to allow alarm " + alarmID);
+    log.info("info: ", info, {});
 
     let alarmInfo = info.info;
 
@@ -595,6 +596,8 @@ module.exports = class {
 
     this.getAlarm(alarmID)
       .then((alarm) => {
+
+        log.info("alarm: ", alarm, {});
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
@@ -608,7 +611,7 @@ module.exports = class {
           target = alarm["p.device.ip"];
           break;
         default:
-          type = "domain";
+          type = "ip";
           target = alarm["p.dest.id"];
 
           if(alarmInfo) {
@@ -628,6 +631,8 @@ module.exports = class {
           break;
         }
 
+        log.info(`------> type: ${type}, target: ${target}`);
+
         if(!type || !target) {
           callback(new Error("invalid block"));
           return;
@@ -635,7 +640,7 @@ module.exports = class {
 
         // TODO: may need to define exception at more fine grain level
         let e = new Exception({
-          "type": alarm.type,
+          type: alarm.type,
           reason: alarm.type,
           aid: alarmID,
           "i.type": type
