@@ -239,6 +239,8 @@ class PolicyManager2 {
     
     return p.then((policy) => {
       this.tryPolicyEnforcement(policy, "unenforce")
+
+      Bone.submitUserIntel('unblock', policy);
       return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
@@ -388,7 +390,9 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
-    switch(policy.type) {
+    log.info("Enforce policy: ", policy, {});
+
+    switch(policy["i.type"]) {
     case "ip":
       return Block.block(policy.target);
       break;
@@ -416,7 +420,8 @@ class PolicyManager2 {
   }
 
   unenforce(policy) {
-    switch(policy.type) {
+    log.info("Unenforce policy: ", policy, {});
+    switch(policy["i.type"]) {
     case "ip":
       return Block.unblock(policy.target);
       break;
