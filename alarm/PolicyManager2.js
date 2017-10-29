@@ -392,7 +392,9 @@ class PolicyManager2 {
   enforce(policy) {
     log.info("Enforce policy: ", policy, {});
 
-    switch(policy["i.type"]) {
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+
+    switch(type) {
     case "ip":
       return Block.block(policy.target);
       break;
@@ -421,7 +423,9 @@ class PolicyManager2 {
 
   unenforce(policy) {
     log.info("Unenforce policy: ", policy, {});
-    switch(policy["i.type"]) {
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    switch(type) {
     case "ip":
       return Block.unblock(policy.target);
       break;
