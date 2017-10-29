@@ -10,6 +10,13 @@ function record_latest_production_branch() {
 
 record_latest_production_branch
 
+cur_branch=$(git rev-parse --abbrev-ref HEAD)
+
+if [[ "$cur_branch" == "master" ]]; then
+  exit 0
+fi
+
+
 # walla repo
 cd $FIREWALLA_HOME
 git config remote.origin.fetch "+refs/heads/master:refs/remotes/origin/master"

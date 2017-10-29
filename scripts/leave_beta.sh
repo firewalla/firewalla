@@ -4,6 +4,16 @@
 
 prod_branch=$(redis-cli get prod.branch)
 
+if [[ -z $prod_branch ]]; then
+  prod_branch="release_6_0"
+fi
+
+cur_branch=$(git rev-parse --abbrev-ref HEAD)
+
+if [[ "$cur_branch" == "$prod_branch" ]]; then
+  exit 0
+fi
+
 if [[ ! -z $prod_branch ]]; then
   cd $FIREWALLA_HOME
   git config remote.origin.fetch "+refs/heads/${prod_branch}:refs/remotes/origin/${prod_branch}"
