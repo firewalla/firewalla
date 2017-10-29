@@ -20,6 +20,8 @@ let hostTool = new HostTool();
 let Alarm = require('../alarm/Alarm.js');
 let Exception = require('../alarm/Exception.js');
 let ExceptionManager = require('../alarm/ExceptionManager.js');
+let PolicyManager2 = require('../alarm/PolicyManager2.js');
+let policyManager2 = new PolicyManager2();
 let exceptionManager = new ExceptionManager();
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
@@ -159,8 +161,40 @@ exports.removeSampleException = () => {
   return Promise.resolve();
 };
 
-exports.createSamplePolicy = () => {
+exports.createSamplePolicyDns = () => {
+  let p = new Policy(
+    {
+      'i.target': 'mob.com',
+      'i.type': 'dns',
+      reason: 'ALARM_PORN',
+      aid: '92',
+      target: 'mob.com',
+      type: 'ALARM_PORN',
+      target_name: 'mob.com',
+      target_ip: 'mob.com'
+    });
 
+  policyManager2.checkAndSave(p, (err) => {
+    console.error(err)
+  });
+}
+
+exports.createSamplePolicyIp = () => {
+  let p = new Policy(
+    {
+      'i.target': '120.132.154.120',
+      'i.type': 'ip',
+      reason: 'ALARM_PORN',
+      aid: '92',
+      target: '120.132.154.120',
+      type: 'ALARM_PORN',
+      target_name: 'mob.com',
+      target_ip: '120.132.154.120'
+    });
+
+  policyManager2.checkAndSave(p, (err) => {
+    console.error(err)
+  });
 }
 
 exports.createSampleVideoAlarm = () => {
@@ -172,6 +206,40 @@ exports.createSampleVideoAlarm = () => {
   });
   return alarmManager2.checkAndSaveAsync(a1);
 };
+
+exports.createSamplePornAlarm = () => {
+  let src = "10.0.0.1";
+  let srcName = "Test-iPhone";
+  let mac = '00:00:00:00:00:01';
+  let macVendor = 'Apple';
+  let dst = '120.132.154.120';
+  let dstName = 'porn.com';
+
+  let al = new Alarm.PornAlarm(new Date() / 1000, src, dstName,
+    {
+      aid: '92',
+      type: 'ALARM_PORN',
+      device: srcName,
+      alarmTimestamp: '1509264808.254',
+      timestamp: '1509264613.749964',
+      notifType: 'activity',
+      'p.dest.ip': dst,
+      'p.dest.name': dstName,
+      'p.device.ip': src,
+      'p.device.name': srcName,
+      'p.device.id': mac,
+      'p.dest.id': dstName,
+      'p.showMap': 'false',
+      'p.device.macVendor': macVendor,
+      'p.device.mac': mac,
+      'p.dest.latitude': '39.9289',
+      'p.dest.longitude': '116.3883',
+      'p.dest.country': 'CN',
+      message: 'This device visited porn website ' + dstName,
+    });
+
+  return alarmManager2.checkAndSaveAsync(al);
+}
 
 exports.createSampleGameAlarm = () => {
   let a1 = new Alarm.GameAlarm(new Date() / 1000, "10.0.1.199", "battle.net", {
