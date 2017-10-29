@@ -46,6 +46,9 @@ CPU_PLATFORM=$(uname -m)
 
 
 branch=$(git rev-parse --abbrev-ref HEAD)
+
+record_latest_production_branch
+
 commit_before=$(git rev-parse HEAD)
 current_tag=$(git describe --tags)
 
@@ -62,6 +65,16 @@ function pre_main() {
     if ! grep "source ~/firewalla/scripts/alias.sh" ~/.bashrc; then
       echo "source ~/firewalla/scripts/alias.sh" >> ~/.bashrc
     fi
+}
+
+function use_right_node_modules() {
+  
+}
+
+function record_latest_production_branch() {
+  if [[ $branch =~ release.* ]]; then
+    redis-cli set prod.branch $branch
+  fi
 }
 
 logger "FIREWALLA: Main-Run Start Update Modules"
