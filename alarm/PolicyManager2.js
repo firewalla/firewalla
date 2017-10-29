@@ -57,6 +57,40 @@ class PolicyManager2 {
     return instance;
   }
 
+  registerPolicyEnforcementListener() {
+    log.info("register policy enforcement listener")
+    sem.on("PolicyEnforcement", (event) => {
+      if (event && event.policy) {
+        log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
+
+        if (event.action && event.action == 'enforce') {
+          this.enforce(event.policy)
+        } else if (event && event.action == 'unenforce') {
+          this.unenforce(event.policy).then(() => {
+            this.deletePolicy(event.policy.pid);
+          })
+        } else {
+          log.error("unrecoganized policy enforcement action:" + event.action)
+        }
+      }
+    })
+  }
+
+  tryPolicyEnforcement(policy, action) {
+    if (policy) {
+      action = action || 'enforce'
+      log.info("try policy enforcement:" + action + ":" + policy.pid)
+
+      sem.emitEvent({
+        type: 'PolicyEnforcement',
+        toProcess: 'FireMain',//make sure firemain process handle enforce policy event
+        message: 'Policy Enforcement:' + action,
+        action : action, //'enforce', 'unenforce'
+        policy : policy
+      })
+    }
+  }
+
   createPolicyIDKey(callback) {
     rclient.set(policyIDKey, initID, callback);
   }
@@ -150,11 +184,8 @@ class PolicyManager2 {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
-
-          this.enforce(policy)
-            .then(() => {
-              callback(null, policy.pid);
-            }).catch((err) => callback(err));
+          this.tryPolicyEnforcement(policy)
+          callback(null, policy.pid)
         });
 
         Bone.submitUserIntel('block', policy);
@@ -207,11 +238,8 @@ class PolicyManager2 {
     }
     
     return p.then((policy) => {
-      this.unenforce(policy)
-        .then(() => {
-          return this.deletePolicy(policyID);
-        })
-        .catch((err) => Promise.reject(err));
+      this.tryPolicyEnforcement(policy, "unenforce")
+      return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
 
