@@ -509,6 +509,8 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
+        log.info("Alarm to block:", alarm, {});
+
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
           callback(new Error("Invalid alarm ID: " + alarmID));
@@ -555,8 +557,11 @@ module.exports = class {
           break;
         }
 
-        if(info.method)
+        if(info.method) {
           p.method = info.method;
+        }
+
+        log.info("Policy object:", p, {});
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -596,7 +601,7 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
-        log.info("alarm: ", alarm, {});
+        log.info("Alarm to allow: ", alarm, {});
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
@@ -666,6 +671,8 @@ module.exports = class {
           // not supported
           break;
         }
+
+        log.info("Exception object:", e, {});
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
