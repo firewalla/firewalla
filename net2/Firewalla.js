@@ -216,6 +216,7 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,
