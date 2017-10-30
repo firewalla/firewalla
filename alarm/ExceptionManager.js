@@ -5,6 +5,7 @@ let log = require('../net2/logger.js')(__filename, 'info');
 let async = require('async');
 
 let Exception = require('./Exception.js');
+let Bone = require('../lib/Bone.js');
 
 let redis = require('redis');
 let rclient = redis.createClient();
@@ -148,6 +149,18 @@ module.exports = class {
 
       let exceptionKey = exceptionPrefix + id;
 
+
+      /*
+      {
+        "i.type": "domain",
+        "reason": "ALARM_GAME",
+        "type": "ALARM_GAME",
+        "timestamp": "1500913117.175",
+        "p.dest.id": "battle.net",
+        "target_name": "battle.net",
+        "target_ip": destIP,
+      }*/
+
       rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
         if(err) {
           log.error("Failed to set exception: " + err);
@@ -164,6 +177,10 @@ module.exports = class {
           callback(err);
         });
       });
+
+      Bone.submitUserIntel('ignore', exception);
+
+      callback(err);
     });
   }
 
@@ -192,18 +209,27 @@ module.exports = class {
         return new Promise((resolve, reject) => {
           let multi = rclient.multi();
 
-          multi.zrem(exceptionQueue, exceptionID);
-          multi.del(exceptionPrefix + exceptionID);
-          multi.exec((err) => {
-            if(err) {
-              log.error("Fail to delete exception: " + err);
-              reject(err);
-              return;
-            }
+          rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
+            log.info("Exception in CB: ", obj, {});
+            let exception = obj;
+
+            multi.zrem(exceptionQueue, exceptionID);
+            multi.del(exceptionPrefix + exceptionID);
+            multi.exec((err) => {
+              if (err) {
+                log.error("Fail to delete exception: " + err);
+                reject(err);
+              }
+
+            });
+
+            Bone.submitUserIntel('unignore', exception);
 
             resolve();
-          })
+          });
+
         });
+
       });
   }
 
@@ -241,4 +267,4 @@ module.exports = class {
     }
   }
 
-}
+};
