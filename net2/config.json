@@ -179,5 +179,9 @@
       "userAgent": {
          "expires": 604800
       }
+    },
+    "features": {
+      "user:intel:submit": true
     }
+
 }
