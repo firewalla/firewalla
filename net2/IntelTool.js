@@ -156,14 +156,14 @@ class IntelTool {
 
     let data = {flowlist:flowList, hashed:1};
 
-    log.info(require('util').inspect(data, {depth: null}));
+    //    log.info(require('util').inspect(data, {depth: null}));
 
     return new Promise((resolve, reject) => {
       bone.intel("*","check", data, (err, data) => {
         if(err)
           reject(err)
         else {
-          log.info("IntelCheck Result:", data, {});
+          //          log.info("IntelCheck Result:", data, {});
           resolve(data);
         }
 

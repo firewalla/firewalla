@@ -46,6 +46,7 @@ let rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+let exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -835,10 +836,19 @@ class netBot extends ControllerBot {
           });
         }
         break;
-      case "mode":
-        let v4 = msg.data.value;
-        let err = null;
-        if (v4.mode) {
+    case "mode":
+      let v4 = msg.data.value;
+      let err = null;
+      
+      if (v4.mode) {
+        async(() => {
+          let mode = require('../net2/Mode.js')
+          let curMode = await (mode.getSetupMode())        
+          if(v4.mode === curMode) {
+            this.simpleTxData(msg, {}, err, callback);
+            return
+          }
+          
           let modeManager = require('../net2/ModeManager.js');
           switch (v4.mode) {
           case "spoof":
@@ -855,14 +865,17 @@ class netBot extends ControllerBot {
             modeManager.setNoneAndPublish()
             break;
           default:
-              log.error("unsupported mode: " + v4.mode);
-              err = new Error("unsupport mode: " + v4.mode);
-              break;
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
           }
           this.simpleTxData(msg, {}, err, callback);
-        }
-        break;
-      default:
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+      }
+      break;
+    default:
         this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
         break;
     }
@@ -1561,8 +1574,27 @@ class netBot extends ControllerBot {
     case "validateSpoof": {
       async(() => {
         let ip = msg.data.value.ip
+        let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
 
-        let result = await (spooferManager.isSpoof(ip))
+        let begin = new Date() / 1000;
+
+        let result = false
+
+        let delayFunction = function(t) {
+          return new Promise(function(resolve) {
+            setTimeout(resolve, t)
+          });
+        }
+        
+        while(new Date() / 1000 < begin + timeout) {
+          log.info(`Checking if IP ${ip} is being spoofed`)
+          result = await (spooferManager.isSpoof(ip))
+          if(result) {
+            break
+          }
+          await(delayFunction(1000))
+        }
+        
         this.simpleTxData(msg, {
           result: result
         }, null, callback)
@@ -1572,6 +1604,45 @@ class netBot extends ControllerBot {
       })
       break
     }
+    case "spoof": {
+      async(() => {
+        let ip = msg.data.value.ip
+
+        
+      })()
+    }
+    case "bootingComplete":
+      async(() => {
+        await (f.setBootingComplete())
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })      
+      break
+    case "resetBootingComplete":
+      async(() => {
+        await (f.resetBootingComplete())
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })      
+      break
+    case "joinBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
+    case "leaveBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);

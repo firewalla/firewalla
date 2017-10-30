@@ -686,8 +686,8 @@ module.exports = class {
           break;
         case "domain":
         case "dns":
-          e["p.dest.id"] = alarm["p.dest.id"];
-          e["target_name"] = alarm["p.dest.name"];
+          e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
+          e["target_name"] = `*.${i_target}`
           e["target_ip"] = alarm["p.dest.ip"];
           break;
         default:

@@ -56,6 +56,14 @@ class DeviceHook extends Hook {
     let ipv6Addr = host.ipv6Addr
 
     return async(() => {
+
+      // 0. update a special name key for source
+      if(host.from) {
+        let skey = `${host.from}Name`
+        host[skey] = host.bname
+        host.lastFrom = host.from
+        delete host.from
+      }
       
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await (hostTool.macExists(mac))

@@ -89,11 +89,13 @@ module.exports = class {
       rclient.publish(channel, JSON.stringify(o));
     }
 
-    publishCompressed(channel, type, ip, msg) {
-        if (this.sending == true) {
-            return;
-        }
-        this.sending = true;
+  publishCompressed(channel, type, ip, msg) {
+    if (this.sending == true) {
+      log.info("suppressing message:", channel, type, ip, msg, {})
+      return;
+    }
+    
+    this.sending = true;
        
         setTimeout(()=>{
             this.sending = false;

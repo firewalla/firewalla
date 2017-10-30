@@ -26,11 +26,19 @@ let _isProduction = null;
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
+let _branch = null
 
 let version = null;
 
+let Promise = require('bluebird');
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let redis = require('redis');
 let rclient = redis.createClient();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -46,6 +54,13 @@ function getPlatform() {
   }
 
   return _platform;
+}
+
+function getBranch() {
+  if(_branch == null) {
+    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
+  }
+  return _branch
 }
 
 function getUserID() {
@@ -103,6 +118,21 @@ function isOverlayFS() {
   }
 
   return _isOverlayFS;
+}
+
+function isBootingComplete() {
+  return async(() => {
+    let keys = await (rclient.keysAsync("bootingComplete"))
+    return keys && keys.length > 0
+  })()
+}
+
+function setBootingComplete() {
+  return rclient.setAsync("bootingComplete", "1")
+}
+
+function resetBootingComplete() {
+  return rclient.delAsync("bootingComplete")
 }
 
 function getRuntimeInfoFolder() {
@@ -186,11 +216,15 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,
   isTravis: isTravis,
   isOverlayFS: isOverlayFS,
   getOverlayUpperDirPartition:getOverlayUpperDirPartition,
-  getEncipherConfigFolder: getEncipherConfigFolder
+  getEncipherConfigFolder: getEncipherConfigFolder,
+  isBootingComplete:isBootingComplete,
+  setBootingComplete:setBootingComplete,
+  resetBootingComplete:resetBootingComplete
 }

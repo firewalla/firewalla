@@ -116,7 +116,7 @@ class FWInvitation {
 
         // for backward compatibility, if license length is not greater than 8,
         // it is old license mode, ignore license registration process
-        if(userInfo && userInfo.license && userInfo.license.length > 8) {
+        if(userInfo && userInfo.license && userInfo.license.length != 8) {
           // validate license first
           await (bone.waitUntilCloudReadyAsync());
           let infs = await (networkTool.getLocalNetworkInterface())
