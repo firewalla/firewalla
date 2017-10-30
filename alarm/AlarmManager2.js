@@ -333,7 +333,9 @@ module.exports = class {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               if (alarm['p.dest.ip']) {
-                bone.intel('ip', alarm['p.dest.ip'],"autoblock",alarm,(err)=>{});
+                alarm["i.target"] = alarm['p.dest.ip'];
+                alarm["i.type"] = "ip";
+                bone.submitUserIntel("autoblock", alarm);
               }
               return;
             }

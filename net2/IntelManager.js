@@ -49,7 +49,7 @@ module.exports = class {
         } else if (action == "support") {
         }
 
-        bone.intel(ip, action, {});
+      bone.intel(ip, "", action, {});
     }
 
     cachelookup(ip, origin, callback) {
