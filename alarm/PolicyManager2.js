@@ -25,6 +25,9 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
+let async = require('asyncawait/async')
+let await = require('asyncawait/await')
+
 let Promise = require('bluebird');
 
 let instance = null;
@@ -190,8 +193,17 @@ class PolicyManager2 {
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
-
-    this.savePolicy(policy, callback);
+    async(()=>{
+      //FIXME: data inconsistence risk for multi-processes or multi-threads
+      let policies = await(this.getSimilarPolicies(policy))
+      if (policies && policies.length > 0) {
+        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+        policy.pid = policies[0].pid
+        callback(null, policy.pid)
+      } else {
+        this.savePolicy(policy, callback);
+      }
+    })()
   }
 
   policyExists(policyID) {
@@ -223,6 +235,25 @@ class PolicyManager2 {
         resolve(results[0]);
       });
     });
+  }
+
+  getSimilarPolicies(policy) {
+    let pm2 = this
+    return async(() => {
+      return new Promise(function (resolve, reject) {
+        pm2.loadActivePolicys(200, (err, policies)=>{
+          if (err) {
+            reject(err)
+          } else {
+            if (policies) {
+              resolve(policies.filter(p => p.type == policy.type && p.target == policy.target))
+            } else {
+              resolve([])
+            }
+          }    
+        })
+      })
+    })();
   }
 
   disableAndDeletePolicy(policyID) {
