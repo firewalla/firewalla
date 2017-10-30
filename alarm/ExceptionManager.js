@@ -210,6 +210,12 @@ module.exports = class {
           let multi = rclient.multi();
 
           rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
+            if(err) {
+              log.error(`exception ${exceptionID} doesn't exist`)
+              reject(err)
+              return
+            }
+            
             log.info("Exception in CB: ", obj, {});
             let exception = obj;
 
