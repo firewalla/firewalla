@@ -178,7 +178,7 @@ module.exports = class {
         });
       });
 
-      Bone.submitUserIntel('ignore', exception);
+      Bone.submitUserIntel('ignore', exception, 'exception');
 
       callback(err);
     });
@@ -229,7 +229,7 @@ module.exports = class {
 
             });
 
-            Bone.submitUserIntel('unignore', exception);
+            Bone.submitUserIntel('unignore', exception, "exception");
 
             resolve();
           });

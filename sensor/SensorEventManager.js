@@ -18,9 +18,9 @@ let log = require('../net2/logger.js')(__filename);
 
 const EventEmitter = require('events');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-let sclient = redis.createClient();
+const redis = require('redis');
+const rclient = redis.createClient();
+const sclient = redis.createClient();
 
 let instance = null;
 

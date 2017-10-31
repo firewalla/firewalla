@@ -1,0 +1,17 @@
+interface eth0
+{
+   AdvSendAdvert on;
+
+   MinRtrAdvInterval 5;
+   MaxRtrAdvInterval 15;
+
+   prefix __IPV6_PREFIX__
+   {
+        AdvOnLink on;
+        AdvAutonomous on;
+   };
+        RDNSS __IPV6_DNS__ 2001:4860:4860::8888 2001:4860:4860::8844
+        {
+                AdvRDNSSLifetime 30;
+        };
+};
