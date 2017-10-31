@@ -38,7 +38,7 @@ class ExtensionManager {
   }
 
   hasExtension(name) {
-    return this.extensions[name] !== null
+    return this.extensions[name] != null
   }
 
   getHook(extName, hookName) {

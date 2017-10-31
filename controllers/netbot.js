@@ -731,7 +731,7 @@ class netBot extends ControllerBot {
             let target = msg.target
             let policyData = msg.data.value[o]
 
-            if(extMgr.hasExtension(o)) {
+            //            if(extMgr.hasExtension(o)) {
               this.hostManager.loadPolicy((err, data) => {
                 this.hostManager.setPolicy(o,
                                            policyData,
@@ -739,9 +739,9 @@ class netBot extends ControllerBot {
                   cb(err)
                 })
               })
-            } else {
-              cb(null)
-            }
+            // } else {
+            //   cb(null)
+            // }
             break
           }
         }, (err) => {
