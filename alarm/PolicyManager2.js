@@ -73,9 +73,18 @@ class PolicyManager2 {
             log.error("enforce policy failed:" + err)
           }
         } else if (event && event.action == 'unenforce') {
-          this.unenforce(event.policy).then(() => {
-            this.deletePolicy(event.policy.pid);
-          })
+          try {
+            this.unenforce(event.policy).then(() => {
+              try {
+                this.deletePolicy(event.policy.pid);
+              } catch (err) {
+                log.error("failed to delete policy:" + err)
+              }
+            })
+          } catch (err) {
+            log.error("failed to unenforce policy:" + err)
+          }
+          
         } else {
           log.error("unrecoganized policy enforcement action:" + event.action)
         }
@@ -208,7 +217,7 @@ class PolicyManager2 {
         let policies = await(this.getSamePolicies(policy))
         if (policies && policies.length > 0) {
           log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          callback("policy existed")
+          callback(new Error("policy existed"))
         } else {
           this.savePolicy(policy, callback);
         }
