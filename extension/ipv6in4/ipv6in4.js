@@ -115,6 +115,7 @@ class IPV6In4 {
   }
 
   enableTunnel() {
+    log.info("Enabling tunnel...")
     return async(() => {
       let myip = sysManager.myIp()
       let intf = fConfig.monitoringInterface || "eth0"
@@ -143,6 +144,7 @@ class IPV6In4 {
   }
 
   disableTunnel() {
+    log.info("Disabling tunnel...")
     return async(() => {
       let intf = fConfig.monitoringInterface || "eth0"
       
@@ -162,6 +164,7 @@ class IPV6In4 {
   }
 
   setupRADVD() {
+    log.info("setting up radvd service...")
     return async(() => {
       
       if(!this.config.v6Prefix) {
@@ -185,6 +188,7 @@ class IPV6In4 {
   }
 
   start() {
+    log.info("Starting ip6in4...")
     return async(() => {
       await (this.loadConfig())
       await (this.setupRADVD())
@@ -194,6 +198,7 @@ class IPV6In4 {
   }
 
   stop() {
+    log.info("Stopping ip6in4...")
     return async(() => {
       await (exec("sudo systemctl stop radvd"))
       await (this.disableTunnel())
