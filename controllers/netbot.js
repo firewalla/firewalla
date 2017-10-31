@@ -841,35 +841,38 @@ class netBot extends ControllerBot {
       let err = null;
       
       if (v4.mode) {
-
-        let mode = require('../net2/Mode.js')
-        let curMode = await (mode.getSetupMode())        
-        if(v4.mode === curMode) {
+        async(() => {
+          let mode = require('../net2/Mode.js')
+          let curMode = await (mode.getSetupMode())        
+          if(v4.mode === curMode) {
+            this.simpleTxData(msg, {}, err, callback);
+            return
+          }
+          
+          let modeManager = require('../net2/ModeManager.js');
+          switch (v4.mode) {
+          case "spoof":
+          case "autoSpoof":
+            modeManager.setAutoSpoofAndPublish()
+            break;
+          case "manualSpoof":
+            modeManager.setManualSpoofAndPublish()
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish()
+            break;
+          case "none":
+            modeManager.setNoneAndPublish()
+            break;
+          default:
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
+          }
           this.simpleTxData(msg, {}, err, callback);
-          return
-        }
-        
-        let modeManager = require('../net2/ModeManager.js');
-        switch (v4.mode) {
-        case "spoof":
-        case "autoSpoof":
-          modeManager.setAutoSpoofAndPublish()
-          break;
-        case "manualSpoof":
-          modeManager.setManualSpoofAndPublish()
-          break;
-        case "dhcp":
-          modeManager.setDHCPAndPublish()
-          break;
-        case "none":
-          modeManager.setNoneAndPublish()
-          break;
-        default:
-          log.error("unsupported mode: " + v4.mode);
-          err = new Error("unsupport mode: " + v4.mode);
-          break;
-        }
-        this.simpleTxData(msg, {}, err, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
       }
       break;
     default:

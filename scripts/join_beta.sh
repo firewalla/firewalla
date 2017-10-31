@@ -32,4 +32,4 @@ git checkout master
 
 sync
 logger "REBOOT: JOIN BETA"
-/home/pi/firewalla/scripts/fire-reboot-normal
+(sleep 1; /home/pi/firewalla/scripts/fire-reboot-normal) &
