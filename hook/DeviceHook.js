@@ -41,7 +41,8 @@ let HostManager = require('../net2/HostManager.js');
 
 var _async = require('async');
 
-const MAX_IPV6_ADDRESSES = 8
+const MAX_IPV6_ADDRESSES = 10
+const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 
 class DeviceHook extends Hook {
   constructor() {
@@ -374,17 +375,38 @@ class DeviceHook extends Hook {
   updateIPv6EntriesForMAC(ipv6Addr, mac) {
     return async(() => {
       let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
+      let linklocalAddrs = [];
+      let globalAddrs=[];
+      
+      existingIPv6Addresses.forEach((addr) => {
+          if (addr.startsWith("fe80")) {
+              linklocalAddrs.push(addr);
+          } else {
+              globalAddrs.push(addr);
+          }
+      });
+
       ipv6Addr.forEach((addr) => {
-        let index = existingIPv6Addresses.indexOf(addr);
-        if(index > -1) {
-          existingIPv6Addresses.splice(index,1);
+        let addrList = globalAddrs;
+        let max = MAX_IPV6_ADDRESSES;
+        if (addr.startsWith("fe80")) {
+            addrList = linklocalAddrs;
+            max = MAX_LINKLOCAL_IPV6_ADDRESSES;
         }
-        existingIPv6Addresses.push(addr) // found new ip address
-        if(existingIPv6Addresses.length > MAX_IPV6_ADDRESSES) {
-            existingIPv6Addresses.shift()
+        let index = addrList.indexOf(addr);
+        if(index > -1) {
+          addrList.splice(index,1);
+        }
+        addrList.push(addr) // found new ip address
+        if(addrList.length > max) {
+            let removed = addrList.shift()
+            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
         }
       })
-      return existingIPv6Addresses
+
+      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
+      
+      return linklocalAddrs.concat(globalAddrs);
     })()
   }
 

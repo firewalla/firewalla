@@ -159,7 +159,7 @@ class IntelTool {
     //    log.info(require('util').inspect(data, {depth: null}));
 
     return new Promise((resolve, reject) => {
-      bone.intel("*","check", data, (err, data) => {
+      bone.intel("*","", "check", data, (err, data) => {
         if(err)
           reject(err)
         else {

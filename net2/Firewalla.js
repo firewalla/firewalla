@@ -26,6 +26,7 @@ let _isProduction = null;
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
+let _branch = null
 
 let version = null;
 
@@ -53,6 +54,13 @@ function getPlatform() {
   }
 
   return _platform;
+}
+
+function getBranch() {
+  if(_branch == null) {
+    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
+  }
+  return _branch
 }
 
 function getUserID() {
@@ -208,6 +216,7 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,

@@ -1330,6 +1330,13 @@ module.exports = class {
       json.docker = true;
     }
 
+    let branch = f.getBranch()
+    if(branch === "master") {
+      json.isBeta = true
+    } else {
+      json.isBeta = false
+    }
+
     json.cpuid = utils.getCpuId()
     json.updateTime = Date.now();
     if (sysManager.sshPassword) {

@@ -46,6 +46,7 @@ let rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+let exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -339,11 +340,9 @@ class netBot extends ControllerBot {
   /*
    *
    *   {
-   *      state: on/off
-   *      intel: <major/minor>
-   *      porn: <major/minor>
-   *      gaming: <major/minor>
-   *      flow: <major/minor>
+   *      state: BOOL;  overall notification
+   *      ALARM_XXX: standard alarm definition
+   *      ALARM_BEHAVIOR: may be mapped to other alarms
    *   }
    */
   _notify(ip, value, callback) {
@@ -356,6 +355,7 @@ class netBot extends ControllerBot {
           if (callback != null)
             callback(err, "Unable to setNotify " + ip);
         }
+        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify),{});
         nm.loadConfig();
       });
     });
@@ -398,7 +398,8 @@ class netBot extends ControllerBot {
     }, 30 * 1000)
 
     this.hostManager = new HostManager("cli", 'client', 'debug');
-
+    this.hostManager.loadPolicy((err, data) => {});  //load policy
+ 
     // no subscription for api mode
     if (apiMode) {
       log.info("Skipping event subscription during API mode.");
@@ -470,7 +471,25 @@ class netBot extends ControllerBot {
         let notifMsg = msg.notif;
         let aid = msg.aid;
         if (notifMsg) {
-          log.info("Sending notification: " + notifMsg);
+          log.info("Sending notification: " + JSON.stringify(msg));
+          if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+               if (this.hostManager.policy['notify']['state']==false) {
+                   log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", msg);
+                   return;
+               }
+               if (msg.alarmType) {
+                   let alarmType = msg.alarmType;
+                   if (msg.alarmType  === "ALARM_LARGE_UPDATE") {
+                       alarmType = "ALARM_BEHAVIOR";
+                   }
+                   if (this.hostManager.policy["notify"][alarmType] === false) {
+                       log.info("ALARM_NOTIFY_BLOCKED", msg);
+                       return;
+                   }
+               }
+          }
+
+          log.info("ALARM_NOTIFY_PASSED");
 
           notifMsg = {
             title: i18n.__("SECURITY_ALERT"),
@@ -822,35 +841,38 @@ class netBot extends ControllerBot {
       let err = null;
       
       if (v4.mode) {
-
-        let mode = require('../net2/Mode.js')
-        let curMode = await (mode.getSetupMode())        
-        if(v4.mode === curMode) {
+        async(() => {
+          let mode = require('../net2/Mode.js')
+          let curMode = await (mode.getSetupMode())        
+          if(v4.mode === curMode) {
+            this.simpleTxData(msg, {}, err, callback);
+            return
+          }
+          
+          let modeManager = require('../net2/ModeManager.js');
+          switch (v4.mode) {
+          case "spoof":
+          case "autoSpoof":
+            modeManager.setAutoSpoofAndPublish()
+            break;
+          case "manualSpoof":
+            modeManager.setManualSpoofAndPublish()
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish()
+            break;
+          case "none":
+            modeManager.setNoneAndPublish()
+            break;
+          default:
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
+          }
           this.simpleTxData(msg, {}, err, callback);
-          return
-        }
-        
-        let modeManager = require('../net2/ModeManager.js');
-        switch (v4.mode) {
-        case "spoof":
-        case "autoSpoof":
-          modeManager.setAutoSpoofAndPublish()
-          break;
-        case "manualSpoof":
-          modeManager.setManualSpoofAndPublish()
-          break;
-        case "dhcp":
-          modeManager.setDHCPAndPublish()
-          break;
-        case "none":
-          modeManager.setNoneAndPublish()
-          break;
-        default:
-          log.error("unsupported mode: " + v4.mode);
-          err = new Error("unsupport mode: " + v4.mode);
-          break;
-        }
-        this.simpleTxData(msg, {}, err, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
       }
       break;
     default:
@@ -1605,6 +1627,22 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })      
       break
+    case "joinBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
+    case "leaveBeta":
+      async(() => {
+        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh`))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
+      break;
     default:
       // unsupported action
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);

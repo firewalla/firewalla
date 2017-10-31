@@ -209,6 +209,7 @@ function run() {
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
+      pm2.registerPolicyEnforcementListener()
 
       setTimeout(() => {
         pm2.enforceAllPolicies()
