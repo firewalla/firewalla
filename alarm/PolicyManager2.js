@@ -66,7 +66,11 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
 
         if (event.action && event.action == 'enforce') {
-          this.enforce(event.policy)
+          try {
+            this.enforce(event.policy)
+          } catch (err) {
+            log.error("enforce policy failed:" + err)
+          }
         } else if (event && event.action == 'unenforce') {
           this.unenforce(event.policy).then(() => {
             this.deletePolicy(event.policy.pid);
@@ -195,13 +199,17 @@ class PolicyManager2 {
     callback = callback || function() {}
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
-      let policies = await(this.getSimilarPolicies(policy))
-      if (policies && policies.length > 0) {
-        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-        policy.pid = policies[0].pid
-        callback(null, policy.pid)
-      } else {
-        this.savePolicy(policy, callback);
+      try {
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback("policy existed")
+        } else {
+          this.savePolicy(policy, callback);
+        }
+      } catch (err) {
+        log.error("failed to save policy:" + err)
+        callback(err)
       }
     })()
   }
@@ -237,16 +245,17 @@ class PolicyManager2 {
     });
   }
 
-  getSimilarPolicies(policy) {
+  getSamePolicies(policy) {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
         pm2.loadActivePolicys(200, (err, policies)=>{
           if (err) {
+            log.error("failed to load active policies:" + err)
             reject(err)
           } else {
             if (policies) {
-              resolve(policies.filter(p => p.type == policy.type && p.target == policy.target))
+              resolve(policies.filter(p => p.type === policy.type && p.target === policy.target))
             } else {
               resolve([])
             }
