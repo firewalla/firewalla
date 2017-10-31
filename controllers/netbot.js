@@ -733,13 +733,16 @@ class netBot extends ControllerBot {
 
             if(extMgr.hasExtension(o)) {
               this.hostManager.loadPolicy((err, data) => {
-                this.hostManager.setPolicy(target,
+                this.hostManager.setPolicy(o,
                                            policyData,
                                            (err, data) => {
                   cb(err)
                 })
               })
+            } else {
+              cb(null)
             }
+            break
           }
         }, (err) => {
           let reply = {
