@@ -335,7 +335,7 @@ module.exports = class {
               if (alarm['p.dest.ip']) {
                 alarm["i.target"] = alarm['p.dest.ip'];
                 alarm["i.type"] = "ip";
-                bone.submitUserIntel("autoblock", alarm);
+                bone.submitUserIntel("autoblock", alarm, "alarm");
               }
               return;
             }
@@ -554,7 +554,8 @@ module.exports = class {
         }
 
         let p = new Policy({
-          type: alarm.type,
+          type: i_type, //alarm.type,
+          alarm_type: alarm.type,
           target: i_target,
           aid: alarmID,
           reason: alarm.type,
@@ -667,6 +668,7 @@ module.exports = class {
         // TODO: may need to define exception at more fine grain level
         let e = new Exception({
           type: alarm.type,
+          alarm_type: alarm.type,
           reason: alarm.type,
           aid: alarmID,
           "i.type": i_type,
