@@ -32,6 +32,8 @@ var async = require('async');
 var VpnManager = require('../vpn/VpnManager.js');
 var vpnManager = new VpnManager('info');
 
+const extensionManager = require('../sensor/ExtensionManager.js')
+
 let UPNP = require('../extension/upnp/upnp');
 let upnp = new UPNP();
 
@@ -501,6 +503,14 @@ module.exports = class {
                 log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
                 continue;
             }
+
+          // If any extension support this 'applyPolicy' hook, call it
+          if(extensionManager.hasExtension(p)) {
+            let hook = extensionManager.getHook(p, "applyPolicy")
+            if(hook)
+              hook(policy[p])
+          }
+          
             if (p == "acl") {
                 continue;
             } else if (p == "blockout") {
