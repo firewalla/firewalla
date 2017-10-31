@@ -28,7 +28,7 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | grep -v 169.254
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v 192.168.218.
             ;;
         gw)
             /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
@@ -94,6 +94,8 @@ ethernet_ip() {
     eth_ip=$(ifconfig eth0 | awk '/inet addr/ {print $2}'| cut -f2 -d:)
     if [[ -n "$eth_ip" ]]; then
         if [[ ${eth_ip:0:8} == '169.254.' ]]; then
+            return 1
+        elif [[ ${eth_ip:0:12} == '192.168.218.' ]]; then
             return 1
         else
             return 0
