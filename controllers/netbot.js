@@ -92,6 +92,8 @@ let appTool = require('../net2/AppTool')();
 
 let spooferManager = require('../net2/SpooferManager.js')
 
+const extMgr = require('../sensor/ExtensionManager')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -725,8 +727,22 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
-            default:
-              cb();
+          default:
+            let target = msg.target
+            let policyData = msg.data.value[o]
+
+            //            if(extMgr.hasExtension(o)) {
+              this.hostManager.loadPolicy((err, data) => {
+                this.hostManager.setPolicy(o,
+                                           policyData,
+                                           (err, data) => {
+                  cb(err)
+                })
+              })
+            // } else {
+            //   cb(null)
+            // }
+            break
           }
         }, (err) => {
           let reply = {

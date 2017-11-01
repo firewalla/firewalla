@@ -14,38 +14,37 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename)
 
-let FWEvent = class {
-  constructor(eid, type) {
-    this.eid = eid;
-    this.type = type;
-    this.timestamp = new Date()/1000;
-    this.message = "";
-  }
-}
+let instance = null
 
-let Sensor = class {
+class ExtensionManager {
   constructor() {
-    this.config = {};
+    if(!instance) {
+      this.extensions = {}
+      this.hooks = {}
+      instance = this
+    }
+    return instance
   }
 
-  getName() {
-    return this.constructor.name
-  }
-  
-  setConfig(config) {
-    require('util')._extend(this.config, config);
+  registerExtension(name, obj, hooks) {
+    this.extensions[name] = obj
+    this.hooks[name] = hooks
   }
 
-  run() {
-    // do nothing in base class
-    log.info(require('util').format("%s is launched", typeof this.constructor));
+  getExtension(name) {
+    return this.extensions[name]
+  }
+
+  hasExtension(name) {
+    return this.extensions[name] != null
+  }
+
+  getHook(extName, hookName) {
+    return this.hooks[extName][hookName].bind(this.extensions[extName])
   }
   
 }
 
-module.exports = {
-  FWEvent: FWEvent,
-  Sensor: Sensor
-}
+module.exports = new ExtensionManager()
