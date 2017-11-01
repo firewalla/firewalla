@@ -65,29 +65,29 @@ class PolicyManager2 {
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
-
-        if (event.action && event.action == 'enforce') {
-          try {
-            this.enforce(event.policy)
-          } catch (err) {
-            log.error("enforce policy failed:" + err)
-          }
-        } else if (event && event.action == 'unenforce') {
-          try {
-            this.unenforce(event.policy).then(() => {
+        async(()=>{
+          if (event.action && event.action == 'enforce') {
               try {
-                this.deletePolicy(event.policy.pid);
+                await(this.enforce(event.policy))
+              } catch (err) {
+                log.error("enforce policy failed:" + err)
+              }
+          } else if (event && event.action == 'unenforce') {
+              try {
+                await(this.unenforce(event.policy))
+              } catch (err) {
+                log.error("failed to unenforce policy:" + err)
+              }
+              
+              try {
+                await(this.deletePolicy(event.policy.pid))
               } catch (err) {
                 log.error("failed to delete policy:" + err)
               }
-            })
-          } catch (err) {
-            log.error("failed to unenforce policy:" + err)
+          } else {
+            log.error("unrecoganized policy enforcement action:" + event.action)
           }
-          
-        } else {
-          log.error("unrecoganized policy enforcement action:" + event.action)
-        }
+        })()
       }
     })
   }
@@ -269,7 +269,13 @@ class PolicyManager2 {
             reject(err)
           } else {
             if (policies) {
-              resolve(policies.filter(p => p.type === policy.type && p.target === policy.target))
+              let type = policy["i.type"] || policy["type"]
+              let target = policy["i.target"] || policy["target"]
+              resolve(policies.filter(p => {
+                let ptype = p["i.type"] || p["type"]
+                let ptarget = p["i.target"] || p["target"]
+                return type === ptype && target === ptarget
+              }))
             } else {
               resolve([])
             }
