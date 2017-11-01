@@ -486,18 +486,18 @@ module.exports = class DNSMASQ {
         log.info("DNSMASQ STDERR:", data.toString(), {})
       })
 
-      p.on('exit', (code, signal) => {
-        if(code === 0) {
-          log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
-        } else {
-          log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
-        }
+      // p.on('exit', (code, signal) => {
+      //   if(code === 0) {
+      //     log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
+      //   } else {
+      //     log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
+      //   }
 
-        if(this.shouldStart) {
-          log.info("Restarting dnsmasq...")
-          this.rawStart() // auto restart if failed unexpectedly
-        }
-      })
+      //   if(this.shouldStart) {
+      //     log.info("Restarting dnsmasq...")
+      //     this.rawStart() // auto restart if failed unexpectedly
+      //   }
+      // })
 
       setTimeout(() => {
         callback(null)
