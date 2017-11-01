@@ -82,6 +82,18 @@ class IPV6In4 {
     })()
   }
 
+  // Example:
+  //   {
+  //   "v4Server": "216.228.221.6",
+  //   "v6Client": "2001:477:18:731::2/64",
+  //   "v6Local": "2001:477:19:731::1337/64",
+  //   "v6Prefix": "2001:477:19:731::/64",
+  //   "v6DNS": "2001:477:20:731::2",
+  //   "username": "test1",
+  //   "password": "pass1",
+  //   "tunnelID": "12345"
+  //   }
+
   setConfig(config) {
     this.config = config
     return this.saveConfig(this.config)
