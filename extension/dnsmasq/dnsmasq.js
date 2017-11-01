@@ -469,6 +469,13 @@ module.exports = class DNSMASQ {
     require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     if(f.isDocker()) {
+
+      try {
+        require('child_process').execSync("sudo pkill dnsmasq")
+      } catch(err) {
+        // do nothing
+      }
+      
       const p = spawn('/bin/bash', ['-c', cmd])
 
       p.stdout.on('data', (data) => {
