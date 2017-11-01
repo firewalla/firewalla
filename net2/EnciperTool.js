@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,38 +14,31 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-let FWEvent = class {
-  constructor(eid, type) {
-    this.eid = eid;
-    this.type = type;
-    this.timestamp = new Date()/1000;
-    this.message = "";
-  }
-}
+const redis = require('redis');
+const rclient = redis.createClient();
 
-let Sensor = class {
+const Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+let instance = null;
+
+class EncipherTool {
   constructor() {
-    this.config = {};
+    if(!instance) {
+      instance = this;
+    }
+    return instance;
   }
 
-  getName() {
-    return this.constructor.name
+  getGID() {
+    return rclient.hgetAsync("sys:ept", "gid")
   }
-  
-  setConfig(config) {
-    require('util')._extend(this.config, config);
-  }
-
-  run() {
-    // do nothing in base class
-    log.info(require('util').format("%s is launched", typeof this.constructor));
-  }
-  
 }
 
-module.exports = {
-  FWEvent: FWEvent,
-  Sensor: Sensor
-}
+module.exports = EncipherTool

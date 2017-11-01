@@ -24,6 +24,7 @@ let flat = require('flat');
 
 let audit = require('../util/audit.js');
 let util = require('util');
+let Bone = require('../lib/Bone.js');
 
 let Promise = require('bluebird');
 
@@ -159,6 +160,8 @@ class PolicyManager2 {
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
+    log.info("In save policy:", policy);
+
     this.getNextID((err, id) => {
       if(err) {
         log.error("Failed to get next ID: " + err);
@@ -184,6 +187,8 @@ class PolicyManager2 {
           this.tryPolicyEnforcement(policy)
           callback(null, policy.pid)
         });
+
+        Bone.submitUserIntel('block', policy, 'policy');
       });
     });
   }
@@ -234,6 +239,8 @@ class PolicyManager2 {
     
     return p.then((policy) => {
       this.tryPolicyEnforcement(policy, "unenforce")
+
+      Bone.submitUserIntel('unblock', policy, 'policy');
       return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
@@ -377,7 +384,11 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
-    switch(policy.type) {
+    log.info("Enforce policy: ", policy, {});
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+
+    switch(type) {
     case "ip":
       return Block.block(policy.target);
       break;
@@ -405,7 +416,10 @@ class PolicyManager2 {
   }
 
   unenforce(policy) {
-    switch(policy.type) {
+    log.info("Unenforce policy: ", policy, {});
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    switch(type) {
     case "ip":
       return Block.unblock(policy.target);
       break;

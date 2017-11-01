@@ -333,7 +333,9 @@ module.exports = class {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               if (alarm['p.dest.ip']) {
-                bone.intel(alarm['p.dest.ip'],"autoblock",alarm,(err)=>{});
+                alarm["i.target"] = alarm['p.dest.ip'];
+                alarm["i.type"] = "ip";
+                bone.submitUserIntel("autoblock", alarm, "alarm");
               }
               return;
             }
@@ -495,20 +497,23 @@ module.exports = class {
 
   //   let items = fullName.split(".")
 
-    
-    
+
+
   // }
-  
+
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
+    log.info("info: ", info, {});
 
-    let alarmInfo = info.info;
+    let userFeedback = info.info;
 
-    let target = null;
-    let type = null;
+    let i_target = null;
+    let i_type = null;
 
     this.getAlarm(alarmID)
       .then((alarm) => {
+
+        log.info("Alarm to block:", alarm, {});
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
@@ -516,48 +521,71 @@ module.exports = class {
           return;
         }
 
-        switch(alarm.type) {
-        case "ALARM_NEW_DEVICE":
-          type = "mac";
-          target = alarm["p.device.mac"];
-          break;
-        default:
-          type = "ip";
-          target = alarm["p.dest.ip"];
+        //BLOCK
+        switch (alarm.type) {
+          case "ALARM_NEW_DEVICE":
+            i_type = "mac";
+            i_target = alarm["p.device.mac"];
+            break;
+          default:
+            i_type = "ip";
+            i_target = alarm["p.dest.ip"];
 
-          if(alarmInfo && alarmInfo.type === "dns") {
-            type = "dns"
-            target = alarmInfo.target
-          }
-          break;
+            if(userFeedback) {
+              switch(userFeedback.type) {
+                case "dns":
+                  i_type = "dns"
+                  i_target = userFeedback.target
+                  break
+                case "ip":
+                  i_type = "ip"
+                  i_target = userFeedback.target
+                  break
+                default:
+                  break
+              }
+            }
+            break;
         }
 
-        if(!type || !target) {
-          callback(new Error("invalid block"));
+        if(!i_type || !i_target) {
+          callback(new Error("invalid block: type:" + i_type + ", target: " + i_target));
           return;
         }
 
-        let p = new Policy(type, target);
-        p.aid = alarmID;
-        p.reason = alarm.type;
+        let p = new Policy({
+          type: i_type, //alarm.type,
+          alarm_type: alarm.type,
+          target: i_target,
+          aid: alarmID,
+          reason: alarm.type,
+          "i.type": i_type,
+          "i.target": i_target,
+        });
 
         // add additional info
-        switch(p.type) {
+        switch(i_type) {
         case "mac":
           p.target_name = alarm["p.device.name"];
           p.target_ip = alarm["p.device.ip"];
           break;
         case "ip":
-        case "dns":
           p.target_name = alarm["p.dest.name"];
           p.target_ip = alarm["p.dest.ip"];
+          break;
+        case "dns":
+          p.target_name = alarm["p.dest.name"];
+          p.target_ip = alarm["p.dest.id"];
           break;
         default:
           break;
         }
 
-        if(info.method)
+        if(info.method) {
           p.method = info.method;
+        }
+
+        log.info("Policy object:", p, {});
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -587,14 +615,17 @@ module.exports = class {
 
   allowFromAlarm(alarmID, info, callback) {
     log.info("Going to allow alarm " + alarmID);
+    log.info("info: ", info, {});
 
-    let alarmInfo = info.info;
+    let userFeedback = info.info;
 
-    let target = null;
-    let type = null;
+    let i_target = null;
+    let i_type = null;
 
     this.getAlarm(alarmID)
       .then((alarm) => {
+
+        log.info("Alarm to allow: ", alarm, {});
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
@@ -602,24 +633,25 @@ module.exports = class {
           return;
         }
 
+        //IGNORE
         switch(alarm.type) {
         case "ALARM_NEW_DEVICE":
-          type = "mac"; // place holder, not going to be matched by any alarm/policy
-          target = alarm["p.device.ip"];
+          i_type = "mac"; // place holder, not going to be matched by any alarm/policy
+          i_target = alarm["p.device.ip"];
           break;
         default:
-          type = "domain";
-          target = alarm["p.dest.id"];
+          i_type = "ip";
+          i_target = alarm["p.dest.ip"];
 
-          if(alarmInfo) {
-            switch(alarmInfo.type) {
+          if(userFeedback) {
+            switch(userFeedback.type) {
             case "dns":
-              type = "dns"
-              target = alarmInfo.target
+              i_type = "dns"
+              i_target = userFeedback.target
               break
             case "ip":
-              type = "ip"
-              target = alarmInfo.target
+              i_type = "ip"
+              i_target = userFeedback.target
               break
             default:
               break
@@ -628,20 +660,22 @@ module.exports = class {
           break;
         }
 
-        if(!type || !target) {
+        if(!i_type || !i_target) {
           callback(new Error("invalid block"));
           return;
         }
 
         // TODO: may need to define exception at more fine grain level
         let e = new Exception({
-          "type": alarm.type,
+          type: alarm.type,
+          alarm_type: alarm.type,
           reason: alarm.type,
           aid: alarmID,
-          "i.type": type
+          "i.type": i_type,
+          "i.target": i_target,
         });
 
-        switch(type) {
+        switch(i_type) {
         case "mac":
           e["p.device.mac"] = alarm["p.device.mac"];
           e["target_name"] = alarm["p.device.name"];
@@ -654,14 +688,16 @@ module.exports = class {
           break;
         case "domain":
         case "dns":
-          e["p.dest.id"] = alarm["p.dest.id"];
-          e["target_name"] = alarm["p.dest.name"];
+          e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
+          e["target_name"] = `*.${i_target}`
           e["target_ip"] = alarm["p.dest.ip"];
           break;
         default:
           // not supported
           break;
         }
+
+        log.info("Exception object:", e, {});
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -701,7 +737,6 @@ module.exports = class {
           callback(new Error("Invalid alarm ID: " + alarmID));
           return;
         }
-
 
         let pid = alarm.result_policy;
 

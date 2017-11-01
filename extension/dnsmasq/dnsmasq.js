@@ -469,6 +469,13 @@ module.exports = class DNSMASQ {
     require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     if(f.isDocker()) {
+
+      try {
+        require('child_process').execSync("sudo pkill dnsmasq")
+      } catch(err) {
+        // do nothing
+      }
+      
       const p = spawn('/bin/bash', ['-c', cmd])
 
       p.stdout.on('data', (data) => {
@@ -479,18 +486,18 @@ module.exports = class DNSMASQ {
         log.info("DNSMASQ STDERR:", data.toString(), {})
       })
 
-      p.on('exit', (code, signal) => {
-        if(code === 0) {
-          log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
-        } else {
-          log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
-        }
+      // p.on('exit', (code, signal) => {
+      //   if(code === 0) {
+      //     log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
+      //   } else {
+      //     log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
+      //   }
 
-        if(this.shouldStart) {
-          log.info("Restarting dnsmasq...")
-          this.rawStart() // auto restart if failed unexpectedly
-        }
-      })
+      //   if(this.shouldStart) {
+      //     log.info("Restarting dnsmasq...")
+      //     this.rawStart() // auto restart if failed unexpectedly
+      //   }
+      // })
 
       setTimeout(() => {
         callback(null)

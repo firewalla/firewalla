@@ -45,6 +45,7 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
+    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -179,5 +180,9 @@
       "userAgent": {
          "expires": 604800
       }
+    },
+    "features": {
+      "user:intel:submit": true
     }
+
 }

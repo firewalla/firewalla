@@ -92,6 +92,8 @@ let appTool = require('../net2/AppTool')();
 
 let spooferManager = require('../net2/SpooferManager.js')
 
+const extMgr = require('../sensor/ExtensionManager')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -725,8 +727,22 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
-            default:
-              cb();
+          default:
+            let target = msg.target
+            let policyData = msg.data.value[o]
+
+            //            if(extMgr.hasExtension(o)) {
+              this.hostManager.loadPolicy((err, data) => {
+                this.hostManager.setPolicy(o,
+                                           policyData,
+                                           (err, data) => {
+                  cb(err)
+                })
+              })
+            // } else {
+            //   cb(null)
+            // }
+            break
           }
         }, (err) => {
           let reply = {
@@ -841,35 +857,38 @@ class netBot extends ControllerBot {
       let err = null;
       
       if (v4.mode) {
-
-        let mode = require('../net2/Mode.js')
-        let curMode = await (mode.getSetupMode())        
-        if(v4.mode === curMode) {
+        async(() => {
+          let mode = require('../net2/Mode.js')
+          let curMode = await (mode.getSetupMode())        
+          if(v4.mode === curMode) {
+            this.simpleTxData(msg, {}, err, callback);
+            return
+          }
+          
+          let modeManager = require('../net2/ModeManager.js');
+          switch (v4.mode) {
+          case "spoof":
+          case "autoSpoof":
+            modeManager.setAutoSpoofAndPublish()
+            break;
+          case "manualSpoof":
+            modeManager.setManualSpoofAndPublish()
+            break;
+          case "dhcp":
+            modeManager.setDHCPAndPublish()
+            break;
+          case "none":
+            modeManager.setNoneAndPublish()
+            break;
+          default:
+            log.error("unsupported mode: " + v4.mode);
+            err = new Error("unsupport mode: " + v4.mode);
+            break;
+          }
           this.simpleTxData(msg, {}, err, callback);
-          return
-        }
-        
-        let modeManager = require('../net2/ModeManager.js');
-        switch (v4.mode) {
-        case "spoof":
-        case "autoSpoof":
-          modeManager.setAutoSpoofAndPublish()
-          break;
-        case "manualSpoof":
-          modeManager.setManualSpoofAndPublish()
-          break;
-        case "dhcp":
-          modeManager.setDHCPAndPublish()
-          break;
-        case "none":
-          modeManager.setNoneAndPublish()
-          break;
-        default:
-          log.error("unsupported mode: " + v4.mode);
-          err = new Error("unsupport mode: " + v4.mode);
-          break;
-        }
-        this.simpleTxData(msg, {}, err, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
       }
       break;
     default:

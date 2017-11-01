@@ -27,6 +27,6 @@ if [[ ! -z $prod_branch ]]; then
   
   sync
   logger "REBOOT: Leave Beta"
-  /home/pi/firewalla/scripts/fire-reboot-normal  
+  (sleep 1; /home/pi/firewalla/scripts/fire-reboot-normal) &
 fi
 

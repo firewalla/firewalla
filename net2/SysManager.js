@@ -452,15 +452,16 @@ module.exports = class {
         serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
       }
 
-      let repoBranch = null;
-      let repoHead = null;
-      let repoTag = null; 
-      try {
-          repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
-          repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
-          repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
-      } catch(e) {
-          log.error("GetSysInfo:GIT unable to read git repo data",e);
+      let repoBranch = ""
+      let repoHead = ""
+      let repoTag = ""
+      
+      try {        
+        repoBranch = require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
+        repoHead = require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
+        repoTag = require('fs').readFileSync("/tmp/REPO_TAG","utf8");
+      } catch (err) {
+        log.error("Failed to load repo info from /tmp");
       }
 
         if (serial != null) {

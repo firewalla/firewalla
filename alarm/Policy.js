@@ -20,10 +20,8 @@ let log = require('../net2/logger.js')(__filename, 'info');
 let extend = require('util')._extend
 
 module.exports = class {
-  constructor(type, target, info) {
+  constructor(info) {
     this.timestamp = new Date() / 1000;
-    this.type = type;
-    this.target = target;
     if(info)
       extend(this, info);
   }

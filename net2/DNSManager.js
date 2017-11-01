@@ -295,7 +295,7 @@ module.exports = class DNSManager {
 
         log.info("######## Sending:",JSON.stringify(flowlist));
 
-        bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
+        bone.intel("*", "", "check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
                log.debug("##### MISS",err,data);
                if (data && data.length == 0) {
