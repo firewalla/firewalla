@@ -53,6 +53,7 @@ class FWInvitation {
     this.symmetrickey = symmetrickey
     this.totalTimeout = defaultTotalTimeout;
     this.checkInterval = defaultCheckInterval;
+    this.recordFirstBinding = true
 
     // in noLicenseMode, a default password will be used, a flag 'firstTime' needs to be used to tell app side to use default password
     if(symmetrickey.noLicenseMode) {
@@ -145,8 +146,7 @@ class FWInvitation {
         let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
 
         // Record first binding time
-        let exists = await (rclient.keysAsync("firstBinding"))
-        if(exists.constructor.name === 'Array' && exists.length === 0) {
+        if(this.recordFirstBinding) {
           await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
         }
         
