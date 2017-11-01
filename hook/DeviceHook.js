@@ -400,11 +400,11 @@ class DeviceHook extends Hook {
         addrList.push(addr) // found new ip address
         if(addrList.length > max) {
             let removed = addrList.shift()
-            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
+//            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
         }
       })
 
-      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
+//      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
       
       return linklocalAddrs.concat(globalAddrs);
     })()

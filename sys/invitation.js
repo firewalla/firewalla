@@ -34,6 +34,10 @@ let networkTool = require('../net2/NetworkTool')();
 
 let license = require('../util/license.js');
 
+const redis = require('redis')
+const rclient = redis.createClient()
+Promise.promisifyAll(redis.RedisClient.prototype);
+
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
@@ -140,7 +144,13 @@ class FWInvitation {
 
         let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
 
-        log.info(`Linked App ${eid} to this device successfully`);
+        // Record first binding time
+        let exists = await (rclient.keysAsync("firstBinding"))
+        if(exists.constructor.name === 'Array' && exists.length === 0) {
+          await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
+        }
+        
+        log.info(`Linked App ${eid} to this device successfully`);        
 
         return {
           status: "success",
