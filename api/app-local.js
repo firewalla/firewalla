@@ -60,6 +60,9 @@ function enableSubPath(path, lib) {
   subpath_v1.use("/" + path, r);
 }
 
+// encipher api is enabled even for production enviornment
+enableSubPath('encipher');
+
 if(!firewalla.isProduction()) {
   // apis for development purpose only, do NOT enable them in production
   subpath_v1.use('/message', message);
@@ -75,7 +78,6 @@ if(!firewalla.isProduction()) {
   enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
-  enableSubPath('encipher');
   enableSubPath('intel');
   enableSubPath('sensor');
 
