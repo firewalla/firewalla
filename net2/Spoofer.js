@@ -102,13 +102,31 @@ module.exports = class {
       if (datas) {
         for (let i in datas) {
           if (v6db[datas[i]] == null) {
-            log.info("Spoof:Remove:By:Check", datas[i]);
-            rclient.srem(monitoredKey6, datas[i]);
+            log.info("Spoof6:Remove:By:Check", datas[i]);
+            this.newUnspoof6(datas[i]);
           }         
         }
       }
     });
   }
+
+  validateV4Spoofs(ipv4Addrs) {
+    let v4db = {};
+    for (let i in ipv4Addrs) {
+      v4db[ipv4Addrs[i]] = true;
+    }
+    rclient.smembers(monitoredKey,(err,datas)=>{
+      if (datas) {
+        for (let i in datas) {
+          if (v4db[datas[i]] == null) {
+            log.info("Spoof4:Remove:By:Check", datas[i]);
+            this.newUnspoof(datas[i]);
+          }         
+        }
+      }
+    });
+  }
+
 
   spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
 
