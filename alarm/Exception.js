@@ -33,9 +33,11 @@ module.exports = class {
 
       if(val.startsWith("*.")) {
         // use glob matching
-        if(!minimatch(val2, val)) {
+        if(!minimatch(val2, val) &&
+           val.slice(2) === val2) {
           return false
         }
+
       } else {
         if(val2 !== val) return false;        
       }
