@@ -48,6 +48,24 @@ module.exports = class {
     });
   }
 
+
+  idsToExceptions(ids, callback) {
+    let multi = rclient.multi();
+
+    ids.forEach((eid) => {
+      multi.hgetall(exceptionPrefix + eid)
+    });
+
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active exceptions (hgetall): " + err);
+        callback(err);
+        return;
+      }
+      callback(null, results.map((r) => this.jsonToException(r)));
+    });
+  }
+
   loadExceptions(callback) {
     callback = callback || function() {}
 
