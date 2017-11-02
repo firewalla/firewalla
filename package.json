@@ -76,6 +76,9 @@
     "useragent": "^2.1.9",
     "uuid": "^2.0.1",
     "vorpal": "^1.7.7",
-    "winston": "^1.0.1"
+    "winston": "^1.0.1",
+    "request-promise": "4.2.2",
+    "minimatch": "3.0.4",
+    "geoip-lite": "1.2.1"
   }
 }

@@ -2,7 +2,7 @@
 echo $@
 COUNTER=0
 while [  $COUNTER -lt 1000 ]; do
-    echo The counter is $COUNTER
+    #echo The counter is $COUNTER
     sleep 10
 done
 

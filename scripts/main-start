@@ -47,7 +47,6 @@ CPU_PLATFORM=$(uname -m)
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-record_latest_production_branch
 
 commit_before=$(git rev-parse HEAD)
 current_tag=$(git describe --tags)
@@ -67,7 +66,36 @@ function pre_main() {
     fi
 }
 
+
+function install_node8() {
+  # install nvm
+  curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.5/install.sh | bash
+
+  # install node 8.7.0
+  source ~/.nvm/nvm.sh; source ~/.profile; source ~/.bashrc; nvm install 8.7.0
+
+  # not start nvm in shell automatically
+  sed -i 's/\(.*NVM_DIR.*\)/#\1/' ~/.bashrc
+}
+
 function use_right_node_modules() {
+  if [[ $CPU_PLATFORM == "armv7l" && $branch == "master" ]]; then
+
+    if [[ ! -d ~/.nvm ]]; then
+      install_node8
+    fi
+    
+    # make sure node_modules use the right repo
+    cd ~/.node_modules
+    NM_URL=$(git remote get-url origin)
+
+    if [[ $NM_URL != "https://github.com/firewalla/fnm.node8.armv7l.git" ]]; then
+      git remote remove origin
+      git remote add origin https://github.com/firewalla/fnm.node8.armv7l.git
+      git pull origin $branch
+    fi    
+    
+  fi
   return 0
 }
 
@@ -88,6 +116,13 @@ function update_node_modules {
         cd - &>/dev/null
       fi
       REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM
+
+      NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
+
+      if [[ $NODE_VERSION =~ 'v4\..*' ]]; then
+        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
+      fi
+      
       if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
         cd $FW_NODE_MODULES_PATH
 
@@ -109,8 +144,14 @@ function update_node_modules {
   fi
 }
 
+# upgrade node8 if necessary
+# use_right_node_modules
+
 # update ~/.node_modules
 update_node_modules
+
+record_latest_production_branch
+
 logger "FIREWALLA: Main-Run Finish Update Modules "
 
 cd /tmp

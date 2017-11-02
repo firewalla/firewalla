@@ -173,9 +173,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh);
+      flow.country = country.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh);
+      flow.country = country.getCountry(sh)
     }
   }
 
