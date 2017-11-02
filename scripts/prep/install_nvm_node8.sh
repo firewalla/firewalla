@@ -5,7 +5,7 @@ rc=0
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 node8_exists() {
-    node_version=$(${FIREWALLA_HOME}/bin/node -v)
+    node_version=$(${FIREWALLA_HOME}/bin/node -v 2>/dev/null)
     test ${node_version:0:2} == 'v8'
     return $?
 }
@@ -18,7 +18,7 @@ node8_exists && {
 logger "Start install Node8 with NVM"
 
 export NVM_DIR="/home/pi/.nvm"
-export NODE_VERSION="8.7.2"
+export NODE_VERSION="8.7.0"
 
 bash ${FIREWALLA_HOME}/scripts/nvm_install.sh
 
