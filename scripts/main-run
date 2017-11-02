@@ -24,6 +24,9 @@ logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+# prepare Firewalla run time environment
+sudo $FIREWALLA_HOME/scripts/main-prep
+
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
 
