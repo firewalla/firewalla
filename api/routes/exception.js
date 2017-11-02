@@ -98,7 +98,7 @@ router.post('/delete',
                 });
             });
 
-router.get('/match',
+router.post('/match',
            (req, res, next) => {
              let alarmID = req.query.alarmID
              let exceptionID = req.query.exceptionID
