@@ -33,8 +33,8 @@ module.exports = class {
 
       if(val.startsWith("*.")) {
         // use glob matching
-        if(!minimatch(val2, val) &&
-           val.slice(2) === val2) { // exact sub domain match
+        if(!minimatch(val2, val) && // NOT glob match
+           val.slice(2) !== val2) { // NOT exact sub domain match
           return false
         }
 
