@@ -119,7 +119,8 @@ function update_node_modules {
 
       NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
 
-      if [[ $NODE_VERSION =~ 'v4\..*' ]]; then
+      RE_NODE4='^v4\..*$'      
+      if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
         REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
       fi
       
@@ -145,7 +146,7 @@ function update_node_modules {
 }
 
 # upgrade node8 if necessary
-# use_right_node_modules
+use_right_node_modules
 
 # update ~/.node_modules
 update_node_modules
