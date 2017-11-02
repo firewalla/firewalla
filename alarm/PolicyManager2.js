@@ -26,6 +26,9 @@ let audit = require('../util/audit.js');
 let util = require('util');
 let Bone = require('../lib/Bone.js');
 
+let async = require('asyncawait/async')
+let await = require('asyncawait/await')
+
 let Promise = require('bluebird');
 
 let instance = null;
@@ -62,16 +65,29 @@ class PolicyManager2 {
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
-
-        if (event.action && event.action == 'enforce') {
-          this.enforce(event.policy)
-        } else if (event && event.action == 'unenforce') {
-          this.unenforce(event.policy).then(() => {
-            this.deletePolicy(event.policy.pid);
-          })
-        } else {
-          log.error("unrecoganized policy enforcement action:" + event.action)
-        }
+        async(()=>{
+          if (event.action && event.action == 'enforce') {
+              try {
+                await(this.enforce(event.policy))
+              } catch (err) {
+                log.error("enforce policy failed:" + err)
+              }
+          } else if (event && event.action == 'unenforce') {
+              try {
+                await(this.unenforce(event.policy))
+              } catch (err) {
+                log.error("failed to unenforce policy:" + err)
+              }
+              
+              try {
+                await(this.deletePolicy(event.policy.pid))
+              } catch (err) {
+                log.error("failed to delete policy:" + err)
+              }
+          } else {
+            log.error("unrecoganized policy enforcement action:" + event.action)
+          }
+        })()
       }
     })
   }
@@ -188,15 +204,28 @@ class PolicyManager2 {
           callback(null, policy.pid)
         });
 
-        Bone.submitUserIntel('block', policy);
+        Bone.submitUserIntel('block', policy, 'policy');
       });
     });
   }
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
-
-    this.savePolicy(policy, callback);
+    async(()=>{
+      //FIXME: data inconsistence risk for multi-processes or multi-threads
+      try {
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback(new Error("policy existed"))
+        } else {
+          this.savePolicy(policy, callback);
+        }
+      } catch (err) {
+        log.error("failed to save policy:" + err)
+        callback(err)
+      }
+    })()
   }
 
   policyExists(policyID) {
@@ -230,6 +259,32 @@ class PolicyManager2 {
     });
   }
 
+  getSamePolicies(policy) {
+    let pm2 = this
+    return async(() => {
+      return new Promise(function (resolve, reject) {
+        pm2.loadActivePolicys(200, (err, policies)=>{
+          if (err) {
+            log.error("failed to load active policies:" + err)
+            reject(err)
+          } else {
+            if (policies) {
+              let type = policy["i.type"] || policy["type"]
+              let target = policy["i.target"] || policy["target"]
+              resolve(policies.filter(p => {
+                let ptype = p["i.type"] || p["type"]
+                let ptarget = p["i.target"] || p["target"]
+                return type === ptype && target === ptarget
+              }))
+            } else {
+              resolve([])
+            }
+          }    
+        })
+      })
+    })();
+  }
+
   disableAndDeletePolicy(policyID) {
     let p = this.getPolicy(policyID);
 
@@ -240,7 +295,7 @@ class PolicyManager2 {
     return p.then((policy) => {
       this.tryPolicyEnforcement(policy, "unenforce")
 
-      Bone.submitUserIntel('unblock', policy);
+      Bone.submitUserIntel('unblock', policy, 'policy');
       return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
