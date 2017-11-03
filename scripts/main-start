@@ -67,37 +67,37 @@ function pre_main() {
 }
 
 
-function install_node8() {
-  # install nvm
-  curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.5/install.sh | bash
+# function install_node8() {
+#   # install nvm
+#   curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.5/install.sh | bash
 
-  # install node 8.7.0
-  source ~/.nvm/nvm.sh; source ~/.profile; source ~/.bashrc; nvm install 8.7.0
+#   # install node 8.7.0
+#   source ~/.nvm/nvm.sh; source ~/.profile; source ~/.bashrc; nvm install 8.7.0
 
-  # not start nvm in shell automatically
-  sed -i 's/\(.*NVM_DIR.*\)/#\1/' ~/.bashrc
-}
+#   # not start nvm in shell automatically
+#   sed -i 's/\(.*NVM_DIR.*\)/#\1/' ~/.bashrc
+# }
 
-function use_right_node_modules() {
-  if [[ $CPU_PLATFORM == "armv7l" && $branch == "master" ]]; then
+# function use_right_node_modules() {
+#   if [[ $CPU_PLATFORM == "armv7l" && $branch == "master" ]]; then
 
-    if [[ ! -d ~/.nvm ]]; then
-      install_node8
-    fi
+#     # if [[ ! -d ~/.nvm ]]; then
+#     #   install_node8
+#     # fi
     
-    # make sure node_modules use the right repo
-    cd ~/.node_modules
-    NM_URL=$(git remote get-url origin)
+#     # make sure node_modules use the right repo
+#     cd ~/.node_modules
+#     NM_URL=$(git remote get-url origin)
 
-    if [[ $NM_URL != "https://github.com/firewalla/fnm.node8.armv7l.git" ]]; then
-      git remote remove origin
-      git remote add origin https://github.com/firewalla/fnm.node8.armv7l.git
-      git pull origin $branch
-    fi    
+#     if [[ $NM_URL != "https://github.com/firewalla/fnm.node8.armv7l.git" ]]; then
+#       git remote remove origin
+#       git remote add origin https://github.com/firewalla/fnm.node8.armv7l.git
+#       git pull origin $branch
+#     fi    
     
-  fi
-  return 0
-}
+#   fi
+#   return 0
+# }
 
 function record_latest_production_branch() {
   if [[ $branch =~ release.* ]]; then
@@ -146,7 +146,7 @@ function update_node_modules {
 }
 
 # upgrade node8 if necessary
-use_right_node_modules
+# use_right_node_modules
 
 # update ~/.node_modules
 update_node_modules
