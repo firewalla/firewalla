@@ -25,13 +25,10 @@ var useragent = require('useragent');
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager();
-const
 const AlarmManager = require('./AlarmManager.js');
 const alarmManager = new AlarmManager('info');
-const
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
