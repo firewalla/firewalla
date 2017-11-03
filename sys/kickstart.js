@@ -278,6 +278,7 @@ function inviteFirstAdmin(gid, callback) {
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
             fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+            fwInvitation.recordFirstBinding = false // don't record for additional binding
 
             let onSuccess = function(payload) {
               return async(() => {

@@ -295,7 +295,7 @@ class DeviceHook extends Hook {
         await (hostTool.updateIPv6Host(enrichedHost)) //v6
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
         }
 
         await (hostTool.updateMACKey(enrichedHost))
@@ -400,11 +400,11 @@ class DeviceHook extends Hook {
         addrList.push(addr) // found new ip address
         if(addrList.length > max) {
             let removed = addrList.shift()
-            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
+//            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
         }
       })
 
-      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
+//      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
       
       return linklocalAddrs.concat(globalAddrs);
     })()

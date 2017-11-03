@@ -23,18 +23,17 @@ var rclient = redis.createClient();
 var iptool = require("ip");
 var useragent = require('useragent');
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const DNSManager = require('./DNSManager.js');
+const dnsManager = new DNSManager();
+const AlarmManager = require('./AlarmManager.js');
+const alarmManager = new AlarmManager('info');
+const Alarm = require('../alarm/Alarm.js');
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
-var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager();
-
-var AlarmManager = require('./AlarmManager.js');
-var alarmManager = new AlarmManager('info');
-
-let Alarm = require('../alarm/Alarm.js');
-let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM2();
+const mode = require('../net2/Mode.js')
 
 var linux = require('../util/linux.js');
 
@@ -462,6 +461,29 @@ module.exports = class {
 
     */
 
+  isConnFlowValid(data) {
+    let m = mode.getSetupModeSync()
+    if(!m) {
+      return true               // by default, always consider as valid
+    }
+
+    if(m === 'dhcp') { // only for dhcp
+      let myip = sysManager.myIp()
+      if(myip) {
+        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+        
+        if(data["id.orig_h"] === myip ||
+           data["id.resp_h"] === myip) {
+          return false  
+        }
+
+        // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      }
+    }
+
+    return true
+  }
+  
     // Only log ipv4 packets for now
     processConnData(data) {
         try {
@@ -479,6 +501,10 @@ module.exports = class {
             if (obj.service && obj.service == "dns") {
                 return;
             }
+
+          if(!this.isConnFlowValid(data)) {
+            return;
+          }
 
             // drop layer 3
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {

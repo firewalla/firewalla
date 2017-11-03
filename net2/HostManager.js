@@ -1668,6 +1668,12 @@ module.exports = class {
 
           await (this.loadDDNSForInit(json));
 
+          // for any pi doesn't have firstBinding key, they are old versions
+          let firstBinding = await (rclient.getAsync("firstBinding"))
+          if(firstBinding) {
+            json.firstBinding = firstBinding
+          }
+
           json.bootingComplete = await (f.isBootingComplete())
 
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {

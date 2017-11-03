@@ -95,6 +95,7 @@ class NewDeviceHook extends Hook {
             sem.emitEvent({
               type: "RefreshMacBackupName",
               message: "Update device backup name via MAC Address",
+              suppressEventLogging: true,
               mac:mac,
               name: name
             });

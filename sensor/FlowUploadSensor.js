@@ -94,10 +94,10 @@ class FlowUploadSensor extends Sensor {
                 }
                 let debug = sysManager.isSystemDebugOn()
                 let flows = await(this.getAllFlows(macs, start, end, !debug))
-                if (flows != null && Object.keys(flows).length > 0) {
+                if (flows != null && flows.length > 0) {
                     let limitedFlows = this.limitFlows(flows)
                     limitedFlows.start = start
-                    limitedFlows.end = end
+                    limitedFlows.end = end 
 
                     let data = JSON.stringify(limitedFlows)
                     if (debug) {
@@ -155,13 +155,12 @@ class FlowUploadSensor extends Sensor {
         let total = this.getSize(flows)
         var uploaded = total
         if (total > this.config.maxFlows) {
-            let ks = Object.keys(flows)
             log.info("number of flows(" + total + ") exceeded limit(" + this.config.maxFlows + "), need cut off")
-            let avgLimit = this.config.maxFlows / ks.length
+            let avgLimit = this.config.maxFlows / flows.length
             //avgLimit means the number limit of flows for each mac
-            ks.map(mac => {
-                if (flows[mac].length > avgLimit) {
-                    flows[mac] = flows[mac].slice(0, avgLimit)
+            flows.map(flow => {
+                if (flow.flows.length > avgLimit) {
+                    flow.flows = flow.flows.slice(0, avgLimit)
                 }
             })
             uploaded = this.getSize(flows)
@@ -176,16 +175,16 @@ class FlowUploadSensor extends Sensor {
 
     getAllFlows(macs, start, end, needHash) {
         return async(() => {
-            let flows = {}
+            let flows = []
             macs.forEach((mac) => {
                 let flow = await(this.getFlows(mac, start, end))
                 if (flow != null && flow.length > 0) {
-                    let retFlow = this.processFlow(flow, needHash)
-                    if (needHash) {
-                        flows[flowUtil.hashMac(mac)] = retFlow
-                    } else {
-                        flows[mac] = retFlow
-                    }
+                    flows.push(
+                      {
+                        flows: this.processFlow(flow, needHash),
+                        mac: needHash? flowUtil.hashMac(mac) : mac
+                      }
+                    )
                 }
             })
             return flows
@@ -196,7 +195,7 @@ class FlowUploadSensor extends Sensor {
         if (flows == null || flows.length == 0) {
             return 0
         } else {
-            return Object.keys(flows).map(k => flows[k].length).reduce((a,b) => a + b)
+            return flows.map(flow => flow.flows.length).reduce((a,b) => a + b)
         }
     }
 

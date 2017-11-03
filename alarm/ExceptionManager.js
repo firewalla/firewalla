@@ -2,7 +2,10 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-let async = require('async');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const Promise = require('bluebird');
 
 let Exception = require('./Exception.js');
 let Bone = require('../lib/Bone.js');
@@ -10,15 +13,18 @@ let Bone = require('../lib/Bone.js');
 let redis = require('redis');
 let rclient = redis.createClient();
 
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 let instance = null;
 
-let exceptionQueue = "exception_queue";
+const exceptionQueue = "exception_queue";
 
-let exceptionIDKey = "exception:id";
+const exceptionIDKey = "exception:id";
 let initID = 1;
-let exceptionPrefix = "exception:";
+const exceptionPrefix = "exception:";
 
-let flat = require('flat');
+const flat = require('flat');
 let audit = require('../util/audit.js');
 
 module.exports = class {
@@ -29,6 +35,9 @@ module.exports = class {
     return instance;
   }
 
+  getExceptionKey(exceptionID) {
+    return exceptionPrefix + exceptionID
+  }
 
   getException(exceptionID) {
     return new Promise((resolve, reject) => {
@@ -45,6 +54,24 @@ module.exports = class {
 
         resolve(results[0]);
       });
+    });
+  }
+
+
+  idsToExceptions(ids, callback) {
+    let multi = rclient.multi();
+
+    ids.forEach((eid) => {
+      multi.hgetall(exceptionPrefix + eid)
+    });
+
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active exceptions (hgetall): " + err);
+        callback(err);
+        return;
+      }
+      callback(null, results.map((r) => this.jsonToException(r)));
     });
   }
 
@@ -254,6 +281,11 @@ module.exports = class {
         callback(null, false);
       }
     });
+  }
+
+  // incr by 1 to count how many times this exception matches alarms
+  updateMatchCount(exceptionID) {
+    return rclient.hincrbyAsync(this.getExceptionKey(exceptionID), "matchCount", 1)
   }
 
   createExceptionFromJson(json, callback) {
