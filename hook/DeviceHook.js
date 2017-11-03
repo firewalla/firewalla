@@ -295,7 +295,7 @@ class DeviceHook extends Hook {
         await (hostTool.updateIPv6Host(enrichedHost)) //v6
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
         }
 
         await (hostTool.updateMACKey(enrichedHost))
