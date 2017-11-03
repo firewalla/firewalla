@@ -12,7 +12,7 @@ node8_exists() {
 
 node8_exists && {
     logger "Node v8 already exists"
-    return 0
+    exit 0
 }
 
 logger "Start install Node8 with NVM"
@@ -21,7 +21,7 @@ export NVM_DIR="/home/pi/.nvm"
 export NVM_VERSION=0.33.6
 export NODE_VERSION="8.7.0"
 
-curl -o- https://raw.githubusercontent.com/creationix/nvm/v${NVM_VERSION}/install.sh | bash
+bash ${FIREWALLA_HOME}/scripts/prep/nvm_install
 
 source $NVM_DIR/nvm.sh
 
