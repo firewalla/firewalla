@@ -37,7 +37,6 @@ module.exports = class {
            val.slice(2) !== val2) { // NOT exact sub domain match
           return false
         }
-
       } else {
         if(val2 !== val) return false;        
       }
