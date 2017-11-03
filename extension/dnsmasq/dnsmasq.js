@@ -397,7 +397,7 @@ module.exports = class DNSMASQ {
     let writer = fs.createWriteStream(file);
 
     hashes.forEach((hash) => {
-      let line = util.format("hash-address=/%s/198.51.100.99\n", hash.replace(/\//g, '.'));
+      let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), BLACK_HOLE_IP);
       writer.write(line);
     });
 
