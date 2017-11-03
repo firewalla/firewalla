@@ -41,6 +41,10 @@ let MODE_DHCP = "dhcp"
 
 let DEFAULT_MODE = MODE_NONE
 
+function getSetupModeSync() {
+  return _setupMode
+}
+
 function getSetupMode() {
   if(_setupMode) {
     return Promise.resolve(_setupMode);
@@ -130,7 +134,8 @@ module.exports = {
   isManualSpoofModeOn:isManualSpoofModeOn,
   isNoneModeOn:isNoneModeOn,
   isAutoSpoofModeOn:isAutoSpoofModeOn,
-  
+
+  getSetupModeSync:getSetupModeSync,
   getSetupMode:getSetupMode,
   reloadSetupMode:reloadSetupMode,
   setSetupMode:setSetupMode,

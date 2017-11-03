@@ -135,6 +135,12 @@ function resetBootingComplete() {
   return rclient.delAsync("bootingComplete")
 }
 
+function isFirstBindDone() {
+  return async(() => {
+    let keys = await (rclient.keysAsync("firstBinding"))
+    return keys.length > 0
+  })()
+}
 function getRuntimeInfoFolder() {
   return getHiddenFolder() + "/run";
 }
@@ -226,5 +232,6 @@ module.exports = {
   getEncipherConfigFolder: getEncipherConfigFolder,
   isBootingComplete:isBootingComplete,
   setBootingComplete:setBootingComplete,
-  resetBootingComplete:resetBootingComplete
+  resetBootingComplete:resetBootingComplete,
+  isFirstBindDone: isFirstBindDone
 }

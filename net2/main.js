@@ -101,12 +101,17 @@ function resetModeInInitStage() {
   // this needs to be execute early!!
   return async(() => {
     let bootingComplete = await (firewalla.isBootingComplete())
+    let firstBindDone = await (firewalla.isFirstBindDone())
     
-    // always reset to none mode if bootingComplete flag is off
+    // always reset to none mode if
+    //        bootingComplete flag is off
+    //    AND
+    //        firstBinding is complete (old version doesn't have this flag )
     // this is to ensure a safe launch
     // in case something wrong with the spoof, firemain will not
     // start spoofing again when restarting
-    if(!bootingComplete) {
+
+    if(!bootingComplete && firstBindDone) {
       await (mode.noneModeOn())
     }
   })()  

@@ -313,6 +313,7 @@ module.exports = class {
         if(result) {
           matches.forEach((e) => {
             log.info("Matched Exception: " + e.eid);
+            exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
           });
           callback(new Error("alarm is covered by exceptions"));
           return;
