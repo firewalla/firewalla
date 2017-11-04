@@ -1592,6 +1592,9 @@ class netBot extends ControllerBot {
         let ip = msg.data.value.ip
         let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
 
+        // add current ip to spoof list
+        await (spooferManager.directSpoof(ip))
+        
         let begin = new Date() / 1000;
 
         let result = false
