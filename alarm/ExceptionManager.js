@@ -205,7 +205,7 @@ module.exports = class {
         });
       });
 
-      Bone.submitUserIntel('ignore', exception, 'exception');
+      Bone.submitIntelFeedback('ignore', exception, 'exception');
 
       callback(err);
     });
@@ -256,7 +256,7 @@ module.exports = class {
 
             });
 
-            Bone.submitUserIntel('unignore', exception, "exception");
+            Bone.submitIntelFeedback('unignore', exception, "exception");
 
             resolve();
           });
