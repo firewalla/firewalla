@@ -184,7 +184,7 @@
       }
     },
     "features": {
-      "user:intel:submit": true
+      "intel:feedback": true
     }
 
 }

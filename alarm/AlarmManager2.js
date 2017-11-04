@@ -334,9 +334,9 @@ module.exports = class {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
               if (alarm['p.dest.ip']) {
-                alarm["i.target"] = alarm['p.dest.ip'];
-                alarm["i.type"] = "ip";
-                bone.submitUserIntel("autoblock", alarm, "alarm");
+                alarm["if.target"] = alarm['p.dest.ip'];
+                alarm["if.type"] = "ip";
+                bone.submitIntelFeedback("autoblock", alarm, "alarm");
               }
               return;
             }
@@ -506,7 +506,7 @@ module.exports = class {
     log.info("Going to block alarm " + alarmID);
     log.info("info: ", info, {});
 
-    let userFeedback = info.info;
+    let intelFeedback = info.info;
 
     let i_target = null;
     let i_type = null;
@@ -532,15 +532,16 @@ module.exports = class {
             i_type = "ip";
             i_target = alarm["p.dest.ip"];
 
-            if(userFeedback) {
-              switch(userFeedback.type) {
+            if(intelFeedback) {
+              switch(intelFeedback.type) {
                 case "dns":
+                case "domain":
                   i_type = "dns"
-                  i_target = userFeedback.target
+                  i_target = intelFeedback.target
                   break
                 case "ip":
                   i_type = "ip"
-                  i_target = userFeedback.target
+                  i_target = intelFeedback.target
                   break
                 default:
                   break
@@ -560,8 +561,8 @@ module.exports = class {
           target: i_target,
           aid: alarmID,
           reason: alarm.type,
-          "i.type": i_type,
-          "i.target": i_target,
+          "if.type": i_type,
+          "if.target": i_target,
         });
 
         // add additional info
@@ -646,6 +647,7 @@ module.exports = class {
 
           if(userFeedback) {
             switch(userFeedback.type) {
+            case "domain":
             case "dns":
               i_type = "dns"
               i_target = userFeedback.target
@@ -672,8 +674,8 @@ module.exports = class {
           alarm_type: alarm.type,
           reason: alarm.type,
           aid: alarmID,
-          "i.type": i_type,
-          "i.target": i_target,
+          "if.type": i_type,
+          "if.target": i_target,
         });
 
         switch(i_type) {
