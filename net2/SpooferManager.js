@@ -171,7 +171,7 @@ function isSpoof(ip) {
       // TODO: add ipv6 check in the future
     } catch(err) {      
       // error means no bitbridge7 is available
-      log.error("process bitbridge7 is not running")
+      log.warn("service bitbridge7 is not running (yet)")
       return false
     }
     
