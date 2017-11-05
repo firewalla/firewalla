@@ -204,7 +204,7 @@ class PolicyManager2 {
           callback(null, policy.pid)
         });
 
-        Bone.submitUserIntel('block', policy, 'policy');
+        Bone.submitIntelFeedback('block', policy, 'policy');
       });
     });
   }
@@ -295,7 +295,7 @@ class PolicyManager2 {
     return p.then((policy) => {
       this.tryPolicyEnforcement(policy, "unenforce")
 
-      Bone.submitUserIntel('unblock', policy, 'policy');
+      Bone.submitIntelFeedback('unblock', policy, 'policy');
       return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
