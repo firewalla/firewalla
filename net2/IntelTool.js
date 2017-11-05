@@ -114,7 +114,7 @@ class IntelTool {
   }
 
   checkIntelFromCloud(ipList, domainList, appList, flow) {
-    log.info("Checking intel for", ipList, domainList, {});
+    log.debug("Checking intel for", ipList, domainList, {});
 
     let flowList = [];
     let _ipList = [];

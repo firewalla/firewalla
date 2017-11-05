@@ -148,17 +148,18 @@ class DeviceHook extends Hook {
     // dhcp monitor and etc...
 
     sem.on("DeviceUpdate", (event) => {
-      let mac = event.mac;
+      let host = event.host
+      let mac = host.mac;
 
       if(mac != null) {
         this.processDeviceUpdate(event)        
       } else {
-        let ip = event.ipv4 || event.ipv4Addr
+        let ip = host.ipv4 || host.ipv4Addr
         if(ip) {
           // need to get mac address first
           async(() => {
             let theMac = await (l2.getMACAsync(ip))
-            event.mac = theMac
+            host.mac = theMac
             this.processDeviceUpdate(event)
           })()
         }
