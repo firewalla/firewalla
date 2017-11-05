@@ -1620,7 +1620,7 @@ class netBot extends ControllerBot {
         }
         
         this.simpleTxData(msg, {running: running}, null, callback)
-      }).catch((err) => {
+      })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
       })
       break
