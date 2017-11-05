@@ -21,9 +21,10 @@ let log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
 let fs = require('fs');
-let qrcode = require('qrcode-terminal');
 
-let ControllerBot = require('../lib/ControllerBot.js');
+const ControllerBot = require('../lib/ControllerBot.js');
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
@@ -39,7 +40,9 @@ let intelManager = new IntelManager('debug');
 
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
+
+const iptool = require('ip')
 
 let redis = require('redis');
 let rclient = redis.createClient();
@@ -1583,6 +1586,68 @@ class netBot extends ControllerBot {
         let modeManager = require('../net2/ModeManager.js');
         await (modeManager.publishManualSpoofUpdate())
         this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
+    case "isSpoofRunning":
+      async(() => {
+        let timeout = msg.data.value.timeout
+
+        let running = false
+        
+        if(timeout) {
+          let begin = new Date() / 1000;
+
+          let delayFunction = function(t) {
+            return new Promise(function(resolve) {
+              setTimeout(resolve, t)
+            });
+          }
+          
+          while(new Date() / 1000 < begin + timeout) {
+            let secondsLeft =  (begin + timeout) - new Date() / 1000
+            log.info("Checking if spoofing daemon is active... ${secondsLeft} seconds left")
+            running = await (spooferManager.isSpoofRunning())
+            if(running) {
+              break
+            }
+            await(delayFunction(1000))
+          }
+          
+        } else {
+          running = await (spooferManager.isSpoofRunning())
+        }
+        
+        this.simpleTxData(msg, {running: running}, null, callback)
+      }).catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      break
+    case "spoofMe":
+      async(() => {
+        let value = msg.data.value
+        let ip = value.ip
+        let name = value.name
+
+        if(iptool.isV4Format(ip)) {
+          sem.emitEvent({
+            type: "DeviceUpdate",
+            message: "Manual submit a new device via API",
+            host: {
+              ipv4: ip,
+              ipv4Addr: ip,
+              bname: name,
+              from:"spoofMe"
+            },
+            toProcess: 'FireMain'
+          })
+          
+          this.simpleTxData(msg, {}, null, callback)
+        } else {
+          this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
+        }
+        
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
       })
