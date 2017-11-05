@@ -1606,7 +1606,7 @@ class netBot extends ControllerBot {
         }
         
         while(new Date() / 1000 < begin + timeout) {
-          log.info(`Checking if IP ${ip} is being spoofed`)
+          log.info(`Checking if IP ${ip} is being spoofed, ${new Date() / 1000 - (begin + timeout)} seconds left`)
           result = await (spooferManager.isSpoof(ip))
           if(result) {
             break

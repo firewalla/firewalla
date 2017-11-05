@@ -166,9 +166,12 @@ function isSpoof(ip) {
   return async(() => {
 
     try {
-      await (exec("ps aux | grep bitbridge7"))
+      await (exec("pgrep -x bitbridge7"))
+
+      // TODO: add ipv6 check in the future
     } catch(err) {      
       // error means no bitbridge7 is available
+      log.error("process bitbridge7 is not running")
       return false
     }
     
