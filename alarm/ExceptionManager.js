@@ -100,6 +100,8 @@ module.exports = class {
           callback(err);
         }
 
+        results = results.filter((x) => x != null) // ignore any exception which doesn't exist
+
         let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
 
         // recent first
@@ -246,7 +248,7 @@ module.exports = class {
             log.info("Exception in CB: ", obj, {});
             let exception = obj;
 
-            multi.zrem(exceptionQueue, exceptionID);
+            multi.srem(exceptionQueue, exceptionID);
             multi.del(exceptionPrefix + exceptionID);
             multi.exec((err) => {
               if (err) {

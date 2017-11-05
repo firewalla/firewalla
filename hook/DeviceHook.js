@@ -20,8 +20,8 @@ let Hook = require('./Hook.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let HostTool = require('../net2/HostTool.js');
-let hostTool = new HostTool();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 let Promise = require('bluebird');
 
@@ -31,13 +31,16 @@ let bone = require("../lib/Bone.js");
 
 let flowUtil = require("../net2/FlowUtil.js");
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let Samba = require('../extension/samba/samba.js');
-let samba = new Samba();
+const Samba = require('../extension/samba/samba.js');
+const samba = new Samba();
 
-let HostManager = require('../net2/HostManager.js');
+const HostManager = require('../net2/HostManager.js');
+
+const l2 = require('../util/Layer2.js');
+
 
 var _async = require('async');
 
@@ -145,9 +148,23 @@ class DeviceHook extends Hook {
     // dhcp monitor and etc...
 
     sem.on("DeviceUpdate", (event) => {
-      let mac = event.mac;
+      let host = event.host
+      let mac = host.mac;
 
-      this.processDeviceUpdate(event)
+      if(mac != null) {
+        this.processDeviceUpdate(event)        
+      } else {
+        let ip = host.ipv4 || host.ipv4Addr
+        if(ip) {
+          // need to get mac address first
+          async(() => {
+            let theMac = await (l2.getMACAsync(ip))
+            host.mac = theMac
+            this.processDeviceUpdate(event)
+          })()
+        }
+      }
+
     });
 
     sem.on("IPv6DeviceInfoUpdate",(event)=>{

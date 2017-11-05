@@ -161,6 +161,21 @@ function loadManualSpoofs(hostManager) {
 }
 
 
+function isSpoofRunning() {
+  return async(() => {
+    try {
+      await (exec("pgrep -x bitbridge7"))
+
+      // TODO: add ipv6 check in the future
+    } catch(err) {      
+      // error means no bitbridge7 is available
+      log.warn("service bitbridge7 is not running (yet)")
+      return false
+    }
+    return true
+  })()
+}
+
 // TODO support ipv6
 function isSpoof(ip) {
   return async(() => {
@@ -196,6 +211,7 @@ module.exports = {
   startSpoofing: startSpoofing,
   stopSpoofing: stopSpoofing,
   directSpoof:directSpoof,
+  isSpoofRunning:isSpoofRunning,
   loadManualSpoofs: loadManualSpoofs,
   loadManualSpoof: loadManualSpoof,
   isSpoof: isSpoof,
