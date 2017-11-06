@@ -38,8 +38,6 @@ let firewalla = require('../net2/Firewalla.js');
 
 let instance = null;
 
-
-
 class IntelTool {
 
   constructor() {
@@ -227,12 +225,15 @@ class IntelTool {
 
     let key = this.getDNSKey(ip);
 
-    let intelJSON = JSON.stringify(intel);
-
-    return rclient.hsetAsync(key, "_intel", intelJSON)
-      .then(() => {
-        return rclient.expireAsync(key, expireTime)
-      });
+    return async(() => {
+      // only update if dns key exists
+      let keys = await (rclient.keysAsync(key))
+      if(keys.length > 0) {
+        let intelJSON = JSON.stringify(intel);
+        await (rclient.hsetAsync(key, "_intel", intelJSON))
+        await (rclient.expireAsync(key, expireTime))
+      }
+    })()
   }
 }
 

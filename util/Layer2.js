@@ -53,7 +53,6 @@ function getMACAndVendor(ipaddress, cb) {
   });
 }
 
-
 function getMAC(ipaddress, cb) {
 
   let _mac = SimpleCache.lookup(ipaddress);
