@@ -28,7 +28,7 @@ let sysManager = new SysManager('info');
 
 let async = require('async');
 
-let l2 = require('../util/Layer2.js');
+const l2 = require('../util/Layer2.js');
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device

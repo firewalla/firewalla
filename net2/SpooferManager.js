@@ -32,6 +32,8 @@ let Promise = require('bluebird');
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
+const iptool = require('ip')
+
 let redis = require('redis');
 let rclient = redis.createClient();
 
@@ -109,6 +111,18 @@ function stopSpoofing() {
   })
 }
 
+function directSpoof(ip) {
+  return async(() => {
+    if(iptool.isV4Format(ip)) {
+      await (rclient.saddAsync(monitoredKey, ip))      
+    } else if(iptool.isV6Format(ip)) {
+      await (rclient.saddAsync(monitoredKey6, ip))
+    } else {
+      return Promise.reject(new Error("Invalid ip address: " + ip))
+    }
+  })()
+}
+
 function emptySpoofSet() {
   return async(() => {
     // clean up redis key
@@ -147,14 +161,32 @@ function loadManualSpoofs(hostManager) {
 }
 
 
+function isSpoofRunning() {
+  return async(() => {
+    try {
+      await (exec("pgrep -x bitbridge7"))
+
+      // TODO: add ipv6 check in the future
+    } catch(err) {      
+      // error means no bitbridge7 is available
+      log.warn("service bitbridge7 is not running (yet)")
+      return false
+    }
+    return true
+  })()
+}
+
 // TODO support ipv6
 function isSpoof(ip) {
   return async(() => {
 
     try {
-      await (exec("ps aux | grep bitbridge7"))
+      await (exec("pgrep -x bitbridge7"))
+
+      // TODO: add ipv6 check in the future
     } catch(err) {      
       // error means no bitbridge7 is available
+      log.warn("service bitbridge7 is not running (yet)")
       return false
     }
     
@@ -178,6 +210,8 @@ function isSpoof(ip) {
 module.exports = {
   startSpoofing: startSpoofing,
   stopSpoofing: stopSpoofing,
+  directSpoof:directSpoof,
+  isSpoofRunning:isSpoofRunning,
   loadManualSpoofs: loadManualSpoofs,
   loadManualSpoof: loadManualSpoof,
   isSpoof: isSpoof,

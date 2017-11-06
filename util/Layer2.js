@@ -21,6 +21,8 @@ let log = require('../net2/logger.js')(__filename);
 let _SimpleCache = require('../util/SimpleCache.js')
 let SimpleCache = new _SimpleCache("macCache",60*10);
 
+const Promise = require('bluebird')
+
 function getMACAndVendor(ipaddress, cb) {
 
   // get MAC Address first
@@ -107,5 +109,6 @@ function getMAC(ipaddress, cb) {
 
 module.exports = {
   getMAC:getMAC,
+  getMACAsync: Promise.promisify(getMAC),
   getMACAndVendor:getMACAndVendor
 }

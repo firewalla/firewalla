@@ -1,6 +1,7 @@
 {
   "version": 1.90,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
+  "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL":"https://firewalla.encipher.io/license/api/v1",
   "cacheInit": true,
@@ -184,7 +185,7 @@
       }
     },
     "features": {
-      "user:intel:submit": true
+      "intel:feedback": true
     }
 
 }
