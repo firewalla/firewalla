@@ -25,6 +25,8 @@ let sysManager = new SysManager('info');
 
 let Promise = require('bluebird');
 
+const firewalla = require('./net2/Firewalla.js')
+
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
@@ -39,22 +41,41 @@ let rclient = redis.createClient();
 
 Promise.promisifyAll(redis.RedisClient.prototype);
 
-function _enforceSpoofMode() {
-  if(fConfig.newSpoof) {
-    let sm = require('./SpooferManager.js')
-    return sm.startSpoofing()
-      .then(() => {
-        log.info("New Spoof is started");
-      }).catch((err) => {
-        log.error("Failed to start new spoof", err, {});
-      });
-  } else {
-    // old style, might not work
-    var Spoofer = require('./Spoofer.js');
-    let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+const AUTO_REVERT_INTERVAL = 120 * 1000 // 2 minutes
 
-    return Promise.resolve();
-  }
+
+function _revert2None() {
+  return async(() => {
+    let bootingComplete = await (firewalla.isBootingComplete())
+    if(!bootingComplete) {
+      log.info("Revert back to none mode for safety")
+      return switchToNone()
+    }
+  })()
+}
+
+function _enforceSpoofMode() {
+  return async(() => {
+    let bootingComplete = await (firewalla.isBootingComplete())
+
+    if(!bootingComplete) {
+      // init stage, reset to none after X seconds if booting not complete
+      setTimeout(_revert2None, AUTO_REVERT_INTERVAL)
+    }
+    
+    if(fConfig.newSpoof) {
+      let sm = require('./SpooferManager.js')
+      await (sm.startSpoofing())
+      log.info("New Spoof is started");
+    } else {
+      // old style, might not work
+      const Spoofer = require('./Spoofer.js');
+      const spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+      return Promise.resolve();
+    }
+  })().catch((err) => {
+    log.error("Failed to start new spoof", err, {});
+  });
 }
 
 function _disableSpoofMode() {
