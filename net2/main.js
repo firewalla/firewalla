@@ -233,7 +233,7 @@ function run() {
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.debug("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }
