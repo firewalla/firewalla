@@ -25,7 +25,7 @@ let sysManager = new SysManager('info');
 
 let Promise = require('bluebird');
 
-const firewalla = require('./net2/Firewalla.js')
+const firewalla = require('./Firewalla.js')
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
