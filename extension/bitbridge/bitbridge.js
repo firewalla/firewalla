@@ -90,7 +90,7 @@ class BitBridge {
 
     } else {
       binary = this.getBinary()
-      args = [this.intf, this.routerIP, this.selfIP, '-m','-q','-n'];
+      args = [this.intf, this.routerIP, this.selfIP, '-m','-n','-q','-d 0'];
 
       let cmd = binary+" "+args.join(" ")
       log.info("Lanching Bitbridge4 ", cmd);
