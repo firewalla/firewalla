@@ -605,7 +605,7 @@ module.exports = class {
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.info("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
+                        log.debug("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
                         flag = 's';
                 }
             }
@@ -667,7 +667,7 @@ module.exports = class {
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.info("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
+                        log.debug("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
                         flag = 's';
                 }
             }

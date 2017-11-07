@@ -43,7 +43,6 @@ Promise.promisifyAll(redis.RedisClient.prototype);
 
 const AUTO_REVERT_INTERVAL = 120 * 1000 // 2 minutes
 
-
 function _revert2None() {
   return async(() => {
     let bootingComplete = await (firewalla.isBootingComplete())
