@@ -161,7 +161,9 @@ class DeviceHook extends Hook {
             let theMac = await (l2.getMACAsync(ip))
             host.mac = theMac
             this.processDeviceUpdate(event)
-          })()
+          })().catch((err) => {
+            log.error(`Failed to get mac address for ip ${ip}`)
+          })
         }
       }
 
