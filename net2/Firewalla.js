@@ -30,7 +30,7 @@ let _branch = null
 
 let version = null;
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')

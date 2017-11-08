@@ -53,7 +53,6 @@ function getMACAndVendor(ipaddress, cb) {
   });
 }
 
-
 function getMAC(ipaddress, cb) {
 
   let _mac = SimpleCache.lookup(ipaddress);
@@ -102,7 +101,8 @@ function getMAC(ipaddress, cb) {
           return;
         }
       }
-      cb(true, "Count not find ip in arp table: " + ipaddress);
+      cb(false, null)
+//      cb(true, "Count not find ip in arp table: " + ipaddress);
     });
   });
 }
