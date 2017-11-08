@@ -41,7 +41,7 @@ let rclient = redis.createClient();
 
 Promise.promisifyAll(redis.RedisClient.prototype);
 
-const AUTO_REVERT_INTERVAL = 120 * 1000 // 2 minutes
+const AUTO_REVERT_INTERVAL = 180 * 1000 // 3 minutes
 
 function _revert2None() {
   return async(() => {
