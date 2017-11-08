@@ -1351,7 +1351,7 @@ module.exports = class {
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
-    json.secondaryIp = sysManager.myIp2()
+    json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
