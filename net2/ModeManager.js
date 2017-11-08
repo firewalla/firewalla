@@ -43,8 +43,11 @@ Promise.promisifyAll(redis.RedisClient.prototype);
 
 const AUTO_REVERT_INTERVAL = 180 * 1000 // 3 minutes
 
+let timer = null
+
 function _revert2None() {
   return async(() => {
+    timer = null
     let bootingComplete = await (firewalla.isBootingComplete())
     if(!bootingComplete) {
       log.info("Revert back to none mode for safety")
@@ -58,8 +61,12 @@ function _enforceSpoofMode() {
     let bootingComplete = await (firewalla.isBootingComplete())
 
     if(!bootingComplete) {
+      if(timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       // init stage, reset to none after X seconds if booting not complete
-      setTimeout(_revert2None, AUTO_REVERT_INTERVAL)
+      timer = setTimeout(_revert2None, AUTO_REVERT_INTERVAL)
     }
     
     if(fConfig.newSpoof) {
