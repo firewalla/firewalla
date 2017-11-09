@@ -49,7 +49,8 @@ function _revert2None() {
   return async(() => {
     timer = null
     let bootingComplete = await (firewalla.isBootingComplete())
-    if(!bootingComplete) {
+    let firstBindDone = await (firewalla.isFirstBindDone())
+    if(!bootingComplete && firstBindDone) {
       log.info("Revert back to none mode for safety")
       return switchToNone()
     }
@@ -59,8 +60,9 @@ function _revert2None() {
 function _enforceSpoofMode() {
   return async(() => {
     let bootingComplete = await (firewalla.isBootingComplete())
-
-    if(!bootingComplete) {
+    let firstBindDone = await (firewalla.isFirstBindDone())
+    
+    if(!bootingComplete && firstBindDone) {
       if(timer) {
         clearTimeout(timer)
         timer = null
