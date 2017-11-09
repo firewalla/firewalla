@@ -1420,7 +1420,11 @@ module.exports = class {
           for (let i in results) {
             let alarm = JSON.parse(results[i]);
             if(alarm.alarmtype === "intel") {
-              delete alarm.intel.results; // trim intel details
+              if (alarm.intel && alarm.intel.results) {
+                  delete alarm.intel.results; // trim intel details
+              } else {
+                  log.error("Alarm Clean Problems: ",JSON.stringify(alarm),results[i])
+              }
             }
 
             if (alarm["id.orig_h"]) {
