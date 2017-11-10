@@ -16,10 +16,12 @@
 var ip = require('ip');
 var spawn = require('child_process').spawn;
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 var running = false;
 var workqueue = [];
+
+const Promise = require('bluebird')
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -53,10 +55,22 @@ function iptables(rule, callback) {
         args = ['ip6tables', '-w'].concat(args);
     }
 
-    log.info("IPTABLE6:", cmd, JSON.stringify(args), workqueue.length);
+  log.info("IPTABLE6:", cmd, args.join(" "), workqueue.length);
+
+  // for testing purpose only
+  if(exports.test && typeof exports.test === 'function') {
+    exports.test(cmd, args.join(" "))
+    if (callback) {
+      callback(null, null);
+    }
+    running = false;
+    newRule(null, null);
+    return
+  }
+  
     var proc = spawn(cmd, args);
     proc.stderr.on('data', function (buf) {
-        console.error("IP6TABLE6:", buf.toString());
+        log.error("IP6TABLE6:", buf.toString());
     });
     proc.on('exit', (code) => {
         if (callback) {
@@ -72,7 +86,7 @@ function iptablesArgs(rule) {
     var args = [];
 
     if (!rule.chain) rule.chain = 'INPUT';
-
+  if(rule.table) args = args.concat(["-t", rule.table])
     if (rule.chain) args = args.concat([rule.action, rule.chain]);
     if (rule.protocol) args = args.concat(["-p", rule.protocol]);
     if (rule.src) args = args.concat(["--source", rule.src]);
@@ -83,7 +97,8 @@ function iptablesArgs(rule) {
     if (rule.out) args = args.concat(["-o", rule.out]);
     if (rule.target) args = args.concat(["-j", rule.target]);
     if (rule.list) args = args.concat(["-n", "-v"]);
-    if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
+  if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
+  if(rule.todest) args = args.concat(["--to-destination", rule.todest])
 
     return args;
 }
@@ -95,7 +110,7 @@ function newRule(rule, callback) {
         rule.callback = callback;
     }
     if (running == true) {
-        if (rule) {
+      if (rule) {
             workqueue.push(rule);
         }
         return;
@@ -155,3 +170,74 @@ function run(listofcmds, callback) {
             callback(err, null);
     });
 }
+
+function dnsRedirectAsync(server, port) {
+  return new Promise((resolve, reject) => {
+    dnsRedirect(server, port, (err) => {
+      if(err) {
+        reject(err)
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+function dnsRedirect(server, port, cb) {
+  let rule = {
+    sudo: true,
+    chain: 'PREROUTING',
+    action: '-A',
+    table: 'nat',
+    protocol: 'udp',
+    dport: '53',
+    target: 'DNAT',
+    todest: `[${server}]:${port}`
+  }
+
+  newRule(rule, (err) => {
+    if(err) {
+      cb(err)
+    } else {
+      rule.protocol = 'tcp'
+      newRule(rule, cb)
+    }
+  })
+}
+
+function dnsUnredirectAsync(server, port) {
+  return new Promise((resolve, reject) => {
+    dnsUnredirect(server, port, (err) => {
+      if(err) {
+        reject(err)
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+function dnsUnredirect(server, port, cb) {
+  let rule = {
+    sudo: true,
+    chain: 'PREROUTING',
+    action: '-D',
+    table: 'nat',
+    protocol: 'udp',
+    dport: '53',
+    target: 'DNAT',
+    todest: `[${server}]:${port}`
+  }
+
+  newRule(rule, (err) => {
+    if(err) {
+      cb(err)
+    } else {
+      rule.protocol = 'tcp'
+      newRule(rule, cb)
+    }
+  })
+}
+
+exports.dnsRedirectAsync = dnsRedirectAsync
+exports.dnsUnredirectAsync = dnsUnredirectAsync
