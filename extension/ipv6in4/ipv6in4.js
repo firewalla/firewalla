@@ -108,6 +108,8 @@ class IPV6In4 {
     if(!this.config.username || !this.config.password || !this.config.tunnelID)
       return Promise.reject(new Error("Invalid username/password/tunnelID"))
 
+    log.info("Updating public ip for ipv6in4 tunnel")
+
     const options = {
       uri: tunnelBrokerUpdateURL,
       auth: {
