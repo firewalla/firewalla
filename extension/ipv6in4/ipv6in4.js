@@ -91,7 +91,8 @@ class IPV6In4 {
   //   "v6DNS": "2001:477:20:731::2",
   //   "username": "test1",
   //   "password": "pass1",
-  //   "tunnelID": "12345"
+  //   "tunnelID": "12345",
+  //   "updatePublicIP": true
   //   }
 
   setConfig(config) {

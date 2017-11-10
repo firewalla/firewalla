@@ -51,6 +51,10 @@ class IPv6in4Sensor extends Sensor {
     setInterval(() => {
       this.scheduledJob();
     }, updateInterval);
+
+    process.nextTick(() => {
+      this.scheduledJob()
+    })
   }
 
   applyPolicy(policy) {
