@@ -45,16 +45,36 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 
 function iptables(rule, callback) {
-    log.info("IPTABLE6: rule:",rule);
-    running = true;
-    var args = iptablesArgs(rule);
+  log.info("IPTABLE6: rule:",rule);
+  running = true;
+  
+  let cmd = 'ip6tables';
+  let args = iptablesArgs(rule);
 
-    var cmd = 'ip6tables';
-    if (rule.sudo) {
-        cmd = 'sudo';
-        args = ['ip6tables', '-w'].concat(args);
-    }
+  if (rule.sudo) {
+    args = ['sudo', 'ip6tables', '-w'].concat(args);
+    cmd = args.join(" ")
+  }
 
+  if (rule.checkBeforeAction) {
+    let checkRule = JSON.parse(JSON.stringify(rule))
+    checkRule.action = '-C'
+    let checkArgs = iptablesArgs(rule)
+    let checkCmd = ['sudo', 'ip6tables', '-w'].concat(checkArgs).join(" ")
+    
+    switch(rule.action) {
+    case "-A":
+      // check if exits before insertion
+      cmd = `${checkCmd} || ${cmd}`
+      break
+    case "-D":
+      cmd = `${checkCmd} && ${cmd}`
+      break
+    default:
+      break
+    }    
+  }
+  
   log.info("IPTABLE6:", cmd, args.join(" "), workqueue.length);
 
   // for testing purpose only
@@ -68,7 +88,7 @@ function iptables(rule, callback) {
     return
   }
   
-    var proc = spawn(cmd, args);
+  const proc = spawn(cmd, {shell: true});g
     proc.stderr.on('data', function (buf) {
         log.error("IP6TABLE6:", buf.toString());
     });
@@ -226,7 +246,8 @@ function dnsUnredirect(server, port, cb) {
     protocol: 'udp',
     dport: '53',
     target: 'DNAT',
-    todest: `[${server}]:${port}`
+    todest: `[${server}]:${port}`,
+    checkBeforeAction: true
   }
 
   newRule(rule, (err) => {
