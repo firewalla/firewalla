@@ -361,7 +361,8 @@ module.exports = class DNSMASQ {
     return async(() => {
       let ipv6s = sysManager.myIp6();
 
-      for(let ip6 in ipv6s) {
+      for(let index in ipv6s) {
+        let ip6 = ipv6s[index]
         if(ip6.startsWith("fe80:")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
           await (ip6tables.dnsUnredirectAsync(ip6, 8853))
