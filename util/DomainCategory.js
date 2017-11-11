@@ -7,7 +7,7 @@ class DomainCategory {
   constructor() {
     this.baseurl = "http://sitereview.bluecoat.com/rest/categorization"
     this.useragent = "Mozilla/5.0";
-    this.timeout = 5000;
+    this.timeout = 10000;
     this.regex = new RegExp('^<.+>(.+)<.+>$');
   }
 
@@ -35,20 +35,20 @@ class DomainCategory {
 
     request.post(options, (err, res, body) => {
       if (err) {
-        log.error('error when query site getCategory', err, {});
+        log.error('error when query domain category', err, {});
         cb(null);
         return;
       }
 
-      let cat = null;
+      let category = null;
       try {
         let _body = JSON.parse(body);
         log.debug('_body:', _body, {});
-        cat = this._extract(_body.categorization);
+        category = this._extract(_body.categorization);
       } catch (err) {
-        log.debug('unable to extract category', err, {});
+        log.error('unable to obtain category', err, {});
       }
-      cb(cat);
+      cb(category);
     });
 
   }
