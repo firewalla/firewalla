@@ -59,7 +59,7 @@ function iptables(rule, callback) {
   if (rule.checkBeforeAction) {
     let checkRule = JSON.parse(JSON.stringify(rule))
     checkRule.action = '-C'
-    let checkArgs = iptablesArgs(rule)
+    let checkArgs = iptablesArgs(checkRule)
     let checkCmd = ['sudo', 'ip6tables', '-w'].concat(checkArgs).join(" ")
     
     switch(rule.action) {
