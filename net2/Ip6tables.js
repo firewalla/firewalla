@@ -75,7 +75,7 @@ function iptables(rule, callback) {
     }    
   }
   
-  log.info("IPTABLE6:", cmd, args.join(" "), workqueue.length);
+  log.info("IPTABLE6:", cmd, workqueue.length);
 
   // for testing purpose only
   if(exports.test && typeof exports.test === 'function') {
@@ -88,7 +88,7 @@ function iptables(rule, callback) {
     return
   }
   
-  const proc = spawn(cmd, {shell: true});g
+  const proc = spawn(cmd, {shell: true});
     proc.stderr.on('data', function (buf) {
         log.error("IP6TABLE6:", buf.toString());
     });
@@ -212,11 +212,13 @@ function dnsRedirect(server, port, cb) {
     protocol: 'udp',
     dport: '53',
     target: 'DNAT',
-    todest: `[${server}]:${port}`
+    todest: `[${server}]:${port}`,
+    checkBeforeAction: true    
   }
 
   newRule(rule, (err) => {
     if(err) {
+      log.error("Failed to apply rule:", rule, {})
       cb(err)
     } else {
       rule.protocol = 'tcp'
@@ -252,6 +254,7 @@ function dnsUnredirect(server, port, cb) {
 
   newRule(rule, (err) => {
     if(err) {
+      log.error("Failed to apply rule:", rule, {})
       cb(err)
     } else {
       rule.protocol = 'tcp'
