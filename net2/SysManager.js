@@ -217,7 +217,12 @@ module.exports = class {
     callback = callback || function() {}
 
     this.language = language;
-    i18n.setLocale(this.language);
+    const theLanguage = i18n.setLocale(this.language);
+    if(theLanguage !== this.language) {
+      callback(new Error("invalid language"))
+      return
+    }
+    
     rclient.hset("sys:config", "language", language, (err) => {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
