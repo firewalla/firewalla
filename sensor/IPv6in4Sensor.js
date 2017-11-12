@@ -47,10 +47,6 @@ class IPv6in4Sensor extends Sensor {
       setConfig: this.setConfig,
       getConfig: this.loadConfig
     })      
-    
-    setInterval(() => {
-      this.scheduledJob();
-    }, updateInterval);
   }
 
   applyPolicy(policy) {
@@ -63,11 +59,26 @@ class IPv6in4Sensor extends Sensor {
   }
   
   start() {
-    return ipv6.start()
+    return async(() => {
+      await (ipv6.start())
+
+      process.nextTick(() => {
+        this.scheduledJob()
+      })
+
+      this.timer =  setInterval(() => {
+        this.scheduledJob();
+      }, updateInterval);      
+      
+    })()
   }
 
   stop() {
-    return ipv6.stop()
+    return async(() => {
+      await (ipv6.stop())
+      clearTimeout(this.timer)
+      this.timer = null
+    })()
   }
 }
 

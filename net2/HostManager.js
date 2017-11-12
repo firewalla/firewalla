@@ -1320,6 +1320,8 @@ module.exports = class {
 
     if(sysManager.language) {
       json.language = sysManager.language;
+    } else {
+      json.language = 'en'
     }
 
     if(sysManager.timezone) {

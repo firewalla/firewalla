@@ -10,6 +10,7 @@ let defaultLocale = "en";
 // let moment = require("moment");
 
 i18n.configure({
+  locales:['en', 'cn'],
   directory: f.getLocalesDirectory(),
   defaultLocale: defaultLocale,
   updateFiles: false
@@ -21,7 +22,7 @@ function m(msgTemplate, info) {
 }
 
 function setLocale(locale) {
-  i18n.setLocale(locale);
+  return i18n.setLocale(locale);
   // moment.locale(locale);
 }
 
