@@ -97,9 +97,10 @@ class BitBridge {
       require('child_process').execSync("echo 'cp /home/pi/firewalla/bin/real/bitbridge7 /home/pi/firewalla/bin/. ; sudo setcap cap_net_admin,cap_net_raw=eip /home/pi/firewalla/bin/bitbridge7 ; "+cmd +" ' > /home/pi/firewalla/bin/bitbridge4.sh");
       require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
 
+      //sudo ./bitbridge6 eth0 -q -w 1 -k monitored_hosts6 -g fe80::250:f1ff:fe80:0
 
       binary = this.getBinary6()
-      args = [this.intf, this.routerIP6, this.selfIP, this.selfMac,'-m','-q','-n'];
+      args = [this.intf, '-w 1','-q','-k monitored_hosts6','-g '+this.routerIP6];
 
       cmd = binary+" "+args.join(" ")
       log.info("Lanching bitbridge6", cmd);

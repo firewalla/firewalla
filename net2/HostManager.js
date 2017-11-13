@@ -468,7 +468,7 @@ class Host {
                     }).catch((err)=>{
                          log.error("Failed to spoof", this.ipv6Addr);
                     })
-                    if (i>10) {
+                    if (i>20) {
                          log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
                          break;
                     }
