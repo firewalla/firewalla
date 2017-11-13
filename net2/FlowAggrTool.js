@@ -118,7 +118,7 @@ class FlowAggrTool {
 
       let count = await (rclient.zremrangebyscoreAsync(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
-        log.warn(`${count} flows are moved from ${key} for self protection`)
+        log.warn(`${count} flows are removed from ${key} for self protection`)
       }
     })()
   }
@@ -201,7 +201,7 @@ class FlowAggrTool {
 
       let count = await (rclient.zremrangebyscoreAsync(sumFlowKey, 0, -1 * MAX_FLOW_PER_SUM)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
-        log.warn(`${count} flows are moved from ${sumFlowKey} for self protection`)
+        log.warn(`${count} flows are removed from ${sumFlowKey} for self protection`)
       }
     })()
   }

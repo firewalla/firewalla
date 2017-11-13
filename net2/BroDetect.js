@@ -1371,11 +1371,11 @@ module.exports = class {
         try {
             let obj = JSON.parse(data);
             if (obj.note == null) {
-                log.error("Notice:Drop", obj);
+//                log.error("Notice:Drop", obj);
                 return;
             }
             if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-                log.error("Notice:Drop My IP", obj);
+//                log.error("Notice:Drop My IP", obj);
                 return;
             }
             log.info("Notice:Processing",obj);
@@ -1449,7 +1449,7 @@ module.exports = class {
                 });
 
             } else {
-              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+//              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
             log.error("Notice:Error Unable to save", e,data, e.stack, {});
