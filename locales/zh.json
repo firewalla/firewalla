@@ -15,6 +15,8 @@
   "NOTIF_ALARM_GAME": "设备\"{{p.device.name}}\"玩了游戏{{p.dest.name}}.",
   "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "设备\"{{p.device.name}}\"上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
   "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "设备\"{{p.device.name}}\"上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}}",
+  "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE_COUNTRY": "设备\"{{p.device.name}}\"上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}} (IP来自{{p.dest.countryLocalized}})",
+  "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE_COUNTRY": "设备\"{{p.device.name}}\"上传了{{p.transfer.outbound.humansize}}数据到{{p.dest.name}} (IP来自{{p.dest.countryLocalized}})",
   "NOTIF_ALARM_NEW_DEVICE": "发现新设备\"{{p.device.name}}\"接入您的网络",
   "NOTIF_ALARM_BRO_NOTICE": "{{p.message}}",
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问设备\"{{p.device.name}}\"的{{p.device.port}}端口, 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
