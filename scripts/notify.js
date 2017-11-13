@@ -33,5 +33,6 @@ if(program.alarm) {
   
   async(() => {
     await (am2.notifAlarm(alarmID))
+    process.exit(0)
   })()
 }
