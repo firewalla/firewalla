@@ -1752,8 +1752,8 @@ module.exports = class {
               this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
 
               let ipv6Addrs = o.ipv6Addr
-              for(let ipv6Addr in ipv6Addrs) {
-                this.hostsdb[`host:ip6:${ipv6Addr}`] = host
+              for(let i in ipv6Addrs) {
+                this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = host
               }
               
                 if (this.hostsdb['host:mac:' + o.mac]) {
@@ -1898,8 +1898,8 @@ module.exports = class {
                           this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
                           let ipv6Addrs = o.ipv6Addr
-                          for(let ipv6Addr in ipv6Addrs) {
-                            this.hostsdb[`host:ip6:${ipv6Addr}`] = hostbymac                           
+                          for(let i in ipv6Addrs) {
+                            this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = hostbymac                           
                           }
                           
                         } else {
@@ -1911,8 +1911,8 @@ module.exports = class {
                           this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
                           let ipv6Addrs = o.ipv6Addr
-                          for(let ipv6Addr in ipv6Addrs) {
-                            this.hostsdb[`host:ip6:${ipv6Addr}`] = hostbymac
+                          for(let i in ipv6Addrs) {
+                            this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = hostbymac
                           }
                           
                           hostbymac.update(o);
@@ -2286,7 +2286,8 @@ module.exports = class {
       
       let monitoredIP4s = await (rclient.smembersAsync("monitored_hosts"))
 
-      for(let ip4 in monitoredIP4s) {
+      for(let i in monitoredIP4s) {
+        let ip4 = monitoredIP4s[i]
         let host = this.getHostFast(ip4)
         if(host && host.lastActiveTimestamp > limit) {
           activeHosts.push(host)
@@ -2295,7 +2296,8 @@ module.exports = class {
 
       let monitoredIP6s = await (rclient.smembersAsync("monitored_hosts6"))
 
-      for(let ip6 in monitoredIP6s) {
+      for(let i in monitoredIP6s) {
+        let ip6 = monitoredIP6s[i]
         let host = hits.getHostFast6(ip6)
         if(host && host.lastActiveTimestamp > limit) {
           activeHosts.push(host)
