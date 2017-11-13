@@ -1895,15 +1895,27 @@ module.exports = class {
                             hostbymac.type = this.type;
                             this.hosts.all.push(hostbymac);
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-                            this.hostsdb['host:mac:' + o.mac] = hostbymac;
+                          this.hostsdb['host:mac:' + o.mac] = hostbymac;
+
+                          let ipv6Addrs = o.ipv6Addr
+                          for(let ipv6Addr in ipv6Addrs) {
+                            this.hostsdb[`host:ip6:${ipv6Addr}`] = hostbymac                           
+                          }
+                          
                         } else {
                             if (o.ipv4!=hostbymac.o.ipv4) {
                                 // the physical host get a new ipv4 address
                                 //
                                 this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
                             }
-                            this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
-                            hostbymac.update(o);
+                          this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
+
+                          let ipv6Addrs = o.ipv6Addr
+                          for(let ipv6Addr in ipv6Addrs) {
+                            this.hostsdb[`host:ip6:${ipv6Addr}`] = hostbymac
+                          }
+                          
+                          hostbymac.update(o);
                         }
                         hostbymac._mark = true;
                         if (hostbyip) {
@@ -2268,7 +2280,7 @@ module.exports = class {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
 
-  getActiveHostsFromList(limit) {
+  getActiveHostsFromSpoofList(limit) {
     return async(() => {
       let activeHosts = []
       
