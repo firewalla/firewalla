@@ -2310,7 +2310,7 @@ module.exports = class {
 
       for(let i in monitoredIP6s) {
         let ip6 = monitoredIP6s[i]
-        let host = hits.getHostFast6(ip6)
+        let host = this.getHostFast6(ip6)
         if(host && host.lastActiveTimestamp > limit) {
           activeHosts.push(host)
         }
