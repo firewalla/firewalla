@@ -95,7 +95,7 @@ class BitBridge {
       let cmd = binary+" "+args.join(" ")
       log.info("Lanching Bitbridge4 ", cmd);
       fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge7.rc`,
-                       `export BINARY_ARGUMENTS=${args.join(" ")}`)
+                       `export BINARY_ARGUMENTS='${args.join(" ")}'`)
       require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
 
 
@@ -105,7 +105,7 @@ class BitBridge {
       cmd = binary+" "+args.join(" ")
       log.info("Lanching bitbridge6", cmd);
       fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.rc`,
-                       `export BINARY_ARGUMENTS=${args.join(" ")}`)
+                       `export BINARY_ARGUMENTS='${args.join(" ")}'`)
       
       require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
     }

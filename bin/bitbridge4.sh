@@ -9,9 +9,9 @@ if [[ -e $FIREWALLA_BIN/$BINARY.rc ]]; then
 fi
 
 if [[ -e $FIREWALLA_BIN/dev ]]; then
-  cp $FIREWALLA_BIN{/mock, }/$BINARY
+  cp $FIREWALLA_BIN{/mock,}/$BINARY
 else
-  cp $FIREWALLA_BIN{/real, }/$BINARY
+  cp $FIREWALLA_BIN{/real,}/$BINARY
 fi
 
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_BIN/$BINARY
