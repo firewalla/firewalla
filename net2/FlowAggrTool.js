@@ -116,7 +116,7 @@ class FlowAggrTool {
     return async(() => {
       const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
-      let count = await (rclient.zremrangebyscore(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
+      let count = await (rclient.zremrangebyscoreAsync(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
         log.warn(`${count} flows are moved from ${key} for self protection`)
       }
@@ -199,7 +199,7 @@ class FlowAggrTool {
       
       let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
 
-      let count = await (rclient.zremrangebyscore(sumFlowKey, 0, -1 * MAX_FLOW_PER_SUM)) // only keep the MAX_FLOW_PER_SUM highest flows
+      let count = await (rclient.zremrangebyscoreAsync(sumFlowKey, 0, -1 * MAX_FLOW_PER_SUM)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
         log.warn(`${count} flows are moved from ${sumFlowKey} for self protection`)
       }
