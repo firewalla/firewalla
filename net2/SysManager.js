@@ -402,6 +402,10 @@ module.exports = class {
         return this.monitoringInterface().gateway;
     }
 
+    myGateway6() {
+        return this.monitoringInterface().gateway6;
+    }
+
     mySubnet() {
         return this.monitoringInterface().subnet;
     }
