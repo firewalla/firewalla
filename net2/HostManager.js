@@ -411,6 +411,7 @@ class Host {
     return list;
   }
 
+
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
@@ -1710,6 +1711,14 @@ module.exports = class {
         return this.hostsdb["host:ip4:"+ip];
     }
 
+  getHostFast6(ip6) {
+    if(ip6) {
+      return this.hostsdb[`host:ip6:${ip6}`]
+    }
+
+    return null
+  }
+
     getHostAsync(ip) {
       return new Promise((resolve, reject) => {
         this.getHost(ip, (err, host) => {
@@ -1740,7 +1749,13 @@ module.exports = class {
                 host = new Host(o,this);
                 host.type = this.type;
                 //this.hosts.all.push(host);
-                this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
+              this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
+
+              let ipv6Addrs = o.ipv6Addr
+              for(let ipv6Addr in ipv6Addrs) {
+                this.hostsdb[`host:ip6:${ipv6Addr}`] = host
+              }
+              
                 if (this.hostsdb['host:mac:' + o.mac]) {
                     // up date if needed
                 }
@@ -2252,5 +2267,38 @@ module.exports = class {
   getActiveMACs() {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
+
+  getActiveHostsFromList(limit) {
+    return async(() => {
+      let activeHosts = []
+      
+      let monitoredIP4s = await (rclient.smembersAsync("monitored_hosts"))
+
+      for(let ip4 in monitoredIP4s) {
+        let host = this.getHostFast(ip4)
+        if(host && host.lastActiveTimestamp > limit) {
+          activeHosts.push(host)
+        }
+      }
+
+      let monitoredIP6s = await (rclient.smembersAsync("monitored_hosts6"))
+
+      for(let ip6 in monitoredIP6s) {
+        let host = hits.getHostFast6(ip6)
+        if(host && host.lastActiveTimestamp > limit) {
+          activeHosts.push(host)
+        }
+      }
+
+      // unique
+      activeHosts = activeHosts.filter((elem, pos) => {
+        return activeHosts.indexOf(elem) === pos
+      })
+
+      return activeHosts
+       
+    })()    
+  }
+
   
 }
