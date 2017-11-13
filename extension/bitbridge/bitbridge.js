@@ -94,7 +94,8 @@ class BitBridge {
 
       let cmd = binary+" "+args.join(" ")
       log.info("Lanching Bitbridge4 ", cmd);
-      require('child_process').execSync("echo 'cp /home/pi/firewalla/bin/real/bitbridge7 /home/pi/firewalla/bin/. ; sudo setcap cap_net_admin,cap_net_raw=eip /home/pi/firewalla/bin/bitbridge7 ; "+cmd +" ' > /home/pi/firewalla/bin/bitbridge4.sh");
+      fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge7.rc`,
+                       `export BINARY_ARGUMENTS=${args.join(" ")}`)
       require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
 
 
@@ -103,7 +104,9 @@ class BitBridge {
 
       cmd = binary+" "+args.join(" ")
       log.info("Lanching bitbridge6", cmd);
-      require('child_process').execSync("echo 'cp /home/pi/firewalla/bin/real/bitbridge6 /home/pi/firewalla/bin/. ; sudo setcap cap_net_admin,cap_net_raw=eip /home/pi/firewalla/bin/bitbridge6 ; "+cmd +" ' > /home/pi/firewalla/bin/bitbridge6.sh");
+      fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.rc`,
+                       `export BINARY_ARGUMENTS=${args.join(" ")}`)
+      
       require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
     }
 
