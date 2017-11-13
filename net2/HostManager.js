@@ -1751,9 +1751,13 @@ module.exports = class {
                 //this.hosts.all.push(host);
               this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
 
-              let ipv6Addrs = o.ipv6Addr
-              for(let i in ipv6Addrs) {
-                this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = host
+              let ipv6Addrs = host.ipv6Addr
+              if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                for(let i in ipv6Addrs) {
+                  let ip6 = ipv6Addrs[i]
+                  let key = `host:ip6:${ip6}`
+                  this.hostsdb[key] = host
+                }
               }
               
                 if (this.hostsdb['host:mac:' + o.mac]) {
@@ -1897,9 +1901,13 @@ module.exports = class {
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                           this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
-                          let ipv6Addrs = o.ipv6Addr
-                          for(let i in ipv6Addrs) {
-                            this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = hostbymac                           
+                          let ipv6Addrs = hostbymac.ipv6Addr
+                          if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                            for(let i in ipv6Addrs) {
+                              let ip6 = ipv6Addrs[i]
+                              let key = `host:ip6:${ip6}`
+                              this.hostsdb[key] = hostbymac
+                            }
                           }
                           
                         } else {
@@ -1910,9 +1918,13 @@ module.exports = class {
                             }
                           this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
-                          let ipv6Addrs = o.ipv6Addr
-                          for(let i in ipv6Addrs) {
-                            this.hostsdb[`host:ip6:${ipv6Addrs[i]}`] = hostbymac
+                          let ipv6Addrs = hostbymac.ipv6Addr
+                          if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                            for(let i in ipv6Addrs) {
+                              let ip6 = ipv6Addrs[i]
+                              let key = `host:ip6:${ip6}`
+                              this.hostsdb[key] = hostbymac
+                            }
                           }
                           
                           hostbymac.update(o);
