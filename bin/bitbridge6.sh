@@ -17,7 +17,7 @@ fi
 
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_BIN/$BINARY
 
-if [[ ! -n $BINARY_ARGUMENTS ]]; then
+if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
   $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS
 else
   exit 1
