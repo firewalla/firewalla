@@ -1,4 +1,3 @@
-
 /*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -99,16 +98,19 @@ class BitBridge {
       require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
 
       //sudo ./bitbridge6 eth0 -q -w 1 -k monitored_hosts6 -g fe80::250:f1ff:fe80:0
-
-      binary = this.getBinary6()
-      args = [this.intf, '-w 1','-q','-k monitored_hosts6','-g '+this.routerIP6];
-
-      cmd = binary+" "+args.join(" ")
-      log.info("Lanching bitbridge6", cmd);
-      fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.rc`,
-                       `export BINARY_ARGUMENTS='${args.join(" ")}'`)
-      
-      require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
+      if(this.routerIP6) {
+        binary = this.getBinary6()
+        args = [this.intf, '-w 1','-q','-k monitored_hosts6','-g '+this.routerIP6];
+        
+        cmd = binary+" "+args.join(" ")
+        log.info("Lanching bitbridge6", cmd);
+        fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.rc`,
+                         `export BINARY_ARGUMENTS='${args.join(" ")}'`)
+        
+        require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
+      } else {
+        log.info("IPV6 not supported in current network environment, lacking ipv6 router")
+      }
     }
 
     this.started = true
