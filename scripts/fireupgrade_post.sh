@@ -23,7 +23,7 @@
 
 sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
-sudo systemctl daemon-reload
-sudo systemctl reenable bitbridge4
-sudo systemctl reenable bitbridge6
+#sudo systemctl daemon-reload
+#sudo systemctl reenable bitbridge4
+#sudo systemctl reenable bitbridge6
 
