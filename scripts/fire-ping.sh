@@ -3,10 +3,24 @@
 # Check Memory as well here, if memory is low don't write ...
 #
 # this should deal with /dev/watchdog
-mem=$(free -m | awk '/-/{print $4}')
+
+mem=0
+
+swapmem=$(free -m | awk '/Swap:/{print $4}')
+realmem=$(free -m | awk '/Mem:/{print $7}')
+totalmem=$(( swapmem + realmem ))
+
+if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+  mem=$totalmem
+  (( mem <= 35 )) && echo swap $mem >> /home/pi/.forever/top_before_reboot.log
+else
+  mem=$realmem
+  (( mem <= 35 )) && echo real mem $mem >> /home/pi/.forever/top_before_reboot.log
+fi
+
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= 20 )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 20 $mem"
-(( mem <= 20 )) && /home/pi/firewalla/scripts/free-memory-lastresort 
+(( mem <= 35 )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 35 $mem"
+(( mem <= 35 )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
