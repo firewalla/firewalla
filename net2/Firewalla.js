@@ -192,6 +192,8 @@ function getVersion() {
 
     if(versionElements.length === 3) {
       version = util.format("%s.%s (%s)", versionElements[0], versionElements[1], versionElements[2]);
+    } else if(versionElements.length === 1) {
+      version = util.format("%s.0 (0)", versionElements[0])
     } else {
       version = "0.0 (0)";
     }

@@ -72,6 +72,9 @@ let portForLocalAPI = normalizePort('8834');
 
 function run() {
 
+  const firewallaConfig = require('../../net2/config.js').getConfig();
+  sysManager.setConfig(firewallaConfig) // update sys config when start
+  
   let app = require('../app');
   app.set('port', port);
 

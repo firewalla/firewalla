@@ -50,6 +50,10 @@ let Block = require('../control/Block.js');
 
 let Policy = require('./Policy.js');
 
+const HostTool = require('../net2/HostTool.js')
+const ht = new HostTool()
+
+
 
 
 class PolicyManager2 {
@@ -438,6 +442,29 @@ class PolicyManager2 {
     });
   }
 
+
+  parseDevicePortRule(target) {
+    return async(() => {
+      let matches = target.match(/(.*):(\d+):(tcp|udp)/)
+      if(matches) {
+        let mac = matches[1]
+        let host = await (ht.getMACEntry(mac))
+        if(host) {
+          return {
+            ip: host.ipv4Addr,
+            port: matches[2],
+            protocol: matches[3]
+          }
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+
+    })()
+  }
+    
   enforce(policy) {
     log.info("Enforce policy: ", policy, {});
 
@@ -462,8 +489,13 @@ class PolicyManager2 {
           });
         });
       break;
-    case "ip_port":
-      return Block.blockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+    case "devicePort":
+      return async(() => {
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.blockPublicPort(data.ip, data.port, data.protocol)
+        }
+      })()
       break;
     default:
       return Promise.reject("Unsupported policy");
@@ -492,8 +524,13 @@ class PolicyManager2 {
             toProcess: 'FireMain'
           });
       });
-    case "ip_port":
-      return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+    case "devicePort":
+       return async(() => {
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        }
+       })()
       break;
     default:
       return Promise.reject("Unsupported policy");
