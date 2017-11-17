@@ -1348,11 +1348,9 @@ class netBot extends ControllerBot {
     } else if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
-        .then(() => {
-          this.simpleTxData(msg, null, null, callback);
-        }).catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      });
+
+      // direct reply back to app that system is being reset
+      this.simpleTxData(msg, null, null, callback)
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
