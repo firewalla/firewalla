@@ -158,10 +158,11 @@ function generateEncryptionKey(license) {
   let seed = mathuuid.uuidshort(32 - userKey.length);
 
   return {
-      'key': userKey + seed,
-      'seed': seed,
-      'userkey': userKey,
-      'noLicenseMode': license == null
+    'key': userKey + seed,
+    'seed': seed,
+    'userkey': userKey,
+    'noLicenseMode': license == null,
+    'license': license != null && license.UUID
   };
 }
 
