@@ -130,6 +130,19 @@ module.exports = class {
                   this.upgradeEvent = data;
               }
           });
+
+          // record firewalla's own server address
+          //
+          dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+               this.serverIps = addresses;
+          });
+          setInterval(()=>{
+              dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+                  this.serverIps = addresses;
+              });
+          },1000*60*60*24);
+
+          return false;
         }
         this.update(null);
         return instance;
@@ -337,6 +350,18 @@ module.exports = class {
         }
     }
 
+    isIPv6GloballyConnected() {
+        let ipv6Addrs = this.myIp6();
+        if (ipv6Addrs && ipv6Addrs.length>0) {
+            for (ip6 in ipv6Addrs) {
+                if (!ip6.startsWith("fe80")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
   myIp2() {
     let secondInterface = this.sysinfo &&
         this.config.monitoringInterface2 &&
@@ -417,6 +442,10 @@ module.exports = class {
 
     mySSHPassword() {
         return this.sshPassword;
+    }
+
+    isOurCloudServer(host) {
+        return host === "firewalla.encipher.io";
     }
 
     inMySubnet6(ip6) {
@@ -506,15 +535,8 @@ module.exports = class {
     isMyServer(ip) {
         if (this.serverIps) {
             return (this.serverIps.indexOf(ip)>-1);
-        } else {
-            dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-                 this.serverIps = addresses;
-            });
-            setInterval(()=>{
-                 this.serverIps = null;
-            },1000*60*60*24);
-            return false;
-        }
+        } 
+        return false;
     }
 
     isMulticastIP4(ip) {
