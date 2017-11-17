@@ -118,7 +118,11 @@ function clearConfig(callback) {
     }
 
     ssConfig = null;
-    fs.unlinkSync(ssConfigPath);
+    try {
+      fs.unlinkSync(ssConfigPath);
+    } catch(err) {
+      log.error(`Failed to remove file: ${ssConfigPath}, error: ${err}`)
+    }
     callback(null);
   });
 }
