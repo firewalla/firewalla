@@ -149,6 +149,10 @@ class BonjourSensor extends Sensor {
     }
     return name;
   }
+
+  getFriendlyDeviceName(service) {
+    return service.name
+  }  
   
   bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service, {});
@@ -177,7 +181,7 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getDeviceName(service),
+      name: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       host: service.host
