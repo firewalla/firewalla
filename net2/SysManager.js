@@ -254,6 +254,13 @@ module.exports = class {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
       }
       rclient.publish("System:TimezoneChange", timezone);
+
+      let cmd = `sudo timedatectl set-timezone ${timezone}`
+      require('child_process').exec(cmd, (err, stdout, stderr) => {
+        if(err) {
+          log.error("Failed to set system timezone:", err, "stderr:", stderr, {})
+        }
+      })
       callback(err);
     });
   }

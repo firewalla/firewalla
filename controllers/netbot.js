@@ -850,7 +850,7 @@ class netBot extends ControllerBot {
         let v3 = msg.data.value;
 
         if (v3.timezone) {
-          sysManager.setTimezone(v3, (err) => {
+          sysManager.setTimezone(v3.timezone, (err) => {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
