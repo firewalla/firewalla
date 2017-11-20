@@ -22,13 +22,13 @@ cd $FIREWALLA_HOME
 git config remote.origin.fetch "+refs/heads/master:refs/remotes/origin/master"
 git fetch origin
 # master should be changed to beta branch in the future
-git checkout master
+git checkout -f master
 
 # node modules repo
 cd ~/.node_modules
 git config remote.origin.fetch "+refs/heads/master:refs/remotes/origin/master"
 git fetch origin
-git checkout master
+git checkout -f master
 
 sync
 logger "REBOOT: JOIN BETA"

@@ -71,6 +71,7 @@ class DeviceHook extends Hook {
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await (hostTool.macExists(mac))
       if(!found) {
+        log.info(`A new device is found: '${mac}' `)
         sem.emitEvent({
           type: "NewDeviceFound",
           message: "A new device (mac address) found @ DeviceHook",
@@ -188,21 +189,22 @@ class DeviceHook extends Hook {
       log.info(util.format("A new device %s - %s - %s is found!", host.bname, host.ipv4Addr, host.mac));
 
       let enrichedHost = extend({}, host, {
-        uid: host.ipv4Addr,
+        uid: host.ipv4Addr || this.getFirstIPv6(host) || host.mac || "Unknown",
         firstFoundTimestamp: new Date() / 1000,
         lastActiveTimestamp: new Date() / 1000
       });
 
       async(() => {
 
-
         // v4
-        await (hostTool.updateHost(enrichedHost));
+        if(enrichedHost.ipv4Addr)
+          await (hostTool.updateHost(enrichedHost));
 
         // v6
-        await (hostTool.updateIPv6Host(enrichedHost));
+        if(enrichedHost.ipv6Addr)
+          await (hostTool.updateIPv6Host(enrichedHost));
 
-        log.info("Host entry is created for this new device");
+        log.info("Host entry is created for this new device:", host, {});
 
         let mac = enrichedHost.mac;
 
@@ -224,7 +226,7 @@ class DeviceHook extends Hook {
 
         enrichedHost.macVendor = v;
 
-        if(!enrichedHost.bname) {
+        if(!enrichedHost.bname && host.ipv4Addr) {
           let sambaName = await (samba.getSambaName(host.ipv4Addr));
           if(sambaName)
             enrichedHost.bname = sambaName;
@@ -431,7 +433,7 @@ class DeviceHook extends Hook {
 
   createAlarmAsync(host) {
     return new Promise((resolve, reject) => {
-      this.createAlarmAsync(host, (err) => {
+      this.createAlarm(host, (err) => {
         if(err) {
           reject(err);
         } else {
@@ -441,6 +443,14 @@ class DeviceHook extends Hook {
     })
   }
 
+  getFirstIPv6(host) {
+    return host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]
+  }
+
+  getPreferredName(host) {
+    return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
+  }
+  
   createAlarm(host, callback) {
     callback = callback || function() {}
 
@@ -448,14 +458,14 @@ class DeviceHook extends Hook {
     let AM2 = require('../alarm/AlarmManager2.js');
     let am2 = new AM2();
 
-    let name = host.bname || host.ipv4Addr;
+    let name = getPreferredName(host)
 
     let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
                                          name,
                                          {
                                            "p.device.id": name,
                                            "p.device.name": name,
-                                           "p.device.ip": host.ipv4Addr,
+                                           "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
                                            "p.device.mac": host.mac,
                                            "p.device.vendor": host.macVendor
                                          });
