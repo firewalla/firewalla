@@ -928,6 +928,20 @@ class Host {
         return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp) / 60) + "m)" + " " + this.o.mac;
     }
 
+  getPreferredBName() {
+
+    // bonjour over dhcp over the others
+    
+    if(this.o.bonjourName) {
+      return this.o.bonjourName
+    }
+
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+
+    return this.o.bname
+  }
 
     toJson() {
         let json = {
@@ -949,8 +963,10 @@ class Host {
             json.ip = this.o.ipv4;
         }
 
-        if (this.o.bname) {
-            json.bname = this.o.bname;
+      let preferredBName = this.getPreferredBName()
+      
+        if (preferredBName) {
+          json.bname = preferredBName
         }
 
         if (this.activities) {
