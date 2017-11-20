@@ -12,10 +12,10 @@ totalmem=$(( swapmem + realmem ))
 
 if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
   mem=$totalmem
-  (( mem <= 35 )) && echo swap $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
 else
   mem=$realmem
-  (( mem <= 35 )) && echo real mem $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
 fi
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')

@@ -44,6 +44,7 @@ rclient.on("error", function (err) {
 });
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
+let appmapsize = 200;
 
 /*
  *
@@ -247,7 +248,7 @@ module.exports = class {
         if (this.connmap[key]!=null) {
              return;
         }
-        log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
+        log.debug("CONNMAP_ARRAY",this.connarray.length,key,value);
         this.connarray.push(value);
         this.connmap[key] = value;
         let mapsize = 9000;
@@ -276,16 +277,19 @@ module.exports = class {
              return;
         }
 
+        if (sysManager.isOurCloudServer(value.host)) {
+             return;
+        }
+
         if (this.appmap[key]!=null) {
              return;
         }
 
-        log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        log.debug("APPMAP_ARRAY",this.apparray.length,key,value.host,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
-        let mapsize = 9000;
-        if (this.apparray.length>mapsize) {
-            let removed = this.apparray.splice(0,this.apparray.length-mapsize);
+        if (this.apparray.length>appmapsize) {
+            let removed = this.apparray.splice(0,this.apparray.length-appmapsize);
             for (let i in removed) {
                 delete this.appmap[removed[i]['uid']];
             }
@@ -502,7 +506,7 @@ module.exports = class {
                 return;
             }
 
-          if(!this.isConnFlowValid(data)) {
+          if(!this.isConnFlowValid(obj)) {
             return;
           }
 
