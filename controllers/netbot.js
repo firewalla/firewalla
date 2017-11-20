@@ -1868,7 +1868,7 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-//            log.info("Received jsondata", msg);
+      log.info("Received jsondata from cloud", msg, {});
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
 
