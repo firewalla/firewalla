@@ -21,6 +21,8 @@ const program = require('commander');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const util = require('util')
+
 const redis = require('redis')
 const rclient = redis.createClient()
 
