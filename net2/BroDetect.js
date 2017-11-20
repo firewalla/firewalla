@@ -502,7 +502,7 @@ module.exports = class {
                 return;
             }
 
-          if(!this.isConnFlowValid(data)) {
+          if(!this.isConnFlowValid(obj)) {
             return;
           }
 
