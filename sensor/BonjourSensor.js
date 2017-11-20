@@ -151,7 +151,11 @@ class BonjourSensor extends Sensor {
   }
 
   getFriendlyDeviceName(service) {
-    return service.name
+    if(service.fqdn && service.fqdn.match(/_airdrop._tcp/)) { // airdrop strange name will pollute bonjour name recognition, use .host instead
+      return this.getDeviceName(service)
+    } else {
+      return service.name
+    }
   }  
   
   bonjourParse(service) {
