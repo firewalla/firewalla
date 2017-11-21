@@ -44,8 +44,9 @@ class SSDPSensor extends Sensor {
 
       let lastFoundTimestamp = this.locationCache[ip]
       if(!lastFoundTimestamp || lastFoundTimestamp < new Date() / 1000 - CACHE_INTERVAL) {
+        this.locationCache[ip] = new Date() / 1000
         this.parseURL(ip, location, (err) => {
-          if(!err) {
+          if(err) {
             this.locationCache[ip] = new Date() / 1000 - (CACHE_INTERVAL - ERROR_CACHE_INTERVAL)
           }
         })
