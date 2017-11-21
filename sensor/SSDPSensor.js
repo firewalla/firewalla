@@ -30,6 +30,7 @@ const request = require('request')
 const parseString = require('xml2js').parseString;
 
 const CACHE_INTERVAL = 3600 // one hour
+const ERROR_CACHE_INTERVAL = 300 // five minutes
 
 const l2 = require('../util/Layer2.js');
 
@@ -43,8 +44,11 @@ class SSDPSensor extends Sensor {
 
       let lastFoundTimestamp = this.locationCache[ip]
       if(!lastFoundTimestamp || lastFoundTimestamp < new Date() / 1000 - CACHE_INTERVAL) {
-        this.locationCache[ip] = new Date() / 1000
-        this.parseURL(ip, location)
+        this.parseURL(ip, location, (err) => {
+          if(!err) {
+            this.locationCache[ip] = new Date() / 1000 - (CACHE_INTERVAL - ERROR_CACHE_INTERVAL)
+          }
+        })
       }
     } else if (statusCode !== 200) {
       log.debug("Got an error ssdp response: ", headers, statusCode, rinfo, {})
@@ -83,16 +87,22 @@ class SSDPSensor extends Sensor {
     });
   }
   
-  parseURL(ip, location) {
-    request(location, (err, response, body) => {
+  parseURL(ip, location, callback) {
+    let options = {
+      uri: location,
+      method: 'GET'
+    }
+    request(options, (err, response, body) => {
       if(err) {
-        log.error("Failed to GET", location, {})
+        log.error("Failed to GET", location, "err:", err, {})
+        callback(err)
         return
       }
 
       parseString(body, (err, result) => {
         if(err) {
           log.error(`Invalid SSDP XML for location ${location}, err: ${err}`)
+          callback(err)
           return
         }
 
@@ -101,7 +111,8 @@ class SSDPSensor extends Sensor {
         if(rr.deviceName) {
           this.notify(ip, rr)
         }
-        
+
+        callback(null)
       })
     });
   }
