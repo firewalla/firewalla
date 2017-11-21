@@ -138,13 +138,13 @@ class SSDPSensor extends Sensor {
   run() {
     this.ssdpClient = new SSDPClient()
     this.locationCache = {}
-    ssdpClient.on('response', this.onResponse)
+    this.ssdpClient.on('response', this.onResponse)
     process.nextTick(() => {
-      ssdpClient.search('ssdp:all')
+      this.ssdpClient.search('ssdp:all')
     })
 
     setInterval(() => {
-      ssdpClient.search('ssdp:all')
+      this.ssdpClient.search('ssdp:all')
     }, 10 * 60 * 1000)          // every 10 minutes
   }
 }
