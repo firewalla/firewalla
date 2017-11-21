@@ -72,7 +72,7 @@ class SSDPSensor extends Sensor {
         from: "ssdp"
       }
 
-      log.info(`Found a device via ssdp: ${host.bname} (${ip})`)
+      log.info(`Found a device via ssdp: ${host.bname} (${ip} - ${host.mac})`)
       
       sem.emitEvent({
         type: "DeviceUpdate",

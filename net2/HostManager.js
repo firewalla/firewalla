@@ -976,6 +976,15 @@ class Host {
         if (this.o.name) {
             json.name = this.o.name;
         }
+
+      if(this.o.modelName) {
+        json.modelName = this.o.modelName
+      }
+
+      if(this.o.manufacturer) {
+        json.manufacturer = this.o.manufacturer
+      }
+      
         if (this.hostname) {
             json._hostname = this.hostname
         }
