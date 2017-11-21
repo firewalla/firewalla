@@ -971,6 +971,9 @@ class Host {
       
         if (preferredBName) {
           json.bname = preferredBName
+          delete this.o.dhcpName
+          delete this.o.bonjourName
+          delete this.o.ssdpName
         }
 
         if (this.activities) {
