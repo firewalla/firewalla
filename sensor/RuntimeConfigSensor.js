@@ -22,7 +22,7 @@ const exec = require('child-process-promise').exec
 
 const Promise = require('bluebird');
 
-const Sensor = require('./Sensor.js')
+const Sensor = require('./Sensor.js').Sensor
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');

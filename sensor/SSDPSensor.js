@@ -70,7 +70,9 @@ class SSDPSensor extends Sensor {
         modelName: ssdpResult.modelName,
         manufacturer: ssdpResult.manufacturer,
         from: "ssdp"
-      };
+      }
+
+      log.info(`Found a device via ssdp: ${host.bname} (${ip})`)
       
       sem.emitEvent({
         type: "DeviceUpdate",
@@ -97,7 +99,7 @@ class SSDPSensor extends Sensor {
         const rr = this.parseContent(result)
 
         if(rr.deviceName) {
-          this.notify(ip, ssdpResult)
+          this.notify(ip, rr)
         }
         
       })
@@ -138,7 +140,9 @@ class SSDPSensor extends Sensor {
   run() {
     this.ssdpClient = new SSDPClient()
     this.locationCache = {}
-    this.ssdpClient.on('response', this.onResponse)
+    this.ssdpClient.on('response', (header, statusCode, rinfo) => {
+      this.onResponse(header, statusCode, rinfo)
+    })
     process.nextTick(() => {
       this.ssdpClient.search('ssdp:all')
     })
