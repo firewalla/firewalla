@@ -215,9 +215,11 @@ class IPV6In4 {
   stop() {
     log.info("Stopping ip6in4...")
     return async(() => {
-      await (exec("sudo systemctl stop radvd"))
+      await (exec("which radvd && sudo systemctl stop radvd"))
       await (this.disableTunnel())
-    })()
+    })().catch((err) => {
+      log.error("Failed to stop ip6in4 due to err:", err, {})
+    })
   }
 }
 
