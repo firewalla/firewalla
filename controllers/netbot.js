@@ -42,6 +42,8 @@ let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
+const flowUtil = require('../net2/FlowUtil');
+
 const iptool = require('ip')
 
 let redis = require('redis');
@@ -1122,7 +1124,29 @@ class netBot extends ControllerBot {
 
   validateFlowIntel(json) {
     return async(() => {
-      // await (bone.flowgraphAsync(...))      
+      // await (bone.flowgraphAsync(...))
+      let flows = json.flows
+
+      let hashCache = {}
+
+      // app
+      let appFlows = flows.appDetails
+      
+      flowUtil.hashIntelFlows(appFlows, hashCache)
+      let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
+      let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+      
+      flow.appDetails = unhashedData
+
+      // category
+      let categoryFlows = flows.categoryDetails
+      
+      flowUtil.hashIntelFlows(categoryFlows, hashCache)
+      let data2 = await (bone.flowgraphAsync('summarizeApp', categoryFlows))
+      let unhashedData2 = flowUtil.unhashIntelFlows(data2, hashCache)
+      
+      flow.categoryDetails = unhashedData2
+      
     })()
   }
   
@@ -1199,6 +1223,8 @@ class netBot extends ControllerBot {
         await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
         await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
         await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
+
+        await (this.validateFlowIntel(jsonobj)
       }
 
       return jsonobj;

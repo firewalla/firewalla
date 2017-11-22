@@ -1,3 +1,4 @@
+
 /**
  * Created by Melvin Tu on 04/01/2017.
  */
@@ -546,7 +547,11 @@ module.exports = class DNSMASQ {
         callback(null)
       }, 1000)
     } else {
-      require('child_process').execSync("sudo systemctl restart firemasq");
+      try {
+        require('child_process').execSync("sudo systemctl restart firemasq");
+      } catch(err) {
+        log.error("Got error when restarting firemasq:", err, {})
+      }
       callback(null)
     }
 
