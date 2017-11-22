@@ -1120,6 +1120,12 @@ class netBot extends ControllerBot {
     }
   }
 
+  validateFlowIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))      
+    })()
+  }
+  
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
@@ -1145,6 +1151,9 @@ class netBot extends ControllerBot {
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
       await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
       await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+
+      // validate flow intel
+      await (this.validateFlowIntel(jsonobj))
 
       return jsonobj;
     })();
