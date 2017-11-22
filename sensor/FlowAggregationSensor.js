@@ -250,6 +250,19 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       await (flowAggrTool.addSumFlow("app", options));
+      
+      let macs = hostManager.getActiveMACs()
+
+      macs.forEach((mac) => {
+        if(!mac) {
+          return
+        }
+        
+        options.mac = mac
+        await (flowAggrTool.addSumFlow("download", options))
+        await (flowAggrTool.addSumFlow("upload", options))
+        await (flowAggrTool.addSumFlow("app", options))
+      })
 
     })();
   }
