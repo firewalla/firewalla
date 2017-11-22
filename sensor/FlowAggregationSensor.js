@@ -259,6 +259,7 @@ class FlowAggregationSensor extends Sensor {
         }
         
         options.mac = mac
+        options.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         await (flowAggrTool.addSumFlow("app", options))
