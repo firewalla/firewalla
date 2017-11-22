@@ -1224,7 +1224,7 @@ class netBot extends ControllerBot {
         await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
         await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
 
-        await (this.validateFlowIntel(jsonobj)
+        await (this.validateFlowIntel(jsonobj))
       }
 
       return jsonobj;
