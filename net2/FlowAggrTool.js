@@ -36,6 +36,9 @@ const MAX_FLOW_PER_AGGR = 2000
 const MAX_FLOW_PER_SUM = 30000
 const MAX_FLOW_PER_HOUR = 7000
 
+const MIN_AGGR_TRAFFIC = 256
+const MIN_SUM_TRAFFIC = 1024
+
 function toInt(n){ return Math.floor(Number(n)); };
 
 class FlowAggrTool {
@@ -116,7 +119,7 @@ class FlowAggrTool {
     return async(() => {
       const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
-      let count = await (rclient.zremrangebyscoreAsync(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
+      let count = await (rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
         log.warn(`${count} flows are removed from ${key} for self protection`)
       }
@@ -131,7 +134,7 @@ class FlowAggrTool {
 
     let args = [key];
 
-    if(length > MAX_FLOW_PER_AGGR) { // self protection      
+    if(length > MAX_FLOW_PER_AGGR) { // self protection
       args.push(length)
       args.push(JSON.stringify({
         device: mac,
@@ -141,6 +144,11 @@ class FlowAggrTool {
 
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
+
+      if(traffic < MIN_AGGR_TRAFFIC) {
+        continue                // skip very small traffic
+      }
+      
       args.push(traffic)
       args.push(JSON.stringify({
         device: mac,
@@ -199,7 +207,7 @@ class FlowAggrTool {
       
       let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
 
-      let count = await (rclient.zremrangebyscoreAsync(sumFlowKey, 0, -1 * MAX_FLOW_PER_SUM)) // only keep the MAX_FLOW_PER_SUM highest flows
+      let count = await (rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow)) // only keep the MAX_FLOW_PER_SUM highest flows
       if(count > 0) {
         log.warn(`${count} flows are removed from ${sumFlowKey} for self protection`)
       }
