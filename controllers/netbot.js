@@ -1132,19 +1132,21 @@ class netBot extends ControllerBot {
 
       let appFlows = flows.appDetails
       let categoryFlows = flows.categoryDetails
-      
-      flowUtil.hashIntelFlows(appFlows, hashCache)
-      flowUtil.hashIntelFlows(categoryFlows, hashCache)
-      
-      let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
-                        bone.flowgraphAsync('summarizeActivity', categoryFlows))
 
-      let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
-      let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
-      
-      flows.appDetails = unhashedData
-      flows.categoryDetails = unhashedData2
-      
+      if(Object.keys(appFlows).length > 0 ||
+         Object.keys(categoryFlows).length > 0) {
+        flowUtil.hashIntelFlows(appFlows, hashCache)
+        flowUtil.hashIntelFlows(categoryFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
+                          bone.flowgraphAsync('summarizeActivity', categoryFlows))
+
+        let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
+        let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
+        
+        flows.appDetails = unhashedData
+        flows.categoryDetails = unhashedData2
+      }
     })()
   }
   
