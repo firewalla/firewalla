@@ -507,8 +507,13 @@ module.exports = class {
           // If any extension support this 'applyPolicy' hook, call it
           if(extensionManager.hasExtension(p)) {
             let hook = extensionManager.getHook(p, "applyPolicy")
-            if(hook)
-              hook(policy[p])
+            if(hook) {
+              try {
+                hook(policy[p])
+              } catch (err) {
+                log.error(`Failed to call applyPolicy hook on policy ${p}, err: ${err}`)
+              }
+            }
           }
           
             if (p == "acl") {

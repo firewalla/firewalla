@@ -18,12 +18,12 @@ if [[ ! -z $prod_branch ]]; then
   cd $FIREWALLA_HOME
   git config remote.origin.fetch "+refs/heads/${prod_branch}:refs/remotes/origin/${prod_branch}"
   git fetch origin
-  git checkout $prod_branch
+  git checkout -f $prod_branch
 
   cd ~/.node_modules
   git config remote.origin.fetch "+refs/heads/${prod_branch}:refs/remotes/origin/${prod_branch}"
   git fetch origin
-  git checkout $prod_branch
+  git checkout -f $prod_branch
   
   sync
   logger "REBOOT: Leave Beta"

@@ -255,7 +255,7 @@ class NmapSensor extends Sensor {
     if(host) {
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "A new device found @ NewDeviceHook",
+        message: "Found a device via NmapSensor",
         suppressEventLogging: true,
         suppressAlarm: this.suppressAlarm,
         host:  {
