@@ -55,6 +55,7 @@
     "BoneSensor": {},
     "APISensor": {},
     "RuntimeConfigSensor": {},
+    "SSDPSensor": {},
     "DNSMASQSensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},

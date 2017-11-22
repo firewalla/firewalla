@@ -51,10 +51,12 @@ class IPv6DiscoverySensor extends Sensor {
   run() {
     setTimeout(()=> {
       this.checkAndRunOnce(true);
-    },1000*60*3);
-    setInterval(() => {
-      this.checkAndRunOnce(true);
-    }, 1000 * 60 * 5); // every 5 minutes, fast scan
+
+      setInterval(() => {
+        this.checkAndRunOnce(true);
+      }, 1000 * 60 * 5); // every 5 minutes, fast scan
+      
+    },1000*60*5); // start the first run in 5 minutes
   }
 
   getNetworkRanges() {
@@ -103,14 +105,11 @@ class IPv6DiscoverySensor extends Sensor {
     });
   }
 
-  /* WARNING NOT SENDING SEM */
-  /* !!!!!!!!!!!!!!!!!!!!!!! */
   addV6Host(v6addrs,mac) {
     log.info("Found V6 Address ",v6addrs,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
       message: "A new ipv6 is found @ IPv6DisocverySensor",
-      suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
         ipv6Addr: v6addrs,

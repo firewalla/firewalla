@@ -928,6 +928,24 @@ class Host {
         return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp) / 60) + "m)" + " " + this.o.mac;
     }
 
+  getPreferredBName() {
+
+    // ssdp over bonjour over dhcp over the others
+
+    if(this.o.ssdpName) {
+      return this.o.ssdpName
+    }
+    
+    if(this.o.bonjourName) {
+      return this.o.bonjourName
+    }
+
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+
+    return this.o.bname
+  }
 
     toJson() {
         let json = {
@@ -949,8 +967,13 @@ class Host {
             json.ip = this.o.ipv4;
         }
 
-        if (this.o.bname) {
-            json.bname = this.o.bname;
+      let preferredBName = this.getPreferredBName()
+      
+        if (preferredBName) {
+          json.bname = preferredBName
+          delete this.o.dhcpName
+          delete this.o.bonjourName
+          delete this.o.ssdpName
         }
 
         if (this.activities) {
@@ -960,6 +983,15 @@ class Host {
         if (this.o.name) {
             json.name = this.o.name;
         }
+
+      if(this.o.modelName) {
+        json.modelName = this.o.modelName
+      }
+
+      if(this.o.manufacturer) {
+        json.manufacturer = this.o.manufacturer
+      }
+      
         if (this.hostname) {
             json._hostname = this.hostname
         }

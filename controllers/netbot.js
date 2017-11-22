@@ -49,6 +49,8 @@ let rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+Promise.promisifyAll(redis.RedisClient.prototype);
+
 let exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
@@ -530,7 +532,16 @@ class netBot extends ControllerBot {
             data.category = "com.firewalla.category.alarm";
           }
 
-          this.tx2(this.primarygid, "test", notifMsg, data);
+          // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+          async(() => {
+            let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
+            if(flag) {
+              notifMsg.body = `[${this.getDeviceName()}] ${notifMsg.body}`
+            }
+            this.tx2(this.primarygid, "test", notifMsg, data);            
+          })()
+
+
         }
       }
     });
@@ -854,7 +865,19 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
-        break;
+      break;
+    case "includeNameInNotification":
+        let v33 = msg.data.value;
+
+      if (v3.includeNameInNotification) {
+        async(() => {
+          await (rclient.hsetAsync("sys:config", "includeNameInNotification", "1"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      }
+      break;
     case "mode":
       let v4 = msg.data.value;
       let err = null;
@@ -1097,6 +1120,12 @@ class netBot extends ControllerBot {
     }
   }
 
+  validateFlowIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))      
+    })()
+  }
+  
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
@@ -1122,6 +1151,9 @@ class netBot extends ControllerBot {
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
       await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
       await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+
+      // validate flow intel
+      await (this.validateFlowIntel(jsonobj))
 
       return jsonobj;
     })();
@@ -1845,7 +1877,7 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-//            log.info("Received jsondata", msg);
+      log.info("Received jsondata from cloud", msg, {});
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
 
