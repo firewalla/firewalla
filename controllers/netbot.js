@@ -550,11 +550,40 @@ class netBot extends ControllerBot {
 
     setTimeout(() => {
       this.scanStart();
-      if (sysManager.systemRebootedDueToIssue(true) == false) {
-        if (nm.canNotify() == true) {
-          this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+      async(() => {
+        let branchChanged = await (sysManager.isBranchJustChanged())
+        if(branchChanged) {
+          let branch = null
+          
+          switch(branchChanged) {
+          case "1":
+            branch = "back to stable version"
+            break;
+          case "2":
+            branch = "to pre_release version"
+            break;
+          case "3":
+            branch = "to development version"
+            break;
+          default:
+            // do nothing, should not happen here
+            break;
+          }
+
+          if(branch) {
+            this.tx(this.primarygid, "200", `Device '${this.getDeviceName()}' has switched ${branch} successfully`)
+            sysManager.clearBranchChangeFlag()            
+          }
+
+        } else {
+          if (sysManager.systemRebootedDueToIssue(true) == false) {
+            if (nm.canNotify() == true) {
+              this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            }
+          }
         }
-      }
+        
+      })()
       this.setupDialog();
     }, 2000);
 
@@ -627,7 +656,7 @@ class netBot extends ControllerBot {
       let listip = [];
       this.hosts = result;
       for (let i in result) {
-        log.info(result[i].toShortString());
+//        log.info(result[i].toShortString());
         result[i].on("Notice:Detected", (channel, type, ip, obj) => {
           log.info("Found new notice", type, ip);
           if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
@@ -1769,7 +1798,12 @@ class netBot extends ControllerBot {
       break
     case "joinBeta":
       async(() => {
-        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        let master = msg.data.value.master
+        if(master) {
+          await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh --master`))
+        } else {
+          await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        }
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
