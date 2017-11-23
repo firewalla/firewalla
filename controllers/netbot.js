@@ -571,7 +571,7 @@ class netBot extends ControllerBot {
           }
 
           if(branch) {
-            let msg = `Device '${this.getDeviceName()}' has switched ${branch} ${sysManger.version()} successfully`
+            let msg = `Device '${this.getDeviceName()}' has switched ${branch} ${sysManager.version()} successfully`
             log.info(msg)
             this.tx(this.primarygid, "200", msg)
             sysManager.clearBranchChangeFlag()            
