@@ -294,7 +294,9 @@ class FlowAggrTool {
 
       let result = await (rclient.zunionstoreAsync(args));
       if(result > 0) {
-        await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey))
+        if(options.setLastSumFlow) {
+          await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey))
+        }
         await(rclient.expireAsync(sumFlowKey, expire))
         await(this.trimSumFlow(trafficDirection, options))
       }
