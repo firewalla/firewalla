@@ -193,7 +193,8 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
+      name: this.getDeviceName(service),
+      bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       host: service.host
