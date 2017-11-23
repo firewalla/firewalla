@@ -288,6 +288,7 @@ class FlowAggregationSensor extends Sensor {
         end: end,
         interval: this.config.interval,
         expireTime: this.config.sumFlowExpireTime,
+        setLastSumFlow: true
       }
 
       let macs = hostManager.getActiveMACs();
