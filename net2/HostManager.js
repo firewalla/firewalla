@@ -930,16 +930,12 @@ class Host {
 
   getPreferredBName() {
 
-    // ssdp over bonjour over dhcp over the others
+    // TODO: preferred name needs to be improved in the future
 
-    if(this.o.ssdpName) {
-      return this.o.ssdpName
-    }
-    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
-
+    
     if(this.o.dhcpName) {
       return this.o.dhcpName
     }

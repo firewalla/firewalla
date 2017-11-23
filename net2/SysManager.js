@@ -34,6 +34,9 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
 
@@ -210,6 +213,14 @@ module.exports = class {
     isSystemDebugOn() {
         return systemDebug;
     }
+
+  isBranchJustChanged() {
+    return rclient.getAsync("branch.changed")
+  }
+
+  clearBranchChangeFlag() {
+    return rclient.delAsync("branch.changed")
+  }
 
     systemRebootedDueToIssue(reset) {
        try {
