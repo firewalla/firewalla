@@ -317,8 +317,12 @@ class NetBotTool {
     json.flows[trafficDirection] = []
 
     return async(() => {
-      let flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
-      if(options.begin && options.end) {
+
+      let flowKey = null
+      
+      if(options.queryall) {
+        flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
+      } else {
         flowKey = await (flowAggrTool.getSumFlowKey(mac, trafficDirection, options.begin, options.end))
       }
       

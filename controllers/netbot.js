@@ -1231,6 +1231,10 @@ class netBot extends ControllerBot {
         options.end = end
       }
 
+      if(msg.data.hourblock != "1") { // 1 => hour stats, other => overall stats (last 24 hours)
+        options.queryall = true
+      }
+      
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
         let error = new Error("Invalide Host");
