@@ -8,15 +8,14 @@ class DomainCategory {
     this.baseurl = "http://sitereview.bluecoat.com/rest/categorization"
     this.useragent = "Mozilla/5.0";
     this.timeout = 10000;
-    this.regex = new RegExp('^<.+>(.+)<.+>$');
+    this.regex = /<a.+?>(.*?)<\/a>/g;
   }
 
   _extract(str) {
-    let result = str.match(this.regex);
-    if (result) {
-      return result[1];
-    } else {
-      return null;
+    let result = [];
+    let match = null;
+    while (match = regex.exec(str)) {
+      result.push(result[1]);
     }
   }
 
@@ -40,15 +39,15 @@ class DomainCategory {
         return;
       }
 
-      let category = null;
+      let categories = null;
       try {
         let _body = JSON.parse(body);
         log.debug('_body:', _body, {});
-        category = this._extract(_body.categorization);
+        categories = this._extract(_body.categorization);
       } catch (err) {
         log.error('unable to obtain category', err, {});
       }
-      cb(category);
+      cb(categories);
     });
 
   }
