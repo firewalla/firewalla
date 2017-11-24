@@ -15,7 +15,7 @@ class DomainCategory {
     let result = [];
     let match = null;
     while (match = regex.exec(str)) {
-      result.push(result[1]);
+      result.push(match[1]);
     }
   }
 
