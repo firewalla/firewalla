@@ -458,7 +458,7 @@ class DeviceHook extends Hook {
     let AM2 = require('../alarm/AlarmManager2.js');
     let am2 = new AM2();
 
-    let name = getPreferredName(host)
+    let name = this.getPreferredName(host)
 
     let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
                                          name,
