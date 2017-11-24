@@ -39,7 +39,9 @@ sudo rm -r -f /tmp/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch =~ release.* ]]; then
-     export FWPRODUCTION=$branch
+  # record production branch in redis
+  redis-cli hset sys:config prod.branch $branch
+  export FWPRODUCTION=$branch
 fi
 
 CPU_PLATFORM=$(uname -m)

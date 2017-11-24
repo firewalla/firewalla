@@ -63,6 +63,17 @@ function getBranch() {
   return _branch
 }
 
+function getProdBranch() {
+  return async(() => {
+    let branch = await (rclient.hgetAsync("sys:config", "prod.branch"))
+    if(branch) {
+      return branch
+    } else {
+      return release_6_0 // default
+    }
+  })()
+}
+
 function getUserID() {
   return process.env.USER;
 }
@@ -83,7 +94,33 @@ function getOverlayUpperDirPartition() {
   return "/media/root-rw/"
 }
 
+
+function isDevelopmentVersion() {
+  let branch = getBranch()
+  if(branch == "master") {
+    return true
+  } else {
+    return false
+  }
+}
+
+function isBeta() {
+  let branch = getBranch()
+  if(branch.match(/^beta_.*/)) {
+    return true
+  } else {
+    return false
+  }  
+}
+
 function isProduction() {
+  let branch = getBranch()
+  if(branch.match(/^release_.*/)) {
+    return true
+  } else {
+    return false
+  }
+  
   // if either of condition matches, this is production environment
   if (_isProduction === null) {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
@@ -215,7 +252,6 @@ module.exports = {
   getLocalesDirectory: getLocalesDirectory,
   getUserHome: getUserHome,
   getHiddenFolder: getHiddenFolder,
-  isProduction: isProduction,
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
@@ -235,5 +271,11 @@ module.exports = {
   isBootingComplete:isBootingComplete,
   setBootingComplete:setBootingComplete,
   resetBootingComplete:resetBootingComplete,
-  isFirstBindDone: isFirstBindDone
+  isFirstBindDone: isFirstBindDone,
+
+  isProduction: isProduction,
+  isBeta:isBeta,
+  isDevelopmentVersion:isDevelopmentVersion,
+
+  getProdBranch: getProdBranch
 }

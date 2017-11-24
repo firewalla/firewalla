@@ -31,7 +31,19 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class RuntimeConfigSensor extends Sensor {
   run() {
-    this.updateRedisConfig()
+    async(() => {
+      try {
+        this.updateRedisConfig()
+      } catch(err) {
+        log.error("Failed to update redis config:", err, {})
+      }
+
+      try {
+        this.updateFakeClock()
+      } catch(err) {
+        log.error("Failed to record latest time to fake-hwlock:", err, {})
+      }
+    })()
   }
 
   updateRedisConfig() {
@@ -40,6 +52,10 @@ class RuntimeConfigSensor extends Sensor {
     // 2 mins for 10000 keys change
     const saveConfig = "900 1 500 10 120 10000"
     return exec(`redis-cli config set save "${saveConfig}"`)
+  }
+
+  updateFakeClock() {
+    return exec('sudo fake-hwclock')
   }
 }
 

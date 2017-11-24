@@ -215,11 +215,11 @@ module.exports = class {
     }
 
   isBranchJustChanged() {
-    return rclient.getAsync("branch.changed")
+    return rclient.hgetAsync("sys:config", "branch.changed")
   }
 
   clearBranchChangeFlag() {
-    return rclient.delAsync("branch.changed")
+    return rclient.hdelAsync("sys:config", "branch.changed")
   }
 
     systemRebootedDueToIssue(reset) {

@@ -74,8 +74,8 @@ test $# -gt 0 || {
 
 branch=$1
 cur_branch=$(git rev-parse --abbrev-ref HEAD)
-switch_branch $cur_branch $branch
-set_redis_flag $branch
+switch_branch $cur_branch $branch || exit 1
+set_redis_flag $branch || exit 2
 
 sync
 logger "REBOOT: SWITCH branch from $cur_branch to $branch"
