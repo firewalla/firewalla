@@ -29,16 +29,18 @@ switch_branch() {
       exit 0
     fi
     # walla repo
-    cd $FIREWALLA_HOME
+    ( cd $FIREWALLA_HOME
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
     git fetch origin
     git checkout -f $tgt_branch
+    )
 
     # node modules repo
-    cd ~/.node_modules
+    ( cd ~/.node_modules
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
     git fetch origin
     git checkout -f $tgt_branch
+    )
 }
 
 set_redis_flag() {
@@ -74,4 +76,4 @@ switch_branch $cur_branch $branch
 set_redis_flag $branch
 
 sync
-logger "REBOOT: SWITCH branch to $branch"
+logger "REBOOT: SWITCH branch from $cur_branch to $branch"
