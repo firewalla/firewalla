@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 CMD=$(basename $0)
 
@@ -31,14 +33,14 @@ switch_branch() {
     # walla repo
     ( cd $FIREWALLA_HOME
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    git fetch origin
+    git fetch origin $tgt_branch
     git checkout -f $tgt_branch
     )
 
     # node modules repo
     ( cd ~/.node_modules
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    git fetch origin
+    git fetch origin $tgt_branch
     git checkout -f $tgt_branch
     )
 }
