@@ -289,5 +289,6 @@ module.exports = {
   isBeta:isBeta,
   isDevelopmentVersion:isDevelopmentVersion,
 
-  getProdBranch: getProdBranch
+  getProdBranch: getProdBranch,
+  getReleaseType: getReleaseType
 }
