@@ -39,7 +39,9 @@ sudo rm -r -f /tmp/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch =~ release.* ]]; then
-     export FWPRODUCTION=$branch
+  # record production branch in redis
+  redis-cli hset sys:config prod.branch $branch
+  export FWPRODUCTION=$branch
 fi
 
 CPU_PLATFORM=$(uname -m)
@@ -278,17 +280,19 @@ sudo sysctl -w net.ipv4.conf.all.route_localnet=1
 if [[ -f /.dockerenv ]]; then
     forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
 else
-    sudo systemctl start firemain
+    sudo systemctl restart firemain
 fi
 cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
 #forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
 
-if [[ -f /.dockerenv ]]; then
+if [[ "$NO_FIREKICK_RESTART" == "" ]]; then
+  if [[ -f /.dockerenv ]]; then
     forever start  -a --uid kickui kickstart.js --config /encipher.config/netbot.config
-else
-    sudo systemctl start firekick
+  else
+    sudo systemctl restart firekick
+  fi
 fi
 
 cd ..
@@ -298,14 +302,14 @@ cd monitor
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid monitor MonitorMain.js
 else
-    sudo systemctl start firemon
+    sudo systemctl restart firemon
 fi
 cd ..
 cd api
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid api bin/www
 else
-    sudo systemctl start fireapi
+    sudo systemctl restart fireapi
 fi
 cd ..
 

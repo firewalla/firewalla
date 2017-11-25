@@ -1353,6 +1353,8 @@ module.exports = class {
       json.language = 'en'
     }
 
+    json.releaseType = f.getReleaseType()
+
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
     }

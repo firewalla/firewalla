@@ -42,6 +42,9 @@ let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
+const SysTool = require('../net2/SysTool.js')
+const sysTool = new SysTool()
+
 const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
@@ -53,7 +56,7 @@ sclient.setMaxListeners(0);
 
 Promise.promisifyAll(redis.RedisClient.prototype);
 
-let exec = require('child-process-promise').exec
+const exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -1802,32 +1805,59 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })      
       break
+
     case "joinBeta":
       async(() => {
-        let master = msg.data.value.master
-        if(master) {
-          await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh --master`))
-        } else {
-          await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
-        }
+        await (this.switchBranch("beta"))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
+        this.simpleTxData(msg, {}, err, callback)
       })
-      break;
     case "leaveBeta":
       async(() => {
-        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh`))
+        await (this.switchBranch("prod"))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
+        this.simpleTxData(msg, {}, err, callback)
       })
-      break;
+    case "switchBranch":
+      let target = msg.data.value.target
+      
+      async(() => {
+        await (this.switchBranch(target))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+
+      break
     default:
       // unsupported action
-      this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
+      this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
       break;
     }
+  }
+
+  switchBranch(target) {
+    return async(() => {
+      let targetBranch = null
+      let prodBranch = await (f.getProdBranch())
+      
+      switch(target) {
+      case "dev":
+        targetBranch = "master"
+        break
+      case "beta":
+        targetBranch = prodBranch.replace("release_", "beta_")
+        break
+      case "prod":
+        targetBranch = prodBranch
+        break
+      }
+
+      await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
+      sysTool.restartServices()
+    })()
   }
 
   simpleTxData(msg, data, err, callback) {

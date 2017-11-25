@@ -34,14 +34,14 @@ switch_branch() {
     ( cd $FIREWALLA_HOME
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
     git fetch origin $tgt_branch
-    git checkout -f $tgt_branch
+    git checkout -f -B $tgt_branch origin/$tgt_branch
     )
 
     # node modules repo
     ( cd ~/.node_modules
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
     git fetch origin $tgt_branch
-    git checkout -f $tgt_branch
+    git checkout -f -B $tgt_branch origin/$tgt_branch
     )
 }
 
@@ -59,7 +59,7 @@ set_redis_flag() {
             ;;
     esac
     test -n "$redis_flag" || return 1
-    redis-cli hset sys:config branch.changed $redis_flag
+    redis-cli hset sys:config branch.changed $redis_flag &>/dev/null
 }
 
 # --------------
@@ -74,8 +74,8 @@ test $# -gt 0 || {
 
 branch=$1
 cur_branch=$(git rev-parse --abbrev-ref HEAD)
-switch_branch $cur_branch $branch
-set_redis_flag $branch
+switch_branch $cur_branch $branch || exit 1
+set_redis_flag $branch || exit 2
 
 sync
 logger "REBOOT: SWITCH branch from $cur_branch to $branch"
