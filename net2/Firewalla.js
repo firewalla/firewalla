@@ -128,6 +128,18 @@ function isProduction() {
   return _isProduction;
 }
 
+function getReleaseType() {
+  if(isProduction()) {
+    return "prod"
+  } else if(isBeta()) {
+    return "beta"
+  } else if (isDevelopmentVersion()) {
+    return "dev"
+  } else {
+    return "unknown"
+  }
+}
+
 function isDocker() {
   if(_isDocker === null) {
     _isDocker = require('fs').existsSync("/.dockerenv");
