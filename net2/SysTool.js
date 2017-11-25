@@ -46,7 +46,7 @@ class SysTool {
   }
 
   rebootServices() {
-    return exec("sync & /home/pi/firewalla/scripts/fire-reboot-normal")
+    return exec("sync & NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fire-reboot-normal")
   }
 
   shutdownServices() {
