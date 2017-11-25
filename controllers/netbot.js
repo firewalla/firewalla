@@ -1821,7 +1821,7 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, err, callback)
       })
     case "switchBranch":
-      target = msg.data.value.target
+      let target = msg.data.value.target
       
       async(() => {
         await (this.switchBranch(target))
