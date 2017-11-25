@@ -69,7 +69,7 @@ function getProdBranch() {
     if(branch) {
       return branch
     } else {
-      return release_6_0 // default
+      return "release_6_0" // default
     }
   })()
 }
