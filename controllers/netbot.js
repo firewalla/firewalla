@@ -1807,37 +1807,25 @@ class netBot extends ControllerBot {
       break
 
     case "joinBeta":
-      let target = null
-      target = "beta"
-    case "leaveBeta":
-      target = target || "production"
-    case "switchBranch":
       async(() => {
-        target = target || msg.data.value.target
-        let targetBranch = null
-        let prodBranch = await (f.getProdBranch())
-        
-        switch(target) {
-        case "development":
-          targetBranch = "master"
-          break
-        case "beta":
-          targetBranch = prodBranch.replace("release_", "beta_")
-          break
-        case "production":
-          targetBranch = prodBranch
-          break
-        }
-
-        try {
-          await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-          sysTool.restartServices()
-          this.simpleTxData(msg, {}, null, callback)
-        } catch(err) {
-          log.error("Failed to switch branch: ", err, {})
-          this.simpleTxData(msg, {}, err, callback);
-        }
-        
+        await (this.switchBranch("beta"))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    case "leaveBeta":
+      async(() => {
+        await (this.switchBranch("prod"))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    case "switchBranch":
+      target = msg.data.value.target
+      
+      async(() => {
+        await (this.switchBranch(target))
+        this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
       })
@@ -1848,6 +1836,28 @@ class netBot extends ControllerBot {
       this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
       break;
     }
+  }
+
+  switchBranch(target) {
+    return async(() => {
+      let targetBranch = null
+      let prodBranch = await (f.getProdBranch())
+      
+      switch(target) {
+      case "dev":
+        targetBranch = "master"
+        break
+      case "beta":
+        targetBranch = prodBranch.replace("release_", "beta_")
+        break
+      case "prod":
+        targetBranch = prodBranch
+        break
+      }
+
+      await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
+      sysTool.restartServices()
+    })()
   }
 
   simpleTxData(msg, data, err, callback) {
