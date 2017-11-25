@@ -1833,7 +1833,7 @@ class netBot extends ControllerBot {
       break
     default:
       // unsupported action
-      this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
+      this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
       break;
     }
   }

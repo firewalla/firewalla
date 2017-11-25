@@ -59,7 +59,7 @@ set_redis_flag() {
             ;;
     esac
     test -n "$redis_flag" || return 1
-    redis-cli hset sys:config branch.changed $redis_flag
+    redis-cli hset sys:config branch.changed $redis_flag &>/dev/null
 }
 
 # --------------

@@ -42,7 +42,7 @@ class SysTool {
 
   // call main-run
   restartServices() {
-    return exec(`${firewalla.getFirewallaHome()}/scripts/main-run.sh`)
+    return exec(`${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
 
   rebootServices() {
