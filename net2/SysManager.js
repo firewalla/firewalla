@@ -34,6 +34,9 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
 
@@ -130,6 +133,19 @@ module.exports = class {
                   this.upgradeEvent = data;
               }
           });
+
+          // record firewalla's own server address
+          //
+          dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+               this.serverIps = addresses;
+          });
+          setInterval(()=>{
+              dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+                  this.serverIps = addresses;
+              });
+          },1000*60*60*24);
+
+          return false;
         }
         this.update(null);
         return instance;
@@ -198,6 +214,14 @@ module.exports = class {
         return systemDebug;
     }
 
+  isBranchJustChanged() {
+    return rclient.hgetAsync("sys:config", "branch.changed")
+  }
+
+  clearBranchChangeFlag() {
+    return rclient.hdelAsync("sys:config", "branch.changed")
+  }
+
     systemRebootedDueToIssue(reset) {
        try {
            if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
@@ -217,7 +241,12 @@ module.exports = class {
     callback = callback || function() {}
 
     this.language = language;
-    i18n.setLocale(this.language);
+    const theLanguage = i18n.setLocale(this.language);
+    if(theLanguage !== this.language) {
+      callback(new Error("invalid language"))
+      return
+    }
+    
     rclient.hset("sys:config", "language", language, (err) => {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
@@ -236,6 +265,13 @@ module.exports = class {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
       }
       rclient.publish("System:TimezoneChange", timezone);
+
+      let cmd = `sudo timedatectl set-timezone ${timezone}`
+      require('child_process').exec(cmd, (err, stdout, stderr) => {
+        if(err) {
+          log.error("Failed to set system timezone:", err, "stderr:", stderr, {})
+        }
+      })
       callback(err);
     });
   }
@@ -332,6 +368,18 @@ module.exports = class {
         }
     }
 
+    isIPv6GloballyConnected() {
+        let ipv6Addrs = this.myIp6();
+        if (ipv6Addrs && ipv6Addrs.length>0) {
+            for (ip6 in ipv6Addrs) {
+                if (!ip6.startsWith("fe80")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
   myIp2() {
     let secondInterface = this.sysinfo &&
         this.config.monitoringInterface2 &&
@@ -397,6 +445,10 @@ module.exports = class {
         return this.monitoringInterface().gateway;
     }
 
+    myGateway6() {
+        return this.monitoringInterface().gateway6;
+    }
+
     mySubnet() {
         return this.monitoringInterface().subnet;
     }
@@ -408,6 +460,10 @@ module.exports = class {
 
     mySSHPassword() {
         return this.sshPassword;
+    }
+
+    isOurCloudServer(host) {
+        return host === "firewalla.encipher.io";
     }
 
     inMySubnet6(ip6) {
@@ -488,6 +544,8 @@ module.exports = class {
                repoBranch: repoBranch,
                repoHead: repoHead,
                repoTag: repoTag,
+               language: this.language,
+               timezone: this.timezone,
                memory: data
             });
         });
@@ -497,15 +555,8 @@ module.exports = class {
     isMyServer(ip) {
         if (this.serverIps) {
             return (this.serverIps.indexOf(ip)>-1);
-        } else {
-            dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-                 this.serverIps = addresses;
-            });
-            setInterval(()=>{
-                 this.serverIps = null;
-            },1000*60*60*24);
-            return false;
-        }
+        } 
+        return false;
     }
 
     isMulticastIP4(ip) {

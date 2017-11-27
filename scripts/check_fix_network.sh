@@ -36,6 +36,10 @@ get_value() {
     esac
 }
 
+set_timeout() {
+    [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
+}
+
 save_values() {
     r=0
     $LOGGER "Save working values of ip/gw/dns"
@@ -148,7 +152,7 @@ done
 echo OK
 
 echo -n "checking ethernet IP ... "
-tmout=60
+tmout=$(set_timeout 60)
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))

@@ -438,7 +438,7 @@ module.exports = class FlowManager {
     flowsummary.tophour = tsnow;
 
     let download = this.getLast24HoursDownloadsStats();
-    let upload = this.getLast24HoursDownloadsStats();
+    let upload = this.getLast24HoursUploadsStats();
     
     return Promise.join(download, upload, (d, u) => {
       flowsummary.flowinbytes = this.flowToLegacyFormat(d);

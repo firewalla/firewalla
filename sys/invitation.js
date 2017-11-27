@@ -88,6 +88,16 @@ class FWInvitation {
       qrcode.generate(str);
   }
 
+  displayLicense(license) {
+    if(!license)
+      return
+    
+    log.info("\n\n-------------------------------\n");
+    log.info("\n\nLicense QR");
+    log.info("\n");
+    qrcode.generate(license)
+  }
+  
   validateLicense(license) {
 
   }
@@ -211,6 +221,7 @@ class FWInvitation {
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
+    this.displayLicense(this.symmetrickey.license)
     this.displayKey(this.symmetrickey.userkey);
 //    this.displayInvite(obj); // no need to display invite in firewalla any more
 

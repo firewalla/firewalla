@@ -95,7 +95,7 @@ class IntelTool {
 
     let key = this.getIntelKey(ip);
 
-    log.info("Storing intel for ip", ip);
+    log.debug("Storing intel for ip", ip);
 
     intel.updateTime = `${new Date() / 1000}`
 

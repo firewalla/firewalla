@@ -1,3 +1,4 @@
+
 /**
  * Created by Melvin Tu on 04/01/2017.
  */
@@ -36,7 +37,8 @@ let fConfig = require('../../net2/config.js').getConfig();
 
 let bone = require("../../lib/Bone.js");
 
-let iptables = require('../../net2/Iptables');
+const iptables = require('../../net2/Iptables');
+const ip6tables = require('../../net2/Ip6tables.js')
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -321,6 +323,13 @@ module.exports = class DNSMASQ {
     });
   }
 
+  _add_all_iptables_rules() {
+    return async(() => {
+      await (this._add_iptables_rules())
+      await (this._add_ip6tables_rules())
+    })()
+  }
+  
   _add_iptables_rules() {
     return async(() => {
       let subnets = await (networkTool.getLocalNetworkSubnets());
@@ -334,6 +343,34 @@ module.exports = class DNSMASQ {
       await (require('../../control/Block.js').block(BLACK_HOLE_IP));
     })();
   }
+
+  _add_ip6tables_rules() {
+    return async(() => {
+      let ipv6s = sysManager.myIp6();
+
+      for(let index in ipv6s) {
+        let ip6 = ipv6s[index]
+        if(ip6.startsWith("fe80::")) {
+          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+          await (ip6tables.dnsRedirectAsync(ip6, 8853))
+        }
+      }
+    })();
+  }
+
+  _remove_ip6tables_rules() {
+    return async(() => {
+      let ipv6s = sysManager.myIp6();
+
+      for(let index in ipv6s) {
+        let ip6 = ipv6s[index]
+        if(ip6.startsWith("fe80:")) {
+          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+          await (ip6tables.dnsUnredirectAsync(ip6, 8853))
+        }
+      }
+    })();
+  }    
 
   add_iptables_rules(callback) {
     callback = callback || function() {}
@@ -356,6 +393,13 @@ module.exports = class DNSMASQ {
     });
   }
 
+  _remove_all_iptables_rules() {
+    return async(() => {
+      await (this._remove_iptables_rules())
+      await (this._remove_ip6tables_rules())
+    })()
+  }
+  
   _remove_iptables_rules() {
     return async(() => {
       let subnets = await (networkTool.getLocalNetworkSubnets());
@@ -503,7 +547,11 @@ module.exports = class DNSMASQ {
         callback(null)
       }, 1000)
     } else {
-      require('child_process').execSync("sudo systemctl restart firemasq");
+      try {
+        require('child_process').execSync("sudo systemctl restart firemasq");
+      } catch(err) {
+        log.error("Got error when restarting firemasq:", err, {})
+      }
       callback(null)
     }
 
@@ -575,14 +623,14 @@ module.exports = class DNSMASQ {
             return;
           }
 
-          this._add_iptables_rules()
+          this._add_all_iptables_rules()
           .then(() => {
             log.info("DNSMASQ is started successfully");
             this.shouldStart = true
             callback();
           }).catch((err) => {
             this.rawStop();
-            this._remove_iptables_rules()
+            this._remove_all_iptables_rules()
             .then(() => {
               callback(err);
             }).catch(() => {
@@ -604,7 +652,7 @@ module.exports = class DNSMASQ {
     this.shouldStart = false;
 
     log.info("Stopping DNSMASQ:", {});
-    this._remove_iptables_rules()
+    this._remove_all_iptables_rules()
     .then(() => {
       this.rawStop((err) => {
         callback(err);

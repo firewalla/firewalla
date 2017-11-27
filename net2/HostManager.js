@@ -411,6 +411,7 @@ class Host {
     return list;
   }
 
+
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
         if (this.o.ipv4Addr == null) {
@@ -468,7 +469,7 @@ class Host {
                     }).catch((err)=>{
                          log.error("Failed to spoof", this.ipv6Addr);
                     })
-                    if (i>10) {
+                    if (i>20) {
                          log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
                          break;
                     }
@@ -927,6 +928,20 @@ class Host {
         return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp) / 60) + "m)" + " " + this.o.mac;
     }
 
+  getPreferredBName() {
+
+    // TODO: preferred name needs to be improved in the future
+
+    if(this.o.bonjourName) {
+      return this.o.bonjourName
+    }
+    
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+
+    return this.o.bname
+  }
 
     toJson() {
         let json = {
@@ -948,8 +963,13 @@ class Host {
             json.ip = this.o.ipv4;
         }
 
-        if (this.o.bname) {
-            json.bname = this.o.bname;
+      let preferredBName = this.getPreferredBName()
+      
+        if (preferredBName) {
+          json.bname = preferredBName
+          delete this.o.dhcpName
+          delete this.o.bonjourName
+          delete this.o.ssdpName
         }
 
         if (this.activities) {
@@ -959,6 +979,15 @@ class Host {
         if (this.o.name) {
             json.name = this.o.name;
         }
+
+      if(this.o.modelName) {
+        json.modelName = this.o.modelName
+      }
+
+      if(this.o.manufacturer) {
+        json.manufacturer = this.o.manufacturer
+      }
+      
         if (this.hostname) {
             json._hostname = this.hostname
         }
@@ -1320,7 +1349,11 @@ module.exports = class {
 
     if(sysManager.language) {
       json.language = sysManager.language;
+    } else {
+      json.language = 'en'
     }
+
+    json.releaseType = f.getReleaseType()
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
@@ -1708,6 +1741,14 @@ module.exports = class {
         return this.hostsdb["host:ip4:"+ip];
     }
 
+  getHostFast6(ip6) {
+    if(ip6) {
+      return this.hostsdb[`host:ip6:${ip6}`]
+    }
+
+    return null
+  }
+
     getHostAsync(ip) {
       return new Promise((resolve, reject) => {
         this.getHost(ip, (err, host) => {
@@ -1738,7 +1779,17 @@ module.exports = class {
                 host = new Host(o,this);
                 host.type = this.type;
                 //this.hosts.all.push(host);
-                this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
+              this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
+
+              let ipv6Addrs = host.ipv6Addr
+              if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                for(let i in ipv6Addrs) {
+                  let ip6 = ipv6Addrs[i]
+                  let key = `host:ip6:${ip6}`
+                  this.hostsdb[key] = host
+                }
+              }
+              
                 if (this.hostsdb['host:mac:' + o.mac]) {
                     // up date if needed
                 }
@@ -1878,15 +1929,35 @@ module.exports = class {
                             hostbymac.type = this.type;
                             this.hosts.all.push(hostbymac);
                             this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-                            this.hostsdb['host:mac:' + o.mac] = hostbymac;
+                          this.hostsdb['host:mac:' + o.mac] = hostbymac;
+
+                          let ipv6Addrs = hostbymac.ipv6Addr
+                          if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                            for(let i in ipv6Addrs) {
+                              let ip6 = ipv6Addrs[i]
+                              let key = `host:ip6:${ip6}`
+                              this.hostsdb[key] = hostbymac
+                            }
+                          }
+                          
                         } else {
                             if (o.ipv4!=hostbymac.o.ipv4) {
                                 // the physical host get a new ipv4 address
                                 //
                                 this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
                             }
-                            this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
-                            hostbymac.update(o);
+                          this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
+
+                          let ipv6Addrs = hostbymac.ipv6Addr
+                          if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+                            for(let i in ipv6Addrs) {
+                              let ip6 = ipv6Addrs[i]
+                              let key = `host:ip6:${ip6}`
+                              this.hostsdb[key] = hostbymac
+                            }
+                          }
+                          
+                          hostbymac.update(o);
                         }
                         hostbymac._mark = true;
                         if (hostbyip) {
@@ -2250,5 +2321,40 @@ module.exports = class {
   getActiveMACs() {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
+
+  getActiveHostsFromSpoofList(limit) {
+    return async(() => {
+      let activeHosts = []
+      
+      let monitoredIP4s = await (rclient.smembersAsync("monitored_hosts"))
+
+      for(let i in monitoredIP4s) {
+        let ip4 = monitoredIP4s[i]
+        let host = this.getHostFast(ip4)
+        if(host && host.o.lastActiveTimestamp > limit) {
+          activeHosts.push(host)
+        }
+      }
+
+      let monitoredIP6s = await (rclient.smembersAsync("monitored_hosts6"))
+
+      for(let i in monitoredIP6s) {
+        let ip6 = monitoredIP6s[i]
+        let host = this.getHostFast6(ip6)
+        if(host && host.o.lastActiveTimestamp > limit) {
+          activeHosts.push(host)
+        }
+      }
+
+      // unique
+      activeHosts = activeHosts.filter((elem, pos) => {
+        return activeHosts.indexOf(elem) === pos
+      })
+
+      return activeHosts
+       
+    })()    
+  }
+
   
 }

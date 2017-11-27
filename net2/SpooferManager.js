@@ -74,12 +74,13 @@ function startSpoofing() {
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();
     let myIP = sysManager.myIp();
+    let gateway6 = sysManager.myGateway6();
     
     if(!ifName || !myIP || !routerIP) {
       return Promise.reject("require valid interface name, ip address and gateway ip address");
     }
     
-    let b7 = new BitBridge(ifName, routerIP, myIP)
+    let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
     b7.start()
     
     spoofStarted = true;
