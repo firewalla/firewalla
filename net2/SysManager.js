@@ -544,6 +544,8 @@ module.exports = class {
                repoBranch: repoBranch,
                repoHead: repoHead,
                repoTag: repoTag,
+               language: this.language,
+               timezone: this.timezone,
                memory: data
             });
         });
