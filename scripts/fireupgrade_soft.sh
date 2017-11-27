@@ -28,11 +28,6 @@ ${FIREWALLA_HOME}/scripts/fireupgrade_post.sh
 ${FIREWALLA_HOME}/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
 touch /tmp/FWUPGRADING
 touch /home/pi/.firewalla/managed_reboot
-sleep 5
-for svc in api main mon
-  do
-      sudo systemctl restart fire${svc}
-done
 
 # call main-run without restarting firekick
 export NO_FIREKICK_RESTART=1
