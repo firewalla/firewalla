@@ -19,11 +19,13 @@
 # This script should only handle upgrade, nothing else
 # This script must be called from fireupgrade.sh
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
 # call post upgrade
-/home/pi/firewalla/scripts/fireupgrade_post.sh 
+${FIREWALLA_HOME}/scripts/fireupgrade_post.sh 
 
 # call upgrade
-/home/pi/firewalla/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
+${FIREWALLA_HOME}/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
 touch /tmp/FWUPGRADING
 touch /home/pi/.firewalla/managed_reboot
 sleep 5
@@ -31,3 +33,7 @@ for svc in api main mon
   do
       sudo systemctl restart fire${svc}
 done
+
+# call main-run without restarting firekick
+export NO_FIREKICK_RESTART=1
+${FIREWALLA_HOME}/scripts/main-run
