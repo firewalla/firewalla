@@ -899,15 +899,7 @@ let legoEptCloud = class {
                 this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
                 this.socket.on('disconnect', ()=>{
                     this.notifySocket = false;
-                    log.info("SOCKET Disconnected");
-                    self.getMsgFromGroup(gid, cacheGroup.lastfetch, 100, (err, messages, cacheGroup2) => {
-                        cacheGroup.lastfetch = Date.now() / 1000;
-                        callback(err,messages);
-                    });
                 });
-                //socket.on('reconnect_attempt', () => {
-                //    socket.io.opts.transports = ['polling', 'websocket'];
-                //});
                 this.socket.on("glisten200",(data)=>{
                      log.info("SOCKET Glisten 200 group indicator");
                 });
@@ -929,10 +921,6 @@ let legoEptCloud = class {
                     if (this.notifyGids.length>0) {
                         this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
                     }
-                    self.getMsgFromGroup(gid, cacheGroup.lastfetch, 100, (err, messages, cacheGroup2) => {
-                        cacheGroup.lastfetch = Date.now() / 1000;
-                        callback(err,messages);
-                    });
                 });
                 cacheGroup.lastfetch = Date.now() / 1000;
                 cacheGroup.lastMsgs = {};
