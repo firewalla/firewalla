@@ -71,7 +71,7 @@ class IPv6DiscoverySensor extends Sensor {
     return this.isSensorEnable()
       .then((result) => {
         if(result) {
-          return this.networkInterface
+          return networkTool.getLocalNetworkInterface()
             .then((results) => {
               if (results) {
                 for (let i in results) {
@@ -120,7 +120,7 @@ class IPv6DiscoverySensor extends Sensor {
 
   neighborDiscoveryV6(intf,obj) {
     if (obj.ip6_addresses==null || obj.ip6_addresses.length<=1) {
-      log.info("Discovery:v6Neighbor:NoV6",intf,obj);
+      log.info("Discovery:v6Neighbor:NoV6",intf,JSON.stringify(obj));
       return;
     }
     this.ping6ForDiscovery(intf,obj,(err) => {
