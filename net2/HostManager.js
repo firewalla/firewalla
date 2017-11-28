@@ -154,6 +154,56 @@ class Host {
         this.parse();
     }
 
+/* example of ipv6Host
+1) "mac"
+2) "B8:53:AC:5F:99:51"
+3) "firstFoundTimestamp"
+4) "1511599097.786"
+5) "lastActiveTimestamp"
+6) "1511846844.798"
+
+*/
+    cleanV6() {
+        return async(()=> {
+            if (this.ipv6Addr == null) {
+                return;
+            }
+
+            let ts = (new Date())/1000;
+            let lastActive = 0;
+            let _ipv6Hosts = {};
+            this._ipv6Hosts = {};
+
+            for (let i in this.ipv6Addr) {
+                let ip6 = this.ipv6Addr[i];
+                console.log("looking up v6",ip6)
+                let ip6Host = await(rclient.hgetallAsync("host:ip6:"+ip6));
+                if (ip6Host != null) {
+                    _ipv6Hosts[ip6] = ip6Host;
+                    if (ip6Host.lastActiveTimestamp > lastActive) {
+                        lastActive = ip6Host.lastActiveTimestamp;
+                    }
+                }
+            }
+
+            this.ipv6Addr = [];
+            for (let ip6 in _ipv6Hosts) {
+                let ip6Host = _ipv6Hosts[ip6];
+                if (ip6Host.lastActiveTimestamp < lastActive - 60*20) {
+                    log.info("Host:"+this.mac+" "+ip6Host.lastActiveTimestamp+" Removing Old Address"+ip6);
+                    //  this.ipv6Addr.push(ip6);
+                } else {
+                    this._ipv6Hosts[ip6] = ip6Host;
+                    this.ipv6Addr.push(ip6);
+                }
+            }
+
+            if (this.o.lastActiveTimestamp < lastActive) {
+                this.o.lastActiveTimestamp = lastActive;
+            }
+        })();
+    }
+
     predictHostNameUsingUserAgent() {
         if (this.hasBeenGivenName() == false) {
             rclient.smembers("host:user_agent_m:" + this.o.mac, (err, results) => {
@@ -317,6 +367,18 @@ class Host {
         return true;
     }
 
+    saveAsync(tuple) {
+        return new Promise((resolve, reject) => {
+            this.save(tuple,(err, data) => {
+                if(err) {
+                    reject(err);
+                } else {
+                    resolve(data);
+                }
+            });
+        });
+    }
+
     save(tuple, callback) {
         if (tuple == null) {
             this.redisfy();
@@ -458,7 +520,7 @@ class Host {
         if (this.ipv6Addr && this.ipv6Addr.length>0) {
             for (let i in this.ipv6Addr) {
                 if (this.ipv6Addr[i] == gateway6) {
-                    continue; 
+                    continue;
                 }
                 if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
                     continue;
@@ -935,7 +997,7 @@ class Host {
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
-    
+
     if(this.o.dhcpName) {
       return this.o.dhcpName
     }
@@ -964,7 +1026,7 @@ class Host {
         }
 
       let preferredBName = this.getPreferredBName()
-      
+
         if (preferredBName) {
           json.bname = preferredBName
           delete this.o.dhcpName
@@ -987,7 +1049,7 @@ class Host {
       if(this.o.manufacturer) {
         json.manufacturer = this.o.manufacturer
       }
-      
+
         if (this.hostname) {
             json._hostname = this.hostname
         }
@@ -1789,7 +1851,7 @@ module.exports = class {
                   this.hostsdb[key] = host
                 }
               }
-              
+
                 if (this.hostsdb['host:mac:' + o.mac]) {
                     // up date if needed
                 }
@@ -1869,7 +1931,7 @@ module.exports = class {
       })
     })
   }
-  
+
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started");
@@ -1939,7 +2001,7 @@ module.exports = class {
                               this.hostsdb[key] = hostbymac
                             }
                           }
-                          
+
                         } else {
                             if (o.ipv4!=hostbymac.o.ipv4) {
                                 // the physical host get a new ipv4 address
@@ -1956,7 +2018,7 @@ module.exports = class {
                               this.hostsdb[key] = hostbymac
                             }
                           }
-                          
+
                           hostbymac.update(o);
                         }
                         hostbymac._mark = true;
@@ -2055,7 +2117,7 @@ module.exports = class {
                 });
             });
         });
-    } 
+    }
 
   appendACL(name, data) {
     if (this.policy.acl == null) {
@@ -2164,7 +2226,7 @@ module.exports = class {
       }
     })()
   }
-  
+
     policyToString() {
         if (this.policy == null || Object.keys(this.policy).length == 0) {
             return "No policy defined";
@@ -2316,7 +2378,7 @@ module.exports = class {
             callback(null,ignored );
         });
     }
-  
+
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
@@ -2325,7 +2387,7 @@ module.exports = class {
   getActiveHostsFromSpoofList(limit) {
     return async(() => {
       let activeHosts = []
-      
+
       let monitoredIP4s = await (rclient.smembersAsync("monitored_hosts"))
 
       for(let i in monitoredIP4s) {
@@ -2352,9 +2414,9 @@ module.exports = class {
       })
 
       return activeHosts
-       
-    })()    
+
+    })()
   }
 
-  
+
 }
