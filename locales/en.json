@@ -1,6 +1,6 @@
 {
-  "SECURITY_ALERT": "Security Alert",
-  "ACTIVITY_ALERT": "Activity Alert",
+  "SECURITY_ALERT": "Security Alarm",
+  "ACTIVITY_ALERT": "Activity Alarm",
   "ALARM_PORN": "This device visited porn website {{p.dest.name}}.",
   "ALARM_VIDEO": "This device visited video website {{p.dest.name}}.",
   "ALARM_GAME": "This device visited game website {{p.dest.name}}.",
