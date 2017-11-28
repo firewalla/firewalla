@@ -780,6 +780,8 @@ let legoEptCloud = class {
     }
     let msgstr = JSON.stringify(mpackage);
 
+    log.info("message size before compression:", msgstr.length);
+
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
       let input = new Buffer(msgstr, 'utf8');
