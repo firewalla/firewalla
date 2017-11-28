@@ -18,6 +18,8 @@
 #
 #  When this scirpt is started, we are guranteed to have a stable network
 
+logger "MAIN-STARTED STARTED $(date)"
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 # use github to pull node modules to ~/.node_modules
@@ -305,6 +307,11 @@ else
     sudo systemctl restart firemon
 fi
 cd ..
+
+sudo /usr/local/bro/bin/broctl cron
+sudo /usr/local/bro/bin/broctl cron enable
+sync
+
 cd api
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid api bin/www
@@ -313,8 +320,6 @@ else
 fi
 cd ..
 
-sudo /usr/local/bro/bin/broctl cron
-sudo /usr/local/bro/bin/broctl cron enable
 sync
 
 #if [[ ! -f /.dockerenv ]]; then
@@ -343,3 +348,5 @@ DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n 
 
 # run post_run in background
 ${FIREWALLA_HOME}/scripts/post_run.sh &>/dev/null </dev/null
+
+logger "MAIN-STARTED EXITED $(date)"
