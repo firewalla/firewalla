@@ -780,6 +780,8 @@ let legoEptCloud = class {
     }
     let msgstr = JSON.stringify(mpackage);
 
+    log.info("message size before compression:", msgstr.length);
+
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
       let input = new Buffer(msgstr, 'utf8');
@@ -794,11 +796,25 @@ let legoEptCloud = class {
           compressMode: true,
           data: output.toString('base64')
         };
-
-        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback);
+        
+        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, (err, result) => {
+          if(err && err.code == 'ECONNRESET') {
+            // resend
+            this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback)
+          } else {
+            callback(err, result)
+          }
+        });
       })
     } else {
-      this._send(gid, msgstr, _beep, mtype, fid, mid, callback);
+      this._send(gid, msgstr, _beep, mtype, fid, mid, (err, result) => {
+        if(err && err.code == 'ECONNRESET') {
+          // resend
+          this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback)
+        } else {
+          callback(err, result)
+        }
+      });
     }
 
   }
