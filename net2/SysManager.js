@@ -477,7 +477,6 @@ module.exports = class {
         for (let m in ip6_masks) {
             let mask = iptool.mask(ip6_addresses[m],ip6_masks[m]);
             if (mask == iptool.mask(ip6,ip6_masks[m])) {
-                log.info("SysManager:FoundSubnet", ip6,mask);
                 return true;
             }
         }

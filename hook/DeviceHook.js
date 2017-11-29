@@ -123,10 +123,11 @@ class DeviceHook extends Hook {
 
         // Then just update the ipv6 entries
         if(ipv6Addr) {
-          await (hostTool.updateIPv6Host(host)) // v6
+          await (hostTool.updateIPv6Host(host,ipv6Addr)) // v6
           let newIPv6Addr = await (this.updateIPv6EntriesForMAC(ipv6Addr, mac))
           let newHost = extend({}, host, {ipv6Addr: newIPv6Addr})
-          
+           
+          log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
           await (hostTool.updateMACKey(newHost)) // mac
         }
       }
