@@ -710,10 +710,21 @@ let legoEptCloud = class {
     // VALID MTYPE:  jsondata
 
 
-  _send(gid, msgstr, _beep, mtype, fid, mid, callback) {
+  _send(gid, msgstr, _beep, mtype, fid, mid, ttl, callback) {
+
+    if(typeof ttl == 'function') {
+      callback = ttl
+      ttl = 1
+    }
+
+    if(ttl <= 0) {
+      callback(new Error("ttl expired"), null)
+      return
+    }
+    
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, {});
+    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl, {});
 
     this.getKey(gid, (err, key, cacheGroup) => {
       if (err != null && key == null) {
@@ -749,7 +760,12 @@ let legoEptCloud = class {
         if (err2 != null) {
           let stack = new Error().stack;
           log.error("Error while requesting ", err2, stack);
-          callback(err2, null);
+          if(ttl > 1) {
+            _send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
+          } else {
+            callback(err2, null);
+          }
+
           return;
         }
         if (httpResponse.statusCode < 200 ||
@@ -797,24 +813,10 @@ let legoEptCloud = class {
           data: output.toString('base64')
         };
         
-        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, (err, result) => {
-          if(err && err.code == 'ECONNRESET') {
-            // resend
-            this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback)
-          } else {
-            callback(err, result)
-          }
-        });
+        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, 5, callback)
       })
     } else {
-      this._send(gid, msgstr, _beep, mtype, fid, mid, (err, result) => {
-        if(err && err.code == 'ECONNRESET') {
-          // resend
-          this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback)
-        } else {
-          callback(err, result)
-        }
-      });
+      this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
     }
 
   }
