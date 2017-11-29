@@ -724,7 +724,7 @@ let legoEptCloud = class {
     
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, {});
+    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl, {});
 
     this.getKey(gid, (err, key, cacheGroup) => {
       if (err != null && key == null) {
