@@ -285,10 +285,10 @@ class HostTool {
       });
   }
 
-  updateIPv6Host(host) {
+  updateIPv6Host(host,ipv6Addr) {
     return async(() => {
-      if(host.ipv6Addr && host.ipv6Addr.constructor.name === "Array") {
-        host.ipv6Addr.forEach((addr) => {
+      if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
+        ipv6Addr.forEach((addr) => {
           let key = this.getIPv6HostKey(addr)
 
           let existingData = await (rclient.hgetallAsync(key))
@@ -302,7 +302,7 @@ class HostTool {
           } else {
             data = {
               mac: host.mac,
-              firstFoundTimestamp: host.firstFoundTimestamp || Date.now() / 1000,
+              firstFoundTimestamp: Date.now() / 1000,
               lastActiveTimestamp: Date.now() / 1000
             }
           }
