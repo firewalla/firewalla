@@ -1234,7 +1234,8 @@ class netBot extends ControllerBot {
         options.end = end
       }
 
-      if(msg.data.hourblock != "1") { // 1 => hour stats, other => overall stats (last 24 hours)
+      if(msg.data.hourblock != "1" &&
+         msg.data.hourblock != "0" ) { // 0 => now, 1 => hour stats, other => overall stats (last 24 hours)
         options.queryall = true
       }
       
