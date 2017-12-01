@@ -292,7 +292,7 @@ module.exports = class {
         dnsmasq.setDefaultNameServers("adblock", dnsaddrs);
         dnsmasq.updateResolvConf(callback);
       } else {
-        dnsmasq.setDefaultNameServers("adblock");
+        dnsmasq.unsetDefaultNameServers("adblock");
         dnsmasq.updateResolvConf(callback);
       }
     });
