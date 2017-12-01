@@ -42,6 +42,11 @@ let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
+const SysTool = require('../net2/SysTool.js')
+const sysTool = new SysTool()
+
+const flowUtil = require('../net2/FlowUtil');
+
 const iptool = require('ip')
 
 let redis = require('redis');
@@ -49,7 +54,9 @@ let rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
-let exec = require('child-process-promise').exec
+Promise.promisifyAll(redis.RedisClient.prototype);
+
+const exec = require('child-process-promise').exec
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -530,18 +537,58 @@ class netBot extends ControllerBot {
             data.category = "com.firewalla.category.alarm";
           }
 
-          this.tx2(this.primarygid, "test", notifMsg, data);
+          // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+          async(() => {
+            let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
+            if(flag) {
+              notifMsg.body = `[${this.getDeviceName()}] ${notifMsg.body}`
+            }
+            this.tx2(this.primarygid, "test", notifMsg, data);            
+          })()
+
+
         }
       }
     });
 
     setTimeout(() => {
       this.scanStart();
-      if (sysManager.systemRebootedDueToIssue(true) == false) {
-        if (nm.canNotify() == true) {
-          this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+      async(() => {
+        let branchChanged = await (sysManager.isBranchJustChanged())
+        if(branchChanged) {
+          let branch = null
+          
+          switch(branchChanged) {
+          case "1":
+            branch = "back to stable version"
+            break;
+          case "2":
+            branch = "to pre_release version"
+            break;
+          case "3":
+            branch = "to development version"
+            break;
+          default:
+            // do nothing, should not happen here
+            break;
+          }
+
+          if(branch) {
+            let msg = `Device '${this.getDeviceName()}' has switched ${branch} ${sysManager.version()} successfully`
+            log.info(msg)
+            this.tx(this.primarygid, "200", msg)
+            sysManager.clearBranchChangeFlag()            
+          }
+
+        } else {
+          if (sysManager.systemRebootedDueToIssue(true) == false) {
+            if (nm.canNotify() == true) {
+              this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+            }
+          }
         }
-      }
+        
+      })()
       this.setupDialog();
     }, 2000);
 
@@ -614,7 +661,7 @@ class netBot extends ControllerBot {
       let listip = [];
       this.hosts = result;
       for (let i in result) {
-        log.info(result[i].toShortString());
+//        log.info(result[i].toShortString());
         result[i].on("Notice:Detected", (channel, type, ip, obj) => {
           log.info("Found new notice", type, ip);
           if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
@@ -850,11 +897,23 @@ class netBot extends ControllerBot {
         let v3 = msg.data.value;
 
         if (v3.timezone) {
-          sysManager.setTimezone(v3, (err) => {
+          sysManager.setTimezone(v3.timezone, (err) => {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
-        break;
+      break;
+    case "includeNameInNotification":
+        let v33 = msg.data.value;
+
+      if (v3.includeNameInNotification) {
+        async(() => {
+          await (rclient.hsetAsync("sys:config", "includeNameInNotification", "1"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      }
+      break;
     case "mode":
       let v4 = msg.data.value;
       let err = null;
@@ -1097,6 +1156,34 @@ class netBot extends ControllerBot {
     }
   }
 
+  validateFlowIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))
+      let flows = json.flows
+
+      let hashCache = {}
+
+
+      let appFlows = flows.appDetails
+      let categoryFlows = flows.categoryDetails
+
+      if(Object.keys(appFlows).length > 0 ||
+         Object.keys(categoryFlows).length > 0) {
+        flowUtil.hashIntelFlows(appFlows, hashCache)
+        flowUtil.hashIntelFlows(categoryFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
+                          bone.flowgraphAsync('summarizeActivity', categoryFlows))
+
+        let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
+        let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
+        
+        flows.appDetails = unhashedData
+        flows.categoryDetails = unhashedData2
+      }
+    })()
+  }
+  
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
@@ -1123,6 +1210,9 @@ class netBot extends ControllerBot {
       await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
       await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
 
+      // validate flow intel
+      await (this.validateFlowIntel(jsonobj))
+
       return jsonobj;
     })();
   }
@@ -1144,6 +1234,11 @@ class netBot extends ControllerBot {
         options.end = end
       }
 
+      if(msg.data.hourblock != "1" &&
+         msg.data.hourblock != "0" ) { // 0 => now, 1 => hour stats, other => overall stats (last 24 hours)
+        options.queryall = true
+      }
+      
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
         let error = new Error("Invalide Host");
@@ -1167,6 +1262,8 @@ class netBot extends ControllerBot {
         await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
         await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
         await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
+
+        await (this.validateFlowIntel(jsonobj))
       }
 
       return jsonobj;
@@ -1348,11 +1445,9 @@ class netBot extends ControllerBot {
     } else if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
-        .then(() => {
-          this.simpleTxData(msg, null, null, callback);
-        }).catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      });
+
+      // direct reply back to app that system is being reset
+      this.simpleTxData(msg, null, null, callback)
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
@@ -1711,27 +1806,59 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback);
       })      
       break
+
     case "joinBeta":
       async(() => {
-        await (exec(`${f.getFirewallaHome()}/scripts/join_beta.sh`))
+        await (this.switchBranch("beta"))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
+        this.simpleTxData(msg, {}, err, callback)
       })
-      break;
     case "leaveBeta":
       async(() => {
-        await (exec(`${f.getFirewallaHome()}/scripts/leave_beta.sh`))
+        await (this.switchBranch("prod"))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
+        this.simpleTxData(msg, {}, err, callback)
       })
-      break;
+    case "switchBranch":
+      let target = msg.data.value.target
+      
+      async(() => {
+        await (this.switchBranch(target))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+
+      break
     default:
       // unsupported action
-      this.simpleTxData(msg, null, new Error("Unsupported action: " + msg.data.item), callback);
+      this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
       break;
     }
+  }
+
+  switchBranch(target) {
+    return async(() => {
+      let targetBranch = null
+      let prodBranch = await (f.getProdBranch())
+      
+      switch(target) {
+      case "dev":
+        targetBranch = "master"
+        break
+      case "beta":
+        targetBranch = prodBranch.replace("release_", "beta_")
+        break
+      case "prod":
+        targetBranch = prodBranch
+        break
+      }
+
+      await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
+      sysTool.restartServices()
+    })()
   }
 
   simpleTxData(msg, data, err, callback) {
@@ -1847,7 +1974,7 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-//            log.info("Received jsondata", msg);
+      log.info("Received jsondata from cloud", rawmsg.message, {});
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
 

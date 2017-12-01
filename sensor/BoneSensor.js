@@ -63,7 +63,7 @@ class BoneSensor extends Sensor {
     return async(() => {
       let sysInfo = await (sysManager.getSysInfoAsync());
 
-      log.info("Checking in Cloud...",sysInfo);
+      log.info("Checking in Cloud...",sysInfo,{});
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 

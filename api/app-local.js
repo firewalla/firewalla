@@ -26,6 +26,7 @@ let alarm = require('./routes/alarm');
 let flow = require('./routes/flow');
 let host = require('./routes/host');
 let mode = require('./routes/mode');
+let test = require('./routes/test');
 let policy = require('./routes/policy');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
@@ -72,6 +73,7 @@ if(!firewalla.isProduction()) {
   subpath_v1.use('/flow', flow);
   subpath_v1.use('/host', host);
   subpath_v1.use('/mode', mode);
+  subpath_v1.use('/test', test);
 
   enableSubPath('policy');
   enableSubPath('exception');

@@ -51,10 +51,12 @@ class IPv6DiscoverySensor extends Sensor {
   run() {
     setTimeout(()=> {
       this.checkAndRunOnce(true);
-    },1000*60*3);
-    setInterval(() => {
-      this.checkAndRunOnce(true);
-    }, 1000 * 60 * 5); // every 5 minutes, fast scan
+
+      setInterval(() => {
+        this.checkAndRunOnce(true);
+      }, 1000 * 60 * 5); // every 5 minutes, fast scan
+      
+    },1000*60*5); // start the first run in 5 minutes
   }
 
   getNetworkRanges() {
@@ -69,7 +71,7 @@ class IPv6DiscoverySensor extends Sensor {
     return this.isSensorEnable()
       .then((result) => {
         if(result) {
-          return this.networkInterface
+          return networkTool.getLocalNetworkInterface()
             .then((results) => {
               if (results) {
                 for (let i in results) {
@@ -103,14 +105,11 @@ class IPv6DiscoverySensor extends Sensor {
     });
   }
 
-  /* WARNING NOT SENDING SEM */
-  /* !!!!!!!!!!!!!!!!!!!!!!! */
   addV6Host(v6addrs,mac) {
     log.info("Found V6 Address ",v6addrs,mac);
     sem.emitEvent({
       type: "DeviceUpdate",
       message: "A new ipv6 is found @ IPv6DisocverySensor",
-      suppressEventLogging: true,
       suppressAlarm: this.suppressAlarm,
       host:  {
         ipv6Addr: v6addrs,
@@ -121,7 +120,7 @@ class IPv6DiscoverySensor extends Sensor {
 
   neighborDiscoveryV6(intf,obj) {
     if (obj.ip6_addresses==null || obj.ip6_addresses.length<=1) {
-      log.info("Discovery:v6Neighbor:NoV6",intf,obj);
+      log.info("Discovery:v6Neighbor:NoV6",intf,JSON.stringify(obj));
       return;
     }
     this.ping6ForDiscovery(intf,obj,(err) => {

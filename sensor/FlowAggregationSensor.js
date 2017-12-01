@@ -63,7 +63,7 @@ class FlowAggregationSensor extends Sensor {
     this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
     this.config.cleanupInterval = 60 * 60 // default one hour
     this.config.flowRange = 24 * 3600 // 24 hours
-    this.config.sumFlowExpireTime = 2 * 3600 // 2 hours
+    this.config.sumFlowExpireTime = 0.5 * 3600 // 30 minutes
     this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
   }
 
@@ -250,6 +250,20 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       await (flowAggrTool.addSumFlow("app", options));
+      
+      let macs = hostManager.getActiveMACs()
+
+      macs.forEach((mac) => {
+        if(!mac) {
+          return
+        }
+        
+        options.mac = mac
+        options.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+        await (flowAggrTool.addSumFlow("download", options))
+        await (flowAggrTool.addSumFlow("upload", options))
+        await (flowAggrTool.addSumFlow("app", options))
+      })
 
     })();
   }
@@ -274,6 +288,7 @@ class FlowAggregationSensor extends Sensor {
         end: end,
         interval: this.config.interval,
         expireTime: this.config.sumFlowExpireTime,
+        setLastSumFlow: true
       }
 
       let macs = hostManager.getActiveMACs();
@@ -443,6 +458,8 @@ class FlowAggregationSensor extends Sensor {
       });
 
       let traffic = this.trafficGroupByDestIP(flows);
+
+      
 
       await (flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
       await (flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime));

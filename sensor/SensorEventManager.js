@@ -60,7 +60,7 @@ class SensorEventManager extends EventEmitter {
 
   emitEvent(event) {
     if(!event.suppressEventLogging) {
-      log.info("New Event: " + event.type + " -- " + event.message);
+      log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
     }
 
     if(event.toProcess && event.toProcess !== process.title) {
