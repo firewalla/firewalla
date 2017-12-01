@@ -88,6 +88,7 @@ var flowUtil = require('../net2/FlowUtil.js');
 let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
+var linux = require('../util/linux.js');
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -163,6 +164,17 @@ class Host {
 6) "1511846844.798"
 
 */
+
+    keepalive() {
+        for (let i in this.ipv6Addr) {
+            log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
+            linux.ping6(null,this.ipv6Addr[i]);
+        }
+        setTimeout(()=>{
+            this.cleanV6();
+        },1000*10);
+    }
+
     cleanV6() {
         return async(()=> {
             if (this.ipv6Addr == null) {
@@ -176,8 +188,8 @@ class Host {
 
             for (let i in this.ipv6Addr) {
                 let ip6 = this.ipv6Addr[i];
-                console.log("looking up v6",ip6)
                 let ip6Host = await(rclient.hgetallAsync("host:ip6:"+ip6));
+                log.debug("HostManager:CleanV6:looking up v6",ip6,ip6Host)
                 if (ip6Host != null) {
                     _ipv6Hosts[ip6] = ip6Host;
                     if (ip6Host.lastActiveTimestamp > lastActive) {
@@ -189,9 +201,8 @@ class Host {
             this.ipv6Addr = [];
             for (let ip6 in _ipv6Hosts) {
                 let ip6Host = _ipv6Hosts[ip6];
-                if (ip6Host.lastActiveTimestamp < lastActive - 60*20) {
-                    log.info("Host:"+this.mac+" "+ip6Host.lastActiveTimestamp+" Removing Old Address"+ip6);
-                    //  this.ipv6Addr.push(ip6);
+                if (ip6Host.lastActiveTimestamp < lastActive - 60*30 || ip6Host.lastActiveTimestamp < ts-60*40) {
+                    log.info("Host:"+this.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
                 } else {
                     this._ipv6Hosts[ip6] = ip6Host;
                     this.ipv6Addr.push(ip6);
@@ -201,6 +212,9 @@ class Host {
             if (this.o.lastActiveTimestamp < lastActive) {
                 this.o.lastActiveTimestamp = lastActive;
             }
+
+            //await(this.saveAsync());
+            log.info("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
         })();
     }
 
@@ -499,7 +513,7 @@ class Host {
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
-            log.info("Started spoofing", this.o.ipv4Addr);
+            log.debug("Started spoofing", this.o.ipv4Addr);
             this.spoofing = true;
             }).catch((err) => {
             log.error("Failed to spoof", this.o.ipv4Addr);
@@ -507,7 +521,7 @@ class Host {
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
-              log.info("Stopped spoofing", this.o.ipv4Addr);
+              log.debug("Stopped spoofing", this.o.ipv4Addr);
               this.spoofing = false;
             }).catch((err) => {
             log.error("Failed to unspoof", this.o.ipv4Addr);
@@ -515,7 +529,7 @@ class Host {
         }
 
         /* put a safety on the spoof */
-        log.info("Spoof For IPv6",this.ipv6Addr,this.o.ipv6Addr,{});
+        log.info("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
         let myIp6 = sysManager.myIp6();
         if (this.ipv6Addr && this.ipv6Addr.length>0) {
             for (let i in this.ipv6Addr) {
@@ -527,7 +541,7 @@ class Host {
                 }
                 if (state == true) {
                     spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
-                         log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                         log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
                     }).catch((err)=>{
                          log.error("Failed to spoof", this.ipv6Addr);
                     })
@@ -541,7 +555,7 @@ class Host {
                  //   this.spoofing = true;
                 } else {
                     spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
-                         log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                         log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
                     }).catch((err)=>{
                          log.error("Failed to spoof", this.ipv6Addr);
                     })
@@ -1363,6 +1377,11 @@ module.exports = class {
                 */
                 log.info("SystemPolicy:Changed", channel, ip, type, obj);
             });
+
+            this.keepalive();
+            setInterval(()=>{
+                this.keepalive();
+            },1000*60*5);
         }
 
             instances[name] = this;
@@ -1370,6 +1389,16 @@ module.exports = class {
         return instances[name];
     }
 
+
+    keepalive() {
+        log.info("HostManager:Keepalive");
+        for (let i in this.hostsdb) {
+            if (i.startsWith("host:mac")) {
+                let _h = this.hostsdb[i];
+                _h.keepalive();
+            }
+        }
+    }
 
     on(event, callback) {
         this.callbacks[event] = callback;
@@ -2032,17 +2061,18 @@ module.exports = class {
                                 this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
                             }
                         }
-                        this.syncHost(hostbymac, true, (err) => {
-
-                            if (this.type == "server") {
-                                hostbymac.applyPolicy((err)=>{
-                                    hostbymac._mark = true;
-                                    cb();
-                                });
-                            } else {
-                               hostbymac._mark = true;
-                               cb();
-                            }
+                        hostbymac.cleanV6().then(()=>{
+                            this.syncHost(hostbymac, true, (err) => {
+                                if (this.type == "server") {
+                                    hostbymac.applyPolicy((err)=>{
+                                        hostbymac._mark = true;
+                                        cb();
+                                    });
+                                } else {
+                                   hostbymac._mark = true;
+                                   cb();
+                                }
+                            });
                         });
                        /*
                         hostbymac.loadPolicy((err, policy) => {
