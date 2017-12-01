@@ -260,13 +260,19 @@ module.exports = class {
 
   family(ip, state, callback) {
     callback = callback || function() {}
+    
+    if(ip !== "0.0.0.0") {
+      callback(null)
+      return
+    }
+
     this.familyDnsAddr((err,dnsaddrs)=>{
       log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddrs.join(" "));
         if (state == true) {
-          dnsmasq.setDefaultNameServers(dnsaddrs);
+          dnsmasq.setDefaultNameServers("family", dnsaddrs);
           dnsmasq.updateResolvConf(callback);
         } else {
-          dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+          dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
           dnsmasq.updateResolvConf(callback);
         }
      });
@@ -274,13 +280,19 @@ module.exports = class {
 
   adblock(ip, state, callback) {
     callback = callback || function() {}
+
+    if(ip !== "0.0.0.0") {
+      callback(null)
+      return
+    }
+    
     this.adblockDnsAddr((err,dnsaddrs)=>{
       log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddrs.join(" "));
       if (state == true) {
-        dnsmasq.setDefaultNameServers(dnsaddrs);
+        dnsmasq.setDefaultNameServers("adblock", dnsaddrs);
         dnsmasq.updateResolvConf(callback);
       } else {
-        dnsmasq.setDefaultNameServers(null);
+        dnsmasq.setDefaultNameServers("adblock");
         dnsmasq.updateResolvConf(callback);
       }
     });
