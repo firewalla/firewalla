@@ -541,9 +541,9 @@ class Host {
                  //   this.spoofing = true;
                 } else {
                     spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
-                         log.info("Starting v6 spoofing", this.ipv6Addr[i]);
+                         log.info("Starting v6 unspoofing", this.ipv6Addr[i]);
                     }).catch((err)=>{
-                         log.error("Failed to spoof", this.ipv6Addr);
+                         log.error("Failed to [v6] unspoof", this.ipv6Addr);
                     })
                 //    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
                 //    spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
