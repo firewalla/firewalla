@@ -263,7 +263,7 @@ module.exports = class {
     this.familyDnsAddr((err,dnsaddrs)=>{
       log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddrs.join(" "));
         if (state == true) {
-          dnsmasq.setDefaultNameServers(dnsaddr);
+          dnsmasq.setDefaultNameServers(dnsaddrs);
           dnsmasq.updateResolvConf(callback);
         } else {
           dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
