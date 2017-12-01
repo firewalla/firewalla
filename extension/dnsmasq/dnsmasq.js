@@ -51,7 +51,7 @@ let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
 
 let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
-let defaultNameServers = null;
+let defaultNameServers = {};
 let upstreamDNS = null;
 
 let dhcpFeature = false;
@@ -127,7 +127,7 @@ module.exports = class DNSMASQ {
   updateResolvConf(callback) {
     callback = callback || function() {}
 
-    var nameservers = defaultNameServers;
+    let nameservers = this.getAllDefaultNameServers()
     if(!nameservers) {
       nameservers = sysManager.myDNS();
     }
@@ -138,6 +138,7 @@ module.exports = class DNSMASQ {
 
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
+    config += "\n";
     fs.writeFileSync(dnsmasqResolvFile, config);
     callback(null);
   }
@@ -227,8 +228,24 @@ module.exports = class DNSMASQ {
     return fs.appendFileAsync(policyFilterFile, data);
   }
 
-  setDefaultNameServers(nameservers) {
-    defaultNameServers = nameservers;
+  setDefaultNameServers(key, nameservers) {
+    defaultNameServers[key] = nameservers;
+  }
+
+  unsetDefaultNameServers(key) {
+    delete defaultNameServers[key]
+  }
+
+  getAllDefaultNameServers() {
+    let list = []
+    for(let key in defaultNameServers) {
+      let l = defaultNameServers[key]
+      if(l.constructor.name === 'Array') {
+        list.push.apply(list, l)
+      }
+    }
+
+    return list
   }
 
   delay(t) {
@@ -474,7 +491,7 @@ module.exports = class DNSMASQ {
 
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
-      cmd = util.format("%s --server=%s", cmd, upstreamDNS);
+      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
     }
 
     if(dhcpFeature && (!sysManager.secondaryIpnet ||
