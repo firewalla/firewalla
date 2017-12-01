@@ -2,22 +2,29 @@
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-let async = require('async');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const Promise = require('bluebird');
 
 let Exception = require('./Exception.js');
+let Bone = require('../lib/Bone.js');
 
 let redis = require('redis');
 let rclient = redis.createClient();
 
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
 let instance = null;
 
-let exceptionQueue = "exception_queue";
+const exceptionQueue = "exception_queue";
 
-let exceptionIDKey = "exception:id";
+const exceptionIDKey = "exception:id";
 let initID = 1;
-let exceptionPrefix = "exception:";
+const exceptionPrefix = "exception:";
 
-let flat = require('flat');
+const flat = require('flat');
 let audit = require('../util/audit.js');
 
 module.exports = class {
@@ -28,6 +35,9 @@ module.exports = class {
     return instance;
   }
 
+  getExceptionKey(exceptionID) {
+    return exceptionPrefix + exceptionID
+  }
 
   getException(exceptionID) {
     return new Promise((resolve, reject) => {
@@ -47,6 +57,24 @@ module.exports = class {
     });
   }
 
+
+  idsToExceptions(ids, callback) {
+    let multi = rclient.multi();
+
+    ids.forEach((eid) => {
+      multi.hgetall(exceptionPrefix + eid)
+    });
+
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active exceptions (hgetall): " + err);
+        callback(err);
+        return;
+      }
+      callback(null, results.map((r) => this.jsonToException(r)));
+    });
+  }
+
   loadExceptions(callback) {
     callback = callback || function() {}
 
@@ -57,6 +85,7 @@ module.exports = class {
         callback(err);
         return;
       }
+
 
       let multi = rclient.multi();
 
@@ -71,7 +100,17 @@ module.exports = class {
           callback(err);
         }
 
-        callback(null, results.map((r) => Object.assign(Object.create(Exception.prototype), r)));
+        results = results.filter((x) => x != null) // ignore any exception which doesn't exist
+
+        let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
+
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
 
     });
@@ -135,9 +174,21 @@ module.exports = class {
         return;
       }
 
-      exception.eid = id;
+      exception.eid = id + ""; // convert it to string to make it consistent with redis
 
       let exceptionKey = exceptionPrefix + id;
+
+
+      /*
+      {
+        "i.type": "domain",
+        "reason": "ALARM_GAME",
+        "type": "ALARM_GAME",
+        "timestamp": "1500913117.175",
+        "p.dest.id": "battle.net",
+        "target_name": "battle.net",
+        "target_ip": destIP,
+      }*/
 
       rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
         if(err) {
@@ -155,6 +206,10 @@ module.exports = class {
           callback(err);
         });
       });
+
+      Bone.submitIntelFeedback('ignore', exception, 'exception');
+
+      callback(err);
     });
   }
 
@@ -183,18 +238,33 @@ module.exports = class {
         return new Promise((resolve, reject) => {
           let multi = rclient.multi();
 
-          multi.zrem(exceptionQueue, exceptionID);
-          multi.del(exceptionPrefix + exceptionID);
-          multi.exec((err) => {
+          rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
             if(err) {
-              log.error("Fail to delete exception: " + err);
-              reject(err);
-              return;
+              log.error(`exception ${exceptionID} doesn't exist`)
+              reject(err)
+              return
             }
+            
+            log.info("Exception in CB: ", obj, {});
+            let exception = obj;
+
+            multi.srem(exceptionQueue, exceptionID);
+            multi.del(exceptionPrefix + exceptionID);
+            multi.exec((err) => {
+              if (err) {
+                log.error("Fail to delete exception: " + err);
+                reject(err);
+              }
+
+            });
+
+            Bone.submitIntelFeedback('unignore', exception, "exception");
 
             resolve();
-          })
+          });
+
         });
+
       });
   }
 
@@ -215,6 +285,11 @@ module.exports = class {
     });
   }
 
+  // incr by 1 to count how many times this exception matches alarms
+  updateMatchCount(exceptionID) {
+    return rclient.hincrbyAsync(this.getExceptionKey(exceptionID), "matchCount", 1)
+  }
+
   createExceptionFromJson(json, callback) {
     callback = callback || function() {}
 
@@ -232,4 +307,4 @@ module.exports = class {
     }
   }
 
-}
+};

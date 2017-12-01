@@ -28,12 +28,16 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | grep -v 169.254
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1
             ;;
         gw)
             /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
             ;;
     esac
+}
+
+set_timeout() {
+    [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
 }
 
 save_values() {
@@ -91,9 +95,11 @@ ethernet_connected() {
 }
 
 ethernet_ip() {
-    eth_ip=$(ifconfig eth0 | awk '/inet addr/ {print $2}'| cut -f2 -d:)
+    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/)
     if [[ -n "$eth_ip" ]]; then
         if [[ ${eth_ip:0:8} == '169.254.' ]]; then
+            return 1
+        elif [[ $eth_ip == '192.168.218.1' ]]; then
             return 1
         else
             return 0
@@ -146,7 +152,7 @@ done
 echo OK
 
 echo -n "checking ethernet IP ... "
-tmout=60
+tmout=$(set_timeout 60)
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
         (( tmout-- ))

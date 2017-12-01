@@ -25,11 +25,16 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
 
-let ModeManager = require('./ModeManager.js');
+let ModeManager = require('./ModeManager.js')
+
+let mode = require('./Mode.js')
 
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
@@ -44,9 +49,11 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
+resetModeInInitStage()
+
 run0();
 
-function run0() {
+function run0() {  
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
@@ -90,8 +97,31 @@ if(firewalla.isProduction()) {
 let hl = null;
 let sl = null;
 
+function resetModeInInitStage() {
+  // this needs to be execute early!!
+  return async(() => {
+    let bootingComplete = await (firewalla.isBootingComplete())
+    let firstBindDone = await (firewalla.isFirstBindDone())
+    
+    // always reset to none mode if
+    //        bootingComplete flag is off
+    //    AND
+    //        firstBinding is complete (old version doesn't have this flag )
+    // this is to ensure a safe launch
+    // in case something wrong with the spoof, firemain will not
+    // start spoofing again when restarting
+
+    if(!bootingComplete && firstBindDone) {
+      await (mode.noneModeOn())
+    }
+  })()  
+}
+
 function run() {
 
+  const firewallaConfig = require('../net2/config.js').getConfig();
+  sysManager.setConfig(firewallaConfig) // update sys config when start
+  
   hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
@@ -176,23 +206,28 @@ function run() {
         type: 'IPTABLES_READY'
       });
 
-      ModeManager.apply();
 
-      // when mode is changed by anyone else, reapply automatically
-      ModeManager.listenOnChange();
-
+      async(() => {
+        await (mode.reloadSetupMode()) // make sure get latest mode from redis
+        await (ModeManager.apply())
+        
+        // when mode is changed by anyone else, reapply automatically
+        ModeManager.listenOnChange();        
+      })()     
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
+      pm2.registerPolicyEnforcementListener()
 
       setTimeout(() => {
         pm2.enforceAllPolicies()
           .then(() => {
             log.info("All existing policy rules are applied");
           }).catch((err) => {
-          log.error("Failed to apply some policy rules: ", err, {});
-        });
+            log.error("Failed to apply some policy rules: ", err, {});
+          });
       }, 1000 * 10); // delay for 10 seconds
+      require('./UpgradeManager').finishUpgrade();
     });
 
   },1000*2);
@@ -201,7 +236,7 @@ function run() {
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.debug("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }
@@ -252,7 +287,7 @@ function run() {
       }
     });
 
-  },30000);
+  },20 * 1000);
 
 
 }

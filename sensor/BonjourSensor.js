@@ -28,7 +28,7 @@ let sysManager = new SysManager('info');
 
 let async = require('async');
 
-let l2 = require('../util/Layer2.js');
+const l2 = require('../util/Layer2.js');
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
@@ -39,6 +39,8 @@ class BonjourSensor extends Sensor {
     super();
     
     this.hostCache = {};
+    let p = require('../net2/MessageBus.js');
+    this.publisher = new p('info','Scan:Done', 10);
   }
   
   run() {
@@ -49,6 +51,7 @@ class BonjourSensor extends Sensor {
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
+        //         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
       });
       this.bonjourBrowserUdp = bonjour.find({
         protocol: 'udp'
@@ -79,7 +82,7 @@ class BonjourSensor extends Sensor {
       this.bonjourBrowserTcp.start();
       this.bonjourBrowserUdp.start();
       this.bonjourBrowserhttp.start();
-    }, 1000 * 5); 
+    }, 1000 * 10); 
   }
 
   // do not process same host in a short time
@@ -90,7 +93,7 @@ class BonjourSensor extends Sensor {
     }
     
     if(this.hostCache[key]) {
-      log.info("Ignoring duplicated bonjour services from same ip:", key, {});
+      log.debug("Ignoring duplicated bonjour services from same ip:", key, {});
       return true;
     }
 
@@ -109,7 +112,7 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    log.info("Found a bonjour service from host:", ipv4Addr, {});
+    log.info("Found a bonjour service from host:", ipv4Addr, service, {});
 
     l2.getMAC(ipv4Addr, (err, mac) => {
       
@@ -124,6 +127,7 @@ class BonjourSensor extends Sensor {
         ipv4Addr: ipv4Addr,
         mac: mac,
         bname: service.name,
+        from: "bonjour"
       };
       
       if(service.ipv6Addrs)
@@ -144,6 +148,22 @@ class BonjourSensor extends Sensor {
       name = service.name;
     }
     return name;
+  }
+
+  getFriendlyDeviceName(service) {
+    let bypassList = [/_airdrop._tcp/, /eph:devhi:netbot/, /_apple-mobdev2._tcp/]
+
+    if(service.fqdn) {
+      let matched = bypassList.filter((x) => service.fqdn.match(x))
+
+      if(matched.length > 0) {
+        return this.getDeviceName(service)
+      }
+    }
+
+    let name = service.name
+    name = name.replace(/ \[..:..:..:..:..:..\]/, "") // remove useless mac address
+    return name
   }
   
   bonjourParse(service) {
@@ -174,6 +194,7 @@ class BonjourSensor extends Sensor {
 
     let s = {
       name: this.getDeviceName(service),
+      bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       host: service.host

@@ -53,6 +53,7 @@ let redis = require("redis");
 let rclient = redis.createClient();
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('info');
+let led = require('../util/Led.js');
 
 let util = require('util');
 
@@ -158,10 +159,11 @@ function generateEncryptionKey(license) {
   let seed = mathuuid.uuidshort(32 - userKey.length);
 
   return {
-      'key': userKey + seed,
-      'seed': seed,
-      'userkey': userKey,
-      'noLicenseMode': license == null
+    'key': userKey + seed,
+    'seed': seed,
+    'userkey': userKey,
+    'noLicenseMode': license == null,
+    'license': license != null && license.UUID
   };
 }
 
@@ -236,6 +238,7 @@ function inviteFirstAdmin(gid, callback) {
         rclient.hset("sys:ept", "group_member_cnt", count);
 
           // new group without any apps bound;
+          led.on();
           if (count === 1) {
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
 
@@ -259,6 +262,7 @@ function inviteFirstAdmin(gid, callback) {
             let onTimeout = function() {
               callback("404", false);
 
+              led.off();
               log.info("EXIT KICKSTART AFTER TIMEOUT");
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
@@ -278,6 +282,7 @@ function inviteFirstAdmin(gid, callback) {
 
             let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
             fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+            fwInvitation.recordFirstBinding = false // don't record for additional binding
 
             let onSuccess = function(payload) {
               return async(() => {
@@ -291,6 +296,7 @@ function inviteFirstAdmin(gid, callback) {
 
             let onTimeout = function() {
               log.info("EXIT KICKSTART AFTER TIMEOUT");
+              led.off();
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             }

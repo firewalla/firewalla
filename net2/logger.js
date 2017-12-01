@@ -100,7 +100,7 @@ module.exports = function (component, loglevel, filename) {
               level: consoleLogLevel,
               timestamp: function() {
                 let d = new Date();
-                return d.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+                return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
               },
               formatter: function(options) {
                 let format = require('util').format("%s %s %s: %s",
@@ -119,7 +119,10 @@ module.exports = function (component, loglevel, filename) {
                                                        dirname: "/home/pi/logs",
                                                        maxsize: 1000000,
                                                        maxFiles: 3,
-                                                       timestamp:true });
+                                                       timestamp:function() {
+                                                            let d = new Date();
+                                                            return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
+                                                       }});
   
     let transports = [fileTransport];
  

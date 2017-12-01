@@ -150,6 +150,28 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
+  /host/{id}/manualSpoofOn:
+    post:
+      summary: turn manual spoof on
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
+  /host/{id}/manualSpoofOff:
+    post:
+      summary: turn manual spoof on
+      tags:
+        - Host
+      parameters:
+        - $ref: '#/parameters/id'
+      responses:
+        200:
+          description: Success
+
   /host/{id}/recentFlow:
     get:
       summary: Get flow info of given host
@@ -215,6 +237,16 @@ paths:
       responses:
         200:
           description: Success
+  /system/info:
+    get:
+      summary: Load current device status
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/compressed'
+      responses:
+        200:
+          description: Success
   /system/status:
     get:
       summary: Load current device status
@@ -250,6 +282,14 @@ paths:
         200:
           description: Success
   /system/apps:
+    get:
+      summary: Load current device apps status
+      tags:
+        - System
+      responses:
+        200:
+          description: Success
+  /system/categories:
     get:
       summary: Load current device apps status
       tags:
@@ -300,6 +340,46 @@ paths:
           description: Success
           schema:
             $ref: '#/definitions/Host'
+  /mode/mode:
+    get:
+      summary: Get Mode
+      tags:
+        - Mode
+      responses:
+        200:
+          description: Success
+  /mode/none:
+    post:
+      summary: set mode to None
+      tags:
+        - Mode
+      responses:
+        200:
+          description: Success          
+  /mode/dhcp:
+    post:
+      summary: set mode to DHCP
+      tags:
+        - Mode
+      responses:
+        200:
+          description: Success          
+  /mode/autospoof:
+    post:
+      summary: set mode to auto spoof
+      tags:
+        - Mode
+      responses:
+        200:
+          description: Success          
+  /mode/manualspoof:
+    post:
+      summary: set mode to manual spoof
+      tags:
+        - Mode
+      responses:
+        200:
+          description: Success                    
   /sensor/run/{name}:
     post:
       summary: Run a specific sensor
@@ -309,7 +389,7 @@ paths:
         - $ref: '#/parameters/namePath'
       responses:
         200:
-          description: Success
+          description: Success          
   /items:
     x-swagger-router-controller: ItemController
     get:

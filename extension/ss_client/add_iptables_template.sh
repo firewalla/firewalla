@@ -15,6 +15,9 @@ sudo iptables -t nat -A FW_SHADOWSOCKS -d 192.168.0.0/16 -j RETURN
 sudo iptables -t nat -A FW_SHADOWSOCKS -d 224.0.0.0/4 -j RETURN
 sudo iptables -t nat -A FW_SHADOWSOCKS -d 240.0.0.0/4 -j RETURN
 
+# for black hole ip, return it, no ss routing
+sudo iptables -t nat -A FW_SHADOWSOCKS -d 198.51.100.99 -j RETURN
+
 sudo iptables -t nat -A FW_SHADOWSOCKS -p tcp -m set --match-set chnroute dst -j RETURN
 
 sudo iptables -t nat -A FW_SHADOWSOCKS -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_LOCAL_PORT

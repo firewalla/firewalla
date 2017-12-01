@@ -306,7 +306,7 @@ let legoEptCloud = class {
                 self.eid = body.eid;
                 self.groups = body.groups;
                 self.aid = body.aid;
-                log.info("------------------------------------");
+//                log.info("------------------------------------");
                 //log(JSON.stringify(self.groups));
             }
             callback(err, self.eid);
@@ -710,10 +710,21 @@ let legoEptCloud = class {
     // VALID MTYPE:  jsondata
 
 
-  _send(gid, msgstr, _beep, mtype, fid, mid, callback) {
+  _send(gid, msgstr, _beep, mtype, fid, mid, ttl, callback) {
+
+    if(typeof ttl == 'function') {
+      callback = ttl
+      ttl = 1
+    }
+
+    if(ttl <= 0) {
+      callback(new Error("ttl expired"), null)
+      return
+    }
+    
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, {});
+    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl, {});
 
     this.getKey(gid, (err, key, cacheGroup) => {
       if (err != null && key == null) {
@@ -749,7 +760,12 @@ let legoEptCloud = class {
         if (err2 != null) {
           let stack = new Error().stack;
           log.error("Error while requesting ", err2, stack);
-          callback(err2, null);
+          if(ttl > 1) {
+            _send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
+          } else {
+            callback(err2, null);
+          }
+
           return;
         }
         if (httpResponse.statusCode < 200 ||
@@ -780,6 +796,8 @@ let legoEptCloud = class {
     }
     let msgstr = JSON.stringify(mpackage);
 
+    log.info("message size before compression:", msgstr.length);
+
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
       let input = new Buffer(msgstr, 'utf8');
@@ -794,11 +812,11 @@ let legoEptCloud = class {
           compressMode: true,
           data: output.toString('base64')
         };
-
-        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, callback);
+        
+        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, 5, callback)
       })
     } else {
-      this._send(gid, msgstr, _beep, mtype, fid, mid, callback);
+      this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
     }
 
   }
@@ -912,14 +930,14 @@ let legoEptCloud = class {
                 this.socket.on("boneMsg",(data)=> {
                      console.log("SOCKET boneMsg ");
                      if (boneCallback && data) {
-                         boneCallback(null,data.type,data);
+                         boneCallback(null,data);
                      }
                 });
                 this.socket.on('connect', ()=>{
                     this.notifySocket = true;
-                    log.info("[Web Socket] Connecting to Firewalla Cloud");
+                    log.info("[Web Socket] Connecting to Firewalla Cloud: ",cacheGroup.group.name);
                     if (this.notifyGids.length>0) {
-                        this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
+                        this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':cacheGroup.group.name});
                     }
                 });
                 cacheGroup.lastfetch = Date.now() / 1000;

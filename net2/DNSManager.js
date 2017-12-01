@@ -39,6 +39,7 @@ var flowUtil = require('../net2/FlowUtil.js');
 var hostManager = null;
 
 let Promise = require('bluebird');
+let firewalla = require('./Firewalla.js');
 
 const dns = require('dns');
 
@@ -251,7 +252,7 @@ module.exports = class DNSManager {
             dnsdata = {};
         }
 
-        let hashdebug = sysManager.isSystemDebugOn();
+        let hashdebug = sysManager.isSystemDebugOn() || !firewalla.isProduction();
         log.info("######################### CACHE MISS ON IP ",hashdebug,ip,dnsdata,flowUtil.dhnameFlow(flow));
         let _iplist = [];
         let _alist = [];
@@ -295,7 +296,7 @@ module.exports = class DNSManager {
 
         log.info("######## Sending:",JSON.stringify(flowlist));
 
-        bone.intel("*","check",{flowlist:flowlist, hashed:1},(err,data)=> {
+        bone.intel("*", "", "check",{flowlist:flowlist, hashed:1},(err,data)=> {
            if (err || data == null || data.length ==0) {
                log.debug("##### MISS",err,data);
                if (data && data.length == 0) {

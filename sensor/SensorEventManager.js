@@ -18,9 +18,9 @@ let log = require('../net2/logger.js')(__filename);
 
 const EventEmitter = require('events');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-let sclient = redis.createClient();
+const redis = require('redis');
+const rclient = redis.createClient();
+const sclient = redis.createClient();
 
 let instance = null;
 
@@ -53,9 +53,14 @@ class SensorEventManager extends EventEmitter {
     rclient.subscribe(this.getRemoteChannel(process.title));
   }
 
+  clearEventType(eventType) {
+    this.removeAllListeners(eventType)
+  }
+  
+
   emitEvent(event) {
     if(!event.suppressEventLogging) {
-      log.info("New Event: " + event.type + " -- " + event.message);
+      log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
     }
 
     if(event.toProcess && event.toProcess !== process.title) {
@@ -70,7 +75,9 @@ class SensorEventManager extends EventEmitter {
     if(count === 0) {
       log.error("No subscription on event type:", event.type, {});
     } else if (count > 1) {
+      // most of time, only one subscribe on each event type
       log.warn("Subscribers on event type:", event.type, "is more than ONE", {});
+      this.emit(event.type, event);
     } else {
       this.emit(event.type, event);
     }

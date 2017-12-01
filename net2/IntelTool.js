@@ -38,8 +38,6 @@ let firewalla = require('../net2/Firewalla.js');
 
 let instance = null;
 
-
-
 class IntelTool {
 
   constructor() {
@@ -97,7 +95,7 @@ class IntelTool {
 
     let key = this.getIntelKey(ip);
 
-    log.info("Storing intel for ip", ip);
+    log.debug("Storing intel for ip", ip);
 
     intel.updateTime = `${new Date() / 1000}`
 
@@ -114,7 +112,7 @@ class IntelTool {
   }
 
   checkIntelFromCloud(ipList, domainList, appList, flow) {
-    log.info("Checking intel for", ipList, domainList, {});
+    log.debug("Checking intel for", ipList, domainList, {});
 
     let flowList = [];
     let _ipList = [];
@@ -156,14 +154,14 @@ class IntelTool {
 
     let data = {flowlist:flowList, hashed:1};
 
-    log.info(require('util').inspect(data, {depth: null}));
+    //    log.info(require('util').inspect(data, {depth: null}));
 
     return new Promise((resolve, reject) => {
-      bone.intel("*","check", data, (err, data) => {
+      bone.intel("*","", "check", data, (err, data) => {
         if(err)
           reject(err)
         else {
-          log.info("IntelCheck Result:", data, {});
+          //          log.info("IntelCheck Result:", data, {});
           resolve(data);
         }
 
@@ -227,12 +225,16 @@ class IntelTool {
 
     let key = this.getDNSKey(ip);
 
-    let intelJSON = JSON.stringify(intel);
-
-    return rclient.hsetAsync(key, "_intel", intelJSON)
-      .then(() => {
-        return rclient.expireAsync(key, expireTime)
-      });
+    return async(() => {
+      // only update if dns key exists
+      let keys = await (rclient.keysAsync(key))
+      // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
+//      if(keys.length > 0) {
+        let intelJSON = JSON.stringify(intel);
+        await (rclient.hsetAsync(key, "_intel", intelJSON))
+        await (rclient.expireAsync(key, expireTime))
+//      }
+    })()
   }
 }
 

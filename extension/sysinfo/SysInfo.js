@@ -200,23 +200,6 @@ function getRedisMemoryUsage() {
   });
 }
 
-function getReleaseType() {
-  if(!releaseBranch) {
-    releaseBranch = require('child_process').execSync('git rev-parse --abbrev-ref HEAD').toString('utf-8');
-  }
-
-  if(releaseBranch.includes("master")) {
-    return "dev";
-  } else if(releaseBranch.includes("release")) {
-    return "prod";
-  } else if(releaseBranch.includes("staging")) {
-    return "beta";
-  } else {
-    return "unknown";
-  }
-
-}
-
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -233,9 +216,10 @@ function getSysInfo() {
     conn: conn + "",
     peakConn: peakConn + "",
     redisMem: redisMemory,
-    releaseType: getReleaseType(),
+    releaseType: f.getReleaseType(),
     threadInfo: threadInfo,
-    intelQueueSize: intelQueueSize
+    intelQueueSize: intelQueueSize,
+    nodeVersion: process.version
   }
 
   return sysinfo;

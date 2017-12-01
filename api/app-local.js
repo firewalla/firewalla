@@ -26,6 +26,7 @@ let alarm = require('./routes/alarm');
 let flow = require('./routes/flow');
 let host = require('./routes/host');
 let mode = require('./routes/mode');
+let test = require('./routes/test');
 let policy = require('./routes/policy');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
@@ -60,6 +61,9 @@ function enableSubPath(path, lib) {
   subpath_v1.use("/" + path, r);
 }
 
+// encipher api is enabled even for production enviornment
+enableSubPath('encipher');
+
 if(!firewalla.isProduction()) {
   // apis for development purpose only, do NOT enable them in production
   subpath_v1.use('/message', message);
@@ -69,13 +73,13 @@ if(!firewalla.isProduction()) {
   subpath_v1.use('/flow', flow);
   subpath_v1.use('/host', host);
   subpath_v1.use('/mode', mode);
+  subpath_v1.use('/test', test);
 
   enableSubPath('policy');
   enableSubPath('exception');
   enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
-  enableSubPath('encipher');
   enableSubPath('intel');
   enableSubPath('sensor');
 

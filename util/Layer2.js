@@ -21,6 +21,8 @@ let log = require('../net2/logger.js')(__filename);
 let _SimpleCache = require('../util/SimpleCache.js')
 let SimpleCache = new _SimpleCache("macCache",60*10);
 
+const Promise = require('bluebird')
+
 function getMACAndVendor(ipaddress, cb) {
 
   // get MAC Address first
@@ -50,7 +52,6 @@ function getMACAndVendor(ipaddress, cb) {
     */
   });
 }
-
 
 function getMAC(ipaddress, cb) {
 
@@ -90,18 +91,24 @@ function getMAC(ipaddress, cb) {
         if (l == 0) continue;
 
         if (table[l].indexOf(ipaddress + " ") == 0) {
-          let mac = table[l].substring(41, 58).toUpperCase();
+          let mac = table[l].substring(41, 58).toUpperCase().trim();
+          if (mac == "00:00:00:00:00:00") {
+             cb(false,null);
+             return;
+          }
           SimpleCache.insert(ipaddress,mac); 
           cb(false, mac);
           return;
         }
       }
-      cb(true, "Count not find ip in arp table: " + ipaddress);
+      cb(false, null)
+//      cb(true, "Count not find ip in arp table: " + ipaddress);
     });
   });
 }
 
 module.exports = {
   getMAC:getMAC,
+  getMACAsync: Promise.promisify(getMAC),
   getMACAndVendor:getMACAndVendor
 }

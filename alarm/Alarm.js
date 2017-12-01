@@ -254,11 +254,36 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getI18NCategory() {
+    let category = null
+    
     if(this["p.local_is_client"] === "1") {
-      return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
+      category = "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
     } else {
-      return "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
+      category = "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
     }
+
+    return category
+  }
+
+  getNotificationCategory() {
+    let category = super.getNotificationCategory()    
+    
+    if(this["p.dest.name"] === this["p.dest.ip"]) {
+      if(this["p.dest.country"]) {
+        let country = this["p.dest.country"]
+        let locale = i18n.getLocale()
+        try {
+          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+          let code = require(countryCodeFile)
+          this["p.dest.countryLocalized"] = code[country]
+          category = category + "_COUNTRY"
+        } catch (error) {
+          log.error("Failed to parse country code file:", error, {})
+        }
+      }
+    }
+
+    return category
   }
 }
 

@@ -14,17 +14,36 @@
  */
 'use strict';
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let redis = require("redis");
-let rclient = redis.createClient();
+const redis = require("redis");
+const rclient = redis.createClient();
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
+const log = require('./logger.js')(__filename)
 
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 
-let _setupMode = null;
+let _setupMode = null
 
-let defaultMode = "spoof";
+
+
+let REDIS_KEY_MODE = "mode"
+
+// several supported modes
+let MODE_NONE = "none"
+let MODE_AUTO_SPOOF = "spoof" // use spoof for backward compatibility
+let MODE_MANUAL_SPOOF = "manualSpoof"
+let MODE_DHCP = "dhcp"
+
+let DEFAULT_MODE = MODE_NONE
+
+function getSetupModeSync() {
+  return _setupMode
+}
 
 function getSetupMode() {
   if(_setupMode) {
@@ -35,22 +54,23 @@ function getSetupMode() {
 }
 
 function reloadSetupMode() {
-  return rclient.getAsync("mode")
+  return rclient.getAsync(REDIS_KEY_MODE)
     .then((mode) => {
       if(mode) {
         _setupMode = mode;
         return mode;
       } else {
         // no mode set in redis, use default one
-        _setupMode = defaultMode;
-        rclient.setAsync("mode", defaultMode); // async no need to check return result, failure of this action is acceptable
+        _setupMode = DEFAULT_MODE;
+        rclient.setAsync(REDIS_KEY_MODE, DEFAULT_MODE); // async no need to check return result, failure of this action is acceptable
         return _setupMode;
       }
     });
 }
 
 function setSetupMode(newMode) {
-  return rclient.setAsync("mode", newMode)
+  log.info("Setting mode to", newMode)
+  return rclient.setAsync(REDIS_KEY_MODE, newMode)
     .then(() => {
       _setupMode = newMode;
       return newMode;
@@ -58,41 +78,76 @@ function setSetupMode(newMode) {
 }
 
 function dhcpModeOn() {
-  return setSetupMode("dhcp");
+  return setSetupMode(MODE_DHCP)
 }
 
 function spoofModeOn() {
-  return setSetupMode("spoof");
+  return autoSpoofModeOn()
+}
+
+function autoSpoofModeOn() {
+  return setSetupMode(MODE_AUTO_SPOOF)
+}
+
+function manualSpoofModeOn() {
+  return setSetupMode(MODE_MANUAL_SPOOF)
+}
+
+function noneModeOn() {
+  return setSetupMode(MODE_NONE)
 }
 
 function isDHCPModeOn() {
-  if(_setupMode && _setupMode === "dhcp") {
-    return Promise.resolve(true);
-  }
-
-  return getSetupMode()
-    .then((mode) => {
-      return mode === "dhcp";
-    });
+  return isXModeOn(MODE_DHCP)
 }
 
 function isSpoofModeOn() {
-  if(_setupMode && _setupMode === "spoof") {
+  return isAutoSpoofModeOn()
+}
+
+function isAutoSpoofModeOn() {  
+  return isXModeOn(MODE_AUTO_SPOOF)
+}
+
+function isManualSpoofModeOn() {  
+  return isXModeOn(MODE_MANUAL_SPOOF)
+}
+
+function isNoneModeOn() {
+  return isXModeOn(MODE_NONE)
+}
+
+function isXModeOn(x) {
+  if(_setupMode && _setupMode === x) {
     return Promise.resolve(true);
   }
 
   return getSetupMode()
     .then((mode) => {
-      return mode === "spoof";
+      return mode === x;
     });
 }
 
 module.exports = {
   isSpoofModeOn:isSpoofModeOn,
   isDHCPModeOn:isDHCPModeOn,
+  isManualSpoofModeOn:isManualSpoofModeOn,
+  isNoneModeOn:isNoneModeOn,
+  isAutoSpoofModeOn:isAutoSpoofModeOn,
+
+  getSetupModeSync:getSetupModeSync,
   getSetupMode:getSetupMode,
   reloadSetupMode:reloadSetupMode,
   setSetupMode:setSetupMode,
+  
   dhcpModeOn: dhcpModeOn,
-  spoofModeOn: spoofModeOn
+  spoofModeOn: spoofModeOn,
+  autoSpoofModeOn: autoSpoofModeOn,
+  manualSpoofModeOn: manualSpoofModeOn,
+  noneModeOn: noneModeOn,
+  
+  MODE_NONE: MODE_NONE,
+  MODE_AUTO_SPOOF: MODE_AUTO_SPOOF,
+  MODE_MANUAL_SPOOF: MODE_MANUAL_SPOOF,
+  MODE_DHCP: MODE_DHCP
 };

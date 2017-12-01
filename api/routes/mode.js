@@ -51,6 +51,30 @@ router.post('/spoof',
     });
   });
 
+router.post('/autospoof',
+  (req, res, next) => {
+    modeManager.setAutoSpoofAndPublish();
+    res.json({
+      status: "success"
+    });
+  });
+
+router.post('/manualspoof',
+  (req, res, next) => {
+    modeManager.setManualSpoofAndPublish();
+    res.json({
+      status: "success"
+    });
+  });
+
+router.post('/none',
+  (req, res, next) => {
+    modeManager.setNoneAndPublish();
+    res.json({
+      status: "success"
+    });
+  });
+
 router.get('/mode',
   (req, res, next) => {
     modeManager.mode()
@@ -59,5 +83,7 @@ router.get('/mode',
       }))
       .catch((err) => res.status(500).send(err))
   });
+
+
 
 module.exports = router;

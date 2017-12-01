@@ -27,18 +27,26 @@ function initSensors() {
     return;
 
   Object.keys(sensorConfigs).forEach((sensorName) => {
-    let fp = './' + sensorName + '.js';
-    let s = require(fp);
-    let ss = new s();
-    ss.setConfig(sensorConfigs[sensorName]);
-    sensors.push(ss);
+    try {
+      let fp = './' + sensorName + '.js';
+      let s = require(fp);
+      let ss = new s();
+      ss.setConfig(sensorConfigs[sensorName]);
+      sensors.push(ss);
+    } catch(err) {
+      log.error(`Failed to load sensor: ${sensorName}: ${err}`)
+    }
   });  
 }
 
 function run() {
   sensors.forEach((s) => {
     log.info("Installing Sensor:", s.constructor.name, {});
-    s.run();
+    try {
+      s.run()
+    } catch(err) {
+      log.error(`Failed to install sensor: ${s.constructor.name}, err: ${err}`)
+    }
   });
 }
 

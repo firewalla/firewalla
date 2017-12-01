@@ -26,11 +26,19 @@ let _isProduction = null;
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
+let _branch = null
 
 let version = null;
 
+const Promise = require('bluebird');
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 let redis = require('redis');
 let rclient = redis.createClient();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -46,6 +54,24 @@ function getPlatform() {
   }
 
   return _platform;
+}
+
+function getBranch() {
+  if(_branch == null) {
+    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
+  }
+  return _branch
+}
+
+function getProdBranch() {
+  return async(() => {
+    let branch = await (rclient.hgetAsync("sys:config", "prod.branch"))
+    if(branch) {
+      return branch
+    } else {
+      return "release_6_0" // default
+    }
+  })()
 }
 
 function getUserID() {
@@ -68,12 +94,50 @@ function getOverlayUpperDirPartition() {
   return "/media/root-rw/"
 }
 
+
+function isDevelopmentVersion() {
+  let branch = getBranch()
+  if(branch == "master") {
+    return true
+  } else {
+    return false
+  }
+}
+
+function isBeta() {
+  let branch = getBranch()
+  if(branch.match(/^beta_.*/)) {
+    return true
+  } else {
+    return false
+  }  
+}
+
 function isProduction() {
+  let branch = getBranch()
+  if(branch.match(/^release_.*/)) {
+    return true
+  } else {
+    return false
+  }
+  
   // if either of condition matches, this is production environment
   if (_isProduction === null) {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
   }
   return _isProduction;
+}
+
+function getReleaseType() {
+  if(isProduction()) {
+    return "prod"
+  } else if(isBeta()) {
+    return "beta"
+  } else if (isDevelopmentVersion()) {
+    return "dev"
+  } else {
+    return "unknown"
+  }
 }
 
 function isDocker() {
@@ -105,6 +169,27 @@ function isOverlayFS() {
   return _isOverlayFS;
 }
 
+function isBootingComplete() {
+  return async(() => {
+    let keys = await (rclient.keysAsync("bootingComplete"))
+    return keys && keys.length > 0
+  })()
+}
+
+function setBootingComplete() {
+  return rclient.setAsync("bootingComplete", "1")
+}
+
+function resetBootingComplete() {
+  return rclient.delAsync("bootingComplete")
+}
+
+function isFirstBindDone() {
+  return async(() => {
+    let keys = await (rclient.keysAsync("firstBinding"))
+    return keys.length > 0
+  })()
+}
 function getRuntimeInfoFolder() {
   return getHiddenFolder() + "/run";
 }
@@ -156,6 +241,8 @@ function getVersion() {
 
     if(versionElements.length === 3) {
       version = util.format("%s.%s (%s)", versionElements[0], versionElements[1], versionElements[2]);
+    } else if(versionElements.length === 1) {
+      version = util.format("%s.0 (0)", versionElements[0])
     } else {
       version = "0.0 (0)";
     }
@@ -177,7 +264,6 @@ module.exports = {
   getLocalesDirectory: getLocalesDirectory,
   getUserHome: getUserHome,
   getHiddenFolder: getHiddenFolder,
-  isProduction: isProduction,
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
@@ -186,11 +272,23 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
   getPlatform: getPlatform,
   isTravis: isTravis,
   isOverlayFS: isOverlayFS,
   getOverlayUpperDirPartition:getOverlayUpperDirPartition,
-  getEncipherConfigFolder: getEncipherConfigFolder
+  getEncipherConfigFolder: getEncipherConfigFolder,
+  isBootingComplete:isBootingComplete,
+  setBootingComplete:setBootingComplete,
+  resetBootingComplete:resetBootingComplete,
+  isFirstBindDone: isFirstBindDone,
+
+  isProduction: isProduction,
+  isBeta:isBeta,
+  isDevelopmentVersion:isDevelopmentVersion,
+
+  getProdBranch: getProdBranch,
+  getReleaseType: getReleaseType
 }

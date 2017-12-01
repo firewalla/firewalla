@@ -106,6 +106,18 @@ class OldDataCleanSensor extends Sensor {
     // TODO
   }
 
+  cleanSumFlow() {
+    
+  }
+
+  cleanHourlyFlow() {
+    
+  }
+
+  cleanAggrFlow() {
+    
+  }
+
   cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
       rclient.keys("stats:hour*",(err,keys)=> {

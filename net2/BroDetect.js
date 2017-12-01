@@ -23,18 +23,17 @@ var rclient = redis.createClient();
 var iptool = require("ip");
 var useragent = require('useragent');
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const DNSManager = require('./DNSManager.js');
+const dnsManager = new DNSManager();
+const AlarmManager = require('./AlarmManager.js');
+const alarmManager = new AlarmManager('info');
+const Alarm = require('../alarm/Alarm.js');
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
-var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager();
-
-var AlarmManager = require('./AlarmManager.js');
-var alarmManager = new AlarmManager('info');
-
-let Alarm = require('../alarm/Alarm.js');
-let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM2();
+const mode = require('../net2/Mode.js')
 
 var linux = require('../util/linux.js');
 
@@ -45,6 +44,7 @@ rclient.on("error", function (err) {
 });
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
+let appmapsize = 200;
 
 /*
  *
@@ -248,7 +248,7 @@ module.exports = class {
         if (this.connmap[key]!=null) {
              return;
         }
-        log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
+        log.debug("CONNMAP_ARRAY",this.connarray.length,key,value);
         this.connarray.push(value);
         this.connmap[key] = value;
         let mapsize = 9000;
@@ -277,16 +277,19 @@ module.exports = class {
              return;
         }
 
+        if (sysManager.isOurCloudServer(value.host)) {
+             return;
+        }
+
         if (this.appmap[key]!=null) {
              return;
         }
 
-        log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        log.debug("APPMAP_ARRAY",this.apparray.length,key,value.host,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
-        let mapsize = 9000;
-        if (this.apparray.length>mapsize) {
-            let removed = this.apparray.splice(0,this.apparray.length-mapsize);
+        if (this.apparray.length>appmapsize) {
+            let removed = this.apparray.splice(0,this.apparray.length-appmapsize);
             for (let i in removed) {
                 delete this.appmap[removed[i]['uid']];
             }
@@ -462,6 +465,29 @@ module.exports = class {
 
     */
 
+  isConnFlowValid(data) {
+    let m = mode.getSetupModeSync()
+    if(!m) {
+      return true               // by default, always consider as valid
+    }
+
+    if(m === 'dhcp') { // only for dhcp
+      let myip = sysManager.myIp()
+      if(myip) {
+        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+        
+        if(data["id.orig_h"] === myip ||
+           data["id.resp_h"] === myip) {
+          return false  
+        }
+
+        // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      }
+    }
+
+    return true
+  }
+  
     // Only log ipv4 packets for now
     processConnData(data) {
         try {
@@ -479,6 +505,10 @@ module.exports = class {
             if (obj.service && obj.service == "dns") {
                 return;
             }
+
+          if(!this.isConnFlowValid(obj)) {
+            return;
+          }
 
             // drop layer 3
             if (obj.orig_ip_bytes==0 && obj.resp_ip_bytes==0) {
@@ -563,18 +593,26 @@ module.exports = class {
                 }
             }
 
-            let flag = null;
+            /*
+             * the s flag is a short packet flag,
+             * meaning the flow was not detect complete.  This can happen due to pcap runs before
+             * the firewall, and due to how spoof working, there are periods that packets may 
+             * leak, which causes the strange detection.  This need to be look at later.
+             *
+             * this problem does not exist in DHCP mode.
+             *
+             * when flag is set to 's', intel should ignore 
+             */
+            let flag;
             if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
                 if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
                     obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
                     obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
                     obj.conn_state == "S0") {
-                        log.debug("Conn:Drop:State",obj.conn_state,obj);
+                        log.debug("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
                         flag = 's';
-               //         return;
                 }
             }
-
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
@@ -622,6 +660,20 @@ module.exports = class {
             } else {
                 log.error("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
                 return;
+            }
+
+            // Mark all flows that are partially completed.  
+            // some of these flows may be valid
+            //
+            //  flag == s 
+            if (obj.proto == "tcp") {
+                if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
+                    obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
+                    obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+                    obj.conn_state == "S0") {
+                        log.debug("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
+                        flag = 's';
+                }
             }
 
             if (obj.orig_bytes == null) {
@@ -691,6 +743,10 @@ module.exports = class {
                 flowspec._ts = now;
                 flowspec.du += obj.duration;
                 flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]);
+                
+                if (flag) {
+                    flowspec.f = flag;
+                }
             }
 
             let tmpspec = {
@@ -1042,7 +1098,7 @@ module.exports = class {
                             if (this.config.bro.dns.expires) {
                                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                             }
-                            log.error("HTTP:Dns:Set",rvalue,value);
+                            log.debug("HTTP:Dns:Set",rvalue,value);
                         } else {
                             log.error("HTTP:Dns:Error", "unable to update count", err, {});
                         }
@@ -1319,11 +1375,11 @@ module.exports = class {
         try {
             let obj = JSON.parse(data);
             if (obj.note == null) {
-                log.error("Notice:Drop", obj);
+//                log.error("Notice:Drop", obj);
                 return;
             }
             if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-                log.error("Notice:Drop My IP", obj);
+//                log.error("Notice:Drop My IP", obj);
                 return;
             }
             log.info("Notice:Processing",obj);
@@ -1397,7 +1453,7 @@ module.exports = class {
                 });
 
             } else {
-              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+//              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
             log.error("Notice:Error Unable to save", e,data, e.stack, {});

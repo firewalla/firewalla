@@ -22,7 +22,7 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let serviceConfigKey = "bone:service:config";
 
-let syncInterval = 1000 * 3600; // sync hourly
+let syncInterval = 1000 * 3600 * 4; // sync every 4 hourly
 let redis = require('redis');
 let rclient = redis.createClient();
 let Promise = require('bluebird');
@@ -63,11 +63,11 @@ class BoneSensor extends Sensor {
     return async(() => {
       let sysInfo = await (sysManager.getSysInfoAsync());
 
-      log.info("Checking in Cloud...");
+      log.info("Checking in Cloud...",sysInfo,{});
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 
-      log.info("Cloud checked in successfully:", JSON.stringify(data));
+      log.info("Cloud checked in successfully:")//, JSON.stringify(data));
 
       await (rclient.setAsync("sys:bone:info",JSON.stringify(data)));
 
@@ -84,9 +84,9 @@ class BoneSensor extends Sensor {
       if(data.publicIp) {
         sysManager.publicIp = data.publicIp;
         await (rclient.hsetAsync(
-            "sys:network:info",
-            "publicIp",
-            JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
+          "sys:network:info",
+          "publicIp",
+          JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
       }
 
       // broadcast new change
@@ -99,6 +99,19 @@ class BoneSensor extends Sensor {
           ddns: data.ddns,
           message: 'DDNS is updated'
         })
+      }
+
+      if (data && data.upgrade) {
+          log.info("Bone:Upgrade", data.upgrade);
+          if (data.upgrade.type == "soft") {
+             log.info("Bone:Upgrade:Soft", data.upgrade);
+             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft', (err, out, code) => {
+             });
+          } else if (data.upgrade.type == "hard") {
+             log.info("Bone:Upgrade:Hard", data.upgrade);
+             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
+             });
+          }
       }
     })();
   }

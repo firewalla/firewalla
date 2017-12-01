@@ -74,8 +74,8 @@ class FlowTool {
     if("af" in flow)
       delete flow.af;
 
-    if("f" in flow)
-      delete flow.f;
+//    if("f" in flow)
+//      delete flow.f;
 
   }
 
@@ -173,9 +173,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh);
+      flow.country = country.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh);
+      flow.country = country.getCountry(sh)
     }
   }
 
@@ -238,7 +238,7 @@ class FlowTool {
       let ips = await (hostTool.getIPsByMac(mac));
       let allFlows = [];
       ips.forEach((ip) => {
-        let flows = await(this.getRecentOutgoingConnections(ip, {mac: mac}, options));
+        let flows = await(this.getRecentOutgoingConnections(ip, options));
         flows.forEach((f) => {
           f.device = mac;
         });
@@ -503,6 +503,10 @@ class FlowTool {
   }
 
   getDestIP(flow) {
+    if(!flow) {
+      return null
+    }
+    
     if(flow.lh === flow.sh) {
       return flow.dh;
     } else {

@@ -1,8 +1,17 @@
-/**
- * Created by Melvin Tu on 14/03/2017.
- * To capture DHCP events
+/*    Copyright 2016 Firewalla LLC 
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 'use strict';
 
 let instance = null;
@@ -100,9 +109,17 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     return items2.join(":");
   }
 
-  parse(output) {
+  parseEvents(output) {
+    if (output == null) return []
+    return output.split(/------------------------------------------------------------------------/)
+                 .map(e => this.parseEvent(e))
+                 .filter(e => e && e.mac)
+  }
+
+  parseEvent(output) {
      let o =  output.split(/\r?\n/);
      let obj = {};
+
     for (let i in o) {
       let line = o[i];
 
@@ -110,20 +127,20 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       // from "IP: 0.0.0.0 (2:42:ac:11:0:2) > 255.255.255.255 (ff:ff:ff:ff:ff:ff)"
       let match = line.match("IP: .* \\((.*)\\) > 255.255.255.255");
       if(match) {
-        obj.mac = this.normalizeMac(match[1]);
+        obj.mac = this.normalizeMac(match[1])
       }
 
       // locate hostname
       let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
       if(match2) {
-        obj.name = match2[1];
-      }
+        obj.name = match2[1]
+      } 
     }
 
-    if(obj.mac && obj.name) {
-      return obj;
+    if (obj.mac && obj.name) {
+      return obj
     } else {
-      return {};
+      return {}
     }
   }
 
@@ -141,11 +158,9 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
 
     dhcpdumpSpawn.stdout.on('data', (data) => {
       log.debug("Found a dhcpdiscover request");
-      var message = decoder.write(data);
-      let obj = this.parse(message);
-      if (obj && obj.mac) {
-        callback(obj);
-      }
+      let message = decoder.write(data);
+
+      this.parseEvents(message).map(e => callback(e))
     });
 
     dhcpdumpSpawn.stderr.on('data', (data) => {

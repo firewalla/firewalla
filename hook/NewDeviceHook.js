@@ -33,7 +33,7 @@ class NewDeviceHook extends Hook {
     this.queue = [];
   }
 
-  findMac(name, mac, retry) {
+  findMac(name, mac, from, retry) {
 
     retry = retry || 0;
 
@@ -54,7 +54,7 @@ class NewDeviceHook extends Hook {
 
         // if first time, try again in another 10 seconds
         if(retry === 0) {
-          setTimeout(() => this.findMac(name, mac, retry + 1),
+          setTimeout(() => this.findMac(name, mac, from, retry + 1),
                      10 * 1000);
         }
         return;
@@ -64,6 +64,7 @@ class NewDeviceHook extends Hook {
 
       result.bname = name;
       result.mac = mac;
+      result.from = from
 
       sem.emitEvent({
         type: "DeviceUpdate",
@@ -94,6 +95,7 @@ class NewDeviceHook extends Hook {
             sem.emitEvent({
               type: "RefreshMacBackupName",
               message: "Update device backup name via MAC Address",
+              suppressEventLogging: true,
               mac:mac,
               name: name
             });
@@ -104,7 +106,7 @@ class NewDeviceHook extends Hook {
           // to this new device
           setTimeout(() => {
             log.info(require('util').format("Trying to inspect more info on host %s (%s)", name, mac))
-            this.findMac(name, mac);
+            this.findMac(name, mac, event.from);
           }, 5000);
         });
     });

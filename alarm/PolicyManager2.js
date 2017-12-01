@@ -24,6 +24,10 @@ let flat = require('flat');
 
 let audit = require('../util/audit.js');
 let util = require('util');
+let Bone = require('../lib/Bone.js');
+
+let async = require('asyncawait/async')
+let await = require('asyncawait/await')
 
 let Promise = require('bluebird');
 
@@ -46,6 +50,10 @@ let Block = require('../control/Block.js');
 
 let Policy = require('./Policy.js');
 
+const HostTool = require('../net2/HostTool.js')
+const ht = new HostTool()
+
+
 
 
 class PolicyManager2 {
@@ -54,6 +62,53 @@ class PolicyManager2 {
       instance = this;
     }
     return instance;
+  }
+
+  registerPolicyEnforcementListener() {
+    log.info("register policy enforcement listener")
+    sem.on("PolicyEnforcement", (event) => {
+      if (event && event.policy) {
+        log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
+        async(()=>{
+          if (event.action && event.action == 'enforce') {
+              try {
+                await(this.enforce(event.policy))
+              } catch (err) {
+                log.error("enforce policy failed:" + err)
+              }
+          } else if (event && event.action == 'unenforce') {
+              try {
+                await(this.unenforce(event.policy))
+              } catch (err) {
+                log.error("failed to unenforce policy:" + err)
+              }
+              
+              try {
+                await(this.deletePolicy(event.policy.pid))
+              } catch (err) {
+                log.error("failed to delete policy:" + err)
+              }
+          } else {
+            log.error("unrecoganized policy enforcement action:" + event.action)
+          }
+        })()
+      }
+    })
+  }
+
+  tryPolicyEnforcement(policy, action) {
+    if (policy) {
+      action = action || 'enforce'
+      log.info("try policy enforcement:" + action + ":" + policy.pid)
+
+      sem.emitEvent({
+        type: 'PolicyEnforcement',
+        toProcess: 'FireMain',//make sure firemain process handle enforce policy event
+        message: 'Policy Enforcement:' + action,
+        action : action, //'enforce', 'unenforce'
+        policy : policy
+      })
+    }
   }
 
   createPolicyIDKey(callback) {
@@ -125,6 +180,8 @@ class PolicyManager2 {
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
+    log.info("In save policy:", policy);
+
     this.getNextID((err, id) => {
       if(err) {
         log.error("Failed to get next ID: " + err);
@@ -132,7 +189,7 @@ class PolicyManager2 {
         return;
       }
 
-      policy.pid = id;
+      policy.pid = id + ""; // convert to string
 
       let policyKey = policyPrefix + id;
 
@@ -147,20 +204,32 @@ class PolicyManager2 {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
-
-          this.enforce(policy)
-            .then(() => {
-              callback(null, policy.pid);
-            }).catch((err) => callback(err));
+          this.tryPolicyEnforcement(policy)
+          callback(null, policy.pid)
         });
+
+        Bone.submitIntelFeedback('block', policy, 'policy');
       });
     });
   }
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
-
-    this.savePolicy(policy, callback);
+    async(()=>{
+      //FIXME: data inconsistence risk for multi-processes or multi-threads
+      try {
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback(new Error("policy existed"))
+        } else {
+          this.savePolicy(policy, callback);
+        }
+      } catch (err) {
+        log.error("failed to save policy:" + err)
+        callback(err)
+      }
+    })()
   }
 
   policyExists(policyID) {
@@ -185,8 +254,8 @@ class PolicyManager2 {
         }
 
         if(results == null || results.length === 0) {
-          reject(new Error("policy not exists"));
-          return;
+          resolve(null)
+          return
         }
 
         resolve(results[0]);
@@ -194,15 +263,44 @@ class PolicyManager2 {
     });
   }
 
+  getSamePolicies(policy) {
+    let pm2 = this
+    return async(() => {
+      return new Promise(function (resolve, reject) {
+        pm2.loadActivePolicys(200, (err, policies)=>{
+          if (err) {
+            log.error("failed to load active policies:" + err)
+            reject(err)
+          } else {
+            if (policies) {
+              let type = policy["i.type"] || policy["type"]
+              let target = policy["i.target"] || policy["target"]
+              resolve(policies.filter(p => {
+                let ptype = p["i.type"] || p["type"]
+                let ptarget = p["i.target"] || p["target"]
+                return type === ptype && target === ptarget
+              }))
+            } else {
+              resolve([])
+            }
+          }    
+        })
+      })
+    })();
+  }
+
   disableAndDeletePolicy(policyID) {
     let p = this.getPolicy(policyID);
 
+    if(!p) {
+      return Promise.resolve()
+    }
+    
     return p.then((policy) => {
-      this.unenforce(policy)
-        .then(() => {
-          return this.deletePolicy(policyID);
-        })
-        .catch((err) => Promise.reject(err));
+      this.tryPolicyEnforcement(policy, "unenforce")
+
+      Bone.submitIntelFeedback('unblock', policy, 'policy');
+      return Promise.resolve()
     }).catch((err) => Promise.reject(err));
   }
 
@@ -234,6 +332,10 @@ class PolicyManager2 {
   }
 
   jsonToPolicy(json) {
+    if(!json) {
+      return null;
+    }
+    
     let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -259,8 +361,16 @@ class PolicyManager2 {
           callback(err);
           return;
         }
+        
+        let rr = results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null)
 
-        callback(null, results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null));
+        // recent first
+        rr.sort((a, b) => {
+          return b.timestamp > a.timestamp
+        })
+
+        callback(null, rr)
+
       });
     }
 
@@ -332,8 +442,35 @@ class PolicyManager2 {
     });
   }
 
+
+  parseDevicePortRule(target) {
+    return async(() => {
+      let matches = target.match(/(.*):(\d+):(tcp|udp)/)
+      if(matches) {
+        let mac = matches[1]
+        let host = await (ht.getMACEntry(mac))
+        if(host) {
+          return {
+            ip: host.ipv4Addr,
+            port: matches[2],
+            protocol: matches[3]
+          }
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+
+    })()
+  }
+    
   enforce(policy) {
-    switch(policy.type) {
+    log.info("Enforce policy: ", policy, {});
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+
+    switch(type) {
     case "ip":
       return Block.block(policy.target);
       break;
@@ -352,8 +489,13 @@ class PolicyManager2 {
           });
         });
       break;
-    case "ip_port":
-      return Block.blockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+    case "devicePort":
+      return async(() => {
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.blockPublicPort(data.ip, data.port, data.protocol)
+        }
+      })()
       break;
     default:
       return Promise.reject("Unsupported policy");
@@ -361,7 +503,10 @@ class PolicyManager2 {
   }
 
   unenforce(policy) {
-    switch(policy.type) {
+    log.info("Unenforce policy: ", policy, {});
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    switch(type) {
     case "ip":
       return Block.unblock(policy.target);
       break;
@@ -379,8 +524,13 @@ class PolicyManager2 {
             toProcess: 'FireMain'
           });
       });
-    case "ip_port":
-      return Block.unblockPublicPort(policy.target, policy.target_port, policy.target_protocol);
+    case "devicePort":
+       return async(() => {
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        }
+       })()
       break;
     default:
       return Promise.reject("Unsupported policy");

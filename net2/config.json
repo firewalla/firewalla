@@ -1,6 +1,7 @@
 {
-  "version": 1.87,
+  "version": 1.93,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
+  "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL":"https://firewalla.encipher.io/license/api/v1",
   "cacheInit": true,
@@ -20,11 +21,13 @@
   "monitoringInterface2": "eth0:0",
   "newSpoof": true,
   "secondaryInterface": {
-     "intf":"eth0:0",
+    "intf":"eth0:0",
+    "ipOnly": "192.168.218.1",
      "ip":"192.168.218.1/24",
      "ipsubnet":"192.168.218.0/24",
      "ipnet":"192.168.218",
-     "ipmask":"255.255.255.0",
+    "ipmask":"255.255.255.0",
+    "ip2Only": "192.168.168.1",
      "ip2":"192.168.168.1/24",
      "ipsubnet2":"192.168.168.0/24",
      "ipnet2":"192.168.168",
@@ -45,14 +48,24 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
+    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "BoneSensor": {},
+    "APISensor": {},
+    "RuntimeConfigSensor": {},
+    "SSDPSensor": {},
     "DNSMASQSensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
+    "IPv6DiscoverySensor":{},
+    "FlowUploadSensor" : {
+      "interval":900,
+      "maxFlows": 50000,
+      "offset": 90
+    },
     "OldDataCleanSensor": {
       "alarm" : {
         "expires": 604800,
@@ -173,5 +186,9 @@
       "userAgent": {
          "expires": 604800
       }
+    },
+    "features": {
+      "intel:feedback": true
     }
+
 }

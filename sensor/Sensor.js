@@ -29,6 +29,10 @@ let Sensor = class {
   constructor() {
     this.config = {};
   }
+
+  getName() {
+    return this.constructor.name
+  }
   
   setConfig(config) {
     require('util')._extend(this.config, config);

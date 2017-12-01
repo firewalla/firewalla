@@ -104,7 +104,7 @@ class CategoryFlowTool {
     let keyPattern = this.getCategoryFlowKey(mac, '*')
     return async(() => {
       let keys = await (rclient.keysAsync(keyPattern))
-      return keys.map((key) => {
+      let categories = keys.map((key) => {
         let result = key.match(/[^:]*$/)
         if(result && result !== 'intel') {
           return result[0]
@@ -112,6 +112,11 @@ class CategoryFlowTool {
           return null
         }
       }).filter((x) => x != null)
+
+      return categories.filter((elem, pos) => {
+        return categories.indexOf(elem) == pos;
+      })
+      
     })()
   }
 

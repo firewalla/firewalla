@@ -7,6 +7,8 @@ let Alarm = require('./Alarm.js')
 
 var extend = require('util')._extend
 
+const minimatch = require('minimatch')
+
 module.exports = class {
   constructor(rules) {
     // FIXME: ignore any rules not begin with prefix "p"
@@ -24,14 +26,20 @@ module.exports = class {
       if(!key.startsWith("p.") && key !== "type") {
         continue;
       }
-      
-      var val = this[key];
-      // console.log(val);
-      if(!alarm[key]) return false;
 
+      var val = this[key];
+      if(!alarm[key]) return false;
       let val2 = alarm[key];
-      // console.log(val2);
-      if(val2 !== val) return false;
+
+      if(val.startsWith("*.")) {
+        // use glob matching
+        if(!minimatch(val2, val) && // NOT glob match
+           val.slice(2) !== val2) { // NOT exact sub domain match
+          return false
+        }
+      } else {
+        if(val2 !== val) return false;        
+      }
 
       matched = true;
     }

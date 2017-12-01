@@ -167,7 +167,7 @@ class NmapSensor extends Sensor {
   }
 
   getNetworkRanges() {
-    return this.networkInterface
+    return networkTool.getLocalNetworkInterface()
       .then((results) => {
       this.networkRanges = results &&
         results.map((x) => x.subnet)
@@ -230,25 +230,40 @@ class NmapSensor extends Sensor {
             this._processHost(h);
           })
 
-          this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
         }).catch((err) => {
-        log.error("Failed to scan:", err, {});
-      });
-    }));
+          log.error("Failed to scan:", err, {});
+        });
+    })).then(() => {
+      setTimeout(() => {
+        log.info("publish Scan:Done after scan is finished")
+        this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+      }, 3 * 1000)
+
+      Firewalla.isBootingComplete()
+        .then((result) => {
+          if(!result) {
+            setTimeout(() => {
+              log.info("publish Scan:Done after scan is finished")
+              this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+            }, 7 * 1000)
+          }
+        })      
+    });
   }
 
   _processHost(host) {
     if(host) {
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "A new device found @ NewDeviceHook",
+        message: "Found a device via NmapSensor",
         suppressEventLogging: true,
         suppressAlarm: this.suppressAlarm,
         host:  {
           ipv4: host.ipv4Addr,
           ipv4Addr: host.ipv4Addr,
           mac: host.mac,
-          macVendor: host.macVendor
+          macVendor: host.macVendor,
+          from: "nmap"
         }
       });
     }

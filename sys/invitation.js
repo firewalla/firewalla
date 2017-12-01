@@ -34,6 +34,10 @@ let networkTool = require('../net2/NetworkTool')();
 
 let license = require('../util/license.js');
 
+const redis = require('redis')
+const rclient = redis.createClient()
+Promise.promisifyAll(redis.RedisClient.prototype);
+
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
@@ -49,6 +53,7 @@ class FWInvitation {
     this.symmetrickey = symmetrickey
     this.totalTimeout = defaultTotalTimeout;
     this.checkInterval = defaultCheckInterval;
+    this.recordFirstBinding = true
 
     // in noLicenseMode, a default password will be used, a flag 'firstTime' needs to be used to tell app side to use default password
     if(symmetrickey.noLicenseMode) {
@@ -83,6 +88,16 @@ class FWInvitation {
       qrcode.generate(str);
   }
 
+  displayLicense(license) {
+    if(!license)
+      return
+    
+    log.info("\n\n-------------------------------\n");
+    log.info("\n\nLicense QR");
+    log.info("\n");
+    qrcode.generate(license)
+  }
+  
   validateLicense(license) {
 
   }
@@ -116,7 +131,7 @@ class FWInvitation {
 
         // for backward compatibility, if license length is not greater than 8,
         // it is old license mode, ignore license registration process
-        if(userInfo && userInfo.license && userInfo.license.length > 8) {
+        if(userInfo && userInfo.license && userInfo.license.length != 8) {
           // validate license first
           await (bone.waitUntilCloudReadyAsync());
           let infs = await (networkTool.getLocalNetworkInterface())
@@ -131,13 +146,21 @@ class FWInvitation {
               }
             } catch(err) {
               log.error("Invalid license");
+              return {
+                status : "pending"
+              }
             }
           }
         }
 
         let inviteResult = await (this.cloud.eptinviteGroupAsync(this.gid, eid));
 
-        log.info(`Linked App ${eid} to this device successfully`);
+        // Record first binding time
+        if(this.recordFirstBinding) {
+          await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
+        }
+        
+        log.info(`Linked App ${eid} to this device successfully`);        
 
         return {
           status: "success",
@@ -198,8 +221,9 @@ class FWInvitation {
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
+    this.displayLicense(this.symmetrickey.license)
     this.displayKey(this.symmetrickey.userkey);
-    this.displayInvite(obj);
+//    this.displayInvite(obj); // no need to display invite in firewalla any more
 
     network.get_private_ip((err, ip) => {
         txtfield.ipaddress = ip;

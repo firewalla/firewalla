@@ -25,14 +25,18 @@
 USB_MOUNT=/media/usb
 USB_DEV=/dev/sda1
 RESET_FILE='firewalla_reset'
+RESET_SPOOF_FILE='firewalla_no_spoof'
 USB_RESET_FILE="${USB_MOUNT}/${RESET_FILE}"
+USB_RESET_SPOOF_FILE="${USB_MOUNT}/${RESET_SPOOF_FILE}"
 RESET_SCRIPT='/media/root-ro/home/pi/firewalla/scripts/system-reset-all-overlayfs.sh'
 
 mkdir -p ${USB_MOUNT}
 test -e ${USB_DEV} || exit 1
 /bin/mount ${USB_DEV} ${USB_MOUNT}
 test -e ${USB_RESET_FILE}; need_reset=$?
+test -e ${USB_RESET_SPOOF_FILE}; need_reset_spoof=$?
 rm -f ${USB_RESET_FILE}; delete_ok=$?
+rm -f ${USB_RESET_SPOOF_FILE}; delete_spoof_ok=$?
 /bin/umount ${USB_MOUNT}
 if [[ ${need_reset} -eq 0 && ${delete_ok} -eq 0 ]]
 then
@@ -40,6 +44,13 @@ then
     exec $RESET_SCRIPT
 else
     logger "${USB_RESET_FILE} NOT found"
+fi
+if [[ ${need_reset_spoof} -eq 0 && ${delete_spoof_ok} -eq 0 ]]
+then
+    logger "${USB_RESET_SPOOF_FILE} detected, reset spoof"
+    /usr/bin/redis-cli set mode none 
+else
+    logger "${USB_RESET_SPOOF_FILE} NOT found"
 fi
 
 exit 0
