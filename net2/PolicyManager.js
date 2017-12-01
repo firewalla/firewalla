@@ -52,8 +52,8 @@ let localPort = 8833;
 let externalPort = 8833;
 let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-let FAMILY_DNS = "208.67.222.123";
-let ADBLOCK_DNS = "198.101.242.72";
+let FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
+let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
 
 var ip = require('ip');
 
@@ -241,7 +241,7 @@ module.exports = class {
   familyDnsAddr(callback) {
       firewalla.getBoneInfo((err,data)=>{
           if (data && data.config && data.config.dns && data.config.dns.familymode) {
-              callback(null, data.config.dns.familymode[0]);
+              callback(null, data.config.dns.familymode);
           } else {
               callback(null, FAMILY_DNS);
           }
@@ -251,7 +251,7 @@ module.exports = class {
   adblockDnsAddr(callback) {
       firewalla.getBoneInfo((err,data)=>{
           if (data && data.config && data.config.dns && data.config.dns.adblock) {
-              callback(null, data.config.dns.adblock[0]);
+              callback(null, data.config.dns.adblock);
           } else {
               callback(null, ADBLOCK_DNS);
           }
@@ -260,52 +260,29 @@ module.exports = class {
 
   family(ip, state, callback) {
     callback = callback || function() {}
-    this.familyDnsAddr((err,dnsaddr)=>{
-        log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddr);
+    this.familyDnsAddr((err,dnsaddrs)=>{
+      log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddrs.join(" "));
         if (state == true) {
-            iptable.dnsChange(ip, dnsaddr + ":53", false, (err, data) => {
-              iptable.dnsChange(ip, dnsaddr+ ":53", true, (err, data) => {
-                if(err) {
-                  callback(err);
-                } else {
-                  dnsmasq.setDefaultNameServers([dnsaddr]);
-                  dnsmasq.updateResolvConf(callback);
-                }
-              });
-            });
-
+          dnsmasq.setDefaultNameServers(dnsaddr);
+          dnsmasq.updateResolvConf(callback);
         } else {
-          iptable.dnsChange(ip, dnsaddr+ ":53", state, (err, data) => {
-            dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-            dnsmasq.updateResolvConf();
-            callback(err, data);
-          });
+          dnsmasq.setDefaultNameServers(null); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+          dnsmasq.updateResolvConf(callback);
         }
      });
    }
 
   adblock(ip, state, callback) {
     callback = callback || function() {}
-    this.adblockDnsAddr((err,dnsaddr)=>{
-        log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddr);
-        if (state == true) {
-            iptable.dnsChange(ip, dnsaddr+ ":53", false, (err, data) => {
-              iptable.dnsChange(ip, dnsaddr+ ":53", true, (err, data) => {
-                if(err) {
-                  callback(err);
-                } else {
-                  dnsmasq.setDefaultNameServers([dnsaddr]);
-                  dnsmasq.updateResolvConf(callback);
-                }
-              });
-            });
-        } else {
-          iptable.dnsChange(ip, dnsaddr+ ":53", state, (err, data) => {
-            dnsmasq.setDefaultNameServers(null);
-            dnsmasq.updateResolvConf();
-            callback(err, data);
-          });
-        }
+    this.adblockDnsAddr((err,dnsaddrs)=>{
+      log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddrs.join(" "));
+      if (state == true) {
+        dnsmasq.setDefaultNameServers(dnsaddrs);
+        dnsmasq.updateResolvConf(callback);
+      } else {
+        dnsmasq.setDefaultNameServers(null);
+        dnsmasq.updateResolvConf(callback);
+      }
     });
   }
 
