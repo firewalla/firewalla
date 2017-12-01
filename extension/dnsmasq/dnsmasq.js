@@ -474,7 +474,7 @@ module.exports = class DNSMASQ {
 
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
-      cmd = util.format("%s --server=%s", cmd, upstreamDNS);
+      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
     }
 
     if(dhcpFeature && (!sysManager.secondaryIpnet ||
