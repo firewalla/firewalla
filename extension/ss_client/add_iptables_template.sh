@@ -24,4 +24,4 @@ sudo iptables -t nat -A FW_SHADOWSOCKS -p tcp --destination-port 22:1023 -j REDI
 
 # Apply the rules to nat client
 sudo iptables -t nat -A PREROUTING -p tcp -j FW_SHADOWSOCKS
-sudo iptables -t nat -A INPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j FW_SHADOWSOCKS
+sudo iptables -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j FW_SHADOWSOCKS
