@@ -42,14 +42,12 @@ var extend = require('util')._extend;
 let extensionFolder = fHome + "/extension/ss_client";
 
 // Files
-let tunnelBinary = extensionFolder + "/fw_ss_tunnel";
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
 let chinaDNSBinary = extensionFolder + "/chinadns";
 const dnsForwarderName = "dns_forwarder"
 const dnsForwarderBinary = `${extensionFolder}/${dnsForwarderName}`
 
 if(f.isDocker()) {
-  tunnelBinary = extensionFolder + "/bin.x86_64/fw_ss_tunnel";
   redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
   chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
 }
@@ -64,16 +62,15 @@ let ssConfigKey = "scisurf.config";
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
 var ssConfig = null;
 
-let localTunnelPort = 8855;
-let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;
 let localRedirectionAddress = "0.0.0.0";
 let chinaDNSPort = 8854;
 let chinaDNSAddress = "127.0.0.1";
-let tunnelPidPath = f.getRuntimeInfoFolder() + "/ss_client.tunnel.pid";
 let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid";
-const dnsServerWithPort = "8.8.8.8:53";
+
 const localDNSForwarderPort = 8857
+const remoteDNS = "8.8.8.8"
+const remoteDNSPort = "53"
 
 function loadConfig(callback) {
   callback = callback || function() {}
@@ -121,7 +118,7 @@ function clearConfig(callback) {
 /*
  * 1. install
  * 2. prepare ipset
- * 3. setup tunnel
+ * 3. setup dns forwarder
  * 4. setup redirection
  * 5. setup chinadns
  * 6. setup iptables
@@ -264,7 +261,7 @@ function validateConfig(config) {
 function _startDNSForwarder(callback) {
   callback = callback || function() {}
 
-  let cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${localDNSForwarderPort} -s ${dnsServerWithPort}`
+  let cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${localDNSForwarderPort} -s ${remoteDNS}:${remoteDNSPort}`
 
   log.info("dns forwarder cmd:", cmd, {})
 
@@ -294,46 +291,6 @@ function _stopDNSForwarder(callback) {
     }
     callback(err)
   })
-}
-
-function _startTunnel(callback) {
-  callback = callback || function() {}
-
-  let cmd = util.format("%s -c %s -u -l %d -f %s -L %s -b %s",
-                        tunnelBinary,
-                        ssConfigPath,
-                        localTunnelPort,
-                        tunnelPidPath,
-                        dnsServerWithPort,
-                        localTunnelAddress);
-
-  log.info("Running cmd:", cmd);
-  // ss_tunnel will put itself to background mode
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Fail to start tunnel: " + err);
-    } else {
-      log.info("tunnel is started successfully");
-    }
-    callback(err);
-  });
-}
-
-function _stopTunnel(callback) {
-  callback = callback || function() {}
-
-  let cmd = util.format("pkill fw_ss_tunnel");
-
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Got error to stop tunnel: " + stderr);
-    } else {
-      log.info("tunnel is stopped successfully");
-    }
-  });
-
-  callback(null);
 }
 
 function _startRedirection(callback) {
@@ -406,9 +363,11 @@ function _disableIpset(callback) {
 function _enableIptablesRule(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s %s",
+  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
                         ssConfig.server,
                         localRedirectionPort,
+                        remoteDNS,
+                        remoteDNSPort,
                         enableIptablesBinary);
 
   log.info("Running cmd:", cmd);
