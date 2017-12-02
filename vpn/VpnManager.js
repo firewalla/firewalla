@@ -232,7 +232,7 @@ module.exports = class {
             protocol: 'udp',
             private: 1194,
             public: 1194,
-            ttl: ttlExpire,
+            ttl: 0,
             description: "Firewalla VPN"
         }, (external) => {
             log.info("VpnManager:Start:portMap", external);
