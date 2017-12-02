@@ -128,7 +128,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     let nameservers = this.getAllDefaultNameServers()
-    if(!nameservers) {
+    if(!nameservers || nameservers.length === 0) {
       nameservers = sysManager.myDNS();
     }
 
