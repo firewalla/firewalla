@@ -167,7 +167,7 @@ class NmapSensor extends Sensor {
   }
 
   getNetworkRanges() {
-    return this.networkInterface
+    return networkTool.getLocalNetworkInterface()
       .then((results) => {
       this.networkRanges = results &&
         results.map((x) => x.subnet)

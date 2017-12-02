@@ -935,9 +935,9 @@ let legoEptCloud = class {
                 });
                 this.socket.on('connect', ()=>{
                     this.notifySocket = true;
-                    log.info("[Web Socket] Connecting to Firewalla Cloud");
+                    log.info("[Web Socket] Connecting to Firewalla Cloud: ",cacheGroup.group.name);
                     if (this.notifyGids.length>0) {
-                        this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
+                        this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':cacheGroup.group.name});
                     }
                 });
                 cacheGroup.lastfetch = Date.now() / 1000;
