@@ -37,6 +37,8 @@ Promise.promisifyAll(redis.Multi.prototype);
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const exec = require('child-process-promise').exec
+
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
 
@@ -266,13 +268,20 @@ module.exports = class {
       }
       rclient.publish("System:TimezoneChange", timezone);
 
-      let cmd = `sudo timedatectl set-timezone ${timezone}`
-      require('child_process').exec(cmd, (err, stdout, stderr) => {
-        if(err) {
-          log.error("Failed to set system timezone:", err, "stderr:", stderr, {})
+      async(() => {
+        try {
+          let cmd = `sudo timedatectl set-timezone ${timezone}`
+          await (exec(cmd))
+          
+          let cronRestartCmd = "sudo systemctl restart cron.service"
+          await (exec(cronRestartCmd))
+          
+          callback(null)
+        } catch(err) {
+          log.error("Failed to set timezone:", err, {})
+          callback(err)
         }
-      })
-      callback(err);
+      })()
     });
   }
 
