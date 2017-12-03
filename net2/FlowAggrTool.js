@@ -464,6 +464,33 @@ class FlowAggrTool {
       await (rclient.expireAsync(key, expire))
     })()
   }
+
+  getCleanedCategoryKey(begin, end, options) {
+    if(options.mac) {
+      return `category:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `category:system:${begin}:${end}`
+    }
+  }
+
+  cleanedCategoryKeyExists(begin, end, options) {
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keysAsync(key))
+      return keys.length === 1
+    })()
+  }
+
+  setCleanedCategoryActivity(begin, end, data, options) {
+    options = options || {}
+    
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    return async(() => {
+      await (rclient.setAsync(key, JSON.stringify(data)))
+      await (rclient.expireAsync(key, expire))
+    })()
+  }
 }
 
 

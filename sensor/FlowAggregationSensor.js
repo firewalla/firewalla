@@ -568,6 +568,91 @@ class FlowAggregationSensor extends Sensor {
     })()
   }
 
+  getCategoryFlow(category, options) {
+    return async(() => {
+      let flows  = []
+
+      let macs = []
+
+      if(options.mac) {
+        macs = [options.mac]
+      } else {
+        macs = await (categoryFlowTool.getCategoryMacAddresses(category))
+      }
+
+      const promises = macs.map((mac) => {
+        return async(() => {
+          let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+          categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+          categoryFlows.forEach((f) => {
+            f.device = mac
+          })
+
+          flows.push.apply(flows, categoryFlows)
+        })()
+      })
+
+      await(promises)
+      
+      flows.sort((a, b) => {
+        return b.ts - a.ts
+      })
+
+      return flows
+    })()
+  }
+  
+  cleanupCategoryActivity(options) {
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    if(options.mac) {
+      log.info(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
+    } else {
+      log.info(`Cleaning up category activities between ${beginString} and ${endString}`)
+    }
+
+    return async(() => {
+
+      if(options.skipIfExists) {
+        let exists = await (flowAggrTool.cleanedCategoryKeyExists(begin, end, options))
+        if(exists) {
+          return
+        }
+      }
+      
+      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let allFlows = {}
+
+      categorys.forEach((category) => {
+        let flows = await (this.getCategoryFlow(category, options))
+        if(flows.length > 0) {
+          allFlows[category] = flows
+        }
+      })
+
+      // allFlows now contains all raw category activities during this range
+
+      let hashCache = {}
+
+      if(Object.keys(allFlows).length > 0) {
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeCategory', allFlows))
+        
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+
+        await (flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options))
+      } else {
+        await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
+      }
+    })()
+  }
+
 }
 
 module.exports = FlowAggregationSensor;
