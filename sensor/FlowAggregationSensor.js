@@ -539,7 +539,9 @@ class FlowAggregationSensor extends Sensor {
 
       apps.forEach((app) => {
         let flows = await (this.getAppFlow(app, options))
-        allFlows[app] = flows
+        if(flows.length > 0) {
+          allFlows[app] = flows
+        }
       })
 
       // allFlows now contains all raw app activities during this range

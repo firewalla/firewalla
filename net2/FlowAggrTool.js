@@ -449,7 +449,7 @@ class FlowAggrTool {
   cleanedAppKeyExists(begin, end, options) {
     let key = this.getCleanedAppKey(begin, end, options)
     return async(() => {
-      let keys = await (rclient.keys(key))
+      let keys = await (rclient.keysAsync(key))
       return keys.length === 1
     })()
   }
