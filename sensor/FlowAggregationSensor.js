@@ -258,9 +258,9 @@ class FlowAggregationSensor extends Sensor {
         await (this.cleanupAppActivity(options)) // to filter idle activities        
       }
       
-      await (flowAggrTool.addSumFlow("category", options));
-
-
+      if(await (flowAggrTool.addSumFlow("category", options))) {
+        await (this.cleanupCategoryActivity(options))
+      }
       
       let macs = hostManager.getActiveMACs()
 
@@ -278,7 +278,9 @@ class FlowAggregationSensor extends Sensor {
           await (this.cleanupAppActivity(options)) // to filter idle activities if updated
         }
         
-        await (flowAggrTool.addSumFlow("category", options));
+        if(await (flowAggrTool.addSumFlow("category", options))) {
+          await (this.cleanupCategoryActivity(options))
+        }
       })
 
     })();
@@ -525,9 +527,9 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if(options.mac) {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`)
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`)
     } else {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString}`)
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString}`)
     }
 
     return async(() => {
@@ -610,9 +612,9 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if(options.mac) {
-      log.info(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
     } else {
-      log.info(`Cleaning up category activities between ${beginString} and ${endString}`)
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString}`)
     }
 
     return async(() => {
