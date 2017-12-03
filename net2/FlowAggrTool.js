@@ -462,7 +462,20 @@ class FlowAggrTool {
     return async(() => {
       await (rclient.setAsync(key, JSON.stringify(data)))
       await (rclient.expireAsync(key, expire))
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastAppActivity(mac, key))
+      }
     })()
+  }
+
+  setLastAppActivity(mac, keyName) {
+    let key = util.format("lastapp:host:%s:", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastAppActivity(mac) {
+    let key = util.format("lastapp:host:%s:", mac);
+    return rclient.getAsync(key);
   }
 
   getCleanedCategoryKey(begin, end, options) {
@@ -471,7 +484,7 @@ class FlowAggrTool {
     } else {
       return `category:system:${begin}:${end}`
     }
-  }
+  }  
 
   cleanedCategoryKeyExists(begin, end, options) {
     let key = this.getCleanedCategoryKey(begin, end, options)
@@ -489,7 +502,22 @@ class FlowAggrTool {
     return async(() => {
       await (rclient.setAsync(key, JSON.stringify(data)))
       await (rclient.expireAsync(key, expire))
+      
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastCategoryActivity(mac, key))
+      }
+      
     })()
+  }
+
+  setLastCategoryActivity(mac, keyName) {
+    let key = util.format("lastcategory:host:%s:", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastCategoryActivity(mac) {
+    let key = util.format("lastcategory:host:%s:", mac);
+    return rclient.getAsync(key);
   }
 }
 
