@@ -51,6 +51,10 @@ let intelTool = new IntelTool();
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager('cli', 'server');
 
+const flowUtil = require('../net2/FlowUtil')
+
+const bone = require('../lib/Bone.js');
+
 function toFloorInt(n){ return Math.floor(Number(n)); };
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -252,7 +256,7 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("app", options));
       await (flowAggrTool.addSumFlow("category", options));
 
-      await (flowAggrTool.cleanupAppActivity(options)) // to filter idle activities
+      await (this.cleanupAppActivity(options)) // to filter idle activities
       
       let macs = hostManager.getActiveMACs()
 
@@ -267,6 +271,8 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("upload", options))
         await (flowAggrTool.addSumFlow("app", options))
         await (flowAggrTool.addSumFlow("category", options));
+
+        await (this.cleanupAppActivity(options)) // to filter idle activities
       })
 
     })();
@@ -482,6 +488,13 @@ class FlowAggregationSensor extends Sensor {
 
     return async(() => {
 
+      if(options.skipIfExists) {
+        let exists = await (flowAggrTool.cleanedAppKeyExists(begin, end, options))
+        if(exists) {
+          return
+        }
+      }
+      
       let apps = await (appFlowTool.getApps('*')) // all mac addresses
 
       let allFlows = {}
@@ -489,7 +502,13 @@ class FlowAggregationSensor extends Sensor {
       let allPromises = apps.map((app) => {
         allFlows[app] = []
 
-        let macs = await (appFlowTool.getAppMacAddresses(app))
+        let macs = []
+
+        if(options.mac) {
+          macs = [mac]
+        } else {
+          macs = await (appFlowTool.getAppMacAddresses(app))
+        }
 
         let promises = macs.map((mac) => {
           return async(() => {
@@ -523,9 +542,9 @@ class FlowAggregationSensor extends Sensor {
         
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
 
-        await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, {}))
+        await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options))
       } else {
-        await (flowAggrTool.setCleanedAppActivity(begin, end, {}, {})) // if no data, set an empty {}
+        await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
     })()
   }

@@ -438,19 +438,31 @@ class FlowAggrTool {
     return ticks;
   }
 
-  getCleanedAppKey(begin, end) {
-    return `app:system:${begin}:${end}`
+  getCleanedAppKey(begin, end, options) {
+    if(options.mac) {
+      return `app:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `app:system:${begin}:${end}`
+    }
+  }
+
+  cleanedAppKeyExists(begin, end, options) {
+    let key = this.getCleanedAppKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keys(key))
+      return keys.length === 1
+    })()
   }
 
   setCleanedAppActivity(begin, end, data, options) {
     options = options || {}
     
-    let key = this.getCleanedAppKey(begin, end)
+    let key = this.getCleanedAppKey(begin, end, options)
     let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     return async(() => {
       await (rclient.setAsync(key, JSON.stringify(data)))
       await (rclient.expireAsync(key, expire))
-    })
+    })()
   }
 }
 
