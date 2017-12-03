@@ -250,6 +250,9 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       await (flowAggrTool.addSumFlow("app", options));
+      await (flowAggrTool.addSumFlow("category", options));
+
+      await (flowAggrTool.cleanupAppActivity(options)) // to filter idle activities
       
       let macs = hostManager.getActiveMACs()
 
@@ -263,6 +266,7 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         await (flowAggrTool.addSumFlow("app", options))
+        await (flowAggrTool.addSumFlow("category", options));
       })
 
     })();
@@ -465,6 +469,65 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime));
 
     })();
+  }
+
+  cleanupAppActivity(options) {
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`Cleaning up app activities between ${beginString} and ${endString}`)
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let allFlows = {}
+
+      let allPromises = apps.map((app) => {
+        allFlows[app] = []
+
+        let macs = await (appFlowTool.getAppMacAddresses(app))
+
+        let promises = macs.map((mac) => {
+          return async(() => {
+            let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+            appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+            appFlows.forEach((f) => {
+              f.device = mac
+            })
+
+            allFlows[app].push.apply(allFlows[app], appFlows)
+          })()
+        })
+
+        await(promises)
+        
+        allFlows[app].sort((a, b) => {
+          return b.ts - a.ts;
+        });
+      })
+
+      await (allPromises)
+
+      // allFlows now contains all raw app activities during this range
+
+      let hashCache = {}
+
+      if(Object.keys(allFlows).length > 0) {
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))
+        
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+
+        await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, {}))
+      } else {
+        await (flowAggrTool.setCleanedAppActivity(begin, end, {}, {})) // if no data, set an empty {}
+      }
+    })()
   }
 
 }
