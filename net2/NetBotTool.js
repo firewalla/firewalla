@@ -149,7 +149,7 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString}`)
 
     let key = 'appDetails'
     json.flows[key] = {}
@@ -231,7 +231,7 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting category detail flows between ${beginString} and ${endString}`)
+    log.info(`[Cache] Getting category detail flows between ${beginString} and ${endString}`)
 
     let key = 'categoryDetails'
     json.flows[key] = {}
