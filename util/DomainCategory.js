@@ -14,7 +14,7 @@ class DomainCategory {
   _extract(str) {
     let result = [];
     let match = null;
-    while (match = regex.exec(str)) {
+    while (match = this.regex.exec(str)) {
       result.push(match[1]);
     }
   }
