@@ -247,7 +247,7 @@ class FlowAggregationSensor extends Sensor {
         begin: begin,
         end: end,
         interval: this.config.interval,
-        expireTime: 24 * 3600, // keep for 36 hours
+        expireTime: 24 * 3600, // keep for 24 hours
         skipIfExists: skipIfExists
       }
 
@@ -477,6 +477,40 @@ class FlowAggregationSensor extends Sensor {
     })();
   }
 
+  getAppFlow(app, options) {
+    return async(() => {
+      let flows  = []
+
+      let macs = []
+
+      if(options.mac) {
+        macs = [options.mac]
+      } else {
+        macs = await (appFlowTool.getAppMacAddresses(app))
+      }
+
+      const promises = macs.map((mac) => {
+        return async(() => {
+          let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+          appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+          appFlows.forEach((f) => {
+            f.device = mac
+          })
+
+          flows.push.apply(flows, appFlows)
+        })()
+      })
+
+      await(promises)
+      
+      flows.sort((a, b) => {
+        return b.ts - a.ts
+      })
+
+      return flows
+    })()
+  }  
+  
   cleanupAppActivity(options) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
@@ -484,7 +518,11 @@ class FlowAggregationSensor extends Sensor {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Cleaning up app activities between ${beginString} and ${endString}`)
+    if(options.mac) {
+      log.info(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`)
+    } else {
+      log.info(`Cleaning up app activities between ${beginString} and ${endString}`)
+    }
 
     return async(() => {
 
@@ -499,37 +537,10 @@ class FlowAggregationSensor extends Sensor {
 
       let allFlows = {}
 
-      let allPromises = apps.map((app) => {
-        allFlows[app] = []
-
-        let macs = []
-
-        if(options.mac) {
-          macs = [mac]
-        } else {
-          macs = await (appFlowTool.getAppMacAddresses(app))
-        }
-
-        let promises = macs.map((mac) => {
-          return async(() => {
-            let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
-            appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-            appFlows.forEach((f) => {
-              f.device = mac
-            })
-
-            allFlows[app].push.apply(allFlows[app], appFlows)
-          })()
-        })
-
-        await(promises)
-        
-        allFlows[app].sort((a, b) => {
-          return b.ts - a.ts;
-        });
+      apps.forEach((app) => {
+        let flows = await (this.getAppFlow(app, options))
+        allFlows[app] = flows
       })
-
-      await (allPromises)
 
       // allFlows now contains all raw app activities during this range
 
