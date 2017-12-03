@@ -1207,11 +1207,19 @@ class netBot extends ControllerBot {
       await (flowTool.prepareRecentFlows(jsonobj, options))
       await (netBotTool.prepareTopUploadFlows(jsonobj, options))
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
 
-      // validate flow intel
-      await (this.validateFlowIntel(jsonobj))
+      await (netBotTool.prepareDetailedAppFlowsFromCache(json, options))
+      if(!json.flows['appDetails']) {
+        await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
+      }
+
+      await (netBotTool.prepareDetailedCategoryFlowsFromCache(json, options))
+      if(!json.flows['categoryDetails']) {
+        await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+      }
+
+      // // validate flow intel
+      // await (this.validateFlowIntel(jsonobj))
 
       return jsonobj;
     })();

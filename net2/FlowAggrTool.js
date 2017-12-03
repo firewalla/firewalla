@@ -468,6 +468,27 @@ class FlowAggrTool {
     })()
   }
 
+  getCleanedAppActivity(begin, end, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
+    })()
+  }
+
+
   setLastAppActivity(mac, keyName) {
     let key = util.format("lastapp:host:%s:", mac);
     return rclient.setAsync(key, keyName);
@@ -507,6 +528,27 @@ class FlowAggrTool {
         await (this.setLastCategoryActivity(mac, key))
       }
       
+    })()
+  }
+
+  getCleanedCategoryActivity(begin, end, options) {
+    options = options || {}
+    
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
     })()
   }
 
