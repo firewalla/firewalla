@@ -644,7 +644,7 @@ class FlowAggregationSensor extends Sensor {
       if(Object.keys(allFlows).length > 0) {
         flowUtil.hashIntelFlows(allFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeCategory', allFlows))
+        let data = await (bone.flowgraphAsync('summarizeActivity', allFlows))
         
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
 
