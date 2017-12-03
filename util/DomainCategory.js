@@ -17,6 +17,7 @@ class DomainCategory {
     while (match = this.regex.exec(str)) {
       result.push(match[1]);
     }
+    return result;
   }
 
   // callback: function(category) { ... };
