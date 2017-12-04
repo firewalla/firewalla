@@ -51,6 +51,11 @@ let intelTool = new IntelTool();
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager('cli', 'server');
 
+const flowUtil = require('../net2/FlowUtil')
+
+const bone = require('../lib/Bone.js');
+
+
 function toFloorInt(n){ return Math.floor(Number(n)); };
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -243,13 +248,14 @@ class FlowAggregationSensor extends Sensor {
         begin: begin,
         end: end,
         interval: this.config.interval,
-        expireTime: 24 * 3600, // keep for 36 hours
+        expireTime: 24 * 3600, // keep for 24 hours
         skipIfExists: skipIfExists
       }
 
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       await (flowAggrTool.addSumFlow("app", options));
+      await (flowAggrTool.addSumFlow("category", options))
       
       let macs = hostManager.getActiveMACs()
 
@@ -263,6 +269,7 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         await (flowAggrTool.addSumFlow("app", options))
+        await (flowAggrTool.addSumFlow("category", options))
       })
 
     })();
@@ -318,7 +325,7 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let intel = await (intelTool.getIntel(destIP));
       if(intel == null ||
-        (!intel.app && !intel.category)) {
+         (!intel.app && !intel.category)) {
         cache[destIP] = 0;
         return false;
       } else {
@@ -466,6 +473,178 @@ class FlowAggregationSensor extends Sensor {
 
     })();
   }
+
+
+  getAppFlow(app, options) {
+    return async(() => {
+      let flows  = []
+
+      let macs = []
+
+      if(options.mac) {
+        macs = [options.mac]
+      } else {
+        macs = await (appFlowTool.getAppMacAddresses(app))
+      }
+
+      const promises = macs.map((mac) => {
+        return async(() => {
+          let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+          appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+          appFlows.forEach((f) => {
+            f.device = mac
+          })
+
+          flows.push.apply(flows, appFlows)
+        })()
+      })
+
+      await(promises)
+      
+      flows.sort((a, b) => {
+        return b.ts - a.ts
+      })
+
+      return flows
+    })()
+  }  
+  
+  cleanupAppActivity(options) {
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    if(options.mac) {
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`)
+    } else {
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString}`)
+    }
+
+    return async(() => {
+
+      if(options.skipIfExists) {
+        let exists = await (flowAggrTool.cleanedAppKeyExists(begin, end, options))
+        if(exists) {
+          return
+        }
+      }
+      
+      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let allFlows = {}
+
+      apps.forEach((app) => {
+        let flows = await (this.getAppFlow(app, options))
+        if(flows.length > 0) {
+          allFlows[app] = flows
+        }
+      })
+
+      // allFlows now contains all raw app activities during this range
+
+      let hashCache = {}
+
+      if(Object.keys(allFlows).length > 0) {
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))
+        
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+
+        await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options))
+      } else {
+        await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
+      }
+    })()
+  }
+
+  getCategoryFlow(category, options) {
+    return async(() => {
+      let flows  = []
+
+      let macs = []
+
+      if(options.mac) {
+        macs = [options.mac]
+      } else {
+        macs = await (categoryFlowTool.getCategoryMacAddresses(category))
+      }
+
+      const promises = macs.map((mac) => {
+        return async(() => {
+          let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
+          categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+          categoryFlows.forEach((f) => {
+            f.device = mac
+          })
+
+          flows.push.apply(flows, categoryFlows)
+        })()
+      })
+
+      await(promises)
+      
+      flows.sort((a, b) => {
+        return b.ts - a.ts
+      })
+
+      return flows
+    })()
+  }
+  
+  cleanupCategoryActivity(options) {
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    if(options.mac) {
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
+    } else {
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString}`)
+    }
+
+    return async(() => {
+
+      if(options.skipIfExists) {
+        let exists = await (flowAggrTool.cleanedCategoryKeyExists(begin, end, options))
+        if(exists) {
+          return
+        }
+      }
+      
+      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let allFlows = {}
+
+      categorys.forEach((category) => {
+        let flows = await (this.getCategoryFlow(category, options))
+        if(flows.length > 0) {
+          allFlows[category] = flows
+        }
+      })
+
+      // allFlows now contains all raw category activities during this range
+
+      let hashCache = {}
+
+      if(Object.keys(allFlows).length > 0) {
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeActivity', allFlows))
+        
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+
+        await (flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options))
+      } else {
+        await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
+      }
+    })()
+  }
+
 
 }
 
