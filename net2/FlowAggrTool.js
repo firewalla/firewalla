@@ -437,6 +437,141 @@ class FlowAggrTool {
 
     return ticks;
   }
+
+  getCleanedAppKey(begin, end, options) {
+    if(options.mac) {
+      return `app:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `app:system:${begin}:${end}`
+    }
+  }
+
+  cleanedAppKeyExists(begin, end, options) {
+    let key = this.getCleanedAppKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keysAsync(key))
+      return keys.length === 1
+    })()
+  }
+
+  setCleanedAppActivity(begin, end, data, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    return async(() => {
+      await (rclient.setAsync(key, JSON.stringify(data)))
+      await (rclient.expireAsync(key, expire))
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastAppActivity(options.mac, key))
+      }
+    })()
+  }
+  
+  getCleanedAppActivityByKey(key, options) {
+    options = options || {}
+    
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
+    })()
+  }
+
+  getCleanedAppActivity(begin, end, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    return this.getCleanedAppActivityByKey(key, options)
+  }
+
+
+  setLastAppActivity(mac, keyName) {
+    let key = util.format("lastapp:host:%s", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastAppActivity(mac) {
+    let key = util.format("lastapp:host:%s", mac);
+    return rclient.getAsync(key);
+  }
+
+  getCleanedCategoryKey(begin, end, options) {
+    if(options.mac) {
+      return `category:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `category:system:${begin}:${end}`
+    }
+  }  
+
+  cleanedCategoryKeyExists(begin, end, options) {
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keysAsync(key))
+      return keys.length === 1
+    })()
+  }
+
+  setCleanedCategoryActivity(begin, end, data, options) {
+    options = options || {}
+    
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    return async(() => {
+      await (rclient.setAsync(key, JSON.stringify(data)))
+      await (rclient.expireAsync(key, expire))
+      
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastCategoryActivity(options.mac, key))
+      }
+      
+    })()
+  }
+
+  getCleanedCategoryActivityByKey(key, options) {
+    options = options || {}
+    
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
+    })()
+  }
+
+  getCleanedCategoryActivity(begin, end, options) {
+    options = options || {}
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return this.getCleanedCategoryActivityByKey(key, options)
+  }
+
+  setLastCategoryActivity(mac, keyName) {
+    let key = util.format("lastcategory:host:%s", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastCategoryActivity(mac) {
+    let key = util.format("lastcategory:host:%s", mac);
+    return rclient.getAsync(key);
+  }
 }
 
 
