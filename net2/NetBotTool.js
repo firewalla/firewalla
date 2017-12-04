@@ -514,10 +514,6 @@ class NetBotTool {
 
       let allFlows = {}
 
-      if(options.queryall) {
-        // need to support queryall too
-      }
-
       categories.forEach((category) => {
         let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
         categoryFlows = categoryFlows.filter((f) => f.duration >= 5)

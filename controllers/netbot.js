@@ -1288,6 +1288,7 @@ class netBot extends ControllerBot {
           netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
           netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
           netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
+          
           netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
           netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
