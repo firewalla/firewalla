@@ -560,13 +560,13 @@ class netBot extends ControllerBot {
           
           switch(branchChanged) {
           case "1":
-            branch = "back to stable version"
+            branch = "back to stable release"
             break;
           case "2":
-            branch = "to pre_release version"
+            branch = "to beta release"
             break;
           case "3":
-            branch = "to development version"
+            branch = "to development release"
             break;
           default:
             // do nothing, should not happen here
