@@ -109,8 +109,6 @@ case $mode in
         /home/pi/firewalla/scripts/fireupgrade_hard.sh
         ;;
     soft)
-        if [[ "$commit_before" != "$commit_after" ]];  then
-            /home/pi/firewalla/scripts/fireupgrade_soft.sh 
-        fi
+        /home/pi/firewalla/scripts/fireupgrade_soft.sh
         ;;
 esac
