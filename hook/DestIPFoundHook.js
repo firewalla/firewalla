@@ -191,7 +191,7 @@ class DestIPFoundHook extends Hook {
       }
 
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = this.enrichCountry(ip);
+      aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country
 
       // this.workaroundIntelUpdate(aggrIntelInfo);
 

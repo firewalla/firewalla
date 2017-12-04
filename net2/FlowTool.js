@@ -363,6 +363,8 @@ class FlowTool {
   getAllRecentConnections(direction, options) {
     options = options || {}
 
+    options = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
+
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
