@@ -1222,17 +1222,19 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options))
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
+      
+      await ([
+        flowTool.prepareRecentFlows(jsonobj, options)
+        netBotTool.prepareTopUploadFlows(jsonobj, options)
+        netBotTool.prepareTopDownloadFlows(jsonobj, options)
+        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options)
+        netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)])
 
-      await (netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options))
       if(!jsonobj.flows['appDetails']) { // fallback to old way
         await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
         await (this.validateFlowAppIntel(jsonobj))
       }
 
-      await (netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options))
       if(!jsonobj.flows['categoryDetails']) { // fallback to old model
         await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
         await (this.validateFlowCategoryIntel(jsonobj))
@@ -1280,21 +1282,21 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
+        await ([
+          flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options)
+          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options)
+          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options)
+          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options)
+          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options)
+          netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
-        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-
-        await (netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options))
         if(!jsonobj.flows["appDetails"]) {
           log.warn("Fell back to legacy mode on app details:", mac, options, {})
           await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
           await (this.validateFlowAppIntel(jsonobj))
         }
 
-        await (netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options))
         if(!jsonobj.flows["categoryDetails"]) {
           log.warn("Fell back to legacy mode on category details:", mac, options, {})
           await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
