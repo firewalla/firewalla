@@ -564,12 +564,12 @@ class FlowAggrTool {
   }
 
   setLastCategoryActivity(mac, keyName) {
-    let key = util.format("lastcategory:host:%s:", mac);
+    let key = util.format("lastcategory:host:%s", mac);
     return rclient.setAsync(key, keyName);
   }
 
   getLastCategoryActivity(mac) {
-    let key = util.format("lastcategory:host:%s:", mac);
+    let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
   }
 }
