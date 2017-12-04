@@ -210,6 +210,10 @@ function hashIntelFlows(intelFlows, cache) {
 }
 
 function unhashIntelFlows(intelFlows, cache) {
+  if(typeof intelFlows != 'object') { // workaround for cloud returns a string
+    return {}
+  }
+  
   for(let intel in intelFlows) {
     let flows = intelFlows[intel]
     flows.forEach((flow) => {
