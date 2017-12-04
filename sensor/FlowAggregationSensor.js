@@ -317,13 +317,11 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         
-        if(await (flowAggrTool.addSumFlow("app", options))) {
-          await (this.cleanupAppActivity(options))
-        }
+        await (flowAggrTool.addSumFlow("app", options))
+        await (this.cleanupAppActivity(options))
         
-        if(await (flowAggrTool.addSumFlow("category", options))) {
-          await (this.cleanupCategoryActivity(options))
-        }
+        await (flowAggrTool.addSumFlow("category", options))
+        await (this.cleanupCategoryActivity(options))
       })
     })();
   }

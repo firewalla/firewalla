@@ -452,12 +452,38 @@ class NetBotTool {
 
       let allFlows = {}
 
+      apps.forEach((app) => {
+        let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
+        appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+        allFlows[app] = appFlows
+      })
+
+      json.flows[key] = allFlows
+    })();
+  }
+  
+  prepareDetailedAppFlowsForHostFromCache(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps(mac))
+
+      let allFlows = {}
+
       let appFlows = null
       
       if(options.queryall) {
         // need to support queryall too
         let lastAppActivityKey = await (flowAggrTool.getLastAppActivity(mac))
-        appFlows = await (flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey))
+        if(lastAppActivityKey) {
+          appFlows = await (flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey))
+        }
       } else {
         appFlows = await (flowAggrTool.getCleanedAppActivity(options.begin, options.end, options))
       }
@@ -498,6 +524,39 @@ class NetBotTool {
       json.flows[key] = allFlows
     })();
   }
+
+  prepareDetailedCategoryFlowsForHostFromCache(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categorys = await (categoryFlowTool.getCategories(mac))
+
+      let allFlows = {}
+
+      let categoryFlows = null
+      
+      if(options.queryall) {
+        // need to support queryall too
+        let lastCategoryActivityKey = await (flowAggrTool.getLastCategoryActivity(mac))
+        if(lastCategoryActivityKey) {
+          categoryFlows = await (flowAggrTool.getCleanedCategoryActivityByKey(lastCategoryActivityKey))
+        }
+      } else {
+        categoryFlows = await (flowAggrTool.getCleanedCategoryActivity(options.begin, options.end, options))
+      }
+
+      if(categoryFlows) {
+        json.flows[key] = categoryFlows
+      }
+    })();
+  }
+
 
   prepareCategoryActivityFlowsForHost(json, mac, options) {
     if(!mac) {

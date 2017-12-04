@@ -463,7 +463,7 @@ class FlowAggrTool {
       await (rclient.setAsync(key, JSON.stringify(data)))
       await (rclient.expireAsync(key, expire))
       if(options.mac && options.setLastSumFlow) {
-        await (this.setLastAppActivity(mac, key))
+        await (this.setLastAppActivity(options.mac, key))
       }
     })()
   }
@@ -496,12 +496,12 @@ class FlowAggrTool {
 
 
   setLastAppActivity(mac, keyName) {
-    let key = util.format("lastapp:host:%s:", mac);
+    let key = util.format("lastapp:host:%s", mac);
     return rclient.setAsync(key, keyName);
   }
 
   getLastAppActivity(mac) {
-    let key = util.format("lastapp:host:%s:", mac);
+    let key = util.format("lastapp:host:%s", mac);
     return rclient.getAsync(key);
   }
 
@@ -531,7 +531,7 @@ class FlowAggrTool {
       await (rclient.expireAsync(key, expire))
       
       if(options.mac && options.setLastSumFlow) {
-        await (this.setLastCategoryActivity(mac, key))
+        await (this.setLastCategoryActivity(options.mac, key))
       }
       
     })()

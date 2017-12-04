@@ -1266,15 +1266,22 @@ class netBot extends ControllerBot {
         await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
         await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
         
-        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-
+        await (netBotTool.prepareAppActivityFlowsForHostFromCache(jsonobj, mac, options))
+        if(!jsonobj.flows["appDetails"]) {
+          log.warn("Fell back to legacy mode on app details:", mac, options, {})
+          await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowIntel(jsonobj))
+        }
+        
+        await (netBotTool.prepareCategoryActivityFlowsForHostFromCache(jsonobj, mac, options))
+        if(!jsonobj.flows["categoryDetails"]) {
+          log.warn("Fell back to legacy mode on category details:", mac, options, {})
+          await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowIntel(jsonobj))
+        }
         
         await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))        
         await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
-
-
-//        await (this.validateFlowIntel(jsonobj))
       }
 
       return jsonobj;
