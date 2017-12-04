@@ -269,15 +269,10 @@ class FlowAggregationSensor extends Sensor {
         options.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
-        let appResult = await (flowAggrTool.addSumFlow("app", options))
-        //        if(appResult) {
+        await (flowAggrTool.addSumFlow("app", options))
         await (this.cleanupAppActivity(options)) // to filter idle activities if updated
-        //        }
-        
-        //        if(
         await (flowAggrTool.addSumFlow("category", options))//) {
         await (this.cleanupCategoryActivity(options))
-        //        }
       })
 
     })();
