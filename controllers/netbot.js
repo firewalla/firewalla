@@ -1156,7 +1156,29 @@ class netBot extends ControllerBot {
     }
   }
 
-  validateFlowIntel(json) {
+  validateFlowAppIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))
+      let flows = json.flows
+
+      let hashCache = {}
+
+
+      let appFlows = flows.appDetails
+
+      if(Object.keys(appFlows).length > 0) {
+        flowUtil.hashIntelFlows(appFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        
+        flows.appDetails = unhashedData
+        flows.categoryDetails = unhashedData2
+      }
+    })()
+  }
+
+  validateFlowCategoryIntel(json) {
     return async(() => {
       // await (bone.flowgraphAsync(...))
       let flows = json.flows
@@ -1167,22 +1189,18 @@ class netBot extends ControllerBot {
       let appFlows = flows.appDetails
       let categoryFlows = flows.categoryDetails
 
-      if(Object.keys(appFlows).length > 0 ||
-         Object.keys(categoryFlows).length > 0) {
-        flowUtil.hashIntelFlows(appFlows, hashCache)
+      if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
-                          bone.flowgraphAsync('summarizeActivity', categoryFlows))
+        let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
 
-        let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
-        let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         
-        flows.appDetails = unhashedData
-        flows.categoryDetails = unhashedData2
+        flows.categoryDetails = unhashedData
       }
     })()
   }
+
   
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
@@ -1211,13 +1229,13 @@ class netBot extends ControllerBot {
       await (netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options))
       if(!jsonobj.flows['appDetails']) { // fallback to old way
         await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
-        await (this.validateFlowIntel(jsonobj))
+        await (this.validateFlowAppIntel(jsonobj))
       }
 
       await (netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options))
       if(!jsonobj.flows['categoryDetails']) { // fallback to old model
         await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
-        await (this.validateFlowIntel(jsonobj))
+        await (this.validateFlowCategoryIntel(jsonobj))
       }
 
       return jsonobj;
@@ -1273,14 +1291,14 @@ class netBot extends ControllerBot {
         if(!jsonobj.flows["appDetails"]) {
           log.warn("Fell back to legacy mode on app details:", mac, options, {})
           await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
-          await (this.validateFlowIntel(jsonobj))
+          await (this.validateFlowAppIntel(jsonobj))
         }
 
         await (netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options))
         if(!jsonobj.flows["categoryDetails"]) {
           log.warn("Fell back to legacy mode on category details:", mac, options, {})
           await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-          await (this.validateFlowIntel(jsonobj))
+          await (this.validateFlowCategoryIntel(jsonobj))
         }
       }
 
