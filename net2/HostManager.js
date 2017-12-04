@@ -1624,6 +1624,20 @@ module.exports = class {
     });
   }
 
+  boneDataForInit(json) {
+    log.debug("Bone for Init");
+    return new Promise((resolve, reject) => {
+      f.getBoneInfo((err,boneinfo)=>{
+        if(err) {
+          reject(err);
+          return;
+        }
+        json.boneinfo = boneinfo;
+        resolve(json);
+      });
+    });
+  }
+
   legacyStats(json) {
     log.debug("Reading legacy stats");
     return flowManager.getSystemStats()
@@ -1788,7 +1802,8 @@ module.exports = class {
             this.exceptionRulesForInit(json),
             this.newAlarmDataForInit(json),
             this.natDataForInit(json),
-            this.ignoredIPDataForInit(json)
+            this.ignoredIPDataForInit(json),
+            this.boneDataForInit(json)
           ]
 
           this.basicDataForInit(json, options);
