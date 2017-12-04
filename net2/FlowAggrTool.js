@@ -467,11 +467,10 @@ class FlowAggrTool {
       }
     })()
   }
-
-  getCleanedAppActivity(begin, end, options) {
+  
+  getCleanedAppActivityByKey(key, options) {
     options = options || {}
     
-    let key = this.getCleanedAppKey(begin, end, options)
     return async(() => {
       let dataString = await (rclient.getAsync(key))
       if(!dataString) {
@@ -486,6 +485,13 @@ class FlowAggrTool {
         return null
       }
     })()
+  }
+
+  getCleanedAppActivity(begin, end, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    return this.getCleanedAppActivityByKey(key, options)
   }
 
 
@@ -531,10 +537,9 @@ class FlowAggrTool {
     })()
   }
 
-  getCleanedCategoryActivity(begin, end, options) {
+  getCleanedCategoryActivityByKey(key, options) {
     options = options || {}
     
-    let key = this.getCleanedCategoryKey(begin, end, options)
     return async(() => {
       let dataString = await (rclient.getAsync(key))
       
@@ -550,6 +555,12 @@ class FlowAggrTool {
         return null
       }
     })()
+  }
+
+  getCleanedCategoryActivityByKey(begin, end, options) {
+    options = options || {}
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return this.getCleanedCategoryActivityByKey(key, options)
   }
 
   setLastCategoryActivity(mac, keyName) {

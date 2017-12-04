@@ -1209,17 +1209,16 @@ class netBot extends ControllerBot {
       await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
 
       await (netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options))
-      if(!jsonobj.flows['appDetails']) {
+      if(!jsonobj.flows['appDetails']) { // fallback to old way
         await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
+        await (this.validateFlowIntel(jsonobj))
       }
 
       await (netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options))
-      if(!jsonobj.flows['categoryDetails']) {
+      if(!jsonobj.flows['categoryDetails']) { // fallback to old model
         await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+        await (this.validateFlowIntel(jsonobj))
       }
-
-      // // validate flow intel
-      // await (this.validateFlowIntel(jsonobj))
 
       return jsonobj;
     })();
@@ -1266,12 +1265,16 @@ class netBot extends ControllerBot {
         await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
         await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
         await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
+        
         await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
         await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
 
-        await (this.validateFlowIntel(jsonobj))
+        
+        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))        
+        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
+
+
+//        await (this.validateFlowIntel(jsonobj))
       }
 
       return jsonobj;

@@ -152,7 +152,7 @@ class NetBotTool {
     log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString}`)
 
     let key = 'appDetails'
-    json.flows[key] = {}
+//    json.flows[key] = {}
     
     return async(() => {
       let flows = await (flowAggrTool.getCleanedAppActivity(begin, end, options))
@@ -234,7 +234,7 @@ class NetBotTool {
     log.info(`[Cache] Getting category detail flows between ${beginString} and ${endString}`)
 
     let key = 'categoryDetails'
-    json.flows[key] = {}
+//    json.flows[key] = {}
     
     return async(() => {
       let flows = await (flowAggrTool.getCleanedCategoryActivity(begin, end, options))
@@ -452,13 +452,19 @@ class NetBotTool {
 
       let allFlows = {}
 
-      apps.forEach((app) => {
-        let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
-        appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-        allFlows[app] = appFlows
-      })
+      let appFlows = null
+      
+      if(options.queryall) {
+        // need to support queryall too
+        let lastAppActivityKey = await (flowAggrTool.getLastAppActivity(mac))
+        appFlows = await (flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey))
+      } else {
+        appFlows = await (flowAggrTool.getCleanedAppActivity(options.begin, options.end, options))
+      }
 
-      json.flows[key] = allFlows
+      if(appFlows) {
+        json.flows[key] = appFlows
+      }
     })();
   }
 
@@ -478,6 +484,10 @@ class NetBotTool {
       categories = categories.filter((x) => x !== "intel")
 
       let allFlows = {}
+
+      if(options.queryall) {
+        // need to support queryall too
+      }
 
       categories.forEach((category) => {
         let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))

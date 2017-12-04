@@ -254,13 +254,14 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       let totalAppResult = await (flowAggrTool.addSumFlow("app", options));
-      if(totalAppResult) {
-        await (this.cleanupAppActivity(options)) // to filter idle activities        
-      }
+      //      if(totalAppResult) {
+      await (this.cleanupAppActivity(options)) // to filter idle activities        
+      //      }
       
-      if(await (flowAggrTool.addSumFlow("category", options))) {
-        await (this.cleanupCategoryActivity(options))
-      }
+      //      if(
+      await (flowAggrTool.addSumFlow("category", options))
+      await (this.cleanupCategoryActivity(options))
+      //      }
       
       let macs = hostManager.getActiveMACs()
 
@@ -274,13 +275,14 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         let appResult = await (flowAggrTool.addSumFlow("app", options))
-        if(appResult) {
-          await (this.cleanupAppActivity(options)) // to filter idle activities if updated
-        }
+        //        if(appResult) {
+        await (this.cleanupAppActivity(options)) // to filter idle activities if updated
+        //        }
         
-        if(await (flowAggrTool.addSumFlow("category", options))) {
-          await (this.cleanupCategoryActivity(options))
-        }
+        //        if(
+        await (flowAggrTool.addSumFlow("category", options))//) {
+        await (this.cleanupCategoryActivity(options))
+        //        }
       })
 
     })();
