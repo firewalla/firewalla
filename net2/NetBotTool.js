@@ -467,6 +467,8 @@ class NetBotTool {
       return Promise.reject("Invalid MAC Address");
     }
 
+    options = JSON.parse(JSON.stringify(options))
+
     let key = 'appDetails'
     json.flows[key] = {}
 
@@ -484,7 +486,8 @@ class NetBotTool {
         if(lastAppActivityKey) {
           appFlows = await (flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey))
         }
-      } else {
+      } else {        
+        options.mac = mac
         appFlows = await (flowAggrTool.getCleanedAppActivity(options.begin, options.end, options))
       }
 
@@ -529,7 +532,9 @@ class NetBotTool {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
     }
-
+    
+    options = JSON.parse(JSON.stringify(options))
+    
     let key = 'categoryDetails'
     json.flows[key] = {}
 
@@ -548,6 +553,7 @@ class NetBotTool {
           categoryFlows = await (flowAggrTool.getCleanedCategoryActivityByKey(lastCategoryActivityKey))
         }
       } else {
+        options.mac = mac
         categoryFlows = await (flowAggrTool.getCleanedCategoryActivity(options.begin, options.end, options))
       }
 

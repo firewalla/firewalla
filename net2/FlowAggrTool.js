@@ -557,7 +557,7 @@ class FlowAggrTool {
     })()
   }
 
-  getCleanedCategoryActivityByKey(begin, end, options) {
+  getCleanedCategoryActivity(begin, end, options) {
     options = options || {}
     let key = this.getCleanedCategoryKey(begin, end, options)
     return this.getCleanedCategoryActivityByKey(key, options)
