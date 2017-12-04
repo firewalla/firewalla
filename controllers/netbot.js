@@ -1224,10 +1224,10 @@ class netBot extends ControllerBot {
       }
       
       await ([
-        flowTool.prepareRecentFlows(jsonobj, options)
-        netBotTool.prepareTopUploadFlows(jsonobj, options)
-        netBotTool.prepareTopDownloadFlows(jsonobj, options)
-        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options)
+        flowTool.prepareRecentFlows(jsonobj, options),
+        netBotTool.prepareTopUploadFlows(jsonobj, options),
+        netBotTool.prepareTopDownloadFlows(jsonobj, options),
+        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
         netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)])
 
       if(!jsonobj.flows['appDetails']) { // fallback to old way
@@ -1284,11 +1284,11 @@ class netBot extends ControllerBot {
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
-          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options)
-          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options)
-          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options)
-          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options)
-          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options)
+          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
           netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
         if(!jsonobj.flows["appDetails"]) {
