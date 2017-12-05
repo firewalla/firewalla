@@ -1,6 +1,7 @@
 [common]
 server_addr = support.firewalla.com
-server_port = 8999
+server_port = 10000
+privilege_token = FRP_SERVICE_TOKEN
 
 [FRP_SERVICE_NAME]
 type = tcp

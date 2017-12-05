@@ -1481,12 +1481,14 @@ class netBot extends ControllerBot {
       this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
+      return;
     } else if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
+      return;
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
@@ -1500,6 +1502,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "upgrade") {
       log.info("upgrading");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/upgrade', (err, out, code) => {
@@ -1513,7 +1516,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
-
+      return;
     } else if (msg.data.item === "shutdown") {
       log.info("shutdown firewalla in 60 seconds");
       let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
@@ -1527,6 +1530,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
         let code = 200;
@@ -1541,6 +1545,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
       });
+      return;
     }
 
     switch (msg.data.item) {
