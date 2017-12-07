@@ -128,7 +128,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     let nameservers = this.getAllDefaultNameServers()
-    if(!nameservers) {
+    if(!nameservers || nameservers.length === 0) {
       nameservers = sysManager.myDNS();
     }
 
@@ -503,7 +503,7 @@ module.exports = class DNSMASQ {
        sysManager.secondaryMask) {
       log.info("DHCP feature is enabled");
 
-      let rangeBegin = util.format("%s.10", sysManager.secondaryIpnet);
+      let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
       let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
       let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
 

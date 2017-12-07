@@ -29,6 +29,10 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const redis = require('redis')
+const rclient = redis.createClient()
+Promise.promisifyAll(redis.RedisClient.prototype)
+
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 
@@ -58,6 +62,12 @@ module.exports = class {
       let templateData = await (readFile(configTemplateFile, 'utf8'))
       templateData = templateData.replace(/FRP_SERVICE_NAME/g, `SSH${this.port}`)
       templateData = templateData.replace(/FRP_SERVICE_PORT/g, this.port)
+
+      let token = await (rclient.hgetAsync("sys:config", "frpToken"))
+      if(token) {
+        templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, token)
+      }
+      
       await(writeFile(configFile, templateData, 'utf8'))
     })()
   }
