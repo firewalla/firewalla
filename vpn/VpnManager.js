@@ -268,7 +268,7 @@ module.exports = class {
             private: 1194,
             public: 1194
         },(err)=>{
-            require('child_process').exec("sudo systemctl start openvpn@server", (err, out, code) => {
+            require('child_process').exec("sudo service openvpn start", (err, out, code) => {
                 log.info("VpnManager:Start", err);
                 if (err && this.started == false) {
                     if (callback) {
