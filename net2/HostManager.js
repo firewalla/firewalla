@@ -2121,6 +2121,7 @@ module.exports = class {
                     }
 */
                     let allIPv6Addrs = [];
+                    let allIPv4Addrs = [];
 
                     let myIp = sysManager.myIp();
 
@@ -2131,6 +2132,9 @@ module.exports = class {
                                 if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
                                     allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
                                 }
+                            }
+                            if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+                                allIPv4Addrs.push(hostbymac.o.ipv4Addr);
                             }
                         }
                         if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
@@ -2156,6 +2160,7 @@ module.exports = class {
                     this.getHostsActive = false;
                     if (this.type === "server") {
                        spoofer.validateV6Spoofs(allIPv6Addrs);
+                       spoofer.validateV4Spoofs(allIPv4Addrs);
                     }
                     log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
                     callback(err, this.hosts.all);
