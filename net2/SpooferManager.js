@@ -204,7 +204,7 @@ function isSpoof(ip) {
     }
     */
     
-    return await (rclient.sismemberAsync(monitoredKey, ip))
+    return await (rclient.sismemberAsync(monitoredKey, ip)) == 1
   })()
 }
 

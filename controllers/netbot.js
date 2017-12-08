@@ -510,6 +510,7 @@ class netBot extends ControllerBot {
 
           let data = {
             gid: this.primarygid,
+            notifType: "ALARM"
           };
 
           if (msg.aid) {
