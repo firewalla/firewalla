@@ -89,7 +89,7 @@ class BitBridge {
 
     } else {
       binary = this.getBinary()
-      args = [this.intf, this.routerIP, this.selfIP, '-m','-n','-q','-d 0'];
+      args = [this.intf, this.routerIP, this.selfIP, '-m','-n','-q','-l','-d 0'];
 
       let cmd = binary+" "+args.join(" ")
       log.info("Lanching Bitbridge4 ", cmd);
@@ -100,7 +100,7 @@ class BitBridge {
       //sudo ./bitbridge6 eth0 -q -w 1 -k monitored_hosts6 -g fe80::250:f1ff:fe80:0
       if(this.routerIP6) {
         binary = this.getBinary6()
-        args = [this.intf, '-w 0.36','-q','-k monitored_hosts6','-g '+this.routerIP6];
+        args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP6];
         
         cmd = binary+" "+args.join(" ")
         log.info("Lanching bitbridge6", cmd);
