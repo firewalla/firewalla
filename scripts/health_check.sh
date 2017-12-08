@@ -7,9 +7,9 @@ REBOOT_TYPE=$NO_REBOOT
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 check_kernel_fatal_err_update_clk_timeout() {
-    if sudo dmesg | fgrep 'sunxi-mmc 1c0f000.mmc: fatal err update clk timeout'
+    if sudo dmesg | egrep 'sunxi-mmc .*.mmc: fatal err update clk timeout'
     then
-        logger "FATAL: sunxi-mmc 1c0f000.mmc: fatal err update clk timeout"
+        logger "FATAL: sunxi-mmc .*.mmc: fatal err update clk timeout"
         REBOOT_TYPE=$FORCE_REBOOT
         return 0
     else
