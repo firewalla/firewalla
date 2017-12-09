@@ -44,6 +44,7 @@ rclient.on("error", function (err) {
 });
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
+let appmapsize = 200;
 
 /*
  *
@@ -247,7 +248,7 @@ module.exports = class {
         if (this.connmap[key]!=null) {
              return;
         }
-        log.debug("CONN DEBUG",this.connarray.length,key,value,"length:");
+        log.debug("CONNMAP_ARRAY",this.connarray.length,key,value);
         this.connarray.push(value);
         this.connmap[key] = value;
         let mapsize = 9000;
@@ -276,16 +277,19 @@ module.exports = class {
              return;
         }
 
+        if (sysManager.isOurCloudServer(value.host)) {
+             return;
+        }
+
         if (this.appmap[key]!=null) {
              return;
         }
 
-        log.debug("DEBUG",this.apparray.length,key,value,"length:", this.apparray.length);
+        log.debug("APPMAP_ARRAY",this.apparray.length,key,value.host,"length:", this.apparray.length);
         this.apparray.push(value);
         this.appmap[key] = value;
-        let mapsize = 9000;
-        if (this.apparray.length>mapsize) {
-            let removed = this.apparray.splice(0,this.apparray.length-mapsize);
+        if (this.apparray.length>appmapsize) {
+            let removed = this.apparray.splice(0,this.apparray.length-appmapsize);
             for (let i in removed) {
                 delete this.appmap[removed[i]['uid']];
             }
@@ -502,7 +506,7 @@ module.exports = class {
                 return;
             }
 
-          if(!this.isConnFlowValid(data)) {
+          if(!this.isConnFlowValid(obj)) {
             return;
           }
 
@@ -1371,11 +1375,11 @@ module.exports = class {
         try {
             let obj = JSON.parse(data);
             if (obj.note == null) {
-                log.error("Notice:Drop", obj);
+//                log.error("Notice:Drop", obj);
                 return;
             }
             if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-                log.error("Notice:Drop My IP", obj);
+//                log.error("Notice:Drop My IP", obj);
                 return;
             }
             log.info("Notice:Processing",obj);
@@ -1449,7 +1453,7 @@ module.exports = class {
                 });
 
             } else {
-              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+//              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
         } catch (e) {
             log.error("Notice:Error Unable to save", e,data, e.stack, {});

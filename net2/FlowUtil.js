@@ -173,6 +173,57 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl))));
 console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 */
 
+// intelFlow => appFlow or categoryFlow
+
+function hashIntelFlow(flow, cache) {
+  cache = cache || {}
+  
+  if(flow.device) {
+    let realMac = flow.device
+    let hashedMac = hashMac(realMac)
+    cache[hashedMac] = realMac
+    flow.device = hashedMac
+  }
+
+  return flow
+}
+
+function unhashIntelFlow(flow, cache) {
+  cache = cache || {}
+  
+  if(flow.device && cache[flow.device]) {
+    flow.device = cache[flow.device]
+  }
+
+  return flow
+}
+
+function hashIntelFlows(intelFlows, cache) {
+  for(let intel in intelFlows) {
+    let flows = intelFlows[intel]
+    flows.forEach((flow) => {
+      hashIntelFlow(flow, cache)
+    })
+  }
+
+  return intelFlows
+}
+
+function unhashIntelFlows(intelFlows, cache) {
+  if(typeof intelFlows != 'object') { // workaround for cloud returns a string
+    return {}
+  }
+  
+  for(let intel in intelFlows) {
+    let flows = intelFlows[intel]
+    flows.forEach((flow) => {
+      unhashIntelFlow(flow, cache)
+    })
+  }
+
+  return intelFlows
+}
+
 
 module.exports = {
   addFlag: addFlag,
@@ -182,5 +233,9 @@ module.exports = {
   hashMac: hashMac,
   hashIp: hashIp,
   hashApp: hashApp,
+  hashIntelFlow: hashIntelFlow,
+  unhashIntelFlow: unhashIntelFlow,
+  hashIntelFlows: hashIntelFlows,
+  unhashIntelFlows: unhashIntelFlows,
   dhnameFlow: dhnameFlow
 };

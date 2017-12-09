@@ -23,7 +23,7 @@ let started = false;
 let fs = require('fs');
 let util = require('util');
 let jsonfile = require('jsonfile');
-let p = require('child_process');
+const p = require('child_process');
 let async = require('async');
 
 let r = require('redis');
@@ -42,16 +42,14 @@ var extend = require('util')._extend;
 let extensionFolder = fHome + "/extension/ss_client";
 
 // Files
-let tunnelBinary = extensionFolder + "/fw_ss_tunnel";
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
 let chinaDNSBinary = extensionFolder + "/chinadns";
-let kcpBinary = extensionFolder + "/kcp_client";
+const dnsForwarderName = "dns_forwarder"
+const dnsForwarderBinary = `${extensionFolder}/${dnsForwarderName}`
 
 if(f.isDocker()) {
-  tunnelBinary = extensionFolder + "/bin.x86_64/fw_ss_tunnel";
   redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
   chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
-  kcpBinary = extensionFolder + "/bin.x86_64/kcp_client";
 }
 
 let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
@@ -62,27 +60,17 @@ let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
 
 let ssConfigKey = "scisurf.config";
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
-let ssForKCPConfigPath = f.getUserConfigFolder() + "/ss_client.kcp.config.json";
 var ssConfig = null;
 
-let localKCPTunnelPort = 8856;
-let localKCPTunnelAddress = "127.0.0.1";
-let kcpParameters = "-mtu 1400 -sndwnd 256 -dscp 46 --nocomp";
-let localTunnelPort = 8855;
-let localTunnelAddress = "127.0.0.1";
 let localRedirectionPort = 8820;
 let localRedirectionAddress = "0.0.0.0";
 let chinaDNSPort = 8854;
 let chinaDNSAddress = "127.0.0.1";
-let tunnelPidPath = f.getRuntimeInfoFolder() + "/ss_client.tunnel.pid";
 let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid";
-let dnsServerWithPort = "8.8.8.8:53";
 
-let kcpLog = f.getLogFolder() + "/kcp.log";
-
-function isKCPEnabled() {
-  return ssConfig && ssConfig.kcp_enabled != null;
-}
+const localDNSForwarderPort = 8857
+const remoteDNS = "8.8.8.8"
+const remoteDNSPort = "53"
 
 function loadConfig(callback) {
   callback = callback || function() {}
@@ -118,7 +106,11 @@ function clearConfig(callback) {
     }
 
     ssConfig = null;
-    fs.unlinkSync(ssConfigPath);
+    try {
+      fs.unlinkSync(ssConfigPath);
+    } catch(err) {
+      log.error(`Failed to remove file: ${ssConfigPath}, error: ${err}`)
+    }
     callback(null);
   });
 }
@@ -126,7 +118,7 @@ function clearConfig(callback) {
 /*
  * 1. install
  * 2. prepare ipset
- * 3. setup tunnel
+ * 3. setup dns forwarder
  * 4. setup redirection
  * 5. setup chinadns
  * 6. setup iptables
@@ -171,72 +163,38 @@ function start(callback) {
             return;
           }
 
-          _startTunnel((err) => {
+          _startDNSForwarder((err) => {
             if(err) {
               callback(err);
               stop(); // stop everything if anything wrong.
               return;
             }
 
-            if(isKCPEnabled()) {
-              _startKCP((err) => {
-                if(err) {
-                  callback(err);
-                  stop(); // stop everything if anything wrong
-                  return;
-                }                
-                _startRedirectionForKCP((err) => {
-                  if(err) {
-                    callback(err);
-                    stop(); // stop everything if anything wrong.
-                    return;
-                  }
-                  
-                  _enableChinaDNS((err) => {
-                    if(err) {
-                      callback(err);
-                      stop(); // stop everything if anything wrong.
-                      return;
-                    }
-                    
-                    _enableIptablesRule((err) => {
-                      if(err) {
-                        stop(); // stop everything if anything wrong.
-                      } else {
-                        started = true;
-                      }
-                      callback(err);
-                    });
-                  });
-                });
-              });
-            } else {
-              _startRedirection((err) => {
+            _startRedirection((err) => {
+              if(err) {
+                callback(err);
+                stop(); // stop everything if anything wrong.
+                return;
+              }
+              
+              _enableChinaDNS((err) => {
                 if(err) {
                   callback(err);
                   stop(); // stop everything if anything wrong.
                   return;
                 }
                 
-                _enableChinaDNS((err) => {
+                _enableIptablesRule((err) => {
                   if(err) {
-                    callback(err);
                     stop(); // stop everything if anything wrong.
-                    return;
+                  } else {
+                    started = true;
                   }
-                  
-                  _enableIptablesRule((err) => {
-                    if(err) {
-                      stop(); // stop everything if anything wrong.
-                    } else {
-                      started = true;
-                    }
-                    callback(err);
-                  });
+                  callback(err);
                 });
               });
-            }  
-          });
+            });
+          });  
         });
       });      
     });
@@ -251,8 +209,7 @@ function stop(callback) {
   async.applyEachSeries([ _disableIptablesRule,
                           _disableChinaDNS,
                           _stopRedirection,
-                          _stopKCP,
-                          _stopTunnel,
+                          _stopDNSForwarder,
                           _disableIpset],
                         (err) => {
                           if(err) {
@@ -281,13 +238,6 @@ function saveConfigToFile() {
     ssConfig.method = "aes-256-cfb";
   }
   
-  if(ssConfig.kcp_server && ssConfig.kcp_server_port) {
-    let ssKCPConfig = extend({}, ssConfig);
-    ssKCPConfig.server = localKCPTunnelAddress;
-    ssKCPConfig.server_port = localKCPTunnelPort;
-    jsonfile.writeFileSync(ssForKCPConfigPath, ssKCPConfig, {spaces: 2});
-  }
-
   jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
 }
 
@@ -308,44 +258,39 @@ function validateConfig(config) {
   // TODO
 }
 
-function _startTunnel(callback) {
+function _startDNSForwarder(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("%s -c %s -u -l %d -f %s -L %s -b %s",
-                        tunnelBinary,
-                        ssConfigPath,
-                        localTunnelPort,
-                        tunnelPidPath,
-                        dnsServerWithPort,
-                        localTunnelAddress);
+  let cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${localDNSForwarderPort} -s ${remoteDNS}:${remoteDNSPort}`
 
-  log.info("Running cmd:", cmd);
-  // ss_tunnel will put itself to background mode
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Fail to start tunnel: " + err);
+  log.info("dns forwarder cmd:", cmd, {})
+
+  let process = p.spawn(cmd, {shell: true})
+
+  process.on('exit', (code, signal) => {
+    if(code != 0) {
+      log.error("dns forwarder exited with error:", code, signal, {})
     } else {
-      log.info("tunnel is started successfully");
+      log.info("dns forwarder exited successfully!")
     }
-    callback(err);
-  });
+  })
+  
+  callback(null)  
 }
 
-function _stopTunnel(callback) {
+function _stopDNSForwarder(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("pkill fw_ss_tunnel");
+  let cmd = `pkill ${dnsForwarderName}`;
 
-  log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
-      log.error("Got error to stop tunnel: " + stderr);
+      log.error("Failed to kill dns forwarder:", err, {})
     } else {
-      log.info("tunnel is stopped successfully");
+      log.info("DNS Forwarder killed")
     }
-  });
-
-  callback(null);
+    callback(err)
+  })
 }
 
 function _startRedirection(callback) {
@@ -370,28 +315,6 @@ function _startRedirection(callback) {
   });
 }
 
-function _startRedirectionForKCP(callback) {
-  callback = callback || function() {}
-
-  let cmd = util.format("%s -c %s -l %d -f %s -b %s",
-                        redirectionBinary,
-                        ssForKCPConfigPath,
-                        localRedirectionPort,
-                        redirectionPidPath,
-                        localRedirectionAddress);
-
-  log.info("Running cmd:", cmd);
-  // ss_redirection will put itself to background mode
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to start redirection for kcp: " + err);
-    } else {
-      log.info("Redirection for kcp is started successfully");
-    }
-    callback(err);
-  });
-}
-
 function _stopRedirection(callback) {
   callback = callback || function() {}
 
@@ -405,69 +328,6 @@ function _stopRedirection(callback) {
     }
   });
   callback(null);
-}
-
-function _startKCP(callback) {
-  callback = callback || function() {}
-
-  let remoteKCPServer = ssConfig.server;
-  let remoteKCPPort = ssConfig.kcp_port;
-  let kcpMode = ssConfig.kcp_mode;
-  let server_sndwnd = ssConfig.sndwnd;
-
-  if(!remoteKCPServer || !remoteKCPPort) {
-    callback(new Error("KCP server and port configuration is required"));
-    return;
-  }
-
-  let args = util.format("%s --mode %s --rcvwnd %s --remoteaddr %s:%d --localaddr %s:%d --log %s",
-                         kcpParameters,
-                         kcpMode,
-                         server_sndwnd,
-                         remoteKCPServer,
-                         remoteKCPPort,
-                         localKCPTunnelAddress,
-                         localKCPTunnelPort,
-                         kcpLog
-                        );
-  
-  log.info("Running cmd:", kcpBinary, args);
-
-  let kcp = p.spawn(kcpBinary, args.split(" "), {detached: true});
-
-  let callbacked = false;
-  
-  kcp.on('close', (code) => {
-    if(!callbacked && code !== 0) {
-      callback(new Error("kcp exited with code " + code));
-      callbacked = true;
-    }
-    log.info("kcp exited with code", code, {});
-  });
-
-  setTimeout(() => {
-    if(!callbacked) {
-      callback(null);
-      callbacked = true;
-    }
-  }, 1000);
-}
-
-function _stopKCP(callback) {
-  callback = callback || function() {}
-
-  let cmd = "pkill kcp_client";
-  log.info("Running cmd:", cmd);
-
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to stop KCP");
-    } else {
-      log.info("KCP is stopped successfully");
-    }
-    callback(null);
-  });
-
 }
 
 function _enableIpset(callback) {
@@ -503,9 +363,11 @@ function _disableIpset(callback) {
 function _enableIptablesRule(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s %s",
+  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
                         ssConfig.server,
                         localRedirectionPort,
+                        remoteDNS,
+                        remoteDNSPort,
                         enableIptablesBinary);
 
   log.info("Running cmd:", cmd);
@@ -547,9 +409,9 @@ function _enableChinaDNS(callback) {
 
   let dnsConfig = util.format("%s,%s:%d",
                               localDNSServers[0],
-                              localTunnelAddress,
-                              localTunnelPort);
-
+                              "127.0.0.1",
+                              localDNSForwarderPort
+                             )
   
   let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
 

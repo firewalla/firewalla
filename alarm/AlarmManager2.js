@@ -459,12 +459,12 @@ module.exports = class {
     });
   }
 
-  // top 20 only by default
+  // top 50 only by default
   loadActiveAlarms(number, callback) {
 
     if(typeof(number) == 'function') {
       callback = number;
-      number = 20;
+      number = 50;
     }
 
     callback = callback || function() {}

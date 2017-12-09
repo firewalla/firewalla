@@ -43,8 +43,8 @@ let flowUtil = require('../net2/FlowUtil.js');
 let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
 let ITEMS_PER_FETCH = 100;
-let QUEUE_SIZE_PAUSE = 1000;
-let QUEUE_SIZE_RESUME = 500;
+let QUEUE_SIZE_PAUSE = 2000;
+let QUEUE_SIZE_RESUME = 1000;
 
 let MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
@@ -191,7 +191,7 @@ class DestIPFoundHook extends Hook {
       }
 
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = this.enrichCountry(ip);
+      aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country
 
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
@@ -250,22 +250,21 @@ class DestIPFoundHook extends Hook {
     });
 
     this.job();
-    this.monitorQueue();
+
+    setInterval(() => {
+      this.monitorQueue()
+    }, MONITOR_QUEUE_SIZE_INTERVAL)
   }
 
   monitorQueue() {
     return async(() => {
       let count = await (rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf"));
       if(count > QUEUE_SIZE_PAUSE) {
-        this.pause = true;
+        this.paused = true;
       }
       if(count < QUEUE_SIZE_RESUME) {
-        this.pause = false;
+        this.paused = false;
       }
-
-      await (delay(MONITOR_QUEUE_SIZE_INTERVAL));
-
-      return this.monitorQueue();
     })();
   }
 }

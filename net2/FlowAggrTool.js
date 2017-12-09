@@ -32,6 +32,13 @@ let util = require('util');
 
 let instance = null;
 
+const MAX_FLOW_PER_AGGR = 2000
+const MAX_FLOW_PER_SUM = 30000
+const MAX_FLOW_PER_HOUR = 7000
+
+const MIN_AGGR_TRAFFIC = 256
+const MIN_SUM_TRAFFIC = 1024
+
 function toInt(n){ return Math.floor(Number(n)); };
 
 class FlowAggrTool {
@@ -107,14 +114,41 @@ class FlowAggrTool {
       });
   }
 
+  // this is to make sure flow data is not flooded enough to consume all memory
+  trimFlow(mac, trafficDirection, interval, ts) {
+    return async(() => {
+      const key = this.getFlowKey(mac, trafficDirection, interval, ts);
+
+      let count = await (rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR)) // only keep the MAX_FLOW_PER_SUM highest flows
+      if(count > 0) {
+        log.warn(`${count} flows are removed from ${key} for self protection`)
+      }
+    })()
+  }
+  
   addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    let key = this.getFlowKey(mac, trafficDirection, interval, ts);
+    const length = Object.keys(traffics).length // number of dest ips in this aggr flow
+    const key = this.getFlowKey(mac, trafficDirection, interval, ts);
+
     let args = [key];
+
+    if(length > MAX_FLOW_PER_AGGR) { // self protection
+      args.push(length)
+      args.push(JSON.stringify({
+        device: mac,
+        destIP: "0.0.0.0"       // special ip address to indicate some flows were skipped due to overflow protection
+      }))
+    }
 
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
+
+      if(traffic < MIN_AGGR_TRAFFIC) {
+        continue                // skip very small traffic
+      }
+      
       args.push(traffic)
       args.push(JSON.stringify({
         device: mac,
@@ -125,10 +159,11 @@ class FlowAggrTool {
     args.push(0);
     args.push("_"); // placeholder to keep key exists
 
-    return rclient.zaddAsync(args)
-      .then(() => {
-        return rclient.expireAsync(key, expire)
-      });
+    return async(() => {
+      await (rclient.zaddAsync(args))
+      await (rclient.expireAsync(key, expire))
+      await (this.trimFlow(mac, trafficDirection, interval, ts))
+    })()
   }
 
   removeFlow(mac, trafficDirection, interval, ts, destIP) {
@@ -152,6 +187,33 @@ class FlowAggrTool {
     })();
   }
 
+  // this is to make sure flow data is not flooded enough to consume all memory
+  trimSumFlow(trafficDirection, options) {
+    return async(() => {
+      if(!options.begin || !options.end) {
+        return Promise.reject(new Error("Require begin and end"));
+      }
+      
+      let begin = options.begin;
+      let end = options.end;
+
+      let max_flow = MAX_FLOW_PER_SUM
+
+      if(end-begin < 4000) { // hourly sum
+        max_flow = MAX_FLOW_PER_HOUR
+      }
+
+      let mac = options.mac; // if mac is undefined, by default it will scan over all machines
+      
+      let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+
+      let count = await (rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow)) // only keep the MAX_FLOW_PER_SUM highest flows
+      if(count > 0) {
+        log.warn(`${count} flows are removed from ${sumFlowKey} for self protection`)
+      }
+    })()
+  }
+
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>
   // content: destination ip address
   // score: traffic size
@@ -167,7 +229,7 @@ class FlowAggrTool {
     let end = options.end;
 
     // if working properly, sumflow should be refreshed in every 10 minutes
-    let expire = options.expireTime || 30 * 60; // by default expire in 30 minutes
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     let interval = options.interval || 600; // by default 10 mins
 
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
@@ -232,8 +294,11 @@ class FlowAggrTool {
 
       let result = await (rclient.zunionstoreAsync(args));
       if(result > 0) {
-        await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey));
-        await(rclient.expireAsync(sumFlowKey, expire));
+        if(options.setLastSumFlow) {
+          await(this.setLastSumFlow(mac, trafficDirection, sumFlowKey))
+        }
+        await(rclient.expireAsync(sumFlowKey, expire))
+        await(this.trimSumFlow(trafficDirection, options))
       }
 
       return Promise.resolve(result);
@@ -371,6 +436,141 @@ class FlowAggrTool {
     }
 
     return ticks;
+  }
+
+  getCleanedAppKey(begin, end, options) {
+    if(options.mac) {
+      return `app:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `app:system:${begin}:${end}`
+    }
+  }
+
+  cleanedAppKeyExists(begin, end, options) {
+    let key = this.getCleanedAppKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keysAsync(key))
+      return keys.length === 1
+    })()
+  }
+
+  setCleanedAppActivity(begin, end, data, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    return async(() => {
+      await (rclient.setAsync(key, JSON.stringify(data)))
+      await (rclient.expireAsync(key, expire))
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastAppActivity(options.mac, key))
+      }
+    })()
+  }
+  
+  getCleanedAppActivityByKey(key, options) {
+    options = options || {}
+    
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
+    })()
+  }
+
+  getCleanedAppActivity(begin, end, options) {
+    options = options || {}
+    
+    let key = this.getCleanedAppKey(begin, end, options)
+    return this.getCleanedAppActivityByKey(key, options)
+  }
+
+
+  setLastAppActivity(mac, keyName) {
+    let key = util.format("lastapp:host:%s", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastAppActivity(mac) {
+    let key = util.format("lastapp:host:%s", mac);
+    return rclient.getAsync(key);
+  }
+
+  getCleanedCategoryKey(begin, end, options) {
+    if(options.mac) {
+      return `category:host:${options.mac}:${begin}:${end}`
+    } else {
+      return `category:system:${begin}:${end}`
+    }
+  }  
+
+  cleanedCategoryKeyExists(begin, end, options) {
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return async(() => {
+      let keys = await (rclient.keysAsync(key))
+      return keys.length === 1
+    })()
+  }
+
+  setCleanedCategoryActivity(begin, end, data, options) {
+    options = options || {}
+    
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    return async(() => {
+      await (rclient.setAsync(key, JSON.stringify(data)))
+      await (rclient.expireAsync(key, expire))
+      
+      if(options.mac && options.setLastSumFlow) {
+        await (this.setLastCategoryActivity(options.mac, key))
+      }
+      
+    })()
+  }
+
+  getCleanedCategoryActivityByKey(key, options) {
+    options = options || {}
+    
+    return async(() => {
+      let dataString = await (rclient.getAsync(key))
+      
+      if(!dataString) {
+        return null
+      }
+      
+      try {
+        let obj = JSON.parse(dataString)
+        return obj
+      } catch(err) {
+        log.error("Failed to parse json:", dataString, "err:", err, {})
+        return null
+      }
+    })()
+  }
+
+  getCleanedCategoryActivity(begin, end, options) {
+    options = options || {}
+    let key = this.getCleanedCategoryKey(begin, end, options)
+    return this.getCleanedCategoryActivityByKey(key, options)
+  }
+
+  setLastCategoryActivity(mac, keyName) {
+    let key = util.format("lastcategory:host:%s", mac);
+    return rclient.setAsync(key, keyName);
+  }
+
+  getLastCategoryActivity(mac) {
+    let key = util.format("lastcategory:host:%s", mac);
+    return rclient.getAsync(key);
   }
 }
 

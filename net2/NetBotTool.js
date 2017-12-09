@@ -136,6 +136,32 @@ class NetBotTool {
     })();
   }
 
+  prepareDetailedAppFlowsFromCache(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString}`)
+
+    let key = 'appDetails'
+//    json.flows[key] = {}
+    
+    return async(() => {
+      let flows = await (flowAggrTool.getCleanedAppActivity(begin, end, options))
+      if(flows) {
+        json.flows[key] = flows
+      }
+    })()
+  }
+  
   prepareDetailedAppFlows(json, options) {
     options = options || {}
 
@@ -189,6 +215,33 @@ class NetBotTool {
 
       json.flows[key] = allFlows
     })();
+  }
+
+
+  prepareDetailedCategoryFlowsFromCache(json, options) {
+    options = options || {}
+
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    let end = options.end || (begin + 3600);
+
+    let endString = new Date(end * 1000).toLocaleTimeString();
+    let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+    log.info(`[Cache] Getting category detail flows between ${beginString} and ${endString}`)
+
+    let key = 'categoryDetails'
+//    json.flows[key] = {}
+    
+    return async(() => {
+      let flows = await (flowAggrTool.getCleanedCategoryActivity(begin, end, options))
+      if(flows) {
+        json.flows[key] = flows
+      }
+    })()
   }
 
   prepareDetailedCategoryFlows(json, options) {
@@ -317,7 +370,15 @@ class NetBotTool {
     json.flows[trafficDirection] = []
 
     return async(() => {
-      let flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
+
+      let flowKey = null
+      
+      if(options.queryall) {
+        flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
+      } else {
+        flowKey = await (flowAggrTool.getSumFlowKey(mac, trafficDirection, options.begin, options.end))
+      }
+      
       if (flowKey) {
         let traffic = await (flowAggrTool.getTopSumFlowByKey(flowKey,20)) // get top 20
 
@@ -400,6 +461,41 @@ class NetBotTool {
       json.flows[key] = allFlows
     })();
   }
+  
+  prepareDetailedAppFlowsForHostFromCache(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+
+    options = JSON.parse(JSON.stringify(options))
+
+    let key = 'appDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let apps = await (appFlowTool.getApps(mac))
+
+      let allFlows = {}
+
+      let appFlows = null
+      
+      if(options.queryall) {
+        // need to support queryall too
+        let lastAppActivityKey = await (flowAggrTool.getLastAppActivity(mac))
+        if(lastAppActivityKey) {
+          appFlows = await (flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey))
+        }
+      } else {        
+        options.mac = mac
+        appFlows = await (flowAggrTool.getCleanedAppActivity(options.begin, options.end, options))
+      }
+
+      if(appFlows) {
+        json.flows[key] = appFlows
+      }
+    })();
+  }
 
   prepareDetailedCategoryFlowsForHost(json, mac, options) {
     if(!mac) {
@@ -427,6 +523,42 @@ class NetBotTool {
       json.flows[key] = allFlows
     })();
   }
+
+  prepareDetailedCategoryFlowsForHostFromCache(json, mac, options) {
+    if(!mac) {
+      return Promise.reject("Invalid MAC Address");
+    }
+    
+    options = JSON.parse(JSON.stringify(options))
+    
+    let key = 'categoryDetails'
+    json.flows[key] = {}
+
+    return async(() => {
+
+      let categorys = await (categoryFlowTool.getCategories(mac))
+
+      let allFlows = {}
+
+      let categoryFlows = null
+      
+      if(options.queryall) {
+        // need to support queryall too
+        let lastCategoryActivityKey = await (flowAggrTool.getLastCategoryActivity(mac))
+        if(lastCategoryActivityKey) {
+          categoryFlows = await (flowAggrTool.getCleanedCategoryActivityByKey(lastCategoryActivityKey))
+        }
+      } else {
+        options.mac = mac
+        categoryFlows = await (flowAggrTool.getCleanedCategoryActivity(options.begin, options.end, options))
+      }
+
+      if(categoryFlows) {
+        json.flows[key] = categoryFlows
+      }
+    })();
+  }
+
 
   prepareCategoryActivityFlowsForHost(json, mac, options) {
     if(!mac) {

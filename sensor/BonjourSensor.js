@@ -149,6 +149,22 @@ class BonjourSensor extends Sensor {
     }
     return name;
   }
+
+  getFriendlyDeviceName(service) {
+    let bypassList = [/_airdrop._tcp/, /eph:devhi:netbot/, /_apple-mobdev2._tcp/]
+
+    if(service.fqdn) {
+      let matched = bypassList.filter((x) => service.fqdn.match(x))
+
+      if(matched.length > 0) {
+        return this.getDeviceName(service)
+      }
+    }
+
+    let name = service.name
+    name = name.replace(/ \[..:..:..:..:..:..\]/, "") // remove useless mac address
+    return name
+  }
   
   bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service, {});
@@ -178,6 +194,7 @@ class BonjourSensor extends Sensor {
 
     let s = {
       name: this.getDeviceName(service),
+      bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       host: service.host
