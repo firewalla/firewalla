@@ -39,6 +39,15 @@ class InterfaceDiscoverSensor extends Sensor {
   }
 
   run() {
+    process.nextTick(() => {
+      this.checkAndRunOnce();
+    });
+    setInterval(() => {
+      this.checkAndRunOnce();
+    }, 1000 * 60 * 20); // 20 minutes.  (See if dhcp changed anything ...)
+  }
+
+  checkAndRunOnce() {
     return async(() => {
       let list = await (networkTool.listInterfaces());
       let redisobjs = ['sys:network:info'];
