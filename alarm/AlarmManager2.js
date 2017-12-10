@@ -52,6 +52,8 @@ let exceptionManager = new ExceptionManager();
 
 let Exception = require('./Exception.js');
 
+const FWError = require('../util/FWError.js')
+
 let alarmIDKey = "alarm:id";
 let alarmPrefix = "_alarm:";
 let initID = 1;
@@ -315,35 +317,51 @@ module.exports = class {
             log.info("Matched Exception: " + e.eid);
             exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
           });
-          callback(new Error("alarm is covered by exceptions"));
+          callback(new FWError("alarm is covered by exceptions", 1));
           return;
         }
 
-        this.saveAlarm(alarm, (err) => {
+        pm2.match(alarm, (err, result) => {
+          
           if(err) {
-            callback(err);
-            return;
+            callback(err)
+            return
           }
 
-          if(alarm.type === "ALARM_INTEL") {
-            log.info("AlarmManager:Check:AutoBlock",alarm);
-            let num = parseInt(alarm["p.security.numOfReportSources"]);
-            if(fConfig && fConfig.policy &&
-              fConfig.policy.autoBlock &&
-              num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
-              // auto block if num is greater than the threshold
-              this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
-              if (alarm['p.dest.ip']) {
-                alarm["if.target"] = alarm['p.dest.ip'];
-                alarm["if.type"] = "ip";
-                bone.submitIntelFeedback("autoblock", alarm, "alarm");
-              }
+          if(result) {
+            // already matched some policy
+            callback(new FWError("alarm is covered by policies", 2))
+            return
+          }
+
+          this.saveAlarm(alarm, (err) => {
+            if(err) {
+              callback(err);
               return;
             }
-          }
 
-          callback(null);
-        });
+            if(alarm.type === "ALARM_INTEL") {
+              log.info("AlarmManager:Check:AutoBlock",alarm);
+              let num = parseInt(alarm["p.security.numOfReportSources"]);
+              if(fConfig && fConfig.policy &&
+                 fConfig.policy.autoBlock &&
+                 num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+                // auto block if num is greater than the threshold
+                this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+                if (alarm['p.dest.ip']) {
+                  alarm["if.target"] = alarm['p.dest.ip'];
+                  alarm["if.type"] = "ip";
+                  bone.submitIntelFeedback("autoblock", alarm, "alarm");
+                }
+                return;
+              }
+            }
+
+            callback(null);
+          });
+          
+        })
+
 
       });
     });
