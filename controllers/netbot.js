@@ -1139,7 +1139,7 @@ class netBot extends ControllerBot {
 
       async(() => {
         const archivedAlarms = am2.loadArchivedAlarms({
-          offset: offset
+          offset: offset,
           limit: limit
         })
         this.simpleTxData(msg,
