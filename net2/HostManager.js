@@ -1339,7 +1339,9 @@ module.exports = class {
         sysManager.update((err) => {
           if (err == null) {
             log.info("System Manager Updated");
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            if(!f.isDocker()) {
+              spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            }
           }
         });
 

@@ -1132,7 +1132,25 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-        break;
+      break;
+    case "archivedAlarms": {
+      const offset = msg.data.value.offset
+      const limit = msg.data.value.limit
+
+      async(() => {
+        const archivedAlarms = am2.loadArchivedAlarms({
+          offset: offset
+          limit: limit
+        })
+        this.simpleTxData(msg,
+                          {alarms: archivedAlarms,
+                           count: archiveAlarms.length},
+                          null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    }
+      break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
