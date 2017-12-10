@@ -796,7 +796,15 @@ module.exports = class {
 
           this.updateAlarm(alarm)
             .then(() => {
-              callback(null, e);
+              // archive alarm
+              
+              this.archiveAlarm(alarm.aid)
+                .then(() => {
+                  callback(null, e);
+                })
+                .catch((err) => {
+                  callback(err)
+                })
             }).catch((err) => {
               callback(err);
             });
