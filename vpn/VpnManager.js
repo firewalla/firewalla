@@ -213,7 +213,7 @@ module.exports = class {
             private: 1194,
             public: 1194
         });
-        require('child_process').exec("sudo service openvpn stop", (err, out, code) => {
+        require('child_process').exec("sudo systemctl stop openvpn@server", (err, out, code) => {
             log.info("Stopping OpenVpn", err);
             if (callback) {
                 callback(err);
