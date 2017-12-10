@@ -147,6 +147,11 @@ module.exports = class {
               });
           },1000*60*60*24);
 
+          // update system information more often
+          setInterval(()=>{
+             this.update(null);
+          },1000*60*20);
+
           return false;
         }
         this.update(null);
