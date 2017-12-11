@@ -57,13 +57,16 @@ module.exports = class {
     return instance;
   }
 
-  _prepareConfiguration() {
+  _prepareConfiguration(userToken) {
     return async(() => {
       let templateData = await (readFile(configTemplateFile, 'utf8'))
       templateData = templateData.replace(/FRP_SERVICE_NAME/g, `SSH${this.port}`)
       templateData = templateData.replace(/FRP_SERVICE_PORT/g, this.port)
 
       let token = await (rclient.hgetAsync("sys:config", "frpToken"))
+      if(userToken) {
+        token = userToken
+      }
       if(token) {
         templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, token)
       }

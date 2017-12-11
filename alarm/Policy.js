@@ -15,15 +15,54 @@
 
 'use strict'
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let extend = require('util')._extend
+const extend = require('util')._extend
+
+const minimatch = require("minimatch")
+
 
 module.exports = class {
   constructor(info) {
     this.timestamp = new Date() / 1000;
     if(info)
       extend(this, info);
+  }
+
+  match(alarm) {
+
+    // for each policy type
+    switch(this.type) {
+    case "ip":
+      if(alarm['p.dest.ip']) {
+        return this.target === alarm['p.dest.ip']        
+      } else {
+        return false
+      }
+      break
+    case "dns":
+    case "domain":
+      if(alarm['p.dest.name']) {
+        return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
+          alarm['p.dest.name'] === this.target
+      } else {
+        return false
+      }
+      break
+    case "mac":
+      if(alarm['p.device.mac']) {
+        return alarm['p.device.mac'] === this.target
+      } else {
+        return false
+      }
+      break
+    case "devicePort":
+      return false // no alarm supports on devicePort yet
+      break
+    default:
+      return false
+      break
+    }
   }
 }
 
