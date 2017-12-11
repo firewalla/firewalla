@@ -1452,6 +1452,10 @@ module.exports = class {
       json.timezone = sysManager.timezone;
     }
 
+    json.features = {
+      archiveAlarm: true
+    }
+
     if(f.isDocker()) {
       json.docker = true;
     }
