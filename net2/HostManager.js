@@ -1007,14 +1007,14 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
   }
