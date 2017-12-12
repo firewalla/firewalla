@@ -1007,14 +1007,14 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
   }
@@ -1608,6 +1608,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
