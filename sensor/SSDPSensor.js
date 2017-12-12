@@ -109,7 +109,7 @@ class SSDPSensor extends Sensor {
 
         const rr = this.parseContent(result)
 
-        if(rr.deviceName) {
+        if(rr && rr.deviceName) {
           this.notify(ip, rr)
         }
 
