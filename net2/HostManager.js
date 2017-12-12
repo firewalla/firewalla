@@ -1608,6 +1608,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
