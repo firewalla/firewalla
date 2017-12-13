@@ -15,7 +15,6 @@ update_node_modules || rc=1
 $FIREWALLA_HOME/bin/node \
     --expose-gc \
     -max-old-space-size=256 \
-    main.js \
-    >> /home/pi/.forever/main.log  2>&1'
+    main.js
 
 exit $rc
