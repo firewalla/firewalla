@@ -113,7 +113,7 @@ logger "FIREWALLA: Main-Run Start Update Modules"
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
-      sudo rm -f ~/.node_modules/.git/index.lock
+      sudo rm -f ~/.node_modules/.git/*.lock
       if [[ ! -d $FW_NODE_MODULES_PATH ]]; then
         cd
         # try again if failed, in case network issue
