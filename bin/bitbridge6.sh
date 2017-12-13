@@ -9,7 +9,9 @@ if [[ -e $FIREWALLA_BIN/$BINARY.rc ]]; then
   source $FIREWALLA_BIN/$BINARY.rc # taking arguments from here
 fi
 
-if [[ -e $FIREWALLA_BIN/dev ]]; then
+branch=$(cd $FIREWALLA_HOME; git rev-parse --abbrev-ref HEAD)
+
+if [[ -e $FIREWALLA_BIN/dev || $branch == release_* ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else
   cp $FIREWALLA_BIN{/real,}/$BINARY

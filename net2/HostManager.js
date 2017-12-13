@@ -1007,14 +1007,14 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
   }
@@ -1339,7 +1339,9 @@ module.exports = class {
         sysManager.update((err) => {
           if (err == null) {
             log.info("System Manager Updated");
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            if(!f.isDocker()) {
+              spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            }
           }
         });
 
@@ -1448,6 +1450,10 @@ module.exports = class {
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
+    }
+
+    json.features = {
+      archiveAlarm: true
     }
 
     if(f.isDocker()) {
@@ -1602,6 +1608,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
