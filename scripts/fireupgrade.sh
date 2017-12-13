@@ -74,7 +74,7 @@ if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   exit 0
 fi
 
-sudo rm -f /home/pi/firewalla/.git/index.lock
+sudo rm -f /home/pi/firewalla/.git/*.lock
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
