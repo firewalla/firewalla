@@ -1655,6 +1655,26 @@ class netBot extends ControllerBot {
           });
         });
 
+    case "alarm:ignore":
+      async(() => {
+        await (am2.ignoreAlarm(msg.data.value.alarmID))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to ignore alarm:", err, ())
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+
+    case "alarm:report":
+      async(() => {
+        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to report bug on alarm:", err, ())
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+
       case "policy:create":
         pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
           if (err) {

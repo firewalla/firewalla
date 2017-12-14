@@ -179,6 +179,30 @@ module.exports = class {
     });
   }
 
+  ignoreAlarm(alarmID) {
+    log.info("Going to ignore alarm " + alarmID);
+
+    return async(() => {
+      let alarm = await (this.getAlarm(alarmID))
+      if(!alarm) {
+        throw new Error(`Invalid alarm id: ${alarmID}`)
+        return
+      }
+
+      alarm.result = "ignore"
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+    })()
+  }
+
+  reportBug(alarmID, feedback) {
+    log.info("Going to report feedback on alarm", alarmID, feedback, {})
+
+    return async(() => {
+      //      await (this.ignoreAlarm(alarmID)) // TODO: report issue to cloud
+    })()
+  }
+
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
@@ -244,7 +268,7 @@ module.exports = class {
         });
       });
     });
-  }
+  }  
 
   removeAlarmAsync(alarmID, callback) {
     callback = callback || function() {}

@@ -1458,7 +1458,10 @@ module.exports = class {
     }
 
     json.features = {
-      archiveAlarm: true
+      archiveAlarm: true,
+      alarmMoreItems: true,
+      ignoreAlarm: true,
+      reportAlarm: true
     }
 
     if(f.isDocker()) {
