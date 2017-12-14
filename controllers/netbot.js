@@ -1670,7 +1670,7 @@ class netBot extends ControllerBot {
         await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        log.error("Failed to report bug on alarm:", err, ())
+        log.error("Failed to report bug on alarm:", err, {})
         this.simpleTxData(msg, {}, err, callback)
       })
       break
