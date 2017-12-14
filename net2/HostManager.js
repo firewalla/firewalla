@@ -873,6 +873,11 @@ class Host {
             _ipv4: flowUtil.hashIp(this.o.ipv4),
             firstFoundTimestamp: this.o.firstFoundTimestamp,
             lastActiveTimestamp: this.o.lastActiveTimestamp,
+            bonjourName: this.o.bonjourName,
+            dhcpName: this.o.dhcpName,
+            ssdpName: this.o.ssdpName,
+            bname: this.o.bname,
+            pname: this.o.pname,
         };
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
