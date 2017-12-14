@@ -9,8 +9,9 @@
 
 rc=0
 
-update_firewalla || rc=1
-update_node_modules || rc=1
+# Do not enable this feature by now (Melvin)
+#update_firewalla || rc=1
+#update_node_modules || rc=1
 
 $FIREWALLA_HOME/bin/node \
     --expose-gc \
