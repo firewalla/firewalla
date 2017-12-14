@@ -1660,7 +1660,7 @@ class netBot extends ControllerBot {
         await (am2.ignoreAlarm(msg.data.value.alarmID))
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        log.error("Failed to ignore alarm:", err, ())
+        log.error("Failed to ignore alarm:", err, {})
         this.simpleTxData(msg, {}, err, callback)
       })
       break
