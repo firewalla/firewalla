@@ -147,7 +147,6 @@ module.exports = class {
               });
           },1000*60*60*24);
 
-          return false;
         }
         this.update(null);
         return instance;
