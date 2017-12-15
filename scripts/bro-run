@@ -57,6 +57,9 @@ sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
+
 sudo systemctl reenable fireupgrade
 sudo systemctl daemon-reload
 sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
