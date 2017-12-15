@@ -8,9 +8,9 @@
 #  MAIN goes here
 # -----------------
 
-service=$1
 rc=0
-
+service=$1
+extra_opts=''
 
 case $service in
     FireMain)
@@ -24,6 +24,11 @@ case $service in
     FireMon)
         service_subdir=monitor
         service_run=MonitorMain.js
+        ;;
+    FireKick)
+        service_subdir=sys
+        service_run=kickstart.js
+        extra_opts='--config /encipher.config/netbot.config'
         ;;
 esac
 
@@ -43,7 +48,7 @@ fi
 $FIREWALLA_HOME/bin/node \
     --expose-gc \
     -max-old-space-size=256 \
-    $service_run
+    $service_run $extra_opts
 )
 
 exit $rc
