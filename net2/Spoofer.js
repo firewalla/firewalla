@@ -111,6 +111,7 @@ module.exports = class {
   }
 
   validateV4Spoofs(ipv4Addrs) {
+    log.info("Spoof4:Remove:By:Check:",JSON.stringify(ipv4Addrs));
     let v4db = {};
     for (let i in ipv4Addrs) {
       v4db[ipv4Addrs[i]] = true;

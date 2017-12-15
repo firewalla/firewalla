@@ -174,6 +174,7 @@ class DeviceHook extends Hook {
     sem.on("IPv6DeviceInfoUpdate",(event)=>{
       let host = event.host;
 
+      
       if (host.ipv6Addr && host.ipv6Addr.length>0) {
         log.info(util.format("A new IPv6DeviceInfoUpdate device %s - %s - %s is found!", host.ipv6Addr, host.mac));
         

@@ -409,7 +409,7 @@ class PolicyManager2 {
     });
   }
 
-  // FIXME: top 200 only by default
+  // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
 
@@ -537,6 +537,24 @@ class PolicyManager2 {
     }
   }
 
+  match(alarm, callback) {
+    this.loadActivePolicys((err, policies) => {
+      if(err) {
+        log.error("Failed to load active policy rules")
+        callback(err)
+        return
+      }
+
+      policies.forEach((policy) => {
+        if(policy.match(alarm)) {
+          callback(null, true)
+          return
+        }
+      })
+
+      callback(null, false)
+    })
+  }
 }
 
 module.exports = PolicyManager2;

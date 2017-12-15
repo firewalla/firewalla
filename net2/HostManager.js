@@ -873,6 +873,11 @@ class Host {
             _ipv4: flowUtil.hashIp(this.o.ipv4),
             firstFoundTimestamp: this.o.firstFoundTimestamp,
             lastActiveTimestamp: this.o.lastActiveTimestamp,
+            bonjourName: this.o.bonjourName,
+            dhcpName: this.o.dhcpName,
+            ssdpName: this.o.ssdpName,
+            bname: this.o.bname,
+            pname: this.o.pname,
         };
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
@@ -1007,14 +1012,14 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
   }
@@ -1339,7 +1344,9 @@ module.exports = class {
         sysManager.update((err) => {
           if (err == null) {
             log.info("System Manager Updated");
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            if(!f.isDocker()) {
+              spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            }
           }
         });
 
@@ -1448,6 +1455,10 @@ module.exports = class {
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
+    }
+
+    json.features = {
+      archiveAlarm: true
     }
 
     if(f.isDocker()) {
@@ -1602,6 +1613,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
@@ -2121,6 +2135,7 @@ module.exports = class {
                     }
 */
                     let allIPv6Addrs = [];
+                    let allIPv4Addrs = [];
 
                     let myIp = sysManager.myIp();
 
@@ -2131,6 +2146,9 @@ module.exports = class {
                                 if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
                                     allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
                                 }
+                            }
+                            if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+                                allIPv4Addrs.push(hostbymac.o.ipv4Addr);
                             }
                         }
                         if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
@@ -2156,6 +2174,7 @@ module.exports = class {
                     this.getHostsActive = false;
                     if (this.type === "server") {
                        spoofer.validateV6Spoofs(allIPv6Addrs);
+                       spoofer.validateV4Spoofs(allIPv4Addrs);
                     }
                     log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
                     callback(err, this.hosts.all);

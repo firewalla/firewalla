@@ -510,6 +510,7 @@ class netBot extends ControllerBot {
 
           let data = {
             gid: this.primarygid,
+            notifType: "ALARM"
           };
 
           if (msg.aid) {
@@ -560,13 +561,13 @@ class netBot extends ControllerBot {
           
           switch(branchChanged) {
           case "1":
-            branch = "back to stable version"
+            branch = "back to stable release"
             break;
           case "2":
-            branch = "to pre_release version"
+            branch = "to beta release"
             break;
           case "3":
-            branch = "to development version"
+            branch = "to development release"
             break;
           default:
             // do nothing, should not happen here
@@ -1131,7 +1132,25 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-        break;
+      break;
+    case "archivedAlarms": {
+      const offset = msg.data.value.offset
+      const limit = msg.data.value.limit
+
+      async(() => {
+        const archivedAlarms = am2.loadArchivedAlarms({
+          offset: offset,
+          limit: limit
+        })
+        this.simpleTxData(msg,
+                          {alarms: archivedAlarms,
+                           count: archiveAlarms.length},
+                          null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    }
+      break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
@@ -1156,7 +1175,29 @@ class netBot extends ControllerBot {
     }
   }
 
-  validateFlowIntel(json) {
+  validateFlowAppIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))
+      let flows = json.flows
+
+      let hashCache = {}
+
+
+      let appFlows = flows.appDetails
+
+      if(Object.keys(appFlows).length > 0) {
+        flowUtil.hashIntelFlows(appFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        
+        flows.appDetails = unhashedData
+        flows.categoryDetails = unhashedData2
+      }
+    })()
+  }
+
+  validateFlowCategoryIntel(json) {
     return async(() => {
       // await (bone.flowgraphAsync(...))
       let flows = json.flows
@@ -1167,22 +1208,18 @@ class netBot extends ControllerBot {
       let appFlows = flows.appDetails
       let categoryFlows = flows.categoryDetails
 
-      if(Object.keys(appFlows).length > 0 ||
-         Object.keys(categoryFlows).length > 0) {
-        flowUtil.hashIntelFlows(appFlows, hashCache)
+      if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
-                          bone.flowgraphAsync('summarizeActivity', categoryFlows))
+        let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
 
-        let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
-        let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         
-        flows.appDetails = unhashedData
-        flows.categoryDetails = unhashedData2
+        flows.categoryDetails = unhashedData
       }
     })()
   }
+
   
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
@@ -1204,14 +1241,23 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options))
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+      
+      await ([
+        flowTool.prepareRecentFlows(jsonobj, options),
+        netBotTool.prepareTopUploadFlows(jsonobj, options),
+        netBotTool.prepareTopDownloadFlows(jsonobj, options),
+        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+        netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)])
 
-      // validate flow intel
-      await (this.validateFlowIntel(jsonobj))
+      if(!jsonobj.flows['appDetails']) { // fallback to old way
+        await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
+        await (this.validateFlowAppIntel(jsonobj))
+      }
+
+      if(!jsonobj.flows['categoryDetails']) { // fallback to old model
+        await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+        await (this.validateFlowCategoryIntel(jsonobj))
+      }
 
       return jsonobj;
     })();
@@ -1255,15 +1301,27 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
+        await ([
+          flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
+          
+          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
+          netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
-        await (this.validateFlowIntel(jsonobj))
+        if(!jsonobj.flows["appDetails"]) {
+          log.warn("Fell back to legacy mode on app details:", mac, options, {})
+          await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowAppIntel(jsonobj))
+        }
+
+        if(!jsonobj.flows["categoryDetails"]) {
+          log.warn("Fell back to legacy mode on category details:", mac, options, {})
+          await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowCategoryIntel(jsonobj))
+        }
       }
 
       return jsonobj;
@@ -1442,12 +1500,14 @@ class netBot extends ControllerBot {
       this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
+      return;
     } else if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
+      return;
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
@@ -1461,6 +1521,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "upgrade") {
       log.info("upgrading");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/upgrade', (err, out, code) => {
@@ -1474,7 +1535,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
-
+      return;
     } else if (msg.data.item === "shutdown") {
       log.info("shutdown firewalla in 60 seconds");
       let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
@@ -1488,6 +1549,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
         let code = 200;
@@ -1502,6 +1564,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
       });
+      return;
     }
 
     switch (msg.data.item) {
@@ -1832,6 +1895,15 @@ class netBot extends ControllerBot {
       })
 
       break
+    case "enableBinding":
+      sysTool.restartFireKickService()
+        .then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      break
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -1855,6 +1927,8 @@ class netBot extends ControllerBot {
         targetBranch = prodBranch
         break
       }
+
+      log.info("Going to switch to branch", targetBranch, {})
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
       sysTool.restartServices()

@@ -113,6 +113,10 @@ class BoneSensor extends Sensor {
              });
           }
       }
+
+      if (data && data.frpToken) {
+        await (rclient.hsetAsync("sys:config", "frpToken", data.frpToken))
+      }
     })();
   }
 
