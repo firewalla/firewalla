@@ -35,7 +35,7 @@ esac
 # Only update firewalla and node_modules if service has been up for more than a
 # given period of time in seconds
 service_elapsed_seconds=$(ps axo cmd,etimes | awk "/^${service}/ {print \$2}")
-if [[ $service_elapsed_seconds -gt $UPGRADE_TIMEOUT ]]
+if [[ -n "$service_elapsed_seconds" && $service_elapsed_seconds -gt $UPGRADE_TIMEOUT ]]
 then
     # Do not enable this feature by now (Melvin)
     logger "UPDATE firewalla and node_modules after $service is up for $service_elapsed_seconds seconds"
