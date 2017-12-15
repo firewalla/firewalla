@@ -151,8 +151,6 @@ module.exports = class {
           setInterval(()=>{
              this.update(null);
           },1000*60*20);
-
-          return false;
         }
         this.update(null);
         return instance;
