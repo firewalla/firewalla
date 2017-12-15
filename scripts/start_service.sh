@@ -21,7 +21,7 @@ case $service in
         service_subdir=api
         service_run=bin/www
         ;;
-    FireMonitor)
+    FireMon)
         service_subdir=monitor
         service_run=MonitorMain.js
         ;;
