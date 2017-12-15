@@ -252,7 +252,7 @@ module.exports = class {
           return;
         }
 
-        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*7;  // seven days
+        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*30;  // a month
         rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
         this.addToActiveQueue(alarm, (err) => {
