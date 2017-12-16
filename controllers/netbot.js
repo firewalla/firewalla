@@ -1144,7 +1144,7 @@ class netBot extends ControllerBot {
         })
         this.simpleTxData(msg,
                           {alarms: archivedAlarms,
-                           count: archiveAlarms.length},
+                           count: archivedAlarms.length},
                           null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
