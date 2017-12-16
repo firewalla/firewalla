@@ -1631,8 +1631,15 @@ class netBot extends ControllerBot {
       });
       break;
     case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
-        this.simpleTxData(msg, exception, err, callback);
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            exception: exception,
+            otherAlarms: otherAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, exception, err, callback);
+        }
       });
       break;
     case "alarm:unblock":

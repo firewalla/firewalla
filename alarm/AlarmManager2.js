@@ -652,6 +652,49 @@ module.exports = class {
       log.info(`Alarm ${alarm.aid} is blocked successfully`)
     })()
   }
+
+  findSimilarAlarmsByException(exception, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(alarm.result !== "") {
+          return false
+        }
+        
+        if(exception.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  allowAlarmByException(alarm, exception, info) {
+    return async(() => {
+      if(!alarm || !exception) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_exception = exception.eid;
+      alarm.result = "allow";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is blocked successfully`)
+    })()
+  }
   
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
@@ -905,7 +948,30 @@ module.exports = class {
               
               this.archiveAlarm(alarm.aid)
                 .then(() => {
-                  callback(null, e);
+                  // old way
+                  if(!info.matchAll) {
+                    callback(null, e)
+                    return
+                  }
+
+                  async(() => {
+                    log.info("Trying to find if any other active alarms are covered by this new exception")
+                    let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
+                    if(alarms && alarms.length > 0) {
+                      let allowedAlarms = []
+                      alarms.forEach((alarm) => {
+                        try {
+                          await (this.allowAlarmByException(alarm, e, info))
+                          allowedAlarms.push(alarm)
+                        } catch(err) {
+                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${e.eid}: ${err}`)
+                        }
+                      })
+                      callback(null, e, allowedAlarms)
+                    } else {
+                      callback(null, e)
+                    }
+                  })()
                 })
                 .catch((err) => {
                   callback(err)
