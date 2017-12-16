@@ -1138,10 +1138,10 @@ class netBot extends ControllerBot {
       const limit = msg.data.value && msg.data.value.limit
 
       async(() => {
-        const archivedAlarms = am2.loadArchivedAlarms({
+        const archivedAlarms = await (am2.loadArchivedAlarms({
           offset: offset,
           limit: limit
-        })
+        }))
         this.simpleTxData(msg,
                           {alarms: archivedAlarms,
                            count: archivedAlarms.length},
