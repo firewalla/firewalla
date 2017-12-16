@@ -38,6 +38,7 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 sleep 3
 if [[ $branch =~ release.* ]]
   then
+    sudo rm -f /home/pi/firewalla/.git/*.lock
     sudo -u pi git fetch origin $branch
     sudo -u pi git reset --hard origin/$branch
 #    sudo /opt/vc/bin/tvservice -o
@@ -56,6 +57,9 @@ sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
+sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
+
 sudo systemctl reenable fireupgrade
 sudo systemctl daemon-reload
 sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
