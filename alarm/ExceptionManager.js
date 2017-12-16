@@ -207,7 +207,8 @@ module.exports = class {
         });
       });
 
-      Bone.submitIntelFeedback('allow', exception, 'exception');
+      // ignore is set for backward compatibility, it's actually should be called "allow"
+      Bone.submitIntelFeedback('ignore', exception, 'exception');
     });
   }
 
@@ -256,7 +257,8 @@ module.exports = class {
 
             });
 
-            Bone.submitIntelFeedback('unallow', exception, "exception");
+            // unignore is set for backward compatibility, it's actually should be called "unallow"
+            Bone.submitIntelFeedback('unignore', exception, "exception");
 
             resolve();
           });
