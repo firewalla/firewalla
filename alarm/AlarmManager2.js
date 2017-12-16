@@ -755,6 +755,13 @@ module.exports = class {
 
                 this.archiveAlarm(alarm.aid)
                   .then(() => {
+
+                    // old way
+                    if(!info.matchAll) {
+                      callback(null, p)
+                      return
+                    }
+
                     async(() => {
                       log.info("Trying to find if any other active alarms are covered by this new policy")
                       let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
