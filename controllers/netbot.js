@@ -1134,17 +1134,17 @@ class netBot extends ControllerBot {
           .catch((err) => this.simpleTxData(msg, null, err, callback));
       break;
     case "archivedAlarms": {
-      const offset = msg.data.value.offset
-      const limit = msg.data.value.limit
+      const offset = msg.data.value && msg.data.value.offset
+      const limit = msg.data.value && msg.data.value.limit
 
       async(() => {
-        const archivedAlarms = am2.loadArchivedAlarms({
+        const archivedAlarms = await (am2.loadArchivedAlarms({
           offset: offset,
           limit: limit
-        })
+        }))
         this.simpleTxData(msg,
                           {alarms: archivedAlarms,
-                           count: archiveAlarms.length},
+                           count: archivedAlarms.length},
                           null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -1654,6 +1654,26 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         });
+
+    case "alarm:ignore":
+      async(() => {
+        await (am2.ignoreAlarm(msg.data.value.alarmID))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to ignore alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+
+    case "alarm:report":
+      async(() => {
+        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to report bug on alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
 
       case "policy:create":
         pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
