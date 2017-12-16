@@ -635,7 +635,7 @@ module.exports = class {
 
       log.info(`Alarm to block: ${alarm.aid}`)
 
-      alarm.result_policy = p.pid;
+      alarm.result_policy = policy.pid;
       alarm.result = "block";
 
       if(info.method === "auto") {
