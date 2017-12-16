@@ -1134,8 +1134,8 @@ class netBot extends ControllerBot {
           .catch((err) => this.simpleTxData(msg, null, err, callback));
       break;
     case "archivedAlarms": {
-      const offset = msg.data.value.offset
-      const limit = msg.data.value.limit
+      const offset = msg.data.value && msg.data.value.offset
+      const limit = msg.data.value && msg.data.value.limit
 
       async(() => {
         const archivedAlarms = am2.loadArchivedAlarms({
