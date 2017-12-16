@@ -218,13 +218,13 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        let policies = await(this.getSamePolicies(policy))
-        if (policies && policies.length > 0) {
-          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          callback(new Error("policy existed"))
-        } else {
+        // let policies = await(this.getSamePolicies(policy))
+        // if (policies && policies.length > 0) {
+        //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+        //   callback(new Error("policy existed"))
+        // } else {
           this.savePolicy(policy, callback);
-        }
+//        }
       } catch (err) {
         log.error("failed to save policy:" + err)
         callback(err)

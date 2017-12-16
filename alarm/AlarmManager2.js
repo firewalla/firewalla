@@ -582,6 +582,20 @@ module.exports = class {
     });
   }
 
+  loadActiveAlarmsAsync(number) {
+    number = number || 50
+    return new Promise((resolve, reject) => {
+      this.loadActiveAlarms(number, (err, results) => {
+        if(err) {
+          reject(err)
+          return
+        }
+
+        resolve(results)
+      })
+    })
+  }
+
   // parseDomain(alarm) {
   //   if(!alarm["p.dest.name"] ||
   //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -596,6 +610,45 @@ module.exports = class {
 
   // }
 
+  findSimilarAlarmsByPolicy(policy, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(p.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  blockAlarmByPolicy(alarm, policy, info) {
+    return async(() => {
+      if(!alarm || !policy) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_policy = p.pid;
+      alarm.result = "block";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is blocked successfully`)
+    })()
+  }
+  
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
     log.info("info: ", info, {});
@@ -702,7 +755,23 @@ module.exports = class {
 
                 this.archiveAlarm(alarm.aid)
                   .then(() => {
-                    callback(null, p);                    
+                    async(() => {
+                      let alarms = this.findSimilarAlarmsByPolicy(p, alarm.aid)
+                      if(alarms && alarms.length > 0) {
+                        let blockedAlarms = []
+                        alarms.forEach((alarm) => {
+                          try {
+                            await (this.blockAlarmByPolicy(alarm, p, info))
+                            blockedAlarms.push(alarm)
+                          } catch(err) {
+                            log.error(`Failed to block alarm ${alarm.aid} with policy ${p.pid}: ${err}`)
+                          }
+                        })
+                        callback(null, p, blockedAlarms)
+                      } else {
+                        callback(null, p)
+                      }
+                    })()
                   })
                   .catch((err) => {
                     callback(err)
