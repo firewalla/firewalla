@@ -207,9 +207,7 @@ module.exports = class {
         });
       });
 
-      Bone.submitIntelFeedback('ignore', exception, 'exception');
-
-      callback(err);
+      Bone.submitIntelFeedback('allow', exception, 'exception');
     });
   }
 
@@ -232,7 +230,7 @@ module.exports = class {
       .then((exists) => {
         if(!exists) {
           log.error("exception " + exceptionID + " doesn't exists");
-          return Promise.reject("exception " + exceptionID + " doesn't exists");
+          return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {
@@ -258,7 +256,7 @@ module.exports = class {
 
             });
 
-            Bone.submitIntelFeedback('unignore', exception, "exception");
+            Bone.submitIntelFeedback('unallow', exception, "exception");
 
             resolve();
           });

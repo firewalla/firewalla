@@ -310,7 +310,7 @@ class PolicyManager2 {
       .then((exists) => {
         if(!exists) {
           log.error("policy " + policyID + " doesn't exists");
-          return Promise.reject("policy " + policyID + " doesn't exists");
+          return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {

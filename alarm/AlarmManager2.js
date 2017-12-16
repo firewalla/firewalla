@@ -618,7 +618,7 @@ module.exports = class {
           return false // ignore current alarm id, since it's already blocked
         }
         
-        if(alarm.result !== "") {
+        if(alarm.result && alarm.result !== "") {
           return false
         }
         
@@ -661,7 +661,7 @@ module.exports = class {
           return false // ignore current alarm id, since it's already blocked
         }
         
-        if(alarm.result !== "") {
+        if(alarm.result && alarm.result !== "") {
           return false
         }
         
@@ -692,7 +692,7 @@ module.exports = class {
       await (this.updateAlarm(alarm))
       await (this.archiveAlarm(alarm.aid))
 
-      log.info(`Alarm ${alarm.aid} is blocked successfully`)
+      log.info(`Alarm ${alarm.aid} is allowed successfully`)
     })()
   }
   
@@ -954,7 +954,7 @@ module.exports = class {
                     return
                   }
 
-                  async(() => {
+                  async(() => {              
                     log.info("Trying to find if any other active alarms are covered by this new exception")
                     let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
                     if(alarms && alarms.length > 0) {
@@ -969,6 +969,7 @@ module.exports = class {
                       })
                       callback(null, e, allowedAlarms)
                     } else {
+                      log.info("No similar alarms are found")
                       callback(null, e)
                     }
                   })()
