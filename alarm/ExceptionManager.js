@@ -207,9 +207,8 @@ module.exports = class {
         });
       });
 
+      // ignore is set for backward compatibility, it's actually should be called "allow"
       Bone.submitIntelFeedback('ignore', exception, 'exception');
-
-      callback(err);
     });
   }
 
@@ -232,7 +231,7 @@ module.exports = class {
       .then((exists) => {
         if(!exists) {
           log.error("exception " + exceptionID + " doesn't exists");
-          return Promise.reject("exception " + exceptionID + " doesn't exists");
+          return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {
@@ -258,6 +257,7 @@ module.exports = class {
 
             });
 
+            // unignore is set for backward compatibility, it's actually should be called "unallow"
             Bone.submitIntelFeedback('unignore', exception, "exception");
 
             resolve();

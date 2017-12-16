@@ -1619,13 +1619,27 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
     case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy) => {
-        this.simpleTxData(msg, policy, err, callback);
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            policy: policy,
+            otherAlarms: otherBlockedAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, policy, err, callback);
+        }
       });
       break;
     case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
-        this.simpleTxData(msg, exception, err, callback);
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            exception: exception,
+            otherAlarms: otherAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, exception, err, callback);
+        }
       });
       break;
     case "alarm:unblock":
