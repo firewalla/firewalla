@@ -618,6 +618,10 @@ module.exports = class {
           return false // ignore current alarm id, since it's already blocked
         }
         
+        if(alarm.result !== "") {
+          return false
+        }
+        
         if(policy.match(alarm)) {
           return true
         } else {

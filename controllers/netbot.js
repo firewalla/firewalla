@@ -1623,7 +1623,7 @@ class netBot extends ControllerBot {
         if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
           this.simpleTxData(msg, {
             policy: policy,
-            otherBlockedAlarms: otherBlockedAlarms
+            otherAlarms: otherBlockedAlarms
           }, err, callback);
         } else {
           this.simpleTxData(msg, policy, err, callback);
