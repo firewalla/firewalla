@@ -1047,7 +1047,7 @@ class Host {
       names.push(this.o.bname)
     }
 
-    return names;
+    return names.filter((value, index, self) => self.indexOf(value) === index)
   }
 
     toJson() {
