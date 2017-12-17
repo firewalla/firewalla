@@ -1024,6 +1024,32 @@ class Host {
     return this.o.bname
   }
 
+  getNameCandidates() {
+    let names = []
+
+    if(this.o.dhcpName) {
+      names.push(this.o.dhcpName)
+    }
+
+    if(this.o.nmapName) {
+      names.push(this.o.nmapName)
+    }
+
+    if(this.o.bonjourName) {
+      names.push(this.o.bonjourName)
+    }
+
+    if(this.o.ssdpName) {
+      names.push(this.o.ssdpName)    
+    }
+
+    if(this.o.bname) {
+      names.push(this.o.bname)
+    }
+
+    return names;
+  }
+
     toJson() {
         let json = {
           dtype: this.dtype,
@@ -1037,7 +1063,8 @@ class Host {
           manualSpoof: this.o.manualSpoof,
           dhcpName: this.o.dhcpName,
           bonjourName: this.o.bonjourName,
-          nmapName: this.o.nmapName
+          nmapName: this.o.nmapName,
+          ssdpName: this.o.ssdpName
         }
 
         if (this.o.ipv4Addr == null) {
@@ -1049,6 +1076,8 @@ class Host {
         if (preferredBName) {
           json.bname = preferredBName
         }
+
+        json.names = this.getNameCandidates()
 
         if (this.activities) {
             json.activities= this.activities;
