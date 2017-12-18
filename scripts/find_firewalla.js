@@ -11,6 +11,7 @@ bonjour.find({type: 'http'}, (service) => {
       service.referer && service.referer.address
   ) {
     console.log("Found firewalla device: ", service.referer.address);
+      console.log(service)
     setTimeout(() => process.exit(0), 3000);
   }
 });

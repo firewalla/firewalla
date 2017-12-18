@@ -1003,7 +1003,13 @@ module.exports = class {
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
-          callback(new Error("can't unblock alarm without binding policy"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          alarm.result_method = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            });
           return;
         }
 
@@ -1045,7 +1051,12 @@ module.exports = class {
         let eid = alarm.result_exception;
 
         if(!eid || eid === "") {
-          callback(new Error("can't unallow alarm without binding exception"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            })
           return;
         }
 
