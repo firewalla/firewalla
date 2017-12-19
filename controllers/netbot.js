@@ -2210,17 +2210,24 @@ class netBot extends ControllerBot {
 
 }
 
-process.on("unhandledRejection", function (r, e) {
-  log.info("Oh No! Unhandled rejection!! \nr::", r, r.stack, "\ne::", e, {});
+let bone = require('../lib/Bone.js');
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.error(msg,reason.stack,{});
+  bone.log("warn",{
+    version: sysManager.version(),
+    type:'FIREWALLA.UI.unhandledRejection',
+    msg:msg,
+    stack:reason.stack
+  },null);
 });
 
-let bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {
-    program: 'ui',
     version: sysManager.version(),
-    type: 'exception',
+    type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack
   }, null);
