@@ -510,7 +510,7 @@ class NetBotTool {
       let categories = await (categoryFlowTool.getCategories(mac))
 
       // ignore intel category, intel is only for internal logic
-      categories = categories.filter((x) => x !== "intel")
+      categories = categories.filter((x) => x.toLowerCase() !== "intel")
 
       let allFlows = {}
 
