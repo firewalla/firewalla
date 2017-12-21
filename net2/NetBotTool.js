@@ -266,6 +266,9 @@ class NetBotTool {
 
       let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
 
+      // ignore intel category, intel is only for internal logic
+      categorys = categorys.filter((x) => x.toLowerCase() !== "intel")
+
       let allFlows = {}
 
       let allPromises = categorys.map((category) => {
@@ -537,6 +540,9 @@ class NetBotTool {
     return async(() => {
 
       let categorys = await (categoryFlowTool.getCategories(mac))
+
+      // ignore intel category, intel is only for internal logic
+      categorys = categorys.filter((x) => x.toLowerCase() !== "intel")
 
       let allFlows = {}
 
