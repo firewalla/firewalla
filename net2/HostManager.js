@@ -838,7 +838,7 @@ class Host {
 
     hashNeighbors(neighbors) {
         let _neighbors = JSON.parse(JSON.stringify(neighbors));
-        let debug =  sysManager.isSystemDebugOn();
+        let debug =  sysManager.isSystemDebugOn() || f.isProduction();
         for (let i in _neighbors) {
             let neighbor = _neighbors[i];
             neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
