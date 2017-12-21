@@ -11,8 +11,8 @@ var randomNumber = function(max) {
 };
 
 // Possible combinations
-var lowercase = 'abcdefghijklmnopqrstuvwxyz',
-	uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+var lowercase = 'abcdefghjkmnopqrstuvwxyz',
+	uppercase = 'ABCDEFGHIJKLMNPQRSTUVWXYZ',
 	numbers = '23456789',
 	symbols = '!@#$%^&*()+_-=}{[]|:;"/?.><,`~',
 	similarCharacters = /[ilLI|`oO0]/g,
@@ -107,7 +107,6 @@ function generate(options) {
 function generatePassword(len) {
   return generate({
     length: len,
-    symbols: true,
     numbers: true
   });
 }
