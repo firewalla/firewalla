@@ -437,10 +437,10 @@ class FlowTool {
             // intel not exists in redis, create a new one
             return async(() => {
               intel = await (destIPFoundHook.processIP(f.ip));
-              if (intel) {
+              if(intel) {
                 f.country = intel.country;
                 f.host = intel.host;
-              }
+              }              
               return f;
             })();
           }

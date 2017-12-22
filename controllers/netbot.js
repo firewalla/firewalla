@@ -904,16 +904,21 @@ class netBot extends ControllerBot {
         }
       break;
     case "includeNameInNotification":
-        let v33 = msg.data.value;
+      let v33 = msg.data.value;
 
-      if (v3.includeNameInNotification) {
-        async(() => {
-          await (rclient.hsetAsync("sys:config", "includeNameInNotification", "1"))
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
+      let flag = "0";
+
+      if(v33.includeNameInNotification) {
+        flag = "1"
       }
+
+      async(() => {
+        await (rclient.hsetAsync("sys:config", "includeNameInNotification", flag))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+
       break;
     case "mode":
       let v4 = msg.data.value;
@@ -1134,17 +1139,17 @@ class netBot extends ControllerBot {
           .catch((err) => this.simpleTxData(msg, null, err, callback));
       break;
     case "archivedAlarms": {
-      const offset = msg.data.value.offset
-      const limit = msg.data.value.limit
+      const offset = msg.data.value && msg.data.value.offset
+      const limit = msg.data.value && msg.data.value.limit
 
       async(() => {
-        const archivedAlarms = am2.loadArchivedAlarms({
+        const archivedAlarms = await (am2.loadArchivedAlarms({
           offset: offset,
           limit: limit
-        })
+        }))
         this.simpleTxData(msg,
                           {alarms: archivedAlarms,
-                           count: archiveAlarms.length},
+                           count: archivedAlarms.length},
                           null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -1619,13 +1624,27 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
     case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy) => {
-        this.simpleTxData(msg, policy, err, callback);
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            policy: policy,
+            otherAlarms: otherBlockedAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, policy, err, callback);
+        }
       });
       break;
     case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
-        this.simpleTxData(msg, exception, err, callback);
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            exception: exception,
+            otherAlarms: otherAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, exception, err, callback);
+        }
       });
       break;
     case "alarm:unblock":
@@ -1654,6 +1673,26 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         });
+
+    case "alarm:ignore":
+      async(() => {
+        await (am2.ignoreAlarm(msg.data.value.alarmID))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to ignore alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+
+    case "alarm:report":
+      async(() => {
+        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to report bug on alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
 
       case "policy:create":
         pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
@@ -2176,17 +2215,24 @@ class netBot extends ControllerBot {
 
 }
 
-process.on("unhandledRejection", function (r, e) {
-  log.info("Oh No! Unhandled rejection!! \nr::", r, r.stack, "\ne::", e, {});
+let bone = require('../lib/Bone.js');
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.error(msg,reason.stack,{});
+  bone.log("warn",{
+    version: sysManager.version(),
+    type:'FIREWALLA.UI.unhandledRejection',
+    msg:msg,
+    stack:reason.stack
+  },null);
 });
 
-let bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {
-    program: 'ui',
     version: sysManager.version(),
-    type: 'exception',
+    type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack
   }, null);

@@ -734,7 +734,7 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
 
-                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.sh, {
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
                                                 "p.device.id" : flow.dhname,
                                                 "p.device.name" : flow.dhname,
                                                 "p.device.ip" : flow.dh,
@@ -800,7 +800,7 @@ module.exports = class FlowMonitor {
                                               // flow in means connection initiated from inside
                                               // flow out means connection initiated from outside (more dangerous)
 
-                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname, {
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
                                                 "p.device.id" : flow.shname,
                                                 "p.device.name" : flow.shname,
                                                 "p.device.ip" : flow.sh,

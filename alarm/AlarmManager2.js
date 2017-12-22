@@ -179,6 +179,30 @@ module.exports = class {
     });
   }
 
+  ignoreAlarm(alarmID) {
+    log.info("Going to ignore alarm " + alarmID);
+
+    return async(() => {
+      let alarm = await (this.getAlarm(alarmID))
+      if(!alarm) {
+        throw new Error(`Invalid alarm id: ${alarmID}`)
+        return
+      }
+
+      alarm.result = "ignore"
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+    })()
+  }
+
+  reportBug(alarmID, feedback) {
+    log.info("Going to report feedback on alarm", alarmID, feedback, {})
+
+    return async(() => {
+      //      await (this.ignoreAlarm(alarmID)) // TODO: report issue to cloud
+    })()
+  }
+
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
@@ -228,7 +252,7 @@ module.exports = class {
           return;
         }
 
-        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*7;  // seven days
+        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*30;  // a month
         rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
         this.addToActiveQueue(alarm, (err) => {
@@ -244,7 +268,7 @@ module.exports = class {
         });
       });
     });
-  }
+  }  
 
   removeAlarmAsync(alarmID, callback) {
     callback = callback || function() {}
@@ -558,6 +582,20 @@ module.exports = class {
     });
   }
 
+  loadActiveAlarmsAsync(number) {
+    number = number || 50
+    return new Promise((resolve, reject) => {
+      this.loadActiveAlarms(number, (err, results) => {
+        if(err) {
+          reject(err)
+          return
+        }
+
+        resolve(results)
+      })
+    })
+  }
+
   // parseDomain(alarm) {
   //   if(!alarm["p.dest.name"] ||
   //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -572,6 +610,92 @@ module.exports = class {
 
   // }
 
+  findSimilarAlarmsByPolicy(policy, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(alarm.result && alarm.result !== "") {
+          return false
+        }
+        
+        if(policy.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  blockAlarmByPolicy(alarm, policy, info) {
+    return async(() => {
+      if(!alarm || !policy) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_policy = policy.pid;
+      alarm.result = "block";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is blocked successfully`)
+    })()
+  }
+
+  findSimilarAlarmsByException(exception, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(alarm.result && alarm.result !== "") {
+          return false
+        }
+        
+        if(exception.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  allowAlarmByException(alarm, exception, info) {
+    return async(() => {
+      if(!alarm || !exception) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_exception = exception.eid;
+      alarm.result = "allow";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is allowed successfully`)
+    })()
+  }
+  
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
     log.info("info: ", info, {});
@@ -678,7 +802,31 @@ module.exports = class {
 
                 this.archiveAlarm(alarm.aid)
                   .then(() => {
-                    callback(null, p);                    
+
+                    // old way
+                    if(!info.matchAll) {
+                      callback(null, p)
+                      return
+                    }
+
+                    async(() => {
+                      log.info("Trying to find if any other active alarms are covered by this new policy")
+                      let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
+                      if(alarms && alarms.length > 0) {
+                        let blockedAlarms = []
+                        alarms.forEach((alarm) => {
+                          try {
+                            await (this.blockAlarmByPolicy(alarm, p, info))
+                            blockedAlarms.push(alarm)
+                          } catch(err) {
+                            log.error(`Failed to block alarm ${alarm.aid} with policy ${p.pid}: ${err}`)
+                          }
+                        })
+                        callback(null, p, blockedAlarms)
+                      } else {
+                        callback(null, p)
+                      }
+                    })()
                   })
                   .catch((err) => {
                     callback(err)
@@ -800,7 +948,31 @@ module.exports = class {
               
               this.archiveAlarm(alarm.aid)
                 .then(() => {
-                  callback(null, e);
+                  // old way
+                  if(!info.matchAll) {
+                    callback(null, e)
+                    return
+                  }
+
+                  async(() => {              
+                    log.info("Trying to find if any other active alarms are covered by this new exception")
+                    let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
+                    if(alarms && alarms.length > 0) {
+                      let allowedAlarms = []
+                      alarms.forEach((alarm) => {
+                        try {
+                          await (this.allowAlarmByException(alarm, e, info))
+                          allowedAlarms.push(alarm)
+                        } catch(err) {
+                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${e.eid}: ${err}`)
+                        }
+                      })
+                      callback(null, e, allowedAlarms)
+                    } else {
+                      log.info("No similar alarms are found")
+                      callback(null, e)
+                    }
+                  })()
                 })
                 .catch((err) => {
                   callback(err)
@@ -831,7 +1003,13 @@ module.exports = class {
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
-          callback(new Error("can't unblock alarm without binding policy"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          alarm.result_method = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            });
           return;
         }
 
@@ -873,7 +1051,12 @@ module.exports = class {
         let eid = alarm.result_exception;
 
         if(!eid || eid === "") {
-          callback(new Error("can't unallow alarm without binding exception"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            })
           return;
         }
 

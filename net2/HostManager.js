@@ -838,7 +838,7 @@ class Host {
 
     hashNeighbors(neighbors) {
         let _neighbors = JSON.parse(JSON.stringify(neighbors));
-        let debug =  sysManager.isSystemDebugOn();
+        let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
         for (let i in _neighbors) {
             let neighbor = _neighbors[i];
             neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
@@ -873,6 +873,11 @@ class Host {
             _ipv4: flowUtil.hashIp(this.o.ipv4),
             firstFoundTimestamp: this.o.firstFoundTimestamp,
             lastActiveTimestamp: this.o.lastActiveTimestamp,
+            bonjourName: this.o.bonjourName,
+            dhcpName: this.o.dhcpName,
+            ssdpName: this.o.ssdpName,
+            bname: this.o.bname,
+            pname: this.o.pname,
         };
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
@@ -1007,16 +1012,42 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
+  }
+
+  getNameCandidates() {
+    let names = []
+
+    if(this.o.dhcpName) {
+      names.push(this.o.dhcpName)
+    }
+
+    if(this.o.nmapName) {
+      names.push(this.o.nmapName)
+    }
+
+    if(this.o.bonjourName) {
+      names.push(this.o.bonjourName)
+    }
+
+    if(this.o.ssdpName) {
+      names.push(this.o.ssdpName)    
+    }
+
+    if(this.o.bname) {
+      names.push(this.o.bname)
+    }
+
+    return names.filter((value, index, self) => self.indexOf(value) === index)
   }
 
     toJson() {
@@ -1032,7 +1063,8 @@ class Host {
           manualSpoof: this.o.manualSpoof,
           dhcpName: this.o.dhcpName,
           bonjourName: this.o.bonjourName,
-          nmapName: this.o.nmapName
+          nmapName: this.o.nmapName,
+          ssdpName: this.o.ssdpName
         }
 
         if (this.o.ipv4Addr == null) {
@@ -1043,10 +1075,9 @@ class Host {
 
         if (preferredBName) {
           json.bname = preferredBName
-          delete this.o.dhcpName
-          delete this.o.bonjourName
-          delete this.o.ssdpName
         }
+
+        json.names = this.getNameCandidates()
 
         if (this.activities) {
             json.activities= this.activities;
@@ -1453,7 +1484,10 @@ module.exports = class {
     }
 
     json.features = {
-      archiveAlarm: true
+      archiveAlarm: true,
+      alarmMoreItems: true,
+      ignoreAlarm: true,
+      reportAlarm: true
     }
 
     if(f.isDocker()) {
@@ -1608,6 +1642,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
@@ -1817,6 +1854,8 @@ module.exports = class {
           await (requiredPromises);
 
           await (this.loadDDNSForInit(json));
+
+          json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
 
           // for any pi doesn't have firstBinding key, they are old versions
           let firstBinding = await (rclient.getAsync("firstBinding"))
