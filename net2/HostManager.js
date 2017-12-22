@@ -1855,6 +1855,8 @@ module.exports = class {
 
           await (this.loadDDNSForInit(json));
 
+          json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
+
           // for any pi doesn't have firstBinding key, they are old versions
           let firstBinding = await (rclient.getAsync("firstBinding"))
           if(firstBinding) {

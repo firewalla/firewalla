@@ -904,16 +904,21 @@ class netBot extends ControllerBot {
         }
       break;
     case "includeNameInNotification":
-        let v33 = msg.data.value;
+      let v33 = msg.data.value;
 
-      if (v3.includeNameInNotification) {
-        async(() => {
-          await (rclient.hsetAsync("sys:config", "includeNameInNotification", "1"))
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
+      let flag = "0";
+
+      if(v33.includeNameInNotification) {
+        flag = "1"
       }
+
+      async(() => {
+        await (rclient.hsetAsync("sys:config", "includeNameInNotification", flag))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+
       break;
     case "mode":
       let v4 = msg.data.value;
