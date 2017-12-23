@@ -896,14 +896,26 @@ class Host {
                         bone.device("identify", obj, (err, data) => {
                             if (data != null) {
                                 log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
+
+                                // pretty much set everything from cloud to local
                                 for (let field in data) {
-                                    this.o[field] = data[field];
+                                    let value = data[field]
+                                    if(value.constructor.name === 'Array' ||
+                                      value.constructor.name === 'Object') {
+                                      this.o[field] = JSON.stringify(value) 
+                                    } else {
+                                      this.o[field] = value
+                                    }
                                 }
+
                                 if (data._vendor!=null && this.o.macVendor == null) {
                                     this.o.macVendor = data._vendor;
                                 }
                                 if (data._name!=null) {
                                     this.o.pname = data._name;
+                                }
+                                if (data._deviceType) {
+                                    this.o._deviceType = data._deviceType
                                 }
                                 this.save();
                             }
@@ -1087,6 +1099,22 @@ class Host {
             json.name = this.o.name;
         }
 
+        if (this.o._deviceType) {
+            json._deviceType = this.o._deviceType
+        }
+
+        if (this.o._deviceType_p) {
+          json._deviceType_p = this.o._deviceType_p
+        }
+
+        if (this.o._deviceType_top3) {
+          try {
+            json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
+          } catch(err) {
+            log.error("Failed to parse device type top 3 info:", err, {})
+          }          
+        }
+        
       if(this.o.modelName) {
         json.modelName = this.o.modelName
       }
