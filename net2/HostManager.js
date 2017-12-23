@@ -896,9 +896,18 @@ class Host {
                         bone.device("identify", obj, (err, data) => {
                             if (data != null) {
                                 log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
+
+                                // pretty much set everything from cloud to local
                                 for (let field in data) {
-                                    this.o[field] = data[field];
+                                    let value = data[field]
+                                    if(value.constructor.name === 'Array' ||
+                                      value.constructor.name === 'Object') {
+                                      this.o[field] = JSON.stringify(value) 
+                                    } else {
+                                      this.o[field] = value
+                                    }
                                 }
+                                
                                 if (data._vendor!=null && this.o.macVendor == null) {
                                     this.o.macVendor = data._vendor;
                                 }
