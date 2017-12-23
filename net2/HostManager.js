@@ -1106,6 +1106,14 @@ class Host {
         if (this.o._deviceType_p) {
           json._deviceType_p = this.o._deviceType_p
         }
+
+        if (this.o._deviceType_top3) {
+          try {
+            json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
+          } catch(err) {
+            log.error("Failed to parse device type top 3 info:", err, {})
+          }          
+        }
         
       if(this.o.modelName) {
         json.modelName = this.o.modelName
