@@ -905,6 +905,9 @@ class Host {
                                 if (data._name!=null) {
                                     this.o.pname = data._name;
                                 }
+                                if (data._deviceType) {
+                                    this.o._deviceType = data._deviceType
+                                }
                                 this.save();
                             }
                         });
@@ -1085,6 +1088,10 @@ class Host {
 
         if (this.o.name) {
             json.name = this.o.name;
+        }
+
+        if (this.o._deviceType) {
+            json._deviceType = this.o._deviceType
         }
 
       if(this.o.modelName) {
