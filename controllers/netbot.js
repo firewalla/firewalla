@@ -1197,7 +1197,6 @@ class netBot extends ControllerBot {
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         
         flows.appDetails = unhashedData
-        flows.categoryDetails = unhashedData2
       }
     })()
   }
@@ -1209,15 +1208,12 @@ class netBot extends ControllerBot {
 
       let hashCache = {}
 
-
-      let appFlows = flows.appDetails
       let categoryFlows = flows.categoryDetails
 
       if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
         let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
-
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         
         flows.categoryDetails = unhashedData
