@@ -907,7 +907,7 @@ class Host {
                                       this.o[field] = value
                                     }
                                 }
-                                
+
                                 if (data._vendor!=null && this.o.macVendor == null) {
                                     this.o.macVendor = data._vendor;
                                 }
@@ -1103,6 +1103,10 @@ class Host {
             json._deviceType = this.o._deviceType
         }
 
+        if (this.o._deviceType_p) {
+          json._deviceType_p = this.o._deviceType_p
+        }
+        
       if(this.o.modelName) {
         json.modelName = this.o.modelName
       }
