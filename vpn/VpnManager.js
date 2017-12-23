@@ -37,7 +37,7 @@ var async = require('async');
 var util = require('util');
 
 var linux = require('../util/linux');
-
+var UPNP = require('../extension/upnp/upnp.js');
 
 var ttlExpire = 12*60*60;
 
@@ -45,6 +45,7 @@ module.exports = class {
     constructor(path, loglevel) {
         if (instance == null) {
             log = require("../net2/logger.js")("VpnManager", loglevel);
+            this.upnp = new UPNP("info",sysManager.myGateway());
 
             instance = this;
         }
@@ -98,63 +99,11 @@ module.exports = class {
 
     unpunchNat(opts, callback) {
         log.info("VpnManager:UnpunchNat", opts);
-        if (this.upnpClient == null) {
-            this.upnpClient = natupnp.createClient();
-        }
-        this.upnpClient.portUnmapping(opts,(err)=>{
-            this.portmapped = false;
+        this.upnp.removePortMapping(opts.protocol, opts.private,opts.public,(err)=>{
             if (callback) {
                 callback(err);
             }
-            setTimeout(() => {
-                if (this.upnpClient) {
-                    this.upnpClient.close();
-                    this.upnpClient = null;
-                } else {
-                    log.error("VpnManager:NatUPNP unmap resetupnp client null");
-                }
-            },1000);
         });
-    }
-
-    setupNat2(opts, success, error) {
-        opts = opts || {}
-        opts.timeout = opts.timeout || 5000
-
-        // returns the IP of the gateway that your active network interface is linked to
-        network.get_gateway_ip((err, gateway) => {
-            if (err) return error(err)
-
-            // use regex to check if ip address is public
-            if (ipTool.isPublic(gateway))
-                return success(gateway)
-
-            var strategies = {
-                //          pmp: natpmp.connect(gateway),
-                upnp: natupnp.createClient()
-            };
-
-            // find a strategy to traverse nat
-            try {
-                async.detectSeries(strategies, (client, next) => {
-                    let portMapping = async.timeout(client.portMapping.bind(client), opts.timeout)
-                    portMapping(opts, (err) => {
-                        next(null, !err)
-                    });
-                }, (err, client) => {
-                    if (err) return error(err)
-
-                    log.info("VpnManager:SetupNat:Success");
-                    if (!client) return error(new Error('All NAT strategies failed or timed out'))
-                    log.info("VpnManager:SetupNat:Success2");
-
-                    client.externalIp((err, external) => {
-                        if (err) return error(err)
-                        success(external)
-                    })
-                })
-            } catch (e) {}
-        })
     }
 
     install(callback) {
@@ -263,6 +212,9 @@ module.exports = class {
                  callback(null, this.portmapped, this.portmapped);
             return;
         }
+
+        this.upnp.gw = sysManager.myGateway();
+        
         this.unpunchNat({
             protocol: 'udp',
             private: 1194,
@@ -277,7 +229,15 @@ module.exports = class {
                     return;
                 }
                 this.started = true;
-                this.setNat(callback);
+                this.upnp.addPortMapping("udp",1194,1194,"Firewalla OpenVPN",(err)=>{
+                   log.info("VpnManager:UPNP:SetDone", err);
+                   if (err) {
+                       callback(null,null,null);            
+                   } else {
+                       this.portmapped = true;
+                       callback(null,"success",1194);
+                   }
+                }); 
             });
         });
     }
