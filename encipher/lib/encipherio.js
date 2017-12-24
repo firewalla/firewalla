@@ -761,7 +761,7 @@ let legoEptCloud = class {
           let stack = new Error().stack;
           log.error("Error while requesting ", err2, stack);
           if(ttl > 1) {
-            _send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
+            this._send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
           } else {
             callback(err2, null);
           }
