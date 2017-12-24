@@ -158,7 +158,7 @@ module.exports = class {
             public: externalPort
         }, (err) => {
             if(err) {
-                log.error("Failed to remove port mapping: " + err);
+                log.error("UPNP Failed to remove port mapping: " + err);
                 if(callback) {
                     callback(err);
                 }
