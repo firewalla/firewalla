@@ -27,6 +27,7 @@ module.exports = class {
             this.gw = gw;
             instance = this;
             this.refreshTimers = {};
+            this.natpmpClient = natpmp.connect(this.gw);
         }
         return instance;
     }
@@ -35,10 +36,10 @@ module.exports = class {
      *  
      */
     getCapability(callback) {
+      try {
         upnpClient.externalIp((err,ip)=>{
             if (err !=null || ip == null) {
                 this.upnpEnabled = false;
-                this.natpmpClient = natpmp.connect(this.gw);
                 if (this.natpmpClient) {
                     this.natpmpClient.externalIp((err, info)=> {
                         if (err == null && info!=null) { 
@@ -47,8 +48,6 @@ module.exports = class {
                         } else {
                             this.natpmpEnabled = false;
                         }
-                        this.natpmpClient.close();
-                        this.natpmpClient = null;
                         callback(null, this.upnpEnabled, this.natpmpEnabled);
                     });
                 }
@@ -58,16 +57,24 @@ module.exports = class {
                 callback(null, this.upnpEnabled, this.natpmpEnabled);
             } 
         });
+      } catch(e) {
+        log.error("UPNP.getCapability exception ", e,{});
+      }
+      
     } 
 
     addPortMapping(protocol, localPort, externalPort, description, callback) {
         this.getCapability(()=>{
-            if (this.upnpEnabled == true) {
-                return this.addPortMappingUPNP(protocol, localPort, externalPort, description, callback);
-            } else if (this.natpmpEnabled == true) {
-                return this.addPortMappingNATPMP(protocol, localPort, externalPort, description, callback);
-            } else {
-                callback(new Error("no upnp/natpmp"));
+            try {
+                if (this.upnpEnabled == true) {
+                    return this.addPortMappingUPNP(protocol, localPort, externalPort, description, callback);
+                } else if (this.natpmpEnabled == true) {
+                    return this.addPortMappingNATPMP(protocol, localPort, externalPort, description, callback);
+                } else {
+                    callback(new Error("no upnp/natpmp"));
+                }
+            } catch(e) {
+                log.error("UPNP.addPortMapping exception",e,{});
             }
         });
     }
@@ -101,20 +108,17 @@ module.exports = class {
  
     addPortMappingNATPMP(protocol, localPort, externalPort, description, callback) {
         callback = callback || function() {};
-        this.natpmpClient = natpmp.connect(this.gw);
         if (this.natpmpClient == null) {
             callback(new Error("natpmpClient null"),null);
             return;
         }
-        this.natpmpClient.portMapping({ private: localPort, public: externalPort, ttl: natpmpTimeout}, (err, info)=> {
+        this.natpmpClient.portMapping({type:protocol, private: localPort, public: externalPort, ttl: natpmpTimeout}, (err, info)=> {
             if (err == null) {
                 this.refreshTimers[localPort+":"+externalPort] = setTimeout(()=>{
                     this.addPortMappingNATPMP(protocol,localPort, externalPort, description,()=>{
                     });  
-                }, natpmpTimeout/2); 
+                }, natpmpTimeout/2*1000); 
             }
-            this.natpmpClient.close();
-            this.natpmpClient = null;
             callback(err,info);
         });
     }
@@ -122,7 +126,6 @@ module.exports = class {
     removePortMappingNATPMP(protocol, localPort, externalPort, callback) {
         callback = callback || function() {};
         let timer = this.refreshTimers[localPort+":"+externalPort];
-        this.natpmpClient = natpmp.connect(this.gw);
         if (this.natpmpClient == null) {
             callback(new Error("natpmpClient null"),null);
             return;
@@ -130,21 +133,26 @@ module.exports = class {
         if (timer) {
             clearTimeout(timer);
         }
-        this.natpmpClient.portUnMapping({ private: localPort, public: externalPort, ttl: 0}, (err, info)=> {
-            this.natpmpClient.close();
-            this.natpmpClient = null;
+        this.natpmpClient.portUnmapping({ type:protocol, private: localPort, public: externalPort, ttl: 0}, (err, info)=> {
+            if (err) {
+                log.error("UPNP.removePortMappingNATPMP",err,{});
+            }
             callback(err,info);
         });
     }
 
     removePortMapping(protocol, localPort, externalPort, callback) {
         this.getCapability(()=>{
-            if (this.upnpEnabled == true) {
-                return this.removePortMappingUPNP(protocol, localPort, externalPort,callback);
-            } else if (this.natpmpEnabled == true) {
-                return this.removePortMappingNATPMP(protocol, localPort, externalPort, callback);
-            } else {
-                callback(new Error("no upnp/natpmp"));
+            try {
+                if (this.upnpEnabled == true) {
+                    return this.removePortMappingUPNP(protocol, localPort, externalPort,callback);
+                } else if (this.natpmpEnabled == true) {
+                    return this.removePortMappingNATPMP(protocol, localPort, externalPort, callback);
+                } else {
+                    callback(new Error("no upnp/natpmp"));
+                }
+            } catch(e) {
+                log.error("UPNP.removePortMapping Exception",e,{});
             }
         });
     }
