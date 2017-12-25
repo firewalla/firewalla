@@ -1,7 +1,27 @@
+/*    Copyright 2017 Firewalla LLC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 /**
  * Created by Melvin Tu on 05/01/2017.
  */
 
+/*
+ * WARNING:
+ *   UPNP operations must be isolated to be one process.  NATPMP requires
+ *   openning a port, which may cause trouble if two processes are doing
+ *   the same 
+ */
 
 'use strict';
  
@@ -27,9 +47,19 @@ module.exports = class {
             this.gw = gw;
             instance = this;
             this.refreshTimers = {};
-            this.natpmpClient = natpmp.connect(this.gw);
         }
         return instance;
+    }
+
+    natpmpClient() {
+        try {
+            if (this._natpmpClient == null) {
+                this._natpmpClient = natpmp.connect(this.gw);
+            }
+            return this._natpmpClient;
+        } catch(e) {
+            log.error("UPNP:natpmpClient Unable to initalize", e,{});
+        }
     }
  
     /* return if NATPMP or UPNP 
@@ -40,8 +70,8 @@ module.exports = class {
         upnpClient.externalIp((err,ip)=>{
             if (err !=null || ip == null) {
                 this.upnpEnabled = false;
-                if (this.natpmpClient) {
-                    this.natpmpClient.externalIp((err, info)=> {
+                if (this.natpmpClient()) {
+                    this.natpmpClient().externalIp((err, info)=> {
                         if (err == null && info!=null) { 
                             this.natpmpIP = info.ip.join('.');
                             this.natpmpEnabled = true;
@@ -108,11 +138,11 @@ module.exports = class {
  
     addPortMappingNATPMP(protocol, localPort, externalPort, description, callback) {
         callback = callback || function() {};
-        if (this.natpmpClient == null) {
+        if (this.natpmpClient() == null) {
             callback(new Error("natpmpClient null"),null);
             return;
         }
-        this.natpmpClient.portMapping({type:protocol, private: localPort, public: externalPort, ttl: natpmpTimeout}, (err, info)=> {
+        this.natpmpClient().portMapping({type:protocol, private: localPort, public: externalPort, ttl: natpmpTimeout}, (err, info)=> {
             if (err == null) {
                 this.refreshTimers[localPort+":"+externalPort] = setTimeout(()=>{
                     this.addPortMappingNATPMP(protocol,localPort, externalPort, description,()=>{
@@ -126,14 +156,14 @@ module.exports = class {
     removePortMappingNATPMP(protocol, localPort, externalPort, callback) {
         callback = callback || function() {};
         let timer = this.refreshTimers[localPort+":"+externalPort];
-        if (this.natpmpClient == null) {
+        if (this.natpmpClient() == null) {
             callback(new Error("natpmpClient null"),null);
             return;
         }
         if (timer) {
             clearTimeout(timer);
         }
-        this.natpmpClient.portUnmapping({ type:protocol, private: localPort, public: externalPort, ttl: 0}, (err, info)=> {
+        this.natpmpClient().portUnmapping({ type:protocol, private: localPort, public: externalPort, ttl: 0}, (err, info)=> {
             if (err) {
                 log.error("UPNP.removePortMappingNATPMP",err,{});
             }
