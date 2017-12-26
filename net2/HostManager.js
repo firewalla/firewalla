@@ -214,7 +214,7 @@ class Host {
             }
 
             //await(this.saveAsync());
-            log.info("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
+            log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
         })();
     }
 
@@ -529,7 +529,7 @@ class Host {
         }
 
         /* put a safety on the spoof */
-        log.info("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
+        log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
         let myIp6 = sysManager.myIp6();
         if (this.ipv6Addr && this.ipv6Addr.length>0) {
             for (let i in this.ipv6Addr) {
