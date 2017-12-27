@@ -1851,6 +1851,39 @@ module.exports = class {
     return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));
   }
 
+    /* 
+     * data here may be used to recover Firewalla configuration 
+     */
+    getCheckInAsync() {
+        return async(() => {
+          let json = {};
+          let requiredPromises = [
+            this.policyDataForInit(json),
+            this.modeForInit(json),
+            this.policyRulesForInit(json),
+            this.exceptionRulesForInit(json),
+            this.natDataForInit(json),
+            this.ignoredIPDataForInit(json),
+          ]
+
+          this.basicDataForInit(json, {});
+
+          await (requiredPromises);
+
+          let firstBinding = await (rclient.getAsync("firstBinding"))
+          if(firstBinding) {
+            json.firstBinding = firstBinding
+          }
+
+          json.bootingComplete = await (f.isBootingComplete())
+
+          // Delete anything that may be private
+          if (json.ssh) delete json.ssh
+
+          return json;
+        })();
+    }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {

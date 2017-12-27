@@ -25,10 +25,11 @@ fi
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
+sudo touch /dev/watchdog 
+
 for i in `seq 1 5`; do
-    if ping -c 1 $DEFAULT_ROUTE &> /dev/null
+    if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null
     then
-#      sudo touch /dev/watchdog
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
     else
@@ -57,7 +58,6 @@ else
    exit 0
 fi
 
-#sudo touch /dev/watchdog
 /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING WRITE2"
 
 
