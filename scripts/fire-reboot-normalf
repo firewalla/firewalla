@@ -2,19 +2,14 @@
 logger "FIREWALLA REBOOT NORMAL FORCED"
 #sudo sh -c 'echo V > /dev/watchdog'
 #sudo sh -c 'echo V > /dev/watchdog'
-sudo pkill bitbridge
-sudo pkill fire-ping
-sudo pkill sleep
-sleep 4
+sync
 crontab -r
+sudo pkill fire-ping
+sudo pkill fire-watchdog
+sleep 1
+sudo sh -c 'echo V > /dev/watchdog'
 sudo /home/pi/firewalla/scripts/fake-hwclock
-#sudo sh -c 'echo V > /dev/watchdog'
-
-# Save fake hwclock before force reboot
-sudo fake-hwclock
-# flush syslog
-# sudo /etc/cron.hourly/log2ram
-sudo /usr/local/sbin/log2ram write
+#sudo log2ram write
 sync
 sync
 sync
