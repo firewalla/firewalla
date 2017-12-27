@@ -332,8 +332,10 @@ class NetBotTool {
             // intel not exists in redis, create a new one
             return async(() => {
               intel = await (destIPFoundHook.processIP(f.ip));
-              f.country = intel.country;
-              f.host = intel.host;
+              if (intel) {
+                f.country = intel.country;
+                f.host = intel.host;
+              }
               return f;
             })();
           }
