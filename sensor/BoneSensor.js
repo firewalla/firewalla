@@ -40,8 +40,8 @@ let fConfig = require('../net2/config.js').getConfig();
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let HostManager = require("../net2/HostManager.js");
-let hostManager = new HostManager("cli", 'client', 'info');
+//let HostManager = require("../net2/HostManager.js");
+//let hostManager = new HostManager("cli", 'client', 'info');
 
 class BoneSensor extends Sensor {
   scheduledJob() {
@@ -67,11 +67,13 @@ class BoneSensor extends Sensor {
       let sysInfo = await (sysManager.getSysInfoAsync());
 
       log.info("Checking in Cloud...",sysInfo,{});
+/*
       try {
         sysInfo.hostInfo = await (hostManager.getCheckInAsync());
       } catch (e) {
         log.error("BoneCheckIn Error fetching hostInfo",e,{});
       }
+*/
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
 
