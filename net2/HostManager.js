@@ -2257,7 +2257,7 @@ module.exports = class {
                         }
                     }
                     for (let h in removedHosts) {
-                        delete this.hostsdb[h];
+                        delete this.hostsdb[removedHosts[h]];
                     }
                     log.debug("hostmanager:removing:hosts", removedHosts);
                     this.hosts.all.sort(function (a, b) {
