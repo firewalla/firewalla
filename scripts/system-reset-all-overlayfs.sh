@@ -21,7 +21,7 @@ sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 sync
 sync
-: ${FIREWALLA_POST_RESET_OP:-'reboot'}
+: ${FIREWALLA_POST_RESET_OP:='reboot'}
 
 if [[ $FIREWALLA_POST_RESET_OP == 'shutdown' ]]; then
     logger "SHUTDOWN: User SHUTDOWN"
