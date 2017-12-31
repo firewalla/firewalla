@@ -26,7 +26,7 @@ sudo sh -c 'echo V > /dev/watchdog'
 sudo sh -c 'echo V > /dev/watchdog'
 sudo /home/pi/firewalla/scripts/fake-hwclock
 
-sleep 2 2 
+sleep 2 
 
 sync
 sync
