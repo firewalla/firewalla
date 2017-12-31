@@ -27,15 +27,16 @@ DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 sudo touch /dev/watchdog 
 
-for i in `seq 1 5`; do
+for i in `seq 1 7`; do
     if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null
     then
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
     else
-       echo "Ping Failed"
-      /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network"
+      echo "Ping Failed"
+      /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
       sleep 1
+      sudo touch /dev/watchdog 
     fi
 done
 
@@ -60,4 +61,5 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING WRITE2"
 
+sudo touch /dev/watchdog 
 
