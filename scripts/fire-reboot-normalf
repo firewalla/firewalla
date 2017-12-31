@@ -1,12 +1,16 @@
 #!/bin/bash -
+# This is forced / quick reboot ... something bad just happened
+
 logger "FIREWALLA REBOOT NORMAL FORCED"
 #sudo sh -c 'echo V > /dev/watchdog'
 #sudo sh -c 'echo V > /dev/watchdog'
 sync
 crontab -r
 sudo pkill fire-ping
+sudo pkill sleep
+sudo pkill fire-ping
 sudo pkill fire-watchdog
-sleep 1
+sudo sh -c 'echo V > /dev/watchdog'
 sudo sh -c 'echo V > /dev/watchdog'
 sudo /home/pi/firewalla/scripts/fake-hwclock
 #sudo log2ram write
