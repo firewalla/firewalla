@@ -1,7 +1,7 @@
 #!/bin/bash
 
-sudo service firemain stop
-sudo service firemon stop
+# kill background process
+/home/pi/firewalla/scripts/fire-stop
 
 # clean database
 /usr/bin/redis-cli flushall
