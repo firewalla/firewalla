@@ -854,13 +854,18 @@ class Host {
     }
 
     identifyDevice(force, callback) {
-        log.debug("HOST:IDENTIFY",this.o.mac);
+        if (this.mgr.type != "server") {
+            if (callback)
+                callback(null, null);
+            return;
+        }
         if (force==false  && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
             log.debug("HOST:IDENTIFY too early", this.o._identifyExpiration);
             if (callback)
                 callback(null, null);
             return;
         }
+        log.info("HOST:IDENTIFY",this.o.mac);
         // need to have if condition, not sending too much info if the device is ...
         // this may be used initially _identifyExpiration
 
