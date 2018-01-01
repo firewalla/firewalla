@@ -871,6 +871,7 @@ class Host {
             ou: this.o.mac.slice(0,13),
             uuid: flowUtil.hashMac(this.o.mac),
             _ipv4: flowUtil.hashIp(this.o.ipv4),
+            ipv4: this.o.ipv4,
             firstFoundTimestamp: this.o.firstFoundTimestamp,
             lastActiveTimestamp: this.o.lastActiveTimestamp,
             bonjourName: this.o.bonjourName,
@@ -878,12 +879,12 @@ class Host {
             ssdpName: this.o.ssdpName,
             bname: this.o.bname,
             pname: this.o.pname,
+            ua_name : this.o.ua_name,
+            ua_os_name : this.o.ua_os_name,
+            name : this.name()
         };
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
-            obj.ua_name = this.o.ua_name;
-            obj.ua_os_name = this.o.ua_os_name;
-            obj.name = this.name();
         }
         try {
             this.packageTopNeighbors(60,(err,neighbors)=>{
