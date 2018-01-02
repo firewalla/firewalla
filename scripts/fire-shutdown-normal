@@ -5,6 +5,7 @@ logger "FIREWALLA REBOOT NORMAL"
 sudo pkill bitbridge
 sudo pkill fire-ping
 sudo pkill sleep
+sudo pkill fire-ping
 sleep 4
 crontab -r
 #sudo sh -c 'echo V > /dev/watchdog'

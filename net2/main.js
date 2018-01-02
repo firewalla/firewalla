@@ -145,6 +145,9 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
+  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+  let dnsmasq = new DNSMASQ();
+  dnsmasq.cleanUpPolicyFilter();
 
   if (process.env.FWPRODUCTION) {
     /*
