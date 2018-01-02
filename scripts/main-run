@@ -36,7 +36,6 @@ logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
-$FIREWALLA_HOME/scripts/fire-ping.sh
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 
@@ -53,4 +52,6 @@ $FIREWALLA_HOME/scripts/main-start
 sudo rm -rf /media/root-rw/overlay.bak
 sudo rm -rf /media/root-rw/overlay-workdir.bak
 
+# this will touch and init watchdog
+$FIREWALLA_HOME/scripts/fire-ping.sh
 sudo service watchdog restart
