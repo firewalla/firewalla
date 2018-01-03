@@ -35,15 +35,15 @@ timeout_check() {
     do
         sleep $interval
         (( timeout-=$interval ))
-        kill -0 $pid || return 0
+        sudo kill -0 $pid || return 0
     done
 
-    kill -s TERM $pid
+    sudo kill -s TERM $pid
     sleep $delay
-    kill -0 $pid || return 1
-    if kill -0 $pid
+    sudo kill -0 $pid || return 1
+    if sudo kill -0 $pid
     then
-        kill -s SIGKILL $pid
+        sudo kill -s SIGKILL $pid
     fi
     return 1
 }
@@ -77,7 +77,7 @@ then
     export CHECK_FIX_NETWORK_RETRY=no
     external_script='sudo /home/pi/firewalla/scripts/check_fix_network.sh'
     $external_script &>/dev/null &
-    timeout_check || echo timeout detected
+    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
 fi
 
 

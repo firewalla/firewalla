@@ -147,6 +147,7 @@ reboot_if_needed() {
         err "CHECK_FIX_NETWORK_REBOOT is set to 'no', abort"
         exit 1
     else
+        err "CHECK_FIX_NETWORK_REBOOT REBOOTING"
         reboot now
     fi
 }
