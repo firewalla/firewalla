@@ -22,6 +22,7 @@ LOGGER=/usr/bin/logger
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
@@ -46,12 +47,25 @@ save_values() {
     for kind in ip gw
     do
         value=$(get_value $kind)
-        [[ -n "$value" ]] || return $r 
+        test -n "$value" || { r=1; break; }
         file=/home/pi/.firewalla/run/saved_${kind}
         rm -f $file
-        echo "$value" > $file || r=1
+        echo "$value" > $file || { r=1; break; }
     done
-    /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf
+
+    if [[ -f /etc/resolv.conf ]]
+    then
+        /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
+    else
+        r=1
+    fi
+
+    if [[ $r -eq 1 ]]
+    then
+        err "Invalid value in IP/GW/DNS detected, save nothing"
+        rm -rf /home/pi/.firewalla/run/saved_*
+    fi
+
     return $r
 }
 
@@ -126,6 +140,17 @@ github_api_ok() {
     curl -L -m10 https://api.github.com/zen &> /dev/null
 }
 
+reboot_if_needed() {
+    : ${CHECK_FIX_NETWORK_REBOOT:='yes'}
+    if [[ $CHECK_FIX_NETWORK_REBOOT == 'no' ]]
+    then
+        err "CHECK_FIX_NETWORK_REBOOT is set to 'no', abort"
+        exit 1
+    else
+        reboot now
+    fi
+}
+
 if [[ $(id -u) != $(id -u root) ]]; then
     err "Only root can run this script"
     exit 1
@@ -145,7 +170,7 @@ while ! ethernet_connected ; do
     else
         echo "fail - reboot"
         $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
-        reboot now
+        reboot_if_needed
     fi
     sleep 1
 done
@@ -167,7 +192,10 @@ while ! ethernet_ip ; do
 done
 echo OK
 
-while true; do
+: ${CHECK_FIX_NETWORK_RETRY:='yes'}
+while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
+    # only run once if requires NO retry
+    test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
     echo -n "checking gateway ... "
     tmout=15
     while ! gateway_pingable; do
@@ -183,7 +211,7 @@ while true; do
             else
                 echo "fail - reboot"
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
-                reboot
+                reboot_if_needed
             fi
         fi
         sleep 1
@@ -209,7 +237,7 @@ while true; do
             else
                 echo "fail - reboot"
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
-                reboot
+                reboot_if_needed
             fi
         fi
         sleep 1
@@ -235,7 +263,7 @@ while true; do
             else
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
                 echo "fail - reboot"
-# comment out on purpose                reboot
+# comment out on purpose                reboot_if_needed
             fi
         fi
         sleep 1
@@ -253,3 +281,4 @@ done
 save_values
 
 exit $rc
+

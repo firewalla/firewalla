@@ -54,4 +54,7 @@ sudo rm -rf /media/root-rw/overlay-workdir.bak
 
 # this will touch and init watchdog
 $FIREWALLA_HOME/scripts/fire-ping.sh
+sleep 1
+$FIREWALLA_HOME/scripts/fire-ping.sh
+sleep 1
 sudo service watchdog restart
