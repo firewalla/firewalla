@@ -28,10 +28,10 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1 | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
         gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
+            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
     esac
 }
@@ -46,7 +46,7 @@ save_values() {
     for kind in ip gw
     do
         value=$(get_value $kind)
-        [[ -n "$value" ]] || continue
+        [[ -n "$value" ]] || return $r 
         file=/home/pi/.firewalla/run/saved_${kind}
         rm -f $file
         echo "$value" > $file || r=1
