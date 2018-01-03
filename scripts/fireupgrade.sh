@@ -73,9 +73,7 @@ done
 if [[ $rc -ne 0 ]]
 then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
-    export CHECK_FIX_NETWORK_REBOOT=no
-    export CHECK_FIX_NETWORK_RETRY=no
-    external_script='sudo /home/pi/firewalla/scripts/check_fix_network.sh'
+    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no ./check_fix_network.sh'
     $external_script &>/dev/null &
     timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
 fi
