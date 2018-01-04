@@ -164,6 +164,7 @@ RESTORED=2
 restored=$NOT_RESTORED
 
 echo -n "checking ethernet connection ... "
+$LOGGER "checking ethernet connection ... "
 tmout=15
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
@@ -178,6 +179,7 @@ done
 echo OK
 
 echo -n "checking ethernet IP ... "
+$LOGGER "checking ethernet IP ... "
 tmout=$(set_timeout 60)
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
@@ -278,6 +280,8 @@ while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
     break
 
 done
+
+$LOGGER "FIRE_CHECK DONE ... "
 
 save_values
 
