@@ -21,6 +21,37 @@
 # WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
 # WILL PREVENT UPGRADES!
 
+# timeout_check - timeout control given process or last background process
+# returns:
+#   0 - process exits before timeout
+#   1 - process killed due to timeout
+
+timeout_check() {
+    pid=${1:-$!}
+    timeout=${2:-120}
+    interval=${3:-1}
+    delay=${4:-3}
+    while (( timeout>0 ))
+    do
+        sleep $interval
+        (( timeout-=$interval ))
+        sudo kill -0 $pid || return 0
+    done
+
+    sudo kill -s TERM $pid
+    sleep $delay
+    sudo kill -0 $pid || return 1
+    if sudo kill -0 $pid
+    then
+        sudo kill -s SIGKILL $pid
+    fi
+    return 1
+}
+
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
+sudo /home/pi/firewalla/scripts/check_reset.sh
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"+`date`
+
 mode=${1:-'normal'}
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
@@ -28,14 +59,25 @@ mode=${1:-'normal'}
 GITHUB_STATUS_API=https://status.github.com/api.json
 
 logger `date`
+rc=1
 for i in `seq 1 10`; do
     HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
+      rc=0
       break
     fi
-    /usr/bin/logger "FIREWALLA.UPGRADE NO Network"
+    /usr/bin/logger "FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
+
+if [[ $rc -ne 0 ]]
+then
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
+    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
+    $external_script &>/dev/null &
+    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
+fi
 
 
 if [[ ! -f /.dockerenv ]]; then
