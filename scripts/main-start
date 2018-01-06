@@ -128,6 +128,7 @@ function update_node_modules {
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
         REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
       fi
+
       
       if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
         cd $FW_NODE_MODULES_PATH
@@ -135,9 +136,19 @@ function update_node_modules {
         EXPECTED_REVISION=$(cat $REVISION_FILE)
         CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
 
+        cd $FW_NODE_MODULES_PATH
+   
+        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date)"
+        if [[ `git status -uno --porcelain` ]]; then
+          NODE_MODULE_CHANGED=true  
+        else
+          NODE_MODULE_CHANGED=false;
+        fi
+        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
         # only reset head when there is new expected revision number
         # this is to reduce the freq of calling 'git reset'
-        if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
+        if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
+            logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
             git fetch origin  || git fetch origin
             git reset -q --hard `cat $REVISION_FILE`
             if [[ -n $FWPRODUCTION ]]; then
