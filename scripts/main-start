@@ -21,6 +21,7 @@
 logger "MAIN-STARTED STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${PI_HOME:=/home/pi}
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -268,6 +269,24 @@ fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 
+# Take care of upgrade differently
+
+
+mkdir $PI_HOME/scripts
+
+[ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
+[ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
+[ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
+if [[ ! -f /.dockerenv ]]; then
+    if [ -s /home/pi/scripts/fireupgrade.sh ]; then
+        [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
+    else 
+        [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
+    fi
+fi 
+sync
+sync
+
 #reload services
 if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
@@ -278,7 +297,6 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
-    sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo systemctl daemon-reload
