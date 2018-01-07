@@ -49,7 +49,12 @@ timeout_check() {
 }
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
-sudo /home/pi/firewalla/scripts/check_reset.sh
+if [ -s /home/pi/scripts/check_reset.sh ]
+then
+    sudo /home/pi/scripts/check_reset.sh
+else
+    sudo /home/pi/firewalla/scripts/check_reset.sh
+fi
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"+`date`
 
 mode=${1:-'normal'}
@@ -74,6 +79,12 @@ if [[ $rc -ne 0 ]]
 then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
     external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
+    if [ -s /home/pi/scripts/check_fix_network.sh ]
+    then
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/scripts/check_fix_network.sh'
+    else
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
+    fi
     $external_script &>/dev/null &
     timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
@@ -116,6 +127,7 @@ if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   exit 0
 fi
 
+if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f /home/pi/firewalla/.git/*.lock
 GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
@@ -135,8 +147,9 @@ echo $current_tag > /tmp/REPO_TAG
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
+
 sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
-sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
+#[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl reenable firewalla
