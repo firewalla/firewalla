@@ -17,6 +17,7 @@ sync
 
 #kill all crontabs and disable all watchdog
 sync
+if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 crontab -r
 sudo pkill fire-ping
 sudo pkill sleep
