@@ -1,13 +1,6 @@
 #!/bin/bash -
 
-#rm ~/.forever/main.log
-#rm ~/.forever/monitor.log
-#rm ~/.forever/api.log
-#rm ~/.forever/ui.log
-forever stop main 
-sudo sysctl stop fireui
-sudo sysctl stop fireapi
-sudo sysctl stop firemon
+/home/pi/firewalla/scripts/fire-stop
 redis-cli KEYS "policy:*" | xargs redis-cli DEL
 sync
 logger "REBOOT: User Reset Policy"
