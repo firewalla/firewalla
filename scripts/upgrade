@@ -1,7 +1,5 @@
 #!/bin/bash -
-sudo service firemain stop
-sudo service firemon stop
-sudo service firekick stop
+/home/pi/firewalla/scripts/fire-stop
 sync
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch =~ release.* ]]
