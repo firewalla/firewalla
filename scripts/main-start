@@ -305,8 +305,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
-    mkdir -p /usr/lib/systemd/systemd-shutdown/
-    sudo cp /home/pi/firewalla/scripts/reset-overlayfs.sh /usr/lib/systemd/systemd-shutdown/
+    sudo cp /home/pi/firewalla/scripts/reset-overlayfs.sh /lib/systemd/system-shutdown/
     sudo systemctl daemon-reload
 fi
 

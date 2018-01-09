@@ -1,7 +1,17 @@
 #!/bin/bash
 
-# flag to run this script
-FLAG_FILE=/tmp/RESET_OVERLAYFS_BEFORE_SHUTDOWN
+set -x
+
+FLAG_FILE=/var/run/RESET_OVERLAYFS_BEFORE_SHUTDOWN
+MOUNT_DEV=/dev/mmcblk0p4
+MOUNT_DIR=/media/root-reset
+LOG_FILE=$MOUNT_DIR/reset-overlayfs.log
+
+mkdir -p $MOUNT_DIR
+mount $MOUNT_DEV $MOUNT_DIR
+
+rm -f $LOG_FILE
+exec &> $LOG_FILE
 
 if [[ -e "$FLAG_FILE" ]]
 then
@@ -9,26 +19,18 @@ then
     rm -f $FLAG_FILE
 else
     echo "INFO: File $FLAG_FILE NOT exist. Bypass overlayfs reset."
+    umount $MOUNT_DIR
     exit 0
 fi
 
-# kill background process
-/home/pi/firewalla/scripts/fire-stop
-
-# clean database
-/usr/bin/redis-cli flushall
-
-# clean up logs
-: ${FIREWALLA_LOG_DIR:=/log}
-
-sudo rm -fr ${FIREWALLA_LOG_DIR}/*/*
-
 # clean up upper directory
-: ${FIREWALLA_UPPER_DIR:=/media/root-rw/overlay}
-: ${FIREWALLA_UPPER_WORK_DIR:=/media/root-rw/overlay-workdir}
+FIREWALLA_UPPER_DIR=$MOUNT_DIR/overlay
+FIREWALLA_UPPER_WORK_DIR=$MOUNT_DIR/overlay-workdir
 
 sudo rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
 sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
 sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 sync
+
+umount $MOUNT_DIR
