@@ -22,16 +22,17 @@ LOGGER=/usr/bin/logger
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1 | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
         gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
+            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
     esac
 }
@@ -146,6 +147,7 @@ reboot_if_needed() {
         err "CHECK_FIX_NETWORK_REBOOT is set to 'no', abort"
         exit 1
     else
+        err "CHECK_FIX_NETWORK_REBOOT REBOOTING"
         reboot now
     fi
 }
@@ -162,6 +164,7 @@ RESTORED=2
 restored=$NOT_RESTORED
 
 echo -n "checking ethernet connection ... "
+$LOGGER "checking ethernet connection ... "
 tmout=15
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
@@ -176,6 +179,7 @@ done
 echo OK
 
 echo -n "checking ethernet IP ... "
+$LOGGER "checking ethernet IP ... "
 tmout=$(set_timeout 60)
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
@@ -277,6 +281,9 @@ while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
 
 done
 
+$LOGGER "FIRE_CHECK DONE ... "
+
 save_values
 
 exit $rc
+

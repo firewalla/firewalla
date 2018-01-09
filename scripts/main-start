@@ -21,6 +21,7 @@
 logger "MAIN-STARTED STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${PI_HOME:=/home/pi}
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -128,6 +129,7 @@ function update_node_modules {
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
         REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
       fi
+
       
       if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
         cd $FW_NODE_MODULES_PATH
@@ -135,9 +137,19 @@ function update_node_modules {
         EXPECTED_REVISION=$(cat $REVISION_FILE)
         CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
 
+        cd $FW_NODE_MODULES_PATH
+   
+        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date)"
+        if [[ `git status -uno --porcelain` ]]; then
+          NODE_MODULE_CHANGED=true  
+        else
+          NODE_MODULE_CHANGED=false;
+        fi
+        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
         # only reset head when there is new expected revision number
         # this is to reduce the freq of calling 'git reset'
-        if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
+        if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
+            logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
             git fetch origin  || git fetch origin
             git reset -q --hard `cat $REVISION_FILE`
             if [[ -n $FWPRODUCTION ]]; then
@@ -168,7 +180,11 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
-     cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     if [ -f /home/pi/.firewalla/config/enablev6 ]; then
+         cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
+     else 
+         cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
+     fi
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
@@ -190,6 +206,7 @@ fi
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge4
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
+sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6
 
 # Enable TCP_BBR
 logger "FIREWALLA:MAIN:ENABLE_TCP_BBR"
@@ -257,6 +274,25 @@ fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 
+# Take care of upgrade differently
+
+
+mkdir $PI_HOME/scripts
+
+[ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
+[ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
+[ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
+[ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
+if [[ ! -f /.dockerenv ]]; then
+    if [ -s /home/pi/scripts/fireupgrade.sh ]; then
+        [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
+    else 
+        [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
+    fi
+fi 
+sync
+sync
+
 #reload services
 if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
@@ -267,7 +303,6 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
-    sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo systemctl daemon-reload
