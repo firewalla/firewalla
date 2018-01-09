@@ -183,7 +183,7 @@ module.exports = class FlowMonitor {
                if (ignore == false) {
                 log.info("######## flowIntel Processing",JSON.stringify(flow));
                 if (this.checkIntelClass(flow['intel'],"av")) {
-                    if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
+                    if ( (flow.du && Number(flow.du)>5) && (flow.rb && Number(flow.rb)>1000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
                             title: "Video Watching",
