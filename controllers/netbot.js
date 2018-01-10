@@ -654,6 +654,34 @@ class netBot extends ControllerBot {
              data: msg.data
           };
           this.tx2(this.primarygid, "", notifyMsg, data);
+      } else if (msg.type == "CONTROL") {
+          if (msg.control && msg.control === "reboot") {
+              log.error("FIREWALLA REMOTE REBOOT");
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
+              });
+          } else if (msg.control && msg.control === "upgrade") {
+              log.error("FIREWALLA REMOTE UPGRADE ");
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
+              });
+          } else if (msg.control && msg.control === "ping") {
+              log.error("FIREWALLA CLOUD PING ");
+          } else if (msg.control && msg.control === "v6on") {
+              require('child_process').exec('sync & touch /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "v6off") {
+              require('child_process').exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "raw") {
+              log.error("FIREWALLA CLOUD RAW ");
+              // RAW commands will never / ever be ran on production 
+              if (sysManager.isSystemDebugOn() || !f.isProduction()) {
+                  if (msg.command) {
+                      log.error("FIREWALLA CLOUD RAW EXEC",msg.command);
+                      require('child_process').exec('sync & '+msg.command, (err, out, code) => {
+                      });
+                  }
+              }
+          }
       }
   }
 
@@ -2188,10 +2216,6 @@ class netBot extends ControllerBot {
     }
 
   }
-
-    boneMsgHandler(msg) {
-        console.log("Bone Message Received ",msg,msg.type);
-    }
 
   helpString() {
     return "Bot version " + sysManager.version() + "\n\nCli interface is no longer useful, please type 'system reset' after update to new encipher app on iOS\n";
