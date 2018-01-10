@@ -1,6 +1,10 @@
 #!/bin/bash
 
-set -x
+if [[ $(id -u) != $(id -u root) ]]
+then
+    echo "ERROR: only ROOT can run this script" >&2
+    exit 1
+fi
 
 LOG_DEV=/dev/mmcblk0p3
 LOG_DIR=/log
@@ -29,9 +33,9 @@ then
     FIREWALLA_UPPER_DIR=$RESET_DIR/overlay
     FIREWALLA_UPPER_WORK_DIR=$RESET_DIR/overlay-workdir
 
-    sudo rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
-    sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
-    sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
+    rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
+    mv ${FIREWALLA_UPPER_DIR}{,.bak}
+    mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
     sync
 else
