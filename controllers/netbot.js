@@ -2217,10 +2217,6 @@ class netBot extends ControllerBot {
 
   }
 
-    //boneMsgHandler(msg) {
-   //     console.log("Bone Message Received ",msg,msg.type);
-   //}
-
   helpString() {
     return "Bot version " + sysManager.version() + "\n\nCli interface is no longer useful, please type 'system reset' after update to new encipher app on iOS\n";
   }
