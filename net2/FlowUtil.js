@@ -57,17 +57,13 @@ function hashApp(domain) {
     return hashed;
 }
 
-function shortDomainName(domain) {
-    return urlHash.shortUrl(domain,true)
-}
-
 function dhnameFlow(_flow) {
     if (_flow.dhname) {
-        return shortDomainName(_flow.dhname);
+        return _flow.dhname;
     }
     if (_flow.af!=null && Object.keys(_flow.af).length>0) {
         for (let key in _flow.af) {
-            return shortDomainName(key);
+            return key;
         }
     }
     if (_flow.lh == _flow.sh) {
