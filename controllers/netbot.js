@@ -644,6 +644,7 @@ class netBot extends ControllerBot {
   }
 
   boneMsgHandler(msg) {
+      log.info("Bone Message",JSON.stringify(msg));
       if (msg.type == "MSG" && msg.title) {
           let notifyMsg = {
              title: msg.title,
@@ -670,6 +671,9 @@ class netBot extends ControllerBot {
               });                     
           } else if (msg.control && msg.control === "v6off") {
               require('child_process').exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "script") {
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/'+msg.command, (err, out, code) => {
               });                     
           } else if (msg.control && msg.control === "raw") {
               log.error("FIREWALLA CLOUD RAW ");
