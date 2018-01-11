@@ -286,7 +286,8 @@ function create_bootstrap_scripts_folder() {
         return 0 # do nothing if checksum file not exist
     fi
 
-    if ! sha256sum -c $CHECKSUM_FILE &> /dev/null; then
+    # sha256sum must be running under scripts folder
+    if ! (cd $FIREWALLA_HOME/scripts; sha256sum -c $CHECKSUM_FILE) &> /dev/null; then
         logger "MAIN-START BOOTSTRAP FILE CHECKSUM FAILED"
         return 1 # checksum failed
     fi
