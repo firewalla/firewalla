@@ -276,22 +276,38 @@ sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 
 # Take care of upgrade differently
 
+function create_bootstrap_scripts_folder() {
+    mkdir -p $PI_HOME/scripts
 
-mkdir $PI_HOME/scripts
+    CHECKSUM_FILE=$FIREWALLA_HOME/scripts/bootstrap.sha256sum
 
-[ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
-[ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
-[ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
-[ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
-if [[ ! -f /.dockerenv ]]; then
-    if [ -s /home/pi/scripts/fireupgrade.sh ]; then
-        [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
-    else 
-        [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
+    if [[ ! -e $CHECKSUM_FILE ]]; then
+        logger "MAIN-START BOOTSTRAP FILE CHECKSUM NOT EXIST"
+        return 0 # do nothing if checksum file not exist
     fi
-fi 
-sync
-sync
+
+    # sha256sum must be running under scripts folder
+    if ! (cd $FIREWALLA_HOME/scripts; sha256sum -c $CHECKSUM_FILE) &> /dev/null; then
+        logger "MAIN-START BOOTSTRAP FILE CHECKSUM FAILED"
+        return 1 # checksum failed
+    fi
+
+    [ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
+    if [[ ! -f /.dockerenv ]]; then
+        if [ -s /home/pi/scripts/fireupgrade.sh ]; then
+            [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
+        else 
+            [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
+        fi
+    fi 
+    sync
+    sync
+}
+
+create_bootstrap_scripts_folder
 
 #reload services
 if [[ ! -f /.dockerenv ]]; then
