@@ -286,7 +286,7 @@ function create_bootstrap_scripts_folder() {
         return 0 # do nothing if checksum file not exist
     fi
 
-    if ! sha256sum $CHECKSUM_FILE &> /dev/null; then
+    if ! sha256sum -c $CHECKSUM_FILE &> /dev/null; then
         logger "MAIN-START BOOTSTRAP FILE CHECKSUM FAILED"
         return 1 # checksum failed
     fi
