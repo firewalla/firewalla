@@ -722,6 +722,11 @@ module.exports = class {
             i_type = "mac";
             i_target = alarm["p.device.mac"];
             break;
+          case "ALARM_BRO_NOTICE":
+            log.error("Unsupported alarm type for blocking: ", alarm, {})
+            callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
+            return
+            break;
           default:
             i_type = "ip";
             i_target = alarm["p.dest.ip"];
@@ -867,6 +872,11 @@ module.exports = class {
         case "ALARM_NEW_DEVICE":
           i_type = "mac"; // place holder, not going to be matched by any alarm/policy
           i_target = alarm["p.device.ip"];
+          break;
+        case "ALARM_BRO_NOTICE":
+          log.error("Unsupported alarm type for allowing: ", alarm, {})
+          callback(new Error("Unsupported alarm type for allowing: " + alarm.type))
+          return
           break;
         default:
           i_type = "ip";
