@@ -1446,7 +1446,7 @@ module.exports = class {
                         // sub message:
                         //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
                         
-                        const addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                        let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
                         addresses = addresses.filter((v, i, array) => {
                           return array.indexOf(v) === i
                         })
