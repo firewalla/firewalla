@@ -1435,6 +1435,7 @@ module.exports = class {
                       let noticeType = obj.note;
                       let timestamp = parseFloat(obj.ts);
 
+                      // TODO: create dedicate alarm type for each notice type
                       let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
                         "p.device.ip": localIP,
                         "p.dest.ip": dh
@@ -1446,10 +1447,16 @@ module.exports = class {
                         //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
                         
                         const addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                        addresses = addresses.filter((v, i, array) => {
+                          return array.indexOf(v) === i
+                        })
+
                         if(addresses.length > 0) {
                           alarm["p.device.ip"] = addresses[0]
                           alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
                         }
+
+                        alarm.message = `${alarm.message} Target devices: ${addresses.join(",")}`
                       }
 
                       async(() => {
