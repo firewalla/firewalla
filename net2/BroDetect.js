@@ -33,6 +33,10 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 const mode = require('../net2/Mode.js')
 
 var linux = require('../util/linux.js');
@@ -1448,13 +1452,17 @@ module.exports = class {
                         }
                       }
 
-                      am2.enrichDeviceInfo(alarm).then((alarm) => {
+                      async(() => {
+                        if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
+                          await (am2.enrichDestInfo(alarm))
+                        }
+                        await (am2.enrichDeviceInfo(alarm))
                         am2.checkAndSave(alarm, (err) => {
                           if(err) {
                             log.error("Failed to save alarm: " + err);
                           }
                         });
-                      });
+                      })()
 
                       alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
                         // if (obj != null) {
