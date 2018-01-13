@@ -110,7 +110,7 @@ function runLocalAPI() {
    * Listen on provided port, on all network interfaces.
    */
 
-  if(f.isProduction()) {
+  if(f.isProductionOrBeta()) {
     serverForLocalAPI.listen(portForLocalAPI, 'localhost')
   } else {
     serverForLocalAPI.listen(portForLocalAPI)
@@ -181,7 +181,8 @@ function onListening() {
 }
 
 // for non production, just print on console
-if(f.isProduction() && !f.isDocker()) {
+if((f.isProductionOrBeta())
+  && !f.isDocker()) {
   process.on('uncaughtException',(err)=>{
     log.info("################### CRASH #############");
     log.info("+-+-+-",err.message,err.stack);
