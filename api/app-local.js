@@ -64,7 +64,7 @@ function enableSubPath(path, lib) {
 // encipher api is enabled even for production enviornment
 enableSubPath('encipher');
 
-if(!firewalla.isProduction()) {
+if(!firewalla.isProductionOrBeta()) {
   // apis for development purpose only, do NOT enable them in production
   subpath_v1.use('/message', message);
   subpath_v1.use('/ss', shadowsocks);

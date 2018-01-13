@@ -11,7 +11,8 @@ fi
 
 branch=$(cd $FIREWALLA_HOME; git rev-parse --abbrev-ref HEAD)
 
-if [[ -e $FIREWALLA_BIN/dev || $branch == release_* ]]; then
+# both beta and prod will disable ipv6
+if [[ -e $FIREWALLA_BIN/dev || $branch == release_* || $branch == beta_* ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else
   cp $FIREWALLA_BIN{/real,}/$BINARY
