@@ -1456,7 +1456,7 @@ module.exports = class {
                           alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
                         }
 
-                        alarm.message = `${alarm.message} Target devices: ${addresses.join(",")}`
+                        alarm["p.message"] = `${alarm["p.message"]} Target devices: ${addresses.join(",")}`
                       }
 
                       async(() => {
