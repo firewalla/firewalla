@@ -1436,6 +1436,18 @@ module.exports = class {
                         "p.dest.ip": dh
                       });
 
+                      if(noticeType == 'SSH::Password_Guessing') {
+                        const subMessage = obj.sub
+                        // sub message:
+                        //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
+                        
+                        const addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                        if(addresses.length > 0) {
+                          alarm["p.device.ip"] = addresses[0]
+                          alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
+                        }
+                      }
+
                       am2.enrichDeviceInfo(alarm).then((alarm) => {
                         am2.checkAndSave(alarm, (err) => {
                           if(err) {
