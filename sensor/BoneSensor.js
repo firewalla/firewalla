@@ -40,6 +40,7 @@ let fConfig = require('../net2/config.js').getConfig();
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
+
 class BoneSensor extends Sensor {
   scheduledJob() {
     Bone.waitUtilCloudReady(() => {
@@ -64,8 +65,22 @@ class BoneSensor extends Sensor {
       let sysInfo = await (sysManager.getSysInfoAsync());
 
       log.info("Checking in Cloud...",sysInfo,{});
+ 
+      // First checkin usually have no meaningful data ... 
+      //
+      try {
+        if (this.lastCheckedIn) {
+            let HostManager = require("../net2/HostManager.js");
+            let hostManager = new HostManager("cli", 'server', 'info');
+            sysInfo.hostInfo = await (hostManager.getCheckInAsync());
+        }
+      } catch (e) {
+        log.error("BoneCheckIn Error fetching hostInfo",e,{});
+      }
 
       let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
+
+      this.lastCheckedIn = Date.now() / 1000;
 
       log.info("Cloud checked in successfully:")//, JSON.stringify(data));
 
@@ -112,6 +127,10 @@ class BoneSensor extends Sensor {
              require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
              });
           }
+      }
+
+      if (data && data.frpToken) {
+        await (rclient.hsetAsync("sys:config", "frpToken", data.frpToken))
       }
     })();
   }

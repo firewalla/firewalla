@@ -22,16 +22,17 @@ LOGGER=/usr/bin/logger
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1
+            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1 | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
         gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}'
+            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
     esac
 }
@@ -46,12 +47,25 @@ save_values() {
     for kind in ip gw
     do
         value=$(get_value $kind)
-        [[ -n "$value" ]] || continue
+        test -n "$value" || { r=1; break; }
         file=/home/pi/.firewalla/run/saved_${kind}
         rm -f $file
-        echo "$value" > $file || r=1
+        echo "$value" > $file || { r=1; break; }
     done
-    /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf
+
+    if [[ -f /etc/resolv.conf ]]
+    then
+        /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
+    else
+        r=1
+    fi
+
+    if [[ $r -eq 1 ]]
+    then
+        err "Invalid value in IP/GW/DNS detected, save nothing"
+        rm -rf /home/pi/.firewalla/run/saved_*
+    fi
+
     return $r
 }
 
@@ -126,6 +140,18 @@ github_api_ok() {
     curl -L -m10 https://api.github.com/zen &> /dev/null
 }
 
+reboot_if_needed() {
+    : ${CHECK_FIX_NETWORK_REBOOT:='yes'}
+    if [[ $CHECK_FIX_NETWORK_REBOOT == 'no' ]]
+    then
+        err "CHECK_FIX_NETWORK_REBOOT is set to 'no', abort"
+        exit 1
+    else
+        err "CHECK_FIX_NETWORK_REBOOT REBOOTING"
+        reboot now
+    fi
+}
+
 if [[ $(id -u) != $(id -u root) ]]; then
     err "Only root can run this script"
     exit 1
@@ -138,6 +164,7 @@ RESTORED=2
 restored=$NOT_RESTORED
 
 echo -n "checking ethernet connection ... "
+$LOGGER "checking ethernet connection ... "
 tmout=15
 while ! ethernet_connected ; do
     if [[ $tmout -gt 0 ]]; then
@@ -145,13 +172,14 @@ while ! ethernet_connected ; do
     else
         echo "fail - reboot"
         $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
-        reboot now
+        reboot_if_needed
     fi
     sleep 1
 done
 echo OK
 
 echo -n "checking ethernet IP ... "
+$LOGGER "checking ethernet IP ... "
 tmout=$(set_timeout 60)
 while ! ethernet_ip ; do
     if [[ $tmout -gt 0 ]]; then
@@ -167,7 +195,10 @@ while ! ethernet_ip ; do
 done
 echo OK
 
-while true; do
+: ${CHECK_FIX_NETWORK_RETRY:='yes'}
+while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
+    # only run once if requires NO retry
+    test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
     echo -n "checking gateway ... "
     tmout=15
     while ! gateway_pingable; do
@@ -183,7 +214,7 @@ while true; do
             else
                 echo "fail - reboot"
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
-                reboot
+                reboot_if_needed
             fi
         fi
         sleep 1
@@ -209,7 +240,7 @@ while true; do
             else
                 echo "fail - reboot"
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
-                reboot
+                reboot_if_needed
             fi
         fi
         sleep 1
@@ -235,7 +266,7 @@ while true; do
             else
                 $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
                 echo "fail - reboot"
-# comment out on purpose                reboot
+# comment out on purpose                reboot_if_needed
             fi
         fi
         sleep 1
@@ -250,6 +281,9 @@ while true; do
 
 done
 
+$LOGGER "FIRE_CHECK DONE ... "
+
 save_values
 
 exit $rc
+

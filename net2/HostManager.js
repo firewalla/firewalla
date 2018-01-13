@@ -214,7 +214,7 @@ class Host {
             }
 
             //await(this.saveAsync());
-            log.info("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
+            log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
         })();
     }
 
@@ -529,7 +529,7 @@ class Host {
         }
 
         /* put a safety on the spoof */
-        log.info("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
+        log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
         let myIp6 = sysManager.myIp6();
         if (this.ipv6Addr && this.ipv6Addr.length>0) {
             for (let i in this.ipv6Addr) {
@@ -838,7 +838,7 @@ class Host {
 
     hashNeighbors(neighbors) {
         let _neighbors = JSON.parse(JSON.stringify(neighbors));
-        let debug =  sysManager.isSystemDebugOn();
+        let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
         for (let i in _neighbors) {
             let neighbor = _neighbors[i];
             neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
@@ -854,13 +854,18 @@ class Host {
     }
 
     identifyDevice(force, callback) {
-        log.debug("HOST:IDENTIFY",this.o.mac);
+        if (this.mgr.type != "server") {
+            if (callback)
+                callback(null, null);
+            return;
+        }
         if (force==false  && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
             log.debug("HOST:IDENTIFY too early", this.o._identifyExpiration);
             if (callback)
                 callback(null, null);
             return;
         }
+        log.info("HOST:IDENTIFY",this.o.mac);
         // need to have if condition, not sending too much info if the device is ...
         // this may be used initially _identifyExpiration
 
@@ -871,14 +876,20 @@ class Host {
             ou: this.o.mac.slice(0,13),
             uuid: flowUtil.hashMac(this.o.mac),
             _ipv4: flowUtil.hashIp(this.o.ipv4),
+            ipv4: this.o.ipv4,
             firstFoundTimestamp: this.o.firstFoundTimestamp,
             lastActiveTimestamp: this.o.lastActiveTimestamp,
+            bonjourName: this.o.bonjourName,
+            dhcpName: this.o.dhcpName,
+            ssdpName: this.o.ssdpName,
+            bname: this.o.bname,
+            pname: this.o.pname,
+            ua_name : this.o.ua_name,
+            ua_os_name : this.o.ua_os_name,
+            name : this.name()
         };
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
-            obj.ua_name = this.o.ua_name;
-            obj.ua_os_name = this.o.ua_os_name;
-            obj.name = this.name();
         }
         try {
             this.packageTopNeighbors(60,(err,neighbors)=>{
@@ -891,14 +902,26 @@ class Host {
                         bone.device("identify", obj, (err, data) => {
                             if (data != null) {
                                 log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
+
+                                // pretty much set everything from cloud to local
                                 for (let field in data) {
-                                    this.o[field] = data[field];
+                                    let value = data[field]
+                                    if(value.constructor.name === 'Array' ||
+                                      value.constructor.name === 'Object') {
+                                      this.o[field] = JSON.stringify(value) 
+                                    } else {
+                                      this.o[field] = value
+                                    }
                                 }
+
                                 if (data._vendor!=null && this.o.macVendor == null) {
                                     this.o.macVendor = data._vendor;
                                 }
                                 if (data._name!=null) {
                                     this.o.pname = data._name;
+                                }
+                                if (data._deviceType) {
+                                    this.o._deviceType = data._deviceType
                                 }
                                 this.save();
                             }
@@ -1007,16 +1030,42 @@ class Host {
   getPreferredBName() {
 
     // TODO: preferred name needs to be improved in the future
-
+    if(this.o.dhcpName) {
+      return this.o.dhcpName
+    }
+    
     if(this.o.bonjourName) {
       return this.o.bonjourName
     }
 
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
 
     return this.o.bname
+  }
+
+  getNameCandidates() {
+    let names = []
+
+    if(this.o.dhcpName) {
+      names.push(this.o.dhcpName)
+    }
+
+    if(this.o.nmapName) {
+      names.push(this.o.nmapName)
+    }
+
+    if(this.o.bonjourName) {
+      names.push(this.o.bonjourName)
+    }
+
+    if(this.o.ssdpName) {
+      names.push(this.o.ssdpName)    
+    }
+
+    if(this.o.bname) {
+      names.push(this.o.bname)
+    }
+
+    return names.filter((value, index, self) => self.indexOf(value) === index)
   }
 
     toJson() {
@@ -1032,7 +1081,8 @@ class Host {
           manualSpoof: this.o.manualSpoof,
           dhcpName: this.o.dhcpName,
           bonjourName: this.o.bonjourName,
-          nmapName: this.o.nmapName
+          nmapName: this.o.nmapName,
+          ssdpName: this.o.ssdpName
         }
 
         if (this.o.ipv4Addr == null) {
@@ -1043,10 +1093,9 @@ class Host {
 
         if (preferredBName) {
           json.bname = preferredBName
-          delete this.o.dhcpName
-          delete this.o.bonjourName
-          delete this.o.ssdpName
         }
+
+        json.names = this.getNameCandidates()
 
         if (this.activities) {
             json.activities= this.activities;
@@ -1056,6 +1105,22 @@ class Host {
             json.name = this.o.name;
         }
 
+        if (this.o._deviceType) {
+            json._deviceType = this.o._deviceType
+        }
+
+        if (this.o._deviceType_p) {
+          json._deviceType_p = this.o._deviceType_p
+        }
+
+        if (this.o._deviceType_top3) {
+          try {
+            json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
+          } catch(err) {
+            log.error("Failed to parse device type top 3 info:", err, {})
+          }          
+        }
+        
       if(this.o.modelName) {
         json.modelName = this.o.modelName
       }
@@ -1339,7 +1404,9 @@ module.exports = class {
         sysManager.update((err) => {
           if (err == null) {
             log.info("System Manager Updated");
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            if(!f.isDocker()) {
+              spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            }
           }
         });
 
@@ -1448,6 +1515,13 @@ module.exports = class {
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
+    }
+
+    json.features = {
+      archiveAlarm: true,
+      alarmMoreItems: true,
+      ignoreAlarm: true,
+      reportAlarm: true
     }
 
     if(f.isDocker()) {
@@ -1602,6 +1676,9 @@ module.exports = class {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
+            if(typeof json.scan[d].description === 'object') {
+              json.scan[d].description = ""
+            }
           }
         }
 
@@ -1780,6 +1857,39 @@ module.exports = class {
     return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));
   }
 
+    /* 
+     * data here may be used to recover Firewalla configuration 
+     */
+    getCheckInAsync() {
+        return async(() => {
+          let json = {};
+          let requiredPromises = [
+            this.policyDataForInit(json),
+            this.modeForInit(json),
+            this.policyRulesForInit(json),
+            this.exceptionRulesForInit(json),
+            this.natDataForInit(json),
+            this.ignoredIPDataForInit(json),
+          ]
+
+          this.basicDataForInit(json, {});
+
+          await (requiredPromises);
+
+          let firstBinding = await (rclient.getAsync("firstBinding"))
+          if(firstBinding) {
+            json.firstBinding = firstBinding
+          }
+
+          json.bootingComplete = await (f.isBootingComplete())
+
+          // Delete anything that may be private
+          if (json.ssh) delete json.ssh
+
+          return json;
+        })();
+    }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1811,6 +1921,8 @@ module.exports = class {
           await (requiredPromises);
 
           await (this.loadDDNSForInit(json));
+
+          json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
 
           // for any pi doesn't have firstBinding key, they are old versions
           let firstBinding = await (rclient.getAsync("firstBinding"))
@@ -2121,6 +2233,7 @@ module.exports = class {
                     }
 */
                     let allIPv6Addrs = [];
+                    let allIPv4Addrs = [];
 
                     let myIp = sysManager.myIp();
 
@@ -2131,6 +2244,9 @@ module.exports = class {
                                 if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
                                     allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
                                 }
+                            }
+                            if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+                                allIPv4Addrs.push(hostbymac.o.ipv4Addr);
                             }
                         }
                         if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
@@ -2147,7 +2263,7 @@ module.exports = class {
                         }
                     }
                     for (let h in removedHosts) {
-                        delete this.hostsdb[h];
+                        delete this.hostsdb[removedHosts[h]];
                     }
                     log.debug("hostmanager:removing:hosts", removedHosts);
                     this.hosts.all.sort(function (a, b) {
@@ -2156,6 +2272,7 @@ module.exports = class {
                     this.getHostsActive = false;
                     if (this.type === "server") {
                        spoofer.validateV6Spoofs(allIPv6Addrs);
+                       spoofer.validateV4Spoofs(allIPv4Addrs);
                     }
                     log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
                     callback(err, this.hosts.all);
