@@ -128,6 +128,10 @@ function isProduction() {
   return _isProduction;
 }
 
+function isProductionOrBeta() {
+  return isProduction() || isBeta()
+}
+
 function getReleaseType() {
   if(isProduction()) {
     return "prod"
@@ -288,6 +292,7 @@ module.exports = {
   isProduction: isProduction,
   isBeta:isBeta,
   isDevelopmentVersion:isDevelopmentVersion,
+  isProductionOrBeta:isProductionOrBeta,
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType
