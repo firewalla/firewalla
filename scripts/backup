@@ -1,0 +1,8 @@
+#!/bin/bash -
+# This will backup the important files 
+
+cd ~/
+rm ~/firebackup.tar
+tar cvf firebackup.tar .encipher/
+tar rvf firebackup.tar .firewalla/
+

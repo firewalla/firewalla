@@ -1,0 +1,35 @@
+#!/bin/bash -
+
+#
+# stop all firewalla services 
+#
+# Note, do not kill fireapi, it will cut off the user
+
+/home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA STOP"
+sudo service bitbridge4 stop
+sudo service bitbridge6 stop
+sudo service firemain stop
+sudo service firemon stop
+sudo service firekick stop
+sudo service brofish stop
+sync
+sync
+
+#kill all crontabs and disable all watchdog
+sync
+if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
+crontab -r
+sudo pkill fire-ping
+sudo pkill sleep
+sudo pkill fire-ping
+sudo pkill fire-watchdog
+#sudo sh -c 'echo V > /dev/watchdog'
+#sudo sh -c 'echo V > /dev/watchdog'
+sudo /home/pi/firewalla/scripts/fake-hwclock
+logger "FIREWALLA: Stopped"
+
+sleep 2 
+
+sync
+sync
+sync
