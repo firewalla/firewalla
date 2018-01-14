@@ -18,7 +18,7 @@ let ursa = require('ursa');
 let crypto = require('crypto');
 let fs = require('fs');
 let path = require('path');
-let request = require('request');
+let request = require('requestretry');
 let uuid = require("uuid");
 let io2 = require('socket.io-client');
 
@@ -753,7 +753,9 @@ let legoEptCloud = class {
           'mtype': mtype,
           'fid': fid,
           'mid': mid,
-        }
+        },
+        maxAttempts: 5,   // (default) try 5 times
+        retryDelay: 1000,  // (default) wait for 1s before trying again
       };
 
       request(options, (err2, httpResponse, body) => {

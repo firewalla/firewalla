@@ -77,7 +77,7 @@ module.exports = class {
       this.started = false;
 
       let UPNP = require('../../extension/upnp/upnp');
-      let upnp = new UPNP();
+      let upnp = new UPNP("info", sysManager.myGateway());
       upnp.removePortMapping("tcp", localPort, externalPort);
 
       this._stop(callback);
@@ -153,9 +153,9 @@ module.exports = class {
     }
 
     setTimeout(() => {
-      let upnp = require('../../extension/upnp/upnp');
-      let u = new upnp();
-      u.addPortMapping("tcp", localPort, externalPort, "Shadowsocks Proxy Port", (err) => {
+      let UPNP = require('../../extension/upnp/upnp');
+      let upnp = new UPNP("info", sysManager.myGateway());
+      upnp.addPortMapping("tcp", localPort, externalPort, "Shadowsocks Proxy Port", (err) => {
         if(err) {
           log.error("Failed to add port mapping for Shadowsocks Proxy Port: " + err);
         } else {

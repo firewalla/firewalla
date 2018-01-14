@@ -315,6 +315,14 @@ paths:
       responses:
         200:
           description: Success
+  /alarm/archive_list:
+    get:
+      summary: Get all archived alarms
+      tags:
+        - Alarm
+      responses:
+        200:
+          description: Success
   /encipher/message/{id}:
     post:
       summary: Debug Channel

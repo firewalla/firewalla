@@ -6,7 +6,7 @@ After=network.target
 User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/net2
-ExecStart=/bin/sh -c '/home/pi/firewalla/bin/node --expose-gc -max-old-space-size=256 main.js >> /home/pi/.forever/main.log  2>&1'
+ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMain >> /home/pi/.forever/main.log  2>&1'
 
 [Install]
 WantedBy=multi-user.target

@@ -76,7 +76,7 @@ module.exports = class {
   }
   
     resetRandomPassword(callback) {
-      var newPassword = key.randomPassword(8);
+      var newPassword = key.randomPassword(10);
 
       const spawn = require('child_process').spawn;
       const passwd = spawn('sudo', ['passwd', process.env.USER]);

@@ -510,6 +510,7 @@ class netBot extends ControllerBot {
 
           let data = {
             gid: this.primarygid,
+            notifType: "ALARM"
           };
 
           if (msg.aid) {
@@ -560,13 +561,13 @@ class netBot extends ControllerBot {
           
           switch(branchChanged) {
           case "1":
-            branch = "back to stable version"
+            branch = "back to stable release"
             break;
           case "2":
-            branch = "to pre_release version"
+            branch = "to beta release"
             break;
           case "3":
-            branch = "to development version"
+            branch = "to development release"
             break;
           default:
             // do nothing, should not happen here
@@ -643,6 +644,7 @@ class netBot extends ControllerBot {
   }
 
   boneMsgHandler(msg) {
+      log.info("Bone Message",JSON.stringify(msg));
       if (msg.type == "MSG" && msg.title) {
           let notifyMsg = {
              title: msg.title,
@@ -653,6 +655,37 @@ class netBot extends ControllerBot {
              data: msg.data
           };
           this.tx2(this.primarygid, "", notifyMsg, data);
+      } else if (msg.type == "CONTROL") {
+          if (msg.control && msg.control === "reboot") {
+              log.error("FIREWALLA REMOTE REBOOT");
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
+              });
+          } else if (msg.control && msg.control === "upgrade") {
+              log.error("FIREWALLA REMOTE UPGRADE ");
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
+              });
+          } else if (msg.control && msg.control === "ping") {
+              log.error("FIREWALLA CLOUD PING ");
+          } else if (msg.control && msg.control === "v6on") {
+              require('child_process').exec('sync & touch /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "v6off") {
+              require('child_process').exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "script") {
+              require('child_process').exec('sync & /home/pi/firewalla/scripts/'+msg.command, (err, out, code) => {
+              });                     
+          } else if (msg.control && msg.control === "raw") {
+              log.error("FIREWALLA CLOUD RAW ");
+              // RAW commands will never / ever be ran on production 
+              if (sysManager.isSystemDebugOn() || !f.isProduction()) {
+                  if (msg.command) {
+                      log.error("FIREWALLA CLOUD RAW EXEC",msg.command);
+                      require('child_process').exec('sync & '+msg.command, (err, out, code) => {
+                      });
+                  }
+              }
+          }
       }
   }
 
@@ -903,16 +936,21 @@ class netBot extends ControllerBot {
         }
       break;
     case "includeNameInNotification":
-        let v33 = msg.data.value;
+      let v33 = msg.data.value;
 
-      if (v3.includeNameInNotification) {
-        async(() => {
-          await (rclient.hsetAsync("sys:config", "includeNameInNotification", "1"))
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
+      let flag = "0";
+
+      if(v33.includeNameInNotification) {
+        flag = "1"
       }
+
+      async(() => {
+        await (rclient.hsetAsync("sys:config", "includeNameInNotification", flag))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+
       break;
     case "mode":
       let v4 = msg.data.value;
@@ -1131,7 +1169,25 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-        break;
+      break;
+    case "archivedAlarms": {
+      const offset = msg.data.value && msg.data.value.offset
+      const limit = msg.data.value && msg.data.value.limit
+
+      async(() => {
+        const archivedAlarms = await (am2.loadArchivedAlarms({
+          offset: offset,
+          limit: limit
+        }))
+        this.simpleTxData(msg,
+                          {alarms: archivedAlarms,
+                           count: archivedAlarms.length},
+                          null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    }
+      break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
@@ -1156,7 +1212,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  validateFlowIntel(json) {
+  validateFlowAppIntel(json) {
     return async(() => {
       // await (bone.flowgraphAsync(...))
       let flows = json.flows
@@ -1165,24 +1221,38 @@ class netBot extends ControllerBot {
 
 
       let appFlows = flows.appDetails
-      let categoryFlows = flows.categoryDetails
 
-      if(Object.keys(appFlows).length > 0 ||
-         Object.keys(categoryFlows).length > 0) {
+      if(Object.keys(appFlows).length > 0) {
         flowUtil.hashIntelFlows(appFlows, hashCache)
-        flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeApp', appFlows),
-                          bone.flowgraphAsync('summarizeActivity', categoryFlows))
-
-        let unhashedData = flowUtil.unhashIntelFlows(data[0], hashCache)
-        let unhashedData2 = flowUtil.unhashIntelFlows(data[1], hashCache)
+        let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         
         flows.appDetails = unhashedData
-        flows.categoryDetails = unhashedData2
       }
     })()
   }
+
+  validateFlowCategoryIntel(json) {
+    return async(() => {
+      // await (bone.flowgraphAsync(...))
+      let flows = json.flows
+
+      let hashCache = {}
+
+      let categoryFlows = flows.categoryDetails
+
+      if(Object.keys(categoryFlows).length > 0) {
+        flowUtil.hashIntelFlows(categoryFlows, hashCache)
+        
+        let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
+        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        
+        flows.categoryDetails = unhashedData
+      }
+    })()
+  }
+
   
   systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
@@ -1204,14 +1274,23 @@ class netBot extends ControllerBot {
         begin: begin,
         end: end
       }
-      await (flowTool.prepareRecentFlows(jsonobj, options))
-      await (netBotTool.prepareTopUploadFlows(jsonobj, options))
-      await (netBotTool.prepareTopDownloadFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
-      await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+      
+      await ([
+        flowTool.prepareRecentFlows(jsonobj, options),
+        netBotTool.prepareTopUploadFlows(jsonobj, options),
+        netBotTool.prepareTopDownloadFlows(jsonobj, options),
+        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+        netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)])
 
-      // validate flow intel
-      await (this.validateFlowIntel(jsonobj))
+      if(!jsonobj.flows['appDetails']) { // fallback to old way
+        await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
+        await (this.validateFlowAppIntel(jsonobj))
+      }
+
+      if(!jsonobj.flows['categoryDetails']) { // fallback to old model
+        await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
+        await (this.validateFlowCategoryIntel(jsonobj))
+      }
 
       return jsonobj;
     })();
@@ -1255,15 +1334,27 @@ class netBot extends ControllerBot {
       if (host) {
         jsonobj = host.toJson();
 
-        await (flowTool.prepareRecentFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options));
-        await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedCategoryFlowsForHost(jsonobj, mac, options))
-        await (netBotTool.prepareDetailedAppFlowsForHost(jsonobj, mac, options))
+        await ([
+          flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
+          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
+          
+          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
+          netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
-        await (this.validateFlowIntel(jsonobj))
+        if(!jsonobj.flows["appDetails"]) {
+          log.warn("Fell back to legacy mode on app details:", mac, options, {})
+          await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowAppIntel(jsonobj))
+        }
+
+        if(!jsonobj.flows["categoryDetails"]) {
+          log.warn("Fell back to legacy mode on category details:", mac, options, {})
+          await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
+          await (this.validateFlowCategoryIntel(jsonobj))
+        }
       }
 
       return jsonobj;
@@ -1442,12 +1533,14 @@ class netBot extends ControllerBot {
       this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
       require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
       });
+      return;
     } else if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
+      return;
     } else if (msg.data.item === "resetpolicy") {
       log.info("Reseting Policy");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
@@ -1461,6 +1554,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "upgrade") {
       log.info("upgrading");
       let task = require('child_process').exec('/home/pi/firewalla/scripts/upgrade', (err, out, code) => {
@@ -1474,7 +1568,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
       });
-
+      return;
     } else if (msg.data.item === "shutdown") {
       log.info("shutdown firewalla in 60 seconds");
       let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
@@ -1488,6 +1582,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
       });
+      return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
         let code = 200;
@@ -1502,6 +1597,7 @@ class netBot extends ControllerBot {
         }
         this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
       });
+      return;
     }
 
     switch (msg.data.item) {
@@ -1556,13 +1652,27 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
     case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy) => {
-        this.simpleTxData(msg, policy, err, callback);
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            policy: policy,
+            otherAlarms: otherBlockedAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, policy, err, callback);
+        }
       });
       break;
     case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception) => {
-        this.simpleTxData(msg, exception, err, callback);
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms) => {
+        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          this.simpleTxData(msg, {
+            exception: exception,
+            otherAlarms: otherAlarms
+          }, err, callback);
+        } else {
+          this.simpleTxData(msg, exception, err, callback);
+        }
       });
       break;
     case "alarm:unblock":
@@ -1591,6 +1701,26 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         });
+
+    case "alarm:ignore":
+      async(() => {
+        await (am2.ignoreAlarm(msg.data.value.alarmID))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to ignore alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+
+    case "alarm:report":
+      async(() => {
+        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        log.error("Failed to report bug on alarm:", err, {})
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
 
       case "policy:create":
         pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
@@ -1832,6 +1962,15 @@ class netBot extends ControllerBot {
       })
 
       break
+    case "enableBinding":
+      sysTool.restartFireKickService()
+        .then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      break
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -1855,6 +1994,8 @@ class netBot extends ControllerBot {
         targetBranch = prodBranch
         break
       }
+
+      log.info("Going to switch to branch", targetBranch, {})
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
       sysTool.restartServices()
@@ -2080,10 +2221,6 @@ class netBot extends ControllerBot {
 
   }
 
-    boneMsgHandler(msg) {
-        console.log("Bone Message Received ",msg,msg.type);
-    }
-
   helpString() {
     return "Bot version " + sysManager.version() + "\n\nCli interface is no longer useful, please type 'system reset' after update to new encipher app on iOS\n";
   }
@@ -2102,17 +2239,24 @@ class netBot extends ControllerBot {
 
 }
 
-process.on("unhandledRejection", function (r, e) {
-  log.info("Oh No! Unhandled rejection!! \nr::", r, r.stack, "\ne::", e, {});
+let bone = require('../lib/Bone.js');
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.error(msg,reason.stack,{});
+  bone.log("warn",{
+    version: sysManager.version(),
+    type:'FIREWALLA.UI.unhandledRejection',
+    msg:msg,
+    stack:reason.stack
+  },null);
 });
 
-let bone = require('../lib/Bone.js');
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
   bone.log("error", {
-    program: 'ui',
     version: sysManager.version(),
-    type: 'exception',
+    type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack
   }, null);

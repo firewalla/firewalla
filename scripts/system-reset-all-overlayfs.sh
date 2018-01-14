@@ -1,7 +1,7 @@
 #!/bin/bash
 
-sudo service firemain stop
-sudo service firemon stop
+# kill background process
+/home/pi/firewalla/scripts/fire-stop
 
 # clean database
 /usr/bin/redis-cli flushall
@@ -21,7 +21,7 @@ sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 sync
 sync
-: ${FIREWALLA_POST_RESET_OP:-'reboot'}
+: ${FIREWALLA_POST_RESET_OP:='reboot'}
 
 if [[ $FIREWALLA_POST_RESET_OP == 'shutdown' ]]; then
     logger "SHUTDOWN: User SHUTDOWN"
