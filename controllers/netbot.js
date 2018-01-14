@@ -1571,7 +1571,7 @@ class netBot extends ControllerBot {
       return;
     } else if (msg.data.item === "shutdown") {
       log.info("shutdown firewalla in 60 seconds");
-      let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
+      let task = require('child_process').exec('sleep 3; sudo shutdown -h now', (err, out, code) => {
         let datamodel = {
           type: 'jsonmsg',
           mtype: 'init',
