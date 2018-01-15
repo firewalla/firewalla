@@ -31,7 +31,12 @@ function getConfig() {
   return config;
 }
 
+function isFeatureOn(featureName) {
+  let config = getConfig()
+  return config.features && config.features[featureName]
+}
 
 module.exports = {
-  getConfig: getConfig
+  getConfig: getConfig,
+  isFeatureOn: isFeatureOn
 };
