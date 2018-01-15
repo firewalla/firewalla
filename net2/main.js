@@ -88,6 +88,7 @@ process.on('uncaughtException',(err)=>{
   }
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
+    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
     process.exit(1);
   },1000*5);
 });
@@ -97,6 +98,7 @@ process.on('unhandledRejection', (reason, p)=>{
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("warn",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
   setTimeout(()=>{
+    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
     process.exit(1);
   },1000*5);
 });
