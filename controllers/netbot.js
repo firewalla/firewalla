@@ -2250,6 +2250,9 @@ process.on('unhandledRejection', (reason, p)=>{
     msg:msg,
     stack:reason.stack
   },null);
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000 * 2);
 });
 
 process.on('uncaughtException', (err) => {

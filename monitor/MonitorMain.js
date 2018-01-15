@@ -59,6 +59,15 @@ process.on('uncaughtException',(err)=>{
     },1000*2);
 });
 
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
+  bone.log("warn",{version:config.version,type:'FIREWALLA.MON.unhandledRejection',msg:msg,stack:reason.stack},null);
+  setTimeout(()=>{
+    process.exit(1);
+  },1000*2);
+});
+
 let heapSensor = null;
 
 function run() {
