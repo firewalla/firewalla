@@ -201,6 +201,7 @@ function start(callback) {
                       statusCheckTimer = setInterval(() => {
                         statusCheck()
                       }, 1000 * 60) // check status every minute
+                      log.info("Status check timer installed")
                     }
                     started = true;
                   }
@@ -222,6 +223,7 @@ function stop(callback) {
 
   if(statusCheckTimer) {
     clearInterval(statusCheckTimer)
+    log.info("status check timer is stopped")
   }
   
   _async.applyEachSeries([ _disableIptablesRule,
@@ -501,7 +503,7 @@ function statusCheck() {
 function verifyDNSConnectivity() {
   let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
   log.info("Verifying DNS connectivity...")
-
+  
   return async(() => {
     try {
       let result = await (exec(cmd))
