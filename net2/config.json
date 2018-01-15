@@ -188,7 +188,8 @@
       }
     },
     "features": {
-      "intel:feedback": true
+      "intel:feedback": true,
+      "ss_client:statusCheck": true
     }
 
 }
