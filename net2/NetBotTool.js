@@ -415,6 +415,12 @@ class NetBotTool {
             if(intel) {
               f.country = intel.country;
               f.host = intel.host;
+              if(intel.category) {
+                f.category = intel.category
+              }
+              if(intel.app) {
+                f.app = intel.app
+              }
               return f;
             } else {
               // intel not exists in redis, create a new one
