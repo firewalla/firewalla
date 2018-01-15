@@ -223,6 +223,7 @@ function stop(callback) {
 
   if(statusCheckTimer) {
     clearInterval(statusCheckTimer)
+    statusCheckTimer = null
     log.info("status check timer is stopped")
   }
   
