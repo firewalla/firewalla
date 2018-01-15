@@ -734,7 +734,7 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
 
-                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.sh, {
+                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
                                                 "p.device.id" : flow.dhname,
                                                 "p.device.name" : flow.dhname,
                                                 "p.device.ip" : flow.dh,

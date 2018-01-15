@@ -1,0 +1,14 @@
+[Unit]
+Description=Firewalla Upgrade Service
+After=dhcpcd.service 
+Requires=network-online.target 
+Before=firewalla.service
+
+[Service]
+User=pi
+Type=oneshot
+ExecStart=/home/pi/scripts/fireupgrade.sh
+
+[Install]
+WantedBy=multi-user.target
+

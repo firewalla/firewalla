@@ -31,7 +31,9 @@ let util = require('util');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
 
 let IM = require('../net2/IntelManager.js')
 let im = new IM('info');
@@ -46,11 +48,14 @@ let pm2 = new PolicyManager2();
 
 let instance = null;
 
-let alarmActiveKey = "alarm_active";
+const alarmActiveKey = "alarm_active";
+const alarmArchiveKey = "alarm_archive";
 let ExceptionManager = require('./ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 
 let Exception = require('./Exception.js');
+
+const FWError = require('../util/FWError.js')
 
 let alarmIDKey = "alarm:id";
 let alarmPrefix = "_alarm:";
@@ -174,6 +179,30 @@ module.exports = class {
     });
   }
 
+  ignoreAlarm(alarmID) {
+    log.info("Going to ignore alarm " + alarmID);
+
+    return async(() => {
+      let alarm = await (this.getAlarm(alarmID))
+      if(!alarm) {
+        throw new Error(`Invalid alarm id: ${alarmID}`)
+        return
+      }
+
+      alarm.result = "ignore"
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+    })()
+  }
+
+  reportBug(alarmID, feedback) {
+    log.info("Going to report feedback on alarm", alarmID, feedback, {})
+
+    return async(() => {
+      //      await (this.ignoreAlarm(alarmID)) // TODO: report issue to cloud
+    })()
+  }
+
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
@@ -223,7 +252,7 @@ module.exports = class {
           return;
         }
 
-        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*7;  // seven days
+        let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24*60*60*30;  // a month
         rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
         this.addToActiveQueue(alarm, (err) => {
@@ -239,7 +268,7 @@ module.exports = class {
         });
       });
     });
-  }
+  }  
 
   removeAlarmAsync(alarmID, callback) {
     callback = callback || function() {}
@@ -275,11 +304,11 @@ module.exports = class {
 
   checkAndSaveAsync(alarm) {
     return new Promise((resolve, reject) => {
-      this.checkAndSave(alarm, (err) => {
+      this.checkAndSave(alarm, (err, alarmID) => {
         if(err) {
           reject(err);
         } else {
-          resolve();
+          resolve(alarmID);
         }
       })
     })
@@ -315,35 +344,51 @@ module.exports = class {
             log.info("Matched Exception: " + e.eid);
             exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
           });
-          callback(new Error("alarm is covered by exceptions"));
+          callback(new FWError("alarm is covered by exceptions", 1));
           return;
         }
 
-        this.saveAlarm(alarm, (err) => {
+        pm2.match(alarm, (err, result) => {
+          
           if(err) {
-            callback(err);
-            return;
+            callback(err)
+            return
           }
 
-          if(alarm.type === "ALARM_INTEL") {
-            log.info("AlarmManager:Check:AutoBlock",alarm);
-            let num = parseInt(alarm["p.security.numOfReportSources"]);
-            if(fConfig && fConfig.policy &&
-              fConfig.policy.autoBlock &&
-              num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
-              // auto block if num is greater than the threshold
-              this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
-              if (alarm['p.dest.ip']) {
-                alarm["if.target"] = alarm['p.dest.ip'];
-                alarm["if.type"] = "ip";
-                bone.submitIntelFeedback("autoblock", alarm, "alarm");
-              }
+          if(result) {
+            // already matched some policy
+            callback(new FWError("alarm is covered by policies", 2))
+            return
+          }
+
+          this.saveAlarm(alarm, (err, alarmID) => {
+            if(err) {
+              callback(err);
               return;
             }
-          }
 
-          callback(null);
-        });
+            if(alarm.type === "ALARM_INTEL") {
+              log.info("AlarmManager:Check:AutoBlock",alarm);
+              let num = parseInt(alarm["p.security.numOfReportSources"]);
+              if(fConfig && fConfig.policy &&
+                 fConfig.policy.autoBlock &&
+                 num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+                // auto block if num is greater than the threshold
+                this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+                if (alarm['p.dest.ip']) {
+                  alarm["if.target"] = alarm['p.dest.ip'];
+                  alarm["if.type"] = "ip";
+                  bone.submitIntelFeedback("autoblock", alarm, "alarm");
+                }
+                return;
+              }
+            }
+
+            callback(null, alarmID);
+          });
+          
+        })
+
 
       });
     });
@@ -403,6 +448,20 @@ module.exports = class {
       });
     }
 
+  
+  idsToAlarmsAsync(ids) {
+    return new Promise((resolve, reject) => {
+      this.idsToAlarms(ids, (err, results) => {
+        if(err) {
+          reject(err)
+          return
+        }
+
+        resolve(results)
+      })                       
+    })
+  }
+
   loadRecentAlarmsAsync(duration) {
     duration = duration || 10 * 60;
     return new Promise((resolve, reject) => {
@@ -445,6 +504,41 @@ module.exports = class {
       });
     }
 
+
+  loadArchivedAlarms(options) {
+    options = options || {}
+    
+    const offset = options.offset || 0 // default starts from 0
+    const limit = options.limit || 20 // default load 20 alarms
+
+    return async(() => {
+      let alarmIDs = await (rclient.
+                            zrevrangebyscoreAsync(alarmArchiveKey,
+                                                  "+inf",
+                                                  "-inf",
+                                                  "limit",
+                                                  offset,
+                                                  limit))
+      
+      let alarms = await (this.idsToAlarmsAsync(alarmIDs))
+
+      alarms = alarms.filter((a) => a != null)
+
+      return alarms
+      
+    })()
+    
+  }
+
+  archiveAlarm(alarmID) {
+    return async(() => {
+      await (rclient.multi()
+             .zrem(alarmActiveKey, alarmID)
+             .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
+             .execAsync())      
+    })()
+  }
+  
   numberOfAlarms(callback) {
     callback = callback || function() {}
 
@@ -488,6 +582,20 @@ module.exports = class {
     });
   }
 
+  loadActiveAlarmsAsync(number) {
+    number = number || 50
+    return new Promise((resolve, reject) => {
+      this.loadActiveAlarms(number, (err, results) => {
+        if(err) {
+          reject(err)
+          return
+        }
+
+        resolve(results)
+      })
+    })
+  }
+
   // parseDomain(alarm) {
   //   if(!alarm["p.dest.name"] ||
   //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -502,6 +610,92 @@ module.exports = class {
 
   // }
 
+  findSimilarAlarmsByPolicy(policy, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(alarm.result && alarm.result !== "") {
+          return false
+        }
+        
+        if(policy.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  blockAlarmByPolicy(alarm, policy, info) {
+    return async(() => {
+      if(!alarm || !policy) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_policy = policy.pid;
+      alarm.result = "block";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is blocked successfully`)
+    })()
+  }
+
+  findSimilarAlarmsByException(exception, curAlarmID) {
+    return async(() => {
+      let alarms = await (this.loadActiveAlarmsAsync())
+      return alarms.filter((alarm) => {
+        if(alarm.aid === curAlarmID) {
+          return false // ignore current alarm id, since it's already blocked
+        }
+        
+        if(alarm.result && alarm.result !== "") {
+          return false
+        }
+        
+        if(exception.match(alarm)) {
+          return true
+        } else {
+          return false
+        }
+      })                  
+    })()
+  }
+
+  allowAlarmByException(alarm, exception, info) {
+    return async(() => {
+      if(!alarm || !exception) {
+        return
+      }
+
+      log.info(`Alarm to block: ${alarm.aid}`)
+
+      alarm.result_exception = exception.eid;
+      alarm.result = "allow";
+
+      if(info.method === "auto") {
+        alarm.result_method = "auto";
+      }
+
+      await (this.updateAlarm(alarm))
+      await (this.archiveAlarm(alarm.aid))
+
+      log.info(`Alarm ${alarm.aid} is allowed successfully`)
+    })()
+  }
+  
   blockFromAlarm(alarmID, info, callback) {
     log.info("Going to block alarm " + alarmID);
     log.info("info: ", info, {});
@@ -527,6 +721,16 @@ module.exports = class {
           case "ALARM_NEW_DEVICE":
             i_type = "mac";
             i_target = alarm["p.device.mac"];
+            break;
+          case "ALARM_BRO_NOTICE":
+            if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+              i_type = "ip"
+              i_target = alarm["p.dest.ip"]
+            } else {
+              log.error("Unsupported alarm type for blocking: ", alarm, {})
+              callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
+              return
+            }
             break;
           default:
             i_type = "ip";
@@ -568,16 +772,16 @@ module.exports = class {
         // add additional info
         switch(i_type) {
         case "mac":
-          p.target_name = alarm["p.device.name"];
+          p.target_name = alarm["p.device.name"] || alarm["p.device.ip"];
           p.target_ip = alarm["p.device.ip"];
           break;
         case "ip":
-          p.target_name = alarm["p.dest.name"];
+          p.target_name = alarm["p.dest.name"] || alarm["p.dest.ip"];
           p.target_ip = alarm["p.dest.ip"];
           break;
         case "dns":
-          p.target_name = alarm["p.dest.name"];
-          p.target_ip = alarm["p.dest.id"];
+          p.target_name = alarm["p.dest.name"] || alarm["p.dest.ip"];
+          p.target_ip = alarm["p.dest.ip"];
           break;
         default:
           break;
@@ -604,7 +808,40 @@ module.exports = class {
 
             this.updateAlarm(alarm)
               .then(() => {
-                callback(null, p);
+                // archive alarm
+
+                this.archiveAlarm(alarm.aid)
+                  .then(() => {
+
+                    // old way
+                    if(!info.matchAll) {
+                      callback(null, p)
+                      return
+                    }
+
+                    async(() => {
+                      log.info("Trying to find if any other active alarms are covered by this new policy")
+                      let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
+                      if(alarms && alarms.length > 0) {
+                        let blockedAlarms = []
+                        alarms.forEach((alarm) => {
+                          try {
+                            await (this.blockAlarmByPolicy(alarm, p, info))
+                            blockedAlarms.push(alarm)
+                          } catch(err) {
+                            log.error(`Failed to block alarm ${alarm.aid} with policy ${p.pid}: ${err}`)
+                          }
+                        })
+                        callback(null, p, blockedAlarms)
+                      } else {
+                        callback(null, p)
+                      }
+                    })()
+                  })
+                  .catch((err) => {
+                    callback(err)
+                  })
+
               }).catch((err) => {
                 callback(err);
               });
@@ -640,6 +877,17 @@ module.exports = class {
         case "ALARM_NEW_DEVICE":
           i_type = "mac"; // place holder, not going to be matched by any alarm/policy
           i_target = alarm["p.device.ip"];
+          break;
+        case "ALARM_BRO_NOTICE":
+          if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+            i_type = "ip"
+            i_target = alarm["p.dest.ip"]
+          } else {
+            log.error("Unsupported alarm type for allowing: ", alarm, {})
+            callback(new Error("Unsupported alarm type for allowing: " + alarm.type))
+            return
+          }
+
           break;
         default:
           i_type = "ip";
@@ -686,7 +934,7 @@ module.exports = class {
           break;
         case "ip":
           e["p.dest.ip"] = alarm["p.dest.ip"];
-          e["target_name"] = alarm["p.dest.name"];
+          e["target_name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
           e["target_ip"] = alarm["p.dest.ip"];
           break;
         case "domain":
@@ -717,7 +965,39 @@ module.exports = class {
 
           this.updateAlarm(alarm)
             .then(() => {
-              callback(null, e);
+              // archive alarm
+              
+              this.archiveAlarm(alarm.aid)
+                .then(() => {
+                  // old way
+                  if(!info.matchAll) {
+                    callback(null, e)
+                    return
+                  }
+
+                  async(() => {              
+                    log.info("Trying to find if any other active alarms are covered by this new exception")
+                    let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
+                    if(alarms && alarms.length > 0) {
+                      let allowedAlarms = []
+                      alarms.forEach((alarm) => {
+                        try {
+                          await (this.allowAlarmByException(alarm, e, info))
+                          allowedAlarms.push(alarm)
+                        } catch(err) {
+                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${e.eid}: ${err}`)
+                        }
+                      })
+                      callback(null, e, allowedAlarms)
+                    } else {
+                      log.info("No similar alarms are found")
+                      callback(null, e)
+                    }
+                  })()
+                })
+                .catch((err) => {
+                  callback(err)
+                })
             }).catch((err) => {
               callback(err);
             });
@@ -744,7 +1024,13 @@ module.exports = class {
         let pid = alarm.result_policy;
 
         if(!pid || pid === "") {
-          callback(new Error("can't unblock alarm without binding policy"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          alarm.result_method = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            });
           return;
         }
 
@@ -786,7 +1072,12 @@ module.exports = class {
         let eid = alarm.result_exception;
 
         if(!eid || eid === "") {
-          callback(new Error("can't unallow alarm without binding exception"));
+          alarm.result = "";
+          alarm.result_policy = "";
+          this.updateAlarm(alarm)
+            .then(() => {
+              callback(null);
+            })
           return;
         }
 

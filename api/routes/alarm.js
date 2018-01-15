@@ -22,6 +22,9 @@ let bodyParser = require('body-parser')
 let AM2 = require('../../alarm/AlarmManager2.js');
 let am2 = new AM2();
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 router.get('/list', (req, res, next) => {
   am2.loadActiveAlarms((err, list) => {
     if(err) {
@@ -31,6 +34,16 @@ router.get('/list', (req, res, next) => {
     }  
   });
 });
+
+router.get('/archive_list', (req, res, next) => {
+  async(() => {
+    let alarms = await(am2.loadArchivedAlarms())
+    res.json({list: alarms})
+  })().catch((err) => {
+    res.status(500).send('');
+  })
+});
+
 
 router.get('/:alarm', (req, res, next) => {
   let alarmID = req.params.alarm;

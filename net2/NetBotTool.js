@@ -266,6 +266,9 @@ class NetBotTool {
 
       let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
 
+      // ignore intel category, intel is only for internal logic
+      categorys = categorys.filter((x) => x.toLowerCase() !== "intel")
+
       let allFlows = {}
 
       let allPromises = categorys.map((category) => {
@@ -329,8 +332,10 @@ class NetBotTool {
             // intel not exists in redis, create a new one
             return async(() => {
               intel = await (destIPFoundHook.processIP(f.ip));
-              f.country = intel.country;
-              f.host = intel.host;
+              if (intel) {
+                f.country = intel.country;
+                f.host = intel.host;
+              }
               return f;
             })();
           }
@@ -510,7 +515,7 @@ class NetBotTool {
       let categories = await (categoryFlowTool.getCategories(mac))
 
       // ignore intel category, intel is only for internal logic
-      categories = categories.filter((x) => x !== "intel")
+      categories = categories.filter((x) => x.toLowerCase() !== "intel")
 
       let allFlows = {}
 
@@ -537,6 +542,9 @@ class NetBotTool {
     return async(() => {
 
       let categorys = await (categoryFlowTool.getCategories(mac))
+
+      // ignore intel category, intel is only for internal logic
+      categorys = categorys.filter((x) => x.toLowerCase() !== "intel")
 
       let allFlows = {}
 
