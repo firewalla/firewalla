@@ -387,3 +387,26 @@ process.on('exit', exitHandler.bind(null, {
 process.on('SIGINT', exitHandler.bind(null, {
     exit: true
 }));
+
+process.on('uncaughtException',(err)=>{
+  log.info("################### CRASH #############");
+  log.info("+-+-+-",err.message,err.stack);
+  if (err && err.message && err.message.includes("Redis connection")) {
+    return;
+  }
+  bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.exception',msg:err.message,stack:err.stack},null);
+  setTimeout(()=>{
+    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    process.exit(1);
+  },1000*2);
+});
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
+  bone.log("warn",{version:config.version,type:'FIREWALLA.KICKSTART.unhandledRejection',msg:msg,stack:reason.stack},null);
+  setTimeout(()=>{
+    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    process.exit(1);
+  },1000*2);
+});
