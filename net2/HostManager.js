@@ -63,6 +63,8 @@ let await = require('asyncawait/await');
 
 let f = require('./Firewalla.js');
 
+const license = require('../util/license.js')
+
 var alarmManager = null;
 
 var uuid = require('uuid');
@@ -1556,6 +1558,9 @@ module.exports = class {
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
+    if(!json.license) {
+        json.license = license.getLicense()
+    }
     json.ept = sysManager.ept;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
