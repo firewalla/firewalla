@@ -261,7 +261,9 @@ module.exports = class DNSMASQ {
           reject(err);
         resolve();
       });
-    }).bind(this);
+    }).bind(this).catch((err) => {
+      log.error("Got error when reloading dnsmasq:", err, {})
+    });
   }
 
   updateTmpFilter(force, callback) {
