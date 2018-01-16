@@ -2244,7 +2244,7 @@ let bone = require('../lib/Bone.js');
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.error(msg,reason.stack,{});
-  bone.log("warn",{
+  bone.log("error",{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
