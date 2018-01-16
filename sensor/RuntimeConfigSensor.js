@@ -33,13 +33,13 @@ class RuntimeConfigSensor extends Sensor {
   run() {
     async(() => {
       try {
-        this.updateRedisConfig()
+        await (this.updateRedisConfig())
       } catch(err) {
         log.error("Failed to update redis config:", err, {})
       }
 
       try {
-        this.updateFakeClock()
+        await (this.updateFakeClock())
       } catch(err) {
         log.error("Failed to record latest time to fake-hwlock:", err, {})
       }
