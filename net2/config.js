@@ -7,6 +7,10 @@ let f = require('./Firewalla.js');
 
 const redis = require('redis')
 const rclient = redis.createClient()
+const sclient_publish = redis.createClient()
+const sclient_subscribe = redis.createClient()
+sclient_publish.setMaxListeners(0)
+sclient_subscribe.setMaxListeners(0)
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -68,6 +72,7 @@ function syncDynamicFeaturesConfigs() {
 function enableDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hsetAsync(dynamicConfigKey, featureName, '1'))
+    sclient_publish.publish("config:feature:dynamic:enable", featureName)
     dynamicConfigs[featureName] = '1'
   })()
 }
@@ -75,6 +80,7 @@ function enableDynamicFeature(featureName) {
 function disableDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hsetAsync(dynamicConfigKey, featureName, '0'))
+    sclient_publish.publish("config:feature:dynamic:disable", featureName)
     dynamicConfigs[featureName] = '0'
   })()
 }
@@ -82,6 +88,7 @@ function disableDynamicFeature(featureName) {
 function clearDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hdel(dynamicConfigKey, featureName))
+    sclient_publish.publish("config:feature:dynamic:clear", featureName)
     delete dynamicConfigs[featureName]
   })()
 }
@@ -90,11 +97,30 @@ function getDynamicConfigs() {
   return dynamicConfigs
 }
 
-// syncDynamicFeaturesConfigs()
+sclient_subscribe.subscribe("config:feature:dynamic:enable")
+sclient_subscribe.subscribe("config:feature:dynamic:disable")
+sclient_subscribe.subscribe("config:feature:dynamic:clear")
 
-// setInterval(() => {
-//   syncDynamicFeaturesConfigs()
-// }, 60 * 1000) // every minute
+sclient_subscribe.on("message", (channel, message) => {
+  log.info(`got message from ${channel}: ${message}`)
+  switch(channel) {
+  case "config:feature:dynamic:enable":
+    dynamicConfigs[message] = '1'
+    break
+  case "config:feature:dynamic:disable":
+    dynamicConfigs[message] = '0'
+    break
+  case "config:feature:dynamic:clear":
+    delete dynamicConfigs[message]
+    break
+  }  
+});
+
+syncDynamicFeaturesConfigs()
+
+setInterval(() => {
+  syncDynamicFeaturesConfigs()
+}, 60 * 1000) // every minute
 
 module.exports = {
   getConfig: getConfig,

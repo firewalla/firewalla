@@ -30,6 +30,8 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
 
+// load feature toggle on/off from redis to memory
+require('../net2/config.js').syncDynamicFeaturesConfigs()
 
 run0();
 

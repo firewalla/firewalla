@@ -28,8 +28,10 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
@@ -141,6 +143,12 @@ module.exports = class {
 
   removeFromActiveQueueAsync(alarmID) {
     return rclient.zremAsync(alarmActiveKey, alarmID)
+  }
+
+  isAlarmTypeEnabled(alarm) {
+    const alarmType = alarm.type
+    const featureKey = `alarm:${alarmType}`
+    return fc.isFeatureOn(featureKey)
   }
 
   validateAlarm(alarm) {
@@ -316,11 +324,17 @@ module.exports = class {
 
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
-
+    
     let verifyResult = this.validateAlarm(alarm);
     if(!verifyResult) {
       callback(new Error("invalid alarm, failed to pass verification"));
       return;
+    }
+
+    let enabled = this.isAlarmTypeEnabled(alarm)
+    if(!enabled) {
+      callback(new Error(`alarm type ${alarm.type} is disabled`))
+      return
     }
 
     let dedupResult = this.dedup(alarm).then((dup) => {

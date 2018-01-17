@@ -26,6 +26,8 @@ const ControllerBot = require('../lib/ControllerBot.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const fc = require('../net2/config.js')
+
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
@@ -1971,6 +1973,48 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
       break
+    case "enableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.enableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })    
+      break
+    }      
+    case "disableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.disableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
+    case "clearFeatureDynamicFlag": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.clearDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
