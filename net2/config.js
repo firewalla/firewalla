@@ -97,6 +97,11 @@ function getDynamicConfigs() {
   return dynamicConfigs
 }
 
+function getFeatures() {
+  let x = {}
+  return Object.assign(x, getConfig().features, getDynamicConfigs())
+}
+
 sclient_subscribe.subscribe("config:feature:dynamic:enable")
 sclient_subscribe.subscribe("config:feature:dynamic:disable")
 sclient_subscribe.subscribe("config:feature:dynamic:clear")
@@ -125,6 +130,7 @@ setInterval(() => {
 module.exports = {
   getConfig: getConfig,
   isFeatureOn: isFeatureOn,
+  getFeatures: getFeatures,
   getDynamicConfigs: getDynamicConfigs,
   enableDynamicFeature:enableDynamicFeature,
   disableDynamicFeature:disableDynamicFeature,

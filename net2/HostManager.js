@@ -74,6 +74,8 @@ var utils = require('../lib/utils.js');
 
 let fConfig = require('./config.js').getConfig();
 
+const fc = require('./config.js')
+
 rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
@@ -1525,6 +1527,8 @@ module.exports = class {
       ignoreAlarm: true,
       reportAlarm: true
     }
+
+    json.runtimeFeatures = fc.getFeatures()
 
     if(f.isDocker()) {
       json.docker = true;
