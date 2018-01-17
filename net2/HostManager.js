@@ -2589,5 +2589,17 @@ module.exports = class {
     })()
   }
 
+  cleanHostOperationHistory() {
+    // reset oper history for each device
+    if(this.hosts && this.hosts.all) {
+      for(let i in this.hosts.all) {
+        let h = this.hosts.all[i]
+        if(h.oper) {
+           delete h.oper
+        }
+      }
+    }
+  }
+
 
 }
