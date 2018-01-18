@@ -218,13 +218,13 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        let policies = await(this.getSamePolicies(policy))
-        if (policies && policies.length > 0) {
-          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          callback(new Error("policy existed"))
-        } else {
+        // let policies = await(this.getSamePolicies(policy))
+        // if (policies && policies.length > 0) {
+        //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+        //   callback(new Error("policy existed"))
+        // } else {
           this.savePolicy(policy, callback);
-        }
+//        }
       } catch (err) {
         log.error("failed to save policy:" + err)
         callback(err)
@@ -310,7 +310,7 @@ class PolicyManager2 {
       .then((exists) => {
         if(!exists) {
           log.error("policy " + policyID + " doesn't exists");
-          return Promise.reject("policy " + policyID + " doesn't exists");
+          return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {
@@ -409,7 +409,7 @@ class PolicyManager2 {
     });
   }
 
-  // FIXME: top 200 only by default
+  // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
 
@@ -537,6 +537,24 @@ class PolicyManager2 {
     }
   }
 
+  match(alarm, callback) {
+    this.loadActivePolicys((err, policies) => {
+      if(err) {
+        log.error("Failed to load active policy rules")
+        callback(err)
+        return
+      }
+
+      policies.forEach((policy) => {
+        if(policy.match(alarm)) {
+          callback(null, true)
+          return
+        }
+      })
+
+      callback(null, false)
+    })
+  }
 }
 
 module.exports = PolicyManager2;

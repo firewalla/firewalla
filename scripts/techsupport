@@ -1,0 +1,40 @@
+#!/bin/bash
+
+#
+#    Copyright 2017 Firewalla LLC
+#
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+
+: ${FIREWALLA_HOME:='/home/pi/firewalla'}
+: ${FIREWALLA_TMP:='/home/pi/tmp'}
+
+mkdir $FIREWALLA_TMP
+cd $FIREWALLA_TMP
+rm -r -f techsupport
+mkdir techsupport
+cd techsupport
+ifconfig > ifconfig.txt
+ps -ef > ps.txt
+$FIREWALLA_HOME/scripts/status > service_status.txt
+top -n 10 -b > top-output.txt
+cp -r -f /home/pi/.firewalla . 
+cp /data/redis/dump.rdb .
+sudo cp /var/log/syslog* .
+sudo chmod 777 syslog*
+cp -r -f /home/pi/logs/* .
+cp -r -f /home/pi/.forever/* .
+cd ..
+tar -zcvf support.tar.gz techsupport
+rm -r -f techsupport

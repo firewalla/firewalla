@@ -80,19 +80,28 @@ function run0() {
 }
 
 
-if(firewalla.isProduction()) {
-  process.on('uncaughtException',(err)=>{
-    log.warn("################### CRASH #############");
-    log.warn("+-+-+-",err.message,err.stack);
-    if (err && err.message && err.message.includes("Redis connection")) {
-      return;
-    }
-    bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
-    setTimeout(()=>{
-      process.exit(1);
-    },1000*5);
-  });
-}
+process.on('uncaughtException',(err)=>{
+  log.warn("################### CRASH #############");
+  log.warn("+-+-+-",err.message,err.stack);
+  if (err && err.message && err.message.includes("Redis connection")) {
+    return;
+  }
+  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+  setTimeout(()=>{
+    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    process.exit(1);
+  },1000*5);
+});
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
+  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
+  // setTimeout(()=>{
+  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+  //   process.exit(1);
+  // },1000*5);
+});
 
 let hl = null;
 let sl = null;
@@ -141,6 +150,9 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
+  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+  let dnsmasq = new DNSMASQ();
+  dnsmasq.cleanUpPolicyFilter().then(() => {}).catch(()=>{});
 
   if (process.env.FWPRODUCTION) {
     /*

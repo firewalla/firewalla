@@ -4,13 +4,9 @@ SHELL=/bin/bash
 */3 * * * * /home/pi/firewalla/etc/bro-bro-check  >/dev/null 2>&1
 0 0 */5 * *  /home/pi/firewalla/scripts/scheduled_reboot.sh &>/dev/null
 0 0 1-31/2 * * /home/pi/firewalla/scripts/clean-log >/dev/null 2>&1
-* * * * * /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1
-* * * * * ( sleep 10 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
-* * * * * ( sleep 20 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
-* * * * * ( sleep 30 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
-* * * * * ( sleep 40 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
-* * * * * ( sleep 50 ; /home/pi/firewalla/scripts/fire-ping.sh  >/dev/null 2>&1 )
+* * * * * for x in $(seq 0 10 50); do ( sleep $x; /home/pi/scripts/fire-ping.sh  &>/dev/null) & done
 */2 * * * * ( /home/pi/firewalla/scripts/fireapi-ping.sh  >/dev/null 2>&1 )
-0 2 * * * ( sleep ${RANDOM:0:2}m ; /home/pi/firewalla/scripts/fireupgrade_check.sh >/tmp/fireupgrade.log 2>&1 )
+0 2 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; /home/pi/firewalla/scripts/fireupgrade_check.sh >/tmp/fireupgrade.log 2>&1 )
 */5 * * * * logger "Firewalla checkpoint every 5 mins" &>/dev/null
 */30 * * * * /home/pi/firewalla/scripts/free-memory &>/dev/null
+0 * * * * /home/pi/firewalla/scripts/health_check.sh &> /tmp/health_check.log
