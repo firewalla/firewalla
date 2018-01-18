@@ -46,15 +46,29 @@ let mode = require('./Mode.js')
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
+const minimatch = require('minimatch')
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
 module.exports = class {
 
+  isSecondaryInterfaceIP(ip) {
+    const prefix = fConfig.secondaryInterface && fConfig.secondaryInterface.ipnet
+    
+    if(prefix) {
+      return minimatch(ip, `${prefix}.*`)
+    }
+
+    return false
+  }
+
   newSpoof(address) {
     return async(() => {
 
+      if(this.isSecondaryInterfaceIP(address)) {
+        return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
+      }
       // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
       let flag = await (mode.isSpoofModeOn())
 
@@ -111,6 +125,7 @@ module.exports = class {
   }
 
   validateV4Spoofs(ipv4Addrs) {
+    log.info("Spoof4:Remove:By:Check:",JSON.stringify(ipv4Addrs));
     let v4db = {};
     for (let i in ipv4Addrs) {
       v4db[ipv4Addrs[i]] = true;

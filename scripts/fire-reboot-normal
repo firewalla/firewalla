@@ -1,15 +1,6 @@
 #!/bin/bash -
 logger "FIREWALLA REBOOT NORMAL"
-#sudo sh -c 'echo V > /dev/watchdog'
-#sudo sh -c 'echo V > /dev/watchdog'
-sudo pkill bitbridge
-sudo pkill fire-ping
-sudo pkill sleep
-sleep 4
-crontab -r
-#sudo sh -c 'echo V > /dev/watchdog'
-sudo /home/pi/firewalla/scripts/fake-hwclock
-#sudo log2ram write
+/home/pi/firewalla/scripts/fire-stop
 sync
 sync
 sync

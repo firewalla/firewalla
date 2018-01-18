@@ -7,6 +7,7 @@ if [ ! -f /etc/openvpn/easy-rsa/pkitool ]; then
     sudo dpkg --configure -a
     sudo apt-get update
     sudo apt-get  -y install openvpn
+    sudo systemctl enable openvpn@server
     sudo apt-get  -y install easy-rsa
     sudo rm -r -f /etc/openvpn
     sudo mkdir /etc/openvpn

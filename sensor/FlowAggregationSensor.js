@@ -55,7 +55,6 @@ const flowUtil = require('../net2/FlowUtil')
 
 const bone = require('../lib/Bone.js');
 
-
 function toFloorInt(n){ return Math.floor(Number(n)); };
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -255,7 +254,10 @@ class FlowAggregationSensor extends Sensor {
       await (flowAggrTool.addSumFlow("download", options));
       await (flowAggrTool.addSumFlow("upload", options));
       await (flowAggrTool.addSumFlow("app", options));
+
+      await (this.cleanupAppActivity(options)) // to filter idle activities        
       await (flowAggrTool.addSumFlow("category", options))
+      await (this.cleanupCategoryActivity(options))
       
       let macs = hostManager.getActiveMACs()
 
@@ -269,7 +271,9 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.addSumFlow("download", options))
         await (flowAggrTool.addSumFlow("upload", options))
         await (flowAggrTool.addSumFlow("app", options))
-        await (flowAggrTool.addSumFlow("category", options))
+        await (this.cleanupAppActivity(options)) // to filter idle activities if updated
+        await (flowAggrTool.addSumFlow("category", options))//) {
+        await (this.cleanupCategoryActivity(options))
       })
 
     })();
@@ -301,10 +305,14 @@ class FlowAggregationSensor extends Sensor {
       let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
         options.mac = mac;
-        await (flowAggrTool.addSumFlow("download", options));
-        await (flowAggrTool.addSumFlow("upload", options));
-        await (flowAggrTool.addSumFlow("app", options));
-        await (flowAggrTool.addSumFlow("category", options));
+        await (flowAggrTool.addSumFlow("download", options))
+        await (flowAggrTool.addSumFlow("upload", options))
+        
+        await (flowAggrTool.addSumFlow("app", options))
+        await (this.cleanupAppActivity(options))
+        
+        await (flowAggrTool.addSumFlow("category", options))
+        await (this.cleanupCategoryActivity(options))
       })
     })();
   }
@@ -473,7 +481,6 @@ class FlowAggregationSensor extends Sensor {
 
     })();
   }
-
 
   getAppFlow(app, options) {
     return async(() => {
@@ -644,7 +651,6 @@ class FlowAggregationSensor extends Sensor {
       }
     })()
   }
-
 
 }
 
