@@ -164,16 +164,30 @@ module.exports = class DNSMASQ {
     });
   }
 
+  cleanUpFilter(file) {
+    return fs.unlinkAsync(file)
+      .catch(err => {
+        if (err) {
+          if (err.code === 'ENOENT') {
+            // ignore
+            log.debug(`Filter file '${file}' not exist, ignore`);
+          } else {
+            log.error(`Failed to remove filter file: '${file}'`, err, {})
+          }
+        }
+      });
+  }
+
   cleanUpADBlockFilter() {
-    return fs.unlinkAsync(adBlockFilterFile);
+    return this.cleanUpFilter(adBlockFilterFile);
   }
 
   cleanUpFamilyFilter() {
-    return fs.unlinkAsync(familyFilterFile);
+    return this.cleanUpFilter(familyFilterFile);
   }
 
   cleanUpPolicyFilter() {
-    return fs.unlinkAsync(policyFilterFile);
+    return this.cleanUpFilter(policyFilterFile);
   }
 
   addPolicyFilterEntry(domain) {
