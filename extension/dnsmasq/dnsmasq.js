@@ -271,8 +271,9 @@ module.exports = class DNSMASQ {
   reload() {
     return new Promise(((resolve, reject) => {
       this.start(false, (err) => {
-        if (err)
+        if (err) {
           reject(err);
+        }
         resolve();
       });
     }).bind(this));
