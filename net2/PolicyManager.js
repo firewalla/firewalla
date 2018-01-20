@@ -286,8 +286,6 @@ module.exports = class {
         }
       });
     } else {
-      //dnsmasq.unsetDefaultNameServers("adblock");
-      //dnsmasq.updateResolvConf(callback);
       dnsmasq.cleanUpADBlockFilter()
         .then(() => dnsmasq.reload())
         .catch(err => log.error('Error when clean up adblock filters', err, {}));
