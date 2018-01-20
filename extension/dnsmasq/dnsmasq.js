@@ -330,7 +330,7 @@ module.exports = class DNSMASQ {
   loadFilterFromBone(callback) {
     callback = callback || function() {}
 
-    bone.hashset("ad_cn",(err,data)=>{
+    bone.hashset("ad",(err,data)=>{
       if(err) {
         callback(err);
       } else {
