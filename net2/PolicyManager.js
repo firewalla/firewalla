@@ -287,11 +287,19 @@ module.exports = class {
     this.adblockDnsAddr((err,dnsaddrs)=>{
       log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddrs.join(" "));
       if (state == true) {
-        dnsmasq.setDefaultNameServers("adblock", dnsaddrs);
-        dnsmasq.updateResolvConf(callback);
+        //dnsmasq.setDefaultNameServers("adblock", dnsaddrs);
+        //dnsmasq.updateResolvConf(callback);
+        dnsmasq.updateFilter(true, (err) => {
+          if (err) {
+            logger.error("Update Adblock filters Failed!!");
+          } else {
+            logger.info("Update Adblock filters successful");
+          }
+        });
       } else {
-        dnsmasq.unsetDefaultNameServers("adblock");
-        dnsmasq.updateResolvConf(callback);
+        //dnsmasq.unsetDefaultNameServers("adblock");
+        //dnsmasq.updateResolvConf(callback);
+        dns.cleanUpADBlockFilter();
       }
     });
   }
