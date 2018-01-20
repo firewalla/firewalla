@@ -27,7 +27,6 @@ let filterFile = dnsFilterDir + "/hash_filter.conf";
 let tmpFilterFile = dnsFilterDir + "/hash_filter.conf.tmp";
 
 let policyFilterFile = dnsFilterDir + "/policy_filter.conf";
-let adBlockFilterFile = dnsFilterDir + "/adblock_filter.conf";
 let familyFilterFile = dnsFilterDir + "/family_filter.conf";
 
 let SysManager = require('../../net2/SysManager');
@@ -165,12 +164,13 @@ module.exports = class DNSMASQ {
   }
 
   cleanUpFilter(file) {
+    log.info("Clean up filter file:", file);
     return fs.unlinkAsync(file)
       .catch(err => {
         if (err) {
           if (err.code === 'ENOENT') {
             // ignore
-            log.debug(`Filter file '${file}' not exist, ignore`);
+            log.info(`Filter file '${file}' not exist, ignore`);
           } else {
             log.error(`Failed to remove filter file: '${file}'`, err, {})
           }
@@ -179,7 +179,7 @@ module.exports = class DNSMASQ {
   }
 
   cleanUpADBlockFilter() {
-    return this.cleanUpFilter(adBlockFilterFile);
+    return this.cleanUpFilter(filterFile);
   }
 
   cleanUpFamilyFilter() {
