@@ -291,9 +291,9 @@ module.exports = class {
         //dnsmasq.updateResolvConf(callback);
         dnsmasq.updateFilter(true, (err) => {
           if (err) {
-            logger.error("Update Adblock filters Failed!!");
+            log.error("Update Adblock filters Failed!!");
           } else {
-            logger.info("Update Adblock filters successful");
+            log.info("Update Adblock filters successful");
           }
         });
       } else {
