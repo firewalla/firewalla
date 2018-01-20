@@ -279,7 +279,7 @@ module.exports = class {
     if (state === true) {
       dnsmasq.updateFilter(true, (err) => {
         if (err) {
-          log.error("Update Adblock filters Failed!!");
+          log.error("Update Adblock filters Failed!!", err, {});
         } else {
           dnsmasq.reload();
           log.info("Update Adblock filters successful");
