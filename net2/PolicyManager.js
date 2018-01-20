@@ -299,7 +299,7 @@ module.exports = class {
       } else {
         //dnsmasq.unsetDefaultNameServers("adblock");
         //dnsmasq.updateResolvConf(callback);
-        dns.cleanUpADBlockFilter();
+        dnsmasq.cleanUpADBlockFilter();
       }
     });
   }
