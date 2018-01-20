@@ -123,6 +123,12 @@ module.exports = class {
 
           let hostsJSON = findings.nmaprun && findings.nmaprun.host;
 
+          if(!hostsJSON) {
+            // skip if finding is invalid
+            callback(null, [], []);
+            return;
+          }
+
           if(hostsJSON.constructor !== Array) {
             hostsJSON = [hostsJSON];
           }
