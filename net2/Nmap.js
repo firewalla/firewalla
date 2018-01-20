@@ -106,7 +106,13 @@ module.exports = class {
      }
 
      nmapScan(cmdline,requiremac,callback) {
-        this.process = require('child_process').exec(cmdline, (err, stdout, code) => {
+        this.process = require('child_process').exec(cmdline, (err, stdout, stderr) => {  
+
+          if(err) {
+            log.error("Failed to nmap scan:", err, "stderr:", stderr, {})
+            callback(err)
+            return
+          }
 
           let findings = null;
           try {
