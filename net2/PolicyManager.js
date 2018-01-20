@@ -275,7 +275,7 @@ module.exports = class {
       return
     }
 
-    log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddrs.join(" "));
+    log.info("PolicyManager:Adblock", ip, state);
     if (state === true) {
       dnsmasq.updateFilter(true, (err) => {
         if (err) {
