@@ -386,10 +386,10 @@ module.exports = class DNSManager {
 
     name(o) {
 
-        const getPreferredBName = require('./util/util.js').getPreferredBName
+        const getPreferredBName = require('../util/util.js').getPreferredBName
 
         return getPreferredBName(o)
-        
+
         if (o==null) {
             return null;
         }

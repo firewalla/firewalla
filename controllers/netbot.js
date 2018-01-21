@@ -1973,6 +1973,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
       break
+    case "disableBinding":
+      sysTool.stopFireKickService()
+        .then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      break
     case "enableFeature": {
       const featureName = msg.data.value.featureName
       async(() => {

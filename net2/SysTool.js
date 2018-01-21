@@ -56,6 +56,10 @@ class SysTool {
   restartFireKickService() {
     return exec("sudo systemctl restart firekick")
   }
+
+  stopFireKickService() {
+    return exec("sudo systemctl stop firekick")
+  }
 }
 
 module.exports = SysTool
