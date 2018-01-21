@@ -1207,6 +1207,8 @@ module.exports = class {
           alarm["p.dest.name"] = intel.host
         }
         
+        return alarm
+        
       })()
     }
   }
