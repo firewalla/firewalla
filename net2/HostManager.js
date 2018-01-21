@@ -25,6 +25,8 @@ var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+const exec = require('child-process-promise').exec
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
@@ -1947,6 +1949,13 @@ module.exports = class {
 
           if(!appTool.isAppReadyToDiscardLegacyAlarm(options.appInfo)) {
             await (this.alarmDataForInit(json));
+          }
+
+          try {
+            await (exec("sudo systemctl is-active firekick"))
+            json.isBindingOpen = 1;
+          } catch(err) {
+            json.isBindingOpen = 0;
           }
 
         })().then(() => {
