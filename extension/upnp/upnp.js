@@ -1,3 +1,5 @@
+import { setTimeout } from 'timers';
+
 /*    Copyright 2017 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -71,6 +73,14 @@ module.exports = class {
             if (err !=null || ip == null) {
                 this.upnpEnabled = false;
                 if (this.natpmpClient()) {
+
+                    let timeout = true;
+                    setTimeout(() => {
+                        if(timeout) {
+                            callback(null, this.upnpEnabled, false)
+                        }
+                    }, 5 * 1000)
+
                     this.natpmpClient().externalIp((err, info)=> {
                         if (err == null && info!=null) { 
                             this.natpmpIP = info.ip.join('.');
@@ -78,6 +88,7 @@ module.exports = class {
                         } else {
                             this.natpmpEnabled = false;
                         }
+                        timeout = false
                         callback(null, this.upnpEnabled, this.natpmpEnabled);
                     });
                 }
