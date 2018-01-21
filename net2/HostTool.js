@@ -116,7 +116,8 @@ class HostTool {
 
     if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
       log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
-      return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
+      //return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
+      return // ignore 00:00:00:00:00:00
     }
 
     if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {

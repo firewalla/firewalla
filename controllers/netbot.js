@@ -26,6 +26,8 @@ const ControllerBot = require('../lib/ControllerBot.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const fc = require('../net2/config.js')
+
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
@@ -1971,6 +1973,57 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
       break
+    case "disableBinding":
+      sysTool.stopFireKickService()
+        .then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      break
+    case "enableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.enableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })    
+      break
+    }      
+    case "disableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.disableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
+    case "clearFeatureDynamicFlag": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.clearDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -1998,7 +2051,7 @@ class netBot extends ControllerBot {
       log.info("Going to switch to branch", targetBranch, {})
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-      sysTool.restartServices()
+      sysTool.upgradeToLatest()
     })()
   }
 
@@ -2244,16 +2297,16 @@ let bone = require('../lib/Bone.js');
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.error(msg,reason.stack,{});
-  bone.log("warn",{
+  bone.log("error",{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
     stack:reason.stack
   },null);
-  setTimeout(() => {
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
-    process.exit(1);
-  }, 1000 * 2);
+  // setTimeout(() => {
+  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+  //   process.exit(1);
+  // }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
 process.on('uncaughtException', (err) => {
@@ -2267,7 +2320,7 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => {
     require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
     process.exit(1);
-  }, 1000 * 2);
+  }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
 module.exports = netBot;

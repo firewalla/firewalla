@@ -485,7 +485,10 @@ function getChinaDNS() {
 
 function statusCheck() {
   return async(() => {
-    let checkResult = await (verifyDNSConnectivity())
+    let checkResult = await (verifyDNSConnectivity()) ||
+      await (verifyDNSConnectivity()) ||
+      await (verifyDNSConnectivity())
+            
     if(!checkResult) {
       let psResult = await (exec("ps aux | grep ss"))
       let stdout = psResult.stdout

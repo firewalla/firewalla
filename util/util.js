@@ -24,6 +24,35 @@ function extend(target) {
   return target;
 }
 
+function getPreferredBName(hostObject) {
+
+  // TODO: preferred name needs to be improved in the future
+  if(hostObject.dhcpName) {
+    return hostObject.dhcpName
+  }
+  
+  if(hostObject.bonjourName) {
+    return hostObject.bonjourName
+  }
+
+  if(hostObject.bname) {
+    return hostObject.bname
+  }
+
+  if (hostObject.pname) {
+    return hostObject.pname
+  }
+  if (hostObject.hostname) {
+    return hostObject.hostname
+  }
+  if (hostObject.macVendor != null) {
+    let name = hostObject.macVendor
+    return name
+  }
+  return hostObject.ipv4Addr
+}
+
 module.exports = {
-  extend:extend
+  extend:extend,
+  getPreferredBName: getPreferredBName
 }

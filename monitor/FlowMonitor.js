@@ -691,6 +691,7 @@ module.exports = class FlowMonitor {
             log.info("FlowMonitor Running Process :", service);
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
+                result = result.filter(x => x) // workaround if host is undefined or null
                 async.eachLimit(result,2, (host, cb) => {
                     let listip = [];
                     listip.push(host.o.ipv4Addr);

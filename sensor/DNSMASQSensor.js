@@ -104,11 +104,12 @@ class DNSMASQSensor extends Sensor {
           .then(() => {
             if(!this.registered) {
               sem.on("StartDNS", (event) => {
-                dnsmasq.checkStatus((status) => {
-                  if(!status) {
-                    this.reload();
-                  }
-                })
+                // NO NEED TO RELOAD DNSMASQ if it's gone, it's going to be managed by systemctl
+                // dnsmasq.checkStatus((status) => {
+                //   if(!status) {
+                //     this.reload();
+                //   }
+                // })
               });
 
               sem.on("StopDNS", (event) => {
