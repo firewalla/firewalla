@@ -48,6 +48,9 @@ let Policy = require('./Policy.js');
 let PolicyManager2 = require('./PolicyManager2.js');
 let pm2 = new PolicyManager2();
 
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+
 let instance = null;
 
 const alarmActiveKey = "alarm_active";
@@ -1174,22 +1177,36 @@ module.exports = class {
       if(!destIP)
         return Promise.reject(new Error("Requiring p.dest.ip"));
 
-      return new Promise((resolve, reject) => {
-        im._location(destIP, (err, loc) => {
-          if(err) {
-            reject(err);
+      const locationAsync = Promise.promisify(im._location).bind(im)
+
+      return async(() => {
+
+        // location
+        const loc = await (locationAsync(destIP))
+        if(loc && loc.loc) {
+          const location = loc.loc;
+          const ll = location.split(",");
+          if(ll.length === 2) {
+            alarm["p.dest.latitude"] = parseFloat(ll[0]);
+            alarm["p.dest.longitude"] = parseFloat(ll[1]);
           }
-          if (loc && loc.loc) {
-            let location = loc.loc;
-            let ll = location.split(",");
-            if(ll.length === 2) {
-              alarm["p.dest.latitude"] = parseFloat(ll[0]);
-              alarm["p.dest.longitude"] = parseFloat(ll[1]);
-            }
-            alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-          }
-          resolve(alarm);
-        });
-      });
+          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+        }
+
+        // intel
+        const intel = await (intelTool.getIntel(destIP))
+        if(intel.app) {
+          alarm["p.dest.app"] = intel.app
+        }
+
+        if(intel.category) {
+          alarm["p.dest.category"] = intel.category
+        }
+
+        if(intel.host) {
+          alarm["p.dest.name"] = intel.host
+        }
+        
+      })()
     }
   }

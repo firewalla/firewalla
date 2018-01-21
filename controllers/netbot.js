@@ -2051,7 +2051,7 @@ class netBot extends ControllerBot {
       log.info("Going to switch to branch", targetBranch, {})
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-      sysTool.restartServices()
+      sysTool.upgradeToLatest()
     })()
   }
 
