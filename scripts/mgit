@@ -19,28 +19,28 @@ function marked_git {
 
 function recover {
     _rc=0
-    for wsdir in $(ls -ad $MARKER_BASE)
+    cd $HOME
+    for wsdir in $(ls -a $MARKER_BASE)
     do
         case $wsdir in
 
             .|..)
-                continue
-                ;;
+            continue
+            ;;
 
             *)
-                git_repo=$(cat $MARKER_BASE/$ws_dir/url)
-                git_branch=$(cat $MARKER_BASE/$ws_dir/branch)
-                (
-                cd $HOME
+            repo=$(cat $MARKER_BASE/$wsdir/url)
+            branch=$(cat $MARKER_BASE/$wsdir/branch)
+            rm -rf ${wsdir}.bak
+            mv -f $wsdir ${wsdir}.bak
+            if git clone --branch $branch --single-branch $repo $wsdir
+            then
                 rm -rf ${wsdir}.bak
-                mv -f $wsdir ${wsdir}.bak
-                git clone --branch $git_branch --single-branch $git_repo $ws_dir || {
-                    rm -rf $wsdir
-                    mv -f ${wsdir}.bak $wsdir
-                    exit 1
-                }
-                ) || _rc=1
-                ;;
+                rm -rf $MARKER_BASE/$wsdir
+            else
+                _rc=1
+            fi
+            ;;
         esac
     done
     return $_rc
