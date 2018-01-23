@@ -3,8 +3,8 @@
 set -e
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
 CMD=$(basename $0)
-MGIT=$FIREWALLA_HOME/scripts/mgit
 
 usage() {
     cat <<EOU

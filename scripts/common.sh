@@ -1,7 +1,7 @@
 #!/bin/bash -
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${MGIT:=/home/pi/scripts/mgit}
+: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
 branch=$(cd $FIREWALLA_HOME > /dev/null; git rev-parse --abbrev-ref HEAD)
 
 function update_firewalla {

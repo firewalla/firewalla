@@ -1,5 +1,6 @@
 #!/bin/bash -
-MGIT=/home/pi/firewalla/scripts/mgit
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
 /home/pi/firewalla/scripts/fire-stop
 sync
 branch=$(git rev-parse --abbrev-ref HEAD)

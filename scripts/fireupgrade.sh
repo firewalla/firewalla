@@ -26,6 +26,9 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
+
 timeout_check() {
     pid=${1:-$!}
     timeout=${2:-120}
@@ -129,7 +132,7 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f /home/pi/firewalla/.git/*.lock
-GIT_COMMAND="(sudo -u pi /home/pi/scripts/mgit fetch origin $branch && sudo -u pi /home/pi/scripts/mgit reset --hard FETCH_HEAD)"
+GIT_COMMAND="(sudo -u pi $MGIT fetch origin $branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
   (sleep 3; eval $GIT_COMMAND) ||
