@@ -34,6 +34,8 @@ let flowUtil = require("../net2/FlowUtil.js");
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const fc = require('../net2/config.js')
+
 const Samba = require('../extension/samba/samba.js');
 const samba = new Samba();
 
@@ -455,6 +457,12 @@ class DeviceHook extends Hook {
   
   createAlarm(host, callback) {
     callback = callback || function() {}
+
+    // check if new device alarm is enabled or not
+    if(!fc.isFeatureOn("new_device")) {
+      callback(null)
+      return
+    }
 
     let Alarm = require('../alarm/Alarm.js');
     let AM2 = require('../alarm/AlarmManager2.js');
