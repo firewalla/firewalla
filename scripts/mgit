@@ -5,20 +5,21 @@
 # disruptive action, like power off or SD card extraction.
 # ----------------------------------------------------------------------------
 
-MARKER_DIR=$HOME/git_in_progress
+MARKER_BASE=$HOME/git_in_progress
 
 function marked_git {
-    mkdir -p $MARKER_DIR
-    maker_file=$MARKER_DIR/$1
-    echo $2 > $marker_file
-    shift 2
-    git "$@"
-    rm -f $marker_file
+    marker_dir=$MARKER_BASE/$1
+    mkdir -p $marker_dir
+    echo $2 > $marker_dir/url
+    echo $3 > $marker_dir/branch
+    shift 3
+    git "$@" || return 1
+    rm -rf $marker_dir
 }
 
 function recover {
-    rc=0
-    for wsdir in $(ls -ad $MARKER_DIR)
+    _rc=0
+    for wsdir in $(ls -ad $MARKER_BASE)
     do
         case $wsdir in
 
@@ -27,23 +28,22 @@ function recover {
                 ;;
 
             *)
-                git_repo=$(cat $MARKER_DIR/$ws_dir/url)
-                git_branch=$(cat $MARKER_DIR/$ws_dir/branch)
+                git_repo=$(cat $MARKER_BASE/$ws_dir/url)
+                git_branch=$(cat $MARKER_BASE/$ws_dir/branch)
                 (
                 cd $HOME
                 rm -rf ${wsdir}.bak
                 mv -f $wsdir ${wsdir}.bak
-                git clone https://github.com/firewalla/$git_repo $ws_dir || {
+                git clone --branch $git_branch --single-branch $git_repo $ws_dir || {
                     rm -rf $wsdir
                     mv -f ${wsdir}.bak $wsdir
                     exit 1
                 }
-                ) || rc=1
+                ) || _rc=1
                 ;;
-
         esac
     done
-    return $rc
+    return $_rc
 }
 
 
@@ -51,27 +51,25 @@ function recover {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
+rc=0
 if [[ $# -eq 0 ]]; then
     git
 else
-    # Protect file related Git operations with marker file
-    # NOTE:
-    # In theory, git clone should be protected by tracking
-    # initial repo URL and local directory.
-    # However it is NOT protected with the assumption that
-    # git clone is NOT in use in Firewalla.
-
+    # Protect file related Git operations(fetch/pull/reset) with marker files
     case $1 in
         fetch|pull|reset)
             wsdir=$(basename $PWD)
             repo=$(git remote get-url origin)
-            marked_git $wsdir $repo "$@"
+            branch=$(git rev-parse --abbrev-ref HEAD)
+            marked_git $wsdir $repo $branch "$@" || rc=1
             ;;
         recover)
-            recover
+            recover || rc=1
             ;;
         *)
-            git "$@"
+            git "$@" || rc=1
             ;;
     esac
 fi
+
+exit $rc
