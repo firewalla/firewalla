@@ -98,20 +98,24 @@ function getDynamicConfigs() {
 }
 
 function getFeatures() {
-  let staticFeatures = getConfig().features
+  let staticFeatures = getConfig().userFeatures
   let dynamicFeatures = getDynamicConfigs()
 
   let x = {}
 
-  for(let key in staticFeatures) {
-    if(dynamicFeatures[key] && dynamicFeatures[key] === '0') {
-      x[key] = false
-    } else {
-      x[key] = true
+  let merged = Object.assign(x, staticFeatures, dynamicFeatures)
+
+  for(let key in merged) {
+    if(merged[key] == '0') {
+      merged[key] = false
+    }
+
+    if(merged[key] == '1') {
+      merged[key] = true
     }
   }
 
-  return x
+  return merged
 }
 
 sclient_subscribe.subscribe("config:feature:dynamic:enable")
