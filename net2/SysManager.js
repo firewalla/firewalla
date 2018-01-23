@@ -138,14 +138,10 @@ module.exports = class {
 
           // record firewalla's own server address
           //
-          dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-               this.serverIps = addresses;
-          });
+          this.resolveServerDNS(true);
           setInterval(()=>{
-              dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-                  this.serverIps = addresses;
-              });
-          },1000*60*60*24);
+              this.resolveServerDNS(false);
+          },1000*60*60*8);
 
           // update system information more often
           setInterval(()=>{
@@ -154,6 +150,22 @@ module.exports = class {
         }
         this.update(null);
         return instance;
+    }
+
+    resolveServerDNS(retry) {
+        dns.resolve4('firewalla.encipher.io', (err, addresses) => {
+            log.info("resolveServerDNS:",retry,err,addresses,null);
+            if (err && retry) {
+                setTimeout(()=>{
+                    this.resolveServerDNS(false);
+                },1000*60*10);
+            } else {
+                if (addresses) {
+                    this.serverIps = addresses;
+                    log.info("resolveServerDNS:Set",retry,err,this.serverIps,null);
+                }
+            }
+       });
     }
 
     updateInfo() {
