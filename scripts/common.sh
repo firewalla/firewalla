@@ -5,8 +5,8 @@ branch=$(cd $FIREWALLA_HOME > /dev/null; git rev-parse --abbrev-ref HEAD)
 
 function update_firewalla {
     ( cd $FIREWALLA_HOME
-    git fetch origin $branch
-    git reset --hard FETCH_HEAD   
+    mgit fetch origin $branch
+    mgit reset --hard FETCH_HEAD   
     )
 }
 
@@ -57,8 +57,8 @@ function update_node_modules {
             # only reset head when there is new expected revision number
             # this is to reduce the freq of calling 'git reset'
             if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
-                git fetch origin  || git fetch origin
-                git reset -q --hard `cat $REVISION_FILE`
+                mgit fetch origin  || mgit fetch origin
+                mgit reset -q --hard `cat $REVISION_FILE`
                 if [[ -n $FWPRODUCTION ]]; then
                     git clean -xdf # clean up all untracking files in node modules repo
                     # only clean untrack files in production mode

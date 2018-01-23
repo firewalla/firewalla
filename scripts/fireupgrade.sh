@@ -129,7 +129,7 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f /home/pi/firewalla/.git/*.lock
-GIT_COMMAND="(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD)"
+GIT_COMMAND="(sudo -u pi mgit fetch origin $branch && sudo -u pi mgit reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
   (sleep 3; eval $GIT_COMMAND) ||
@@ -142,7 +142,6 @@ echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
 
-#(sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD) || exit 1
 /home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service

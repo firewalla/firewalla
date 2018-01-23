@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# ----------------------------------------------------------------------------
+# This is a wrapper of Git that can recover given local repository from
+# disruptive action, like power off or SD card extraction.
+# ----------------------------------------------------------------------------
+
+MARKER_DIR=$HOME/git_in_progress
+
+function marked_git {
+    mkdir -p $MARKER_DIR
+    maker_file=$MARKER_DIR/$1
+    echo $2 > $marker_file
+    shift 2
+    git "$@"
+    rm -f $marker_file
+}
+
+function recover {
+    rc=0
+    for wsdir in $(ls -ad $MARKER_DIR)
+    do
+        case $wsdir in
+
+            .|..)
+                continue
+                ;;
+
+            *)
+                git_repo=$(cat $MARKER_DIR/$ws_dir/url)
+                git_branch=$(cat $MARKER_DIR/$ws_dir/branch)
+                (
+                cd $HOME
+                rm -rf ${wsdir}.bak
+                mv -f $wsdir ${wsdir}.bak
+                git clone https://github.com/firewalla/$git_repo $ws_dir || {
+                    rm -rf $wsdir
+                    mv -f ${wsdir}.bak $wsdir
+                    exit 1
+                }
+                ) || rc=1
+                ;;
+
+        esac
+    done
+    return $rc
+}
+
+
+# ----------------------------------------------------------------------------
+# MAIN goes here
+# ----------------------------------------------------------------------------
+
+if [[ $# -eq 0 ]]; then
+    git
+else
+    # Protect file related Git operations with marker file
+    # NOTE:
+    # In theory, git clone should be protected by tracking
+    # initial repo URL and local directory.
+    # However it is NOT protected with the assumption that
+    # git clone is NOT in use in Firewalla.
+
+    case $1 in
+        fetch|pull|reset)
+            wsdir=$(basename $PWD)
+            repo=$(git remote get-url origin)
+            marked_git $wsdir $repo "$@"
+            ;;
+        recover)
+            recover
+            ;;
+        *)
+            git "$@"
+            ;;
+    esac
+fi

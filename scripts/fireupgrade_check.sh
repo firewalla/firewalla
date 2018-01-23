@@ -23,7 +23,7 @@
 
 cd /home/pi/firewalla
 branch=$(git rev-parse --abbrev-ref HEAD)
-git fetch --tags
+mgit fetch --tags
 
 current_tag=$(git describe --tags)
 latest_tag=$(git describe --tags `git rev-parse origin/$branch`)
