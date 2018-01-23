@@ -150,8 +150,8 @@ function update_node_modules {
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
             logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            mgit fetch origin  || mgit fetch origin
-            mgit reset -q --hard `cat $REVISION_FILE`
+            $FIREWALLA_HOME/scripts/mgit fetch origin  || $FIREWALLA_HOME/scripts/mgit fetch origin
+            $FIREWALLA_HOME/scripts/mgit reset -q --hard `cat $REVISION_FILE`
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
@@ -304,12 +304,12 @@ function create_bootstrap_scripts_folder() {
             [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
         fi
     fi 
-    export PATH=$PATH:$PI_HOME/scripts
     sync
     sync
 }
 
 create_bootstrap_scripts_folder
+$PI_HOME/scripts/mgit recover
 
 #reload services
 if [[ ! -f /.dockerenv ]]; then

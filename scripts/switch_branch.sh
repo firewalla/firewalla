@@ -4,6 +4,7 @@ set -e
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 CMD=$(basename $0)
+MGIT=$FIREWALLA_HOME/scripts/mgit
 
 usage() {
     cat <<EOU
@@ -33,14 +34,14 @@ switch_branch() {
     # walla repo
     ( cd $FIREWALLA_HOME
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    mgit fetch origin $tgt_branch
+    $MGIT fetch origin $tgt_branch
     #git checkout -f -B $tgt_branch origin/$tgt_branch
     )
 
     # node modules repo
     ( cd ~/.node_modules
     git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    mgit fetch origin $tgt_branch
+    $MGIT fetch origin $tgt_branch
     #git checkout -f -B $tgt_branch origin/$tgt_branch
     )
 }

@@ -129,7 +129,7 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f /home/pi/firewalla/.git/*.lock
-GIT_COMMAND="(sudo -u pi mgit fetch origin $branch && sudo -u pi mgit reset --hard FETCH_HEAD)"
+GIT_COMMAND="(sudo -u pi /home/pi/scripts/mgit fetch origin $branch && sudo -u pi /home/pi/scripts/mgit reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
   (sleep 3; eval $GIT_COMMAND) ||
