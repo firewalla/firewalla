@@ -29,6 +29,8 @@ let alarmManager2 = new AlarmManager2();
 
 let audit = require('../util/audit.js');
 
+const fc = require('../net2/config.js')
+
 let uuid = require('uuid');
 
 rclient.on("error", function (err) {
@@ -149,6 +151,22 @@ module.exports = class FlowMonitor {
         if (intel == null || _class == null) {
             return false;
         }
+
+        const intelFeatureMapping = {
+            "av": "video",
+            "game": "game",
+            "porn": "porn"
+        }
+
+        const featureName = intelFeatureMapping[_class]
+        if(!featureName) {
+            return false
+        }
+
+        if(!fc.isFeatureOn(featureName)) {
+            return false
+        }
+
         if (intel.c) {
             if (intel.c == _class) {
                 return true;

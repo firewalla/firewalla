@@ -334,11 +334,12 @@ module.exports = class {
       return;
     }
 
-    let enabled = this.isAlarmTypeEnabled(alarm)
-    if(!enabled) {
-      callback(new Error(`alarm type ${alarm.type} is disabled`))
-      return
-    }
+    // disable this check for now, since we use new way to check feature enable/disable
+    // let enabled = this.isAlarmTypeEnabled(alarm)
+    // if(!enabled) {
+    //   callback(new Error(`alarm type ${alarm.type} is disabled`))
+    //   return
+    // }
 
     let dedupResult = this.dedup(alarm).then((dup) => {
 
