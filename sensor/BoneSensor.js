@@ -22,7 +22,6 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let serviceConfigKey = "bone:service:config";
 
-let syncInterval = 1000 * 3600 * 4; // sync every 4 hourly
 let redis = require('redis');
 let rclient = redis.createClient();
 let Promise = require('bluebird');
@@ -140,9 +139,15 @@ class BoneSensor extends Sensor {
     //   this.scheduledJob();
     // }, 5 * 1000); // in 5 seconds
 
-    setInterval(() => {
-      this.scheduledJob();
-    }, syncInterval);
+    // Random 4 to 6 hours checkin
+    (function loop() {
+      let rand = 1000 * 3600 * (Math.random() * (6-4) + 4);
+      setTimeout(function() {
+         log.error("Bone Checking In");
+         this.scheduledJob();
+         loop();  
+      }, rand);
+    }());
   }
 
   // make config redis-friendly..
