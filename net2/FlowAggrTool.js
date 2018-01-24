@@ -68,9 +68,9 @@ class FlowAggrTool {
   // aggrflow:<device_mac>:download:10m:<ts>
   flowExists(mac, trafficDirection, interval, ts) {
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
-    return rclient.keysAsync(key)
+    return rclient.existsAsync(key)
       .then((results) => {
-        return results.length === 1;
+        return results == 1
       })
   }
 
@@ -239,8 +239,8 @@ class FlowAggrTool {
     return async(() => {
 
       if(options.skipIfExists) {
-        let exists = await(rclient.keysAsync(sumFlowKey));
-        if(exists.length > 0) {
+        let exists = await(rclient.existsAsync(sumFlowKey));
+        if(exists) {
           return;
         }
       }
@@ -449,8 +449,8 @@ class FlowAggrTool {
   cleanedAppKeyExists(begin, end, options) {
     let key = this.getCleanedAppKey(begin, end, options)
     return async(() => {
-      let keys = await (rclient.keysAsync(key))
-      return keys.length === 1
+      let exists = await (rclient.existsAsync(key))
+      return exists == 1
     })()
   }
 
@@ -516,8 +516,8 @@ class FlowAggrTool {
   cleanedCategoryKeyExists(begin, end, options) {
     let key = this.getCleanedCategoryKey(begin, end, options)
     return async(() => {
-      let keys = await (rclient.keysAsync(key))
-      return keys.length === 1
+      let exists = await (rclient.existsAsync(key))
+      return exists == 1
     })()
   }
 
