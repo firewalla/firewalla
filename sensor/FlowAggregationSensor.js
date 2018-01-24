@@ -69,6 +69,8 @@ class FlowAggregationSensor extends Sensor {
     this.config.flowRange = 24 * 3600 // 24 hours
     this.config.sumFlowExpireTime = 0.5 * 3600 // 30 minutes
     this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
+    
+    this.firstTime = true; // some work only need to be done once, use this flag to check
   }
 
   scheduledJob() {
@@ -78,6 +80,7 @@ class FlowAggregationSensor extends Sensor {
       await (this.aggrAll(ts));
       await (this.sumAll(ts));
       await (this.updateAllHourlySummedFlows(ts));
+      this.firstTime = false;
       log.info("Summarized flow generation is complete");
     })();
   }
@@ -211,12 +214,14 @@ class FlowAggregationSensor extends Sensor {
 
     return async(() => {
 
-      // the 24th last hours -> the 2nd last hour
-      for(let i = 1; i < 24; i++) {
-        let ts = lastHourTick - i * 3600;
-        await (this.hourlySummedFlows(ts, {
-          skipIfExists: true
-        }));
+      if(this.firstTime) {
+        // the 24th last hours -> the 2nd last hour
+        for(let i = 1; i < 24; i++) {
+          let ts = lastHourTick - i * 3600;
+          await (this.hourlySummedFlows(ts, {
+            skipIfExists: true
+          }));
+        }
       }
 
       // last hour and this hour
