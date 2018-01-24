@@ -45,16 +45,16 @@ class HostTool {
   }
 
   macExists(mac) {
-    return rclient.keysAsync("host:mac:" + mac)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync("host:mac:" + mac)
+      .then((result) => {
+        return result == 1
       });
   }
 
   ipv4Exists(ip) {
-    return rclient.keysAsync("host:ip4:" + ip)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync("host:ip4:" + ip)
+      .then((result) => {
+        return result == 1
       });
   }
 
@@ -280,9 +280,9 @@ class HostTool {
 
   ipv6Exists(ip) {
     let key = this.getIPv6HostKey(ip)
-    return rclient.keysAsync(key)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync(key)
+      .then((result) => {
+        return result == 1
       });
   }
 
