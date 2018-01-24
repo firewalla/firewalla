@@ -139,15 +139,9 @@ class BoneSensor extends Sensor {
     //   this.scheduledJob();
     // }, 5 * 1000); // in 5 seconds
 
-    // Random 4 to 6 hours checkin
-    (function loop() {
-      let rand = 1000 * 3600 * (Math.random() * (6-4) + 4);
-      setTimeout(function() {
-         log.error("Bone Checking In");
-         this.scheduledJob();
-         loop();  
-      }, rand);
-    }());
+    setInterval(() => {
+      this.scheduledJob();
+    }, syncInterval);
   }
 
   // make config redis-friendly..
