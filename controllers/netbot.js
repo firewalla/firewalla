@@ -2180,7 +2180,7 @@ class netBot extends ControllerBot {
                 log.error("Failed to load init cache: " + err);
 
               // regenerate init data
-              log.info("Re-generate init data");
+              log.info("Re-generating init data");
 
               let begin = Date.now();
 

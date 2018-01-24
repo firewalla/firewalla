@@ -187,19 +187,23 @@
          "expires": 604800
       }
     },
+
     "features": {
       "intel:feedback": true,
-      "ss_client:statusCheck": true,
-
-      "alarm:ALARM_PORN": true,
-      "alarm:ALARM_VIDEO": true,
-      "alarm:ALARM_GAME": true,
-      "alarm:ALARM_LARGE_UPLOAD": true,
-      "alarm:ALARM_NEW_DEVICE": true,
-      "alarm:ALARM_BRO_NOTICE": true,
-      "alarm:ALARM_INTEL": true,
-      "alarm:ALARM_VULNERABILITY": true
-      
+      "ss_client:statusCheck": true
+    },
+    
+    "userFeatures": {
+      "porn": true,
+      "video": true,
+      "game": true,
+      "large_upload": true,
+      "new_device": true,
+      "cyber_security": true,
+      "vulnerability": false,
+      "ipv6": false,
+      "shadowsocks_server": false,
+      "scisurf": false
     }
 
 }

@@ -230,7 +230,7 @@ module.exports = class FlowManager {
   }
 
   last24HourDatabaseExists() {
-    return rclient.keysAsync("stats:last24:download");
+    return rclient.existsAsync("stats:last24:download");
   }
   
   getLast24HoursDownloadsStats(ip) {

@@ -60,13 +60,9 @@ class IntelTool {
   intelExists(ip) {
     let key = this.getIntelKey(ip);
 
-    return rclient.keysAsync(key)
-      .then((keys) => {
-        if(keys.length === 1) {
-          return true;
-        } else {
-          return false;
-        }
+    return rclient.existsAsync(key)
+      .then((exists) => {
+        return exists == 1
       })
   }
 
@@ -227,7 +223,7 @@ class IntelTool {
 
     return async(() => {
       // only update if dns key exists
-      let keys = await (rclient.keysAsync(key))
+      // let keys = await (rclient.keysAsync(key))
       // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
 //      if(keys.length > 0) {
         let intelJSON = JSON.stringify(intel);
