@@ -858,34 +858,52 @@ class netBot extends ControllerBot {
         };
         reply.code = 200;
 
-        this.hostManager.getHost(msg.target, (err, host) => {
-          if (host == null) {
-            log.info("Host not found");
-            reply.code = 404;
-            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-            return;
+        async(() => {
+          let ip = null
+
+          if(hostTool.isMacAddress(msg.target)) {
+            const macAddress = msg.target
+            log.info("set host name alias by mac address", macAddress, {})
+
+            const hostObject = await (hostTool.getMACEntry(macAddress))
+            
+            if(hostObject && hostObject.ipv4Addr) {
+              ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+            } else {
+              let error = new Error("Invalide Mac");
+              error.code = 404;
+              return Promise.reject(error);
+            }
+          } else {
+            ip = msg.target
           }
 
-          if (data.value.name == host.o.name) {
-            log.info("Host not changed", data.value.name, host.o.name);
-            reply.code = 200;
-            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-            return;
+          let host = await (this.hostManager.getHostAsync(ip))
+
+          if(!host) {
+            this.simpleTxData(msg, {}, new Error("invalid host"), callback)
+            return
           }
 
-          host.o.name = data.value.name;
+          if(data.value.name == host.o.name) {
+            this.simpleTxData(msg, {}, null, callback)
+            return
+          }
+
+          host.o.name = data.value.name
           log.info("Changing names", host.o.name);
           host.save(null, (err) => {
             if (err) {
-              reply.code = 500;
-              this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+              this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
             } else {
-              reply.code = 200;
-              reply.data = msg.data.value;
-              this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+              this.simpleTxData(msg, {}, null, callback)
             }
           });
-        });
+
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        
         break;
       case "intel":
         // intel actions
