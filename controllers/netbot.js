@@ -1321,6 +1321,7 @@ class netBot extends ControllerBot {
       }
       
       if(hostTool.isMacAddress(ip)) {
+        log.info("Loading host info by mac address", ip, {})
         const macAddress = ip
         const hostObject = await (hostTool.getMACEntry(macAddress))
         
