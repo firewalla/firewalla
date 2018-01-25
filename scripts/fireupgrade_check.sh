@@ -22,7 +22,7 @@
 # WILL PREVENT UPGRADES!
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
+MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 cd /home/pi/firewalla
 branch=$(git rev-parse --abbrev-ref HEAD)
