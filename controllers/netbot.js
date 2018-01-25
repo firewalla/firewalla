@@ -1297,8 +1297,8 @@ class netBot extends ControllerBot {
       return jsonobj;
     })();
   }
-
-  newDeviceHandler(msg, ip) {
+  
+  newDeviceHandler(msg, ip) { // WARNING: ip could be ip address or mac address, name it ip is just for backward compatible
     log.info("Getting info on device", ip, {});
 
     return async(() => {
@@ -1320,6 +1320,20 @@ class netBot extends ControllerBot {
         options.queryall = true
       }
       
+      if(hostTool.isMacAddress(ip)) {
+        log.info("Loading host info by mac address", ip, {})
+        const macAddress = ip
+        const hostObject = await (hostTool.getMACEntry(macAddress))
+        
+        if(hostObject && hostObject.ipv4Addr) {
+          ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+        } else {
+          let error = new Error("Invalide Mac");
+          error.code = 404;
+          return Promise.reject(error);
+        }        
+      }
+
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
         let error = new Error("Invalide Host");
