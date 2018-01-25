@@ -22,6 +22,7 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let serviceConfigKey = "bone:service:config";
 
+let syncInterval = 1000 * 3600 * 4; // sync every 4 hourly
 let redis = require('redis');
 let rclient = redis.createClient();
 let Promise = require('bluebird');
