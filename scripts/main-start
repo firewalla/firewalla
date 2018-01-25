@@ -22,7 +22,7 @@ logger "MAIN-STARTED STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${PI_HOME:=/home/pi}
-: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
+MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT

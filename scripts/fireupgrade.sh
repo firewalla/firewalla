@@ -27,7 +27,7 @@
 #   1 - process killed due to timeout
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${MGIT:=$FIREWALLA_HOME/scripts/mgit}
+MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 timeout_check() {
     pid=${1:-$!}
