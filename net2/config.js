@@ -47,7 +47,7 @@ function getConfig() {
 
 function isFeatureOn_Static(featureName) {
   let config = getConfig()
-  return config.features && config.features[featureName]
+  return config.userFeatures && config.userFeatures[featureName]
 }
 
 function isFeatureOn_Dynamic(featureName) {
