@@ -51,7 +51,7 @@ function isFeatureOn_Static(featureName) {
 }
 
 function isFeatureOn_Dynamic(featureName) {
-  return dynamicConfigs && !(dynamicConfigs[featureName] && dynamicConfigs[featureName] === '0')
+  return dynamicConfigs && dynamicConfigs[featureName] && dynamicConfigs[featureName] === '1'
 }
 
 function isFeatureOn(featureName) {
