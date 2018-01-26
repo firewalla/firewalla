@@ -47,15 +47,19 @@ function getConfig() {
 
 function isFeatureOn_Static(featureName) {
   let config = getConfig()
-  return config.features && config.features[featureName]
+  return config.userFeatures && config.userFeatures[featureName]
 }
 
 function isFeatureOn_Dynamic(featureName) {
-  return dynamicConfigs && !(dynamicConfigs[featureName] && dynamicConfigs[featureName] === '0')
+  return dynamicConfigs && dynamicConfigs[featureName] && dynamicConfigs[featureName] === '1'
 }
 
 function isFeatureOn(featureName) {
-  return isFeatureOn_Static(featureName) && isFeatureOn_Dynamic(featureName)
+  if(isFeatureOn_Static(featureName) || isFeatureOn_Dynamic(featureName)) {
+    return true
+  } else {
+    return false
+  }
 }
 
 function syncDynamicFeaturesConfigs() {
