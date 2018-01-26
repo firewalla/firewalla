@@ -55,7 +55,7 @@ function isFeatureOn_Dynamic(featureName) {
 }
 
 function isFeatureOn(featureName) {
-  return isFeatureOn_Static(featureName) && isFeatureOn_Dynamic(featureName)
+  return isFeatureOn_Static(featureName) || isFeatureOn_Dynamic(featureName)
 }
 
 function syncDynamicFeaturesConfigs() {
