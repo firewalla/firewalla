@@ -372,6 +372,14 @@ else
 fi
 cd ..
 
+cd extension/httpd
+if [[ -f /.dockerenv ]]; then
+    forever start -a --uid root httpd.js
+else
+    sudo systemctl restart firehttpd
+fi
+cd ../../
+
 sync
 
 #if [[ ! -f /.dockerenv ]]; then
