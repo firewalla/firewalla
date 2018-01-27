@@ -1,3 +1,5 @@
+import { setInterval } from 'timers';
+
 /*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -40,24 +42,23 @@ class NaughtyMonkeySensor extends Sensor {
   job() {
     return async(() => {
       if(fc.isFeatureOn("naughty_monkey")) {
+        await (this.delay(this.getRandomTime()))
+
         // do stuff   
         this.malware()
       }
-
-      setTimeout(() => {
-        this.job()                
-      }, this.getRandomTime())
     })()
   }
   
   randomFindDevice() {
-    let hostCount = hostManager.hosts.all
+    const hosts = hostManager.hosts.all
+    const hostCount = hosts.length
     if(hostCount > 0) {
       let randomHostIndex = Math.floor(Math.random() * hostCount)
       if(randomHostIndex == hostCount) {
         randomHostIndex = hostCount - 1
       }
-      return hostManager.hostsdb[randomHostIndex]
+      return hosts[randomHostIndex] && hosts[randomHostIndex].o
     } else {
       return null
     }
@@ -74,9 +75,13 @@ class NaughtyMonkeySensor extends Sensor {
       const cmd = `node malware_simulator.js --src 176.10.107.180  --dst ${ip} --duration 1000 --length 100000`
       log.info("Release a monkey:", cmd)
       return exec(cmd, {
-        cwd: f.getFirewallaHome() + "./testLegacy/"
+        cwd: f.getFirewallaHome() + "/testLegacy/"
+      }).catch((err) => {
+        log.error("Failed to release monkey", cmd, err, {})
       })
-    }    
+    } else {
+      log.warn("can't find a host to release a monkey")
+    }
   }
 
   run() {
@@ -84,15 +89,16 @@ class NaughtyMonkeySensor extends Sensor {
     // if(!f.isDevelopmentVersion()) {
     //   return // do nothing if non dev version
     // }
+    this.job()
 
-    setTimeout(() => {
+    setInterval(() => {
       this.job()
-    }, this.getRandomTime())
+    }, 1000 * 3600 * 24) // release a monkey once every day
   }
 
   // in milli seconds
   getRandomTime() {
-    return Math.floor(Math.random() * 1000 * 3600)
+    return Math.floor(Math.random() * 1000 * 3600 * 24) // anytime random within a day
   }
 }
 
