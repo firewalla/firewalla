@@ -7,8 +7,6 @@ const httpsPort = 443;
 const https = require('https');
 const forge = require('node-forge');
 
-let f = require('../../net2/Firewalla.js');
-
 const httpsOptions = genHttpsOptions();
 
 app.use('*', (req, res) => {
