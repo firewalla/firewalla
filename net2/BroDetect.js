@@ -473,7 +473,7 @@ module.exports = class {
     */
 
   isMonitoring(ip) {
-    const hostObject = hostManager.getHostFast(origIP)
+    const hostObject = hostManager.getHostFast(ip)
 
     if(hostObject && hostObject.spoofing == false) {
       log.info("not spoofing:", ip)
