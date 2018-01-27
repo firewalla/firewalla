@@ -2,18 +2,12 @@
 
 const express = require('express');
 const app = express();
-const port = 18080;
-const httpsPort = 8443;
-const path = require('path');
-const certPath = 'extension/httpd';
-const fs = require('fs');
+const port = 80;
+const httpsPort = 443;
 const https = require('https');
 const forge = require('node-forge');
 
 let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
-let userID = f.getUserID();
-let confDir = f.getUserConfigFolder() + "/httpd";
 
 const httpsOptions = genHttpsOptions();
 
