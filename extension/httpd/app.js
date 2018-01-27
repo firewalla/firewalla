@@ -15,8 +15,9 @@ const httpsOptions = {
 };
 
 app.use('*', (req, res) => {
-  let txt = `Ads Blocked by Firewalla: ${req.method} ${req.hostname}${req.originalUrl}`;
+  let txt = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
   res.send(txt);
+  console.log(txt);
 });
 
 app.listen(port, () => console.log(`Httpd istening on port ${port}!`));
