@@ -58,7 +58,7 @@ let dhcpFeature = false;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
-let BLACK_HOLE_IP="192.168.1.101";
+let BLACK_HOLE_IP=sysManager.myIp();
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
