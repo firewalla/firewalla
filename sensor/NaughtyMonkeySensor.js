@@ -1,5 +1,3 @@
-import { setInterval } from 'timers';
-
 /*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
