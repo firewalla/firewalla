@@ -1,12 +1,12 @@
 'use strict';
 
 const express = require('express');
-const app = express();
-const port = 80;
-const httpsPort = 443;
 const https = require('https');
 const forge = require('node-forge');
 
+const port = 80;
+const httpsPort = 443;
+const app = express();
 const httpsOptions = genHttpsOptions();
 
 app.use('*', (req, res) => {
@@ -15,10 +15,8 @@ app.use('*', (req, res) => {
   console.log(txt);
 });
 
-app.listen(port, () => console.log(`Httpd istening on port ${port}!`));
-
-https.createServer(httpsOptions, app).listen(httpsPort, () => console.log(`Httpd istening on port ${httpsPort}!`));
-
+app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
+https.createServer(httpsOptions, app).listen(httpsPort, () => console.log(`Httpd listening on port ${httpsPort}!`));
 
 function genHttpsOptions() {
 // generate a keypair and create an X.509v3 certificate
