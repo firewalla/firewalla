@@ -476,10 +476,10 @@ module.exports = class {
     const hostObject = hostManager.getHostFast(ip)
 
     if(hostObject && hostObject.spoofing == false) {
-      log.info("not spoofing:", ip)
+      log.info("not spoofing:", ip, {})
       return false
     } else {
-      log.info("spoofing")
+      log.info("spoofing", ip, {})
       return true;
     }
 
