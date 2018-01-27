@@ -47,11 +47,11 @@ class NaughtyMonkeySensor extends Sensor {
       setTimeout(() => {
         this.job()                
       }, this.getRandomTime())
-    })
+    })()
   }
   
   randomFindDevice() {
-    let hostCount = hostManager.hostsdb.length
+    let hostCount = hostManager.hosts.all
     if(hostCount > 0) {
       let randomHostIndex = Math.floor(Math.random() * hostCount)
       if(randomHostIndex == hostCount) {
@@ -65,11 +65,12 @@ class NaughtyMonkeySensor extends Sensor {
 
   malware() {
     const host = this.randomFindDevice()
-    const ip = host.ipv4Addr
 
     // node malware_simulator.js --src 176.10.107.180  --dst 192.168.2.166 --duration 1000 --length 100000
 
-    if(ip) {
+    if(host && host.ipv4Addr) {
+      const ip = host.ipv4Addr
+
       const cmd = `node malware_simulator.js --src 176.10.107.180  --dst ${ip} --duration 1000 --length 100000`
       log.info("Release a monkey:", cmd)
       return exec(cmd, {
