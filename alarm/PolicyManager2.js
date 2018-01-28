@@ -33,6 +33,8 @@ const Promise = require('bluebird');
 
 const minimatch = require('minimatch')
 
+const SysManager = require('../net2/SysManager.js')
+const sysManager = new SysManager('info');
 
 let instance = null;
 
@@ -475,7 +477,7 @@ class PolicyManager2 {
   isFirewallaCloud(policy) {
     const target = policy.target
 
-    return target === "52.26.167.62" ||
+    return sysManager.isMyServer(target) ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
