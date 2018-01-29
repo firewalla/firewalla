@@ -28,7 +28,7 @@ app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
 https.createServer(httpsOptions, app).listen(httpsPort, () => console.log(`Httpd listening on port ${httpsPort}!`));
 
 function genHttpsOptions() {
-// generate a keypair and create an X.509v3 certificate
+  // generate a keypair and create an X.509v3 certificate
   const pki = forge.pki;
   console.log('Generating 1024-bit key-pair...');
   const keys = pki.rsa.generateKeyPair(1024);
@@ -65,7 +65,7 @@ function genHttpsOptions() {
   cert.setExtensions([{
     name: 'basicConstraints',
     cA: true/*,
-  pathLenConstraint: 4*/
+    pathLenConstraint: 4*/
   }, {
     name: 'keyUsage',
     keyCertSign: true,
