@@ -1336,7 +1336,8 @@ let legoEptCloud = class {
                 request({
                         method: 'PUT',
                         url: url,
-                        body: crypted
+                        body: crypted,
+                        family: 4
                     },
                     function (error, response, body) {
                         if (response.statusCode === 200) {
