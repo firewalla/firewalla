@@ -4,6 +4,11 @@ const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
 
+let redis = require('redis');
+let rclient = redis.createClient();
+
+Promise.promisifyAll(redis.RedisClient.prototype);
+
 const port = 80;
 const httpsPort = 443;
 const app = express();
