@@ -21,9 +21,12 @@
 # WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
 # WILL PREVENT UPGRADES!
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+
 cd /home/pi/firewalla
 branch=$(git rev-parse --abbrev-ref HEAD)
-git fetch --tags
+$MGIT fetch --tags
 
 current_tag=$(git describe --tags)
 latest_tag=$(git describe --tags `git rev-parse origin/$branch`)

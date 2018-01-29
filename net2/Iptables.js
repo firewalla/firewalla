@@ -78,13 +78,13 @@ function iptables(rule, callback) {
             args = ['iptables', '-w'].concat(args);
         }
 
-        log.info("IPTABLE4:", cmd, JSON.stringify(args), workqueue.length);
+        log.debug("IPTABLE4:", cmd, JSON.stringify(args), workqueue.length);
         let proc = spawn(cmd, args);
         proc.stderr.on('data', function (buf) {
             console.error("IPTABLE4:", buf.toString());
         });
         proc.on('exit', (code) => {
-            log.info("IPTABLE4:EXIT", cmd, JSON.stringify(args), workqueue.length);
+            log.debug("IPTABLE4:EXIT", cmd, JSON.stringify(args), workqueue.length);
             if (callback) {
                 callback(null, code);
             }
@@ -128,7 +128,7 @@ function iptables(rule, callback) {
           break;
         }
 
-        log.info("IPTABLE:DNS:Running commandline: ", cmdline);
+        log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
@@ -237,7 +237,7 @@ function _dnsChange(ip, dns, state, callback) {
     let cmd = "iptables";
     let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
 
-    log.info("IPTABLE:DNS:Running commandline: ", cmdline);
+    log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
     this.process = require('child_process').exec(cmdline, (err, out, code) => {
         if (err && action !== "-D") {
             log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
@@ -272,7 +272,7 @@ function flush6(callback) {
 
 function run(listofcmds, callback) {
     async.eachLimit(listofcmds, 1, (cmd, cb) => {
-        log.info("IPTABLE:DNS:RUNCOMMAND", cmd);
+        log.debug("IPTABLE:DNS:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
                 log.error("IPTABLE:DNS:Error unable to set", err, {});

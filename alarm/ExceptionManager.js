@@ -7,6 +7,8 @@ const await = require('asyncawait/await');
 
 const Promise = require('bluebird');
 
+const minimatch = require('minimatch')
+
 let Exception = require('./Exception.js');
 let Bone = require('../lib/Bone.js');
 
@@ -268,7 +270,26 @@ module.exports = class {
       });
   }
 
+  isFirewallaCloud(alarm) {
+    const name = alarm["p.dest.name"]
+    if(!name) {
+      return false
+    }
+
+    return name === "firewalla.encipher.io" ||
+      name === "firewalla.com" ||
+      minimatch(name, "*.firewalla.com")
+
+    // TODO: might need to add static ip address here
+  }
+
   match(alarm, callback) {
+
+    if(this.isFirewallaCloud(alarm)) {
+      callback(null, true, [])
+      return
+    }
+
     this.loadExceptions((err, results) => {
       if(err) {
         callback(err);

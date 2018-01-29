@@ -252,7 +252,7 @@ class NmapSensor extends Sensor {
   }
 
   _processHost(host) {
-    if(host) {
+    if(host && host.mac) {
       sem.emitEvent({
         type: "DeviceUpdate",
         message: "Found a device via NmapSensor",

@@ -1,5 +1,5 @@
 {
-  "version": 1.93,
+  "version": 1.95,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -56,6 +56,7 @@
     "APISensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
+    "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
@@ -187,8 +188,24 @@
          "expires": 604800
       }
     },
+
     "features": {
-      "intel:feedback": true
+      "intel:feedback": true,
+      "ss_client:statusCheck": true
+    },
+    
+    "userFeatures": {
+      "porn": true,
+      "video": true,
+      "game": true,
+      "large_upload": true,
+      "new_device": true,
+      "cyber_security": true,
+      "vulnerability": false,
+      "ipv6": false,
+      "shadowsocks_server": false,
+      "scisurf": false,
+      "naughty_monkey": false
     }
 
 }

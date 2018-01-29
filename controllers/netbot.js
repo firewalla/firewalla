@@ -26,6 +26,8 @@ const ControllerBot = require('../lib/ControllerBot.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const fc = require('../net2/config.js')
+
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
@@ -856,34 +858,52 @@ class netBot extends ControllerBot {
         };
         reply.code = 200;
 
-        this.hostManager.getHost(msg.target, (err, host) => {
-          if (host == null) {
-            log.info("Host not found");
-            reply.code = 404;
-            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-            return;
+        async(() => {
+          let ip = null
+
+          if(hostTool.isMacAddress(msg.target)) {
+            const macAddress = msg.target
+            log.info("set host name alias by mac address", macAddress, {})
+
+            const hostObject = await (hostTool.getMACEntry(macAddress))
+            
+            if(hostObject && hostObject.ipv4Addr) {
+              ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+            } else {
+              let error = new Error("Invalide Mac");
+              error.code = 404;
+              return Promise.reject(error);
+            }
+          } else {
+            ip = msg.target
           }
 
-          if (data.value.name == host.o.name) {
-            log.info("Host not changed", data.value.name, host.o.name);
-            reply.code = 200;
-            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-            return;
+          let host = await (this.hostManager.getHostAsync(ip))
+
+          if(!host) {
+            this.simpleTxData(msg, {}, new Error("invalid host"), callback)
+            return
           }
 
-          host.o.name = data.value.name;
+          if(data.value.name == host.o.name) {
+            this.simpleTxData(msg, {}, null, callback)
+            return
+          }
+
+          host.o.name = data.value.name
           log.info("Changing names", host.o.name);
           host.save(null, (err) => {
             if (err) {
-              reply.code = 500;
-              this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+              this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
             } else {
-              reply.code = 200;
-              reply.data = msg.data.value;
-              this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+              this.simpleTxData(msg, {}, null, callback)
             }
           });
-        });
+
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        
         break;
       case "intel":
         // intel actions
@@ -1295,8 +1315,8 @@ class netBot extends ControllerBot {
       return jsonobj;
     })();
   }
-
-  newDeviceHandler(msg, ip) {
+  
+  newDeviceHandler(msg, ip) { // WARNING: ip could be ip address or mac address, name it ip is just for backward compatible
     log.info("Getting info on device", ip, {});
 
     return async(() => {
@@ -1318,6 +1338,20 @@ class netBot extends ControllerBot {
         options.queryall = true
       }
       
+      if(hostTool.isMacAddress(ip)) {
+        log.info("Loading host info by mac address", ip, {})
+        const macAddress = ip
+        const hostObject = await (hostTool.getMACEntry(macAddress))
+        
+        if(hostObject && hostObject.ipv4Addr) {
+          ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+        } else {
+          let error = new Error("Invalide Mac");
+          error.code = 404;
+          return Promise.reject(error);
+        }        
+      }
+
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
         let error = new Error("Invalide Host");
@@ -1571,7 +1605,7 @@ class netBot extends ControllerBot {
       return;
     } else if (msg.data.item === "shutdown") {
       log.info("shutdown firewalla in 60 seconds");
-      let task = require('child_process').exec('sudo shutdown -h', (err, out, code) => {
+      let task = require('child_process').exec('sleep 3; sudo shutdown -h now', (err, out, code) => {
         let datamodel = {
           type: 'jsonmsg',
           mtype: 'init',
@@ -1971,6 +2005,57 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
       break
+    case "disableBinding":
+      sysTool.stopFireKickService()
+        .then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      break
+    case "enableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.enableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })    
+      break
+    }      
+    case "disableFeature": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.disableDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
+    case "clearFeatureDynamicFlag": {
+      const featureName = msg.data.value.featureName
+      async(() => {
+        if(featureName) {
+          await (fc.clearDynamicFeature(featureName))
+        }
+      })().then(() => {
+        this.simpleTxData(msg, {}, null, callback)
+      })
+      .catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }      
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -1998,7 +2083,7 @@ class netBot extends ControllerBot {
       log.info("Going to switch to branch", targetBranch, {})
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-      sysTool.restartServices()
+      sysTool.upgradeToLatest()
     })()
   }
 
@@ -2127,7 +2212,7 @@ class netBot extends ControllerBot {
                 log.error("Failed to load init cache: " + err);
 
               // regenerate init data
-              log.info("Re-generate init data");
+              log.info("Re-generating init data");
 
               let begin = Date.now();
 

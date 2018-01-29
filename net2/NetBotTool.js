@@ -327,6 +327,12 @@ class NetBotTool {
           if(intel) {
             f.country = intel.country;
             f.host = intel.host;
+            if(intel.category) {
+              f.category = intel.category
+            }
+            if(intel.app) {
+              f.app = intel.app
+            }
             return f;
           } else {
             // intel not exists in redis, create a new one
@@ -335,6 +341,12 @@ class NetBotTool {
               if (intel) {
                 f.country = intel.country;
                 f.host = intel.host;
+                if(intel.category) {
+                  f.category = intel.category
+                }
+                if(intel.app) {
+                  f.app = intel.app
+                }
               }
               return f;
             })();
@@ -403,6 +415,12 @@ class NetBotTool {
             if(intel) {
               f.country = intel.country;
               f.host = intel.host;
+              if(intel.category) {
+                f.category = intel.category
+              }
+              if(intel.app) {
+                f.app = intel.app
+              }
               return f;
             } else {
               // intel not exists in redis, create a new one
@@ -410,6 +428,12 @@ class NetBotTool {
                 intel = await (destIPFoundHook.processIP(f.ip));
                 f.country = intel.country;
                 f.host = intel.host;
+                if(intel.category) {
+                  f.category = intel.category
+                }
+                if(intel.app) {
+                  f.app = intel.app
+                }
                 return f;
               })();
             }

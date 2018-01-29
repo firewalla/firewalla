@@ -28,8 +28,10 @@ let flat = require('flat');
 let audit = require('../util/audit.js');
 let util = require('util');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
@@ -45,6 +47,9 @@ let Policy = require('./Policy.js');
 
 let PolicyManager2 = require('./PolicyManager2.js');
 let pm2 = new PolicyManager2();
+
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
 
 let instance = null;
 
@@ -141,6 +146,12 @@ module.exports = class {
 
   removeFromActiveQueueAsync(alarmID) {
     return rclient.zremAsync(alarmActiveKey, alarmID)
+  }
+
+  isAlarmTypeEnabled(alarm) {
+    const alarmType = alarm.type
+    const featureKey = `alarm:${alarmType}`
+    return fc.isFeatureOn(featureKey)
   }
 
   validateAlarm(alarm) {
@@ -316,12 +327,19 @@ module.exports = class {
 
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
-
+    
     let verifyResult = this.validateAlarm(alarm);
     if(!verifyResult) {
       callback(new Error("invalid alarm, failed to pass verification"));
       return;
     }
+
+    // disable this check for now, since we use new way to check feature enable/disable
+    // let enabled = this.isAlarmTypeEnabled(alarm)
+    // if(!enabled) {
+    //   callback(new Error(`alarm type ${alarm.type} is disabled`))
+    //   return
+    // }
 
     let dedupResult = this.dedup(alarm).then((dup) => {
 
@@ -631,7 +649,7 @@ module.exports = class {
     })()
   }
 
-  blockAlarmByPolicy(alarm, policy, info) {
+  blockAlarmByPolicy(alarm, policy, info, needArchive) {
     return async(() => {
       if(!alarm || !policy) {
         return
@@ -647,7 +665,12 @@ module.exports = class {
       }
 
       await (this.updateAlarm(alarm))
-      await (this.archiveAlarm(alarm.aid))
+
+      if(needArchive) {
+        await (this.archiveAlarm(alarm.aid))
+      } else {
+        await (this.removeFromActiveQueueAsync(alarm.alarmID))
+      }
 
       log.info(`Alarm ${alarm.aid} is blocked successfully`)
     })()
@@ -1160,22 +1183,38 @@ module.exports = class {
       if(!destIP)
         return Promise.reject(new Error("Requiring p.dest.ip"));
 
-      return new Promise((resolve, reject) => {
-        im._location(destIP, (err, loc) => {
-          if(err) {
-            reject(err);
+      const locationAsync = Promise.promisify(im._location).bind(im)
+
+      return async(() => {
+
+        // location
+        const loc = await (locationAsync(destIP))
+        if(loc && loc.loc) {
+          const location = loc.loc;
+          const ll = location.split(",");
+          if(ll.length === 2) {
+            alarm["p.dest.latitude"] = parseFloat(ll[0]);
+            alarm["p.dest.longitude"] = parseFloat(ll[1]);
           }
-          if (loc && loc.loc) {
-            let location = loc.loc;
-            let ll = location.split(",");
-            if(ll.length === 2) {
-              alarm["p.dest.latitude"] = parseFloat(ll[0]);
-              alarm["p.dest.longitude"] = parseFloat(ll[1]);
-            }
-            alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-          }
-          resolve(alarm);
-        });
-      });
+          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+        }
+
+        // intel
+        const intel = await (intelTool.getIntel(destIP))
+        if(intel.app) {
+          alarm["p.dest.app"] = intel.app
+        }
+
+        if(intel.category) {
+          alarm["p.dest.category"] = intel.category
+        }
+
+        if(intel.host) {
+          alarm["p.dest.name"] = intel.host
+        }
+        
+        return alarm
+        
+      })()
     }
   }

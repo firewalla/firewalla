@@ -24,12 +24,18 @@ let fs = require('fs');
 let util = require('util');
 let jsonfile = require('jsonfile');
 const p = require('child_process');
-let async = require('async');
+const _async = require('async');
+
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const exec = require('child-process-promise').exec
 
 let r = require('redis');
 let rclient = r.createClient();
 
 let f = require('../../net2/Firewalla.js');
+const fc = require('../../net2/config.js')
 let fHome = f.getFirewallaHome();
 
 let SysManager = require('../../net2/SysManager');
@@ -71,6 +77,9 @@ let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid"
 const localDNSForwarderPort = 8857
 const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
+
+
+let statusCheckTimer = null
 
 function loadConfig(callback) {
   callback = callback || function() {}
@@ -188,6 +197,12 @@ function start(callback) {
                   if(err) {
                     stop(); // stop everything if anything wrong.
                   } else {
+                    if(!statusCheckTimer && fc.isFeatureOn("ss_client:statusCheck")) {
+                      statusCheckTimer = setInterval(() => {
+                        statusCheck()
+                      }, 1000 * 60) // check status every minute
+                      log.info("Status check timer installed")
+                    }
                     started = true;
                   }
                   callback(err);
@@ -205,8 +220,14 @@ function stop(callback) {
   callback = callback || function() {}
 
   log.info("Stopping everything on ss_client");
+
+  if(statusCheckTimer) {
+    clearInterval(statusCheckTimer)
+    statusCheckTimer = null
+    log.info("status check timer is stopped")
+  }
   
-  async.applyEachSeries([ _disableIptablesRule,
+  _async.applyEachSeries([ _disableIptablesRule,
                           _disableChinaDNS,
                           _stopRedirection,
                           _stopDNSForwarder,
@@ -460,6 +481,52 @@ function configExists() {
 
 function getChinaDNS() {
   return chinaDNSAddress + "#" + chinaDNSPort;
+}
+
+function statusCheck() {
+  return async(() => {
+    let checkResult = await (verifyDNSConnectivity()) ||
+      await (verifyDNSConnectivity()) ||
+      await (verifyDNSConnectivity())
+            
+    if(!checkResult) {
+      let psResult = await (exec("ps aux | grep ss"))
+      let stdout = psResult.stdout
+      log.info("ss client running status: \n", stdout, {})
+
+      // restart this service, something is wrong
+      start((err) => {
+        if(err) {
+          log.error("Failed to restart ss_client:", err, {})
+        }
+      })
+    }
+  })()
+}
+
+function verifyDNSConnectivity() {
+  let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
+  log.info("Verifying DNS connectivity...")
+  
+  return async(() => {
+    try {
+      let result = await (exec(cmd))
+      if(result.stdout === "") {
+        log.error("Got empty dns result when verifying dns connectivity:", {})
+        return false
+      } else if(result.stderr !== "") {
+        log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+        return false
+      } else {
+        log.info("DNS connectivity looks good")
+        return true
+      }
+    } catch(err) {
+      log.error("Got error when verifying dns connectivity:", err, {})
+      return false
+    }
+  })()
+  
 }
 
 module.exports = {
