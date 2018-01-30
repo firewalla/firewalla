@@ -7,7 +7,6 @@ const forge = require('node-forge');
 let promise = require('bluebird');
 let redis = require('redis');
 let client = redis.createClient();
-
 promise.promisifyAll(redis.RedisClient.prototype);
 
 const port = 80;
@@ -19,9 +18,9 @@ app.use('*', (req, res) => {
   let txt = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
   res.send(txt);
 
-  client.incrAsync('adblock:count').then(value => {
+  client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
     console.log(`${txt}, Total blocked: ${value}`);
-  })
+  });
 });
 
 app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
