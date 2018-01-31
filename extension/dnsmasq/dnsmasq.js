@@ -64,6 +64,10 @@ let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8
 
 let RELOAD_DELAY = 15000;
 
+const lock = require('lockfile')
+const path = require('path');
+const lockFile = path.resolve(dnsFilterDir + '/dnsmasq.lock');
+
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
@@ -74,7 +78,7 @@ module.exports = class DNSMASQ {
       this.deleteInProgress = false;
       this.shouldStart = false;
       this.enabled = false;
-      this.restartCount = 0;
+      this.reloadCount = 0;
 
       process.on('exit', () => {
         this.shouldStart = false;
@@ -169,37 +173,52 @@ module.exports = class DNSMASQ {
   }
 
   controlAdblockFilter(state) {
-    if (state !== undefined && state !== null) {
-      this.enabled = state;
-    }
+    const handleError = function (err, _state) {
+      log.error("unable to " + _state ? "obtain the lock" : "unlock the lock", err, {});
+      this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, _state), RELOAD_DELAY);
+    };
 
-    log.info(`in control adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.restartCount: ${this.restartCount++}`);
-
-    if (this.enabled) {
-      log.info("Start to update Adblock filters.");
-      this.nextControlAdblockFilter = null;
-      this.updateAdblockFilter(true, (err) => {
-        if (err) {
-          log.error("Update Adblock filters Failed!", err, {});
-        } else {
-          log.info("Update Adblock filters successful.");
-          this.reload().then(() => {
-            this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY);
-          });
-        }
-      });
-
-    } else {
-      log.info("Start to clean up Adblock filters.");
-      if (this.nextControlAdblockFilter) {
-        log.info("Clear the scheduled next ControlAdblockFilter invocation");
-        clearTimeout(this.nextcontrolAdblockFilter);
+    lock.lock(lockFile, {wait: 3000, retries: 5, stale: 50}, err => {
+      if (err) {
+        handleError(err, true);
+        return;
       }
 
-      this.cleanUpAdblockFilter()
-        .then(() => this.reload())
-        .catch(err => log.error('Error when clean up adblock filters', err, {}));
-    }
+      if (state !== undefined && state !== null) {
+        this.enabled = state;
+      }
+
+      log.info(`in control adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.reloadCount: ${this.reloadCount++}`);
+
+      if (this.enabled) {
+        log.info("Start to update Adblock filters.");
+        this.nextControlAdblockFilter = null;
+        this.updateAdblockFilter(true, (err) => {
+          if (err) {
+            log.error("Update Adblock filters Failed!", err, {});
+          } else {
+            log.info("Update Adblock filters successful.");
+            this.reload()
+              .then(() => {
+                this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY);
+              })
+              .finally(() => lock.unlock(lockFile, err => handleError(err, false)));
+          }
+        });
+
+      } else {
+        log.info("Start to clean up Adblock filters.");
+        if (this.nextControlAdblockFilter) {
+          log.info("Clear the scheduled next ControlAdblockFilter invocation");
+          clearTimeout(this.nextcontrolAdblockFilter);
+        }
+
+        this.cleanUpAdblockFilter()
+          .then(() => this.reload())
+          .catch(err => log.error('Error when clean up adblock filters', err, {}))
+          .finally(() => lock.unlock(lockFile, err => handleError(err, false)));
+      }
+    });
   }
 
   cleanUpFilter(file) {
