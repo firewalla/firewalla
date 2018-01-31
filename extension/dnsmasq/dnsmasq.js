@@ -62,6 +62,8 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
+let RELOAD_DELAY = 15000;
+
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
@@ -179,10 +181,11 @@ module.exports = class DNSMASQ {
         if (err) {
           log.error("Update Adblock filters Failed!", err, {});
         } else {
-          this.reload();
-          log.info("Update Adblock filters successful.");
+          this.reload().then(() => {
+            log.info("Update Adblock filters successful.");
+            setTimeout((() => {this.controlAdblockFilter()}).bind(this), RELOAD_DELAY);
+          });
         }
-        setTimeout((() => {this.controlAdblockFilter()}).bind(this), 15000);
       });
 
     } else {
