@@ -167,11 +167,11 @@ module.exports = class DNSMASQ {
   }
 
   controlAdblockFilter(state) {
-    if (state !== null && state !== undefined) {
+    if (state !== undefined && state !== null) {
       this.enabled = state;
     }
 
-    log.info(`in enable adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.restartCount: ${this.restartCount++}`);
+    log.info(`in control adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.restartCount: ${this.restartCount++}`);
 
     if (this.enabled) {
       log.info("Start to update Adblock filters.");
@@ -182,8 +182,9 @@ module.exports = class DNSMASQ {
           this.reload();
           log.info("Update Adblock filters successful.");
         }
+        setTimeout((() => {this.controlAdblockFilter()}).bind(this), 15000);
       });
-      setTimeout((() => {this.controlAdblockFilter()}).bind(this), 15000);
+
     } else {
       log.info("Start to clean up Adblock filters.");
       this.cleanUpAdblockFilter()
@@ -306,9 +307,12 @@ module.exports = class DNSMASQ {
         }
         resolve();
       });
-    }).bind(this)).catch((err) => {
-      log.error("Got error when reloading dnsmasq:", err, {})
-    });
+    }).bind(this))
+      .then(() => {
+        log.info("Dnsmasq reload complete.");
+      }).catch((err) => {
+        log.error("Got error when reloading dnsmasq:", err, {})
+      });
   }
 
   updateAdblockTmpFilter(force, callback) {
