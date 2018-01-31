@@ -80,6 +80,8 @@ module.exports = class DNSMASQ {
       this.enabled = false;
       this.reloadCount = 0;
 
+      lock.unlock(lockFile, err => {});
+
       process.on('exit', () => {
         this.shouldStart = false;
         this.stop();
@@ -177,7 +179,7 @@ module.exports = class DNSMASQ {
       if (!err) { return; }
 
       log.error(`Error when ${_state ? "obtain the lock" : "unlock the lock"}`, err, {});
-      this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, _state), RELOAD_DELAY);
+      this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, state), 1000);
       lock.unlock(lockFile, err => {});
     }.bind(this);
 
