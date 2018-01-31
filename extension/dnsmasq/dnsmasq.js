@@ -170,11 +170,8 @@ module.exports = class DNSMASQ {
     this.enabled = state || this.enabled;
     log.info("in enable adblock filter: ", state, this.enabled, restartCount ++);
 
-    if (this.enabled === undefined) {
-      return;
-    }
-
     if (this.enabled === true) {
+      log.info("Start to update Adblock filters.");
       this.updateAdblockFilter(true, (err) => {
         if (err) {
           log.error("Update Adblock filters Failed!", err, {});
@@ -183,8 +180,9 @@ module.exports = class DNSMASQ {
           log.info("Update Adblock filters successful.");
         }
       });
-      setTimeout(this.controlAdblockFilter, 15000);
+      setTimeout(function() {this.controlAdblockFilter()}, 15000);
     } else {
+      log.info("Start to clean up Adblock filters.");
       this.cleanUpAdblockFilter()
         .then(() => this.reload())
         .catch(err => log.error('Error when clean up adblock filters', err, {}));
@@ -297,6 +295,7 @@ module.exports = class DNSMASQ {
   }
 
   reload() {
+    log.info("Dnsmasq reloading.");
     return new Promise(((resolve, reject) => {
       this.start(false, (err) => {
         if (err) {
