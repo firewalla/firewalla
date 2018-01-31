@@ -198,13 +198,9 @@ module.exports = class DNSMASQ {
 
       if (curState === undefined || curState === null) {
         this.nextState.shift();
-        lock.unlock(lockFile, err => handleError(err, false));
-        log.info(`--- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
-        this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
-        return;
+      } else {
+        this.enabled = curState;
       }
-
-      this.enabled = curState;
 
       log.info(`in control adblock filter: state: ${curState}, this.enabled: ${this.enabled}, this.reloadCount: ${this.reloadCount++}`);
 
