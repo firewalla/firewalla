@@ -77,7 +77,7 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
-      this.enabled = false;
+      this.enabled = undefined;
       this.reloadCount = 0;
       this.nextState = [];
 
@@ -184,6 +184,12 @@ module.exports = class DNSMASQ {
     if (state !== undefined && state !== null) {
       this.nextState.push(state);
       log.info(`nextState is: ${util.inspect(this.nextState)}`);
+      if (this.enabled !== undefined) {
+        // already timer running, clear existing one and trigger next round immediately
+        clearTimeout(this.nextControlAdblockFilter);
+        setImmediate(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
+        return;
+      }
     }
 
     lock.lock(lockFile, err => {
@@ -214,13 +220,21 @@ module.exports = class DNSMASQ {
             this.reload().finally(() => {
               this.nextState.shift();
               lock.unlock(lockFile, err => handleError(err, false));
-              log.info(`--- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
+              log.info(`000 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
               this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
             });
           }
         });
 
       } else {
+
+        if (curState === undefined) {
+          lock.unlock(lockFile, err => handleError(err, false));
+          log.info(`111 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
+          this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
+          return;
+        }
+
         log.info("Start to clean up Adblock filters.");
 
         if (this.nextControlAdblockFilter) {
@@ -234,7 +248,7 @@ module.exports = class DNSMASQ {
             this.reload().finally(() => {
               this.nextState.shift();
               lock.unlock(lockFile, err => handleError(err, false));
-              log.info(`--- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
+              log.info(`222 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
               this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
             });
           });
