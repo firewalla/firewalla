@@ -183,7 +183,7 @@ module.exports = class DNSMASQ {
       lock.unlock(lockFile, err => {});
     }.bind(this);
 
-    lock.lock(lockFile, {wait: 3000, retries: 5, stale: 50}, err => {
+    lock.lock(lockFile, err => {
       if (err) {
         handleError(err, true);
         return;
