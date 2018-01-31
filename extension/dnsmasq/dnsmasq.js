@@ -71,6 +71,7 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
+      this.enabled = false;
 
       process.on('exit', () => {
         this.shouldStart = false;
@@ -162,6 +163,27 @@ module.exports = class DNSMASQ {
         callback(null);
       }
     });
+  }
+
+  controlAdblockFilter(state) {
+    this.enabled = state || this.enabled;
+    log.info("in enable adblock filter: ", state, this.enabled);
+    
+    if (this.enabled === true) {
+      this.updateAdblockFilter(true, (err) => {
+        if (err) {
+          log.error("Update Adblock filters Failed!", err, {});
+        } else {
+          dnsmasq.reload();
+          log.info("Update Adblock filters successful.");
+        }
+      });
+      setTimeout(this.enableAdblockFilter, 5000);
+    } else {
+      this.cleanUpAdblockFilter()
+        .then(() => this.reload())
+        .catch(err => log.error('Error when clean up adblock filters', err, {}));
+    }
   }
 
   cleanUpFilter(file) {
