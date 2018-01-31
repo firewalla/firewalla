@@ -79,6 +79,7 @@ module.exports = class DNSMASQ {
       this.shouldStart = false;
       this.enabled = false;
       this.reloadCount = 0;
+      this.nextState = [];
 
       lock.unlock(lockFile, err => {});
 
@@ -174,14 +175,17 @@ module.exports = class DNSMASQ {
     });
   }
 
-  controlAdblockFilter(state) {
+  controlAdblockFilter(state, retry) {
     const handleError = function (err, _state) {
       if (!err) { return; }
 
       log.error(`Error when ${_state ? "obtain the lock" : "unlock the lock"}`, err, {});
-      this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, state), 1000);
-      lock.unlock(lockFile, err => {});
+      this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, true), 1000);
     }.bind(this);
+
+    if (!retry) {
+      this.nextState.push(state);
+    }
 
     lock.lock(lockFile, err => {
       if (err) {
@@ -191,11 +195,12 @@ module.exports = class DNSMASQ {
 
       log.info("--- Obtained lock");
 
-      if (state !== undefined && state !== null) {
-        this.enabled = state;
+      const curState = this.nextState[0];
+      if (curState !== undefined && curState !== null) {
+        this.enabled = curState;
       }
 
-      log.info(`in control adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.reloadCount: ${this.reloadCount++}`);
+      log.info(`in control adblock filter: state: ${curState}, this.enabled: ${this.enabled}, this.reloadCount: ${this.reloadCount++}`);
 
       if (this.enabled) {
         log.info("Start to update Adblock filters.");
@@ -210,6 +215,7 @@ module.exports = class DNSMASQ {
                 this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY);
               })
               .finally(() => {
+                this.nextState.shift();
                 lock.unlock(lockFile, err => handleError(err, false));
                 log.info("--- Released the lock");
               });
@@ -227,6 +233,7 @@ module.exports = class DNSMASQ {
           .then(() => this.reload())
           .catch(err => log.error('Error when clean up adblock filters', err, {}))
           .finally(() => {
+            this.nextState.shift();
             lock.unlock(lockFile, err => handleError(err, false));
             log.info("--- Released the lock");
           });
