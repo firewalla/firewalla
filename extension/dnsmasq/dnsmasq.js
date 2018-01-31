@@ -180,7 +180,7 @@ module.exports = class DNSMASQ {
           log.info("Update Adblock filters successful.");
         }
       });
-      setTimeout(function() {this.controlAdblockFilter()}, 15000);
+      setTimeout((() => {this.controlAdblockFilter()}).bind(this), 15000);
     } else {
       log.info("Start to clean up Adblock filters.");
       this.cleanUpAdblockFilter()
