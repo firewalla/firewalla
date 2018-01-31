@@ -517,6 +517,16 @@ module.exports = class {
 
         // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
       }
+    } else if(m === 'spoof' || m === 'autoSpoof') {
+      let myip = sysManager.myIp()
+
+      // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
+      if(myip && 
+        (data["id.orig_h"] === myip ||
+        data["id.resp_h"] === myip) && 
+        !this.isMonitoring(myip)) {        
+            return false // set it to invalid if walla itself is set to "monitoring off"
+      }
     }
 
     return true
