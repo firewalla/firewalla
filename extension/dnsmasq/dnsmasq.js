@@ -62,7 +62,7 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
-let RELOAD_DELAY = 15000;
+let RELOAD_DELAY = 3600 * 24 * 1000; // one day
 
 const lock = require('lockfile')
 const path = require('path');
@@ -202,9 +202,7 @@ module.exports = class DNSMASQ {
 
       const curState = this.nextState[0];
 
-      if (curState === undefined || curState === null) {
-        this.nextState.shift();
-      } else {
+      if (curState !== undefined && curState !== null) {
         this.enabled = curState;
       }
 
