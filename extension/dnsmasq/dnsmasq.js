@@ -167,10 +167,13 @@ module.exports = class DNSMASQ {
   }
 
   controlAdblockFilter(state) {
-    this.enabled = state || this.enabled;
-    log.info("in enable adblock filter: ", state, this.enabled, this.restartCount ++);
+    if (state !== null && state !== undefined) {
+      this.enabled = state;
+    }
 
-    if (this.enabled === true) {
+    log.info(`in enable adblock filter: state: ${state}, this.enabled: ${this.enabled}, this.restartCount: ${this.restartCount++}`);
+
+    if (this.enabled) {
       log.info("Start to update Adblock filters.");
       this.updateAdblockFilter(true, (err) => {
         if (err) {
