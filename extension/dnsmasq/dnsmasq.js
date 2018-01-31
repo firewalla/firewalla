@@ -174,9 +174,11 @@ module.exports = class DNSMASQ {
 
   controlAdblockFilter(state) {
     const handleError = function (err, _state) {
-      log.error("unable to " + _state ? "obtain the lock" : "unlock the lock", err, {});
+      if (!err) { return; }
+
+      log.error(`Error when ${_state ? "obtain the lock" : "unlock the lock"}`, err, {});
       this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this, _state), RELOAD_DELAY);
-    };
+    }.bind(this);
 
     lock.lock(lockFile, {wait: 3000, retries: 5, stale: 50}, err => {
       if (err) {
