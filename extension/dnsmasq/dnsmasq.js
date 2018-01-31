@@ -181,15 +181,20 @@ module.exports = class DNSMASQ {
         if (err) {
           log.error("Update Adblock filters Failed!", err, {});
         } else {
+          log.info("Update Adblock filters successful.");
           this.reload().then(() => {
-            log.info("Update Adblock filters successful.");
-            setTimeout((() => {this.controlAdblockFilter()}).bind(this), RELOAD_DELAY);
+            this.nextcontrolAdblockFilter = setTimeout((() => {this.controlAdblockFilter()}).bind(this), RELOAD_DELAY);
           });
         }
       });
 
     } else {
       log.info("Start to clean up Adblock filters.");
+      if (this.nextcontrolAdblockFilter) {
+        log.info("Clear the scheduled next ControlAdblockFilter invocation");
+        clearTimeout(this.nextcontrolAdblockFilter);
+      }
+
       this.cleanUpAdblockFilter()
         .then(() => this.reload())
         .catch(err => log.error('Error when clean up adblock filters', err, {}));
