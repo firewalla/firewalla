@@ -177,25 +177,22 @@ module.exports = class DNSMASQ {
     });
   }
 
-  _reloadAdblockFilter() {
-    let preState = null;
-    let nextState = this.nextState;
-
-    if (nextState !== undefined) {
-      preState = this.state;
-      this.state = nextState;
+  _setTimeoutForNextReload(oldNextState, curNextState) {
+    if (oldNextState === curNextState) {
+      // no need immediate reload when next state not changed during reloading
+      this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+    } else {
+      log.warn(`next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
+      setImmediate(this._reloadAdblockFilter.bind(this));
     }
+  };
 
-    log.info(`in control adblock filter: preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
+  _reloadAdblockFilter() {
+    let preState = this.state;
+    let nextState = this.nextState;
+    this.state = nextState;
 
-    const setTimeoutForNextReload = function (oldNextState, curNextState) {
-      if (oldNextState === curNextState) {
-        this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
-      } else {
-        log.warn("next state changed during update, needs to reload again immediately");
-        setImmediate(this._reloadAdblockFilter.bind(this));
-      }
-    }.bind(this);
+    log.info(`in reloadAdblockFilter(): preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
 
     if (nextState === true) {
       log.info("Start to update Adblock filters.");
@@ -208,14 +205,14 @@ module.exports = class DNSMASQ {
 
         this.reload().finally(() => {
           log.info(`currently enabled --- nextState is: ${this.nextState}`);
-          setTimeoutForNextReload(nextState, this.nextState);
+          this._setTimeoutForNextReload(nextState, this.nextState);
         });
       });
     } else {
       if (preState === false && nextState === false) {
         // disabled, no need do anything
         log.info(`currently disabled --- nextState is: ${this.nextState}`);
-        setTimeoutForNextReload(nextState, this.nextState);
+        this._setTimeoutForNextReload(nextState, this.nextState);
         return;
       }
 
@@ -226,7 +223,7 @@ module.exports = class DNSMASQ {
         .then(() => {
           this.reload().finally(() => {
             log.info(`newly disabled --- nextState is: ${this.nextState}`);
-            setTimeoutForNextReload(nextState, this.nextState);
+            this._setTimeoutForNextReload(nextState, this.nextState);
           });
         });
     }
