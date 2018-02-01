@@ -182,13 +182,13 @@ module.exports = class DNSMASQ {
       // no need immediate reload when next state not changed during reloading
       this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
       this.nextReloadAdblockFilter.length = 0;
-      log.info(`scheduling for next reload in ${RELOAD_DELAY/1000}s`);
+      log.info(`schedule next reload in ${RELOAD_DELAY/1000}s`);
       this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
     } else {
       log.warn(`next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
       setImmediate(this._reloadAdblockFilter.bind(this));
     }
-  };
+  }
 
   _reloadAdblockFilter() {
     let preState = this.state;
