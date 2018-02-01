@@ -64,10 +64,6 @@ let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8
 
 let RELOAD_DELAY = 3600 * 12 * 1000; // half day
 
-const lock = require('lockfile')
-const path = require('path');
-const lockFile = path.resolve(dnsFilterDir + '/dnsmasq.lock');
-
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
