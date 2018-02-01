@@ -1554,68 +1554,12 @@ class netBot extends ControllerBot {
 
   cmdHandler(gid, msg, callback) {
     log.info("API: CmdHandler ",gid,msg,{});
-    if (msg.data.item === "reboot") {
-      log.info("Rebooting");
-      let datamodel = {
-        type: 'jsonmsg',
-        mtype: 'init',
-        id: uuid.v4(),
-        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-        replyid: msg.id,
-        code: 200
-      }
-      this.txData(this.primarygid, "reboot", datamodel, "jsondata", "", null, callback);
-      require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
-      });
-      return;
-    } else if (msg.data.item === "reset") {
+    if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
-      return;
-    } else if (msg.data.item === "resetpolicy") {
-      log.info("Reseting Policy");
-      let task = require('child_process').exec('/home/pi/firewalla/scripts/reset-policy', (err, out, code) => {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200
-        }
-        this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
-      });
-      return;
-    } else if (msg.data.item === "upgrade") {
-      log.info("upgrading");
-      let task = require('child_process').exec('/home/pi/firewalla/scripts/upgrade', (err, out, code) => {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200
-        }
-        this.txData(this.primarygid, "reset", datamodel, "jsondata", "", null, callback);
-      });
-      return;
-    } else if (msg.data.item === "shutdown") {
-      log.info("shutdown firewalla in 60 seconds");
-      let task = require('child_process').exec('sleep 3; sudo shutdown -h now', (err, out, code) => {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200
-        }
-        this.txData(this.primarygid, "shutdown", datamodel, "jsondata", "", null, callback);
-      });
       return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
@@ -1635,6 +1579,38 @@ class netBot extends ControllerBot {
     }
 
     switch (msg.data.item) {
+      case "upgrade":
+        async(() => {
+          sysTool.upgradeToLatest()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "shutdown":
+        async(() => {
+          sysTool.shutdownServices()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "reboot":
+        async(() => {
+          sysTool.rebootServices()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "resetpolicy":
+        async(() => {
+          sysTool.resetPolicy()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
