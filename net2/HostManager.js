@@ -1413,18 +1413,21 @@ module.exports = class {
             if(!f.isDocker()) {
               spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
             } else {
+              // for docker
               spoofer = {
                 isSecondaryInterfaceIP: () => {},
-                newSpoof: () => {},
-                newUnspoof: () => {},
-                newSpoof6: () => {},
-                newUnspoof6: () => {},
+                newSpoof: () => new Promise(resolve => resolve()),
+                newUnspoof: () => new Promise(resolve => resolve()),
+                newSpoof6: () => new Promise(resolve => resolve()),
+                newUnspoof6: () => new Promise(resolve => resolve()),
                 spoof: () => {},
                 spoofMac6: () => {},
                 clean: () => {},
                 clean7: () => {},
                 clean6byIp: () => {},
-                clean6: () => {}
+                clean6: () => {},
+                validateV6Spoofs: () => {},
+                validateV4Spoofs: () => {},
               };
             }
           }
