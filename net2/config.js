@@ -19,6 +19,8 @@ const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
 
+let callbacks = {}
+
 let config = null;
 
 function getConfig() {
@@ -128,15 +130,26 @@ sclient_subscribe.subscribe("config:feature:dynamic:clear")
 
 sclient_subscribe.on("message", (channel, message) => {
   log.info(`got message from ${channel}: ${message}`)
+  const theFeature = message
   switch(channel) {
   case "config:feature:dynamic:enable":
-    dynamicConfigs[message] = '1'
+    dynamicConfigs[theFeature] = '1'
+    if(callbacks[theFeature]) {
+      callbacks[theFeature].forEach((c) => {
+        c(theFeature, true)
+      })
+    }
     break
   case "config:feature:dynamic:disable":
-    dynamicConfigs[message] = '0'
+    dynamicConfigs[theFeature] = '0'
+    if(callbacks[theFeature]) {
+      callbacks[theFeature].forEach((c) => {
+        c(theFeature, false)
+      })
+    }
     break
   case "config:feature:dynamic:clear":
-    delete dynamicConfigs[message]
+    delete dynamicConfigs[theFeature]
     break
   }  
 });
@@ -147,6 +160,16 @@ setInterval(() => {
   syncDynamicFeaturesConfigs()
 }, 60 * 1000) // every minute
 
+
+
+function onFeature(feature, callback) {
+  if(!callbacks[feature]) {
+    callbacks[feature] = []
+  }
+
+  callbacks[feature].push(callback)
+}
+
 module.exports = {
   getConfig: getConfig,
   isFeatureOn: isFeatureOn,
@@ -155,5 +178,6 @@ module.exports = {
   enableDynamicFeature:enableDynamicFeature,
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
-  syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs
+  syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
+  onFeature: onFeature  
 };
