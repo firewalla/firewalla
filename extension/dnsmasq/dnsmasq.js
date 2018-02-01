@@ -180,6 +180,9 @@ module.exports = class DNSMASQ {
   _setTimeoutForNextReload(oldNextState, curNextState) {
     if (oldNextState === curNextState) {
       // no need immediate reload when next state not changed during reloading
+      this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
+      this.nextReloadAdblockFilter.length = 0;
+      log.info(`scheduling for next reload in ${RELOAD_DELAY/1000}s`);
       this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
     } else {
       log.warn(`next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
@@ -203,29 +206,19 @@ module.exports = class DNSMASQ {
           log.info("Update Adblock filters successful.");
         }
 
-        this.reload().finally(() => {
-          log.info(`currently enabled --- nextState is: ${this.nextState}`);
-          this._setTimeoutForNextReload(nextState, this.nextState);
-        });
+        this.reload().finally(() => this._setTimeoutForNextReload(nextState, this.nextState));
       });
     } else {
       if (preState === false && nextState === false) {
         // disabled, no need do anything
-        log.info(`currently disabled --- nextState is: ${this.nextState}`);
         this._setTimeoutForNextReload(nextState, this.nextState);
         return;
       }
 
       log.info("Start to clean up Adblock filters.");
-
       this.cleanUpAdblockFilter()
         .catch(err => log.error('Error when clean up adblock filters', err, {}))
-        .then(() => {
-          this.reload().finally(() => {
-            log.info(`newly disabled --- nextState is: ${this.nextState}`);
-            this._setTimeoutForNextReload(nextState, this.nextState);
-          });
-        });
+        .then(() => this.reload().finally(() => this._setTimeoutForNextReload(nextState, this.nextState)));
     }
   }
 
@@ -235,6 +228,7 @@ module.exports = class DNSMASQ {
     if (this.state !== undefined) {
       // already timer running, clear existing ones before trigger next round immediately
       this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
+      this.nextReloadAdblockFilter.length = 0;
     }
     setImmediate(this._reloadAdblockFilter.bind(this));
   }
