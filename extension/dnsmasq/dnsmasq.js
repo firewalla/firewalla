@@ -62,7 +62,7 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
-let RELOAD_DELAY = 3600 * 12 * 1000; // half day
+let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
 module.exports = class DNSMASQ {
   constructor(loglevel) {
@@ -175,8 +175,8 @@ module.exports = class DNSMASQ {
       // no need immediate reload when next state not changed during reloading
       this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
       this.nextReloadAdblockFilter.length = 0;
-      log.info(`schedule next reload in ${RELOAD_DELAY/1000}s`);
-      this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+      log.info(`schedule next reload in ${RELOAD_INTERVAL/1000}s`);
+      this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_INTERVAL));
     } else {
       log.warn(`next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
       setImmediate(this._reloadAdblockFilter.bind(this));
