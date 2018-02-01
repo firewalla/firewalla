@@ -188,7 +188,16 @@ module.exports = class DNSMASQ {
 
     log.info(`in control adblock filter: preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
 
-    if (this.state) {
+    const setTimeoutForNextReload = function (oldNextState, curNextState) {
+      if (oldNextState === curNextState) {
+        this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+      } else {
+        log.warn("next state changed during update, needs to reload again immediately");
+        setImmediate(this._reloadAdblockFilter.bind(this));
+      }
+    }.bind(this);
+
+    if (nextState === true) {
       log.info("Start to update Adblock filters.");
       this.updateAdblockFilter(true, (err) => {
         if (err) {
@@ -198,20 +207,15 @@ module.exports = class DNSMASQ {
         }
 
         this.reload().finally(() => {
-          log.info(`000 --- nextState is: ${this.nextState}`);
-          if (this.nextState === nextState) {
-            this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
-          } else {
-            log.warn("next state changed during update, needs to reload again immediately");
-            setImmediate(this._reloadAdblockFilter.bind(this));
-          }
+          log.info(`currently enabled --- nextState is: ${this.nextState}`);
+          setTimeoutForNextReload(nextState, this.nextState);
         });
       });
     } else {
-      if (!preState && !this.state) {
+      if (preState === false && nextState === false) {
         // disabled, no need do anything
-        log.info(`111 --- nextState is: ${this.nextState}`);
-        this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+        log.info(`currently disabled --- nextState is: ${this.nextState}`);
+        setTimeoutForNextReload(nextState, this.nextState);
         return;
       }
 
@@ -221,13 +225,8 @@ module.exports = class DNSMASQ {
         .catch(err => log.error('Error when clean up adblock filters', err, {}))
         .then(() => {
           this.reload().finally(() => {
-            if (this.nextState === nextState) {
-              log.info(`222 --- nextState is: ${this.nextState}`);
-              this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
-            } else {
-              log.warn("next state changed during update, needs to reload again immediately");
-              setImmediate(this._reloadAdblockFilter.bind(this));
-            }
+            log.info(`newly disabled --- nextState is: ${this.nextState}`);
+            setTimeoutForNextReload(nextState, this.nextState);
           });
         });
     }
@@ -236,14 +235,11 @@ module.exports = class DNSMASQ {
   controlAdblockFilter(state) {
     this.nextState = state;
     log.info(`nextState is: ${this.nextState}`);
-    if (this.state === undefined) {
-      // startup, the state is null, need to reload immediately
-      setImmediate(this._reloadAdblockFilter.bind(this));
-    } else {
-      // already timer running, clear existing ones and trigger next round immediately
+    if (this.state !== undefined) {
+      // already timer running, clear existing ones before trigger next round immediately
       this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
-      setImmediate(this._reloadAdblockFilter.bind(this));
     }
+    setImmediate(this._reloadAdblockFilter.bind(this));
   }
 
   cleanUpFilter(file) {
