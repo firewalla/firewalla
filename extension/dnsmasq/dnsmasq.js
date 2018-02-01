@@ -79,7 +79,7 @@ module.exports = class DNSMASQ {
       this.shouldStart = false;
       this.enabled = undefined;
       this.reloadCount = 0;
-      this.nextState = [];
+      this.nextState = undefined;
 
       lock.unlock(lockFile, err => {});
 
@@ -176,14 +176,19 @@ module.exports = class DNSMASQ {
   }
 
   controlAdblockFilter(state) {
-    const handleError = function (err, getLock) {
+    const handleError = function (err, inGetLock) {
       if (!err) { return; }
-      log.error(`Error when ${getLock ? "obtain the lock" : "unlock the lock"}`, err, {});
+      log.error(`Error when ${inGetLock ? "obtain the lock" : "unlock the lock"}`, err, {});
+      const RETRY_DELAY = 1000;
+      if (inGetLock) {
+        clearTimeout(this.nextControlAdblockFilter);
+        this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RETRY_DELAY, undefined);
+      }
     }.bind(this);
 
     if (state !== undefined && state !== null) {
-      this.nextState.push(state);
-      log.info(`nextState is: ${util.inspect(this.nextState)}`);
+      this.nextState = state;
+      log.info(`nextState is: ${this.nextState}`);
       if (this.enabled !== undefined) {
         // already timer running, clear existing one and trigger next round immediately
         clearTimeout(this.nextControlAdblockFilter);
@@ -200,7 +205,7 @@ module.exports = class DNSMASQ {
 
       log.info("--- Obtained lock");
 
-      const curState = this.nextState[0];
+      const curState = this.nextState;
 
       if (curState !== undefined && curState !== null) {
         this.enabled = curState;
@@ -216,16 +221,14 @@ module.exports = class DNSMASQ {
           } else {
             log.info("Update Adblock filters successful.");
             this.reload().finally(() => {
-              this.nextState.shift();
+              this.nextState = undefined;
               lock.unlock(lockFile, err => handleError(err, false));
               log.info(`000 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
               this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
             });
           }
         });
-
       } else {
-
         if (curState === undefined) {
           lock.unlock(lockFile, err => handleError(err, false));
           log.info(`111 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
@@ -235,16 +238,11 @@ module.exports = class DNSMASQ {
 
         log.info("Start to clean up Adblock filters.");
 
-        if (this.nextControlAdblockFilter) {
-          log.info("Clear the scheduled next ControlAdblockFilter invocation");
-          clearTimeout(this.nextcontrolAdblockFilter);
-        }
-
         this.cleanUpAdblockFilter()
           .catch(err => log.error('Error when clean up adblock filters', err, {}))
           .then(() => {
             this.reload().finally(() => {
-              this.nextState.shift();
+              this.nextState = undefined;
               lock.unlock(lockFile, err => handleError(err, false));
               log.info(`222 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
               this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
