@@ -62,8 +62,7 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
-//let RELOAD_DELAY = 3600 * 24 * 1000; // one day
-let RELOAD_DELAY = 15 * 1000; // one day
+let RELOAD_DELAY = 3600 * 12 * 1000; // half day
 
 const lock = require('lockfile')
 const path = require('path');
