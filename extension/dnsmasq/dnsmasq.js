@@ -62,7 +62,8 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
-let RELOAD_DELAY = 3600 * 24 * 1000; // one day
+//let RELOAD_DELAY = 3600 * 24 * 1000; // one day
+let RELOAD_DELAY = 15 * 1000; // one day
 
 const lock = require('lockfile')
 const path = require('path');
@@ -77,9 +78,10 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
-      this.enabled = undefined;
+      this.state = undefined;
       this.reloadCount = 0;
       this.nextState = undefined;
+      this.nextReloadAdblockFilter = [];
 
       lock.unlock(lockFile, err => {});
 
@@ -175,81 +177,73 @@ module.exports = class DNSMASQ {
     });
   }
 
-  controlAdblockFilter(state) {
-    const handleError = function (err, inGetLock) {
-      if (!err) { return; }
-      log.error(`Error when ${inGetLock ? "obtain the lock" : "unlock the lock"}`, err, {});
-      const RETRY_DELAY = 1000;
-      if (inGetLock) {
-        clearTimeout(this.nextControlAdblockFilter);
-        this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RETRY_DELAY, undefined);
-      }
-    }.bind(this);
+  _reloadAdblockFilter() {
+    let preState = null;
+    let nextState = this.nextState;
 
-    if (state !== undefined && state !== null) {
-      this.nextState = state;
-      log.info(`nextState is: ${this.nextState}`);
-      if (this.enabled !== undefined) {
-        // already timer running, clear existing one and trigger next round immediately
-        clearTimeout(this.nextControlAdblockFilter);
-        setImmediate(this.controlAdblockFilter.bind(this), undefined);
-        return;
-      }
+    if (nextState !== undefined) {
+      preState = this.state;
+      this.state = nextState;
     }
 
-    lock.lock(lockFile, err => {
-      if (err) {
-        handleError(err, true);
+    log.info(`in control adblock filter: preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
+
+    if (this.state) {
+      log.info("Start to update Adblock filters.");
+      this.updateAdblockFilter(true, (err) => {
+        if (err) {
+          log.error("Update Adblock filters Failed!", err, {});
+        } else {
+          log.info("Update Adblock filters successful.");
+        }
+
+        this.reload().finally(() => {
+          log.info(`000 --- nextState is: ${this.nextState}`);
+          if (this.nextState === nextState) {
+            this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+          } else {
+            log.warn("next state changed during update, needs to reload again immediately");
+            setImmediate(this._reloadAdblockFilter.bind(this));
+          }
+        });
+      });
+    } else {
+      if (!preState && !this.state) {
+        // disabled, no need do anything
+        log.info(`111 --- nextState is: ${this.nextState}`);
+        this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
         return;
       }
 
-      log.info("--- Obtained lock");
+      log.info("Start to clean up Adblock filters.");
 
-      const curState = this.nextState;
-
-      if (curState !== undefined && curState !== null) {
-        this.enabled = curState;
-      }
-
-      log.info(`in control adblock filter: state: ${curState}, this.enabled: ${this.enabled}, this.reloadCount: ${this.reloadCount++}`);
-
-      if (this.enabled) {
-        log.info("Start to update Adblock filters.");
-        this.updateAdblockFilter(true, (err) => {
-          if (err) {
-            log.error("Update Adblock filters Failed!", err, {});
-          } else {
-            log.info("Update Adblock filters successful.");
-            this.reload().finally(() => {
-              this.nextState = undefined;
-              lock.unlock(lockFile, err => handleError(err, false));
-              log.info(`000 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
-              this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
-            });
-          }
-        });
-      } else {
-        if (curState === undefined) {
-          lock.unlock(lockFile, err => handleError(err, false));
-          log.info(`111 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
-          this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
-          return;
-        }
-
-        log.info("Start to clean up Adblock filters.");
-
-        this.cleanUpAdblockFilter()
-          .catch(err => log.error('Error when clean up adblock filters', err, {}))
-          .then(() => {
-            this.reload().finally(() => {
-              this.nextState = undefined;
-              lock.unlock(lockFile, err => handleError(err, false));
-              log.info(`222 --- Released the lock, nextState is: ${util.inspect(this.nextState)}`);
-              this.nextControlAdblockFilter = setTimeout(this.controlAdblockFilter.bind(this), RELOAD_DELAY, undefined);
-            });
+      this.cleanUpAdblockFilter()
+        .catch(err => log.error('Error when clean up adblock filters', err, {}))
+        .then(() => {
+          this.reload().finally(() => {
+            if (this.nextState === nextState) {
+              log.info(`222 --- nextState is: ${this.nextState}`);
+              this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_DELAY));
+            } else {
+              log.warn("next state changed during update, needs to reload again immediately");
+              setImmediate(this._reloadAdblockFilter.bind(this));
+            }
           });
-      }
-    });
+        });
+    }
+  }
+
+  controlAdblockFilter(state) {
+    this.nextState = state;
+    log.info(`nextState is: ${this.nextState}`);
+    if (this.state === undefined) {
+      // startup, the state is null, need to reload immediately
+      setImmediate(this._reloadAdblockFilter.bind(this));
+    } else {
+      // already timer running, clear existing ones and trigger next round immediately
+      this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
+      setImmediate(this._reloadAdblockFilter.bind(this));
+    }
   }
 
   cleanUpFilter(file) {
