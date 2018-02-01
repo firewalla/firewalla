@@ -78,8 +78,6 @@ module.exports = class DNSMASQ {
       this.nextState = undefined;
       this.nextReloadAdblockFilter = [];
 
-      lock.unlock(lockFile, err => {});
-
       process.on('exit', () => {
         this.shouldStart = false;
         this.stop();
