@@ -1412,6 +1412,20 @@ module.exports = class {
             log.info("System Manager Updated");
             if(!f.isDocker()) {
               spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            } else {
+              spoofer = {
+                isSecondaryInterfaceIP: () => {},
+                newSpoof: () => {},
+                newUnspoof: () => {},
+                newSpoof6: () => {},
+                newUnspoof6: () => {},
+                spoof: () => {},
+                spoofMac6: () => {},
+                clean: () => {},
+                clean7: () => {},
+                clean6byIp: () => {},
+                clean6: () => {}
+              };
             }
           }
         });
