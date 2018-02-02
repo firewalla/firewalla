@@ -197,7 +197,7 @@ function start(callback) {
                   if(err) {
                     stop(); // stop everything if anything wrong.
                   } else {
-                    if(!statusCheckTimer && fc.isFeatureOn("ss_client:statusCheck")) {
+                    if(!statusCheckTimer) {
                       statusCheckTimer = setInterval(() => {
                         statusCheck()
                       }, 1000 * 60) // check status every minute
