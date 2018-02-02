@@ -414,7 +414,7 @@ module.exports = class DNSMASQ {
   loadFilterFromBone(callback) {
     callback = callback || function() {}
 
-    const name = f.isProduction() ? 'ads' : 'ads-dev'
+    const name = f.isProduction() ? 'ads' : 'ads-dev';
 
     log.info(`Load data set from bone: ${name}`);
 
