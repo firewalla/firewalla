@@ -414,7 +414,9 @@ module.exports = class DNSMASQ {
   loadFilterFromBone(callback) {
     callback = callback || function() {}
 
-    bone.hashset("ads",(err,data)=>{
+    const listName = f.isProduction() ? `ads` : `ads-dev`;
+
+    bone.hashset(listName, (err,data) => {
       if(err) {
         callback(err);
       } else {
