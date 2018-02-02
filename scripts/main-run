@@ -24,6 +24,9 @@ logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+# remove overlay backup files
+sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
 
