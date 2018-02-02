@@ -62,6 +62,8 @@ let BLACK_HOLE_IP="198.51.100.99";
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
+let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
+
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
@@ -71,6 +73,10 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
+      this.state = undefined;
+      this.reloadCount = 0;
+      this.nextState = undefined;
+      this.nextReloadAdblockFilter = [];
 
       process.on('exit', () => {
         this.shouldStart = false;
@@ -162,6 +168,62 @@ module.exports = class DNSMASQ {
         callback(null);
       }
     });
+  }
+
+  _setTimeoutForNextReload(oldNextState, curNextState) {
+    if (oldNextState === curNextState) {
+      // no need immediate reload when next state not changed during reloading
+      this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
+      this.nextReloadAdblockFilter.length = 0;
+      log.info(`schedule next reload in ${RELOAD_INTERVAL/1000}s`);
+      this.nextReloadAdblockFilter.push(setTimeout(this._reloadAdblockFilter.bind(this), RELOAD_INTERVAL));
+    } else {
+      log.warn(`next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
+      setImmediate(this._reloadAdblockFilter.bind(this));
+    }
+  }
+
+  _reloadAdblockFilter() {
+    let preState = this.state;
+    let nextState = this.nextState;
+    this.state = nextState;
+
+    log.info(`in reloadAdblockFilter(): preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
+
+    if (nextState === true) {
+      log.info("Start to update Adblock filters.");
+      this.updateAdblockFilter(true, (err) => {
+        if (err) {
+          log.error("Update Adblock filters Failed!", err, {});
+        } else {
+          log.info("Update Adblock filters successful.");
+        }
+
+        this.reload().finally(() => this._setTimeoutForNextReload(nextState, this.nextState));
+      });
+    } else {
+      if (preState === false && nextState === false) {
+        // disabled, no need do anything
+        this._setTimeoutForNextReload(nextState, this.nextState);
+        return;
+      }
+
+      log.info("Start to clean up Adblock filters.");
+      this.cleanUpAdblockFilter()
+        .catch(err => log.error('Error when clean up adblock filters', err, {}))
+        .then(() => this.reload().finally(() => this._setTimeoutForNextReload(nextState, this.nextState)));
+    }
+  }
+
+  controlAdblockFilter(state) {
+    this.nextState = state;
+    log.info(`nextState is: ${this.nextState}`);
+    if (this.state !== undefined) {
+      // already timer running, clear existing ones before trigger next round immediately
+      this.nextReloadAdblockFilter.forEach(t => clearTimeout(t));
+      this.nextReloadAdblockFilter.length = 0;
+    }
+    setImmediate(this._reloadAdblockFilter.bind(this));
   }
 
   cleanUpFilter(file) {
@@ -270,6 +332,7 @@ module.exports = class DNSMASQ {
   }
 
   reload() {
+    log.info("Dnsmasq reloading.");
     return new Promise(((resolve, reject) => {
       this.start(false, (err) => {
         if (err) {
@@ -277,9 +340,12 @@ module.exports = class DNSMASQ {
         }
         resolve();
       });
-    }).bind(this)).catch((err) => {
-      log.error("Got error when reloading dnsmasq:", err, {})
-    });
+    }).bind(this))
+      .then(() => {
+        log.info("Dnsmasq reload complete.");
+      }).catch((err) => {
+        log.error("Got error when reloading dnsmasq:", err, {})
+      });
   }
 
   updateAdblockTmpFilter(force, callback) {

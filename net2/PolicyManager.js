@@ -276,20 +276,7 @@ module.exports = class {
     }
 
     log.info("PolicyManager:Adblock:Dnsmasq", ip, state);
-    if (state === true) {
-      dnsmasq.updateAdblockFilter(true, (err) => {
-        if (err) {
-          log.error("Update Adblock filters Failed!", err, {});
-        } else {
-          dnsmasq.reload();
-          log.info("Update Adblock filters successful.");
-        }
-      });
-    } else {
-      dnsmasq.cleanUpAdblockFilter()
-        .then(() => dnsmasq.reload())
-        .catch(err => log.error('Error when clean up adblock filters', err, {}));
-    }
+    dnsmasq.controlAdblockFilter(state);
   }
 
     hblock(host, state) {
