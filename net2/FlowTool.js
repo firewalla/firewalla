@@ -281,7 +281,7 @@ class FlowTool {
 
     f.ts = flow.ts;
     f.fd = flow.fd;
-    f.du = flow.duration
+    f.duration = flow.du
 
     if(flow.lh === flow.sh) {
       f.ip = flow.dh;
