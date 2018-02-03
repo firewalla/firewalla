@@ -35,7 +35,7 @@ if(!ip) {
 }
 
 async(() => {
-  const conns = await (flowTool.getRecentConnections(ip, "in", {
+  let conns = await (flowTool.getRecentConnections(ip, "in", {
     end: new Date() / 1000,
     begin: new Date() / 1000 - 86400,
     no_merge: true,
@@ -51,7 +51,7 @@ async(() => {
         return
       }
     }
-    console.log(`${conn.ts}\t${conn.host}\t${conn.ip}\t${conn.upload}\t${conn.download}\t${conn.category}\t${conn.duration}`)
+    console.log(`${Math.floor(conn.ts / 60 / 5)}\t${conn.ts}\t${conn.host}\t${conn.ip}\t${conn.upload}\t${conn.download}\t${conn.category}\t${conn.duration}`)
   })
   
 })()
