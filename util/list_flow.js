@@ -24,6 +24,7 @@ const program = require('commander');
 
 program.version('0.0.2')
   .option('--ip [ip]', 'ip address')
+  .option('--filter [filter]', 'filter on host')
 
 program.parse(process.argv)
 
@@ -36,6 +37,18 @@ if(!ip) {
 async(() => {
   const conns = flowTool.getRecentConnections(ip, "in", {
     end: new Date() / 1000,
-    begin: new Date() / 1000 - 86400
+    begin: new Date() / 1000 - 86400,
+    no_merge: true
   })
+  
+  conns.map((conn) =>  {
+
+    if(program.filter) {
+      if(!conn.host.match(new RegExp(program.filter))) {
+        return
+      }
+    }
+    console.log(`${conn.ts}\t${conn.host}\t${conn.ip}\t${conn.upload}\t${conn.download}\t${conn.category}\t${conn.duration}`)
+  })
+  
 })()
