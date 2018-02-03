@@ -62,7 +62,7 @@ class SysTool {
   }
 
   upgradeToLatest() {
-    return exec("/home/pi/firewalla/scripts/fireupgrade.sh")
+    return exec("/home/pi/firewalla/scripts/fireupgrade.sh soft")
   }
 
   resetPolicy() {
