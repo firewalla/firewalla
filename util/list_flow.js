@@ -35,12 +35,12 @@ if(!ip) {
 }
 
 async(() => {
-  const conns = flowTool.getRecentConnections(ip, "in", {
+  const conns = await (flowTool.getRecentConnections(ip, "in", {
     end: new Date() / 1000,
     begin: new Date() / 1000 - 86400,
     no_merge: true,
     maxRecentFlow: 999999999
-  })
+  }))
   
   conns = conns.sort((a, b) => a.ts - b.ts)
 
