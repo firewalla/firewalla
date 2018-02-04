@@ -1527,6 +1527,7 @@ module.exports = class {
     }
 
     json.cpuid = utils.getCpuId();
+    json.uptime = process.uptime()
 
     if(sysManager.language) {
       json.language = sysManager.language;

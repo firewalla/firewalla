@@ -281,6 +281,7 @@ class FlowTool {
 
     f.ts = flow.ts;
     f.fd = flow.fd;
+    f.duration = flow.du
 
     if(flow.lh === flow.sh) {
       f.ip = flow.dh;
@@ -415,8 +416,14 @@ class FlowTool {
 
       flowObjects.forEach((x) => this.trimFlow(x));
 
-      let mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts));
+      let mergedFlow = null
 
+      if(!options.no_merge) {
+        mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
+      } else {
+        mergedFlow = flowObjects
+      }
+      
       let simpleFlows = mergedFlow
             .map((f) => this.toSimpleFlow(f))
             .map((f) => {

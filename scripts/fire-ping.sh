@@ -44,7 +44,7 @@ done
 # reboot ...
 
 api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
-if [[ $api_process_cnt > 0 ]]; then
+if [[ $api_process_cnt > 0 && ! -e /home/pi/.firewalla/config/disable_no_network_reboot ]]; then
    /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING NO Local Network REBOOT "
    /home/pi/firewalla/scripts/fire-rebootf 
    exit 0
@@ -54,9 +54,11 @@ FOUND=`grep "eth0:" /proc/net/dev`
 if [ -n "$FOUND" ] ; then
    echo found
 else
-   /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING MISSING ETH0 Local Network REBOOT "
-   /home/pi/firewalla/scripts/fire-rebootf 
-   exit 0
+  if [[ ! -e /home/pi/.firewalla/config/disable_no_eth0_reboot ]]; then
+    /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING MISSING ETH0 Local Network REBOOT "
+    /home/pi/firewalla/scripts/fire-rebootf 
+  fi
+  exit 0
 fi
 
 /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING WRITE2"
