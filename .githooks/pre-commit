@@ -1,0 +1,13 @@
+#!/bin/bash
+
+echo "[Firewalla Repo] Checking if bootstrap.sha256sum should be updated..."
+cd scripts
+if sha256sum -c bootstrap.sha256sum; then
+    echo "[Firewalla Repo] No need to update, continue committing"
+    exit 0
+else
+    echo "[Firewalla Repo] Need update, please update before commit"
+    echo "[Firewalla Repo] run 'cd scripts; sha256sum fire-ping.sh check_fix_network.sh fireupgrade.sh ../etc/fireupgrade2.service mgit'"
+    exit 1
+fi
+
