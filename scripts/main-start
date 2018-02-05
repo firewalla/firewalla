@@ -151,8 +151,8 @@ function update_node_modules {
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
             logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            $MGIT fetch origin  || $MGIT fetch origin
-            $MGIT reset -q --hard `cat $REVISION_FILE`
+            $MGIT fetch origin  || $MGIT fetch origin || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO FETCH ORIGIN"
+            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO RESET ORIGIN"
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
