@@ -47,18 +47,43 @@ function getConfig() {
 
 function isFeatureOn_Static(featureName) {
   let config = getConfig()
-  return config.userFeatures && config.userFeatures[featureName]
+  if(config.userFeatures && featureName in config.userFeatures) {
+    if(config.userFeatures[featureName]) {
+      return true
+    } else {
+      return false
+    }
+  } else {
+    return undefined
+  }
 }
 
+// undefined: feature not exists
+// true: feature enabled
+// false: feature disabled
 function isFeatureOn_Dynamic(featureName) {
-  return dynamicConfigs && dynamicConfigs[featureName] && dynamicConfigs[featureName] === '1'
+  if(dynamicConfigs && featureName in dynamicConfigs) {
+    if(dynamicConfigs[featureName] === '1' ) {
+      return true
+    } else {
+      return false
+    }
+  } else {
+    return undefined
+  }
 }
 
 function isFeatureOn(featureName) {
-  if(isFeatureOn_Static(featureName) || isFeatureOn_Dynamic(featureName)) {
-    return true
+  const dynamicFlag = isFeatureOn_Dynamic(featureName)
+  if(dynamicFlag !== undefined) {
+    return dynamicFlag
+  }
+
+  const staticFlag = isFeatureOn_Static(featureName)
+  if(staticFlag !== undefined) {
+    return staticFlag
   } else {
-    return false
+    return false // default disabled
   }
 }
 
