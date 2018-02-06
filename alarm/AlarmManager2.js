@@ -669,7 +669,7 @@ module.exports = class {
       if(needArchive) {
         await (this.archiveAlarm(alarm.aid))
       } else {
-        await (this.removeFromActiveQueueAsync(alarm.alarmID))
+        await (this.removeFromActiveQueueAsync(alarm.aid))
       }
 
       log.info(`Alarm ${alarm.aid} is blocked successfully`)
@@ -697,7 +697,7 @@ module.exports = class {
     })()
   }
 
-  allowAlarmByException(alarm, exception, info) {
+  allowAlarmByException(alarm, exception, info, needArchive) {
     return async(() => {
       if(!alarm || !exception) {
         return
@@ -713,8 +713,13 @@ module.exports = class {
       }
 
       await (this.updateAlarm(alarm))
-      await (this.archiveAlarm(alarm.aid))
 
+      if(needArchive) {
+        await (this.archiveAlarm(alarm.aid))
+      } else {
+        await (this.removeFromActiveQueueAsync(alarm.aid))
+      }
+      
       log.info(`Alarm ${alarm.aid} is allowed successfully`)
     })()
   }
