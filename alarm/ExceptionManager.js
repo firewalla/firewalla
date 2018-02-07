@@ -199,13 +199,30 @@ module.exports = class {
   }
 
   checkAndSave(exception, callback) {
-    let exceptions = await(this.getSameExceptions(exception))
-    if (exceptions && exceptions.length > 0) {
-      log.info(`exception ${exception} already exists in system: ${exceptions}`)
-      callback(null, exceptions[0], true)
-    } else {
-      this.saveException(exception, callback);
-    }
+    return async(() => {
+      let exceptions = await(this.getSameExceptions(exception))
+      if (exceptions && exceptions.length > 0) {
+        log.info(`exception ${exception} already exists in system: ${exceptions}`)
+        callback(null, exceptions[0], true)
+      } else {
+        let ee = await (this.saveExceptionAsync(exception))
+        callback(null, ee)
+      }
+    })().catch((err) => {
+      callback(err)
+    })
+  }
+
+  saveExceptionAsync(exception) {
+    return new Promise((resolve, reject) => {
+      this.saveException(exception, (err, ee) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(ee)
+        }
+      })
+    })
   }
 
   saveException(exception, callback) {
