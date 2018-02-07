@@ -203,7 +203,7 @@ class OldDataCleanSensor extends Sensor {
   cleanDuplicatedPolicy() {
     return async(() => {
 
-      const policies = await (pm2.loadActivePolicys(1000))
+      const policies = await (pm2.loadActivePolicysAsync(1000))
       
       let toBeDeleted = []
 
@@ -235,7 +235,7 @@ class OldDataCleanSensor extends Sensor {
         let e = exceptions[i]
         for(let j = i+1; j< exceptions.length; j++) {
           let e2 = exceptions[j]
-          if(e.isEqualToException(e2)) {
+          if(e && e2 && e.isEqualToException(e2)) {
             toBeDeleted.push(e)
             break
           }
