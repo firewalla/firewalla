@@ -33,6 +33,9 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const HostManager = require('../net2/HostManager')
+const hostManager = new HostManager('cli', 'server');
+
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -469,6 +472,17 @@ module.exports = class {
 
     */
 
+  isMonitoring(ip) {
+    const hostObject = hostManager.getHostFast(ip)
+
+    if(hostObject && hostObject.spoofing == false) {
+      return false
+    } else {
+      return true;
+    }
+
+  }
+
   isConnFlowValid(data) {
     let m = mode.getSetupModeSync()
     if(!m) {
@@ -484,6 +498,22 @@ module.exports = class {
            data["id.resp_h"] === myip) {
           return false  
         }
+
+        // ignore any devices' traffic who is set to monitoring off
+        const origIP = data["id.orig_h"]
+        const respIP = data["id.resp_h"]
+
+        if(sysManager.isLocalIP(origIP)) {
+            if(!this.isMonitoring(origIP)) {
+              return false // set it to invalid if it is not monitoring
+            }
+        }
+
+        if(sysManager.isLocalIP(respIP)) {
+          if(!this.isMonitoring(respIP)) {
+            return false // set it to invalid if it is not monitoring
+          }
+      }
 
         // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
       }

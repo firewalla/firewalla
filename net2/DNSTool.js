@@ -55,13 +55,9 @@ class DNSTool {
   dnsExists(ip) {
     let key = this.getDnsKey(ip);
 
-    return rclient.keysAsync(key)
-      .then((keys) => {
-        if(keys.length === 1) {
-          return true;
-        } else {
-          return false;
-        }
+    return rclient.existsAsync(key)
+      .then((exists) => {
+        return exists == 1
       })
   }
 

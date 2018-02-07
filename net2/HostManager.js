@@ -25,6 +25,8 @@ var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+const exec = require('child-process-promise').exec
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
@@ -63,6 +65,8 @@ let await = require('asyncawait/await');
 
 let f = require('./Firewalla.js');
 
+const license = require('../util/license.js')
+
 var alarmManager = null;
 
 var uuid = require('uuid');
@@ -71,6 +75,8 @@ var bone = require("../lib/Bone.js");
 var utils = require('../lib/utils.js');
 
 let fConfig = require('./config.js').getConfig();
+
+const fc = require('./config.js')
 
 rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
@@ -1524,6 +1530,8 @@ module.exports = class {
       reportAlarm: true
     }
 
+    json.runtimeFeatures = fc.getFeatures()
+
     if(f.isDocker()) {
       json.docker = true;
     }
@@ -1556,6 +1564,9 @@ module.exports = class {
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
+    if(!json.license) {
+        json.license = license.getLicense()
+    }
     json.ept = sysManager.ept;
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
@@ -1938,6 +1949,13 @@ module.exports = class {
 
           if(!appTool.isAppReadyToDiscardLegacyAlarm(options.appInfo)) {
             await (this.alarmDataForInit(json));
+          }
+
+          try {
+            await (exec("sudo systemctl is-active firekick"))
+            json.isBindingOpen = 1;
+          } catch(err) {
+            json.isBindingOpen = 0;
           }
 
         })().then(() => {
@@ -2578,6 +2596,18 @@ module.exports = class {
       return activeHosts
 
     })()
+  }
+
+  cleanHostOperationHistory() {
+    // reset oper history for each device
+    if(this.hosts && this.hosts.all) {
+      for(let i in this.hosts.all) {
+        let h = this.hosts.all[i]
+        if(h.oper) {
+           delete h.oper
+        }
+      }
+    }
   }
 
 

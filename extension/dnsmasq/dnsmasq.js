@@ -23,11 +23,11 @@ let Promise = require('bluebird');
 let fs = Promise.promisifyAll(require("fs"))
 
 let dnsFilterDir = f.getUserConfigFolder() + "/dns";
-let filterFile = dnsFilterDir + "/hash_filter.conf";
-let tmpFilterFile = dnsFilterDir + "/hash_filter.conf.tmp";
+
+let adblockFilterFile = dnsFilterDir + "/adblock_filter.conf";
+let adblockTmpFilterFile = dnsFilterDir + "/adblock_filter.conf.tmp";
 
 let policyFilterFile = dnsFilterDir + "/policy_filter.conf";
-let adBlockFilterFile = dnsFilterDir + "/adblock_filter.conf";
 let familyFilterFile = dnsFilterDir + "/family_filter.conf";
 
 let SysManager = require('../../net2/SysManager');
@@ -143,10 +143,10 @@ module.exports = class DNSMASQ {
     callback(null);
   }
 
-  updateFilter(force, callback) {
+  updateAdblockFilter(force, callback) {
     callback = callback || function() {}
 
-    this.updateTmpFilter(force, (err, result) => {
+    this.updateAdblockTmpFilter(force, (err, result) => {
       if(err) {
         callback(err);
         return;
@@ -154,9 +154,9 @@ module.exports = class DNSMASQ {
 
       if(result) {
         // need update
-        log.debug("filterFile is ", filterFile);
-        log.debug("tmpFilterFile is ", tmpFilterFile);
-        fs.rename(tmpFilterFile, filterFile, callback);
+        log.debug("Adblock filter file is ", adblockFilterFile);
+        log.debug("Adblock tmp filter file is ", adblockTmpFilterFile);
+        fs.rename(adblockTmpFilterFile, adblockFilterFile, callback);
       } else {
         // no need to update
         callback(null);
@@ -164,16 +164,31 @@ module.exports = class DNSMASQ {
     });
   }
 
-  cleanUpADBlockFilter() {
-    return fs.unlinkAsync(adBlockFilterFile);
+  cleanUpFilter(file) {
+    log.info("Clean up filter file:", file);
+    return fs.unlinkAsync(file)
+      .catch(err => {
+        if (err) {
+          if (err.code === 'ENOENT') {
+            // ignore
+            log.info(`Filter file '${file}' not exist, ignore`);
+          } else {
+            log.error(`Failed to remove filter file: '${file}'`, err, {})
+          }
+        }
+      });
+  }
+
+  cleanUpAdblockFilter() {
+    return this.cleanUpFilter(adblockFilterFile);
   }
 
   cleanUpFamilyFilter() {
-    return fs.unlinkAsync(familyFilterFile);
+    return this.cleanUpFilter(familyFilterFile);
   }
 
   cleanUpPolicyFilter() {
-    return fs.unlinkAsync(policyFilterFile);
+    return this.cleanUpFilter(policyFilterFile);
   }
 
   addPolicyFilterEntry(domain) {
@@ -255,16 +270,19 @@ module.exports = class DNSMASQ {
   }
 
   reload() {
-    return new Promise((resolve, reject) => {
+    return new Promise(((resolve, reject) => {
       this.start(false, (err) => {
-        if (err)
+        if (err) {
           reject(err);
+        }
         resolve();
       });
-    }).bind(this);
+    }).bind(this)).catch((err) => {
+      log.error("Got error when reloading dnsmasq:", err, {})
+    });
   }
 
-  updateTmpFilter(force, callback) {
+  updateAdblockTmpFilter(force, callback) {
     callback = callback || function() {}
 
     let mkdirp = require('mkdirp');
@@ -276,14 +294,14 @@ module.exports = class DNSMASQ {
       }
 
       // Check if the filter file is older enough that needs to refresh
-      fs.stat(filterFile, (err, stats) => {
+      fs.stat(adblockFilterFile, (err, stats) => {
         if (!err) { // already exists
           if(force == true ||
              (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
 
-            fs.stat(tmpFilterFile, (err, stats) => {
+            fs.stat(adblockTmpFilterFile, (err, stats) => {
               if(!err) {
-                fs.unlinkSync(tmpFilterFile);
+                fs.unlinkSync(adblockTmpFilterFile);
               } else if(err.code !== "ENOENT") {
                 // unexpected err
                 callback(err);
@@ -295,7 +313,7 @@ module.exports = class DNSMASQ {
                   callback(err);
                   return;
                 }
-                this.writeHashFilterFile(hashes, tmpFilterFile, (err) => {
+                this.writeHashFilterFile(hashes, adblockTmpFilterFile, (err) => {
                   if(err) {
                     callback(err);
                   } else {
@@ -314,7 +332,7 @@ module.exports = class DNSMASQ {
               callback(err);
               return;
             }
-            this.writeHashFilterFile(hashes, tmpFilterFile, (err) => {
+            this.writeHashFilterFile(hashes, adblockTmpFilterFile, (err) => {
               if(err) {
                 callback(err);
               } else {
@@ -330,7 +348,7 @@ module.exports = class DNSMASQ {
   loadFilterFromBone(callback) {
     callback = callback || function() {}
 
-    bone.hashset("ad_cn",(err,data)=>{
+    bone.hashset("ads",(err,data)=>{
       if(err) {
         callback(err);
       } else {

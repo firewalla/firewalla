@@ -22,6 +22,7 @@ logger "MAIN-STARTED STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${PI_HOME:=/home/pi}
+MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -150,8 +151,8 @@ function update_node_modules {
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
             logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            git fetch origin  || git fetch origin
-            git reset -q --hard `cat $REVISION_FILE`
+            $MGIT fetch origin  || $MGIT fetch origin
+            $MGIT reset -q --hard `cat $REVISION_FILE`
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
@@ -296,6 +297,7 @@ function create_bootstrap_scripts_folder() {
     [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/mgit ] && cp /home/pi/firewalla/scripts/mgit $PI_HOME/scripts/.
     if [[ ! -f /.dockerenv ]]; then
         if [ -s /home/pi/scripts/fireupgrade.sh ]; then
             [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
@@ -308,6 +310,9 @@ function create_bootstrap_scripts_folder() {
 }
 
 create_bootstrap_scripts_folder
+# Try to recover any broken repos if Git failed before with mark
+# Has to use the "mgit" outside firewalla since it could be recovered
+$PI_HOME/scripts/mgit recover
 
 #reload services
 if [[ ! -f /.dockerenv ]]; then

@@ -157,6 +157,10 @@ function apply() {
       break;
     case Mode.MODE_AUTO_SPOOF:
       await (_enforceSpoofMode())
+
+      // reset oper history for each device, so that we can re-apply spoof commands
+      hostManager.cleanHostOperationHistory()
+
       await (hostManager.getHostsAsync())
       break;
     case Mode.MODE_MANUAL_SPOOF:

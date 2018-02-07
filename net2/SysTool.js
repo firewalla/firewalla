@@ -56,6 +56,18 @@ class SysTool {
   restartFireKickService() {
     return exec("sudo systemctl restart firekick")
   }
+
+  stopFireKickService() {
+    return exec("sudo systemctl stop firekick")
+  }
+
+  upgradeToLatest() {
+    return exec("NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fireupgrade.sh soft")
+  }
+
+  resetPolicy() {
+    return exec("/home/pi/firewalla/scripts/reset-policy")
+  }
 }
 
 module.exports = SysTool
