@@ -60,6 +60,11 @@ class DeviceHook extends Hook {
     let ipv4Addr = host.ipv4Addr
     let ipv6Addr = host.ipv6Addr
 
+    if(!mac) { // ignore if no mac
+      log.info("Invalid MAC address for process device update:", event, {})
+      return;
+    }
+
     return async(() => {
 
       // 0. update a special name key for source
@@ -69,7 +74,7 @@ class DeviceHook extends Hook {
         host.lastFrom = host.from
         delete host.from
       }
-      
+            
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await (hostTool.macExists(mac))
       if(!found) {
