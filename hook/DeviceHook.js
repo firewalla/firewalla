@@ -65,6 +65,9 @@ class DeviceHook extends Hook {
       return;
     }
 
+    mac = mac.toUpperCase()
+    host.mac = mac // make sure the MAC is upper case
+
     return async(() => {
 
       // 0. update a special name key for source
@@ -158,7 +161,7 @@ class DeviceHook extends Hook {
 
     sem.on("DeviceUpdate", (event) => {
       let host = event.host
-      let mac = host.mac;
+      let mac = host.mac;      
 
       if(mac != null) {
         this.processDeviceUpdate(event)        
