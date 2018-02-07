@@ -235,7 +235,7 @@ class OldDataCleanSensor extends Sensor {
         let e = exceptions[i]
         for(let j = i+1; j< exceptions.length; j++) {
           let e2 = exceptions[j]
-          if(e.isEqualToPolicy(e2)) {
+          if(e.isEqualToException(e2)) {
             toBeDeleted.push(e)
             break
           }
