@@ -282,13 +282,7 @@ class PolicyManager2 {
             reject(err)
           } else {
             if (policies) {
-              let type = policy["i.type"] || policy["type"]
-              let target = policy["i.target"] || policy["target"]
-              resolve(policies.filter(p => {
-                let ptype = p["i.type"] || p["type"]
-                let ptarget = p["i.target"] || p["target"]
-                return type === ptype && target === ptarget
-              }))
+              resolve(policies.filter((p) => policy.isEqualToPolicy(p)))
             } else {
               resolve([])
             }

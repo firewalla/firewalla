@@ -29,6 +29,15 @@ module.exports = class {
       extend(this, info);
   }
 
+  isEqualToPolicy(policy) {
+    const thisType = this["i.type"] || this["type"]
+    const thatType = policy["i.type"] || policy["type"]
+    const thisTarget = this["i.target"] || this["target"]
+    const thatTarget = policy["i.target"] || policy["target"]
+
+    return thisType === thatType && thisTarget === thatTarget
+  }
+
   match(alarm) {
 
     // for each policy type

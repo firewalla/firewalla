@@ -24,6 +24,9 @@ let redis = require("redis");
 let rclient = redis.createClient();
 let pubClient = redis.createClient();
 
+const PolicyManager2 = require('../alarm/PolicyManager2.js')
+const pm2 = new PolicyManager2()
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -194,6 +197,32 @@ class OldDataCleanSensor extends Sensor {
       });
   }
 
+  cleanDuplicatedPolicy() {
+    return async(() => {
+
+      pm2.loadActivePolicys(1000, (err, policies) => {
+        let toBeDeleted = []
+
+        for(let i in policies) {
+          let p = policies[i]
+          for(let j = i+1; j< policies.length; j++) {
+            let p2 = policies[j]
+            if(p.isEqualToPolicy(p2)) {
+              toBeDeleted.push(p)
+              break
+            }
+          }
+        }
+
+        for(let k in toBeDeleted) {
+          let p = toBeDeleted[k]
+          await (pm2.deletePolicy(p.pid))
+        }
+      }) 
+
+    })()
+  }
+
   scheduledJob() {
     return async(() => {
       log.info("Start cleaning old data in redis")
@@ -211,6 +240,7 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+      await (this.cleanDuplicatedPolicy())
 
       log.info("scheduledJob is executed successfully");
     })();
