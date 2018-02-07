@@ -77,6 +77,18 @@ module.exports = class {
     });
   }
 
+  loadExceptionsAsync() {
+    return new Promise((resolve, reject) => {
+      this.loadExceptions((err, exceptions) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(exceptions)
+        }
+      })
+    })
+  }
+
   loadExceptions(callback) {
     callback = callback || function() {}
 
@@ -195,7 +207,7 @@ module.exports = class {
       this.saveException(exception, callback);
     }
   }
-  
+
   saveException(exception, callback) {
     callback = callback || function() {}
 

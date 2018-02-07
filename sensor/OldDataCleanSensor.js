@@ -27,6 +27,9 @@ let pubClient = redis.createClient();
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
+const ExceptionManager = require('../alarm/ExceptionManager.js')
+const em = new ExceptionManager()
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -200,26 +203,56 @@ class OldDataCleanSensor extends Sensor {
   cleanDuplicatedPolicy() {
     return async(() => {
 
-      pm2.loadActivePolicys(1000, (err, policies) => {
-        let toBeDeleted = []
+      const policies = await (pm2.loadActivePolicys(1000))
+      
+      let toBeDeleted = []
 
-        for(let i in policies) {
-          let p = policies[i]
-          for(let j = i+1; j< policies.length; j++) {
-            let p2 = policies[j]
-            if(p.isEqualToPolicy(p2)) {
-              toBeDeleted.push(p)
-              break
-            }
+      for(let i in policies) {
+        let p = policies[i]
+        for(let j = i+1; j< policies.length; j++) {
+          let p2 = policies[j]
+          if(p.isEqualToPolicy(p2)) {
+            toBeDeleted.push(p)
+            break
           }
         }
+      }
 
-        for(let k in toBeDeleted) {
-          let p = toBeDeleted[k]
-          await (pm2.deletePolicy(p.pid))
+      for(let k in toBeDeleted) {
+        let p = toBeDeleted[k]
+        await (pm2.deletePolicy(p.pid))
+      }
+    })()
+  }
+
+  cleanDuplicatedException() {
+    return async(() => {
+      const exceptions = await (em.loadExceptionsAsync())
+
+      let toBeDeleted = []
+
+      for(let i in exceptions) {
+        let e = exceptions[i]
+        for(let j = i+1; j< exceptions.length; j++) {
+          let e2 = exceptions[j]
+          if(e.isEqualToPolicy(e2)) {
+            toBeDeleted.push(e)
+            break
+          }
         }
-      }) 
+      }
 
+      for(let k in toBeDeleted) {
+        let e = toBeDeleted[k]
+        await (em.deleteException(e.eid))
+      }
+    })()
+  }
+
+  oneTimeJob() {
+    return async(() => {
+      await (this.cleanDuplicatedPolicy())
+      await (this.cleanDuplicatedException())
     })()
   }
 
@@ -240,8 +273,6 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
-      await (this.cleanDuplicatedPolicy())
-
       log.info("scheduledJob is executed successfully");
     })();
   }
@@ -263,6 +294,7 @@ class OldDataCleanSensor extends Sensor {
 
     setTimeout(() => {
       this.scheduledJob();
+      this.oneTimeJob()
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour

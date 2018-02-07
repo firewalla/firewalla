@@ -412,6 +412,18 @@ class PolicyManager2 {
     });
   }
 
+  loadActivePolicysAsync(number) {
+    return new Promise((resolve, reject) => {
+      this.loadActivePolicys(number, (err, policies) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(policies)
+        }
+      })
+    })
+  }
+  
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
