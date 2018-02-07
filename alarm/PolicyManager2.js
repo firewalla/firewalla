@@ -484,6 +484,8 @@ class PolicyManager2 {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
+           sysManager.myIp() === target ||
+           sysManager.myIp2() === target ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
