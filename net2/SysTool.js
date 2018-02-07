@@ -62,7 +62,7 @@ class SysTool {
   }
 
   upgradeToLatest() {
-    return exec("/home/pi/firewalla/scripts/fireupgrade.sh soft")
+    return exec("NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fireupgrade.sh soft")
   }
 
   resetPolicy() {
