@@ -166,6 +166,36 @@ module.exports = class {
     });
   }
 
+  getSameExceptions(exception) {
+    let em = this
+    return async(() => {
+      return new Promise(function (resolve, reject) {
+        em.loadExceptions((err, exceptions) =>{
+          if (err) {
+            log.error("failed to load exceptions:", err, {})
+            reject(err)
+          } else {
+            if (exceptions) {
+              resolve(exceptions.filter((e) => e.isEqualToException(exception)))
+            } else {
+              resolve([])
+            }
+          }    
+        })
+      })
+    })();
+  }
+
+  checkAndSave(exception, callback) {
+    let exceptions = await(this.getSameExceptions(exception))
+    if (exceptions && exceptions.length > 0) {
+      log.info(`exception ${exception} already exists in system: ${exceptions}`)
+      callback(null, exceptions[0], true)
+    } else {
+      this.saveException(exception, callback);
+    }
+  }
+  
   saveException(exception, callback) {
     callback = callback || function() {}
 
@@ -205,7 +235,7 @@ module.exports = class {
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
           }
 
-          callback(err);
+          callback(err, exception);
         });
       });
 

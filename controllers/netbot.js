@@ -1739,8 +1739,13 @@ class netBot extends ControllerBot {
             return;
           }
 
-          pm2.checkAndSave(policy, (err, policyID) => {
-            this.simpleTxData(msg, policy, err, callback);
+          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+            if(alreadyExists) {
+              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+              return
+            } else {
+              this.simpleTxData(msg, policy2, err, callback);
+            }
           });
         });
         break;

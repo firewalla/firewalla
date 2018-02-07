@@ -210,7 +210,7 @@ class PolicyManager2 {
             audit.trace("Created policy", policy.pid);
           }
           this.tryPolicyEnforcement(policy)
-          callback(null, policy.pid)
+          callback(null, policy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
@@ -227,13 +227,13 @@ class PolicyManager2 {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
-        // let policies = await(this.getSamePolicies(policy))
-        // if (policies && policies.length > 0) {
-        //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-        //   callback(new Error("policy existed"))
-        // } else {
-        this.savePolicy(policy, callback);
-//        }
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback(null, policies[0], true)
+        } else {
+          this.savePolicy(policy, callback);
+        }
       } catch (err) {
         log.error("failed to save policy:" + err)
         callback(err)
@@ -276,7 +276,7 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(200, (err, policies)=>{
+        pm2.loadActivePolicys(1000, (err, policies)=>{
           if (err) {
             log.error("failed to load active policies:" + err)
             reject(err)
