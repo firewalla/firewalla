@@ -30,6 +30,9 @@ const pm2 = new PolicyManager2()
 const ExceptionManager = require('../alarm/ExceptionManager.js')
 const em = new ExceptionManager()
 
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -249,10 +252,23 @@ class OldDataCleanSensor extends Sensor {
     })()
   }
 
+  cleanInvalidMACAddress() {
+    return async(() => {
+      const macs = await (hostTool.getAllMACs())
+      const invalidMACs = macs.filter((m) => {
+        return m.match(/[a-f]+/) != null
+      })
+      invalidMACs.forEach((m) => {
+        await (hostTool.deleteMac(m))
+      })
+    })()
+  }
+
   oneTimeJob() {
     return async(() => {
       await (this.cleanDuplicatedPolicy())
       await (this.cleanDuplicatedException())
+      await (this.cleanInvalidMACAddress())
     })()
   }
 
