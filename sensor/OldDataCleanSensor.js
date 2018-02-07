@@ -211,7 +211,7 @@ class OldDataCleanSensor extends Sensor {
         let p = policies[i]
         for(let j = i+1; j< policies.length; j++) {
           let p2 = policies[j]
-          if(p.isEqualToPolicy(p2)) {
+          if(p && p2 && p.isEqualToPolicy(p2)) {
             toBeDeleted.push(p)
             break
           }

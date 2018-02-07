@@ -30,6 +30,10 @@ module.exports = class {
   }
 
   isEqualToPolicy(policy) {
+    if(!policy) {
+      return false
+    }
+    
     const thisType = this["i.type"] || this["type"]
     const thatType = policy["i.type"] || policy["type"]
     const thisTarget = this["i.target"] || this["target"]
