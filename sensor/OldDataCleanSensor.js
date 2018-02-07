@@ -207,7 +207,7 @@ class OldDataCleanSensor extends Sensor {
       
       let toBeDeleted = []
 
-      for(let i in policies) {
+      for(let i = 0; i < policies.length; i++) {
         let p = policies[i]
         for(let j = i+1; j< policies.length; j++) {
           let p2 = policies[j]
@@ -231,7 +231,7 @@ class OldDataCleanSensor extends Sensor {
 
       let toBeDeleted = []
 
-      for(let i in exceptions) {
+      for(let i = 0; i < exceptions.length; i++) {
         let e = exceptions[i]
         for(let j = i+1; j< exceptions.length; j++) {
           let e2 = exceptions[j]
