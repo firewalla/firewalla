@@ -860,9 +860,9 @@ module.exports = class {
                             log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
                           }
                         })
-                        callback(null, policy, blockedAlarms)
+                        callback(null, policy, blockedAlarms, alreadyExists)
                       } else {
-                        callback(null, policy)
+                        callback(null, policy, undefined, alreadyExists)
                       }
                     })()
                   })
@@ -1020,10 +1020,10 @@ module.exports = class {
                           log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
                         }
                       })
-                      callback(null, exception, allowedAlarms)
+                      callback(null, exception, allowedAlarms, alreadyExists)
                     } else {
                       log.info("No similar alarms are found")
-                      callback(null, exception)
+                      callback(null, exception, undefined, alreadyExists)
                     }
                   })()
                 })
