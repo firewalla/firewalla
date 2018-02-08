@@ -1662,11 +1662,12 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
     case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms) => {
+      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
         if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
           this.simpleTxData(msg, {
             policy: policy,
-            otherAlarms: otherBlockedAlarms
+            otherAlarms: otherBlockedAlarms,
+            alreadyExists: alreadyExists
           }, err, callback);
         } else {
           this.simpleTxData(msg, policy, err, callback);
@@ -1674,11 +1675,12 @@ class netBot extends ControllerBot {
       });
       break;
     case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms) => {
+      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
         if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
           this.simpleTxData(msg, {
             exception: exception,
-            otherAlarms: otherAlarms
+            otherAlarms: otherAlarms,
+            alreadyExists: alreadyExists
           }, err, callback);
         } else {
           this.simpleTxData(msg, exception, err, callback);
@@ -1739,8 +1741,13 @@ class netBot extends ControllerBot {
             return;
           }
 
-          pm2.checkAndSave(policy, (err, policyID) => {
-            this.simpleTxData(msg, policy, err, callback);
+          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+            if(alreadyExists) {
+              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+              return
+            } else {
+              this.simpleTxData(msg, policy2, err, callback);
+            }
           });
         });
         break;

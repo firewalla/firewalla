@@ -210,7 +210,7 @@ class PolicyManager2 {
             audit.trace("Created policy", policy.pid);
           }
           this.tryPolicyEnforcement(policy)
-          callback(null, policy.pid)
+          callback(null, policy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
@@ -227,13 +227,13 @@ class PolicyManager2 {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
-        // let policies = await(this.getSamePolicies(policy))
-        // if (policies && policies.length > 0) {
-        //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-        //   callback(new Error("policy existed"))
-        // } else {
-        this.savePolicy(policy, callback);
-//        }
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback(null, policies[0], true)
+        } else {
+          this.savePolicy(policy, callback);
+        }
       } catch (err) {
         log.error("failed to save policy:" + err)
         callback(err)
@@ -276,19 +276,13 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(200, (err, policies)=>{
+        pm2.loadActivePolicys(1000, (err, policies)=>{
           if (err) {
             log.error("failed to load active policies:" + err)
             reject(err)
           } else {
             if (policies) {
-              let type = policy["i.type"] || policy["type"]
-              let target = policy["i.target"] || policy["target"]
-              resolve(policies.filter(p => {
-                let ptype = p["i.type"] || p["type"]
-                let ptarget = p["i.target"] || p["target"]
-                return type === ptype && target === ptarget
-              }))
+              resolve(policies.filter((p) => policy.isEqualToPolicy(p)))
             } else {
               resolve([])
             }
@@ -418,6 +412,18 @@ class PolicyManager2 {
     });
   }
 
+  loadActivePolicysAsync(number) {
+    return new Promise((resolve, reject) => {
+      this.loadActivePolicys(number, (err, policies) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(policies)
+        }
+      })
+    })
+  }
+  
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
@@ -478,6 +484,8 @@ class PolicyManager2 {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
+           sysManager.myIp() === target ||
+           sysManager.myIp2() === target ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")

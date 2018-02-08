@@ -823,11 +823,11 @@ module.exports = class {
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
-        pm2.checkAndSave(p, (err) => {
+        pm2.checkAndSave(p, (err, policy, alreadyExists) => {
           if(err)
             callback(err);
           else {
-            alarm.result_policy = p.pid;
+            alarm.result_policy = policy.pid;
             alarm.result = "block";
 
             if(info.method === "auto") {
@@ -843,7 +843,7 @@ module.exports = class {
 
                     // old way
                     if(!info.matchAll) {
-                      callback(null, p)
+                      callback(null, policy)
                       return
                     }
 
@@ -854,15 +854,15 @@ module.exports = class {
                         let blockedAlarms = []
                         alarms.forEach((alarm) => {
                           try {
-                            await (this.blockAlarmByPolicy(alarm, p, info))
+                            await (this.blockAlarmByPolicy(alarm, policy, info))
                             blockedAlarms.push(alarm)
                           } catch(err) {
-                            log.error(`Failed to block alarm ${alarm.aid} with policy ${p.pid}: ${err}`)
+                            log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
                           }
                         })
-                        callback(null, p, blockedAlarms)
+                        callback(null, policy, blockedAlarms, alreadyExists)
                       } else {
-                        callback(null, p)
+                        callback(null, policy, undefined, alreadyExists)
                       }
                     })()
                   })
@@ -981,14 +981,18 @@ module.exports = class {
         // FIXME: make it transactional
         // set alarm handle result + add policy
 
-        exceptionManager.saveException(e, (err) => {
+        exceptionManager.checkAndSave(e, (err, exception, alreadyExists) => {
           if(err) {
             log.error("Failed to save exception: " + err);
             callback(err);
             return;
           }
 
-          alarm.result_exception = e.eid;
+          if(alreadyExists) {
+            log.info(`exception ${e} already exists: ${exception}`)
+          }
+
+          alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
           this.updateAlarm(alarm)
@@ -999,27 +1003,27 @@ module.exports = class {
                 .then(() => {
                   // old way
                   if(!info.matchAll) {
-                    callback(null, e)
+                    callback(null, exception)
                     return
                   }
 
                   async(() => {              
                     log.info("Trying to find if any other active alarms are covered by this new exception")
-                    let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
+                    let alarms = await (this.findSimilarAlarmsByException(exception, alarm.aid))
                     if(alarms && alarms.length > 0) {
                       let allowedAlarms = []
                       alarms.forEach((alarm) => {
                         try {
-                          await (this.allowAlarmByException(alarm, e, info))
+                          await (this.allowAlarmByException(alarm, exception, info))
                           allowedAlarms.push(alarm)
                         } catch(err) {
-                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${e.eid}: ${err}`)
+                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
                         }
                       })
-                      callback(null, e, allowedAlarms)
+                      callback(null, exception, allowedAlarms, alreadyExists)
                     } else {
                       log.info("No similar alarms are found")
-                      callback(null, e)
+                      callback(null, exception, undefined, alreadyExists)
                     }
                   })()
                 })
