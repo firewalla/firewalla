@@ -84,17 +84,17 @@ module.exports = class FlowMonitor {
             instance = this;
           log = require("../net2/logger.js")("FlowMonitor", loglevel);
 
-          flowManager.last24HourDatabaseExists()
-            .then((result) => {
-              if(!result) {
-                // need to migrate from legacy
-                log.info("Migrating stats from old version to new version");
-                hostManager.migrateStats()
-                  .then(() => {
-                    log.info("Stats are migrated to new format");
-                  });
-              }
-            });
+        //   flowManager.last24HourDatabaseExists()
+        //     .then((result) => {
+        //       if(!result) {
+        //         // need to migrate from legacy
+        //         log.info("Migrating stats from old version to new version");
+        //         hostManager.migrateStats()
+        //           .then(() => {
+        //             log.info("Stats are migrated to new format");
+        //           });
+        //       }
+        //     });
         }
         return instance;
     }
