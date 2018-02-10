@@ -29,55 +29,29 @@ app.engine('pug', require('pug').__express);
 app.set('views', './firewalla_views');
 app.set('view engine', 'pug');
 
-const router = express.Router();
-
-function isPathValid(path) {
-  return Path.dirname(path) === staticDirname;
+function isPorn(dn) {
+  return true;
 }
 
-router.use(staticDirname, (req, res) => {
-  const reqUrl = new URL(req.originalUrl);
-  const path = reqUrl.pathname();
+let router = express.Router();
 
-  if (!isPathValid(path)) {
-    res.status(400).end();
-    return;
-  }
+router.all('/porn', (req, res) => {
+  console.info("Got a request in porn views");
+  let message = `Porn Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
+  res.render('green', {message});
+})
 
-  const filename = Path.basename(path);
-  const absFilename = staticAbsDirname + '/' + filename;
-
-  fs.lstat(absFilename, (err, stats) => {
-    if (err) {
-      log.warn(`Error when lstat file: ${absFilename}`, err, {});
-      res.status(400).end();
-      return;
-    }
-
-    if (!stats.isFile()) {
-      log.warn(`Not a file: ${absFilename}`, {});
-      res.status(400).end();
-      return;
-    }
-
-    fs.readFile(absFilename, (err, data) => {
-      if (err) {
-        log.warn(`Error when reading file: ${absFilename}`, err, {});
-        res.status(400).end();
-        return;
-      }
-
-      res.header('Content-Type', 'text/html');
-      res.status(200).send(data).end();
-    });
-  });
-
-});
-
+app.use('/firewalla_views', router);
 
 app.use('*', (req, res) => {
-  let message = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
-  res.render('adblock', {message});
+  console.info("Got a request in *");
+
+  if (!req.originalUrl.includes('firewalla_views')) {
+    if (isPorn(req.hostname)) {
+      res.status(301).location(`/firewalla_views/porn?url=${req.originalUrl}`).send().end();
+      return;
+    }
+  }
 
   if (enableRedis) {
     client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
