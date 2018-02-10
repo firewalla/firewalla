@@ -12,7 +12,7 @@ promise.promisifyAll(redis.RedisClient.prototype);
 const port = 80;
 const httpsPort = 443;
 const app = express();
-const httpsOptions = genHttpsOptions();
+const enableHttps = false;
 
 app.use('*', (req, res) => {
   let txt = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
@@ -24,7 +24,11 @@ app.use('*', (req, res) => {
 });
 
 app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
-https.createServer(httpsOptions, app).listen(httpsPort, () => console.log(`Httpd listening on port ${httpsPort}!`));
+
+if (enableHttps) {
+  const httpsOptions = genHttpsOptions();
+  https.createServer(httpsOptions, app).listen(httpsPort, () => console.log(`Httpd listening on port ${httpsPort}!`));
+}
 
 function genHttpsOptions() {
   // generate a keypair and create an X.509v3 certificate
