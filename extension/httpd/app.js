@@ -3,9 +3,6 @@
 const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
-const URL = require('url');
-const Path = require('path');
-const fs = require('fs');
 
 const port = 8000;
 const httpsPort = 443;
@@ -22,12 +19,15 @@ if (enableRedis) {
 }
 */
 
-const staticDirname = '/firewalla_views';
-const staticAbsDirname = '/home/pi/firewalla/extension/httpd' + staticDirname;
+const viewsPath = 'firewalla_views';
 
 app.engine('pug', require('pug').__express);
 app.set('views', './firewalla_views');
 app.set('view engine', 'pug');
+
+function isMalware(dn) {
+  return true;
+}
 
 function isPorn(dn) {
   return true;
@@ -41,14 +41,14 @@ router.all('/porn', (req, res) => {
   res.render('green', {message});
 })
 
-app.use('/firewalla_views', router);
+app.use(`/${viewsPath}`, router);
 
 app.use('*', (req, res) => {
   console.info("Got a request in *");
 
-  if (!req.originalUrl.includes('firewalla_views')) {
+  if (!req.originalUrl.includes(viewsPath)) {
     if (isPorn(req.hostname)) {
-      res.status(301).location(`/firewalla_views/porn?url=${req.originalUrl}`).send().end();
+      res.status(303).location(`/${viewsPath}/porn?url=${req.originalUrl}`).send().end();
       return;
     }
   }
