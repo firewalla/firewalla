@@ -3,24 +3,87 @@
 const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
+const URL = require('url');
+const Path = require('path');
+const fs = require('fs');
 
-let promise = require('bluebird');
-let redis = require('redis');
-let client = redis.createClient();
-promise.promisifyAll(redis.RedisClient.prototype);
-
-const port = 80;
+const port = 8000;
 const httpsPort = 443;
 const app = express();
 const enableHttps = false;
+const enableRedis = false;
+
+/*
+if (enableRedis) {
+  const promise = require('bluebird');
+  const redis = require('redis');
+  const client = redis.createClient();
+  promise.promisifyAll(redis.RedisClient.prototype);
+}
+*/
+
+const staticDirname = '/firewalla_views';
+const staticAbsDirname = '/home/pi/firewalla/extension/httpd' + staticDirname;
+
+app.engine('pug', require('pug').__express);
+app.set('views', './firewalla_views');
+app.set('view engine', 'pug');
+
+const router = express.Router();
+
+function isPathValid(path) {
+  return Path.dirname(path) === staticDirname;
+}
+
+router.use(staticDirname, (req, res) => {
+  const reqUrl = new URL(req.originalUrl);
+  const path = reqUrl.pathname();
+
+  if (!isPathValid(path)) {
+    res.status(400).end();
+    return;
+  }
+
+  const filename = Path.basename(path);
+  const absFilename = staticAbsDirname + '/' + filename;
+
+  fs.lstat(absFilename, (err, stats) => {
+    if (err) {
+      log.warn(`Error when lstat file: ${absFilename}`, err, {});
+      res.status(400).end();
+      return;
+    }
+
+    if (!stats.isFile()) {
+      log.warn(`Not a file: ${absFilename}`, {});
+      res.status(400).end();
+      return;
+    }
+
+    fs.readFile(absFilename, (err, data) => {
+      if (err) {
+        log.warn(`Error when reading file: ${absFilename}`, err, {});
+        res.status(400).end();
+        return;
+      }
+
+      res.header('Content-Type', 'text/html');
+      res.status(200).send(data).end();
+    });
+  });
+
+});
+
 
 app.use('*', (req, res) => {
-  let txt = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
-  res.send(txt);
+  let message = `Ads Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
+  res.render('adblock', {message});
 
-  client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
-    console.log(`${txt}, Total blocked: ${value}`);
-  });
+  if (enableRedis) {
+    client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
+      console.log(`${txt}, Total blocked: ${value}`);
+    });
+  }
 });
 
 app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
