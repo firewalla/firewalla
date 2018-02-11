@@ -1005,6 +1005,12 @@ class netBot extends ControllerBot {
             err = new Error("unsupport mode: " + v4.mode);
             break;
           }
+
+          // force sysManager.update after set mode, this is to prevent device assigned in 218.* 
+          // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
+          sysManager.update((err, data) => {
+          });
+
           this.simpleTxData(msg, {}, err, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
