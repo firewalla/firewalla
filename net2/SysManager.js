@@ -657,7 +657,10 @@ module.exports = class {
                 return true;
             }
 
-            return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
+            return iptool.cidrSubnet(this.subnet).contains(ip) || 
+            this.isLocalIP4(this.config.monitoringInterface2,ip) || 
+            this.sysinfo[this.config.monitoringInterface2] == null; // consider IP valid if monitoringInterface2 is not loaded yet.
+
         } else if (iptool.isV6Format(ip)) {
             if (ip.startsWith('::')) {
                 return true;
