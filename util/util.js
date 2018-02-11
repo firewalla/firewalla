@@ -26,6 +26,10 @@ function extend(target) {
 
 function getPreferredBName(hostObject) {
 
+  if (hostObject==null) {
+    return null
+  }
+
   // TODO: preferred name needs to be improved in the future
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
