@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if [[ -e /.dockerenv ]]; then
+    #Disable iptables in docker
+    sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F
+    exit
+fi
+
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
 sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
