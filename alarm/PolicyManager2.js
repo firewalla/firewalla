@@ -29,7 +29,12 @@ let Bone = require('../lib/Bone.js');
 let async = require('asyncawait/async')
 let await = require('asyncawait/await')
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
+
+const minimatch = require('minimatch')
+
+const SysManager = require('../net2/SysManager.js')
+const sysManager = new SysManager('info');
 
 let instance = null;
 
@@ -218,12 +223,16 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
+        if(this.isFirewallaCloud(policy)) {
+          callback(new Error("Firewalla cloud can't be blocked"))
+          return
+        }
         // let policies = await(this.getSamePolicies(policy))
         // if (policies && policies.length > 0) {
         //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         //   callback(new Error("policy existed"))
         // } else {
-          this.savePolicy(policy, callback);
+        this.savePolicy(policy, callback);
 //        }
       } catch (err) {
         log.error("failed to save policy:" + err)
@@ -465,10 +474,23 @@ class PolicyManager2 {
     })()
   }
     
+  isFirewallaCloud(policy) {
+    const target = policy.target
+
+    return sysManager.isMyServer(target) ||
+           target === "firewalla.encipher.com" ||
+           target === "firewalla.com" ||
+           minimatch(target, "*.firewalla.com")
+  }
+
   enforce(policy) {
     log.info("Enforce policy: ", policy, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
+
+    if(this.isFirewallaCloud(policy)) {
+      return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+    }
 
     switch(type) {
     case "ip":
@@ -479,7 +501,7 @@ class PolicyManager2 {
       return blockMacAsync(policy.target);
       break;
     case "domain":
-    case "dns":
+    case "dns":    
       return dnsmasq.addPolicyFilterEntry(policy.target)
         .then(() => {
           sem.emitEvent({

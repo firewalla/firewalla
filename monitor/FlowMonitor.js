@@ -29,6 +29,8 @@ let alarmManager2 = new AlarmManager2();
 
 let audit = require('../util/audit.js');
 
+const fc = require('../net2/config.js')
+
 let uuid = require('uuid');
 
 rclient.on("error", function (err) {
@@ -149,6 +151,24 @@ module.exports = class FlowMonitor {
         if (intel == null || _class == null) {
             return false;
         }
+
+        const intelFeatureMapping = {
+            "av": "video",
+            "game": "game",
+            "porn": "porn",
+            "intel": "cyber_security"
+        }
+
+        const featureName = intelFeatureMapping[_class]
+        if(!featureName) {
+            return false
+        }
+
+        if(!fc.isFeatureOn(featureName)) {
+          log.warn(`Feature ${featureName} is not enabled`)
+            return false
+        }
+
         if (intel.c) {
             if (intel.c == _class) {
                 return true;
@@ -691,6 +711,7 @@ module.exports = class FlowMonitor {
             log.info("FlowMonitor Running Process :", service);
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
+                result = result.filter(x => x) // workaround if host is undefined or null
                 async.eachLimit(result,2, (host, cb) => {
                     let listip = [];
                     listip.push(host.o.ipv4Addr);
@@ -734,37 +755,40 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
 
-                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
-                                                "p.device.id" : flow.dhname,
-                                                "p.device.name" : flow.dhname,
-                                                "p.device.ip" : flow.dh,
-                                                "p.device.port" : flow.dp || 0,
-                                                "p.dest.name": flow.shname || flow.sh,
-                                                "p.dest.ip": flow.sh,
-                                                "p.dest.port" : flow.sp,
-                                                "p.transfer.outbound.size" : flow.rb,
-                                                "p.transfer.inbound.size" : flow.ob,
-                                                "p.transfer.duration" : flow.du,
-                                                "p.local_is_client": 0, // connection is initiated from local
-                                                "p.flow": JSON.stringify(flow)
-                                              });
+                                                if(fc.isFeatureOn("large_upload")) {
+                                                    let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
+                                                        "p.device.id" : flow.dhname,
+                                                        "p.device.name" : flow.dhname,
+                                                        "p.device.ip" : flow.dh,
+                                                        "p.device.port" : flow.dp || 0,
+                                                        "p.dest.name": flow.shname || flow.sh,
+                                                        "p.dest.ip": flow.sh,
+                                                        "p.dest.port" : flow.sp,
+                                                        "p.transfer.outbound.size" : flow.rb,
+                                                        "p.transfer.inbound.size" : flow.ob,
+                                                        "p.transfer.duration" : flow.du,
+                                                        "p.local_is_client": 0, // connection is initiated from local
+                                                        "p.flow": JSON.stringify(flow)
+                                                      });
+        
+                                                      alarmManager2.enrichDestInfo(alarm).then((alarm) => {
+                                                        alarmManager2.checkAndSave(alarm, (err) => {
+                                                          if(!err) {
+                                                          }
+                                                        });
+                                                      });
+        
+                                                      alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
+                                                          // if (data!=null) {
+                                                          //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                          //       direction: "out",
+                                                          //       "txRatioRanked": [flow],
+                                                          //       id:data.id,
+                                                          //   });
+                                                          // }
+                                                        });
+                                                }
 
-                                              alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                                                alarmManager2.checkAndSave(alarm, (err) => {
-                                                  if(!err) {
-                                                  }
-                                                });
-                                              });
-
-                                              alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
-                                                  // if (data!=null) {
-                                                  //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                  //       direction: "out",
-                                                  //       "txRatioRanked": [flow],
-                                                  //       id:data.id,
-                                                  //   });
-                                                  // }
-                                                });
                                             });
                                         }
                                     });
@@ -797,42 +821,45 @@ module.exports = class FlowMonitor {
                                                     copy.lobj = loc;
                                                 }
 
-                                              // flow in means connection initiated from inside
-                                              // flow out means connection initiated from outside (more dangerous)
+                                                if(fc.isFeatureOn("large_upload")) {
+                                                    // flow in means connection initiated from inside
+                                                    // flow out means connection initiated from outside (more dangerous)
 
-                                              let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
-                                                "p.device.id" : flow.shname,
-                                                "p.device.name" : flow.shname,
-                                                "p.device.ip" : flow.sh,
-                                                "p.device.port" : flow.sp || 0,
-                                                "p.dest.name": flow.dhname || flow.dh,
-                                                "p.dest.ip": flow.dh,
-                                                "p.dest.port" : flow.dp,
-                                                "p.transfer.outbound.size" : flow.ob,
-                                                "p.transfer.inbound.size" : flow.rb,
-                                                "p.transfer.duration" : flow.du,
-                                                "p.local_is_client": 1, // connection is initiated from local
-                                                "p.flow": JSON.stringify(flow)
-                                              });
+                                                    let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
+                                                    "p.device.id" : flow.shname,
+                                                    "p.device.name" : flow.shname,
+                                                    "p.device.ip" : flow.sh,
+                                                    "p.device.port" : flow.sp || 0,
+                                                    "p.dest.name": flow.dhname || flow.dh,
+                                                    "p.dest.ip": flow.dh,
+                                                    "p.dest.port" : flow.dp,
+                                                    "p.transfer.outbound.size" : flow.ob,
+                                                    "p.transfer.inbound.size" : flow.rb,
+                                                    "p.transfer.duration" : flow.du,
+                                                    "p.local_is_client": 1, // connection is initiated from local
+                                                    "p.flow": JSON.stringify(flow)
+                                                    });
 
-                                              // ideally each destination should have a unique ID, now just use hostname as a workaround
-                                              // so destionationName, destionationHostname, destionationID are the same for now
-                                              alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                                                alarmManager2.checkAndSave(alarm, (err) => {
-                                                  if(!err) {
-                                                  }
-                                                });
-                                              });
+                                                    // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                                    // so destionationName, destionationHostname, destionationID are the same for now
+                                                    alarmManager2.enrichDestInfo(alarm).then((alarm) => {
+                                                    alarmManager2.checkAndSave(alarm, (err) => {
+                                                        if(!err) {
+                                                        }
+                                                    });
+                                                    });
 
-                                                alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
-                                                  // if (data!=null) {
-                                                  //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                  //       direction: "in",
-                                                  //       "txRatioRanked": [flow],
-                                                  //       id:data.id,
-                                                  //   });
-                                                  // }
-                                                });
+                                                    alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
+                                                        // if (data!=null) {
+                                                        //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
+                                                        //       direction: "in",
+                                                        //       "txRatioRanked": [flow],
+                                                        //       id:data.id,
+                                                        //   });
+                                                        // }
+                                                    });
+                                                }
+
                                             });
                                         }
                                     });
@@ -928,39 +955,42 @@ module.exports = class FlowMonitor {
         let severity = iobj.severityscore > 50 ? "major" : "minor";
         let reason = iobj.reason;
 
-        let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
-          "p.device.ip": deviceIP,
-          "p.device.port": this.getDevicePort(flowObj),
-          "p.dest.id": remoteIP,
-          "p.dest.ip": remoteIP,
-          "p.dest.name": remoteHostname,
-          "p.dest.port": this.getRemotePort(flowObj),
-          "p.security.reason": reason,
-          "p.security.numOfReportSources": iobj.count,
-          "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
-        });
-  
-
-        if (flowObj && flowObj.action) {
-          alarm["p.action.block"]=flowObj.action.block;
-        }
-
-        if (flowObj && flowObj.categoryArray) {
-          alarm['p.security.category']=flowObj.categoryArray;
-        }
-
-        log.info("Host:ProcessIntelFlow:Alarm",alarm);
-
-        alarmManager2.enrichDeviceInfo(alarm)
-          .then(alarmManager2.enrichDestInfo)
-          .then((alarm) => {
-            alarmManager2.checkAndSave(alarm, (err) => {
-              if(err)
-                log.error("Fail to save alarm: " + err);
-            });
-          }).catch((err) => {
-            log.error("Failed to create alarm: " + err);
+        if(fc.isFeatureOn("cyber_security")) {
+          let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+            "p.device.ip": deviceIP,
+            "p.device.port": this.getDevicePort(flowObj),
+            "p.dest.id": remoteIP,
+            "p.dest.ip": remoteIP,
+            "p.dest.name": remoteHostname,
+            "p.dest.port": this.getRemotePort(flowObj),
+            "p.security.reason": reason,
+            "p.security.numOfReportSources": iobj.count,
+            "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
           });
+    
+  
+          if (flowObj && flowObj.action) {
+            alarm["p.action.block"]=flowObj.action.block;
+          }
+  
+          if (flowObj && flowObj.categoryArray) {
+            alarm['p.security.category']=flowObj.categoryArray;
+          }
+  
+          log.info("Host:ProcessIntelFlow:Alarm",alarm);
+  
+          alarmManager2.enrichDeviceInfo(alarm)
+            .then(alarmManager2.enrichDestInfo)
+            .then((alarm) => {
+              alarmManager2.checkAndSave(alarm, (err) => {
+                if(err)
+                  log.error("Fail to save alarm: " + err);
+              });
+            }).catch((err) => {
+              log.error("Failed to create alarm: " + err);
+            });
+        }
+        
       });
     });
   }

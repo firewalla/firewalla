@@ -246,15 +246,6 @@ module.exports = class {
       }); 
   }
 
-  adblockDnsAddr(callback) {
-      firewalla.getBoneInfo((err,data)=>{
-          if (data && data.config && data.config.dns && data.config.dns.adblock) {
-              callback(null, data.config.dns.adblock);
-          } else {
-              callback(null, ADBLOCK_DNS);
-          }
-      }); 
-  }
 
   family(ip, state, callback) {
     callback = callback || function() {}
@@ -283,17 +274,9 @@ module.exports = class {
       callback(null)
       return
     }
-    
-    this.adblockDnsAddr((err,dnsaddrs)=>{
-      log.info("PolicyManager:Adblock:IPTABLE", ip, state,dnsaddrs.join(" "));
-      if (state == true) {
-        dnsmasq.setDefaultNameServers("adblock", dnsaddrs);
-        dnsmasq.updateResolvConf(callback);
-      } else {
-        dnsmasq.unsetDefaultNameServers("adblock");
-        dnsmasq.updateResolvConf(callback);
-      }
-    });
+
+    log.info("PolicyManager:Adblock:Dnsmasq", ip, state);
+    dnsmasq.controlAdblockFilter(state);
   }
 
     hblock(host, state) {

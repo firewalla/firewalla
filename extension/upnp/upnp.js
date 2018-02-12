@@ -71,6 +71,14 @@ module.exports = class {
             if (err !=null || ip == null) {
                 this.upnpEnabled = false;
                 if (this.natpmpClient()) {
+
+                    let timeout = true;
+                    setTimeout(() => {
+                        if(timeout) {
+                            callback(null, this.upnpEnabled, false)
+                        }
+                    }, 5 * 1000)
+
                     this.natpmpClient().externalIp((err, info)=> {
                         if (err == null && info!=null) { 
                             this.natpmpIP = info.ip.join('.');
@@ -78,6 +86,7 @@ module.exports = class {
                         } else {
                             this.natpmpEnabled = false;
                         }
+                        timeout = false
                         callback(null, this.upnpEnabled, this.natpmpEnabled);
                     });
                 }
@@ -179,7 +188,9 @@ module.exports = class {
                 } else if (this.natpmpEnabled == true) {
                     return this.removePortMappingNATPMP(protocol, localPort, externalPort, callback);
                 } else {
-                    callback(new Error("no upnp/natpmp"));
+                    if (typeof callback === 'function') {
+                        callback(new Error("no upnp/natpmp"));
+                    }
                 }
             } catch(e) {
                 log.error("UPNP.removePortMapping Exception",e,{});

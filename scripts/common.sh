@@ -1,12 +1,13 @@
 #!/bin/bash -
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 branch=$(cd $FIREWALLA_HOME > /dev/null; git rev-parse --abbrev-ref HEAD)
 
 function update_firewalla {
     ( cd $FIREWALLA_HOME
-    git fetch origin $branch
-    git reset --hard FETCH_HEAD   
+    $MGIT fetch origin $branch
+    $MGIT reset --hard FETCH_HEAD
     )
 }
 
@@ -57,8 +58,8 @@ function update_node_modules {
             # only reset head when there is new expected revision number
             # this is to reduce the freq of calling 'git reset'
             if [[ $EXPECTED_REVISION != $CURRENT_REVISION ]]; then
-                git fetch origin  || git fetch origin
-                git reset -q --hard `cat $REVISION_FILE`
+                $MGIT fetch origin  || $MGIT fetch origin
+                $MGIT reset -q --hard `cat $REVISION_FILE`
                 if [[ -n $FWPRODUCTION ]]; then
                     git clean -xdf # clean up all untracking files in node modules repo
                     # only clean untrack files in production mode

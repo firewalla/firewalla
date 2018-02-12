@@ -192,6 +192,7 @@ module.exports = class {
         var options = {
             uri: weburl,
             method: 'GET',
+            family: 4
             // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
         };
 
@@ -234,6 +235,7 @@ module.exports = class {
         var options = {
             uri: url,
             method: 'GET',
+            family: 4
             // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
         };
 

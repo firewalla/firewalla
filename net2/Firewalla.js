@@ -128,6 +128,10 @@ function isProduction() {
   return _isProduction;
 }
 
+function isProductionOrBeta() {
+  return isProduction() || isBeta()
+}
+
 function getReleaseType() {
   if(isProduction()) {
     return "prod"
@@ -171,8 +175,8 @@ function isOverlayFS() {
 
 function isBootingComplete() {
   return async(() => {
-    let keys = await (rclient.keysAsync("bootingComplete"))
-    return keys && keys.length > 0
+    let exists = await (rclient.existsAsync("bootingComplete"))
+    return exists == 1
   })()
 }
 
@@ -186,8 +190,8 @@ function resetBootingComplete() {
 
 function isFirstBindDone() {
   return async(() => {
-    let keys = await (rclient.keysAsync("firstBinding"))
-    return keys.length > 0
+    let exists = await (rclient.existsAsync("firstBinding"))
+    return exists == 1
   })()
 }
 function getRuntimeInfoFolder() {
@@ -288,6 +292,7 @@ module.exports = {
   isProduction: isProduction,
   isBeta:isBeta,
   isDevelopmentVersion:isDevelopmentVersion,
+  isProductionOrBeta:isProductionOrBeta,
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType

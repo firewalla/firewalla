@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# ----------------------------------------------------------------------------
+# This is a wrapper of Git that can recover given local repository from
+# disruptive action, like power off or SD card extraction.
+# ----------------------------------------------------------------------------
+
+MARKER_BASE=$HOME/git_in_progress
+
+function marked_git {
+    marker_dir=$MARKER_BASE/$1
+    mkdir -p $marker_dir
+    echo $2 > $marker_dir/url
+    echo $3 > $marker_dir/branch
+    shift 3
+    git "$@" || return 1
+    rm -rf $marker_dir
+}
+
+function recover {
+    _rc=0
+    cd $HOME
+    for wsdir in $(ls -a $MARKER_BASE)
+    do
+        case $wsdir in
+
+            .|..)
+            continue
+            ;;
+
+            *)
+            repo=$(cat $MARKER_BASE/$wsdir/url)
+            branch=$(cat $MARKER_BASE/$wsdir/branch)
+            rm -rf ${wsdir}.bak
+            mv -f $wsdir ${wsdir}.bak
+            if git clone --branch $branch --single-branch $repo $wsdir
+            then
+                rm -rf ${wsdir}.bak
+                rm -rf $MARKER_BASE/$wsdir
+            else
+                _rc=1
+            fi
+            ;;
+        esac
+    done
+    return $_rc
+}
+
+
+# ----------------------------------------------------------------------------
+# MAIN goes here
+# ----------------------------------------------------------------------------
+
+rc=0
+if [[ $# -eq 0 ]]; then
+    git
+else
+    # Protect file related Git operations(fetch/pull/reset) with marker files
+    case $1 in
+        fetch|pull|reset)
+            wsdir=$(basename $PWD)
+            repo=$(git remote get-url origin)
+            branch=$(git rev-parse --abbrev-ref HEAD)
+            marked_git $wsdir $repo $branch "$@" || rc=1
+            ;;
+        recover)
+            recover || rc=1
+            ;;
+        *)
+            git "$@" || rc=1
+            ;;
+    esac
+fi
+
+exit $rc

@@ -33,6 +33,13 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const HostManager = require('../net2/HostManager')
+const hostManager = new HostManager('cli', 'server');
+
+
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 const mode = require('../net2/Mode.js')
 
 var linux = require('../util/linux.js');
@@ -465,6 +472,17 @@ module.exports = class {
 
     */
 
+  isMonitoring(ip) {
+    const hostObject = hostManager.getHostFast(ip)
+
+    if(hostObject && hostObject.spoofing == false) {
+      return false
+    } else {
+      return true;
+    }
+
+  }
+
   isConnFlowValid(data) {
     let m = mode.getSetupModeSync()
     if(!m) {
@@ -481,7 +499,33 @@ module.exports = class {
           return false  
         }
 
+        // ignore any devices' traffic who is set to monitoring off
+        const origIP = data["id.orig_h"]
+        const respIP = data["id.resp_h"]
+
+        if(sysManager.isLocalIP(origIP)) {
+            if(!this.isMonitoring(origIP)) {
+              return false // set it to invalid if it is not monitoring
+            }
+        }
+
+        if(sysManager.isLocalIP(respIP)) {
+          if(!this.isMonitoring(respIP)) {
+            return false // set it to invalid if it is not monitoring
+          }
+      }
+
         // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      }
+    } else if(m === 'spoof' || m === 'autoSpoof') {
+      let myip = sysManager.myIp()
+
+      // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
+      if(myip && 
+        (data["id.orig_h"] === myip ||
+        data["id.resp_h"] === myip) && 
+        !this.isMonitoring(myip)) {        
+            return false // set it to invalid if walla itself is set to "monitoring off"
       }
     }
 
@@ -1431,18 +1475,41 @@ module.exports = class {
                       let noticeType = obj.note;
                       let timestamp = parseFloat(obj.ts);
 
+                      // TODO: create dedicate alarm type for each notice type
                       let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
                         "p.device.ip": localIP,
                         "p.dest.ip": dh
                       });
 
-                      am2.enrichDeviceInfo(alarm).then((alarm) => {
+                      if(noticeType == 'SSH::Password_Guessing') {
+                        const subMessage = obj.sub
+                        // sub message:
+                        //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
+                        
+                        let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                        addresses = addresses.filter((v, i, array) => {
+                          return array.indexOf(v) === i
+                        })
+
+                        if(addresses.length > 0) {
+                          alarm["p.device.ip"] = addresses[0]
+                          alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
+                        }
+
+                        alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+                      }
+
+                      async(() => {
+                        if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
+                          await (am2.enrichDestInfo(alarm))
+                        }
+                        await (am2.enrichDeviceInfo(alarm))
                         am2.checkAndSave(alarm, (err) => {
                           if(err) {
                             log.error("Failed to save alarm: " + err);
                           }
                         });
-                      });
+                      })()
 
                       alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
                         // if (obj != null) {

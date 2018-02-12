@@ -15,7 +15,7 @@
 'use strict';
 
 var instance = null;
-var log = null;
+const log = require("../net2/logger.js")(__filename)
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
 var firewalla = require('../net2/Firewalla.js');
@@ -42,11 +42,9 @@ var UPNP = require('../extension/upnp/upnp.js');
 var ttlExpire = 12*60*60;
 
 module.exports = class {
-    constructor(path, loglevel) {
+    constructor() {
         if (instance == null) {
-            log = require("../net2/logger.js")("VpnManager", loglevel);
             this.upnp = new UPNP("info",sysManager.myGateway());
-
             instance = this;
         }
         return instance;
@@ -162,7 +160,7 @@ module.exports = class {
             private: 1194,
             public: 1194
         });
-        require('child_process').exec("sudo systemctl stop openvpn", (err, out, code) => {
+        require('child_process').exec("sudo systemctl stop openvpn@server", (err, out, code) => {
             log.info("Stopping OpenVpn", err);
             if (callback) {
                 callback(err);
@@ -220,7 +218,7 @@ module.exports = class {
             private: 1194,
             public: 1194
         },(err)=>{
-            require('child_process').exec("sudo systemctl start openvpn", (err, out, code) => {
+            require('child_process').exec("sudo systemctl start openvpn@server", (err, out, code) => {
                 log.info("VpnManager:Start", err);
                 if (err && this.started == false) {
                     if (callback) {

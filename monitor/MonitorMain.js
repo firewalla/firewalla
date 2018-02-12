@@ -30,6 +30,8 @@ if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
 
+// load feature toggle on/off from redis to memory
+require('../net2/config.js').syncDynamicFeaturesConfigs()
 
 run0();
 
@@ -55,8 +57,19 @@ process.on('uncaughtException',(err)=>{
     }
     bone.log("error",{version:config.version,type:'FIREWALLA.MON.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
+        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
         process.exit(1);
     },1000*2);
+});
+
+process.on('unhandledRejection', (reason, p)=>{
+  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
+  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
+  bone.log("error",{version:config.version,type:'FIREWALLA.MON.unhandledRejection',msg:msg,stack:reason.stack},null);
+  // setTimeout(()=>{
+  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+  //   process.exit(1);
+  // },1000*2);
 });
 
 let heapSensor = null;

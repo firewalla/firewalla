@@ -1,4 +1,6 @@
 #!/bin/bash -
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 /home/pi/firewalla/scripts/fire-stop
 sync
 branch=$(git rev-parse --abbrev-ref HEAD)
@@ -6,13 +8,13 @@ if [[ $branch =~ release.* ]]
   then
     echo "on release"
     cd /home/pi/firewalla
-    sudo -u pi git fetch origin $branch
-    sudo -u pi git reset --hard origin/$branch
-    sudo -u pi git pull
+    sudo -u pi $MGIT fetch origin $branch
+    sudo -u pi $MGIT reset --hard origin/$branch
+    sudo -u pi $MGIT pull
     cd /home/pi/.node_modules
-    sudo -u pi git fetch origin $branch
-    sudo -u pi git reset --hard origin/$branch
-    sudo -u pi git pull
+    sudo -u pi $MGIT fetch origin $branch
+    sudo -u pi $MGIT reset --hard origin/$branch
+    sudo -u pi $MGIT pull
   else
     echo "on devbranch"
   fi

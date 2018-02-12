@@ -45,16 +45,16 @@ class HostTool {
   }
 
   macExists(mac) {
-    return rclient.keysAsync("host:mac:" + mac)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync("host:mac:" + mac)
+      .then((result) => {
+        return result == 1
       });
   }
 
   ipv4Exists(ip) {
-    return rclient.keysAsync("host:ip4:" + ip)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync("host:ip4:" + ip)
+      .then((result) => {
+        return result == 1
       });
   }
 
@@ -116,7 +116,8 @@ class HostTool {
 
     if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
       log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
-      return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
+      //return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
+      return // ignore 00:00:00:00:00:00
     }
 
     if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
@@ -279,9 +280,9 @@ class HostTool {
 
   ipv6Exists(ip) {
     let key = this.getIPv6HostKey(ip)
-    return rclient.keysAsync(key)
-      .then((results) => {
-        return results.length > 0;
+    return rclient.existsAsync(key)
+      .then((result) => {
+        return result == 1
       });
   }
 
@@ -452,6 +453,11 @@ class HostTool {
         return []
       }
     })()
+  }
+
+  isMacAddress(mac) {
+    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    return macAddressPattern.test(mac)
   }
 }
 

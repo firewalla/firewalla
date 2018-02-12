@@ -50,11 +50,23 @@ class SysTool {
   }
 
   shutdownServices() {
-    return exec("sudo shutdown -h")
+    return exec("sleep 3; sudo shutdown -h now")
   }
 
   restartFireKickService() {
     return exec("sudo systemctl restart firekick")
+  }
+
+  stopFireKickService() {
+    return exec("sudo systemctl stop firekick")
+  }
+
+  upgradeToLatest() {
+    return exec("/home/pi/firewalla/scripts/fireupgrade.sh soft")
+  }
+
+  resetPolicy() {
+    return exec("/home/pi/firewalla/scripts/reset-policy")
   }
 }
 
