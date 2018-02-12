@@ -139,6 +139,8 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
 
     if (obj.mac && obj.name) {
       return obj
+    } else if(obj.mac) {
+      return obj
     } else {
       return {}
     }
