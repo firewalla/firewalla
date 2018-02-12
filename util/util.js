@@ -30,6 +30,10 @@ function getPreferredBName(hostObject) {
     return null
   }
 
+  if(hostObject.name) {
+    return hostObject.name // always use user customized name first
+  }
+
   // TODO: preferred name needs to be improved in the future
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
