@@ -3,11 +3,16 @@
 # $1: filename
 # $2: password
 # $3: url
+# $4: fullcontrol
 
-url=${3-'https://firewallasupportupload.s3-us-west-2.amazonaws.com'}
-
-/home/pi/firewalla/scripts/techsupport
+/home/pi/firewalla/scripts/techsupport short 10
 gpg --passphrase $2 --symmetric --cipher-algo AES256 /home/pi/tmp/support.tar.gz
 mv /home/pi/tmp/support.tar.gz.gpg /home/pi/tmp/$1
-curl --upload /home/pi/tmp/$1 $url
+
+if [ -z "$4" ]
+   then 
+       curl --upload /home/pi/tmp/$1  $url
+   else 
+       curl --upload /home/pi/tmp/$1 -H 'x-amz-acl: bucket-owner-full-control' $url
+$fi
 rm /home/pi/tmp/$1

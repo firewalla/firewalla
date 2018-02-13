@@ -30,10 +30,25 @@ ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
 cp -r -f /home/pi/.firewalla . 
-cp /data/redis/dump.rdb .
-sudo cp /var/log/syslog* .
+if [ -z "$1" ]
+   then 
+     cp /data/redis/dump.rdb .
+   else
+     echo "skip db"
+fi 
+if [ -z "$2" ]
+   then 
+     cp -r -f /home/pi/logs/* .
+     sudo cp /var/log/syslog* .
+   else
+     ls -lt /home/pi/logs/FireMon*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
+     ls -lt /home/pi/logs/FireApi*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
+     ls -lt /home/pi/logs/FireMain*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
+     ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
+     ls -lt /home/pi/logs/audit*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
+     ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp {} .
+fi 
 sudo chmod 777 syslog*
-cp -r -f /home/pi/logs/* .
 cp -r -f /home/pi/.forever/* .
 cd ..
 tar -zcvf support.tar.gz techsupport
