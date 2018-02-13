@@ -390,7 +390,7 @@ module.exports = class {
               let num = parseInt(alarm["p.security.numOfReportSources"]);
               if(fConfig && fConfig.policy &&
                  fConfig.policy.autoBlock &&
-                 num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+                 (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
                 // auto block if num is greater than the threshold
                 this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
                 if (alarm['p.dest.ip']) {
