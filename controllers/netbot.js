@@ -85,8 +85,9 @@ let await = require('asyncawait/await');
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
 
-let FRP = require('../extension/frp/frp.js')
-let frp = new FRP();
+const FRPManager = require('../extension/frp/FRPManager.js')
+const fm = new FRPManager()
+const frp = fm.getSupportFRP()
 
 let f = require('../net2/Firewalla.js');
 
