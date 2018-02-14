@@ -307,7 +307,7 @@ paths:
       responses:
         200:
           description: Success
-  /system/encipher:
+  /encipher/simple:
     post:
       summary: A simple API for encipher message
       tags:
