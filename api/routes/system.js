@@ -171,7 +171,7 @@ router.post('/encipher', (req, res, next) => {
     router.handle(req, res)
 
   } catch(err) {
-    res.status(400).setDefaultEncoding({error: err})
+    res.status(400).send({error: err})
   }  
 })
 

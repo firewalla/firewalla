@@ -314,8 +314,9 @@ paths:
         - System
       parameters:
         - $ref: '#/parameters/command'
-        - $ref: '#/parameters/item'
+        - $ref: '#/parameters/itemInQuery'
         - $ref: '#/parameters/target'
+        - $ref: '#/parameters/json'
       responses:
         200:
           description: Success
