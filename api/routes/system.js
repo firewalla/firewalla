@@ -124,7 +124,7 @@ router.get('/status',
 router.post('/encipher', (req, res, next) => {
   const command = req.query.command || "init"
   const item = req.query.item || ""
-  const content = req.query.content || "{}"
+  const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
 
   let body = {
@@ -163,8 +163,8 @@ router.post('/encipher', (req, res, next) => {
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
-    const c = JSON.parse(content)
-    body.message.obj.data.value = c
+//    const c = JSON.parse(content)
+    body.message.obj.data.value = content
 
     req.url = "/encipher/message/" + gid
     req.body = JSON.stringify(body)
