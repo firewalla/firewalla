@@ -24,16 +24,7 @@ var rclient = redis.createClient();
 
 let Promise = require('bluebird');
 
-const TimeSeries = require('redis-timeseries')
-
-const timeSeries = new TimeSeries(rclient, "timedTraffic")
-ts.granularities = {
-  '1minute'  : { ttl: timeSeries.hours(1)  , duration: timeSeries.minutes(1) },
-  '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
-  '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
-  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) }
-}
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 		
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
