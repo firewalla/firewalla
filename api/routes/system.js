@@ -43,6 +43,8 @@ let flowTool = require('../../net2/FlowTool')();
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const jsonfile = require('jsonfile')
+
 
 /* system api */
 router.get('/info',
@@ -89,6 +91,89 @@ router.get('/status',
 
              });
            });
+
+
+          //  {
+          //   "message": {
+          //     "from": "iRocoX",
+          //     "obj": {
+          //       "mtype": "set",
+          //       "id": "DA45C7BE-9029-4165-AD56-7860A9A3AE6B",
+          //       "data": {
+          //         "value": {
+          //           "language": "zh"
+          //         },
+          //         "item": "language"
+          //       },
+          //       "type": "jsonmsg",
+          //       "target": "0.0.0.0"
+          //     },
+          //     "appInfo": {
+          //       "appID": "com.rottiesoft.circle",
+          //       "version": "1.25",
+          //       "platform": "ios"
+          //     },
+          //     "msg": "",
+          //     "type": "jsondata",
+          //     "compressMode": 1,
+          //     "mtype": "msg"
+          //   },
+          //   "mtype": "msg"
+          // }
+
+router.post('/encipher', (req, res, next) => {
+  const command = req.query.command || "init"
+  const item = req.query.item || ""
+  const content = req.query.content || "{}"
+  const target = req.query.target || "0.0.0.0"
+
+  let body = {
+    "message": {
+      "from": "iRocoX",
+      "obj": {
+        "mtype": "set",
+        "id": "DA45C7BE-9029-4165-AD56-7860A9A3AE6B",
+        "data": {
+          "value": {
+            "language": "zh"
+          },
+          "item": "language"
+        },
+        "type": "jsonmsg",
+        "target": "0.0.0.0"
+      },
+      "appInfo": {
+        "appID": "com.rottiesoft.circle",
+        "version": "1.25",
+        "platform": "ios"
+      },
+      "msg": "",
+      "type": "jsondata",
+      "compressMode": 1,
+      "mtype": "msg"
+    },
+    "mtype": "msg"
+  }
+
+  body.message.obj.mtype = command
+  body.message.obj.data.item = item
+  body.message.obj.target = target
+
+  
+  try {
+    const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
+
+    const c = JSON.parse(content)
+    body.message.obj.data.value = c
+
+    req.url = "/encipher/message/" + gid
+    req.body = JSON.stringify(body)
+    router.handle(req, res)
+
+  } catch(err) {
+    res.status(400).setDefaultEncoding({error: err})
+  }  
+})
 
 router.get('/flow',
     function(req, res, next) {
