@@ -24,6 +24,17 @@ var rclient = redis.createClient();
 
 let Promise = require('bluebird');
 
+const TimeSeries = require('redis-timeseries')
+
+const timeSeries = new TimeSeries(rclient, "timedTraffic")
+ts.granularities = {
+  '1minute'  : { ttl: timeSeries.hours(1)  , duration: timeSeries.minutes(1) },
+  '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
+  '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
+  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
+  '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) }
+}
+		
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -324,6 +335,8 @@ module.exports = class FlowManager {
             return;
         }
  
+      timeSeries.recordHit('download',ts, Number(inBytes)).exec()
+
       rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
         if(err) {
           log.error("Failed to record stats on download bytes: " + err);
@@ -331,6 +344,8 @@ module.exports = class FlowManager {
           return;
         }
         
+        timeSeries.recordHit('upload',ts, Number(outBytes)).exec()
+
         rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
           if(err) {
             log.error("Failed to record stats on upload bytes: " + err);
