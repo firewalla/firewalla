@@ -15,7 +15,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+let log = require('../net2/logger.js')(__filename);
 
 const TimeSeries = require('redis-timeseries')
 
