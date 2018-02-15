@@ -28,8 +28,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 
-
-
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
@@ -45,9 +43,6 @@ let intelManager = new IntelManager('debug');
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
-
-const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
-const getHitsAsync = Promise.promisify(timeSeries.getHits)
 
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -90,9 +85,8 @@ let await = require('asyncawait/await');
 let NM = require('../ui/NotifyManager.js');
 let nm = new NM();
 
-const FRPManager = require('../extension/frp/FRPManager.js')
-const fm = new FRPManager()
-const frp = fm.getSupportFRP()
+let FRP = require('../extension/frp/frp.js')
+let frp = new FRP();
 
 let f = require('../net2/Firewalla.js');
 
@@ -1262,17 +1256,6 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, _config, null, callback);
       }
       break;
-    case "last60mins":
-      async(() => {
-        let downloadStats = await (getHitsAsync("download", "1minute", 60))
-        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
-        this.simpleTxData(msg, {
-          upload: uploadStats,
-          download: downloadStats
-        }, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
