@@ -41,10 +41,8 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
-
-const FRPManager = require('../extension/frp/FRPManager.js')
-const fm = new FRPManager()
-const frp = fm.getSupportFRP()
+let FRP = require('../extension/frp/frp.js')
+let frp = new FRP();
 
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');

@@ -43,8 +43,6 @@ let flowTool = require('../../net2/FlowTool')();
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
-const jsonfile = require('jsonfile')
-
 
 /* system api */
 router.get('/info',
@@ -91,8 +89,6 @@ router.get('/status',
 
              });
            });
-
-
 
 router.get('/flow',
     function(req, res, next) {
