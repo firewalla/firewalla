@@ -1211,15 +1211,15 @@ module.exports = class {
 
         // intel
         const intel = await (intelTool.getIntel(destIP))
-        if(intel.app) {
+        if(intel && intel.app) {
           alarm["p.dest.app"] = intel.app
         }
 
-        if(intel.category) {
+        if(intel && intel.category) {
           alarm["p.dest.category"] = intel.category
         }
 
-        if(intel.host) {
+        if(intel && intel.host) {
           alarm["p.dest.name"] = intel.host
         }
         
