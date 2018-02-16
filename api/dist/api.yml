@@ -307,6 +307,19 @@ paths:
       responses:
         200:
           description: Success
+  /encipher/simple:
+    post:
+      summary: A simple API for encipher message
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/command'
+        - $ref: '#/parameters/itemInQuery'
+        - $ref: '#/parameters/target'
+        - $ref: '#/parameters/json'
+      responses:
+        200:
+          description: Success
   /alarm/list:
     get:
       summary: Get all active alarms
@@ -598,6 +611,24 @@ parameters:
     in: query
     required: true
     description: Action
+    type: string
+  target:
+      name: target
+      in: query
+      required: false
+      description: Target
+      type: string
+  itemInQuery:
+    name: item
+    in: query
+    required: false
+    description: item
+    type: string
+  command:
+    name: command
+    in: query
+    required: false
+    description: command
     type: string
   json:
     name: json

@@ -24,6 +24,8 @@ var rclient = redis.createClient();
 
 let Promise = require('bluebird');
 
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+		
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -324,6 +326,8 @@ module.exports = class FlowManager {
             return;
         }
  
+      timeSeries.recordHit('download',ts, Number(inBytes)).exec()
+
       rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
         if(err) {
           log.error("Failed to record stats on download bytes: " + err);
@@ -331,6 +335,8 @@ module.exports = class FlowManager {
           return;
         }
         
+        timeSeries.recordHit('upload',ts, Number(outBytes)).exec()
+
         rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
           if(err) {
             log.error("Failed to record stats on upload bytes: " + err);
