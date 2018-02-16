@@ -1615,6 +1615,18 @@ module.exports = class {
     });
   }
 
+  last60MinStatsForInit(json) {
+      return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1minute", 60))
+        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
+    
+        json.last60 = {
+            upload: uploadStats,
+            download: downloadStats
+        }
+      })()
+  }
+
   policyDataForInit(json) {
     log.debug("Loading polices");
 
@@ -1936,6 +1948,7 @@ module.exports = class {
 
           let requiredPromises = [
             this.last24StatsForInit(json),
+            this.last60MinStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
             this.modeForInit(json),
