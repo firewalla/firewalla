@@ -30,6 +30,9 @@ const exec = require('child-process-promise').exec
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const getHitsAsync = Promise.promisify(timeSeries.getHits)
+
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
 var SysManager = require('./SysManager.js');
