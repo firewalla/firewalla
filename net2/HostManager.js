@@ -31,7 +31,7 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
-const getHitsAsync = Promise.promisify(timeSeries.getHits)
+const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
