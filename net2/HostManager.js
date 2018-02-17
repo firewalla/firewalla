@@ -1623,9 +1623,21 @@ module.exports = class {
         let downloadStats = await (getHitsAsync("download", "1minute", 60))
         let uploadStats = await (getHitsAsync("upload", "1minute", 60))
     
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
         json.last60 = {
             upload: uploadStats,
-            download: downloadStats
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
         }
       })()
   }
