@@ -1638,7 +1638,31 @@ module.exports = class {
             download: downloadStats,
             totalUpload: totalUpload,
             totalDownload: totalDownload
-        }
+        }        
+      })()
+  }
+
+  last30daysStatsForInit(json) {
+    return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1day", 30))
+        let uploadStats = await (getHitsAsync("upload", "1day", 30))
+    
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last30 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
       })()
   }
 
@@ -1964,6 +1988,7 @@ module.exports = class {
           let requiredPromises = [
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
+            this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
             this.modeForInit(json),
