@@ -1,11 +1,15 @@
 echo "Main"
 sudo service firemain status | grep Active
+sudo journalctl -u firemain.service |grep Start |wc -l
 echo "Monitor"
 sudo service firemon status | grep Active
+sudo journalctl -u firemon.service |grep Start |wc -l
 echo "Kick"
 sudo service firekick status | grep Active
+sudo journalctl -u firekick.service |grep Start |wc -l
 echo "API"
 sudo service fireapi status | grep Active
+sudo journalctl -u fireapi.service |grep Start |wc -l
 echo "Upgrade"
 sudo service fireupgrade status | grep Active
 echo "DNSMasq"
