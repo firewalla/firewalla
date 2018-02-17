@@ -27,8 +27,8 @@ timeSeries.granularities = {
   '1minute'  : { ttl: timeSeries.hours(1)  , duration: timeSeries.minutes(1) },
   '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
   '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
-  '1hour'    : { ttl: timeSeries.days(1)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.days(30) , duration: timeSeries.days(1) },
+  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
+  '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) },
   '1month'     : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
