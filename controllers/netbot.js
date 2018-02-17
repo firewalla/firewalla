@@ -864,6 +864,11 @@ class netBot extends ControllerBot {
         };
         reply.code = 200;
 
+        if(!data.value.name) {
+          this.simpleTxData(msg, {}, new Error("host name required for setting name"), callback)
+          return
+        }
+
         async(() => {
           let ip = null
 
@@ -871,15 +876,17 @@ class netBot extends ControllerBot {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress, {})
 
-            const hostObject = await (hostTool.getMACEntry(macAddress))
-            
-            if(hostObject && hostObject.ipv4Addr) {
-              ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
-            } else {
-              let error = new Error("Invalide Mac");
-              error.code = 404;
-              return Promise.reject(error);
+            let macObject = {
+              name: data.value.name,
+              mac: macAddress
             }
+
+            await (hostTool.updateMACKey(macObject, true))
+
+            this.simpleTxData(msg, {}, null, callback)
+            
+            return
+
           } else {
             ip = msg.target
           }
