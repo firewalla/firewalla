@@ -30,6 +30,9 @@ const exec = require('child-process-promise').exec
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
+
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
 var SysManager = require('./SysManager.js');
@@ -1615,6 +1618,54 @@ module.exports = class {
     });
   }
 
+  last60MinStatsForInit(json) {
+      return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1minute", 60))
+        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
+    
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last60 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
+  last30daysStatsForInit(json) {
+    return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1day", 30))
+        let uploadStats = await (getHitsAsync("upload", "1day", 30))
+    
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last30 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
   policyDataForInit(json) {
     log.debug("Loading polices");
 
@@ -1936,6 +1987,8 @@ module.exports = class {
 
           let requiredPromises = [
             this.last24StatsForInit(json),
+            this.last60MinStatsForInit(json),
+            this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
             this.modeForInit(json),
