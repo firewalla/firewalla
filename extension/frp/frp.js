@@ -30,6 +30,10 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const redis = require('redis')	
+const rclient = redis.createClient()	
+Promise.promisifyAll(redis.RedisClient.prototype)
+
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 
