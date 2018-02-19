@@ -27,12 +27,25 @@ program.version('0.0.2')
 
 program.parse(process.argv)
 
-timeSeries.getHits("download", "1minute", 10, (err, data) => {
+timeSeries.getHits("download", "1minute", 11, (err, data) => {
+
+  if(data[data.length - 1][1] == 0) {
+    data = data.slice(0, 10)
+  } else {
+    data = data.slice(1)
+  }
+
   data.forEach((d) => {
     console.log("download", new Date(d[0] * 1000), d[1])
   })
 
-  timeSeries.getHits("upload", "1minute", 10, (err, data) => {
+  timeSeries.getHits("upload", "1minute", 11, (err, data) => {
+    if(data[data.length - 1][1] == 0) {
+      data = data.slice(0, 10)
+    } else {
+      data = data.slice(1)
+    }
+
     data.forEach((d) => {
       console.log("upload", new Date(d[0] * 1000), d[1])
     })

@@ -1620,9 +1620,19 @@ module.exports = class {
 
   last60MinStatsForInit(json) {
       return async(() => {
-        let downloadStats = await (getHitsAsync("download", "1minute", 60))
-        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
-    
+        let downloadStats = await (getHitsAsync("download", "1minute", 61))
+        if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
+            downloadStats = downloadStats.slice(0, 60)
+        } else {
+            downloadStats = downloadStats.slice(1)
+        }
+        let uploadStats = await (getHitsAsync("upload", "1minute", 61))
+        if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
+            uploadStats = uploadStats.slice(0, 60)
+        } else {
+            uploadStats = uploadStats.slice(1)
+        }
+
         let totalDownload = 0
         downloadStats.forEach((s) => {
             totalDownload += s[1]

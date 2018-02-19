@@ -24,7 +24,7 @@ const rclient = redis.createClient();
 
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
-  '1minute'  : { ttl: timeSeries.hours(1)  , duration: timeSeries.minutes(1) },
+  '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
   '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
   '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
   '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
