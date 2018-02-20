@@ -191,11 +191,11 @@ class DestIPFoundHook extends Hook {
       }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      if(!skipRedisUpdate) {
-        if(cloudIntelInfo.constructor.name === 'Array' && cloudIntelInfo.length > 0) {
-          await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo[0], this.config.intelExpireTime));
-        }
-      }
+      // if(!skipRedisUpdate) {
+      //   if(cloudIntelInfo.constructor.name === 'Array' && cloudIntelInfo.length > 0) {
+      //     await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo[0], this.config.intelExpireTime));
+      //   }
+      // }
 
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country

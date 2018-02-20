@@ -40,7 +40,12 @@ rclient.on("error", function (err) {
     log.error("Redis(alarm) Error " + err);
 });
 
-let async = require('async');
+let _async = require('async');
+
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+
 let instance = null;
 let HostManager = require("../net2/HostManager.js");
 let hostManager = new HostManager("cli", 'client', 'info');
@@ -687,7 +692,7 @@ module.exports = class FlowMonitor {
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
                 result = result.filter(x => x) // workaround if host is undefined or null
-                async.eachLimit(result,2, (host, cb) => {
+                _async.eachLimit(result,2, (host, cb) => {
                     let listip = [];
                     listip.push(host.o.ipv4Addr);
                     if (host.ipv6Addr && host.ipv6Addr.length > 0) {
