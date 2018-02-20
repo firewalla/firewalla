@@ -199,9 +199,9 @@ module.exports = class FlowMonitor {
         for (let i in flows) {
             let flow = flows[i];
             log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
-            if (flow['intel'] && flow['intel']['c'] && flowUtil.checkFlag(flow,'l')==false) {
+            if (flow['intel'] && flow['intel']['category'] && flowUtil.checkFlag(flow,'l')==false) {
               log.info("########## flowIntel",JSON.stringify(flow),{});
-              let c = flow['intel']['c'];
+              let c = flow['intel']['category'];
               let cs = flow['intel']['cs'];
 
               hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
@@ -295,15 +295,6 @@ module.exports = class FlowMonitor {
                         if(err)
                           log.error("Failed to create alarm: " + err);
                       });
-
-                        alarmManager.alarm(flow.sh,c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                            // if (obj!=null) {
-                            //       this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                            //            msg:msg,
-                            //            obj:obj
-                            //       });
-                            // }
-                        });
                     }
                 } else if (this.checkIntelClass(flow['intel'],"intel")) {
                     // Intel object
@@ -384,13 +375,6 @@ module.exports = class FlowMonitor {
 
                   // Process intel to generate Alarm about it
                   this.processIntelFlow(intelobj);
-
-                    /*
-                    this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                                            msg:msg
-                                        });
-                    alarmManager.alarm(flow.sh, "warn", 'major', '50', {"msg":msg}, null, null);
-                    */
                   }
                 } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
@@ -430,15 +414,6 @@ module.exports = class FlowMonitor {
                         }).catch((err) => {
                           if(err)
                             log.error("Failed to create alarm: " + err);
-                        });
-
-                        alarmManager.alarm(flow.sh, c, 'minor', '0', {"msg":msg}, actionobj, (err, obj, action)=>{
-                            // if (obj!=null) {
-                            //      this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                            //                     msg:msg,
-                            //                     obj:obj
-                            //      });
-                            // }
                         });
                     }
                 }
@@ -778,15 +753,6 @@ module.exports = class FlowMonitor {
                                                         });
                                                       });
         
-                                                      alarmManager.alarm(host.o.ipv4Addr, "outflow", 'major', '50', copy, actionobj,(err,data,action)=>{
-                                                          // if (data!=null) {
-                                                          //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                          //       direction: "out",
-                                                          //       "txRatioRanked": [flow],
-                                                          //       id:data.id,
-                                                          //   });
-                                                          // }
-                                                        });
                                                 }
 
                                             });
@@ -849,15 +815,6 @@ module.exports = class FlowMonitor {
                                                     });
                                                     });
 
-                                                    alarmManager.alarm(host.o.ipv4Addr, "inflow", 'major', '50', copy, actionobj,(err,data)=>{
-                                                        // if (data!=null) {
-                                                        //   this.publisher.publish("MonitorEvent", "Monitor:Flow:Out", host.o.ipv4Addr, {
-                                                        //       direction: "in",
-                                                        //       "txRatioRanked": [flow],
-                                                        //       id:data.id,
-                                                        //   });
-                                                        // }
-                                                    });
                                                 }
 
                                             });
