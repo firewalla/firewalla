@@ -37,8 +37,6 @@ rclient.on("error", function (err) {
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var AlarmManager = require('./AlarmManager.js');
-var alarmManager = new AlarmManager('debug');
 
 let Alarm = require('../alarm/Alarm.js');
 let AM2 = require('../alarm/AlarmManager2.js');
@@ -237,7 +235,6 @@ module.exports = class {
      */
     release() {
         rclient.quit();
-        alarmManager.release();
         sysManager.release();
         log.debug("Calling release function of Discovery");
     }
@@ -506,18 +503,7 @@ module.exports = class {
                   mac: data.mac,
                   macVendor: data.macVendor,
                   message: "new device event by process host"
-                });
-                
-                let d = JSON.parse(JSON.stringify(data));
-                let actionobj = {
-                  title: "New Host",
-                  actions: ["hblock","ignore"],
-                  target: data.ipv4Addr,
-                  mac: data.mac, 
-                }
-                alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
-                  //                                  this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
-                });
+                });              
               }
             });
           } else {

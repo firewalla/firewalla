@@ -125,6 +125,10 @@ class DestIPFoundHook extends Hook {
       if(info.c) {
         intel.category = info.c;
       }
+
+      if(info.action && info.action.block) {
+        intel.action = "block"
+      }
       //      }
     });
 

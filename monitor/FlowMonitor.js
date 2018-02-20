@@ -33,6 +33,9 @@ const fc = require('../net2/config.js')
 
 let uuid = require('uuid');
 
+const HostTool = require('../net2/HostTool')
+const hostTool = new HostTool()
+
 rclient.on("error", function (err) {
     log.error("Redis(alarm) Error " + err);
 });
@@ -169,6 +172,12 @@ module.exports = class FlowMonitor {
             return false
         }
 
+        if (intel.category) {
+          if (intel.category == _class) {
+              return true;
+          }
+      }
+
         if (intel.c) {
             if (intel.c == _class) {
                 return true;
@@ -240,15 +249,6 @@ module.exports = class FlowMonitor {
                           if(err)
                             log.error("Failed to create alarm: " + err);
                         });;
-
-                        alarmManager.alarm(flow.sh, c, 'info', '0', {"msg":msg}, actionobj, (err,obj,action)=> {
-                            // if (obj != null) {
-                            //     this.publisher.publish("DiscoveryEvent", "Notice:Detected", flow.sh, {
-                            //                     msg:msg,
-                            //                     obj:obj
-                            //     });
-                            // }
-                        });
                     }
                 } else if (this.checkIntelClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
@@ -937,61 +937,62 @@ module.exports = class FlowMonitor {
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
 
-    dnsManager.resolveRemoteHost(remoteIP, (err, name) => {
-      let remoteHostname = name.name || remoteIP;
+    async(() => {
+        const name = await (hostTool.getName(remoteIP))
+        let remoteHostname = name || remoteIP;
 
-      intelManager.lookup(remoteIP, (err, iobj, url) => {
-
-        if (err != null || iobj == null) {
-          log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
-          return;
-        }
-
-        if (iobj.severityscore < 4) {
-          log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-          return;
-        }
-
-        let severity = iobj.severityscore > 50 ? "major" : "minor";
-        let reason = iobj.reason;
-
-        if(fc.isFeatureOn("cyber_security")) {
-          let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
-            "p.device.ip": deviceIP,
-            "p.device.port": this.getDevicePort(flowObj),
-            "p.dest.id": remoteIP,
-            "p.dest.ip": remoteIP,
-            "p.dest.name": remoteHostname,
-            "p.dest.port": this.getRemotePort(flowObj),
-            "p.security.reason": reason,
-            "p.security.numOfReportSources": iobj.count,
-            "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
-          });
-    
+        intelManager.lookup(remoteIP, (err, iobj, url) => {
   
-          if (flowObj && flowObj.action) {
-            alarm["p.action.block"]=flowObj.action.block;
+          if (err != null || iobj == null) {
+            log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
+            return;
           }
   
-          if (flowObj && flowObj.categoryArray) {
-            alarm['p.security.category']=flowObj.categoryArray;
+          if (iobj.severityscore < 4) {
+            log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
+            return;
           }
   
-          log.info("Host:ProcessIntelFlow:Alarm",alarm);
+          let severity = iobj.severityscore > 50 ? "major" : "minor";
+          let reason = iobj.reason;
   
-          alarmManager2.enrichDeviceInfo(alarm)
-            .then(alarmManager2.enrichDestInfo)
-            .then((alarm) => {
-              alarmManager2.checkAndSave(alarm, (err) => {
-                if(err)
-                  log.error("Fail to save alarm: " + err);
-              });
-            }).catch((err) => {
-              log.error("Failed to create alarm: " + err);
+          if(fc.isFeatureOn("cyber_security")) {
+            let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+              "p.device.ip": deviceIP,
+              "p.device.port": this.getDevicePort(flowObj),
+              "p.dest.id": remoteIP,
+              "p.dest.ip": remoteIP,
+              "p.dest.name": remoteHostname,
+              "p.dest.port": this.getRemotePort(flowObj),
+              "p.security.reason": reason,
+              "p.security.numOfReportSources": iobj.count,
+              "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
             });
-        }
-        
-      });
-    });
+      
+    
+            if (flowObj && flowObj.action && flowObj.action === "block") {
+              alarm["p.action.block"]=true
+            }
+    
+            if (flowObj && flowObj.categoryArray) {
+              alarm['p.security.category']=flowObj.categoryArray;
+            }
+    
+            log.info("Host:ProcessIntelFlow:Alarm",alarm);
+    
+            alarmManager2.enrichDeviceInfo(alarm)
+              .then(alarmManager2.enrichDestInfo)
+              .then((alarm) => {
+                alarmManager2.checkAndSave(alarm, (err) => {
+                  if(err)
+                    log.error("Fail to save alarm: " + err);
+                });
+              }).catch((err) => {
+                log.error("Failed to create alarm: " + err);
+              });
+          }
+          
+        });
+    })()
   }
 }

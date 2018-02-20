@@ -43,6 +43,8 @@ let im = new IM('info');
 var DNSManager = require('../net2/DNSManager.js');
 var dnsManager = new DNSManager('info');
 
+const getPreferredBName = require('../util/util.js').getPreferredBName
+
 let Policy = require('./Policy.js');
 
 let PolicyManager2 = require('./PolicyManager2.js');
@@ -1164,7 +1166,7 @@ module.exports = class {
             return;
           }
 
-          let deviceName = dnsManager.name(result);
+          let deviceName = getPreferredBName(result);
           let deviceID = result.mac;
 
           extend(alarm, {

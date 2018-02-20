@@ -946,11 +946,11 @@ module.exports = class FlowManager {
                 } else {
                     appdb[flow.appr] = [flow];
                 }
-            } else if (flow.intel && flow.intel.c && flow.intel.c!="intel") {
-                if (activitydb[flow.intel.c]) {
-                    activitydb[flow.intel.c].push(flow);
+            } else if (flow.intel && flow.intel.category && flow.intel.category!="intel") {
+                if (activitydb[flow.intel.category]) {
+                    activitydb[flow.intel.category].push(flow);
                 } else {
-                    activitydb[flow.intel.c] = [flow];
+                    activitydb[flow.intel.category] = [flow];
                 }
             }
         }
