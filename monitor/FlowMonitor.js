@@ -162,7 +162,7 @@ module.exports = class FlowMonitor {
 
         const intelFeatureMapping = {
             "av": "video",
-            "game": "game",
+            "games": "game",
             "porn": "porn",
             "intel": "cyber_security"
         }
