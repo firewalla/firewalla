@@ -52,7 +52,6 @@ const getPreferredBName = require('../util/util.js').getPreferredBName
 
 var hostManager = null;
 
-let Promise = require('bluebird');
 let firewalla = require('./Firewalla.js');
 
 const dns = require('dns');
@@ -334,15 +333,15 @@ module.exports = class DNSManager {
         const _ipdst = o[ipdst]
 
         if(sysManager.isLocalIP(_ipsrc)) {
-          await(this.enrichDeviceIP(_ipsrc))
+          await(this.enrichDeviceIP(_ipsrc, o, "src"))
         } else {
-          await (this.enrichDestIP(_ipsrc))
+          await (this.enrichDestIP(_ipsrc, o, "src"))
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
-          await(this.enrichDeviceIP(_ipdst))
+          await(this.enrichDeviceIP(_ipdst, o, "dst"))
         } else {
-          await (this.enrichDestIP(_ipdst))
+          await (this.enrichDestIP(_ipdst, o, "dst"))
         }
       })().finally(() => {
         cb()
