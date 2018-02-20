@@ -59,7 +59,7 @@ class DestIPFoundHook extends Hook {
   constructor() {
     super();
 
-    this.config.intelExpireTime = 7 * 24 * 3600; // one week
+    this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
   }
 
@@ -188,7 +188,12 @@ class DestIPFoundHook extends Hook {
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       if(!skipRedisUpdate) {
         if(cloudIntelInfo.constructor.name === 'Array' && cloudIntelInfo.length > 0) {
+          log.debug("DestHook:IntelTool:New", JSON.stringify(cloudIntelInfo[0]), this.config.intelExpireTime);
           await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo[0], this.config.intelExpireTime));
+        } else {
+          let intel = {ts:Math.floor(Date.now()/1000)};
+          log.debug("DestHook:IntelTool:New:MarkOnly", JSON.stringify(intel), this.config.intelExpireTime);
+          await (intelTool.updateIntelKeyInDNS(ip, intel, this.config.intelExpireTime));
         }
       }
 

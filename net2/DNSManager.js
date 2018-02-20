@@ -309,7 +309,7 @@ module.exports = class DNSManager {
                    dnsdata.intel = intel;
                    dnsdata._intel = JSON.stringify(intel);
                    rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
-                       rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                       rclient.expireat(key, parseInt((+new Date) / 1000) + 86400*2);
                        callback(err,null);
                    });
                }
@@ -327,12 +327,15 @@ module.exports = class DNSManager {
                   if (rintel == null) {
                       rintel = r;  
                   }
+                  if (r.ip) {
+                      delete r.ip;
+                  }
                   dnsdata.intel = r;
                   dnsdata._intel = JSON.stringify(r);
                   //log.info("##### MISS 2",key,err,JSON.stringify(r));
                   rclient.hset(key, "_intel", JSON.stringify(r),(err,data)=> {
                       //log.info("##### MISS 2 SAVED ",key,err,JSON.stringify(r),data);
-                      rclient.expireat(key, Math.floor(Date.now()/1000)+43200*2);
+                      rclient.expireat(key, Math.floor(Date.now()/1000)+86400*2);
                       cb();
                   });
               } else {
@@ -343,7 +346,7 @@ module.exports = class DNSManager {
                   dnsdata.intel = intel;
                   dnsdata._intel = JSON.stringify(intel);
                   rclient.hset(key, "_intel", JSON.stringify(intel),(err,data)=> {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + 43200*2);
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + 86400*2);
                       cb(); 
                   });
               }
