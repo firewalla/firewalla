@@ -91,6 +91,7 @@ class DestIPFoundHook extends Hook {
     if(sslInfo && sslInfo.server_name) {
       intel.host = sslInfo.server_name
       intel.sslHost = sslInfo.server_name
+      intel.org = sslInfo.O
     }
 
     // app
