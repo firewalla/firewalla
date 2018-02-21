@@ -1702,8 +1702,8 @@ module.exports = class {
             }
 
             json.blockedSitesCount = blockedSites
-            json.blockedDevices = blockedDevices
-            json.blockedDevicePorts = blockedDevicePorts
+            json.blockedDevicesCount = blockedDevices
+            json.blockedDevicePortsCount = blockedDevicePorts
 
             resolve();
           });
