@@ -1721,6 +1721,10 @@ module.exports = class {
           reject(err);
         } else {
 
+          rules = rules.filter((r) => {
+            r.type != "ALARM_NEW_DEVICE" // allow new device is default
+          })
+          
           let alarmIDs = rules.map((p) => p.aid);
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
