@@ -622,7 +622,7 @@ class netBot extends ControllerBot {
         
       })()
       this.setupDialog();
-    }, 2000);
+    }, 20 * 1000);
 
     this.hostManager.on("Scan:Done", (channel, type, ip, obj) => {
       if (type == "Scan:Done") {

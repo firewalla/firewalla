@@ -32,6 +32,15 @@ timeSeries.granularities = {
   '1month'     : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
+const boneAPITimeSeries = new TimeSeries(rclient, "boneAPIUsage")
+boneAPITimeSeries.granularities = {
+  '1minute'  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
+  '5minutes' : { ttl: boneAPITimeSeries.days(1)   , duration: boneAPITimeSeries.minutes(5) },
+  '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
+  '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
+}
+
 module.exports = {
-  getTimeSeries: function() {return timeSeries}
+  getTimeSeries: function() {return timeSeries},
+  getBoneAPITimeSeries: function() {return boneAPITimeSeries}
 }

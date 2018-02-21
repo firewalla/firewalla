@@ -27,8 +27,6 @@ const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager();
-const AlarmManager = require('./AlarmManager.js');
-const alarmManager = new AlarmManager('info');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -36,6 +34,8 @@ const am2 = new AM2();
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager('cli', 'server');
 
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -1465,60 +1465,52 @@ module.exports = class {
                      obj: obj
                 };
 
-                dnsManager.resolvehost(obj.src,(err,__src)=>{
-                    dnsManager.resolvehost(obj.dst,(err,__dst)=>{
-                      actionobj.shname =dnsManager.name(__src);
-                      actionobj.dhname =dnsManager.name(__dst);
+                async(() => {
+                    const srcName = await (hostTool.getName(obj.src))
+                    const dstName = await (hostTool.getName(obj.dst))
+                    if(srcName) {
+                        actionobj.shname = srcName
+                    }
+                    if(dstName) {
+                        actionobj.dhname = dstName
+                    }
 
-                      let localIP = lh;
-                      let message = obj.msg;
-                      let noticeType = obj.note;
-                      let timestamp = parseFloat(obj.ts);
+                    let localIP = lh;
+                    let message = obj.msg;
+                    let noticeType = obj.note;
+                    let timestamp = parseFloat(obj.ts);
 
-                      // TODO: create dedicate alarm type for each notice type
-                      let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-                        "p.device.ip": localIP,
-                        "p.dest.ip": dh
-                      });
+                    // TODO: create dedicate alarm type for each notice type
+                    let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
+                      "p.device.ip": localIP,
+                      "p.dest.ip": dh
+                    });
 
-                      if(noticeType == 'SSH::Password_Guessing') {
-                        const subMessage = obj.sub
-                        // sub message:
-                        //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
-                        
-                        let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
-                        addresses = addresses.filter((v, i, array) => {
-                          return array.indexOf(v) === i
-                        })
+                    if(noticeType == 'SSH::Password_Guessing') {
+                      const subMessage = obj.sub
+                      // sub message:
+                      //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
+                      
+                      let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                      addresses = addresses.filter((v, i, array) => {
+                        return array.indexOf(v) === i
+                      })
 
-                        if(addresses.length > 0) {
-                          alarm["p.device.ip"] = addresses[0]
-                          alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
-                        }
-
-                        alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+                      if(addresses.length > 0) {
+                        alarm["p.device.ip"] = addresses[0]
+                        alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
                       }
 
-                      async(() => {
-                        if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
-                          await (am2.enrichDestInfo(alarm))
-                        }
-                        await (am2.enrichDeviceInfo(alarm))
-                        am2.checkAndSave(alarm, (err) => {
-                          if(err) {
-                            log.error("Failed to save alarm: " + err);
-                          }
-                        });
-                      })()
+                      alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+                    }
 
-                      alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
-                        // if (obj != null) {
-                        //          this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
-                        // }
-                      });
-                    });
-                });
+                    if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
+                        await (am2.enrichDestInfo(alarm))
+                    }
 
+                    await (am2.enrichDeviceInfo(alarm))
+                    await (am2.checkAndSaveAsync(alarm))
+                })()
             } else {
 //              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
