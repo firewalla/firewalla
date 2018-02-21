@@ -1683,7 +1683,7 @@ module.exports = class {
             let blockedDevicePorts = 0
 
             for (let i in rules) {
-              switch (rule[i].type) {
+              switch (rules[i].type) {
               case "ip":
               case "domain":
               case "dns":
