@@ -1682,8 +1682,8 @@ module.exports = class {
             let blockedDevices = 0
             let blockedDevicePorts = 0
 
-            for (let rule in rules) {
-              switch (rule.type) {
+            for (let i in rules) {
+              switch (rule[i].type) {
               case "ip":
               case "domain":
               case "dns":
