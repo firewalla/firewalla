@@ -1677,6 +1677,34 @@ module.exports = class {
             }
 
             json.policyRules = rules;
+
+            let blockedSites = 0
+            let blockedDevices = 0
+            let blockedDevicePorts = 0
+
+            for (let rule in rules) {
+              switch (rule.type) {
+              case "ip":
+              case "domain":
+              case "dns":
+                blockedSites++
+                break
+              case "mac":
+                blockedDevices ++
+                break
+              case "devicePort":
+                blockedDevicePorts++
+                break
+              default:
+                // do nothing
+                break
+              }
+            }
+
+            json.blockedSitesCount = blockedSites
+            json.blockedDevices = blockedDevices
+            json.blockedDevicePorts = blockedDevicePorts
+
             resolve();
           });
         }
@@ -1709,7 +1737,8 @@ module.exports = class {
               }
             }
 
-            json.exceptionRules = rules;
+            json.exceptionRules = rules
+            json.exceptionCount = rules.length
             resolve();
           });
         }

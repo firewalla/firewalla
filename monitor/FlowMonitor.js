@@ -751,12 +751,13 @@ module.exports = class FlowMonitor {
                                                         "p.flow": JSON.stringify(flow)
                                                       });
         
-                                                      alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                                                        alarmManager2.checkAndSave(alarm, (err) => {
-                                                          if(!err) {
-                                                          }
-                                                        });
-                                                      });
+                                                      async(() => {
+                                                        await (alarmManager2.enrichDeviceInfo(alarm))
+                                                        await (alarmManager2.enrichDestInfo(alarm))
+                                                        alarmManager2.checkAndSaveAsync(alarm)
+                                                      })().catch((err) => {
+                                                        log.error("Failed to enrich and save alarm", err, {})
+                                                      })
         
                                                 }
 
@@ -813,13 +814,13 @@ module.exports = class FlowMonitor {
 
                                                     // ideally each destination should have a unique ID, now just use hostname as a workaround
                                                     // so destionationName, destionationHostname, destionationID are the same for now
-                                                    alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-                                                    alarmManager2.checkAndSave(alarm, (err) => {
-                                                        if(!err) {
-                                                        }
-                                                    });
-                                                    });
-
+                                                    async(() => {
+                                                      await (alarmManager2.enrichDeviceInfo(alarm))
+                                                      await (alarmManager2.enrichDestInfo(alarm))
+                                                      alarmManager2.checkAndSaveAsync(alarm)
+                                                    })().catch((err) => {
+                                                      log.error("Failed to enrich and save alarm", err, {})
+                                                    })
                                                 }
 
                                             });
