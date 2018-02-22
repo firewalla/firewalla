@@ -86,8 +86,10 @@ function unblock(destination) {
   let cmd = null;
   if(iptool.isV4Format(destination)) {
     cmd = "sudo ipset del -! blocked_ip_set " + destination;
-  } else {
+  } else if(iptool.isV6Format(destination)) {
     cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
+  } else {
+    // do nothing
   }
 
   log.info("Control:UnBlock:",cmd);

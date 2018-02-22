@@ -95,11 +95,11 @@ function ValidateIPaddress(ipaddress)
 
 module.exports = class {
     initWatchers() {
-        log.info("Initializing watchers", this.config.bro);
+        log.debug("Initializing watchers", this.config.bro);
         if (this.intelLog == null) {
             this.intelLog = new Tail(this.config.bro.intel.path, '\n');
             if (this.intelLog != null) {
-                log.info("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
+                log.debug("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
                 this.intelLog.on('line', (data) => {
                     log.debug("Detect:Intel ", data);
                     this.processIntelData(data);
@@ -112,7 +112,7 @@ module.exports = class {
         if (this.noticeLog == null) {
             this.noticeLog = new Tail(this.config.bro.notice.path, '\n');
             if (this.noticeLog != null) {
-                log.info("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
+                log.debug("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
                 this.noticeLog.on('line', (data) => {
                     log.debug("Detect:Notice", data);
                     this.processNoticeData(data);
@@ -125,7 +125,7 @@ module.exports = class {
         if (this.dnsLog == null) {
             this.dnsLog = new Tail(this.config.bro.dns.path, '\n');
             if (this.dnsLog != null) {
-                log.info("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
+                log.debug("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
                 this.dnsLog.on('line', (data) => {
                     this.processDnsData(data);
                 });
@@ -137,7 +137,7 @@ module.exports = class {
         if (this.softwareLog == null) {
             this.softwareLog = new Tail(this.config.bro.software.path, '\n');
             if (this.softwareLog != null) {
-                log.info("Initializing watchers: software initialized", this.config.bro.software.path);
+                log.debug("Initializing watchers: software initialized", this.config.bro.software.path);
                 this.softwareLog.on('line', (data) => {
                     log.debug("Detect:Software", data);
                     this.processSoftwareData(data);
@@ -150,7 +150,7 @@ module.exports = class {
         if (this.httpLog == null) {
             this.httpLog = new Tail(this.config.bro.http.path, '\n');
             if (this.httpLog != null) {
-                log.info("Initializing watchers: http initialized", this.config.bro.http.path);
+                log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
                 this.httpLog.on('line', (data) => {
                     log.debug("Detect:Http", data);
                     this.processHttpData(data);
@@ -163,7 +163,7 @@ module.exports = class {
         if (this.sslLog == null) {
             this.sslLog = new Tail(this.config.bro.ssl.path, '\n');
             if (this.sslLog != null) {
-                log.info("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
+                log.debug("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
                 this.sslLog.on('line', (data) => {
                     log.debug("Detect:SSL", data);
                     this.processSslData(data);
@@ -176,7 +176,7 @@ module.exports = class {
         if (this.connLog == null) {
             this.connLog = new Tail(this.config.bro.conn.path, '\n');
             if (this.connLog != null) {
-                log.info("Initializing watchers: connInitialized", this.config.bro.conn.path);
+                log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
                 this.connLog.on('line', (data) => {
                     this.processConnData(data);
                 });
@@ -187,7 +187,7 @@ module.exports = class {
         if (this.connLogdev == null) {
             this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
             if (this.connLogdev != null) {
-                log.info("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
+                log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
                 this.connLogdev.on('line', (data) => {
                     this.processConnData(data);
                 });
@@ -199,7 +199,7 @@ module.exports = class {
         if (this.x509Log == null) {
             this.x509Log = new Tail(this.config.bro.x509.path, '\n');
             if (this.x509Log != null) {
-                log.info("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
+                log.debug("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
                 this.x509Log.on('line', (data) => {
                     this.processX509Data(data);
                 });
@@ -211,7 +211,7 @@ module.exports = class {
         if (this.knownHostsLog == null) {
             this.knownHostsLog = new Tail(this.config.bro.knownHosts.path, '\n');
             if (this.knownHostsLog != null) {
-                log.info("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
+                log.debug("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
                 this.knownHostsLog.on('line', (data) => {
                     this.processknownHostsData(data);
                 });
