@@ -1,5 +1,7 @@
 'use strict';
 
+const log = require("../../net2/logger")('httpd');
+
 const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
@@ -10,16 +12,12 @@ const port = 80;
 const httpsPort = 443;
 const app = express();
 const enableHttps = false;
-const enableRedis = false;
+const enableRedis = true;
 
-/*
-if (enableRedis) {
-  const promise = require('bluebird');
-  const redis = require('redis');
-  const client = redis.createClient();
-  promise.promisifyAll(redis.RedisClient.prototype);
-}
-*/
+const promise = require('bluebird');
+const redis = require('redis');
+const client = redis.createClient();
+promise.promisifyAll(redis.RedisClient.prototype);
 
 const viewsPath = 'firewalla_views';
 
@@ -29,48 +27,50 @@ app.set('view engine', 'pug');
 
 let router = express.Router();
 
-router.all('/green', (req, res) => {
+router.all('/green', async (req, res) => {
   const hostname = req.hostname;
   const url = qs.unescape(req.query.url);
   const ip = req.ip;
   const method = req.method;
 
-  console.info("Got a request in porn views");
+  log.info("Got a request in porn views");
 
   res.render('green', {hostname, url, ip, method});
 })
 
 app.use(`/${viewsPath}`, router);
 
-app.use('*', (req, res) => {
-  console.info("Got a request in *");
+app.use('*', async (req, res) => {
+  log.info("Got a request in *");
 
   if (!req.originalUrl.includes(viewsPath)) {
-    let cat = intel.check(req.hostname);
+    let cat = await intel.check(req.hostname);
+
+    log.info("Category: ", cat);
 
     switch(cat) {
       case 'porn':
         res.status(303).location(`/${viewsPath}/green?${qs.stringify({url: req.originalUrl})}`).send().end();
+        if (enableRedis) {
+          client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
+            log.info(`Total porn blocked: ${value}`);
+          });
+        }
+
         break;
       case 'ad':
         if (enableRedis) {
-          client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
-            console.log(`${txt}, Total blocked: ${value}`);
+          client.hincrbyAsync('block:stats', 'ad', 1).then(value => {
+            log.info(`Total ad blocked: ${value}`);
           });
         }
       default:
         res.status(200).send().end();
     }
   }
-
-  if (enableRedis) {
-    client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
-      console.log(`${txt}, Total blocked: ${value}`);
-    });
-  }
 });
 
-app.listen(port, () => console.log(`Httpd listening on port ${port}!`));
+app.listen(port, () => log.info(`Httpd listening on port ${port}!`));
 
 if (enableHttps) {
   const httpsOptions = genHttpsOptions();
