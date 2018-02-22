@@ -86,6 +86,8 @@ class DNSTool {
       });
   }
 
+  // doesn't have to keep it long, it's only used for instant blocking
+  
   addReverseDns(dns, addresses, expire) {
     expire = expire || 2 * 3600; // two hours by default
     addresses = addresses || []

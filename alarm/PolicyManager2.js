@@ -497,7 +497,8 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
-    log.info("Enforce policy: ", policy, {});
+    log.debug("Enforce policy: ", policy, {});
+    log.info("Enforce policy: ", policy.type, policy.target, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
 
