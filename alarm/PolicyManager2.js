@@ -525,29 +525,48 @@ class PolicyManager2 {
           toProcess: 'FireMain'
         })
 
-        const v4Addresses = await (resolve4Async(policy.target))
-        v4Addresses.forEach((addr) => {
-          await (Block.block(addr))
-        })
-
-        const v6Addresses = await (resolve6Async(policy.target))
-        v6Addresses.forEach((addr) => {
-          await (Block.block(addr))
-        })
-
-        // load other addresses from rdns, critical to apply instant blocking
-        const addresses = await (dnsTool.getAddressesByDNS(policy.target))
-        addresses.forEach((addr) => {
-          await (Block.block(addr))
-        })
-
-        // if it is a suffix match, use pattern to get more addresses
-        if(!policy.domainExactMatch) {
-          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
-          patternAddresses.forEach((addr) => {
+        try {
+          const v4Addresses = await (resolve4Async(policy.target))
+          v4Addresses.forEach((addr) => {
             await (Block.block(addr))
           })
+        } catch(err) {
+          // do nothing
         }
+
+        try {
+          const v6Addresses = await (resolve6Async(policy.target))
+          v6Addresses.forEach((addr) => {
+            await (Block.block(addr))
+          })
+        } catch(err) {
+          // do nothing
+        }
+
+
+        try {
+          // load other addresses from rdns, critical to apply instant blocking
+          const addresses = await (dnsTool.getAddressesByDNS(policy.target))
+          addresses.forEach((addr) => {
+            await (Block.block(addr))
+          })
+        } catch(err) {
+          // do nothing
+        }
+
+
+        try {
+          // if it is a suffix match, use pattern to get more addresses
+          if(!policy.domainExactMatch) {
+            const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
+            patternAddresses.forEach((addr) => {
+              await (Block.block(addr))
+            })
+          }
+        } catch (err) {
+          // do nothing
+        }
+
 
       })()
       break;
@@ -587,29 +606,49 @@ class PolicyManager2 {
           toProcess: 'FireMain'
         })
 
-        const v4Addresses = await (resolve4Async(policy.target))
-        v4Addresses.forEach((addr) => {
-          await (Block.unblock(addr))
-        })
-
-        const v6Addresses = await (resolve6Async(policy.target))
-        v6Addresses.forEach((addr) => {
-          await (Block.unblock(addr))
-        })
-
-        // load other addresses from rdns, critical to apply instant blocking
-        const addresses = await (dnsTool.getAddressesByDNS(policy.target))
-        addresses.forEach((addr) => {
-          await (Block.unblock(addr))
-        })
-
-        // if it is a suffix match, use pattern to get more addresses
-        if(!policy.domainExactMatch) {
-          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
-          patternAddresses.forEach((addr) => {
+        try {
+          const v4Addresses = await (resolve4Async(policy.target))
+          v4Addresses.forEach((addr) => {
             await (Block.unblock(addr))
           })
+        } catch(err) {
+          // do nothing
         }
+
+
+        try {
+          const v6Addresses = await (resolve6Async(policy.target))
+          v6Addresses.forEach((addr) => {
+            await (Block.unblock(addr))
+          })
+        } catch(err) {
+          // do nothing
+        }
+
+
+        try {
+          // load other addresses from rdns, critical to apply instant blocking
+          const addresses = await (dnsTool.getAddressesByDNS(policy.target))
+          addresses.forEach((addr) => {
+            await (Block.unblock(addr))
+          })
+        } catch(err) {
+          // do nothing
+        }
+
+
+        try {
+          // if it is a suffix match, use pattern to get more addresses
+          if(!policy.domainExactMatch) {
+            const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
+            patternAddresses.forEach((addr) => {
+              await (Block.unblock(addr))
+            })
+          }
+        } catch(err) {
+          // do nothing
+        }
+
       })()
     case "devicePort":
        return async(() => {
