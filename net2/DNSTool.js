@@ -94,7 +94,7 @@ class DNSTool {
     return async(() => {
       addresses.forEach((addr) => {
         await (rclient.zaddAsync(key, new Date() / 1000, addr))
-        await (rclient.expireAsync(expire))
+        await (rclient.expireAsync(key, expire))
       })
     })()
   }
