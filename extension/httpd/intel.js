@@ -17,8 +17,7 @@ class Intel {
 
   async check(dn) {
     try {
-      let result = await this.checkIntelFromCloud(dn);
-      console.log(result);
+      return await this.checkIntelFromCloud(dn);
     } catch (err) {
       console.error("Error: ", err);
     }
@@ -52,9 +51,11 @@ class Intel {
 
     console.info(util.inspect(data, {depth: null}));
 
-    let results = await bone.intelAsync("*", "", "check", data);
+    let best, results = await bone.intelAsync("*", "", "check", data);
 
-    let best = results.reduce((best, cur) => origHost[cur.ip].length > origHost[best.ip].length ? cur : best);
+    if (Array.isArray(results) && results.length > 0) {
+      best = results.reduce((best, cur) => origHost[cur.ip].length > origHost[best.ip].length ? cur : best);
+    }
 
     return best ? best.c : null;
   }
