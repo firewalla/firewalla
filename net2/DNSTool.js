@@ -31,7 +31,7 @@ const util = require('util');
 
 const firewalla = require('../net2/Firewalla.js');
 
-const instance = null;
+let instance = null;
 
 class DNSTool {
 
