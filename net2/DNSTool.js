@@ -51,6 +51,10 @@ class DNSTool {
     return util.format("dns:ip:%s", ip);
   }
 
+  getReverseDNSKey(dns) {
+    return `rdns:domain:$dns`
+  }
+
 
   dnsExists(ip) {
     let key = this.getDnsKey(ip);
@@ -73,14 +77,26 @@ class DNSTool {
 
     let key = this.getDnsKey(ip);
 
-    log.info("Storing dns for ip", ip);
-
     dns.updateTime = `${new Date() / 1000}`
 
     return rclient.hmsetAsync(key, dns)
       .then(() => {
         return rclient.expireAsync(key, expire);
       });
+  }
+
+  addReverseDns(dns, addresses, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+    addresses = addresses || []
+
+    let key = this.getReverseDNSKey(dns)
+
+    return async(() => {
+      addresses.forEach((addr) => {
+        await (rclient.zaddAsync(key, new Date() / 1000, addr))
+        await (rclient.expireAsync(expire))
+      })
+    })()
   }
 
   removeDns(ip) {

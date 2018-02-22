@@ -37,6 +37,10 @@ const hostManager = new HostManager('cli', 'server');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
+
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
+
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
@@ -365,6 +369,12 @@ module.exports = class {
             }
             if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
                 // NOTE write up a look up flow here
+
+                // record reverse dns as well for future reverse lookup
+                async(() => {
+                  await (dnsTool.addReverseDns(obj['query'], obj['answer']))
+                })()
+
                 for (let i in obj['answers']) {
                     let key = "dns:ip:" + obj['answers'][i];
                     let value = {
