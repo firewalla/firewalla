@@ -26,6 +26,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const iptool = require('ip')
 
 const util = require('util');
 
@@ -86,16 +87,47 @@ class DNSTool {
   }
 
   addReverseDns(dns, addresses, expire) {
-    expire = expire || 7 * 24 * 3600; // one week by default
+    expire = expire || 2 * 3600; // two hours by default
     addresses = addresses || []
 
     let key = this.getReverseDNSKey(dns)
 
     return async(() => {
+      let updated = false
+
       addresses.forEach((addr) => {
-        await (rclient.zaddAsync(key, new Date() / 1000, addr))
-        await (rclient.expireAsync(key, expire))
+        if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+          await (rclient.zaddAsync(key, new Date() / 1000, addr))
+          updated = true
+        }
       })
+
+      if(updated) {
+        await (rclient.expireAsync(key, expire))
+      }
+    })()
+  }
+
+  getAddressesByDNS(dns) {
+    let key = this.getReverseDNSKey(dns)
+    return async(() => {
+      return rclient.zrangeAsync(key, "0", "-1")
+    })()
+  }
+
+  getAddressesByDNSPattern(dnsPattern) {
+    let pattern = `rdns:domain:*.${dnsPattern}`
+    
+    return async(() => {
+      let keys = await (rclient.keysAsync(pattern))
+      let list = []
+      if(keys) {
+        keys.forEach((key) => {
+          let l = await(rclient.zrangeAsync(key, "0", "-1"))
+          list.push.apply(list, l)
+        })
+      }
+      return list
     })()
   }
 

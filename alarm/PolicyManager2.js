@@ -62,7 +62,8 @@ let Policy = require('./Policy.js');
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
 
-
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 
 class PolicyManager2 {
@@ -532,6 +533,21 @@ class PolicyManager2 {
         v6Addresses.forEach((addr) => {
           await (Block.block(addr))
         })
+
+        // load other addresses from rdns, critical to apply instant blocking
+        const addresses = await (dnsTool.getAddressesByDNS(policy.target))
+        addresses.forEach((addr) => {
+          await (Block.block(addr))
+        })
+
+        // if it is a suffix match, use pattern to get more addresses
+        if(!policy.domainExactMatch) {
+          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
+          patternAddresses.forEach((addr) => {
+            await (Block.block(addr))
+          })
+        }
+
       })()
       break;
     case "devicePort":
@@ -580,6 +596,19 @@ class PolicyManager2 {
           await (Block.unblock(addr))
         })
 
+        // load other addresses from rdns, critical to apply instant blocking
+        const addresses = await (dnsTool.getAddressesByDNS(policy.target))
+        addresses.forEach((addr) => {
+          await (Block.unblock(addr))
+        })
+
+        // if it is a suffix match, use pattern to get more addresses
+        if(!policy.domainExactMatch) {
+          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target))        
+          patternAddresses.forEach((addr) => {
+            await (Block.unblock(addr))
+          })
+        }
       })()
     case "devicePort":
        return async(() => {
