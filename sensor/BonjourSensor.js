@@ -112,7 +112,7 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    log.info("Found a bonjour service from host:", ipv4Addr, service, {});
+    log.info("Found a bonjour service from host:", ipv4Addr, service.name, {});
 
     l2.getMAC(ipv4Addr, (err, mac) => {
       

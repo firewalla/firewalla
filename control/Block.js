@@ -24,6 +24,11 @@ let iptool = require("ip");
 
 let inited = false;
 
+const BLACK_HOLE_IP="198.51.100.99";
+
+const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
+
+
 // =============== block @ connection level ==============
 
 function getIPTablesCmd(v6) {
@@ -47,13 +52,16 @@ function setupBlockChain() {
   inited = true;
 }
 
-function block(destination) {
+function block(destination, autoRollback) {
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
     cmd = "sudo ipset add -! blocked_ip_set " + destination;    
-  } else {
+  } else if(iptool.isV6Format(destination)) {
     cmd = "sudo ipset add -! blocked_ip_set6 " + destination;
+  } else {
+    // do nothing
+    return Promise.resolve()
   }
   log.info("Control:Block:",cmd);
 
@@ -65,17 +73,29 @@ function block(destination) {
         return;
       }
 
+      if(autoRollback) {
+        setTimeout(unblock, AUTO_ROLLBACK_TIME, destination)
+      }
+      
       resolve();
     });
   });
 }
 
 function unblock(destination) {
+  
+  // never unblock black hole ip
+  if(destination === BLACK_HOLE_IP) {
+    return Promise.resolve()
+  }
+  
   let cmd = null;
   if(iptool.isV4Format(destination)) {
     cmd = "sudo ipset del -! blocked_ip_set " + destination;
-  } else {
+  } else if(iptool.isV6Format(destination)) {
     cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
+  } else {
+    // do nothing
   }
 
   log.info("Control:UnBlock:",cmd);
@@ -111,7 +131,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
         if(err) {
           log.info("BLOCK:OUTGOING==> ", addCMD);
           cp.exec(addCMD, (err, stdout, stderr) => {
-            log.info(err, stdout, stderr);
+            log.debug(err, stdout, stderr);
             callback(err);        
           });
         }
@@ -119,7 +139,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   } else {
       let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
-        log.info(err, stdout, stderr);
+        log.debug(err, stdout, stderr);
         callback(err);        
       });
   }

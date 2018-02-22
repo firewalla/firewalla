@@ -800,6 +800,10 @@ module.exports = class {
           "if.target": i_target,
         });
 
+        if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+          p.domainExactMatch = "1"
+        }
+
         // add additional info
         switch(i_type) {
         case "mac":

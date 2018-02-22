@@ -26,10 +26,14 @@ let audit = require('../util/audit.js');
 let util = require('util');
 let Bone = require('../lib/Bone.js');
 
-let async = require('asyncawait/async')
-let await = require('asyncawait/await')
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 const Promise = require('bluebird');
+
+const dns = require('dns');
+const resolve4Async = Promise.promisify(dns.resolve4)
+const resolve6Async = Promise.promisify(dns.resolve6)
 
 const minimatch = require('minimatch')
 
@@ -58,7 +62,8 @@ let Policy = require('./Policy.js');
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
 
-
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 
 class PolicyManager2 {
@@ -492,7 +497,8 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
-    log.info("Enforce policy: ", policy, {});
+    log.debug("Enforce policy: ", policy, {});
+    log.info("Enforce policy: ", policy.type, policy.target, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -510,14 +516,40 @@ class PolicyManager2 {
       break;
     case "domain":
     case "dns":    
-      return dnsmasq.addPolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-        });
+      return async(() => {
+        await (dnsmasq.addPolicyFilterEntry(policy.target).catch((err) => undefined))
+
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+
+        const v4Addresses = await (resolve4Async(policy.target).catch((err) => []))
+        v4Addresses.forEach((addr) => {
+          await (Block.block(addr, true).catch((err) => undefined))
+        })
+
+        const v6Addresses = await (resolve6Async(policy.target).catch((err) => []))
+        v6Addresses.forEach((addr) => {
+          await (Block.block(addr, true).catch((err) => undefined))
+        })
+
+        // load other addresses from rdns, critical to apply instant blocking
+        const addresses = await (dnsTool.getAddressesByDNS(policy.target).catch((err) => []))
+        addresses.forEach((addr) => {
+          await (Block.block(addr, true).catch((err) => undefined))
+        })
+
+        // if it is a suffix match, use pattern to get more addresses
+        if(!policy.domainExactMatch) {
+          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target).catch((err) => []))        
+          patternAddresses.forEach((addr) => {
+            await (Block.block(addr, true).catch((err) => undefined))
+          })
+        }
+
+      })()
       break;
     case "devicePort":
       return async(() => {
@@ -546,14 +578,43 @@ class PolicyManager2 {
       break;
     case "domain":
     case "dns":
-      return dnsmasq.removePolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-      });
+      return async(() => {
+        await (dnsmasq.removePolicyFilterEntry(policy.target).catch((err) => undefined))
+
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+
+        const v4Addresses = await (resolve4Async(policy.target).catch((err) => []))
+        v4Addresses.forEach((addr) => {
+          await (Block.unblock(addr).catch((err) => undefined))
+        })
+
+
+        const v6Addresses = await (resolve6Async(policy.target).catch((err) => []))
+        v6Addresses.forEach((addr) => {
+          await (Block.unblock(addr).catch((err) => undefined))
+        })
+
+
+        // load other addresses from rdns, critical to apply instant blocking
+        const addresses = await (dnsTool.getAddressesByDNS(policy.target).catch((err) => []))
+        addresses.forEach((addr) => {
+          await (Block.unblock(addr).catch((err) => undefined))
+        })
+
+
+        // if it is a suffix match, use pattern to get more addresses
+        if(!policy.domainExactMatch) {
+          const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target).catch((err) => []))        
+          patternAddresses.forEach((addr) => {
+            await (Block.unblock(addr).catch((err) => undefined))
+          })
+        }
+
+      })()
     case "devicePort":
        return async(() => {
         let data = await (this.parseDevicePortRule(policy.target))
