@@ -3,8 +3,10 @@
 const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
+const qs = require('querystring');
+const intel = require('./intel.js');
 
-const port = 8000;
+const port = 80;
 const httpsPort = 443;
 const app = express();
 const enableHttps = false;
@@ -25,20 +27,17 @@ app.engine('pug', require('pug').__express);
 app.set('views', './firewalla_views');
 app.set('view engine', 'pug');
 
-function isMalware(dn) {
-  return true;
-}
-
-function isPorn(dn) {
-  return true;
-}
-
 let router = express.Router();
 
-router.all('/porn', (req, res) => {
+router.all('/green', (req, res) => {
+  const hostname = req.hostname;
+  const url = qs.unescape(req.query.url);
+  const ip = req.ip;
+  const method = req.method;
+
   console.info("Got a request in porn views");
-  let message = `Porn Blocked by Firewalla: ${req.ip} => ${req.method}: ${req.hostname}${req.originalUrl}`;
-  res.render('green', {message});
+
+  res.render('green', {hostname, url, ip, method});
 })
 
 app.use(`/${viewsPath}`, router);
@@ -47,9 +46,20 @@ app.use('*', (req, res) => {
   console.info("Got a request in *");
 
   if (!req.originalUrl.includes(viewsPath)) {
-    if (isPorn(req.hostname)) {
-      res.status(303).location(`/${viewsPath}/porn?url=${req.originalUrl}`).send().end();
-      return;
+    let cat = intel.check(req.hostname);
+
+    switch(cat) {
+      case 'porn':
+        res.status(303).location(`/${viewsPath}/green?${qs.stringify({url: req.originalUrl})}`).send().end();
+        break;
+      case 'ad':
+        if (enableRedis) {
+          client.hincrbyAsync('block:stats', 'adblock', 1).then(value => {
+            console.log(`${txt}, Total blocked: ${value}`);
+          });
+        }
+      default:
+        res.status(200).send().end();
     }
   }
 
