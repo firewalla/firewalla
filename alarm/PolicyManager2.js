@@ -26,10 +26,14 @@ let audit = require('../util/audit.js');
 let util = require('util');
 let Bone = require('../lib/Bone.js');
 
-let async = require('asyncawait/async')
-let await = require('asyncawait/await')
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 const Promise = require('bluebird');
+
+const dns = require('dns');
+const resolve4Async = Promise.promisify(dns.resolve4)
+const resolve6Async = Promise.promisify(dns.resolve6)
 
 const minimatch = require('minimatch')
 
@@ -510,14 +514,25 @@ class PolicyManager2 {
       break;
     case "domain":
     case "dns":    
-      return dnsmasq.addPolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-        });
+      return async(() => {
+        await (dnsmasq.addPolicyFilterEntry(policy.target))
+
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+
+        const v4Addresses = await (resolve4Async(policy.target))
+        v4Addresses.forEach((addr) => {
+          await (Block.block(addr))
+        })
+
+        const v6Addresses = await (resolve6Async(policy.target))
+        v6Addresses.forEach((addr) => {
+          await (Block.block(addr))
+        })
+      })()
       break;
     case "devicePort":
       return async(() => {
@@ -546,14 +561,26 @@ class PolicyManager2 {
       break;
     case "domain":
     case "dns":
-      return dnsmasq.removePolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-      });
+      return async(() => {
+        await (dnsmasq.removePolicyFilterEntry(policy.target))
+
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+
+        const v4Addresses = await (resolve4Async(policy.target))
+        v4Addresses.forEach((addr) => {
+          await (Block.unblock(addr))
+        })
+
+        const v6Addresses = await (resolve6Async(policy.target))
+        v6Addresses.forEach((addr) => {
+          await (Block.unblock(addr))
+        })
+
+      })()
     case "devicePort":
        return async(() => {
         let data = await (this.parseDevicePortRule(policy.target))
