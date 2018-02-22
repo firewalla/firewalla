@@ -52,7 +52,7 @@ class DNSTool {
   }
 
   getReverseDNSKey(dns) {
-    return `rdns:domain:$dns`
+    return `rdns:domain:${dns}`
   }
 
 
