@@ -1,3 +1,5 @@
+const log = require("../../net2/logger")('intel');
+
 const bone = require('../../lib/Bone');
 const util = require('util');
 let flowUtil = require('../../net2/FlowUtil.js');
@@ -19,14 +21,14 @@ class Intel {
     try {
       return await this.checkIntelFromCloud(dn);
     } catch (err) {
-      console.error("Error: ", err);
+      log.error("Error:", err, {});
     }
   }
 
   async checkIntelFromCloud(dn) {
-    console.log("Checking intel for", dn, {});
+    log.info("Checking intel for", dn);
     bone.setToken(await this.jwt());
-    console.log(`JWT: ${bone.getToken()}`);
+    //log.debug(`JWT: ${bone.getToken()}`);
 
     let origHost = {};
     let debugMode = false;
@@ -37,7 +39,7 @@ class Intel {
     let _hlist = hds.map(x => x.slice(1, 3));
     let _alist = flowUtil.hashApp(dn);
 
-    console.log('Mapping: ' + util.inspect(origHost));
+    //log.debug('Mapping: ' + util.inspect(origHost));
 
     let alist = [dn], hlist = [dn], iplist = [dn];
     let _iplist = _hlist;
@@ -49,7 +51,7 @@ class Intel {
 
     let data = {flowlist, hashed: 1};
 
-    console.info(util.inspect(data, {depth: null}));
+    //log.info(util.inspect(data, {depth: null}));
 
     let best, results = await bone.intelAsync("*", "", "check", data);
 
