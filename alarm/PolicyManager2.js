@@ -527,25 +527,25 @@ class PolicyManager2 {
 
         const v4Addresses = await (resolve4Async(policy.target).catch((err) => []))
         v4Addresses.forEach((addr) => {
-          await (Block.block(addr).catch((err) => undefined))
+          await (Block.block(addr, true).catch((err) => undefined))
         })
 
         const v6Addresses = await (resolve6Async(policy.target).catch((err) => []))
         v6Addresses.forEach((addr) => {
-          await (Block.block(addr).catch((err) => undefined))
+          await (Block.block(addr, true).catch((err) => undefined))
         })
 
         // load other addresses from rdns, critical to apply instant blocking
         const addresses = await (dnsTool.getAddressesByDNS(policy.target).catch((err) => []))
         addresses.forEach((addr) => {
-          await (Block.block(addr).catch((err) => undefined))
+          await (Block.block(addr, true).catch((err) => undefined))
         })
 
         // if it is a suffix match, use pattern to get more addresses
         if(!policy.domainExactMatch) {
           const patternAddresses = await (dnsTool.getAddressesByDNSPattern(policy.target).catch((err) => []))        
           patternAddresses.forEach((addr) => {
-            await (Block.block(addr).catch((err) => undefined))
+            await (Block.block(addr, true).catch((err) => undefined))
           })
         }
 

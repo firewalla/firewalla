@@ -26,6 +26,8 @@ let inited = false;
 
 const BLACK_HOLE_IP="198.51.100.99";
 
+const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
+
 
 // =============== block @ connection level ==============
 
@@ -50,7 +52,7 @@ function setupBlockChain() {
   inited = true;
 }
 
-function block(destination) {
+function block(destination, autoRollback) {
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -71,6 +73,10 @@ function block(destination) {
         return;
       }
 
+      if(autoRollback) {
+        setTimeout(unblock, AUTO_ROLLBACK_TIME, destination)
+      }
+      
       resolve();
     });
   });
