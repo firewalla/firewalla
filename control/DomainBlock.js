@@ -40,6 +40,13 @@ const resolve6Async = Promise.promisify(dns.resolve6)
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+let globalLock = false
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 class DomainBlock {
 
@@ -51,6 +58,13 @@ class DomainBlock {
   blockDomain(domain, options) {
     options = options || {}
     return async(() => {
+      if(globalLock) {
+        await(delay(5000))
+        return this.blockDomain(domain, options)
+      }
+
+      globalLock = true
+
       await (dnsmasq.addPolicyFilterEntry(domain).catch((err) => undefined))
 
       sem.emitEvent({
@@ -65,11 +79,21 @@ class DomainBlock {
       setTimeout(() => {
         this.incrementalUpdateIPMapping(domain, options)
       }, 20 * 1000) // reinforce in 20 seconds
-    })()
+    })().finally(() => {
+      globalLock = false
+    })
   }
 
   unblockDomain(domain, options) {
     return async(() => {
+
+      if(globalLock) {
+        await(delay(5000))
+        return this.unblockDomain(domain, options)
+      }
+
+      globalLock = true
+
       await (this.unapplyBlock(domain, options))
       await (this.removeDomainIPMapping(domain, options))
 
@@ -80,7 +104,9 @@ class DomainBlock {
         message: 'DNSMASQ filter rule is updated',
         toProcess: 'FireMain'
       })
-    })()
+    })().finally(() => {
+      globalLock = false
+    })
   }
 
   getDomainIPMappingKey(domain, options) {
@@ -170,6 +196,14 @@ class DomainBlock {
     const key = this.getDomainIPMappingKey(domain, options)
 
     return async(() => {
+
+      if(globalLock) {
+        await(delay(5000))
+        return this.incrementalUpdateIPMapping(domain, options)
+      }
+
+      globalLock = true
+
       await (this.resolveDomain(domain))
 
       let set = {}
@@ -202,7 +236,9 @@ class DomainBlock {
         }
       }
 
-    })()
+    })().finally(() => {
+      globalLock = false
+    })
   }
 
   getAllIPMappings() {
