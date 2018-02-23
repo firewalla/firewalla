@@ -246,11 +246,11 @@ module.exports = class {
 
     start() {
         if (this.intelLog) {
-            log.info("Start watching intel log");
+            log.debug("Start watching intel log");
             this.intelLog.watch();
         }
         if (this.noticeLog) {
-            log.info("Start watching notice log");
+            log.debug("Start watching notice log");
             this.noticeLog.watch();
         }
     }

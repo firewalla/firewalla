@@ -15,35 +15,52 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const redis = require('redis');
+const rclient = redis.createClient();
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let exec = require('child-process-promise').exec;
+const domainBlock = require('../control/DomainBlock.js')()
 
 class PolicyGuardSensor extends Sensor {
   constructor() {
-    super();
+    super();    
   }
 
   job() {
-    
+    log.info("reinforce policy...")
+    return async(() => {
+      const list = await (domainBlock.getAllIPMappings())
+      list.forEach((l) => {
+        const matchDomain = l.match(/ipmapping:domain:(.*)/)
+        if(matchDomain) {
+          const domain = matchDomain[1]
+          await (domainBlock.incrementalUpdateIPMapping(domain, {}))
+          return
+        } 
+        
+        const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
+        if(matchExactDomain) {
+          const domain = matchExactDomain[1]
+          await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
+          return
+        }
+      })
+    })()
   }
 
   run() {
-    this.job();
     setInterval(() => {
       this.job();
-    }, 1000 * 60 * 60 * 24); // check in every day
+    }, this.config.interval || 1000 * 60 * 60 * 2); // every two hours
   }
 }
 

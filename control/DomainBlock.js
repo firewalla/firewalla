@@ -40,6 +40,13 @@ const resolve6Async = Promise.promisify(dns.resolve6)
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+let globalLock = false
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 class DomainBlock {
 
@@ -51,6 +58,15 @@ class DomainBlock {
   blockDomain(domain, options) {
     options = options || {}
     return async(() => {
+      if(globalLock) {
+        log.info("blockDomain is deferred due to lock")
+
+        await(delay(5000))
+        return this.blockDomain(domain, options)
+      }
+
+      globalLock = true
+
       await (dnsmasq.addPolicyFilterEntry(domain).catch((err) => undefined))
 
       sem.emitEvent({
@@ -61,11 +77,27 @@ class DomainBlock {
 
       await (this.syncDomainIPMapping(domain, options))
       await (this.applyBlock(domain, options))
-    })()
+
+      setTimeout(() => {
+        this.incrementalUpdateIPMapping(domain, options)
+      }, 60 * 1000) // reinforce in 60 seconds
+    })().finally(() => {
+      globalLock = false
+    })
   }
 
   unblockDomain(domain, options) {
     return async(() => {
+
+      if(globalLock) {
+        log.info("unblockDomain is deferred due to lock")
+
+        await(delay(5000))
+        return this.unblockDomain(domain, options)
+      }
+
+      globalLock = true
+
       await (this.unapplyBlock(domain, options))
       await (this.removeDomainIPMapping(domain, options))
 
@@ -76,14 +108,16 @@ class DomainBlock {
         message: 'DNSMASQ filter rule is updated',
         toProcess: 'FireMain'
       })
-    })()
+    })().finally(() => {
+      globalLock = false
+    })
   }
 
   getDomainIPMappingKey(domain, options) {
     options = options || {}
 
     if(options.exactMatch) {
-      return `ipmapping:site:${domain}`
+      return `ipmapping:exactdomain:${domain}`
     } else {
       return `ipmapping:domain:${domain}`
     }    
@@ -121,17 +155,25 @@ class DomainBlock {
     })()
   }
 
-  syncDomainIPMapping(domain, options) {
-    options = options || {}
-
-    const key = this.getDomainIPMappingKey(domain, options)
-    
+  resolveDomain(domain) {
     return async(() => {
       const v4Addresses = await (resolve4Async(domain).catch((err) => []))
       await (dnsTool.addReverseDns(domain, v4Addresses))
 
       const v6Addresses = await (resolve6Async(domain).catch((err) => []))
       await (dnsTool.addReverseDns(domain, v6Addresses))
+
+      return v4Addresses.concat(v6Addresses)
+    })()
+  }
+
+  syncDomainIPMapping(domain, options) {
+    options = options || {}
+
+    const key = this.getDomainIPMappingKey(domain, options)
+    
+    return async(() => {
+      await (this.resolveDomain(domain))
 
       let list = []
 
@@ -149,11 +191,71 @@ class DomainBlock {
     })()     
   }
 
+  // incremental update mapping to reinforce ip blocking
+  incrementalUpdateIPMapping(domain, options) {
+    options = options || {}
+
+    log.info("Incrementally updating blocking list for", domain)
+
+    const key = this.getDomainIPMappingKey(domain, options)
+
+    return async(() => {
+
+      if(globalLock) {
+        log.info("incrementalUpdate is deferred due to lock")
+        await(delay(5000))
+        return this.incrementalUpdateIPMapping(domain, options)
+      }
+
+      globalLock = true
+
+      const existing = await(rclient.existsAsync(key))
+
+      if(!existing) {
+        return
+      }
+      
+      await (this.resolveDomain(domain))
+
+      let set = {}
+
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await (dnsTool.getAddressesByDNS(domain).catch((err) => []))
+      addresses.forEach((addr) => {
+        set[addr] = 1
+      })
+
+      if(!options.exactMatch) {
+        const patternAddresses = await (dnsTool.getAddressesByDNSPattern(domain).catch((err) => []))
+        patternAddresses.forEach((addr) => {
+          set[addr] = 1
+        })
+      }
+
+      const existingAddresses = await (this.getMappedIPAddresses(domain, options))
+
+      let existingSet = {}
+      existingAddresses.forEach((addr) => {
+        existingSet[addr] = 1
+      })
+
+      // only add new changed ip addresses, there is no need to remove any old ip addrs
+      for(let addr in set) {
+        if(!existingSet[addr]) {
+          await (rclient.saddAsync(key,addr))
+          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
+        }
+      }
+
+    })().finally(() => {
+      globalLock = false
+    })
+  }
+
   getAllIPMappings() {
     return async(() => {
-      let list = await (rclient.keysAsync("ipmapping:site:*"))
-      let list2 = await (rclient.keysAsync("ipmapping:domain:*"))
-      return list.concat(list2)
+      let list = await (rclient.keysAsync("ipmapping:*"))
+      return list
     })()
   }
 

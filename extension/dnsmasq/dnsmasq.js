@@ -333,19 +333,19 @@ module.exports = class DNSMASQ {
 
   reload() {
     log.info("Dnsmasq reloading.");
-    return new Promise(((resolve, reject) => {
-      this.start(false, (err) => {
+    let self = this
+    return new Promise((resolve, reject) => {
+      self.start(false, (err) => {
         if (err) {
           reject(err);
         }
         resolve();
       });
-    }).bind(this))
-      .then(() => {
-        log.info("Dnsmasq reload complete.");
-      }).catch((err) => {
-        log.error("Got error when reloading dnsmasq:", err, {})
-      });
+    }).then(() => {
+      log.info("Dnsmasq reload complete.");
+    }).catch((err) => {
+      log.error("Got error when reloading dnsmasq:", err, {})
+    });
   }
 
   updateAdblockTmpFilter(force, callback) {
