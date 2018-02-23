@@ -36,6 +36,7 @@ class PolicyGuardSensor extends Sensor {
   }
 
   job() {
+    log.info("reinforce policy...")
     return async(() => {
       const list = await (domainBlock.getAllIPMappings())
       list.forEach((l) => {

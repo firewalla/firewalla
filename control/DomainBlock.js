@@ -161,10 +161,12 @@ class DomainBlock {
   incrementalUpdateIPMapping(domain, options) {
     options = options || {}
 
+    log.info("Incrementally updating blocking list for", domain)
+
     const key = this.getDomainIPMappingKey(domain, options)
 
     return async(() => {
-      const newResolvedAddrs = await (this.resolveDomain(domain))
+      await (this.resolveDomain(domain))
 
       let set = {}
 
@@ -181,13 +183,21 @@ class DomainBlock {
         })
       }
 
-      newResolvedAddrs.forEach((addr) => {
-        if(!set[addr]) {
+      const existingAddresses = await (this.getMappedIPAddresses(domain, options))
+
+      let existingSet = {}
+      existingAddresses.forEach((addr) => {
+        existingSet[addr] = 1
+      })
+
+      // only add new changed ip addresses, there is no need to remove any old ip addrs
+      for(let addr in set) {
+        if(!existingSet[addr]) {
           await (rclient.saddAsync(key,addr))
           await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
         }
-      })
-      
+      }
+
     })()
   }
 
