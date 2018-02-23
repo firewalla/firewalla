@@ -80,7 +80,7 @@ class DomainBlock {
 
       setTimeout(() => {
         this.incrementalUpdateIPMapping(domain, options)
-      }, 20 * 1000) // reinforce in 20 seconds
+      }, 60 * 1000) // reinforce in 60 seconds
     })().finally(() => {
       globalLock = false
     })
