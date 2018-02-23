@@ -204,6 +204,12 @@ class DomainBlock {
 
       globalLock = true
 
+      const existing = await(rclient.existsAsync(key))
+
+      if(!existing) {
+        return
+      }
+      
       await (this.resolveDomain(domain))
 
       let set = {}

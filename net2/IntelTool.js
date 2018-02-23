@@ -180,9 +180,9 @@ class IntelTool {
         if(subject) {
           let result = this._parseX509Subject(subject);
           if(result) {
-            sslInfo.CN = result.CN
-            sslInfo.OU = result.OU
-            sslInfo.O = result.O
+            sslInfo.CN = result.CN || ""
+            sslInfo.OU = result.OU || ""
+            sslInfo.O = result.O || ""
           }
         }
 
