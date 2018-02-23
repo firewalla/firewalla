@@ -61,6 +61,10 @@ class DomainBlock {
 
       await (this.syncDomainIPMapping(domain, options))
       await (this.applyBlock(domain, options))
+
+      setTimeout(() => {
+        this.incrementalUpdateIPMapping(domain, options)
+      }, 20 * 1000) // reinforce in 20 seconds
     })()
   }
 
