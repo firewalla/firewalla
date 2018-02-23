@@ -52,7 +52,7 @@ function setupBlockChain() {
   inited = true;
 }
 
-function block(destination, autoRollback) {
+function block(destination) {
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -71,10 +71,6 @@ function block(destination, autoRollback) {
         log.error("Unable to ipset add ",cmd);
         reject(err);
         return;
-      }
-
-      if(autoRollback) {
-        setTimeout(unblock, AUTO_ROLLBACK_TIME, destination)
       }
       
       resolve();

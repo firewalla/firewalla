@@ -89,14 +89,14 @@ class DNSTool {
   // doesn't have to keep it long, it's only used for instant blocking
   
   addReverseDns(dns, addresses, expire) {
-    expire = expire || 2 * 3600; // two hours by default
+    expire = expire || 24 * 3600; // one day by default
     addresses = addresses || []
 
     let key = this.getReverseDNSKey(dns)
 
     return async(() => {
       let updated = false
-
+      
       addresses.forEach((addr) => {
         if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
           await (rclient.zaddAsync(key, new Date() / 1000, addr))
