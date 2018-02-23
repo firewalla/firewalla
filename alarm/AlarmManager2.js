@@ -74,8 +74,6 @@ let extend = require('util')._extend;
 
 let fConfig = require('../net2/config.js').getConfig();
 
-let AUTO_BLOCK_THRESHOLD = 10;
-
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -841,45 +839,40 @@ module.exports = class {
               alarm.result_method = "auto";
             }
 
-            this.updateAlarm(alarm)
-              .then(() => {
-                // archive alarm
+            async(() => {
+              await (this.updateAlarm(alarm))
+              
+              if(alarm.result_method != "auto") {                
+                // archive alarm unless it's auto block
+                await (this.archiveAlarm(alarm.aid))
+              }
 
-                this.archiveAlarm(alarm.aid)
-                  .then(() => {
+              // old way
+              if(!info.matchAll) {
+                callback(null, policy)
+                return
+              }
 
-                    // old way
-                    if(!info.matchAll) {
-                      callback(null, policy)
-                      return
-                    }
+              log.info("Trying to find if any other active alarms are covered by this new policy")
+              let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
+              if(alarms && alarms.length > 0) {
+                let blockedAlarms = []
+                alarms.forEach((alarm) => {
+                  try {
+                    await (this.blockAlarmByPolicy(alarm, policy, info))
+                    blockedAlarms.push(alarm)
+                  } catch(err) {
+                    log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
+                  }
+                })
+                callback(null, policy, blockedAlarms, alreadyExists)
+              } else {
+                callback(null, policy, undefined, alreadyExists)
+              }
 
-                    async(() => {
-                      log.info("Trying to find if any other active alarms are covered by this new policy")
-                      let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
-                      if(alarms && alarms.length > 0) {
-                        let blockedAlarms = []
-                        alarms.forEach((alarm) => {
-                          try {
-                            await (this.blockAlarmByPolicy(alarm, policy, info))
-                            blockedAlarms.push(alarm)
-                          } catch(err) {
-                            log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
-                          }
-                        })
-                        callback(null, policy, blockedAlarms, alreadyExists)
-                      } else {
-                        callback(null, policy, undefined, alreadyExists)
-                      }
-                    })()
-                  })
-                  .catch((err) => {
-                    callback(err)
-                  })
-
-              }).catch((err) => {
-                callback(err);
-              });
+            })().catch((err) => {
+              callback(err)
+            })                         
           }
         });
       }).catch((err) => {
