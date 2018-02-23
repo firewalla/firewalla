@@ -46,29 +46,38 @@ app.use('*', async (req, res) => {
   if (!req.originalUrl.includes(viewsPath)) {
     let cat = await intel.check(req.hostname);
 
-    log.info("Category: ", cat);
+    log.info(`${req.hostname} 's category is ${cat}`);
 
     switch(cat) {
       case 'porn':
-        res.status(303).location(`/${viewsPath}/green?${qs.stringify({url: req.originalUrl})}`).send().end();
-        if (enableRedis) {
-          client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
-            log.info(`Total porn blocked: ${value}`);
-          });
-        }
-
+        isPorn(req, res);
         break;
       case 'ad':
-        if (enableRedis) {
-          client.hincrbyAsync('block:stats', 'ad', 1).then(value => {
-            log.info(`Total ad blocked: ${value}`);
-          });
-        }
+        isAd(req, res);
+        break;
       default:
         res.status(200).send().end();
     }
   }
 });
+
+function isPorn(req, res) {
+  res.status(303).location(`/${viewsPath}/green?${qs.stringify({url: req.originalUrl})}`).send().end();
+  if (enableRedis) {
+    client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
+      log.info(`Total porn blocked: ${value}`);
+    });
+  }
+}
+
+function isAd(req, res) {
+  res.status(200).send().end();
+  if (enableRedis) {
+    client.hincrbyAsync('block:stats', 'ad', 1).then(value => {
+      log.info(`Total ad blocked: ${value}`);
+    });
+  }
+}
 
 app.listen(port, () => log.info(`Httpd listening on port ${port}!`));
 
