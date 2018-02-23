@@ -83,7 +83,7 @@ class DomainBlock {
     options = options || {}
 
     if(options.exactMatch) {
-      return `ipmapping:site:${domain}`
+      return `ipmapping:exactdomain:${domain}`
     } else {
       return `ipmapping:domain:${domain}`
     }    
@@ -121,17 +121,25 @@ class DomainBlock {
     })()
   }
 
-  syncDomainIPMapping(domain, options) {
-    options = options || {}
-
-    const key = this.getDomainIPMappingKey(domain, options)
-    
+  resolveDomain(domain) {
     return async(() => {
       const v4Addresses = await (resolve4Async(domain).catch((err) => []))
       await (dnsTool.addReverseDns(domain, v4Addresses))
 
       const v6Addresses = await (resolve6Async(domain).catch((err) => []))
       await (dnsTool.addReverseDns(domain, v6Addresses))
+
+      return v4Addresses.concat(v6Addresses)
+    })()
+  }
+
+  syncDomainIPMapping(domain, options) {
+    options = options || {}
+
+    const key = this.getDomainIPMappingKey(domain, options)
+    
+    return async(() => {
+      await (this.resolveDomain(domain))
 
       let list = []
 
@@ -149,11 +157,44 @@ class DomainBlock {
     })()     
   }
 
+  // incremental update mapping to reinforce ip blocking
+  incrementalUpdateIPMapping(domain, options) {
+    options = options || {}
+
+    const key = this.getDomainIPMappingKey(domain, options)
+
+    return async(() => {
+      const newResolvedAddrs = await (this.resolveDomain(domain))
+
+      let set = {}
+
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await (dnsTool.getAddressesByDNS(domain).catch((err) => []))
+      addresses.forEach((addr) => {
+        set[addr] = 1
+      })
+
+      if(!options.exactMatch) {
+        const patternAddresses = await (dnsTool.getAddressesByDNSPattern(domain).catch((err) => []))
+        patternAddresses.forEach((addr) => {
+          set[addr] = 1
+        })
+      }
+
+      newResolvedAddrs.forEach((addr) => {
+        if(!set[addr]) {
+          await (rclient.saddAsync(key,addr))
+          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
+        }
+      })
+      
+    })()
+  }
+
   getAllIPMappings() {
     return async(() => {
-      let list = await (rclient.keysAsync("ipmapping:site:*"))
-      let list2 = await (rclient.keysAsync("ipmapping:domain:*"))
-      return list.concat(list2)
+      let list = await (rclient.keysAsync("ipmapping:*"))
+      return list
     })()
   }
 
