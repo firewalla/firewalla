@@ -1,17 +1,18 @@
-const log = require("../../net2/logger")('intel');
-
-const bone = require('../../lib/Bone');
 const util = require('util');
-let flowUtil = require('../../net2/FlowUtil.js');
 const Promise = require('bluebird');
-let redis = require("redis");
-let rclient = redis.createClient();
+const redis = require("redis");
+
+const log = require("../../net2/logger")('intel');
+const bone = require('../../lib/Bone');
+const flowUtil = require('../../net2/FlowUtil.js');
+
+const rclient = redis.createClient();
 Promise.promisifyAll(redis.RedisClient.prototype);
 
 class Intel {
   async jwt() {
     try {
-      return rclient.getAsync("sys:bone:jwt");
+      return await rclient.getAsync("sys:bone:jwt");
     } catch (err) {
       // null
     }
@@ -53,7 +54,13 @@ class Intel {
 
     //log.info(util.inspect(data, {depth: null}));
 
-    let best, results = await bone.intelAsync("*", "", "check", data);
+    let results, best;
+
+    try {
+      results = await bone.intelAsync("*", "", "check", data);
+    } catch (err) {
+      log.error('Unable to get intel from cloud', err, {});
+    }
 
     if (Array.isArray(results) && results.length > 0) {
       best = results.reduce((best, cur) => origHost[cur.ip].length > origHost[best.ip].length ? cur : best);
