@@ -148,6 +148,21 @@ class DomainBlock {
 
     })()     
   }
+
+  getAllIPMappings() {
+    return async(() => {
+      let list = await (rclient.keysAsync("ipmapping:site:*"))
+      let list2 = await (rclient.keysAsync("ipmapping:domain:*"))
+      return list.concat(list2)
+    })()
+  }
+
+  removeAllIPMappings() {
+    return async(() => {
+      const list = await (this.getAllIPMappings())
+      return rclient.delAsync(list)
+    })()
+  }
 }
 
 module.exports = () => new DomainBlock()
