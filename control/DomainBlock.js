@@ -68,7 +68,7 @@ class DomainBlock {
     return async(() => {
       await (this.unapplyBlock(domain, options))
       await (this.removeDomainIPMapping(domain, options))
-      
+
       await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
 
       sem.emitEvent({
@@ -104,10 +104,10 @@ class DomainBlock {
       const addresses = await (this.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
-          await (Block.block(addr).catch((err) => undefined))
+          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
         })
       }
-    })
+    })()
   }
 
   unapplyBlock(domain, options) {
@@ -115,10 +115,10 @@ class DomainBlock {
       const addresses = await (this.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
-          await (Block.unblock(addr).catch((err) => undefined))
+          await (Block.unblock(addr, "blocked_domain_set").catch((err) => undefined))
         })
       }
-    })
+    })()
   }
 
   syncDomainIPMapping(domain, options) {

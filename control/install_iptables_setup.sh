@@ -3,10 +3,12 @@
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
 sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
+sudo ipset create blocked_domain_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush blocked_ip_set
+sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 
 
@@ -20,11 +22,15 @@ sudo iptables -C FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j R
 # drop non-tcp
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_set dst -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_set dst -j DROP
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_set src -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_set src -j DROP
+sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_domain_set dst -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_domain_set dst -j DROP
+sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_domain_set src -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_domain_set src -j DROP
 sudo iptables -C FW_BLOCK -p all -m set --match-set blocked_ip_port_set dst,dst -j DROP &>/dev/null || sudo iptables -I FW_BLOCK -p all -m set --match-set blocked_ip_port_set dst,dst -j DROP
 
 # reject tcp
 sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set dst -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set dst -j REJECT
 sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set src -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set src -j REJECT
+sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_domain_set dst -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_domain_set dst -j REJECT
+sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_domain_set src -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_domain_set src -j REJECT
 sudo iptables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set dst,dst -j REJECT &>/dev/null || sudo iptables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set dst,dst -j REJECT
 
 # forward to fw_block
@@ -38,8 +44,10 @@ fi
 if [[ -e /sbin/ip6tables ]]; then
 
   sudo ipset create blocked_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create blocked_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create blocked_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset flush blocked_ip_set6
+  sudo ipset flush blocked_domain_set6
   sudo ipset flush blocked_ip_port_set6
 
 
@@ -52,11 +60,15 @@ if [[ -e /sbin/ip6tables ]]; then
   # drop non-tcp
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_set6 dst -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_set6 dst -j DROP
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_set6 src -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_set6 src -j DROP
+  sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_domain_set6 dst -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_domain_set6 dst -j DROP
+  sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_domain_set6 src -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_domain_set6 src -j DROP
   sudo ip6tables -C FW_BLOCK -p all -m set --match-set blocked_ip_port_set6 dst,dst -j DROP &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p all -m set --match-set blocked_ip_port_set6 dst,dst -j DROP
 
   # reject tcp
   sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 dst -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 dst -j REJECT
   sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 src -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_set6 src -j REJECT
+  sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_domain_set6 dst -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_domain_set6 dst -j REJECT
+  sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_domain_set6 src -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_domain_set6 src -j REJECT
   sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set6 dst,dst -j REJECT &>/dev/null ||   sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set blocked_ip_port_set6 dst,dst -j REJECT
 
   # forward to fw_block

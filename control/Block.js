@@ -52,13 +52,15 @@ function setupBlockChain() {
   inited = true;
 }
 
-function block(destination) {
+function block(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
-    cmd = "sudo ipset add -! blocked_ip_set " + destination;    
+    cmd = `sudo ipset add -! ${ipset} ${destination}`
   } else if(iptool.isV6Format(destination)) {
-    cmd = "sudo ipset add -! blocked_ip_set6 " + destination;
+    cmd = `sudo ipset add -! ${ipset}6 ${destination}`
   } else {
     // do nothing
     return Promise.resolve()
@@ -78,8 +80,9 @@ function block(destination) {
   });
 }
 
-function unblock(destination) {
-  
+function unblock(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
   // never unblock black hole ip
   if(destination === BLACK_HOLE_IP) {
     return Promise.resolve()
@@ -87,9 +90,9 @@ function unblock(destination) {
   
   let cmd = null;
   if(iptool.isV4Format(destination)) {
-    cmd = "sudo ipset del -! blocked_ip_set " + destination;
+    cmd = `sudo ipset del -! ${ipset} ${destination}`
   } else if(iptool.isV6Format(destination)) {
-    cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
+    cmd = `sudo ipset del -! ${ipset}6 ${destination}`
   } else {
     // do nothing
   }
