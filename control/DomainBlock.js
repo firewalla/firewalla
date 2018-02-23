@@ -59,6 +59,8 @@ class DomainBlock {
     options = options || {}
     return async(() => {
       if(globalLock) {
+        log.info("blockDomain is deferred due to lock")
+
         await(delay(5000))
         return this.blockDomain(domain, options)
       }
@@ -88,6 +90,8 @@ class DomainBlock {
     return async(() => {
 
       if(globalLock) {
+        log.info("unblockDomain is deferred due to lock")
+
         await(delay(5000))
         return this.unblockDomain(domain, options)
       }
@@ -198,6 +202,7 @@ class DomainBlock {
     return async(() => {
 
       if(globalLock) {
+        log.info("incrementalUpdate is deferred due to lock")
         await(delay(5000))
         return this.incrementalUpdateIPMapping(domain, options)
       }
