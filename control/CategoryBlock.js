@@ -93,7 +93,7 @@ class CategoryBlock {
   saveDomains(category, list) {
     return async(() => {
       const key = this.getCategoryDomainKey(category)
-      await (rclient.sadd(key, list))
+      await (rclient.saddAsync(key, list))
     })()
   }
 
@@ -115,7 +115,7 @@ class CategoryBlock {
     return async(() => {
       const data = await (bone.hashsetAsync(hashset))
       const list = JSON.parse(data)
-      return list
+      return ["sina.com.cn", "youku.com"] // testing only
     })()
   }
 
