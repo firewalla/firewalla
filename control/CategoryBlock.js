@@ -61,7 +61,7 @@ class CategoryBlock {
 
     return async(() => {
       const list = await (this.loadCategoryFromBone(category))
-      await (this.saveDomains(list)) // used for unblock
+      await (this.saveDomains(category, list)) // used for unblock
       list.forEach((domain) => {
         await (domainBlock.blockDomain(domain)) // may need to provide options argument in the future
       })
