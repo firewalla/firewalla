@@ -61,10 +61,13 @@ class CategoryBlock {
 
     return async(() => {
       const list = await (this.loadCategoryFromBone(category))
-      await (this.saveDomains(category, list)) // used for unblock
-      list.forEach((domain) => {
-        await (domainBlock.blockDomain(domain)) // may need to provide options argument in the future
-      })
+      if(list) {
+        await (this.saveDomains(category, list)) // used for unblock
+        list.forEach((domain) => {
+          await (domainBlock.blockDomain(domain, {ignoreApplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
+        })
+        await (domainBlock.applyBlock("")) // this will create ipset rules
+      }
     })()
   }
 
@@ -75,9 +78,10 @@ class CategoryBlock {
     domainBlock.externalMapping = this.getMapping(category)
 
     return async(() => {
+      await (domainBlock.unapplyBlock("").catch((err) => undefined)) // this will remove ipset rules
       const list = await (this.loadDomains(category))
       list.forEach((domain) => {
-        await (domainBlock.unblockDomain(domain)) // may need to provide options argument in the future
+        await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
       })
       await (rclient.delAsync(this.getMapping(category))) // ipmapping:category:gaming
     })()
