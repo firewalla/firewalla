@@ -72,14 +72,14 @@ class CategoryBlock {
     options = options || {}
 
     const domainBlock = require('./DomainBlock.js')()
-    domainBlock.mapping = this.getMapping(category)
+    domainBlock.externalMapping = this.getMapping(category)
 
     return async(() => {
       const list = await (this.loadDomains(category))
       list.forEach((domain) => {
         await (domainBlock.unblockDomain(domain)) // may need to provide options argument in the future
       })
-      await (rclient.delAsync(this.getMapping(category)))
+      await (rclient.delAsync(this.getMapping(category))) // ipmapping:category:gaming
     })()
   }
 

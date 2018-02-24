@@ -78,9 +78,9 @@ class DomainBlock {
       await (this.syncDomainIPMapping(domain, options))
       await (this.applyBlock(domain, options))
 
-      setTimeout(() => {
-        this.incrementalUpdateIPMapping(domain, options)
-      }, 60 * 1000) // reinforce in 60 seconds
+      // setTimeout(() => {
+      //   this.incrementalUpdateIPMapping(domain, options)
+      // }, 60 * 1000) // reinforce in 60 seconds
     })().finally(() => {
       globalLock = false
     })
