@@ -200,8 +200,8 @@ module.exports = class {
         return
       }
 
-      alarm.result = "ignore"
-      await (this.updateAlarm(alarm))
+      // alarm.result = "ignore"
+      // await (this.updateAlarm(alarm))
       await (this.archiveAlarm(alarm.aid))
     })()
   }

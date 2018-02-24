@@ -76,11 +76,13 @@ class DomainBlock {
       })
 
       await (this.syncDomainIPMapping(domain, options))
-      await (this.applyBlock(domain, options))
+      if(!options.ignoreApplyBlock) {
+        await (this.applyBlock(domain, options))
+      }
 
-      setTimeout(() => {
-        this.incrementalUpdateIPMapping(domain, options)
-      }, 60 * 1000) // reinforce in 60 seconds
+      // setTimeout(() => {
+      //   this.incrementalUpdateIPMapping(domain, options)
+      // }, 60 * 1000) // reinforce in 60 seconds
     })().finally(() => {
       globalLock = false
     })
@@ -98,8 +100,13 @@ class DomainBlock {
 
       globalLock = true
 
-      await (this.unapplyBlock(domain, options))
-      await (this.removeDomainIPMapping(domain, options))
+      if(!options.ignoreUnapplyBlock) {
+        await (this.unapplyBlock(domain, options))
+      }      
+
+      if(!this.externalMapping) {
+        await (this.removeDomainIPMapping(domain, options))
+      }      
 
       await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
 
@@ -115,6 +122,10 @@ class DomainBlock {
 
   getDomainIPMappingKey(domain, options) {
     options = options || {}
+
+    if(this.externalMapping) {
+      return this.externalMapping
+    }
 
     if(options.exactMatch) {
       return `ipmapping:exactdomain:${domain}`
