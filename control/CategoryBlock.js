@@ -79,7 +79,7 @@ class CategoryBlock {
       list.forEach((domain) => {
         await (domainBlock.unblockDomain(domain)) // may need to provide options argument in the future
       })
-      await (rcilent.delAsync(this.getMapping(category)))
+      await (rclient.delAsync(this.getMapping(category)))
     })()
   }
 
@@ -115,7 +115,7 @@ class CategoryBlock {
     return async(() => {
       const data = await (bone.hashsetAsync(hashset))
       const list = JSON.parse(data)
-      return ["sina.com.cn", "youku.com"] // testing only
+      return ["sina.com.cn", "youku.com", "vimeo.com"] // testing only
     })()
   }
 
