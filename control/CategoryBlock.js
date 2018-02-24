@@ -86,7 +86,7 @@ class CategoryBlock {
   loadDomains(category) {
     return async(() => {
       const key = this.getCategoryDomainKey(category)
-      return rclient.smembers(key)
+      return rclient.smembersAsync(key)
     })()
   }
 
