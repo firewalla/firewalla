@@ -151,8 +151,8 @@ function update_node_modules {
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
             logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            $MGIT fetch origin  || $MGIT fetch origin
-            $MGIT reset -q --hard `cat $REVISION_FILE`
+            $MGIT fetch origin  || $MGIT fetch origin || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO FETCH ORIGIN"
+            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO RESET ORIGIN"
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
@@ -336,7 +336,7 @@ sudo sysctl -w net.ipv4.conf.all.route_localnet=1
 
 
 if [[ -f /.dockerenv ]]; then
-    forever start  -a --uid main  -c "/usr/bin/node --expose-gc"  ./main.js
+    forever start  -a --uid main  -c "${FIREWALLA_HOME}/bin/node --expose-gc"  ./main.js
 else
     sudo systemctl restart firemain
 fi
@@ -347,7 +347,7 @@ cd sys
 
 if [[ -z "$NO_FIREKICK_RESTART" ]]; then
   if [[ -f /.dockerenv ]]; then
-    forever start  -a --uid kickui kickstart.js --config /encipher.config/netbot.config
+    forever start  -a --uid kickui -c "${FIREWALLA_HOME}/bin/node --expose-gc"  kickstart.js --config /encipher.config/netbot.config
   else
     sudo systemctl restart firekick
   fi
@@ -358,7 +358,7 @@ cd monitor
 #forever start --uid monitor -c "/usr/bin/node --expose-gc" ./MonitorMain.js
 #forever start --uid monitor MonitorMain.js
 if [[ -f /.dockerenv ]]; then
-    forever start -a --uid monitor MonitorMain.js
+    forever start -a --uid monitor -c "${FIREWALLA_HOME}/bin/node --expose-gc"  MonitorMain.js
 else
     sudo systemctl restart firemon
 fi
@@ -370,7 +370,7 @@ sync
 
 cd api
 if [[ -f /.dockerenv ]]; then
-    forever start -a --uid api bin/www
+    forever start -a --uid api -c "${FIREWALLA_HOME}/bin/node --expose-gc"  bin/www
 else
     sudo systemctl restart fireapi
 fi

@@ -7,6 +7,8 @@ const await = require('asyncawait/await');
 
 const Promise = require('bluebird');
 
+const minimatch = require('minimatch')
+
 let Exception = require('./Exception.js');
 let Bone = require('../lib/Bone.js');
 
@@ -73,6 +75,18 @@ module.exports = class {
       }
       callback(null, results.map((r) => this.jsonToException(r)));
     });
+  }
+
+  loadExceptionsAsync() {
+    return new Promise((resolve, reject) => {
+      this.loadExceptions((err, exceptions) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(exceptions)
+        }
+      })
+    })
   }
 
   loadExceptions(callback) {
@@ -164,6 +178,53 @@ module.exports = class {
     });
   }
 
+  getSameExceptions(exception) {
+    let em = this
+    return async(() => {
+      return new Promise(function (resolve, reject) {
+        em.loadExceptions((err, exceptions) =>{
+          if (err) {
+            log.error("failed to load exceptions:", err, {})
+            reject(err)
+          } else {
+            if (exceptions) {
+              resolve(exceptions.filter((e) => e.isEqualToException(exception)))
+            } else {
+              resolve([])
+            }
+          }    
+        })
+      })
+    })();
+  }
+
+  checkAndSave(exception, callback) {
+    return async(() => {
+      let exceptions = await(this.getSameExceptions(exception))
+      if (exceptions && exceptions.length > 0) {
+        log.info(`exception ${exception} already exists in system: ${exceptions}`)
+        callback(null, exceptions[0], true)
+      } else {
+        let ee = await (this.saveExceptionAsync(exception))
+        callback(null, ee)
+      }
+    })().catch((err) => {
+      callback(err)
+    })
+  }
+
+  saveExceptionAsync(exception) {
+    return new Promise((resolve, reject) => {
+      this.saveException(exception, (err, ee) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(ee)
+        }
+      })
+    })
+  }
+
   saveException(exception, callback) {
     callback = callback || function() {}
 
@@ -203,7 +264,7 @@ module.exports = class {
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
           }
 
-          callback(err);
+          callback(err, exception);
         });
       });
 
@@ -268,7 +329,26 @@ module.exports = class {
       });
   }
 
+  isFirewallaCloud(alarm) {
+    const name = alarm["p.dest.name"]
+    if(!name) {
+      return false
+    }
+
+    return name === "firewalla.encipher.io" ||
+      name === "firewalla.com" ||
+      minimatch(name, "*.firewalla.com")
+
+    // TODO: might need to add static ip address here
+  }
+
   match(alarm, callback) {
+
+    if(this.isFirewallaCloud(alarm)) {
+      callback(null, true, [])
+      return
+    }
+
     this.loadExceptions((err, results) => {
       if(err) {
         callback(err);

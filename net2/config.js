@@ -19,6 +19,8 @@ const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
 
+let callbacks = {}
+
 let config = null;
 
 function getConfig() {
@@ -47,18 +49,43 @@ function getConfig() {
 
 function isFeatureOn_Static(featureName) {
   let config = getConfig()
-  return config.userFeatures && config.userFeatures[featureName]
+  if(config.userFeatures && featureName in config.userFeatures) {
+    if(config.userFeatures[featureName]) {
+      return true
+    } else {
+      return false
+    }
+  } else {
+    return undefined
+  }
 }
 
+// undefined: feature not exists
+// true: feature enabled
+// false: feature disabled
 function isFeatureOn_Dynamic(featureName) {
-  return dynamicConfigs && dynamicConfigs[featureName] && dynamicConfigs[featureName] === '1'
+  if(dynamicConfigs && featureName in dynamicConfigs) {
+    if(dynamicConfigs[featureName] === '1' ) {
+      return true
+    } else {
+      return false
+    }
+  } else {
+    return undefined
+  }
 }
 
 function isFeatureOn(featureName) {
-  if(isFeatureOn_Static(featureName) || isFeatureOn_Dynamic(featureName)) {
-    return true
+  const dynamicFlag = isFeatureOn_Dynamic(featureName)
+  if(dynamicFlag !== undefined) {
+    return dynamicFlag
+  }
+
+  const staticFlag = isFeatureOn_Static(featureName)
+  if(staticFlag !== undefined) {
+    return staticFlag
   } else {
-    return false
+    return false // default disabled
   }
 }
 
@@ -128,15 +155,26 @@ sclient_subscribe.subscribe("config:feature:dynamic:clear")
 
 sclient_subscribe.on("message", (channel, message) => {
   log.info(`got message from ${channel}: ${message}`)
+  const theFeature = message
   switch(channel) {
   case "config:feature:dynamic:enable":
-    dynamicConfigs[message] = '1'
+    dynamicConfigs[theFeature] = '1'
+    if(callbacks[theFeature]) {
+      callbacks[theFeature].forEach((c) => {
+        c(theFeature, true)
+      })
+    }
     break
   case "config:feature:dynamic:disable":
-    dynamicConfigs[message] = '0'
+    dynamicConfigs[theFeature] = '0'
+    if(callbacks[theFeature]) {
+      callbacks[theFeature].forEach((c) => {
+        c(theFeature, false)
+      })
+    }
     break
   case "config:feature:dynamic:clear":
-    delete dynamicConfigs[message]
+    delete dynamicConfigs[theFeature]
     break
   }  
 });
@@ -147,6 +185,16 @@ setInterval(() => {
   syncDynamicFeaturesConfigs()
 }, 60 * 1000) // every minute
 
+
+
+function onFeature(feature, callback) {
+  if(!callbacks[feature]) {
+    callbacks[feature] = []
+  }
+
+  callbacks[feature].push(callback)
+}
+
 module.exports = {
   getConfig: getConfig,
   isFeatureOn: isFeatureOn,
@@ -155,5 +203,6 @@ module.exports = {
   enableDynamicFeature:enableDynamicFeature,
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
-  syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs
+  syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
+  onFeature: onFeature  
 };

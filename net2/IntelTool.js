@@ -180,8 +180,9 @@ class IntelTool {
         if(subject) {
           let result = this._parseX509Subject(subject);
           if(result) {
-            sslInfo.CN = result.CN;
-            sslInfo.OU = result.OU;
+            sslInfo.CN = result.CN || ""
+            sslInfo.OU = result.OU || ""
+            sslInfo.O = result.O || ""
           }
         }
 
@@ -226,6 +227,9 @@ class IntelTool {
       // let keys = await (rclient.keysAsync(key))
       // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
 //      if(keys.length > 0) {
+        if (intel && intel.ip) {
+            delete intel.ip;
+        }
         let intelJSON = JSON.stringify(intel);
         await (rclient.hsetAsync(key, "_intel", intelJSON))
         await (rclient.expireAsync(key, expireTime))

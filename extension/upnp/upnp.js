@@ -188,7 +188,9 @@ module.exports = class {
                 } else if (this.natpmpEnabled == true) {
                     return this.removePortMappingNATPMP(protocol, localPort, externalPort, callback);
                 } else {
-                    callback(new Error("no upnp/natpmp"));
+                    if (typeof callback === 'function') {
+                        callback(new Error("no upnp/natpmp"));
+                    }
                 }
             } catch(e) {
                 log.error("UPNP.removePortMapping Exception",e,{});

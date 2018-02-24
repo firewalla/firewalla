@@ -16,6 +16,8 @@
 
 let log = require('../net2/logger.js')(__filename);
 
+const Promise = require('bluebird')
+
 let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
@@ -43,6 +45,11 @@ let Sensor = class {
     log.info(require('util').format("%s is launched", typeof this.constructor));
   }
   
+  delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
 }
 
 module.exports = {
