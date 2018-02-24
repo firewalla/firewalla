@@ -63,6 +63,8 @@ const dnsTool = new DNSTool()
 
 const domainBlock = require('../control/DomainBlock.js')()
 
+const categoryBlock = require('../control/CategoryBlock.js')()
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -523,6 +525,8 @@ class PolicyManager2 {
         }
       })()
       break;
+    case "category":
+      return categoryBlock.blockCategory(policy.target)
     default:
       return Promise.reject("Unsupported policy");
     }
@@ -551,6 +555,9 @@ class PolicyManager2 {
         }
        })()
       break;
+    case "category":
+      return categoryBlock.unblockCategory(policy.target)
+      break
     default:
       return Promise.reject("Unsupported policy");
     }

@@ -99,7 +99,10 @@ class DomainBlock {
       globalLock = true
 
       await (this.unapplyBlock(domain, options))
-      await (this.removeDomainIPMapping(domain, options))
+
+      if(!this.externalMapping) {
+        await (this.removeDomainIPMapping(domain, options))
+      }      
 
       await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
 
@@ -115,6 +118,10 @@ class DomainBlock {
 
   getDomainIPMappingKey(domain, options) {
     options = options || {}
+
+    if(this.externalMapping) {
+      return this.externalMapping
+    }
 
     if(options.exactMatch) {
       return `ipmapping:exactdomain:${domain}`
