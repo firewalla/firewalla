@@ -312,7 +312,7 @@ function create_bootstrap_scripts_folder() {
 create_bootstrap_scripts_folder
 # Try to recover any broken repos if Git failed before with mark
 # Has to use the "mgit" outside firewalla since it could be recovered
-$PI_HOME/scripts/mgit recover
+test -z $NO_MGIT_RECOVER && $PI_HOME/scripts/mgit recover
 
 #reload services
 if [[ ! -f /.dockerenv ]]; then
