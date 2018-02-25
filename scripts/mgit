@@ -5,118 +5,113 @@
 # disruptive action, like power off or SD card extraction.
 # ----------------------------------------------------------------------------
 
-MARKER_BASE=$HOME/git_in_progress
-LOCK_RETRY=1000
-ERR_LOCK_NOTFOUND=2
-ERR_LOCK_INVALID=3
-ERR_LOCK_TIMEOUT=4
+MGIT_DIR=$HOME/.mgit
+MGIT_REPOS=$MGIT_DIR/repos
+LOCK_TIMEOUT=1800
 
 function marked_git {
-    _rc=0
-    wsdir=$(basename $PWD)
-    marker_dir=$MARKER_BASE/$wsdir
-    mkdir -p $marker_dir
-    git remote get-url origin > $marker_dir/url
-    git rev-parse --abbrev-ref HEAD > $marker_dir/branch
-    if obtain_lock $wsdir
-    then
-        git "$@" || _rc=1
-        release_lock $wsdir
-    else
-        _rc=1
-    fi
-    return $_rc
+    repo_name=$(basename $PWD)
+    mgit_repo=$MGIT_REPOS/$repo_name
+    lock_file=$MGIT_REPOS/$repo_name/lock
+    marker_file=$MGIT_REPOS/$repo_name/git-in-progress
+    (
+    flock -w $LOCK_TIMEOUT 9 || exit 1
+
+
+    # save repo info
+    mkdir -p $mgit_repo
+    git remote get-url origin > $mgit_repo/url
+    sync
+    git rev-parse --abbrev-ref HEAD > $mgit_repo/branch
+    sync
+
+    # lay down the marker file
+    date > $marker_file
+    sync
+
+    # execute actual git command
+    git "$@" || _rc=1
+
+    # clean up marker afterwards
+    rm -f $marker_file
+    sync
+    ) 9>$lock_file || return 1
+
+    return 0
 
 }
 
-function validate_lock {
-    wsdir=$1
-    obtain=$2
-    lock_file=$MARKER_BASE/$wsdir/pid
-    cnt=0
-    while [[ $cnt -lt $LOCK_RETRY ]]
-    do
-        (( cnt++ ))
-        # no existing lock, try lock it
-        test -e $lock_file || {
-            if [[ -n "$obtain" ]]
-            then
-                # obtain lock
-                mkdir -p $MARKER_BASE/$wsdir
-                echo $$ > $lock_file
-            else
-                # check only and return error
-                return $ERR_LOCK_NOTFOUND
-            fi
-        }
-        lpid=$(cat $lock_file)
-        # invalid lock detected
-        test -e /proc/$lpid || return $ERR_LOCK_INVALID
-        if [[ "$lpid" == "$$" ]]
-        then
-            # valid lock obtained
-            return 0
-        else
-            # valid lock owned by others, wait for it to release
-            sleep 3
-        fi
-    done
-
-    # timeout
-    return $ERR_LOCK_TIMEOUT
+function get_repo_default {
+    rname=$1
+    item=$2
+    case $rname in
+        firewalla)
+        case $item in
+            url)    echo 'https://github.com/firewalla/firewalla.git' ;;
+            branch) echo 'release_6_0' ;;
+        esac
+        ;;
+        .node_modules)
+        case $item in
+            url)    echo 'https://github.com/firewalla/firewalla.git' ;;
+            branch) echo 'release_6_0' ;;
+        esac
+        ;;
+    esac
 }
 
-function obtain_lock {
-    validate_lock $1 obtain
-}
-
-function release_lock {
-    wsdir=$1
-    lock_file=$MARKER_BASE/$wsdir/pid
-    if [[ -e $lock_file ]]
-    then
-        rm -f $lock_file
-    fi
-}
 
 function recover {
     _rc=0
     cd $HOME
-    for wsdir in $(ls -a $MARKER_BASE)
+    for repo_name in $(ls -a $MGIT_REPOS)
     do
-        case $wsdir in
+        case $repo_name in
 
             .|..)
             continue
             ;;
 
             *)
-            # try to validate lock
-            validate_lock $wsdir; rc1=$?
 
-            # try to do "git status ..."
-            gs_out=$(cd $wsdir; git status -uno --porcelain); rc2=$?
+            need_recover=0
 
-            # recover if lock invalid or git status failed
-            if [[ $rc1 -eq $ERR_LOCK_INVALID || $rc2 -ne 0 ]]
+            # recover if marker file found
+            marker_file=$MGIT_REPOS/$repo_name/git-in-progress
+            test -e $marker_file && need_recover=1
+
+            if [[ -d $repo_name ]]
             then
-                repo=$(cat $MARKER_BASE/$wsdir/url)
-                branch=$(cat $MARKER_BASE/$wsdir/branch)
-                if [[ -e ${wsdir}.bak ]]
-                then
-                    rm -rf $wsdir
-                else
-                    mv $wsdir ${wsdir}.bak
-                fi
-                if git clone --branch $branch --single-branch $repo $wsdir
+                # recover if git status failed inside repo_name dir
+                gs_out=$(cd $repo_name; git status -uno --porcelain) || need_recover=1
+            else
+                # recover if repo_name dir not found
+                need_recover=1
+            fi
+
+            if [[ $need_recover -eq 1 ]]
+            then
+                lock_file=$MGIT_REPOS/$repo_name/lock
+                (
+                flock -w $LOCK_TIMEOUT 9 || exit 1
+                url=$(cat $MGIT_REPOS/$repo_name/url)
+                branch=$(cat $MGIT_REPOS/$repo_name/branch)
+                if git clone --branch ${branch:=$(get_repo_default $repo_name branch)} \
+                             --single-branch ${url:=$(get_repo_default $repo_name url)} \
+                             ${repo_name}.recover
                 then
                     # recover OK
-                    rm -rf ${wsdir}.bak
-                    release_lock $wsdir
+                    mv ${repo_name} ${repo_name}.old
+                    mv ${repo_name}.recover ${repo_name}
+                    rm -rf ${repo_name}.old
+                    sync
+                    rm -f $marker_file
+                    sync
                 else
                     # recover failed
-                    _rc=1
+                    exit 1
                 fi
+                ) 9>$lock_file ||_rc=1
             fi
             ;;
         esac
@@ -133,15 +128,15 @@ rc=0
 if [[ $# -eq 0 ]]; then
     git
 else
-    # Protect file related Git operations(fetch/pull/reset) with marker files
+    mkdir -p $MGIT_REPOS
     case $1 in
 
         fetch|pull|reset)
-            marked_git "$@" || rc=1
+            marked_git "$@" || exit 1
             ;;
 
         recover)
-            recover || rc=1
+            recover || exit 1
             ;;
 
         *)
