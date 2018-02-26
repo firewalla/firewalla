@@ -1528,7 +1528,7 @@ module.exports = class {
       })
 
       json.last60top = values
-      
+
     })()
   }
 
@@ -1866,7 +1866,7 @@ module.exports = class {
           let requiredPromises = [
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
-            this.last60MinTopTransferForInit(json),
+//            this.last60MinTopTransferForInit(json),
             this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),

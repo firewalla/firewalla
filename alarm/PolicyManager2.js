@@ -459,7 +459,9 @@ class PolicyManager2 {
         return;
       }
 
-      this.idsToPolicys(results, callback);
+      this.idsToPolicys(results, (err, policyRules) => {
+        callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+      });
     });
   }
 
@@ -509,6 +511,10 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
+    if(policy.disabled == 1) {
+      return // ignore disabled policy rules
+    }
+    
     // auto unenforce if expire time is set
     if(policy.expire) {
       if(policy.willExpireSoon())  {

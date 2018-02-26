@@ -60,7 +60,6 @@
     "DNSMASQSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
-    "TopTransfer": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
