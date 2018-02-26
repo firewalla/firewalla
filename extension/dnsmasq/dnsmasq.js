@@ -257,14 +257,6 @@ module.exports = class DNSMASQ {
     setImmediate(this._reloadFilter.bind(this), type);
   }
 
-  controlAdblockFilter(state) {
-    this.controlFilter('adblock', state);
-  }
-
-  controlFamilyFilter(state) {
-    this.controlFilter('family', state);
-  }
-
   cleanUpFilter(type) {
     const file = FILTER_FILE[type];
 
