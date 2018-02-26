@@ -1510,6 +1510,21 @@ module.exports = class {
       })()
   }
 
+  last60MinTopTransferForInit(json) {
+    return async(() => {
+      const top = await (rclient.hgetallAsync("last60stats"))
+      const keys = Object.keys(top)
+      keys.forEach((key) => {
+        try {
+          top[key] = JSON.parse(top[key])
+        } catch(err) {
+          delete top[key]
+        }
+      })
+      json.last60top = top
+    })()
+  }
+
   last30daysStatsForInit(json) {
     return async(() => {
         let downloadStats = await (getHitsAsync("download", "1day", 30))
@@ -1844,6 +1859,7 @@ module.exports = class {
           let requiredPromises = [
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
+            this.last60MinTopTransferForInit(json),
             this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),

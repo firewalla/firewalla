@@ -51,6 +51,10 @@ class TopTransfer extends Sensor {
     return async(() => {
       const timeSlot = this.getTimeSlot()
       const results = await (flowTool.getAllRecentOutgoingConnectionsMixed(timeSlot))
+      results.forEach((x) => {
+        delete x.device
+        delete x.fd
+      })
       results.sort((x, y) => {
         return y.upload + y.download - x.download - x.upload // sort by traffic
       })      
