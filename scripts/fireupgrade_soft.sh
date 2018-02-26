@@ -31,4 +31,4 @@ touch /home/pi/.firewalla/managed_reboot
 
 # call main-run without restarting firekick
 export NO_FIREKICK_RESTART=1
-${FIREWALLA_HOME}/scripts/main-run
+NO_MGIT_RECOVER=1 ${FIREWALLA_HOME}/scripts/main-run
