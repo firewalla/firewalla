@@ -19,6 +19,8 @@ function marked_git {
     (
     flock -w $LOCK_TIMEOUT 9 || exit 1
 
+    _rc=0
+
     # save repo info
     git remote get-url origin > $mgit_repo/url
     sync
@@ -32,11 +34,13 @@ function marked_git {
     sync
 
     # execute actual git command
-    git "$@" || exit 1
+    git "$@" || _rc=1
 
     # clean up marker afterwards
     rm -f $marker_file
     sync
+
+    exit $_rc
 
     ) 9>$lock_file || return 1
 
