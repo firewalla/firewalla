@@ -219,7 +219,7 @@ module.exports = class DNSMASQ {
     let nextState = this.nextState[type];
     this.state[type] = nextState;
 
-    log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount++}`);
+    log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
 
     if (nextState === true) {
       log.info("Start to update Adblock filters.");
