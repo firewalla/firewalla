@@ -65,6 +65,8 @@ const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
 
+const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -174,6 +176,18 @@ class PolicyManager2 {
     callback = callback || function() {}
 
     callback(null, this.jsonToPolicy(json));
+  }
+
+  updatePolicyAsync(policy) {
+    const pid = policy.pid
+    if(pid) {
+      const policyKey = policyPrefix + pid;
+      return async(() => {
+        await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
+      })()
+    } else {
+      return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+    }
   }
 
   savePolicyAsync(policy) {
@@ -496,6 +510,33 @@ class PolicyManager2 {
   }
 
   enforce(policy) {
+    // auto unenforce if expire time is set
+    if(policy.expire) {
+      const diff = policy.expire - new Date() / 1000 // in seconds
+      if(diff < POLICY_MIN_EXPIRE_TIME) {
+        // skip enforce as it's already expired or expiring
+        log.info(`Skip policy ${policy.pid} as it's already expired`)
+      } else {
+        return async(() => {
+          await (this.enforce(policy))
+          setTimeout(() => {
+            async(() => {
+              log.info(`Revoke policy ${policy.pid}, since it's expired`)
+              await (this.unenforce(policy))
+              await (this.updatePolicyAsync({
+                pid: policy.pid,
+                expired: 1 // flag to indicate that this policy is revoked successfully.
+              }))
+            })()
+          }, diff * 1000) // in milli seconds
+        })()
+      }
+    } else {
+      return this._enforce(policy) // regular enforce
+    }
+  }
+
+  _enforce(policy) {
     log.debug("Enforce policy: ", policy, {});
     log.info("Enforce policy: ", policy.type, policy.target, {});
 
