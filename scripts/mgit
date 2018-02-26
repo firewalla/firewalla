@@ -60,7 +60,7 @@ function get_repo_default {
         ;;
         .node_modules)
         case $item in
-            url)    echo 'https://github.com/firewalla/firewalla.git' ;;
+            url)    echo 'https://github.com/firewalla/fnm.node8.armv7l.git' ;;
             branch) echo 'release_6_0' ;;
         esac
         ;;
