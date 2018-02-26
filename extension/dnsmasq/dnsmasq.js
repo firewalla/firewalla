@@ -180,7 +180,7 @@ module.exports = class DNSMASQ {
   updateFilter(type, force, callback) {
     callback = callback || function() {}
 
-    this.updateTmpFilter(type, force, (err, result) => {
+    this._updateTmpFilter(type, force, (err, result) => {
       if (err) {
         callback(err);
         return;
@@ -225,9 +225,9 @@ module.exports = class DNSMASQ {
       log.info("Start to update Adblock filters.");
       this.updateFilter(true, (err) => {
         if (err) {
-          log.error("Update Adblock filters Failed!", err, {});
+          log.error(`Update ${type} filters Failed!`, err, {});
         } else {
-          log.info("Update Adblock filters successful.");
+          log.info(`Update ${type} filters successful.`);
         }
 
         this.reload().finally(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
@@ -369,7 +369,7 @@ module.exports = class DNSMASQ {
       });
   }
 
-  updateTmpFilter(type, force, callback) {
+  _updateTmpFilter(type, force, callback) {
     callback = callback || function() {}
 
     let mkdirp = require('mkdirp');
@@ -398,12 +398,12 @@ module.exports = class DNSMASQ {
                 return;
               }
 
-              this.loadFilterFromBone(type, (err, hashes) => {
+              this._loadFilterFromBone(type, (err, hashes) => {
                 if(err) {
                   callback(err);
                   return;
                 }
-                this.writeHashFilterFile(hashes, filterFileTmp, (err) => {
+                this._writeHashFilterFile(hashes, filterFileTmp, (err) => {
                   if(err) {
                     callback(err);
                   } else {
@@ -417,12 +417,12 @@ module.exports = class DNSMASQ {
             callback(null, 0);
           }
         } else { // no such file, need to crate one
-          this.loadFilterFromBone(type, (err, hashes) => {
+          this._loadFilterFromBone(type, (err, hashes) => {
             if(err) {
               callback(err);
               return;
             }
-            this.writeHashFilterFile(hashes, filterFileTmp, (err) => {
+            this._writeHashFilterFile(hashes, filterFileTmp, (err) => {
               if(err) {
                 callback(err);
               } else {
@@ -435,7 +435,7 @@ module.exports = class DNSMASQ {
     });
   }
 
-  loadFilterFromBone(type, callback) {
+  _loadFilterFromBone(type, callback) {
     callback = callback || function() {}
 
     const name = f.isProduction() ? this.hashTypes[type] : this.hashTypes[type] + '-dev';
@@ -563,7 +563,7 @@ module.exports = class DNSMASQ {
     });
   }
 
-  writeHashFilterFile(hashes, file, callback) {
+  _writeHashFilterFile(hashes, file, callback) {
     callback = callback || function() {}
 
 
