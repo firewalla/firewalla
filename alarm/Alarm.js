@@ -50,7 +50,12 @@ class Alarm {
   }
 
   getI18NCategory() {
-    return this.type;
+    if(this.result === "block" &&
+    this.result_method === "auto") {
+      return `AUTO_BLOCK_${this.type}`
+    } else {
+      return this.type;
+    }
   }
 
   getInfoCategory() {
