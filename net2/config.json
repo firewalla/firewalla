@@ -191,7 +191,8 @@
 
     "features": {
       "intel:feedback": true,
-      "ss_client:statusCheck": true
+      "ss_client:statusCheck": true,
+      "familyMode": "v1"
     },
     
     "userFeatures": {
