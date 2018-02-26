@@ -39,10 +39,19 @@ module.exports = class {
     const thisTarget = this["i.target"] || this["target"]
     const thatTarget = policy["i.target"] || policy["target"]
 
-    return thisType === thatType && thisTarget === thatTarget
+    return thisType === thatType && thisTarget === thatTarget && this[expire] === policy[expire]
+  }
+
+  isExpired() {
+    const expire = this.expire
+    return expire && parseFloat(expire) < new Date()
   }
 
   match(alarm) {
+
+    if(this.isExpired()) {
+      return false // always return unmatched if policy is already expired
+    }
 
     // for each policy type
     switch(this.type) {
