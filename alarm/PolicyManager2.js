@@ -512,7 +512,7 @@ class PolicyManager2 {
   enforce(policy) {
     // auto unenforce if expire time is set
     if(policy.expire) {
-      const diff = policy.expire - new Date() / 1000 // in seconds
+      const diff = parseFloat(policy.expire) - new Date() / 1000 // in seconds
       if(diff < POLICY_MIN_EXPIRE_TIME) {
         // skip enforce as it's already expired or expiring
         log.info(`Skip policy ${policy.pid} as it's already expired`)
