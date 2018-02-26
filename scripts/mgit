@@ -5,41 +5,122 @@
 # disruptive action, like power off or SD card extraction.
 # ----------------------------------------------------------------------------
 
-MARKER_BASE=$HOME/git_in_progress
+MGIT_DIR=$HOME/.mgit
+MGIT_REPOS=$MGIT_DIR/repos
+LOCK_TIMEOUT=1800
 
 function marked_git {
-    marker_dir=$MARKER_BASE/$1
-    mkdir -p $marker_dir
-    echo $2 > $marker_dir/url
-    echo $3 > $marker_dir/branch
-    shift 3
-    git "$@" || return 1
-    rm -rf $marker_dir
+    toplevel=$(git rev-parse --show-toplevel) || return 1
+    repo_name=$(basename $toplevel)
+    mgit_repo=$MGIT_REPOS/$repo_name
+    lock_file=$MGIT_REPOS/$repo_name/lock
+    marker_file=$MGIT_REPOS/$repo_name/git-in-progress
+    mkdir -p $mgit_repo
+    (
+    flock -w $LOCK_TIMEOUT 9 || exit 1
+
+    _rc=0
+
+    # save repo info
+    git remote get-url origin > $mgit_repo/url
+    sync
+    git rev-parse --abbrev-ref HEAD > $mgit_repo/branch
+    sync
+    echo $toplevel > $mgit_repo/toplevel
+    sync
+
+    # lay down the marker file
+    date > $marker_file
+    sync
+
+    # execute actual git command
+    git "$@" || _rc=1
+
+    # clean up marker afterwards
+    rm -f $marker_file
+    sync
+
+    exit $_rc
+
+    ) 9>$lock_file || return 1
+
+    return 0
+
 }
+
+function get_repo_default {
+    rname=$1
+    item=$2
+    case $rname in
+        firewalla)
+        case $item in
+            url)    echo 'https://github.com/firewalla/firewalla.git' ;;
+            branch) echo 'release_6_0' ;;
+        esac
+        ;;
+        .node_modules)
+        case $item in
+            url)    echo 'https://github.com/firewalla/fnm.node8.armv7l.git' ;;
+            branch) echo 'release_6_0' ;;
+        esac
+        ;;
+    esac
+}
+
 
 function recover {
     _rc=0
-    cd $HOME
-    for wsdir in $(ls -a $MARKER_BASE)
+    for repo_name in $(ls -a $MGIT_REPOS)
     do
-        case $wsdir in
+        case $repo_name in
 
             .|..)
             continue
             ;;
 
             *)
-            repo=$(cat $MARKER_BASE/$wsdir/url)
-            branch=$(cat $MARKER_BASE/$wsdir/branch)
-            rm -rf ${wsdir}.bak
-            mv -f $wsdir ${wsdir}.bak
-            if git clone --branch $branch --single-branch $repo $wsdir
+
+            lock_file=$MGIT_REPOS/$repo_name/lock
+            (
+            flock -w $LOCK_TIMEOUT 9 || exit 1
+
+            need_recover=0
+
+            # recover if marker file found
+            marker_file=$MGIT_REPOS/$repo_name/git-in-progress
+            test -e $marker_file && need_recover=1
+
+            # recover if git status failed inside repo or repo_name dir not found
+            toplevel=$(cat $MGIT_REPOS/$repo_name/toplevel)
+            if [[ -d ${toplevel:=$HOME/$repo_name} ]]
             then
-                rm -rf ${wsdir}.bak
-                rm -rf $MARKER_BASE/$wsdir
+                gs_out=$(cd $toplevel; git status -uno --porcelain) || need_recover=1
             else
-                _rc=1
+                need_recover=1
             fi
+
+            if [[ $need_recover -eq 1 ]]
+            then
+                url=$(cat $MGIT_REPOS/$repo_name/url)
+                branch=$(cat $MGIT_REPOS/$repo_name/branch)
+                cd $(dirname $toplevel)
+                if git clone --branch ${branch:=$(get_repo_default $repo_name branch)} \
+                             --single-branch ${url:=$(get_repo_default $repo_name url)} \
+                             ${repo_name}.recover
+                then
+                    # recover OK
+                    mv ${repo_name} ${repo_name}.old
+                    mv ${repo_name}.recover ${repo_name}
+                    rm -rf ${repo_name}.old
+                    sync
+                    rm -f $marker_file
+                    sync
+                else
+                    # recover failed
+                    exit 1
+                fi
+            fi
+            ) 9>$lock_file ||_rc=1
             ;;
         esac
     done
@@ -55,17 +136,17 @@ rc=0
 if [[ $# -eq 0 ]]; then
     git
 else
-    # Protect file related Git operations(fetch/pull/reset) with marker files
+    mkdir -p $MGIT_REPOS
     case $1 in
+
         fetch|pull|reset)
-            wsdir=$(basename $PWD)
-            repo=$(git remote get-url origin)
-            branch=$(git rev-parse --abbrev-ref HEAD)
-            marked_git $wsdir $repo $branch "$@" || rc=1
+            marked_git "$@" || rc=1
             ;;
+
         recover)
             recover || rc=1
             ;;
+
         *)
             git "$@" || rc=1
             ;;
