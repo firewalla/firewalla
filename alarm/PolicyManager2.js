@@ -65,8 +65,6 @@ const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
 
-const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
-
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -79,17 +77,18 @@ class PolicyManager2 {
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
+        const policy = this.jsonToPolicy(event.policy)
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         async(()=>{
           if (event.action && event.action == 'enforce') {
               try {
-                await(this.enforce(event.policy))
+                await(this.enforce(policy))
               } catch (err) {
                 log.error("enforce policy failed:" + err)
               }
           } else if (event && event.action == 'unenforce') {
               try {
-                await(this.unenforce(event.policy))
+                await(this.unenforce(policy))
               } catch (err) {
                 log.error("failed to unenforce policy:" + err)
               }
@@ -512,10 +511,9 @@ class PolicyManager2 {
   enforce(policy) {
     // auto unenforce if expire time is set
     if(policy.expire) {
-      const diff = parseFloat(policy.expire) - new Date() / 1000 // in seconds
-      if(diff < POLICY_MIN_EXPIRE_TIME) {
+      if(policy.willExpireSoon())  {
         // skip enforce as it's already expired or expiring
-        log.info(`Skip policy ${policy.pid} as it's already expired`)
+        log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
         return async(() => {
           await (this._enforce(policy))
@@ -525,10 +523,10 @@ class PolicyManager2 {
               await (this.unenforce(policy))
               await (this.updatePolicyAsync({
                 pid: policy.pid,
-                expired: 1 // flag to indicate that this policy is revoked successfully.
+                disabled: 1 // flag to indicate that this policy is revoked successfully.
               }))
             })()
-          }, diff * 1000) // in milli seconds
+          }, parseFloat(policy.expire) * 1000) // in milli seconds
         })()
       }
     } else {

@@ -2489,6 +2489,26 @@ module.exports = class {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
   }
 
+  getActiveHumanDevices() {   
+    const HUMAN_TRESHOLD = 0.05
+
+    this.hosts.all.filter((host) => {
+      if(h.o && h.o.mac) {
+        const dtype = h.o.dtype
+        try {
+          const dtypeObject = JSON.parse(dtype)
+          const human = dtypeObject.human
+          return human > HUMAN_TRESHOLD
+        } catch(err) {
+          return false
+        }
+      } else {
+        return false
+      }
+    })   
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null)
+  }
+
   getActiveHostsFromSpoofList(limit) {
     return async(() => {
       let activeHosts = []

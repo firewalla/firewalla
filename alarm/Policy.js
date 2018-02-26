@@ -21,6 +21,8 @@ const extend = require('util')._extend
 
 const minimatch = require("minimatch")
 
+const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
+
 
 module.exports = class {
   constructor(info) {
@@ -43,8 +45,21 @@ module.exports = class {
   }
 
   isExpired() {
-    const expire = this.expire
-    return expire && parseFloat(expire) < new Date()
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000
+  }
+
+  willExpireSoon() {
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000 + POLICY_MIN_EXPIRE_TIME
+  }
+
+  getWhenExpired() {
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire)
   }
 
   match(alarm) {

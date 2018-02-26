@@ -43,8 +43,6 @@ const categoryHashsetMapping = {
   "social": "app.social"
 }
 
-let globalLock = false
-
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
