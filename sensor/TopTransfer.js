@@ -46,7 +46,7 @@ class TopTransfer extends Sensor {
   getKey() {
     return "last60stats"
   }
-  
+
   job() {
     return async(() => {
       const timeSlot = this.getTimeSlot()
@@ -54,12 +54,13 @@ class TopTransfer extends Sensor {
       results.sort((x, y) => {
         return y.upload + y.download - x.download - x.upload // sort by traffic
       })      
-      const timeKey = timeSlot % 60
+      const timeKey = (timeSlot.begin / 60) % 60
       return rclient.hsetAsync(this.getKey(), timeKey, JSON.stringify(results.slice(0,3))) // top 3
     })()
   }
 
   run() {
+    this.job();
     setInterval(() => {
       this.job();
     }, this.config.interval || 1000 * 50); // every 50 seconds
