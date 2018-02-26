@@ -10,19 +10,21 @@ MGIT_REPOS=$MGIT_DIR/repos
 LOCK_TIMEOUT=1800
 
 function marked_git {
-    repo_name=$(basename $PWD)
+    toplevel=$(git rev-parse --show-toplevel) || return 1
+    repo_name=$(basename $toplevel)
     mgit_repo=$MGIT_REPOS/$repo_name
     lock_file=$MGIT_REPOS/$repo_name/lock
     marker_file=$MGIT_REPOS/$repo_name/git-in-progress
+    mkdir -p $mgit_repo
     (
     flock -w $LOCK_TIMEOUT 9 || exit 1
 
-
     # save repo info
-    mkdir -p $mgit_repo
     git remote get-url origin > $mgit_repo/url
     sync
     git rev-parse --abbrev-ref HEAD > $mgit_repo/branch
+    sync
+    echo $toplevel > $mgit_repo/toplevel
     sync
 
     # lay down the marker file
@@ -30,11 +32,12 @@ function marked_git {
     sync
 
     # execute actual git command
-    git "$@" || _rc=1
+    git "$@" || exit 1
 
     # clean up marker afterwards
     rm -f $marker_file
     sync
+
     ) 9>$lock_file || return 1
 
     return 0
@@ -63,7 +66,6 @@ function get_repo_default {
 
 function recover {
     _rc=0
-    cd $HOME
     for repo_name in $(ls -a $MGIT_REPOS)
     do
         case $repo_name in
@@ -74,28 +76,30 @@ function recover {
 
             *)
 
+            lock_file=$MGIT_REPOS/$repo_name/lock
+            (
+            flock -w $LOCK_TIMEOUT 9 || exit 1
+
             need_recover=0
 
             # recover if marker file found
             marker_file=$MGIT_REPOS/$repo_name/git-in-progress
             test -e $marker_file && need_recover=1
 
-            if [[ -d $repo_name ]]
+            # recover if git status failed inside repo or repo_name dir not found
+            toplevel=$(cat $MGIT_REPOS/$repo_name/toplevel)
+            if [[ -d ${toplevel:=$HOME/$repo_name} ]]
             then
-                # recover if git status failed inside repo_name dir
-                gs_out=$(cd $repo_name; git status -uno --porcelain) || need_recover=1
+                gs_out=$(cd $toplevel; git status -uno --porcelain) || need_recover=1
             else
-                # recover if repo_name dir not found
                 need_recover=1
             fi
 
             if [[ $need_recover -eq 1 ]]
             then
-                lock_file=$MGIT_REPOS/$repo_name/lock
-                (
-                flock -w $LOCK_TIMEOUT 9 || exit 1
                 url=$(cat $MGIT_REPOS/$repo_name/url)
                 branch=$(cat $MGIT_REPOS/$repo_name/branch)
+                cd $(dirname $toplevel)
                 if git clone --branch ${branch:=$(get_repo_default $repo_name branch)} \
                              --single-branch ${url:=$(get_repo_default $repo_name url)} \
                              ${repo_name}.recover
@@ -111,8 +115,8 @@ function recover {
                     # recover failed
                     exit 1
                 fi
-                ) 9>$lock_file ||_rc=1
             fi
+            ) 9>$lock_file ||_rc=1
             ;;
         esac
     done
@@ -132,11 +136,11 @@ else
     case $1 in
 
         fetch|pull|reset)
-            marked_git "$@" || exit 1
+            marked_git "$@" || rc=1
             ;;
 
         recover)
-            recover || exit 1
+            recover || rc=1
             ;;
 
         *)
