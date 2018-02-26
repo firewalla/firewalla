@@ -518,7 +518,7 @@ class PolicyManager2 {
         log.info(`Skip policy ${policy.pid} as it's already expired`)
       } else {
         return async(() => {
-          await (this.enforce(policy))
+          await (this._enforce(policy))
           setTimeout(() => {
             async(() => {
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
