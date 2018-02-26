@@ -36,5 +36,7 @@
   "INFO_ALARM_BRO_NOTICE": "{{p.message}} {{localizedRelativeTime}}",
   "INFO_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} ({{p.dest.ip}}) accessed device {{p.device.name}} ({{p.device.ip}}:{{p.device.port}}) {{localizedRelativeTime}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "INFO_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} accessed {{p.dest.name}}:{{p.dest.port}} {{localizedRelativeTime}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
-  "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware"
+  "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware",
+  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing device {{p.device.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
+  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)"
 }

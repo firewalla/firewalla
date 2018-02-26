@@ -1513,15 +1513,22 @@ module.exports = class {
   last60MinTopTransferForInit(json) {
     return async(() => {
       const top = await (rclient.hgetallAsync("last60stats"))
-      const keys = Object.keys(top)
-      keys.forEach((key) => {
+      let values = Object.values(top)
+
+      values = values.map((value) => {
         try {
-          top[key] = JSON.parse(top[key])
+          return JSON.parse(value)
         } catch(err) {
-          delete top[key]
+          return null
         }
       })
-      json.last60top = top
+
+      values.sort((x, y) => {
+        return x.ts - y.ts
+      })
+
+      json.last60top = values
+      
     })()
   }
 

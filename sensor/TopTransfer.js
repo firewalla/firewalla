@@ -54,12 +54,33 @@ class TopTransfer extends Sensor {
       results.forEach((x) => {
         delete x.device
         delete x.fd
+        delete x.duration
+        delete x.country
       })
-      results.sort((x, y) => {
-        return y.upload + y.download - x.download - x.upload // sort by traffic
-      })      
+      
+      const topDownloads = JSON.parse(JSON.stringify(results))
+      topDownloads.sort((x, y) => {
+        return y.download - x.download
+      })
+      topDownloads.forEach((x) => {
+        delete x.upload
+      })
+
+      const topUploads = JSON.parse(JSON.stringify(results))
+      topUploads.sort((x, y) => {
+        return y.upload - x.upload
+      })
+      topUploads.forEach((x) => {
+        delete x.download
+      })
+
       const timeKey = (timeSlot.begin / 60) % 60
-      return rclient.hsetAsync(this.getKey(), timeKey, JSON.stringify(results.slice(0,3))) // top 3
+      const value = {
+        download: topDownloads[0],
+        upload: topUploads[0],
+        ts: timeSlot.begin
+      }
+      return rclient.hsetAsync(this.getKey(), timeKey, JSON.stringify(value))
     })()
   }
 
