@@ -139,7 +139,7 @@ router.post('/:policy/enable',
 
     return async(() => {
       let policy = await (pm2.getPolicy(id))
-      await (pm2.enablePolicy(id))
+      await (pm2.enablePolicy(policy))
       res.status(200).json({status: "success"});
     })().catch((err) => {
       res.status(400).send('Failed to enable policy: ' + err);
@@ -152,7 +152,7 @@ router.post('/:policy/disable',
 
     return async(() => {
       let policy = await (pm2.getPolicy(id))
-      await (pm2.disablePolicy(id))
+      await (pm2.disablePolicy(policy))
       res.status(200).json({status: "success"});
     })().catch((err) => {
       res.status(400).send('Failed to disable policy: ' + err);

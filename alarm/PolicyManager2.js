@@ -567,11 +567,14 @@ class PolicyManager2 {
   // this is the real execution of enable and disable policy
   _enablePolicy(policy) {
     return async(() => {
+      const now = new Date() / 1000
       await (this.updatePolicyAsync({
         pid: policy.pid,
-        disabled: 0
+        disabled: 0,
+        activatedTime: now
       }))
       policy.disabled = 0
+      policy.activatedTime = now
       return policy
     })()
   }
