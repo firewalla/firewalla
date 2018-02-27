@@ -194,7 +194,7 @@ class PolicyManager2 {
   }
 
   createPolicyFromJson(json, callback) {
-    callback = callback || function() {}
+    callback = callback || function() {}    
 
     callback(null, this.jsonToPolicy(json));
   }
@@ -402,6 +402,11 @@ class PolicyManager2 {
   jsonToPolicy(json) {
     if(!json) {
       return null;
+    }
+
+    // convert array to string so that redis can store it as value
+    if(json.scope && json.scope.constructor.name === 'Array') {
+      json.scope = JSON.stringify(json.scope)
     }
     
     let proto = Policy.prototype;

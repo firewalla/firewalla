@@ -57,15 +57,15 @@ function setupBlockChain() {
 }
 
 function getMacSet(tag) {
-  return `c_bms_${tag}_set`
+  return `c_bm_${tag}_set`
 }
 
 function getDstSet(tag) {
-  return `c_bds_${tag}_set`
+  return `c_bd_${tag}_set`
 }
 
 function getDstSet6(tag) {
-  return `c_bds_${tag}_set6`
+  return `c_bd_${tag}_set6`
 }
 
 function setupBlockingEnv(tag) {
