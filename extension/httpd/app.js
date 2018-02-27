@@ -6,6 +6,7 @@ const express = require('express');
 const https = require('https');
 const forge = require('node-forge');
 const qs = require('querystring');
+const path = require('path');
 const intel = require('./intel.js');
 
 const port = 80;
@@ -24,7 +25,7 @@ class App {
   constructor() {
     this.app = express();
     this.app.engine('pug', require('pug').__express);
-    this.app.set('views', './firewalla_views');
+    this.app.set('views', path.join(__dirname, viewsPath));
     this.app.set('view engine', 'pug');
     this.routes();
   }
