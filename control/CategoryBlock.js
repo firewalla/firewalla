@@ -68,7 +68,7 @@ class CategoryBlock {
         list.forEach((domain) => {
           await (domainBlock.blockDomain(domain, {ignoreApplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
         })
-        await (domainBlock.applyBlock("")) // this will create ipset rules
+        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
     })()
   }
@@ -80,7 +80,7 @@ class CategoryBlock {
     domainBlock.externalMapping = this.getMapping(category)
 
     return async(() => {
-      await (domainBlock.unapplyBlock("").catch((err) => undefined)) // this will remove ipset rules
+      await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       const list = await (this.loadDomains(category))
       if(list && list.length > 0) {
         list.forEach((domain) => {

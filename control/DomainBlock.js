@@ -145,22 +145,25 @@ class DomainBlock {
   }
   
   applyBlock(domain, options) {
+    const blockSet = options.blockSet || "blocked_domain_set"
     return async(() => {
       const addresses = await (this.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
-          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
+          await (Block.block(addr, blockSet).catch((err) => undefined))
         })
       }
     })()
   }
 
   unapplyBlock(domain, options) {
+    const blockSet = options.blockSet || "blocked_domain_set"
+
     return async(() => {
       const addresses = await (this.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
-          await (Block.unblock(addr, "blocked_domain_set").catch((err) => undefined))
+          await (Block.unblock(addr, blockSet).catch((err) => undefined))
         })
       }
     })()
