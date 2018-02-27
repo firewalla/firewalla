@@ -129,4 +129,28 @@ router.delete('/:policy',
                 });
             });
 
+router.post('/:policy/enable',
+(req, res, next) => {
+  let id = req.params.policy;
+
+  pm2.enablePolicy(id)
+    .then(() => {
+      res.status(200).json({status: "success"});
+    }).catch((err) => {
+      res.status(400).send('Failed to delete policy: ' + err);
+    });
+});
+
+router.post('/:policy/disable',
+(req, res, next) => {
+  let id = req.params.policy;
+
+  pm2.disablePolicy(id)
+    .then(() => {
+      res.status(200).json({status: "success"});
+    }).catch((err) => {
+      res.status(400).send('Failed to delete policy: ' + err);
+    });
+});
+
 module.exports = router;
