@@ -60,7 +60,8 @@ class PolicyScheduler {
     }
     
     try {
-      const job = new CronJob(cronTime, function() {
+      log.info(`Registering policy ${policy.pid} for reoccuring`)
+      const job = new CronJob(cronTime, () => {
         this.policyTick(policy)
       }, 
       () => {},
@@ -82,15 +83,17 @@ class PolicyScheduler {
     const pid = policy.pid
     if(pid == undefined) {
       // ignore
-      return
+      return Promise.resolve()
     }
 
     const job = runningCronJobs[pid]
     if(!job) {
-      return // already deregistered
+      return Promise.resolve() // already deregistered
     }
 
     return async(() => {
+      log.info(`Deregistering policy ${policy.pid} for reoccuring`)
+
       // cleanup... stop the job, unenforce and remove job entry from runningJobs
       job.stop()
       if(enforcedPolicies[pid]) {
@@ -110,7 +113,7 @@ class PolicyScheduler {
     const pid = policy.pid
     if(pid == undefined) {
       // ignore
-      return
+      return Promise.resolve()
     }
 
     return async(() => {
@@ -119,6 +122,7 @@ class PolicyScheduler {
         // already running, do nothing
       } else {
         // not running yet
+        log.info(`Enforcing policy ${policy.pid}`)
         if(this.enforceCallback) {
           await (this.enforceCallback(policy))
         }
@@ -131,16 +135,25 @@ class PolicyScheduler {
 
   // this is a guard tick to ensure policy is unenforced if time is outside the cron active period
   tickGuard(policy) {
-    async(() => {
-      const flag = enforcedPolicies[policy]
-      if(flag) {
+    const pid = policy.pid
+    if(pid == undefined) {
+      // ignore
+      return Promise.resolve()
+    }
+
+    return async(() => {
+      const flag = enforcedPolicies[pid]
+      const job = runningCronJobs[pid]
+      if(flag && job) {
         const lastExecutionDate = job.lastDate() / 1000
         const now = new Date() / 1000
         if(now - lastExecutionDate > INVALIDATE_POLICY_TRESHOLD) {
+          log.info(`Unenforcing policy ${policy.pid}`)
+
           if(this.unenforceCallback) {
             await (this.unenforceCallback(policy))
           }
-          delete enforcedPolicies[policy]
+          delete enforcedPolicies[pid]
         }
       }
     })()

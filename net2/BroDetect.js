@@ -1436,7 +1436,7 @@ module.exports = class {
 //                log.error("Notice:Drop My IP", obj);
                 return;
             }
-            log.info("Notice:Processing",obj);
+            log.debug("Notice:Processing",obj);
             if (this.config.bro.notice.ignore[obj.note] == null) {
                 let strdata = JSON.stringify(obj);
                 let key = "notice:" + obj.src;

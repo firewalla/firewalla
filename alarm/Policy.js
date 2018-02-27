@@ -41,7 +41,7 @@ module.exports = class {
     const thisTarget = this["i.target"] || this["target"]
     const thatTarget = policy["i.target"] || policy["target"]
 
-    return thisType === thatType && thisTarget === thatTarget && this.expire === policy.expire
+    return thisType === thatType && thisTarget === thatTarget && this.expire === policy.expire && this.cronTime === policy.cronTime
   }
 
   isExpired() {
