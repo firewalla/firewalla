@@ -1818,6 +1818,37 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, null, err, callback)
       })                 
       break;
+    case "policy:enable":
+      async(() => {
+        const policyID = msg.data.value.policyID
+        if(policyID) {
+          let policy = await (pm2.getPolicy(msg.data.value.policyID))
+          if(policy) {
+            await (pm2.enablePolicy(policy))
+            this.simpleTxData(msg, policy, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+          }
+        } else {
+          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
+        }
+      })()
+
+    case "policy:disable":
+    async(() => {
+      const policyID = msg.data.value.policyID
+      if(policyID) {
+        let policy = await (pm2.getPolicy(msg.data.value.policyID))
+        if(policy) {
+          await (pm2.disablePolicy(policy))
+          this.simpleTxData(msg, policy, null, callback);
+        } else {
+          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+        }
+      } else {
+        this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
+      }
+    })()
 
       case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
@@ -2091,7 +2122,20 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, err, callback)
       })
       break
-    }      
+    }
+    case "releaseMonkey": {
+      async(() => {
+        sem.emitEvent({
+          type: "ReleaseMonkey",
+          message: "Release a monkey to test system",
+          toProcess: 'FireMain'
+        })
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);

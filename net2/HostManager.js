@@ -1510,6 +1510,28 @@ module.exports = class {
       })()
   }
 
+  last60MinTopTransferForInit(json) {
+    return async(() => {
+      const top = await (rclient.hgetallAsync("last60stats"))
+      let values = Object.values(top)
+
+      values = values.map((value) => {
+        try {
+          return JSON.parse(value)
+        } catch(err) {
+          return null
+        }
+      })
+
+      values.sort((x, y) => {
+        return x.ts - y.ts
+      })
+
+      json.last60top = values
+
+    })()
+  }
+
   last30daysStatsForInit(json) {
     return async(() => {
         let downloadStats = await (getHitsAsync("download", "1day", 30))
@@ -1844,6 +1866,7 @@ module.exports = class {
           let requiredPromises = [
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
+//            this.last60MinTopTransferForInit(json),
             this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
@@ -2487,6 +2510,26 @@ module.exports = class {
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+  }
+
+  getActiveHumanDevices() {   
+    const HUMAN_TRESHOLD = 0.05
+
+    this.hosts.all.filter((host) => {
+      if(h.o && h.o.mac) {
+        const dtype = h.o.dtype
+        try {
+          const dtypeObject = JSON.parse(dtype)
+          const human = dtypeObject.human
+          return human > HUMAN_TRESHOLD
+        } catch(err) {
+          return false
+        }
+      } else {
+        return false
+      }
+    })   
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null)
   }
 
   getActiveHostsFromSpoofList(limit) {

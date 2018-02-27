@@ -1215,6 +1215,10 @@ module.exports = class {
       if(obj["san.dns"] && obj["san.dns"].constructor === Array) {
         obj["san.dns"] = JSON.stringify(obj["san.dns"]);
       }
+
+      if(obj["san.ip"] && obj["san.ip"].constructor === Array) {
+        obj["san.ip"] = JSON.stringify(obj["san.ip"]);
+      }
     }
 
 /*
@@ -1436,7 +1440,7 @@ module.exports = class {
 //                log.error("Notice:Drop My IP", obj);
                 return;
             }
-            log.info("Notice:Processing",obj);
+            log.debug("Notice:Processing",obj);
             if (this.config.bro.notice.ignore[obj.note] == null) {
                 let strdata = JSON.stringify(obj);
                 let key = "notice:" + obj.src;

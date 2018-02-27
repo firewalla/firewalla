@@ -11,6 +11,10 @@ sudo ipset flush blocked_ip_set
 sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 
+# This is to remove all customized ip sets, to have a clean start
+for set in `sudo ipset list -name | egrep "^c_"`; do
+  sudo ipset destroy -! $set
+done
 
 #FIXME: ignore if failed or not
 sudo iptables -N FW_BLOCK &>/dev/null
