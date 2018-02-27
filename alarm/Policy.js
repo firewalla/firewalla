@@ -64,7 +64,11 @@ module.exports = class {
 
   getExpireDiffFromNow() {
     return this.getWhenExpired() - new Date() / 1000
-  }  
+  }
+
+  isDisabled() {
+    return this.disabled == '1'
+  }
 
   match(alarm) {
 

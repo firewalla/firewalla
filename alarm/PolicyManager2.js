@@ -568,6 +568,12 @@ class PolicyManager2 {
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           setTimeout(() => {
             async(() => {
+              // make sure policy is still enabled before disabling it
+              const policy = await (this.getPolicy(policy.pid))
+              if(policy.isDisabled()) {
+                return
+              }
+
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
               await (this.unenforce(policy))
               await (this._disablePolicy(policy)) 

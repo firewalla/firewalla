@@ -42,8 +42,7 @@ class NaughtyMonkeySensor extends Sensor {
       if(fc.isFeatureOn("naughty_monkey")) {
         await (this.delay(this.getRandomTime()))
 
-        // do stuff   
-        this.malware()
+        this.release()
       }
     })()
   }
@@ -60,6 +59,11 @@ class NaughtyMonkeySensor extends Sensor {
     } else {
       return null
     }
+  }
+
+  release() {
+    // do stuff   
+    this.malware()
   }
 
   malware() {
@@ -86,8 +90,14 @@ class NaughtyMonkeySensor extends Sensor {
 
     // if(!f.isDevelopmentVersion()) {
     //   return // do nothing if non dev version
-    // }
+    // }    
     this.job()
+
+    sem.on('ReleaseMonkey', (event) => {
+      if(fc.isFeatureOn("naughty_monkey")) {
+        this.release()
+      }
+    })
 
     setInterval(() => {
       this.job()
