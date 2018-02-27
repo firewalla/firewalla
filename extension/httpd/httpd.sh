@@ -2,4 +2,4 @@
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
-sudo node $DIR/app.js
+sudo /home/pi/firewalla/bin/node $DIR/app.js
