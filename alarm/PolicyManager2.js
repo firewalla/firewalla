@@ -523,6 +523,7 @@ class PolicyManager2 {
       } else {
         return async(() => {
           await (this._enforce(policy))
+          log.info(`Will auto revoke policy ${policy.pid} in ${policy.getExpireDiffFromNow()} seconds`)
           setTimeout(() => {
             async(() => {
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
@@ -532,7 +533,7 @@ class PolicyManager2 {
                 disabled: 1 // flag to indicate that this policy is revoked successfully.
               }))
             })()
-          }, parseFloat(policy.expire) * 1000) // in milli seconds
+          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
         })()
       }
     } else {

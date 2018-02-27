@@ -62,6 +62,10 @@ module.exports = class {
     return parseFloat(activatedTime) + parseFloat(expire)
   }
 
+  getExpireDiffFromNow() {
+    return this.getWhenExpired() - new Date() / 1000
+  }  
+
   match(alarm) {
 
     if(this.isExpired()) {
