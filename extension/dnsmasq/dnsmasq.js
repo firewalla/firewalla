@@ -222,7 +222,7 @@ module.exports = class DNSMASQ {
     log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
 
     if (nextState === true) {
-      log.info("Start to update Adblock filters.");
+      log.info(`Start to update ${type} filters.`);
       this.updateFilter(type, true, (err) => {
         if (err) {
           log.error(`Update ${type} filters Failed!`, err, {});
@@ -241,7 +241,7 @@ module.exports = class DNSMASQ {
 
       log.info(`Start to clean up ${type} filters.`);
       this.cleanUpFilter(type)
-        .catch(err => log.error('Error when clean up adblock filters', err, {}))
+        .catch(err => log.error(`Error when clean up ${type} filters`, err, {}))
         .then(() => this.reload().finally(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
     }
   }
