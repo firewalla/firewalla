@@ -187,7 +187,7 @@ function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {
     await (setupBlockingEnv(tag))
     macAddresses.forEach((mac) => {
-      await (advancedBlockMAC(mac))
+      await (advancedBlockMAC(mac, getMacSet(tag)))
     })
     destinations.forEach((addr) => {
       await (block(addr, getDstSet(tag)))
@@ -198,7 +198,7 @@ function advancedBlock(tag, macAddresses, destinations) {
 function advancedUnblock(tag, macAddresses, destinations) {
   return async(() => {
     macAddresses.forEach((mac) => {
-      await (advancedUnblockMAC(mac))
+      await (advancedUnblockMAC(mac, getMacSet(tag)))
     })
     destinations.forEach((addr) => {
       await (unblock(addr, getDstSet(tag)))
