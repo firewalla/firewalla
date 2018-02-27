@@ -92,7 +92,7 @@ class PolicyManager2 {
             } catch (err) {
               log.error("enforce policy failed:" + err)
             }
-          } else if (event && event.action == 'unenforce') {
+          } else if (event && event.action == 'unenforce_and_delete') {
             try {
               await(this.unenforce(policy))
             } catch (err) {
@@ -103,6 +103,12 @@ class PolicyManager2 {
               await(this.deletePolicy(event.policy.pid))
             } catch (err) {
               log.error("failed to delete policy:" + err)
+            }
+          } else if (event && event.action == 'unenforce') {
+            try {
+              await(this.unenforce(policy))
+            } catch (err) {
+              log.error("failed to unenforce policy:" + err)
             }
           } else {
             log.error("unrecoganized policy enforcement action:" + event.action)
@@ -349,7 +355,7 @@ class PolicyManager2 {
     }
     
     return p.then((policy) => {
-      this.tryPolicyEnforcement(policy, "unenforce")
+      this.tryPolicyEnforcement(policy, "unenforce_and_delete")
 
       Bone.submitIntelFeedback('unblock', policy, 'policy');
       return Promise.resolve()
