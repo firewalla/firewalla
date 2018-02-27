@@ -24,6 +24,9 @@ let iptool = require("ip");
 
 let inited = false;
 
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 const BLACK_HOLE_IP="198.51.100.99";
 
 const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
@@ -78,6 +81,7 @@ function setupBlockingEnv(tag) {
 
     const cmdCreateMacSet = `sudo ipset create ${macSet} hash:mac`
     const cmdCreateDstSet = `sudo ipset create ${dstSet} hash:ip family inet hashsize 128 maxelem 65536`
+    const cmdCreateDstSet6 = `sudo ipset create ${dstSet6} hash:ip family inet6 hashsize 128 maxelem 65536`
     const cmdCreateOutgoingRule = `sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
     const cmdCreateIncomingRule = `sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
     const cmdCreateOutgoingTCPRule = `sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
@@ -89,6 +93,7 @@ function setupBlockingEnv(tag) {
 
     await (exec(cmdCreateMacSet))
     await (exec(cmdCreateDstSet))
+    await (exec(cmdCreateDstSet6))
     await (exec(cmdCreateOutgoingRule))
     await (exec(cmdCreateIncomingRule))
     await (exec(cmdCreateOutgoingTCPRule))
@@ -119,30 +124,34 @@ function destroyBlockingEnv(tag) {
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
   return async(() => {
-    const macSet = `c_bms_${tag}`
-    const dstSet = `c_bds_${tag}`
+    const macSet = getMacSet(tag)
+    const dstSet = getDstSet(tag)
+    const dstSet6 = getDstSet6(tag)
 
-    const cmdCreateOutgoingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
-    const cmdCreateIncomingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
-    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
-    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
-    const cmdCreateOutgoingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
-    const cmdCreateIncomingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
-    const cmdCreateOutgoingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
-    const cmdCreateIncomingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
-    const cmdCreateMacSet = `sudo ipset destroy ${macSet}`
-    const cmdCreateDstSet = `sudo ipset destroy ${dstSet}`
+    const cmdDeleteOutgoingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
+    const cmdDeleteIncomingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
+    const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
+    const cmdDeleteOutgoingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
+    const cmdDeleteIncomingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
+    const cmdDeleteOutgoingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
+    const cmdDeleteMacSet = `sudo ipset destroy ${macSet}`
+    const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`
+    const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`
 
-    await (exec(cmdCreateOutgoingRule6))
-    await (exec(cmdCreateIncomingRule6))
-    await (exec(cmdCreateOutgoingTCPRule6))
-    await (exec(cmdCreateIncomingTCPRule6))
-    await (exec(cmdCreateOutgoingRule))
-    await (exec(cmdCreateIncomingRule))
-    await (exec(cmdCreateOutgoingTCPRule))
-    await (exec(cmdCreateIncomingTCPRule))
-    await (exec(cmdCreateMacSet))
-    await (exec(cmdCreateDstSet))
+    await (exec(cmdDeleteOutgoingRule6))
+    await (exec(cmdDeleteIncomingRule6))
+    await (exec(cmdDeleteOutgoingTCPRule6))
+    await (exec(cmdDeleteIncomingTCPRule6))
+    await (exec(cmdDeleteOutgoingRule))
+    await (exec(cmdDeleteIncomingRule))
+    await (exec(cmdDeleteOutgoingTCPRule))
+    await (exec(cmdDeleteIncomingTCPRule))
+    await (exec(cmdDeleteMacSet))
+    await (exec(cmdDeleteDstSet))
+    await (exec(cmdDeleteDstSet6))
+
   })()
 }
 
