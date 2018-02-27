@@ -326,7 +326,7 @@ class PolicyManager2 {
 
   disablePolicy(policy) {
     return async(() => {
-      if(policy.disabled) {
+      if(policy.disabled == '1') {
         return // do nothing, since it's already disabled
       }
       await (this._disablePolicy(policy))
