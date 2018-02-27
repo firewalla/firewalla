@@ -1215,6 +1215,10 @@ module.exports = class {
       if(obj["san.dns"] && obj["san.dns"].constructor === Array) {
         obj["san.dns"] = JSON.stringify(obj["san.dns"]);
       }
+
+      if(obj["san.ip"] && obj["san.ip"].constructor === Array) {
+        obj["san.ip"] = JSON.stringify(obj["san.ip"]);
+      }
     }
 
 /*
