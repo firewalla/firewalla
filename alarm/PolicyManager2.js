@@ -15,10 +15,10 @@
 
 'use strict'
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const redis = require('redis');
+const rclient = redis.createClient();
 
 let flat = require('flat');
 
@@ -64,6 +64,8 @@ const dnsTool = new DNSTool()
 const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
+
+const scheduler = require('../extension/scheduler/scheduler.js')()
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -581,6 +583,9 @@ class PolicyManager2 {
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
         })()
       }
+    } else if (policy.cronTime) {
+      // this is a reoccuring policy, use scheduler to manage it
+      return scheduler.registerPolicy(policy)
     } else {
       return this._enforce(policy) // regular enforce
     }
@@ -614,44 +619,69 @@ class PolicyManager2 {
     })()
   }
 
+  _refreshActivatedTime(policy) {
+    return async(() => {
+      const now = new Date() / 1000
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        activatedTime: now
+      }))
+      policy.activatedTime = now
+      return policy
+    })()
+  }
+
   _enforce(policy) {
     log.debug("Enforce policy: ", policy, {});
     log.info("Enforce policy: ", policy.type, policy.target, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    if(this.isFirewallaCloud(policy)) {
-      return Promise.reject(new Error("Firewalla cloud can't be blocked."))
-    }
+    return async(() => {
+      await (this._refreshActivatedTime(policy))
 
-    switch(type) {
-    case "ip":
-      return Block.block(policy.target);
-      break;
-    case "mac":
-      let blockMacAsync = Promise.promisify(Block.blockMac);
-      return blockMacAsync(policy.target);
-      break;
-    case "domain":
-    case "dns":    
-      return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
-      break;
-    case "devicePort":
-      return async(() => {
-        let data = await (this.parseDevicePortRule(policy.target))
-        if(data) {
-          Block.blockPublicPort(data.ip, data.port, data.protocol)
-        }
-      })()
-      break;
-    case "category":
-      return categoryBlock.blockCategory(policy.target)
-    default:
-      return Promise.reject("Unsupported policy");
-    }
+      if(this.isFirewallaCloud(policy)) {
+        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      }
+  
+      switch(type) {
+      case "ip":
+        return Block.block(policy.target);
+        break;
+      case "mac":
+        let blockMacAsync = Promise.promisify(Block.blockMac);
+        return blockMacAsync(policy.target);
+        break;
+      case "domain":
+      case "dns":    
+        return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+        break;
+      case "devicePort":
+        return async(() => {
+          let data = await (this.parseDevicePortRule(policy.target))
+          if(data) {
+            Block.blockPublicPort(data.ip, data.port, data.protocol)
+          }
+        })()
+        break;
+      case "category":
+        return categoryBlock.blockCategory(policy.target)
+      default:
+        return Promise.reject("Unsupported policy");
+      }
+    })()    
   }
 
   unenforce(policy) {
+    if (policy.cronTime) {
+      // this is a reoccuring policy, use scheduler to manage it
+      return scheduler.deregisterPolicy(policy)
+    } else {
+      return this._unenforce(policy) // regular unenforce
+    }
+  }
+
+  _unenforce(policy) {
     log.info("Unenforce policy: ", policy, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
@@ -667,12 +697,12 @@ class PolicyManager2 {
     case "dns":
       return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
     case "devicePort":
-       return async(() => {
-        let data = await (this.parseDevicePortRule(policy.target))
-        if(data) {
-          Block.unblockPublicPort(data.ip, data.port, data.protocol)
-        }
-       })()
+      return async(() => {
+      let data = await (this.parseDevicePortRule(policy.target))
+      if(data) {
+        Block.unblockPublicPort(data.ip, data.port, data.protocol)
+      }
+      })()
       break;
     case "category":
       return categoryBlock.unblockCategory(policy.target)
