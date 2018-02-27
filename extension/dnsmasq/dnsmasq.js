@@ -223,7 +223,7 @@ module.exports = class DNSMASQ {
 
     if (nextState === true) {
       log.info("Start to update Adblock filters.");
-      this.updateFilter(true, (err) => {
+      this.updateFilter(type, true, (err) => {
         if (err) {
           log.error(`Update ${type} filters Failed!`, err, {});
         } else {
