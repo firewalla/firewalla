@@ -81,23 +81,23 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         async(()=>{
           if (event.action && event.action == 'enforce') {
-              try {
-                await(this.enforce(policy))
-              } catch (err) {
-                log.error("enforce policy failed:" + err)
-              }
+            try {
+              await(this.enforce(policy))
+            } catch (err) {
+              log.error("enforce policy failed:" + err)
+            }
           } else if (event && event.action == 'unenforce') {
-              try {
-                await(this.unenforce(policy))
-              } catch (err) {
-                log.error("failed to unenforce policy:" + err)
-              }
-              
-              try {
-                await(this.deletePolicy(event.policy.pid))
-              } catch (err) {
-                log.error("failed to delete policy:" + err)
-              }
+            try {
+              await(this.unenforce(policy))
+            } catch (err) {
+              log.error("failed to unenforce policy:" + err)
+            }
+            
+            try {
+              await(this.deletePolicy(event.policy.pid))
+            } catch (err) {
+              log.error("failed to delete policy:" + err)
+            }
           } else {
             log.error("unrecoganized policy enforcement action:" + event.action)
           }
@@ -307,6 +307,32 @@ class PolicyManager2 {
         })
       })
     })();
+  }
+
+  // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
+  // So cross-process communication is used
+  // the real execution is on FireMain, check out _enablePolicy and _disablePolicy below
+  enablePolicy(policy) {
+    return async(() => {
+      if(policy.disabled != '1') {
+        return policy // do nothing, since it's already enabled
+      }
+      await (this._enablePolicy(policy))
+      this.tryPolicyEnforcement(policy, "enforce")
+      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      return policy
+    })()
+  }
+
+  disablePolicy(policy) {
+    return async(() => {
+      if(policy.disabled) {
+        return // do nothing, since it's already disabled
+      }
+      await (this._disablePolicy(policy))
+      this.tryPolicyEnforcement(policy, "unenforce")
+      Bone.submitIntelFeedback('disable', policy, 'policy')
+    })()
   }
 
   disableAndDeletePolicy(policyID) {
@@ -523,15 +549,12 @@ class PolicyManager2 {
       } else {
         return async(() => {
           await (this._enforce(policy))
-          log.info(`Will auto revoke policy ${policy.pid} in ${policy.getExpireDiffFromNow()} seconds`)
+          log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           setTimeout(() => {
             async(() => {
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
               await (this.unenforce(policy))
-              await (this.updatePolicyAsync({
-                pid: policy.pid,
-                disabled: 1 // flag to indicate that this policy is revoked successfully.
-              }))
+              await (this._disablePolicy(policy)) 
             })()
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
         })()
@@ -539,6 +562,29 @@ class PolicyManager2 {
     } else {
       return this._enforce(policy) // regular enforce
     }
+  }
+
+  // this is the real execution of enable and disable policy
+  _enablePolicy(policy) {
+    return async(() => {
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        disabled: 0
+      }))
+      policy.disabled = 0
+      return policy
+    })()
+  }
+
+  _disablePolicy(policy) {
+    return async(() => {
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        disabled: 1 // flag to indicate that this policy is revoked successfully.
+      }))
+      policy.disabled = 1
+      return policy
+    })()
   }
 
   _enforce(policy) {
