@@ -65,6 +65,12 @@ const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
 
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -545,6 +551,10 @@ class PolicyManager2 {
     if(policy.expire) {
       if(policy.willExpireSoon())  {
         // skip enforce as it's already expired or expiring
+        return async(() => {
+          await (delay(policy.getExpireDiffFromNow() * 1000 ))
+          await (this._disablePolicy(policy))
+        })()
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
         return async(() => {
@@ -575,6 +585,7 @@ class PolicyManager2 {
       }))
       policy.disabled = 0
       policy.activatedTime = now
+      log.info(`Policy ${policy.pid} is enabled`)
       return policy
     })()
   }
@@ -586,6 +597,7 @@ class PolicyManager2 {
         disabled: 1 // flag to indicate that this policy is revoked successfully.
       }))
       policy.disabled = 1
+      log.info(`Policy ${policy.pid} is disabled`)
       return policy
     })()
   }
