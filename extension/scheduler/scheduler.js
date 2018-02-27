@@ -15,7 +15,7 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename)
+const log = require('../../net2/logger.js')(__filename)
 
 const CronJob = require('cron').CronJob;
 
@@ -23,9 +23,6 @@ const Promise = require('bluebird');
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
-
-const PolicyManager2 = require('../../net2/PolicyManager2.js');
-const pm2 = new PolicyManager2();
 
 let instance = null;
 
@@ -97,7 +94,9 @@ class PolicyScheduler {
       // cleanup... stop the job, unenforce and remove job entry from runningJobs
       job.stop()
       if(enforcedPolicies[pid]) {
-        await (pm2.unenforce(policy))
+        if(this.unenforceCallback) {
+          await (this.unenforceCallback(policy))
+        }
         delete enforcedPolicies[pid]
       }
       delete runningCronJobs[job]
@@ -120,7 +119,9 @@ class PolicyScheduler {
         // already running, do nothing
       } else {
         // not running yet
-        await (pm2._enforce(policy))
+        if(this.enforceCallback) {
+          await (this.enforceCallback(policy))
+        }
         enforcedPolicies[pid] = 1
       }
     })().catch((err) => {
@@ -136,7 +137,9 @@ class PolicyScheduler {
         const lastExecutionDate = job.lastDate() / 1000
         const now = new Date() / 1000
         if(now - lastExecutionDate > INVALIDATE_POLICY_TRESHOLD) {
-          await (pm2.unenforce(policy))
+          if(this.unenforceCallback) {
+            await (this.unenforceCallback(policy))
+          }
           delete enforcedPolicies[policy]
         }
       }

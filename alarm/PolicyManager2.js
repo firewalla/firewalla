@@ -77,6 +77,14 @@ class PolicyManager2 {
   constructor() {
     if (instance == null) {
       instance = this;
+
+      scheduler.enforceCallback = (policy) => {
+        return this._enforce(policy)
+      }
+
+      scheduler.unenforceCallback = (policy) => {
+        return this._unenforce(policy)
+      }
     }
     return instance;
   }
