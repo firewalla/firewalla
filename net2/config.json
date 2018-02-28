@@ -1,5 +1,5 @@
 {
-  "version": 1.95,
+  "version": 1.954,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -58,10 +58,14 @@
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
+    "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
+    "PolicyGuardSensor": {
+      "interval": 7200000
+    },
     "FlowUploadSensor" : {
       "interval":900,
       "maxFlows": 50000,
@@ -202,6 +206,7 @@
       "large_upload": true,
       "new_device": true,
       "cyber_security": true,
+      "cyber_security.autoBlock": true,
       "vulnerability": false,
       "ipv6": false,
       "shadowsocks_server": false,

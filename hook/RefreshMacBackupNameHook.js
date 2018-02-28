@@ -31,7 +31,7 @@ class RefreshMacBackupNameHook extends Hook {
       let name = event.name;
       
       // ignore unknown updates
-      if(name.toLowerCase() === "unknown")
+      if(!name || name.toLowerCase() === "unknown")
         return;
 
       hostTool.macExists(mac)

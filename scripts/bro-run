@@ -72,7 +72,5 @@ logger "FIREWALLA: Deployed BRO using BROCTL"
 sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
 sudo sysctl -p
 
-sudo dhclient -6 eth0 &
-sudo dhclient -4 eth0 &
 logger "FIREWALLA: BRO-RUN Finished"
 #(sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&

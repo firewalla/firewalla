@@ -113,7 +113,7 @@ module.exports = class {
                     defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
                 }
             }
-            log.info("PolicyManager:flush", defaultTable, {});
+            log.debug("PolicyManager:flush", defaultTable, {});
           iptable.run(defaultTable);
 
           // Setup iptables so that it's ready for blocking

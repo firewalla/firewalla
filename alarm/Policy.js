@@ -21,6 +21,8 @@ const extend = require('util')._extend
 
 const minimatch = require("minimatch")
 
+const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
+
 
 module.exports = class {
   constructor(info) {
@@ -29,7 +31,50 @@ module.exports = class {
       extend(this, info);
   }
 
+  isEqualToPolicy(policy) {
+    if(!policy) {
+      return false
+    }
+    
+    const thisType = this["i.type"] || this["type"]
+    const thatType = policy["i.type"] || policy["type"]
+    const thisTarget = this["i.target"] || this["target"]
+    const thatTarget = policy["i.target"] || policy["target"]
+
+    return thisType === thatType && thisTarget === thatTarget && this.expire === policy.expire && this.cronTime === policy.cronTime
+  }
+
+  isExpired() {
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000
+  }
+
+  willExpireSoon() {
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000 + POLICY_MIN_EXPIRE_TIME
+  }
+
+  getWhenExpired() {
+    const expire = this.expire || NaN
+    const activatedTime = this.activatedTime || this.timestamp
+    return parseFloat(activatedTime) + parseFloat(expire)
+  }
+
+  getExpireDiffFromNow() {
+    return this.getWhenExpired() - new Date() / 1000
+  }
+
+  isDisabled() {
+    return this.disabled == '1'
+  }
+
   match(alarm) {
+
+    if(this.isExpired()) {
+      return false // always return unmatched if policy is already expired
+    }
 
     // for each policy type
     switch(this.type) {

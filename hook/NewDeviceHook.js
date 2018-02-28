@@ -91,6 +91,11 @@ class NewDeviceHook extends Hook {
       hostTool.macExists(mac)
         .then((result) => {
           if(result) {
+
+            if(!name) {
+              return // hostname is not provided by dhcp request, can't update name
+            }
+
             log.info("MAC Address", mac, " already exists, updating backup name");
             sem.emitEvent({
               type: "RefreshMacBackupName",

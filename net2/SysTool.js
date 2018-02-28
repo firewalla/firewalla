@@ -42,11 +42,11 @@ class SysTool {
 
   // call main-run
   restartServices() {
-    return exec(`${firewalla.getFirewallaHome()}/scripts/main-run`)
+    return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
 
   rebootServices() {
-    return exec("sync & NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fire-reboot-normal")
+    return exec("sync & /home/pi/firewalla/scripts/fire-reboot-normal")
   }
 
   shutdownServices() {
@@ -62,7 +62,7 @@ class SysTool {
   }
 
   upgradeToLatest() {
-    return exec("/home/pi/firewalla/scripts/fireupgrade.sh soft")
+    return exec("NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fireupgrade.sh soft")
   }
 
   resetPolicy() {

@@ -15,10 +15,10 @@
 
 'use strict'
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const redis = require('redis');
+const rclient = redis.createClient();
 
 let flat = require('flat');
 
@@ -26,8 +26,8 @@ let audit = require('../util/audit.js');
 let util = require('util');
 let Bone = require('../lib/Bone.js');
 
-let async = require('asyncawait/async')
-let await = require('asyncawait/await')
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 const Promise = require('bluebird');
 
@@ -58,13 +58,33 @@ let Policy = require('./Policy.js');
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
 
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
+const domainBlock = require('../control/DomainBlock.js')()
 
+const categoryBlock = require('../control/CategoryBlock.js')()
+
+const scheduler = require('../extension/scheduler/scheduler.js')()
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
 
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
       instance = this;
+
+      scheduler.enforceCallback = (policy) => {
+        return this._enforce(policy)
+      }
+
+      scheduler.unenforceCallback = (policy) => {
+        return this._unenforce(policy)
+      }
     }
     return instance;
   }
@@ -73,26 +93,33 @@ class PolicyManager2 {
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
+        const policy = this.jsonToPolicy(event.policy)
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         async(()=>{
           if (event.action && event.action == 'enforce') {
-              try {
-                await(this.enforce(event.policy))
-              } catch (err) {
-                log.error("enforce policy failed:" + err)
-              }
+            try {
+              await(this.enforce(policy))
+            } catch (err) {
+              log.error("enforce policy failed:" + err)
+            }
+          } else if (event && event.action == 'unenforce_and_delete') {
+            try {
+              await(this.unenforce(policy))
+            } catch (err) {
+              log.error("failed to unenforce policy:" + err)
+            }
+            
+            try {
+              await(this.deletePolicy(event.policy.pid))
+            } catch (err) {
+              log.error("failed to delete policy:" + err)
+            }
           } else if (event && event.action == 'unenforce') {
-              try {
-                await(this.unenforce(event.policy))
-              } catch (err) {
-                log.error("failed to unenforce policy:" + err)
-              }
-              
-              try {
-                await(this.deletePolicy(event.policy.pid))
-              } catch (err) {
-                log.error("failed to delete policy:" + err)
-              }
+            try {
+              await(this.unenforce(policy))
+            } catch (err) {
+              log.error("failed to unenforce policy:" + err)
+            }
           } else {
             log.error("unrecoganized policy enforcement action:" + event.action)
           }
@@ -167,9 +194,21 @@ class PolicyManager2 {
   }
 
   createPolicyFromJson(json, callback) {
-    callback = callback || function() {}
+    callback = callback || function() {}    
 
     callback(null, this.jsonToPolicy(json));
+  }
+
+  updatePolicyAsync(policy) {
+    const pid = policy.pid
+    if(pid) {
+      const policyKey = policyPrefix + pid;
+      return async(() => {
+        await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
+      })()
+    } else {
+      return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+    }
   }
 
   savePolicyAsync(policy) {
@@ -210,7 +249,7 @@ class PolicyManager2 {
             audit.trace("Created policy", policy.pid);
           }
           this.tryPolicyEnforcement(policy)
-          callback(null, policy.pid)
+          callback(null, policy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
@@ -227,13 +266,13 @@ class PolicyManager2 {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
-        // let policies = await(this.getSamePolicies(policy))
-        // if (policies && policies.length > 0) {
-        //   log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-        //   callback(new Error("policy existed"))
-        // } else {
-        this.savePolicy(policy, callback);
-//        }
+        let policies = await(this.getSamePolicies(policy))
+        if (policies && policies.length > 0) {
+          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+          callback(null, policies[0], true)
+        } else {
+          this.savePolicy(policy, callback);
+        }
       } catch (err) {
         log.error("failed to save policy:" + err)
         callback(err)
@@ -276,19 +315,13 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(200, (err, policies)=>{
+        pm2.loadActivePolicys(1000, (err, policies)=>{
           if (err) {
             log.error("failed to load active policies:" + err)
             reject(err)
           } else {
             if (policies) {
-              let type = policy["i.type"] || policy["type"]
-              let target = policy["i.target"] || policy["target"]
-              resolve(policies.filter(p => {
-                let ptype = p["i.type"] || p["type"]
-                let ptarget = p["i.target"] || p["target"]
-                return type === ptype && target === ptarget
-              }))
+              resolve(policies.filter((p) => policy.isEqualToPolicy(p)))
             } else {
               resolve([])
             }
@@ -296,6 +329,32 @@ class PolicyManager2 {
         })
       })
     })();
+  }
+
+  // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
+  // So cross-process communication is used
+  // the real execution is on FireMain, check out _enablePolicy and _disablePolicy below
+  enablePolicy(policy) {
+    return async(() => {
+      if(policy.disabled != '1') {
+        return policy // do nothing, since it's already enabled
+      }
+      await (this._enablePolicy(policy))
+      this.tryPolicyEnforcement(policy, "enforce")
+      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      return policy
+    })()
+  }
+
+  disablePolicy(policy) {
+    return async(() => {
+      if(policy.disabled == '1') {
+        return // do nothing, since it's already disabled
+      }
+      await (this._disablePolicy(policy))
+      this.tryPolicyEnforcement(policy, "unenforce")
+      Bone.submitIntelFeedback('disable', policy, 'policy')
+    })()
   }
 
   disableAndDeletePolicy(policyID) {
@@ -306,7 +365,7 @@ class PolicyManager2 {
     }
     
     return p.then((policy) => {
-      this.tryPolicyEnforcement(policy, "unenforce")
+      this.tryPolicyEnforcement(policy, "unenforce_and_delete")
 
       Bone.submitIntelFeedback('unblock', policy, 'policy');
       return Promise.resolve()
@@ -343,6 +402,11 @@ class PolicyManager2 {
   jsonToPolicy(json) {
     if(!json) {
       return null;
+    }
+
+    // convert array to string so that redis can store it as value
+    if(json.scope && json.scope.constructor.name === 'Array') {
+      json.scope = JSON.stringify(json.scope)
     }
     
     let proto = Policy.prototype;
@@ -418,6 +482,18 @@ class PolicyManager2 {
     });
   }
 
+  loadActivePolicysAsync(number) {
+    return new Promise((resolve, reject) => {
+      this.loadActivePolicys(number, (err, policies) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(policies)
+        }
+      })
+    })
+  }
+  
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, callback) {
@@ -436,7 +512,9 @@ class PolicyManager2 {
         return;
       }
 
-      this.idsToPolicys(results, callback);
+      this.idsToPolicys(results, (err, policyRules) => {
+        callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+      });
     });
   }
 
@@ -478,54 +556,223 @@ class PolicyManager2 {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
+           sysManager.myIp() === target ||
+           sysManager.myIp2() === target ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
   }
 
   enforce(policy) {
-    log.info("Enforce policy: ", policy, {});
-
-    let type = policy["i.type"] || policy["type"]; //backward compatibility
-
-    if(this.isFirewallaCloud(policy)) {
-      return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+    if(policy.disabled == 1) {
+      return // ignore disabled policy rules
     }
+    
+    // auto unenforce if expire time is set
+    if(policy.expire) {
+      if(policy.willExpireSoon())  {
+        // skip enforce as it's already expired or expiring
+        return async(() => {
+          await (delay(policy.getExpireDiffFromNow() * 1000 ))
+          await (this._disablePolicy(policy))
+        })()
+        log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
+      } else {
+        return async(() => {
+          await (this._enforce(policy))
+          log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
+          setTimeout(() => {
+            async(() => {
+              // make sure policy is still enabled before disabling it
+              const policy = await (this.getPolicy(policy.pid))
+              if(policy.isDisabled()) {
+                return
+              }
 
-    switch(type) {
-    case "ip":
-      return Block.block(policy.target);
-      break;
-    case "mac":
-      let blockMacAsync = Promise.promisify(Block.blockMac);
-      return blockMacAsync(policy.target);
-      break;
-    case "domain":
-    case "dns":    
-      return dnsmasq.addPolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-        });
-      break;
-    case "devicePort":
-      return async(() => {
-        let data = await (this.parseDevicePortRule(policy.target))
-        if(data) {
-          Block.blockPublicPort(data.ip, data.port, data.protocol)
-        }
-      })()
-      break;
-    default:
-      return Promise.reject("Unsupported policy");
+              log.info(`Revoke policy ${policy.pid}, since it's expired`)
+              await (this.unenforce(policy))
+              await (this._disablePolicy(policy)) 
+            })()
+          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
+        })()
+      }
+    } else if (policy.cronTime) {
+      // this is a reoccuring policy, use scheduler to manage it
+      return scheduler.registerPolicy(policy)
+    } else {
+      return this._enforce(policy) // regular enforce
     }
   }
 
+  // this is the real execution of enable and disable policy
+  _enablePolicy(policy) {
+    return async(() => {
+      const now = new Date() / 1000
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        disabled: 0,
+        activatedTime: now
+      }))
+      policy.disabled = 0
+      policy.activatedTime = now
+      log.info(`Policy ${policy.pid} is enabled`)
+      return policy
+    })()
+  }
+
+  _disablePolicy(policy) {
+    return async(() => {
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        disabled: 1 // flag to indicate that this policy is revoked successfully.
+      }))
+      policy.disabled = 1
+      log.info(`Policy ${policy.pid} is disabled`)
+      return policy
+    })()
+  }
+
+  _refreshActivatedTime(policy) {
+    return async(() => {
+      const now = new Date() / 1000
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        activatedTime: now
+      }))
+      policy.activatedTime = now
+      return policy
+    })()
+  }
+
+  _enforce(policy) {
+    log.debug("Enforce policy: ", policy, {});
+    log.info("Enforce policy: ", policy.type, policy.target, {});
+
+    let type = policy["i.type"] || policy["type"]; //backward compatibility
+
+    if(policy.scope) {
+      return this._advancedEnforce(policy)
+    }
+
+    return async(() => {
+      await (this._refreshActivatedTime(policy))
+
+      if(this.isFirewallaCloud(policy)) {
+        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      }
+  
+      switch(type) {
+      case "ip":
+        return Block.block(policy.target);
+        break;
+      case "mac":
+        let blockMacAsync = Promise.promisify(Block.blockMac);
+        return blockMacAsync(policy.target);
+        break;
+      case "domain":
+      case "dns":    
+        return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+        break;
+      case "devicePort":
+        return async(() => {
+          let data = await (this.parseDevicePortRule(policy.target))
+          if(data) {
+            Block.blockPublicPort(data.ip, data.port, data.protocol)
+          }
+        })()
+        break;
+      case "category":
+        return categoryBlock.blockCategory(policy.target)
+      default:
+        return Promise.reject("Unsupported policy");
+      }
+    })()    
+  }
+
+  _advancedEnforce(policy) {
+    return async(() => {
+      log.info("Advance enforce policy: ", policy.type, policy.target, policy.scope, {})
+
+      const type = policy["i.type"] || policy["type"]; //backward compatibility
+
+      if(this.isFirewallaCloud(policy)) {
+        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      }
+
+      let scope = policy.scope
+      if(typeof scope === 'string') {
+        try {
+          scope = JSON.parse(scope)
+        } catch(err) {
+          log.error("Failed to parse scope:", err, {})
+          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
+        }        
+      }
+
+      switch(type) {
+      case "ip":
+        if(scope) {
+          return Block.advancedBlock(policy.pid, scope, [policy.target])
+        } else {
+          return Block.block(policy.target)
+        }
+        return Block.block(policy.target);
+        break;
+      case "mac":
+        let blockMacAsync = Promise.promisify(Block.blockMac);
+        return blockMacAsync(policy.target);
+        break;
+      case "domain":
+      case "dns":    
+        return async(() => {
+          if(scope) {
+            await (Block.advancedBlock(policy.pid, scope, []))
+            return domainBlock.blockDomain(policy.target, {
+              exactMatch: policy.domainExactMatch, 
+              blockSet: Block.getDstSet(policy.pid)
+            })
+          } else {
+            return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+          }
+        })()        
+        
+        break;
+      case "devicePort":
+        return async(() => {
+          let data = await (this.parseDevicePortRule(policy.target))
+          if(data) {
+            Block.blockPublicPort(data.ip, data.port, data.protocol)
+          }
+        })()
+        break;
+      case "category":
+        return async(() => {
+          if(scope) {
+            await (Block.advancedBlock(policy.pid, scope, []))
+            return categoryBlock.blockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+          } else {
+            return categoryBlock.blockCategory(policy.target)
+          }
+        })()
+      
+      default:
+        return Promise.reject("Unsupported policy");
+      }
+
+    })()
+  }
+
   unenforce(policy) {
-    log.info("Unenforce policy: ", policy, {});
+    if (policy.cronTime) {
+      // this is a reoccuring policy, use scheduler to manage it
+      return scheduler.deregisterPolicy(policy)
+    } else {
+      return this._unenforce(policy) // regular unenforce
+    }
+  }
+
+  _unenforce(policy) {
+    log.info("Unenforce policy: ", policy.pid, policy.target, {})
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
     switch(type) {
@@ -538,22 +785,18 @@ class PolicyManager2 {
       break;
     case "domain":
     case "dns":
-      return dnsmasq.removePolicyFilterEntry(policy.target)
-        .then(() => {
-          sem.emitEvent({
-            type: 'ReloadDNSRule',
-            message: 'DNSMASQ filter rule is updated',
-            toProcess: 'FireMain'
-          });
-      });
+      return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
     case "devicePort":
-       return async(() => {
-        let data = await (this.parseDevicePortRule(policy.target))
-        if(data) {
-          Block.unblockPublicPort(data.ip, data.port, data.protocol)
-        }
-       })()
+      return async(() => {
+      let data = await (this.parseDevicePortRule(policy.target))
+      if(data) {
+        Block.unblockPublicPort(data.ip, data.port, data.protocol)
+      }
+      })()
       break;
+    case "category":
+      return categoryBlock.unblockCategory(policy.target)
+      break
     default:
       return Promise.reject("Unsupported policy");
     }

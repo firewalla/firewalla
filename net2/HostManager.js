@@ -30,6 +30,9 @@ const exec = require('child-process-promise').exec
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
+
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
 var SysManager = require('./SysManager.js');
@@ -41,8 +44,10 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
-let FRP = require('../extension/frp/frp.js')
-let frp = new FRP();
+
+const FRPManager = require('../extension/frp/FRPManager.js')
+const fm = new FRPManager()
+const frp = fm.getSupportFRP()
 
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
@@ -64,6 +69,8 @@ let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
 let f = require('./Firewalla.js');
+
+const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const license = require('../util/license.js')
 
@@ -608,127 +615,7 @@ class Host {
                     this.callbacks[e](channel, ip, type, obj);
                 }
             } else if (type == "Intel:Detected") {
-                let hip = obj['id.resp_h'];
-                let dip = obj['id.orig_h'];
-                if (sysManager.isLocalIP(obj['id.orig_h']) == false) {
-                    hip = obj['id.orig_h'];
-                    dip = obj['id.resp_h'];
-                }
-                log.debug("Host:Subscriber:Intel", hip);
-                if (sysManager.isLocalIP(hip) == true || sysManager.ignoreIP(hip) == true) {
-                    log.error("Host:Subscriber:Intel Error related to local ip", hip);
-                    return;
-                }
-
-                // damp the notifications a bit
-                let intel = obj['id.resp_h'] + obj['id.orig_h'];
-                if (this.lastIntel != null && this.lastIntel == intel) {
-                    log.info("Host:Subscriber:Intel:Damp ", this.lastIntel);
-                    return;
-                } else {
-                    this.lastIntel = intel;
-                    setTimeout(() => {
-                        this.lastIntel = null;
-                    }, 3000);
-                }
-                dnsManager.resolveRemoteHost(hip, (err, name) => {
-                    log.debug("Host:Subscriber:Intel:Resolved", hip, name);
-                    if (name != null) {
-                        obj['target_host_name'] = name;
-                    }
-                    intelManager.lookup(hip, (err, iobj, url) => {
-                        log.debug("Host:Subscriber:Intel:Lookup", hip, url);
-                        if (err != null || iobj == null) {
-                            log.error("Host:Subscriber:Intel:NOTVERIFIED", hip);
-                            return;
-                        }
-
-                        if (iobj.severityscore < 4) {
-                            log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-                            return;
-                        }
-
-                        obj.alarmtype = "intel";
-
-                        if (iobj.severityscore > 50) {
-                            obj.alarmseverity = "major";
-                        } else {
-                            obj.alarmseverity = "minor";
-                        }
-
-                        if (err == null && iobj != null) {
-                            obj['intel'] = iobj;
-                            obj['intelurl'] = url;
-                        }
-
-                        let actionobj = {
-                            title: "Warning",
-                            actions: ["block","ignore"],
-                            src: "0.0.0.0",
-                            dst: hip,
-                            target:"0.0.0.0",
-                            //info: "",
-                            cmd: {
-                                type: "jsonmsg",
-                                mtype: "set",
-                                target: "0.0.0.0",
-                                data: {
-                                    item: 'policy',
-                                    value: {
-                                        acl: {
-                                            src: "0.0.0.0",
-                                            dst: hip,
-                                            state: true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        log.debug("Host:Subscriber:Intel:Write", obj);
-
-                        if (alarmManager == null) {
-                            let AlarmManager = require("./AlarmManager.js");
-                            alarmManager = new AlarmManager("info");
-                        }
-                        alarmManager.alarm(hip, "intel", obj.alarmseverity, iobj.severityscore, obj, actionobj, (err, data) => {
-                            if (this.callbacks[e]) {
-                                log.debug("Callbacks: ", channel, ip, type, obj);
-                                this.callbacks[e](channel, ip, type, obj);
-                            } else {
-                                log.debug("No callbacks with ", e, this.callbacks);
-                            }
-                        });
-
-                        // Alarms are stored as alarm:ip4:<ip> //timestamp//data
-                        /*
-                        let key = "alarm:ip4:"+hip;
-                        obj['id']=uuid.v4();
-                        let redisObj = [key,obj.ts,JSON.stringify(obj)];
-                        log.debug("alarm:ip4:",redisObj);
-                        rclient.zadd(redisObj,(err,response)=>{
-                            if (err) {
-                                log.error("alarm:save:error", err);
-                            } else {
-                                rclient.expireat(key, parseInt((+new Date)/1000) + 60*60*24*7);
-                            }
-                            if (this.callbacks[e]) {
-                                log.debug("Callbacks: ",channel,ip,type,obj);
-                                this.callbacks[e](channel,ip,type,obj);
-                            } else {
-                                log.debug("No callbacks with ",e,this.callbacks);
-                            }
-                        });
-
-                        let key2 = "alarm:ip4:0.0.0.0";
-                        rclient.zadd([key2,obj.ts,JSON.stringify(obj)],(err,response)=>{
-                            if (err) {
-                                log.error("alarm:save:error", err,key2);
-                            }
-                        });
-                        */
-                    });
-                });
+                // no need to handle intel here.                
             } else if (type == "HostPolicy:Changed" && this.type == "server") {
                 this.applyPolicy((err)=>{
                 });
@@ -994,31 +881,7 @@ class Host {
     }
 
     name() {
-        return dnsManager.name(this.o);
-        /*
-                if (this.hasBeenGivenName() == true) {
-                    return this.o.name;
-                }
-                if (this.o.bname) {
-                    return this.o.bname;
-                }
-                if (this.predictedName) {
-                    return this.predictedName;
-                }
-                if (this.hostname) {
-                    return this.hostname;
-                }
-                let name = this.o.ipv4Addr;
-                if (this.o.name != null) {
-                    name = this.o.name;
-                   return name;
-                } else if (this.o.macVendor != null) {
-                    name = "(?)"+this.o.macVendor;
-                  return name;
-                }
-
-                return  this.o.ipv4Addr;
-        */
+        return getPreferredBName(this.o)
     }
 
 
@@ -1613,6 +1476,86 @@ module.exports = class {
     });
   }
 
+  last60MinStatsForInit(json) {
+      return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1minute", 61))
+        if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
+            downloadStats = downloadStats.slice(0, 60)
+        } else {
+            downloadStats = downloadStats.slice(1)
+        }
+        let uploadStats = await (getHitsAsync("upload", "1minute", 61))
+        if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
+            uploadStats = uploadStats.slice(0, 60)
+        } else {
+            uploadStats = uploadStats.slice(1)
+        }
+
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last60 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
+  last60MinTopTransferForInit(json) {
+    return async(() => {
+      const top = await (rclient.hgetallAsync("last60stats"))
+      let values = Object.values(top)
+
+      values = values.map((value) => {
+        try {
+          return JSON.parse(value)
+        } catch(err) {
+          return null
+        }
+      })
+
+      values.sort((x, y) => {
+        return x.ts - y.ts
+      })
+
+      json.last60top = values
+
+    })()
+  }
+
+  last30daysStatsForInit(json) {
+    return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1day", 30))
+        let uploadStats = await (getHitsAsync("upload", "1day", 30))
+    
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last30 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
   policyDataForInit(json) {
     log.debug("Loading polices");
 
@@ -1627,51 +1570,6 @@ module.exports = class {
           json.policy = this.policy;
         }
         resolve(json);
-      });
-    });
-  }
-
-  alarmDataForInit(json) {
-
-    log.debug("Reading Alarms");
-    if (alarmManager == null) {
-      let AlarmManager = require("./AlarmManager.js");
-      alarmManager = new AlarmManager("info");
-    }
-
-    return new Promise((resolve, reject) => {
-      alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
-        log.debug("Done Reading Alarms");
-        if (err == null && results && results.length > 0) {
-          json.alarms = [];
-          for (let i in results) {
-            let alarm = JSON.parse(results[i]);
-            if(alarm.alarmtype === "intel") {
-              if (alarm.intel && alarm.intel.results) {
-                  delete alarm.intel.results; // trim intel details
-              } else {
-                  log.error("Alarm Clean Problems: ",JSON.stringify(alarm),results[i])
-              }
-            }
-
-            if (alarm["id.orig_h"]) {
-              let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
-              let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
-              alarm.hostName = alarm["id.orig_h"];
-              if (origHost && origHost.name()) {
-                alarm.hostName = origHost.name();
-              } else if (toHost && toHost.name()) {
-                alarm.hostName = toHost.name();
-              }
-            }
-            json.alarms.push(alarm);
-          }
-          resolve(json);
-        } else {
-          if(err)
-            reject(err);
-          resolve(json);
-        }
       });
     });
   }
@@ -1801,6 +1699,34 @@ module.exports = class {
             }
 
             json.policyRules = rules;
+
+            let blockedSites = 0
+            let blockedDevices = 0
+            let blockedDevicePorts = 0
+
+            for (let i in rules) {
+              switch (rules[i].type) {
+              case "ip":
+              case "domain":
+              case "dns":
+                blockedSites++
+                break
+              case "mac":
+                blockedDevices ++
+                break
+              case "devicePort":
+                blockedDevicePorts++
+                break
+              default:
+                // do nothing
+                break
+              }
+            }
+
+            json.blockedSitesCount = blockedSites
+            json.blockedDevicesCount = blockedDevices
+            json.blockedDevicePortsCount = blockedDevicePorts
+
             resolve();
           });
         }
@@ -1816,6 +1742,10 @@ module.exports = class {
         if(err) {
           reject(err);
         } else {
+
+          rules = rules.filter((r) => {
+            return r.type != "ALARM_NEW_DEVICE" // allow new device is default
+          })
 
           let alarmIDs = rules.map((p) => p.aid);
 
@@ -1833,7 +1763,8 @@ module.exports = class {
               }
             }
 
-            json.exceptionRules = rules;
+            json.exceptionRules = rules
+            json.exceptionCount = rules.length
             resolve();
           });
         }
@@ -1934,6 +1865,9 @@ module.exports = class {
 
           let requiredPromises = [
             this.last24StatsForInit(json),
+            this.last60MinStatsForInit(json),
+//            this.last60MinTopTransferForInit(json),
+            this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
             this.modeForInit(json),
@@ -1963,10 +1897,6 @@ module.exports = class {
 
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
             await (this.legacyStats(json));
-          }
-
-          if(!appTool.isAppReadyToDiscardLegacyAlarm(options.appInfo)) {
-            await (this.alarmDataForInit(json));
           }
 
           try {
@@ -2580,6 +2510,26 @@ module.exports = class {
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
     return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+  }
+
+  getActiveHumanDevices() {   
+    const HUMAN_TRESHOLD = 0.05
+
+    this.hosts.all.filter((host) => {
+      if(h.o && h.o.mac) {
+        const dtype = h.o.dtype
+        try {
+          const dtypeObject = JSON.parse(dtype)
+          const human = dtypeObject.human
+          return human > HUMAN_TRESHOLD
+        } catch(err) {
+          return false
+        }
+      } else {
+        return false
+      }
+    })   
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null)
   }
 
   getActiveHostsFromSpoofList(limit) {

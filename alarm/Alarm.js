@@ -184,11 +184,21 @@ class IntelAlarm extends Alarm {
   }
 
   getI18NCategory() {
-    if(this["p.local_is_client"] === "1") {
-      return "ALARM_INTEL_FROM_INSIDE";
+    if(this.result === "block" &&
+    this.result_method === "auto") {
+      if(this["p.local_is_client"] === "1") {
+        return "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
+      } else {
+        return "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
+      }
     } else {
-      return "ALARM_INTEL_FROM_OUTSIDE";
+      if(this["p.local_is_client"] === "1") {
+        return "ALARM_INTEL_FROM_INSIDE";
+      } else {
+        return "ALARM_INTEL_FROM_OUTSIDE";
+      }
     }
+
   }
 
   keysToCompareForDedup() {

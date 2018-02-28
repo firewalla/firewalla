@@ -306,7 +306,7 @@ function _stopDNSForwarder(callback) {
 
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
-      log.error("Failed to kill dns forwarder:", err, {})
+      log.debug("Failed to kill dns forwarder:", err, {})
     } else {
       log.info("DNS Forwarder killed")
     }

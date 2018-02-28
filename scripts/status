@@ -1,16 +1,23 @@
 echo "Main"
 sudo service firemain status | grep Active
+sudo journalctl -u firemain.service |grep Started |wc -l
 echo "Monitor"
 sudo service firemon status | grep Active
+sudo journalctl -u firemon.service |grep Started |wc -l
 echo "Kick"
 sudo service firekick status | grep Active
+sudo journalctl -u firekick.service |grep Started |wc -l
 echo "API"
 sudo service fireapi status | grep Active
+sudo journalctl -u fireapi.service |grep Started |wc -l
 echo "Upgrade"
 sudo service fireupgrade status | grep Active
 echo "DNSMasq"
 sudo service firemasq status | grep Active
+sudo journalctl -u firemasq.service |grep Started |wc -l
 echo "Bitbridge4"
 sudo service bitbridge4 status | grep Active
+sudo journalctl -u bitbridge4.service |grep Started |wc -l
 echo "Bitbridge6"
 sudo service bitbridge6 status | grep Active
+sudo journalctl -u bitbridge6.service |grep Started |wc -l

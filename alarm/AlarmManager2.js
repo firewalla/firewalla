@@ -43,6 +43,8 @@ let im = new IM('info');
 var DNSManager = require('../net2/DNSManager.js');
 var dnsManager = new DNSManager('info');
 
+const getPreferredBName = require('../util/util.js').getPreferredBName
+
 let Policy = require('./Policy.js');
 
 let PolicyManager2 = require('./PolicyManager2.js');
@@ -71,8 +73,6 @@ let c = require('../net2/MessageBus.js');
 let extend = require('util')._extend;
 
 let fConfig = require('../net2/config.js').getConfig();
-
-let AUTO_BLOCK_THRESHOLD = 10;
 
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
@@ -200,8 +200,8 @@ module.exports = class {
         return
       }
 
-      alarm.result = "ignore"
-      await (this.updateAlarm(alarm))
+      // alarm.result = "ignore"
+      // await (this.updateAlarm(alarm))
       await (this.archiveAlarm(alarm.aid))
     })()
   }
@@ -390,7 +390,8 @@ module.exports = class {
               let num = parseInt(alarm["p.security.numOfReportSources"]);
               if(fConfig && fConfig.policy &&
                  fConfig.policy.autoBlock &&
-                 num > AUTO_BLOCK_THRESHOLD || (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+                 fc.isFeatureOn("cyber_security.autoBlock") &&
+                 (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
                 // auto block if num is greater than the threshold
                 this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
                 if (alarm['p.dest.ip']) {
@@ -669,7 +670,7 @@ module.exports = class {
       if(needArchive) {
         await (this.archiveAlarm(alarm.aid))
       } else {
-        await (this.removeFromActiveQueueAsync(alarm.alarmID))
+        await (this.removeFromActiveQueueAsync(alarm.aid))
       }
 
       log.info(`Alarm ${alarm.aid} is blocked successfully`)
@@ -697,7 +698,7 @@ module.exports = class {
     })()
   }
 
-  allowAlarmByException(alarm, exception, info) {
+  allowAlarmByException(alarm, exception, info, needArchive) {
     return async(() => {
       if(!alarm || !exception) {
         return
@@ -713,8 +714,13 @@ module.exports = class {
       }
 
       await (this.updateAlarm(alarm))
-      await (this.archiveAlarm(alarm.aid))
 
+      if(needArchive) {
+        await (this.archiveAlarm(alarm.aid))
+      } else {
+        await (this.removeFromActiveQueueAsync(alarm.aid))
+      }
+      
       log.info(`Alarm ${alarm.aid} is allowed successfully`)
     })()
   }
@@ -792,6 +798,10 @@ module.exports = class {
           "if.target": i_target,
         });
 
+        if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+          p.domainExactMatch = "1"
+        }
+
         // add additional info
         switch(i_type) {
         case "mac":
@@ -818,56 +828,51 @@ module.exports = class {
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
-        pm2.checkAndSave(p, (err) => {
+        pm2.checkAndSave(p, (err, policy, alreadyExists) => {
           if(err)
             callback(err);
           else {
-            alarm.result_policy = p.pid;
+            alarm.result_policy = policy.pid;
             alarm.result = "block";
 
             if(info.method === "auto") {
               alarm.result_method = "auto";
             }
 
-            this.updateAlarm(alarm)
-              .then(() => {
-                // archive alarm
+            async(() => {
+              await (this.updateAlarm(alarm))
+              
+              if(alarm.result_method != "auto") {                
+                // archive alarm unless it's auto block
+                await (this.archiveAlarm(alarm.aid))
+              }
 
-                this.archiveAlarm(alarm.aid)
-                  .then(() => {
+              // old way
+              if(!info.matchAll) {
+                callback(null, policy)
+                return
+              }
 
-                    // old way
-                    if(!info.matchAll) {
-                      callback(null, p)
-                      return
-                    }
+              log.info("Trying to find if any other active alarms are covered by this new policy")
+              let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
+              if(alarms && alarms.length > 0) {
+                let blockedAlarms = []
+                alarms.forEach((alarm) => {
+                  try {
+                    await (this.blockAlarmByPolicy(alarm, policy, info))
+                    blockedAlarms.push(alarm)
+                  } catch(err) {
+                    log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
+                  }
+                })
+                callback(null, policy, blockedAlarms, alreadyExists)
+              } else {
+                callback(null, policy, undefined, alreadyExists)
+              }
 
-                    async(() => {
-                      log.info("Trying to find if any other active alarms are covered by this new policy")
-                      let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
-                      if(alarms && alarms.length > 0) {
-                        let blockedAlarms = []
-                        alarms.forEach((alarm) => {
-                          try {
-                            await (this.blockAlarmByPolicy(alarm, p, info))
-                            blockedAlarms.push(alarm)
-                          } catch(err) {
-                            log.error(`Failed to block alarm ${alarm.aid} with policy ${p.pid}: ${err}`)
-                          }
-                        })
-                        callback(null, p, blockedAlarms)
-                      } else {
-                        callback(null, p)
-                      }
-                    })()
-                  })
-                  .catch((err) => {
-                    callback(err)
-                  })
-
-              }).catch((err) => {
-                callback(err);
-              });
+            })().catch((err) => {
+              callback(err)
+            })                         
           }
         });
       }).catch((err) => {
@@ -976,14 +981,18 @@ module.exports = class {
         // FIXME: make it transactional
         // set alarm handle result + add policy
 
-        exceptionManager.saveException(e, (err) => {
+        exceptionManager.checkAndSave(e, (err, exception, alreadyExists) => {
           if(err) {
             log.error("Failed to save exception: " + err);
             callback(err);
             return;
           }
 
-          alarm.result_exception = e.eid;
+          if(alreadyExists) {
+            log.info(`exception ${e} already exists: ${exception}`)
+          }
+
+          alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
           this.updateAlarm(alarm)
@@ -994,27 +1003,27 @@ module.exports = class {
                 .then(() => {
                   // old way
                   if(!info.matchAll) {
-                    callback(null, e)
+                    callback(null, exception)
                     return
                   }
 
                   async(() => {              
                     log.info("Trying to find if any other active alarms are covered by this new exception")
-                    let alarms = await (this.findSimilarAlarmsByException(e, alarm.aid))
+                    let alarms = await (this.findSimilarAlarmsByException(exception, alarm.aid))
                     if(alarms && alarms.length > 0) {
                       let allowedAlarms = []
                       alarms.forEach((alarm) => {
                         try {
-                          await (this.allowAlarmByException(alarm, e, info))
+                          await (this.allowAlarmByException(alarm, exception, info))
                           allowedAlarms.push(alarm)
                         } catch(err) {
-                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${e.eid}: ${err}`)
+                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
                         }
                       })
-                      callback(null, e, allowedAlarms)
+                      callback(null, exception, allowedAlarms, alreadyExists)
                     } else {
                       log.info("No similar alarms are found")
-                      callback(null, e)
+                      callback(null, exception, undefined, alreadyExists)
                     }
                   })()
                 })
@@ -1154,7 +1163,7 @@ module.exports = class {
             return;
           }
 
-          let deviceName = dnsManager.name(result);
+          let deviceName = getPreferredBName(result);
           let deviceID = result.mac;
 
           extend(alarm, {
@@ -1201,15 +1210,15 @@ module.exports = class {
 
         // intel
         const intel = await (intelTool.getIntel(destIP))
-        if(intel.app) {
+        if(intel && intel.app) {
           alarm["p.dest.app"] = intel.app
         }
 
-        if(intel.category) {
+        if(intel && intel.category) {
           alarm["p.dest.category"] = intel.category
         }
 
-        if(intel.host) {
+        if(intel && intel.host) {
           alarm["p.dest.name"] = intel.host
         }
         

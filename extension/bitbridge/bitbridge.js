@@ -25,6 +25,7 @@ let Promise = require('bluebird');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const exec = require('child-process-promise').exec
 
 const fc = require('../../net2/config.js')
 

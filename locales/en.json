@@ -10,6 +10,8 @@
   "ALARM_BRO_NOTICE": "{{p.message}}",
   "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} is accessing this device's port {{p.device.port}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{p.dest.name}}:{{p.dest.port}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
+  "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing this device. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
+  "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked this device from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
   "ALARM_VULNERABILITY_CVE-2017-0143": "This device is vulnerable to WannaCry ransomware",
   "NOTIF_ALARM_PORN": "Device \"{{p.device.name}}\" visited porn website {{p.dest.name}}",
   "NOTIF_ALARM_VIDEO": "Device \"{{p.device.name}}\" visited video website {{p.dest.name}}",
@@ -34,5 +36,7 @@
   "INFO_ALARM_BRO_NOTICE": "{{p.message}} {{localizedRelativeTime}}",
   "INFO_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} ({{p.dest.ip}}) accessed device {{p.device.name}} ({{p.device.ip}}:{{p.device.port}}) {{localizedRelativeTime}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "INFO_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} accessed {{p.dest.name}}:{{p.dest.port}} {{localizedRelativeTime}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
-  "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware"
+  "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware",
+  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing device {{p.device.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
+  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)"
 }
