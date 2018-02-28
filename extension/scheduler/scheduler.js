@@ -50,16 +50,13 @@ class PolicyScheduler {
   constructor() {
     if (instance == null) {
       instance = this;
-      setInterval(() => {
-        this.tickGuardAll()
-      }, 1000 * 60) // every minute
     }
     return instance;
   }  
 
   shouldPolicyBeRunning(policy) {
     const cronTime = policy.cronTime
-    const duration = policy.duration // in seconds
+    const duration = parseFloat(policy.duration) // in seconds
 
     if(!cronTime || !duration) {
       return 0
@@ -99,6 +96,8 @@ class PolicyScheduler {
   apply(policy, duration) {
     duration = duration || policy.duration
     
+    const pid = policy.pid
+    
     return async(() => {
       await (this.enforce(policy))
 
@@ -107,7 +106,7 @@ class PolicyScheduler {
           await (this.unenforce(policy))
           delete policyTimers[pid]
         })()          
-      }, duration * 1000)
+      }, parseFloat(duration) * 1000)
 
       policyTimers[pid] = timer;
 
