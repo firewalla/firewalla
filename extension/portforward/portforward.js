@@ -64,6 +64,25 @@ class PortForward {
   constructor() {
     if(!instance) {
       this.config = {maps:[]}
+      let c = require('../../net2/MessageBus.js');
+      this.channel = new c('debug');
+      this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
+        if (type == "Extension:PortForwarding") {
+          async(()=>{
+            if (obj!=null) {
+              if (obj.state == false) {
+                await (this.removePort(obj));
+              } else {
+                await (this.addPort(obj));
+              }
+              await (this.saveConfig());
+            }         
+          })();
+        } else {
+          
+        } 
+      });
+
       instance = this      
     }
 

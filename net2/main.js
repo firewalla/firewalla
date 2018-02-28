@@ -201,6 +201,11 @@ function run() {
   // always create the secondary interface
   ModeManager.enableSecondaryInterface();
 
+  // Launch PortManager
+
+  let PortForward = require("../extension/portforward/portforward.js");
+  let portforward = new PortForward();
+
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager('info');
@@ -225,6 +230,7 @@ function run() {
         
         // when mode is changed by anyone else, reapply automatically
         ModeManager.listenOnChange();        
+        await (portforward.start());
       })()     
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
