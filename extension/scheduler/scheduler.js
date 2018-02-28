@@ -77,7 +77,7 @@ class PolicyScheduler {
 
   enforce(policy) {
     return async(() => {
-      log.info(`Enforcing policy ${policy.pid}`)
+      log.info(`=== Enforcing policy ${policy.pid}`)
       if(this.enforceCallback) {
         await (this.enforceCallback(policy))
       }
@@ -86,9 +86,9 @@ class PolicyScheduler {
 
   unenforce(policy) {
     return async(() => {
-      log.info(`Enforcing policy ${policy.pid}`)
-      if(this.enforceCallback) {
-        await (this.enforceCallback(policy))
+      log.info(`=== Unenforcing policy ${policy.pid}`)
+      if(this.unenforceCallback) {
+        await (this.unenforceCallback(policy))
       }
     })()
   }
