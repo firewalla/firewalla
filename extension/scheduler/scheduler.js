@@ -97,7 +97,7 @@ class PolicyScheduler {
     duration = duration || policy.duration
     
     const pid = policy.pid
-    
+
     return async(() => {
       await (this.enforce(policy))
 
@@ -117,13 +117,17 @@ class PolicyScheduler {
     const cronTime = policy.cronTime
     const duration = policy.duration
     if(!cronTime || !duration) {
-      return Promise.reject(`Invalid Cron Time ${cronTime} / duration ${duration} for policy ${policy.pid}`)
+      const err = `Invalid Cron Time ${cronTime} / duration ${duration} for policy ${policy.pid}`
+      log.error(err)
+      return Promise.reject(new Error(err))
     }
 
     const pid = policy.pid
 
     if(runningCronJobs[pid]) { // already have a running job for this pid
-      return Promise.reject(`Already have cron job running for policy ${pid}`)
+      const err = `Already have cron job running for policy ${pid}`
+      log.error(err)
+      return Promise.reject(new Error(err))
     }
 
     try {

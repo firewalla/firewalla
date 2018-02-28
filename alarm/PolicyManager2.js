@@ -123,7 +123,9 @@ class PolicyManager2 {
           } else {
             log.error("unrecoganized policy enforcement action:" + event.action)
           }
-        })()
+        })().catch((err) => {
+          log.error(`Failed to process policy enforce on policy ${policy.pid}, err: ${err}`)
+        })
       }
     })
   }
@@ -534,7 +536,7 @@ class PolicyManager2 {
     return new Promise((resolve, reject) => {
       this.loadActivePolicys((err, rules) => {
 
-        let enforces = rules.map((rule) => this.enforce(rule));
+        let enforces = rules.map((rule) => this.enforce(rule).catch((err) => undefined));
 
         return Promise.all(enforces);
       });
@@ -658,7 +660,7 @@ class PolicyManager2 {
 
   _enforce(policy) {
     log.debug("Enforce policy: ", policy, {});
-    log.info("Enforce policy: ", policy.type, policy.target, {});
+    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, {});
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -703,7 +705,7 @@ class PolicyManager2 {
 
   _advancedEnforce(policy) {
     return async(() => {
-      log.info("Advance enforce policy: ", policy.type, policy.target, policy.scope, {})
+      log.info("Advance enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -784,7 +786,7 @@ class PolicyManager2 {
   }
 
   _unenforce(policy) {
-    log.info("Unenforce policy: ", policy.pid, policy.target, {})
+    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
     switch(type) {
