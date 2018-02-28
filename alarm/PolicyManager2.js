@@ -237,7 +237,14 @@ class PolicyManager2 {
 
       let policyKey = policyPrefix + id;
 
-      rclient.hmset(policyKey, flat.flatten(policy), (err) => {
+      const policyCopy = JSON.parse(JSON.stringify(policy))
+
+      // convert array to string so that redis can store it as value
+      if(policyCopy.scope && policyCopy.scope.constructor.name === 'Array') {
+        policyCopy.scope = JSON.stringify(policyCopy.scope)
+      }
+    
+      rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
         if(err) {
           log.error("Failed to set policy: " + err);
           callback(err);
@@ -404,11 +411,6 @@ class PolicyManager2 {
       return null;
     }
 
-    // convert array to string so that redis can store it as value
-    if(json.scope && json.scope.constructor.name === 'Array') {
-      json.scope = JSON.stringify(json.scope)
-    }
-    
     let proto = Policy.prototype;
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
@@ -435,7 +437,17 @@ class PolicyManager2 {
           return;
         }
         
-        let rr = results.map((r) => this.jsonToPolicy(r)).filter((r) => r != null)
+        let rr = results.map((r) => {
+          if(r.scope.constructor.name === 'String') {
+            try {
+              r.scope = JSON.parse(r.scope)
+            } catch(err) {
+              log.error("Failed to parse policy scope string:", r.scope, {})
+              r.scope = []
+            }
+          }
+          return this.jsonToPolicy(r)
+        }).filter((r) => r != null)
 
         // recent first
         rr.sort((a, b) => {
