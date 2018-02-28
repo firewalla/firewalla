@@ -1678,7 +1678,7 @@ module.exports = class {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicys((err, rules) => {
+      policyManager2.loadActivePolicys(1000, {includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;

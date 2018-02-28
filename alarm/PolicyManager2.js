@@ -510,11 +510,16 @@ class PolicyManager2 {
   
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
-  loadActivePolicys(number, callback) {
+  loadActivePolicys(number, options, callback) {
+    if(typeof options === 'function') {
+      callback = options
+      options = {}
+    }
 
     if(typeof(number) == 'function') {
       callback = number;
       number = 1000; // by default load last 1000 policy rules, for self-protection
+      options = {}
     }
 
     callback = callback || function() {}
@@ -527,7 +532,11 @@ class PolicyManager2 {
       }
 
       this.idsToPolicys(results, (err, policyRules) => {
-        callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+        if(options.includingDisabled) {
+          callback(err, policyRules)
+        } else {
+          callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+        }
       });
     });
   }
