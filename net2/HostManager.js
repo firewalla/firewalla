@@ -1676,7 +1676,7 @@ module.exports = class {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicys((err, rules) => {
+      policyManager2.loadActivePolicys(1000, {includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
@@ -1698,34 +1698,15 @@ module.exports = class {
               }
             }
 
-            json.policyRules = rules;
-
-            let blockedSites = 0
-            let blockedDevices = 0
-            let blockedDevicePorts = 0
-
-            for (let i in rules) {
-              switch (rules[i].type) {
-              case "ip":
-              case "domain":
-              case "dns":
-                blockedSites++
-                break
-              case "mac":
-                blockedDevices ++
-                break
-              case "devicePort":
-                blockedDevicePorts++
-                break
-              default:
-                // do nothing
-                break
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
               }
-            }
+            })
 
-            json.blockedSitesCount = blockedSites
-            json.blockedDevicesCount = blockedDevices
-            json.blockedDevicePortsCount = blockedDevicePorts
+            json.policyRules = rules;
 
             resolve();
           });

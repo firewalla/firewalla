@@ -642,7 +642,7 @@ module.exports = class FlowManager {
 
         if (flows.length <= 1) {
             // Need to take care of this condition
-            log.info("FlowManager:FlowSummary", "not enough flows");
+            log.debug("FlowManager:FlowSummary", "not enough flows");
             if (flows.length == 1) {
                 flowspec.rxRanked.push(flows[0]);
                 flowspec.txRanked.push(flows[0]);
