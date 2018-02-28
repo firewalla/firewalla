@@ -12,10 +12,12 @@ html
             section.spotlight.style1.orient-left.content-align-left.image-position-right.fullscreen.onload-image-fade-in.onload-content-fade-right
                 .content
                     header
-                        h1 Blocked Site
+                        h1 
+                            | Blocked Site 
+                            span.icon.fa-ban
                         p.major
                             | This domain is 
-                            span.icon.fa-ban(style='color:darkred') blocked
+                            span(style='color:darkred') blocked
                             |  by Firewalla.
                     p.small
                         | Firewalla is protecting you from #{hostname}. You can manage your blocked list in Firewalla App.
