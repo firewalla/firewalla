@@ -739,7 +739,6 @@ class PolicyManager2 {
         } else {
           return Block.block(policy.target)
         }
-        return Block.block(policy.target);
         break;
       case "mac":
         let blockMacAsync = Promise.promisify(Block.blockMac);
@@ -797,6 +796,10 @@ class PolicyManager2 {
   _unenforce(policy) {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
+    if(policy.scope) {
+      return this._advancedEnforce(policy)
+    }
+
     let type = policy["i.type"] || policy["type"]; //backward compatibility
     switch(type) {
     case "ip":
@@ -823,6 +826,74 @@ class PolicyManager2 {
     default:
       return Promise.reject("Unsupported policy");
     }
+  }
+
+  _advancedUnenforce(policy) {
+    return async(() => {
+      log.info("Advance unenforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
+
+      const type = policy["i.type"] || policy["type"]; //backward compatibility
+
+      let scope = policy.scope
+      if(typeof scope === 'string') {
+        try {
+          scope = JSON.parse(scope)
+        } catch(err) {
+          log.error("Failed to parse scope:", err, {})
+          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
+        }        
+      }
+
+      switch(type) {
+      case "ip":
+        if(scope) {
+          return Block.advancedUnblock(policy.pid, scope, [policy.target])
+        } else {
+          return Block.unblock(policy.target)
+        }
+        break;
+      case "mac":
+        let unblockMacAsync = Promise.promisify(Block.unblockMac)
+        return unblockMacAsync(policy.target)
+        break;
+      case "domain":
+      case "dns":    
+        return async(() => {
+          if(scope) {
+            await (Block.advancedUnblock(policy.pid, scope, []))
+            return domainBlock.unblockDomain(policy.target, {
+              exactMatch: policy.domainExactMatch, 
+              blockSet: Block.getDstSet(policy.pid)
+            })
+          } else {
+            return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+          }
+        })()        
+        
+        break;
+      case "devicePort":
+        return async(() => {
+          let data = await (this.parseDevicePortRule(policy.target))
+          if(data) {
+            Block.unblockPublicPort(data.ip, data.port, data.protocol)
+          }
+        })()
+        break;
+      case "category":
+        return async(() => {
+          if(scope) {
+            await (Block.advancedUnblock(policy.pid, scope, []))
+            return categoryBlock.unblockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+          } else {
+            return categoryBlock.unblockCategory(policy.target)
+          }
+        })()
+      
+      default:
+        return Promise.reject("Unsupported policy");
+      }
+
+    })()
   }
 
   match(alarm, callback) {
