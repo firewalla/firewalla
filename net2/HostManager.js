@@ -1698,34 +1698,13 @@ module.exports = class {
               }
             }
 
+            rules.sort((x,y) => {
+              y.timestamp < x.timestamp
+            })
+
             json.policyRules = rules;
 
-            let blockedSites = 0
-            let blockedDevices = 0
-            let blockedDevicePorts = 0
 
-            for (let i in rules) {
-              switch (rules[i].type) {
-              case "ip":
-              case "domain":
-              case "dns":
-                blockedSites++
-                break
-              case "mac":
-                blockedDevices ++
-                break
-              case "devicePort":
-                blockedDevicePorts++
-                break
-              default:
-                // do nothing
-                break
-              }
-            }
-
-            json.blockedSitesCount = blockedSites
-            json.blockedDevicesCount = blockedDevices
-            json.blockedDevicePortsCount = blockedDevicePorts
 
             resolve();
           });
