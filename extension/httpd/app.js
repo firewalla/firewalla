@@ -19,36 +19,39 @@ const redis = require('redis');
 const client = redis.createClient();
 promise.promisifyAll(redis.RedisClient.prototype);
 
-const viewsPath = 'firewalla_views';
+const VIEW_PATH = 'firewalla_view';
+const STATIC_PATH = 'firewalla_static';
 
 class App {
   constructor() {
     this.app = express();
     this.app.engine('pug', require('pug').__express);
-    this.app.set('views', path.join(__dirname, viewsPath));
+    this.app.set('views', path.join(__dirname, VIEW_PATH));
     this.app.set('view engine', 'pug');
+    this.app.disable('view cache'); //debug only
     this.routes();
   }
 
   routes() {
     this.router = express.Router();
-    this.router.all('/green', async (req, res) => {
+    this.router.all('/block', async (req, res) => {
       const hostname = req.hostname;
       const url = qs.unescape(req.query.url);
       const ip = req.ip;
       const method = req.method;
 
-      log.info("Got a request in porn views");
+      log.info("Got a request in block views");
 
-      res.render('green', {hostname, url, ip, method});
+      res.render('block', {hostname, url, ip, method});
     })
 
-    this.app.use(`/${viewsPath}`, this.router);
+    this.app.use('/' + VIEW_PATH, this.router);
+    this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
 
     this.app.use('*', async (req, res) => {
       log.info("Got a request in *");
 
-      if (!req.originalUrl.includes(viewsPath)) {
+      if (!req.originalUrl.includes(VIEW_PATH)) {
         let cat = await intel.check(req.hostname);
 
         log.info(`${req.hostname} 's category is ${cat}`);
@@ -77,7 +80,7 @@ class App {
   }
 
   isPorn(req, res) {
-    res.status(303).location(`/${viewsPath}/green?${qs.stringify({url: req.originalUrl})}`).send().end();
+    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({url: req.originalUrl})}`).send().end();
     if (enableRedis) {
       client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
         log.info(`Total porn blocked: ${value}`);
