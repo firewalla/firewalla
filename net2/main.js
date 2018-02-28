@@ -152,7 +152,7 @@ function run() {
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
-  dnsmasq.cleanUpPolicyFilter().then(() => {}).catch(()=>{});
+  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
 
   if (process.env.FWPRODUCTION) {
     /*

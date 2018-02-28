@@ -324,6 +324,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo systemctl daemon-reload
@@ -375,6 +376,14 @@ else
     sudo systemctl restart fireapi
 fi
 cd ..
+
+cd extension/httpd
+if [[ -f /.dockerenv ]]; then
+    forever start -a --uid root httpd.js
+else
+    sudo systemctl restart firehttpd
+fi
+cd ../../
 
 sync
 
