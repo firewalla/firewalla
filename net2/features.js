@@ -19,3 +19,7 @@ exports.isOff = (feature) => {
 exports.getFeatures = () => {
   return features;
 };
+
+exports.getVersion = (feature) => {
+  return features[feature];
+};
