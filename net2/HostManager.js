@@ -25,6 +25,8 @@ var rclient = redis.createClient();
 var sclient = redis.createClient();
 sclient.setMaxListeners(0);
 
+const prettyCron = require('prettycron');
+
 const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
@@ -1702,10 +1704,15 @@ module.exports = class {
               y.timestamp < x.timestamp
             })
 
+            // create human readable cronTime if needed
+            rules.forEach((rule) => {
+              if(rule.cronTime) {
+                rule.humanCronTime = prettyCron.toString(rule.cronTime)
+              }
+            })
+
             json.policyRules = rules;
-
-
-
+            
             resolve();
           });
         }

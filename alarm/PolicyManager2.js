@@ -438,7 +438,7 @@ class PolicyManager2 {
         }
         
         let rr = results.map((r) => {
-          if(r.scope.constructor.name === 'String') {
+          if(r.scope && r.scope.constructor.name === 'String') {
             try {
               r.scope = JSON.parse(r.scope)
             } catch(err) {
