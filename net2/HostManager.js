@@ -1701,7 +1701,11 @@ module.exports = class {
             }
 
             rules.sort((x,y) => {
-              y.timestamp < x.timestamp
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
             })
 
             // create human readable cronTime if needed
