@@ -13,7 +13,7 @@ module.exports = {
 function hashHost(_domain, opts) {
   let results = urlHash.canonicalizeAndHashExpressions(_domain);
   if(results) {
-    if (opts.keepOriginal) {
+    if (opts && opts.keepOriginal) {
       return results.map(x => {
         if (x[0].endsWith('/')) {
           x[0] = x[0].substr(0, x[0].length - 1);
