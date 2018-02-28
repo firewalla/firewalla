@@ -1705,14 +1705,14 @@ module.exports = class {
             })
 
             // create human readable cronTime if needed
-            rules.forEach((rule) => {
-              if(rule.cronTime) {
-                rule.humanCronTime = prettyCron.toString(rule.cronTime)
-              }
-            })
+            // rules.forEach((rule) => {
+            //   if(rule.cronTime) {
+            //     rule.humanCronTime = prettyCron.toString(rule.cronTime)
+            //   }
+            // })
 
             json.policyRules = rules;
-            
+
             resolve();
           });
         }
