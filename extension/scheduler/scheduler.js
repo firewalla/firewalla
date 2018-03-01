@@ -81,6 +81,7 @@ class PolicyScheduler {
       if(this.enforceCallback) {
         await (this.enforceCallback(policy))
       }
+      log.info(`Policy ${policy.pid} is enforced`)
     })()
   }
 

@@ -544,10 +544,17 @@ class PolicyManager2 {
   enforceAllPolicies() {
     return new Promise((resolve, reject) => {
       this.loadActivePolicys((err, rules) => {
-
-        let enforces = rules.map((rule) => this.enforce(rule).catch((err) => undefined));
-
-        return Promise.all(enforces);
+        
+        return async(() => {
+          rules.forEach((rule) => {
+            try {
+              await (this.enforce(rule))
+            } catch(err) {
+              log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
+            }            
+          })
+          log.info("All policy rules are enforced")
+        })()
       });
     });
   }
