@@ -551,9 +551,9 @@ class PolicyManager2 {
               await (this.enforce(rule))
             } catch(err) {
               log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
-            }
-            
+            }            
           })
+          log.info("All policy rules are enforced")
         })()
       });
     });

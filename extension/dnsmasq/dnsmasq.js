@@ -47,8 +47,9 @@ let bone = require("../../lib/Bone.js");
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const exec = require('child-process-promise').exec
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 let networkTool = require('../../net2/NetworkTool')();
 
@@ -70,6 +71,8 @@ let BLACK_HOLE_IP=sysManager.myIp();
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
+
+let statusCheckTimer = null
 
 module.exports = class DNSMASQ {
   constructor(loglevel) {
@@ -678,6 +681,12 @@ module.exports = class DNSMASQ {
     } else {
       try {
         require('child_process').execSync("sudo systemctl restart firemasq");
+        if(!statusCheckTimer) {
+          statusCheckTimer = setInterval(() => {
+            this.statusCheck()
+          }, 1000 * 60 * 2) // check status every two minutes
+          log.info("Status check timer installed")
+        }
       } catch(err) {
         log.error("Got error when restarting firemasq:", err, {})
       }
@@ -703,6 +712,11 @@ module.exports = class DNSMASQ {
       if (err) {
         log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code: " + err);
       } else {
+        if(statusCheckTimer) {
+          clearInterval(statusCheckTimer)
+          statusCheckTimer = null
+          log.info("status check timer is stopped")
+        }
       }
 
       callback(err);
@@ -837,4 +851,49 @@ module.exports = class DNSMASQ {
     dhcpFeature = flag;
   }
 
+  verifyDNSConnectivity() {
+    let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
+    log.info("Verifying DNS connectivity...")
+    
+    return async(() => {
+      try {
+        let result = await (exec(cmd))
+        if(result.stdout === "") {
+          log.error("Got empty dns result when verifying dns connectivity:", {})
+          return false
+        } else if(result.stderr !== "") {
+          log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+          return false
+        } else {
+          log.info("DNS connectivity looks good")
+          return true
+        }
+      } catch(err) {
+        log.error("Got error when verifying dns connectivity:", err, {})
+        return false
+      }
+    })()    
+  }
+
+  statusCheck() {
+    return async(() => {
+      log.info("Keep-alive checking dnsmasq status")
+      let checkResult = await (this.verifyDNSConnectivity()) ||
+        await (this.verifyDNSConnectivity()) ||
+        await (this.verifyDNSConnectivity())
+              
+      if(!checkResult) {
+        let psResult = await (exec("ps aux | grep dnsmasq"))
+        let stdout = psResult.stdout
+        log.info("dnsmasq running status: \n", stdout, {})
+  
+        // restart this service, something is wrong
+        this.rawRestart((err) => {
+          if(err) {
+            log.error("Failed to restart ss_client:", err, {})
+          }
+        })
+      }
+    })()
+  }
 };
