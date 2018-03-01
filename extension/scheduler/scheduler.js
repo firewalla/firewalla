@@ -24,15 +24,19 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const cronParser = require('cron-parser');
+const moment = require('moment');
+
 let instance = null;
 
 const runningCronJobs = {}
-const enforcedPolicies = {}
-const policyRules = {}
+
+const policyTimers = {} // if policy timer exists, if means it's activated
 
 const INVALIDATE_POLICY_TRESHOLD = 2 * 60 // if the cronjob is not active in 2 minutes, just unenforce the policy => meaning it's out of cronjob range
 
-// Seconds: 0-59
+const MIN_DURATION = 2 * 60
+
 // Minutes: 0-59
 // Hours: 0-23
 // Day of Month: 1-31
@@ -46,30 +50,102 @@ class PolicyScheduler {
   constructor() {
     if (instance == null) {
       instance = this;
-      setInterval(() => {
-        this.tickGuardAll()
-      }, 1000 * 60) // every minute
     }
     return instance;
   }  
 
+  shouldPolicyBeRunning(policy) {
+    const cronTime = policy.cronTime
+    const duration = parseFloat(policy.duration) // in seconds
+
+    if(!cronTime || !duration) {
+      return 0
+    }
+
+    const interval = cronParser.parseExpression(cronTime)
+    const lastDate = interval.prev()
+    const now = moment()
+
+    const diff = now.diff(moment(lastDate), 'seconds')
+
+    if(diff < duration - MIN_DURATION) {
+      return duration - diff // how many seconds left
+    } else {
+      return 0
+    }
+  }
+
+  enforce(policy) {
+    return async(() => {
+      log.info(`=== Enforcing policy ${policy.pid}`)
+      if(this.enforceCallback) {
+        await (this.enforceCallback(policy))
+      }
+      log.info(`Policy ${policy.pid} is enforced`)
+    })()
+  }
+
+  unenforce(policy) {
+    return async(() => {
+      log.info(`=== Unenforcing policy ${policy.pid}`)
+      if(this.unenforceCallback) {
+        await (this.unenforceCallback(policy))
+      }
+    })()
+  }
+
+  apply(policy, duration) {
+    duration = duration || policy.duration
+    
+    const pid = policy.pid
+
+    return async(() => {
+      await (this.enforce(policy))
+
+      const timer = setTimeout(() => {     // when timer expires, it will unenforce policy
+        async(() => {
+          await (this.unenforce(policy))
+          delete policyTimers[pid]
+        })()          
+      }, parseFloat(duration) * 1000)
+
+      policyTimers[pid] = timer;
+
+    })()
+  }
+
   registerPolicy(policy) {
     const cronTime = policy.cronTime
-    if(!cronTime) {
-      return Promise.reject(`Invalid Cron Time ${cronTime} for policy ${policy.pid}`)
+    const duration = policy.duration
+    if(!cronTime || !duration) {
+      const err = `Invalid Cron Time ${cronTime} / duration ${duration} for policy ${policy.pid}`
+      log.error(err)
+      return Promise.reject(new Error(err))
     }
-    
+
+    const pid = policy.pid
+
+    if(runningCronJobs[pid]) { // already have a running job for this pid
+      const err = `Already have cron job running for policy ${pid}`
+      log.error(err)
+      return Promise.reject(new Error(err))
+    }
+
     try {
       log.info(`Registering policy ${policy.pid} for reoccuring`)
       const job = new CronJob(cronTime, () => {
-        this.policyTick(policy)
+        this.apply(policy)
       }, 
       () => {},
       true // enable the job
       );
       
-      runningCronJobs[policy.pid] = job
-      policyRules[policy.pid] = policy
+      runningCronJobs[pid] = job // register job
+
+      const x = this.shouldPolicyBeRunning(policy) // it's in policy activation period when starting FireMain
+      if(x > 0) {
+        return this.apply(policy, x)
+      }
 
       return Promise.resolve()
 
@@ -86,88 +162,21 @@ class PolicyScheduler {
       return Promise.resolve()
     }
 
+    const timer = policyTimers[pid]
     const job = runningCronJobs[pid]
+
     if(!job) {
-      return Promise.resolve() // already deregistered
-    }
-
-    return async(() => {
-      log.info(`Deregistering policy ${policy.pid} for reoccuring`)
-
-      // cleanup... stop the job, unenforce and remove job entry from runningJobs
       job.stop()
-      if(enforcedPolicies[pid]) {
-        if(this.unenforceCallback) {
-          await (this.unenforceCallback(policy))
-        }
-        delete enforcedPolicies[pid]
-      }
       delete runningCronJobs[job]
-      delete policyRules[pid]
-    })()
+    }    
 
-  }
-
-  // this will be executed per tick, the tick will be executed every minute when the cron job is on
-  policyTick(policy) {
-    const pid = policy.pid
-    if(pid == undefined) {
-      // ignore
-      return Promise.resolve()
+    if(timer) {
+      return async(() => {
+        await (this.unenforce(policy))
+        delete policyTimers[pid]
+      })()      
     }
-
-    return async(() => {
-      const flag = enforcedPolicies[pid]
-      if(flag) {
-        // already running, do nothing
-      } else {
-        // not running yet
-        log.info(`Enforcing policy ${policy.pid}`)
-        if(this.enforceCallback) {
-          await (this.enforceCallback(policy))
-        }
-        enforcedPolicies[pid] = 1
-      }
-    })().catch((err) => {
-      log.error("Got error when ticking policy:", err, {})
-    })
   }
-
-  // this is a guard tick to ensure policy is unenforced if time is outside the cron active period
-  tickGuard(policy) {
-    const pid = policy.pid
-    if(pid == undefined) {
-      // ignore
-      return Promise.resolve()
-    }
-
-    return async(() => {
-      const flag = enforcedPolicies[pid]
-      const job = runningCronJobs[pid]
-      if(flag && job) {
-        const lastExecutionDate = job.lastDate() / 1000
-        const now = new Date() / 1000
-        if(now - lastExecutionDate > INVALIDATE_POLICY_TRESHOLD) {
-          log.info(`Unenforcing policy ${policy.pid}`)
-
-          if(this.unenforceCallback) {
-            await (this.unenforceCallback(policy))
-          }
-          delete enforcedPolicies[pid]
-        }
-      }
-    })()
-  }
-  
-  tickGuardAll() {
-    const pids = Object.keys(enforcedPolicies)
-    pids.forEach((pid) => {
-      if(policyRules[pid]) {
-        this.tickGuard(policyRules[pid])
-      }      
-    })
-  }
-
 }
 
 module.exports = function() { return new PolicyScheduler() }

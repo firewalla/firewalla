@@ -1833,24 +1833,24 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
         }
       })()
-
+      break;
     case "policy:disable":
-    async(() => {
-      const policyID = msg.data.value.policyID
-      if(policyID) {
-        let policy = await (pm2.getPolicy(msg.data.value.policyID))
-        if(policy) {
-          await (pm2.disablePolicy(policy))
-          this.simpleTxData(msg, policy, null, callback);
+      async(() => {
+        const policyID = msg.data.value.policyID
+        if(policyID) {
+          let policy = await (pm2.getPolicy(msg.data.value.policyID))
+          if(policy) {
+            await (pm2.disablePolicy(policy))
+            this.simpleTxData(msg, policy, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+          }
         } else {
-          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
         }
-      } else {
-        this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-      }
-    })()
-
-      case "exception:delete":
+      })()
+      break;
+    case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
             this.simpleTxData(msg, null, null, callback);

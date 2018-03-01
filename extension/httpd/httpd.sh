@@ -2,4 +2,5 @@
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
-sudo /home/pi/firewalla/bin/node $DIR/app.js
+export NODE_PATH=/home/pi/.node_modules:$NODE_PATH
+/home/pi/firewalla/bin/node $DIR/app.js

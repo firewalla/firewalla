@@ -9,8 +9,8 @@ const qs = require('querystring');
 const path = require('path');
 const intel = require('./intel.js');
 
-const port = 80;
-const httpsPort = 443;
+const port = 8880;
+const httpsPort = 8883;
 const enableHttps = false;
 const enableRedis = true;
 
@@ -21,6 +21,8 @@ promise.promisifyAll(redis.RedisClient.prototype);
 
 const VIEW_PATH = 'firewalla_view';
 const STATIC_PATH = 'firewalla_static';
+
+process.title = "FireBlue";
 
 class App {
   constructor() {

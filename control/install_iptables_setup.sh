@@ -84,3 +84,8 @@ if [[ -e /sbin/ip6tables ]]; then
   # forward to fw_block
   sudo ip6tables -C FORWARD -p all -j FW_BLOCK &>/dev/null ||   sudo ip6tables -A FORWARD -p all -j FW_BLOCK
 fi
+
+# redirect blue hole ip 80/443 port to localhost
+BLUE_HOLE_IP="198.51.100.100"
+sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
+sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883

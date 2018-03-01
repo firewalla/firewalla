@@ -25,6 +25,8 @@
     "body-parser": "1.9.x",
     "bonjour": "^3.2.2",
     "botbuilder": "^0.6.1",
+    "cron": "^1.3.0",
+    "cron-parser": "^2.4.4",
     "child-process-promise": "*",
     "chokidar": "^1.4.3",
     "commander": "^2.9.0",
