@@ -198,8 +198,16 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  // always create the secondary interface
-  ModeManager.enableSecondaryInterface();
+  async(() => {
+    // always create the secondary interface
+    await (ModeManager.enableSecondaryInterface())
+    d.discoverInterfaces((err, list) => {
+      if(!err && list && list.length >= 2) {
+        sysManager.update(null) // if new interface is found, update sysManager
+      }
+    })
+  })()
+
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
