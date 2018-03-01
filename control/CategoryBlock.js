@@ -123,8 +123,10 @@ class CategoryBlock {
 
     return async(() => {
       if(hashset) {
+        log.info(`Loading domains for ${category} from cloud`);
         const data = await (bone.hashsetAsync(hashset))
         const list = JSON.parse(data)
+        log.info(`${list.length} domains are found`)
         return list.map((l) => l.replace("*.", "")) // convert it to domain style    *.facebook.com => facebook.com
       } else {
         return []
