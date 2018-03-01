@@ -66,7 +66,8 @@ let dhcpFeature = false;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
-let BLACK_HOLE_IP=sysManager.myIp();
+const BLACK_HOLE_IP = "198.51.100.99"
+const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
@@ -406,7 +407,7 @@ module.exports = class DNSMASQ {
                   callback(err);
                   return;
                 }
-                this._writeHashFilterFile(hashes, filterFileTmp, (err) => {
+                this._writeHashFilterFile(type, hashes, filterFileTmp, (err) => {
                   if(err) {
                     callback(err);
                   } else {
@@ -425,7 +426,7 @@ module.exports = class DNSMASQ {
               callback(err);
               return;
             }
-            this._writeHashFilterFile(hashes, filterFileTmp, (err) => {
+            this._writeHashFilterFile(type, hashes, filterFileTmp, (err) => {
               if(err) {
                 callback(err);
               } else {
@@ -472,7 +473,8 @@ module.exports = class DNSMASQ {
         await (iptables.dnsChangeAsync(subnet, dns, true));
       })
 
-      await (require('../../control/Block.js').block(BLACK_HOLE_IP));
+      await (require('../../control/Block.js').block(BLACK_HOLE_IP))
+      await (require('../../control/Block.js').block(BLUE_HOLE_IP))
     })();
   }
 
@@ -566,14 +568,20 @@ module.exports = class DNSMASQ {
     });
   }
 
-  _writeHashFilterFile(hashes, file, callback) {
+  _writeHashFilterFile(type, hashes, file, callback) {
     callback = callback || function() {}
 
 
     let writer = fs.createWriteStream(file);
 
+    let targetIP = BLACK_HOLE_IP
+
+    if(type === "family") {
+      targetIP = BLUE_HOLE_IP
+    }
+
     hashes.forEach((hash) => {
-      let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), BLACK_HOLE_IP);
+      let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
       writer.write(line);
     });
 
@@ -684,7 +692,7 @@ module.exports = class DNSMASQ {
         if(!statusCheckTimer) {
           statusCheckTimer = setInterval(() => {
             this.statusCheck()
-          }, 1000 * 60 * 2) // check status every two minutes
+          }, 1000 * 60 * 1) // check status every minute
           log.info("Status check timer installed")
         }
       } catch(err) {
