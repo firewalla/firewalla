@@ -22,7 +22,7 @@ let userID = f.getUserID();
 let Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
-promise.promisifyAll(Redis.RedisClient.prototype);
+Promise.promisifyAll(Redis.RedisClient.prototype);
 let fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
