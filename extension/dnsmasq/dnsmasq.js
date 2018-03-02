@@ -420,8 +420,8 @@ module.exports = class DNSMASQ {
                     callback(null, 1);
                   }
                 });
-                
-                this._writeHashIntoRedis(type, hashes, err => {
+
+                this._writeHashIntoRedis(type, hashes).then(err => {
                   if (err) {
                     callback(err);
                   } else {
@@ -582,22 +582,22 @@ module.exports = class DNSMASQ {
       }
     });
   }
-
-
-  _writeHashIntoRedis(type, hashes, callback) {
-    callback = callback || function() {};
-
-    log.info(`Writing hash into redis for type: ${type}`);
-
-    try {
-      let jobs = hashes.map(hash => redis.saddAsync('dns:hashset:' + type, hash));
-      await (Promise.all(jobs));
-      let count = await (redis.scardAsync(type));
-      log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
-      callback(null);
-    } catch (err) {
-      callback(err);
-    }
+  
+  _writeHashIntoRedis(type, hashes) {
+    return async(() => {
+      log.info(`Writing hash into redis for type: ${type}`);
+      let error;
+      try {
+        let jobs = hashes.map(hash => redis.saddAsync('dns:hashset:' + type, hash));
+        await(Promise.all(jobs));
+        let count = await(redis.scardAsync(type));
+        log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
+      } catch (err) {
+        log.error("Error when writing hashes into redis", err, {});
+        error = err;
+      }
+      return error;
+    })();
   }
 
   _writeHashFilterFile(type, hashes, file, callback) {
