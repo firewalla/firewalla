@@ -36,6 +36,19 @@ exports.drop = function (rule, callback) {
     newRule(rule, callback);
 }
 
+exports.portforwardAsync = function(rule) {
+    return new Promise((resolve, reject) => {
+        rule.type = "portforward";
+        newRule(rule,(err)=>{
+            if(err) {
+                reject(err)
+            } else {
+                resolve();
+            }
+        });
+    });
+}
+
 function reject(rule, callback) {
     rule.target = 'REJECT';
     if (!rule.action) rule.action = '-A';
@@ -139,10 +152,50 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else if (rule.type == "portforward") {
+        let state = rule.state;
+        let protocol = rule.protocol;
+        let dport = rule.dport;
+        let toIP = rule.toIP;
+        let toPort = rule.toPort;
+        let action = "-A";
+        if (state == false || state == null) {
+            action = "-D";
+        }
+
+        let cmd = "iptables";
+        let cmdline = "";
+
+        let getCommand = function(action, protocol, dport, toIP, toPort) {
+          return `sudo iptables -t nat ${action} PREROUTING -p ${protocol} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+        }
+
+        switch(action) {
+          case "-A":
+            cmdline += `(${getCommand("-C", protocol, dport,toIP,toPort)} || ${getCommand(action, protocol, dport, toIP, toPort)})`
+          break;
+          case "-D":
+            cmdline += `(${getCommand("-C", protocol, dport, toIP, toPort)} && ${getCommand(action, protocol, dport, toIP, toPort)})`
+            cmdline += ` ; true` // delete always return true FIXME
+          break;
+        }
+
+        log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
+        require('child_process').exec(cmdline, (err, out, code) => {
+            if (err && action !== "-D") {
+                log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
+            }
+            if (callback) {
+                callback(err, null);
+            }
+            running = false;
+            newRule(null, null);
+        });
+
     } else {
       log.error("Invalid rule type:", rule.type);
       if (callback) {
-          callback(err, null);
+          callback(new Error("invalid rule type:"+rule.type), null);
       }
       running = false;
       newRule(null, null);
