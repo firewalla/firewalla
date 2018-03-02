@@ -251,7 +251,7 @@ function unblock(destination, ipset) {
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
-        log.error("Unable to ipset remove ",cmd);
+        log.error("Unable to ipset remove ",cmd, err, {})
         reject(err);
         return;
       }
