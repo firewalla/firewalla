@@ -472,9 +472,6 @@ module.exports = class DNSMASQ {
       subnets.forEach(subnet => {
         await (iptables.dnsChangeAsync(subnet, dns, true));
       })
-
-      await (require('../../control/Block.js').block(BLACK_HOLE_IP))
-      await (require('../../control/Block.js').block(BLUE_HOLE_IP))
     })();
   }
 

@@ -6,6 +6,9 @@ if [[ -e /.dockerenv ]]; then
     exit
 fi
 
+BLACK_HOLE_IP="198.51.100.99"
+BLUE_HOLE_IP="198.51.100.100"
+
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
 sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
@@ -18,6 +21,9 @@ sudo ipset flush blocked_ip_set
 sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
+
+sudo ipset add blocked_ip_set $BLACK_HOLE_IP
+sudo ipset add blocked_ip_set $BLUE_HOLE_IP
 
 # This is to remove all customized ip sets, to have a clean start
 for set in `sudo ipset list -name | egrep "^c_"`; do
@@ -96,6 +102,5 @@ if [[ -e /sbin/ip6tables ]]; then
 fi
 
 # redirect blue hole ip 80/443 port to localhost
-BLUE_HOLE_IP="198.51.100.100"
 sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
