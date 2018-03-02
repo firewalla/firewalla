@@ -886,7 +886,10 @@ class PolicyManager2 {
         return async(() => {
           if(scope) {
             await (Block.advancedUnblock(policy.pid, scope, []))
-            return categoryBlock.unblockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+            return categoryBlock.unblockCategory(policy.target, {
+              blockSet: Block.getDstSet(policy.pid),
+              ignoreUnapplyBlock: true
+            })
           } else {
             return categoryBlock.unblockCategory(policy.target)
           }
