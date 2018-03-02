@@ -40,7 +40,8 @@ const bone = require('../lib/Bone.js')
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
-  "social": "app.social"
+  "social": "app.social",
+  "porn": "app.porn"
 }
 
 function delay(t) {
@@ -80,7 +81,10 @@ class CategoryBlock {
     domainBlock.externalMapping = this.getMapping(category)
 
     return async(() => {
-      await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+      if(!options.ignoreUnapplyBlock) {
+        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+      }
+            
       const list = await (this.loadDomains(category))
       if(list && list.length > 0) {
         list.forEach((domain) => {

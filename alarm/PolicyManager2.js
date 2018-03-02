@@ -696,8 +696,7 @@ class PolicyManager2 {
         return Block.block(policy.target);
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -748,8 +747,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -804,7 +802,7 @@ class PolicyManager2 {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
     if(policy.scope) {
-      return this._advancedEnforce(policy)
+      return this._advancedUnenforce(policy)
     }
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
@@ -813,8 +811,7 @@ class PolicyManager2 {
       return Block.unblock(policy.target);
       break;
     case "mac":
-      let unblockMacAsync = Promise.promisify(Block.unblockMac);
-      return unblockMacAsync(policy.target);
+      return Block.unblockMac(policy.target);
       break;
     case "domain":
     case "dns":
@@ -860,8 +857,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let unblockMacAsync = Promise.promisify(Block.unblockMac)
-        return unblockMacAsync(policy.target)
+        return Block.unblockMac(policy.target)
         break;
       case "domain":
       case "dns":    
@@ -890,7 +886,10 @@ class PolicyManager2 {
         return async(() => {
           if(scope) {
             await (Block.advancedUnblock(policy.pid, scope, []))
-            return categoryBlock.unblockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+            return categoryBlock.unblockCategory(policy.target, {
+              blockSet: Block.getDstSet(policy.pid),
+              ignoreUnapplyBlock: true
+            })
           } else {
             return categoryBlock.unblockCategory(policy.target)
           }
