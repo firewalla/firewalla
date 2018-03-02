@@ -12,7 +12,6 @@ const intel = require('./intel.js');
 const port = 8880;
 const httpsPort = 8883;
 const enableHttps = false;
-const enableRedis = true;
 
 const promise = require('bluebird');
 const redis = require('redis');
@@ -41,10 +40,11 @@ class App {
       const url = qs.unescape(req.query.url);
       const ip = req.ip;
       const method = req.method;
+      const count = qs.unescape(req.query.count);
 
       log.info("Got a request in block views");
 
-      res.render('block', {hostname, url, ip, method});
+      res.render('block', {hostname, url, ip, method, count});
     })
 
     this.app.use('/' + VIEW_PATH, this.router);
@@ -60,10 +60,10 @@ class App {
 
         switch(cat) {
           case 'porn':
-            this.isPorn(req, res);
+            await this.isPorn(req, res);
             break;
           case 'ad':
-            this.isAd(req, res);
+            await this.isAd(req, res);
             break;
           default:
             res.status(200).send().end();
@@ -81,22 +81,16 @@ class App {
     }
   }
 
-  isPorn(req, res) {
-    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({url: req.originalUrl})}`).send().end();
-    if (enableRedis) {
-      client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
-        log.info(`Total porn blocked: ${value}`);
-      });
-    }
+  async isPorn(req, res) {
+    let count = await client.hincrbyAsync('block:stats', 'porn', 1);
+    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({hostname: req.hostname, url: req.originalUrl, count})}`).send().end();
+    log.info(`Total porn blocked: ${count}`);
   }
 
-  isAd(req, res) {
+  async isAd(req, res) {
     res.status(200).send().end();
-    if (enableRedis) {
-      client.hincrbyAsync('block:stats', 'ad', 1).then(value => {
-        log.info(`Total ad blocked: ${value}`);
-      });
-    }
+    let count = client.hincrbyAsync('block:stats', 'ad', 1);
+    log.info(`Total ad blocked: ${count}`);
   }
 
   genHttpsOptions() {
