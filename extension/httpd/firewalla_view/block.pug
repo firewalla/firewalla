@@ -21,7 +21,11 @@ html
                             |  by Firewalla.
                     p.small
                         | Firewalla is protecting you from #{hostname}. You can manage your blocked list in Firewalla App.
-                        | Firewalla has protected you for #{count} times.
+                    p
+                        i(style='color: darkgray')
+                          | Firewalla has prevented
+                          | #{count}
+                          | inappropriate web content visits.
                     ul.actions.vertical
                         li
                             a.button.medium.wide.smooth-scroll-middle(href='https://firewalla.com') Visit Our Site 
