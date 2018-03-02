@@ -158,6 +158,11 @@ function destroyBlockingEnv(tag) {
 function block(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
