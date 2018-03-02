@@ -10,7 +10,7 @@ const redis = Redis.createClient();
 Promise.promisifyAll(Redis.RedisClient.prototype);
 
 class Intel {
-  constructor(types) {
+  constructor() {
     (async () => {
       this.types = (await Promise.map(await redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
     })();
@@ -27,21 +27,23 @@ class Intel {
   async check(dn) {
     try {
       let intel = await this.checkIntelLocally(dn);
-
-      log.info('local intel result:', intel);
+      log.info(`local intel for ${dn} is: ${intel}`);
 
       if (intel) {
         return intel;
       }
 
-      return await this.checkIntelFromCloud(dn);
+      intel = await this.checkIntelFromCloud(dn);
+      log.info(`cloud intel for ${dn} is: ${intel}`);
+
+      return intel;
     } catch (err) {
-      log.error("Error:", err, {});
+      log.error("Error when check intel:", err, {});
     }
   }
 
   async checkIntelLocally(dn) {
-    let inList = await this.getIntelLocally(dn);
+    let inList = await this.matchHashedDomainsInRedis(dn);
 
     if (inList.family) {
       return 'porn'
@@ -50,23 +52,20 @@ class Intel {
     }
   }
 
-  async getIntelLocally(dn) {
+  async matchHashedDomainsInRedis(dn) {
     const hashedDomains = flowUtil.hashHost(dn, {keepOriginal: true});
-    //log.info("hds:\n", util.inspect(hashedDomains, {colors: true}));
+    //log.debug("hds:\n", util.inspect(hashedDomains, {colors: true}));
 
-    return (await Promise.map(this.types, async type => {
-      const key = `dns:hashset:${type}`;
-
-      // hashedDomain[0]: domain name, [1]: short hash, [2]: full hash
-      let isMember = (await Promise.map(hashedDomains,
-        async hashedDomain => ({
-          dn: hashedDomain[0],
-          isMember: await redis.sismemberAsync(key, hashedDomain[2])
-        })))
-        .reduce((acc, cur) => acc || cur.isMember, false);
-
-      return {type, isMember};
-    })).reduce((acc, cur) => Object.assign(acc, {[cur.type]: cur.isMember}), {});
+    return (await Promise.map(this.types,
+      async type => ({
+        type,
+        isMember: (await Promise.map(hashedDomains,
+          async hdn => ({ // hdn[0]: domain name, hdn[1]: short hash, hdn[2]: full hash
+            isMember: await redis.sismemberAsync(`dns:hashset:${type}`, hdn[2])
+          })))
+          .reduce((acc, cur) => acc || cur.isMember, false)
+      })))
+      .reduce((acc, cur) => Object.assign(acc, {[cur.type]: cur.isMember}), {});
   };
 
   async checkIntelFromCloud(dn) {
