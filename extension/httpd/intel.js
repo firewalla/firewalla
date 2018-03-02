@@ -1,6 +1,6 @@
 const util = require('util');
 const Promise = require('bluebird');
-const Redis = require("Redis");
+const Redis = require("redis");
 
 const log = require("../../net2/logger")('intel');
 const bone = require('../../lib/Bone');
@@ -10,9 +10,10 @@ const redis = Redis.createClient();
 Promise.promisifyAll(Redis.RedisClient.prototype);
 
 class Intel {
-  
   constructor(types) {
-    this.types = types;
+    (async () => {
+      this.types = await Promise.map(await redis.keysAsync('dns:hashset:*'), key => key.split(':')[2]);
+    })();
   }
   
   async jwt() {
@@ -26,24 +27,31 @@ class Intel {
   async check(dn) {
     try {
       let result = await this.checkIntelLocally(dn);
-      log.info('local intel result:', util.inspect(result));
-
+      log.info('local intel result:', util.inspect(result, {colors: true, depth: null}));
 
       return await this.checkIntelFromCloud(dn);
     } catch (err) {
       log.error("Error:", err, {});
     }
   }
-  
+
   async checkIntelLocally(dn) {
-    return Promise.map(types, async type => {
-      let key = `dns:hashset:${type}`;
+    const hashedDomains = flowUtil.hashHost(dn, {keepOriginal: true});
+    log.info("hds:\n", util.inspect(hashedDomains, {colors: true}));
 
-      let hds = flowUtil.hashHost(dn);
+    return Promise.map(this.types, async type => {
+      const key = `dns:hashset:${type}`;
 
-      return Promise.map(hds, async hd => ({type, isMember: await redis.sismemberAsync(key, hd)}));
+      // hashedDomain[0]: domain name, [1]: short hash, [2]: full hash
+      let results = await Promise.map(hashedDomains, async hashedDomain => ({
+        dn: hashedDomain[0],
+        isMember: await redis.sismemberAsync(key, hashedDomain[2])
+      }));
+
+      let result = results.reduce((acc, cur) => acc || cur.isMember);
+      return {[type]: result};
     });
-  }
+  };
 
   async checkIntelFromCloud(dn) {
     log.info("Checking intel for", dn);
