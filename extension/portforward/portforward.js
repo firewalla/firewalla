@@ -90,7 +90,11 @@ class PortForward {
   }
 
   saveConfig() {
+    if (this.config == null) {
+        return;
+    }
     let string = JSON.stringify(this.config)
+    log.info("PortForwarder:Saving:",string);
     return rclient.setAsync(configKey, string)
   }
 
@@ -104,6 +108,7 @@ class PortForward {
           this.config = config
         } catch(err) {
           log.error("PortForwarder:Failed to parse config:", json, err, {})
+          this.config = {maps:[]};
         }
       } else {
         log.info("PortForwarder:EmptyConfig");
