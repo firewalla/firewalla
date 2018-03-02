@@ -802,7 +802,7 @@ class PolicyManager2 {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
     if(policy.scope) {
-      return this._advancedEnforce(policy)
+      return this._advancedUnenforce(policy)
     }
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
