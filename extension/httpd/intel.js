@@ -25,6 +25,10 @@ class Intel {
 
   async check(dn) {
     try {
+      let result = await this.checkIntelLocally(dn);
+      log.info('local intel result:', util.inspect(result));
+
+
       return await this.checkIntelFromCloud(dn);
     } catch (err) {
       log.error("Error:", err, {});
@@ -32,18 +36,13 @@ class Intel {
   }
   
   async checkIntelLocally(dn) {
-    let jobs = types.map(async type => {
+    return Promise.map(types, async type => {
       let key = `dns:hashset:${type}`;
 
       let hds = flowUtil.hashHost(dn);
-      
-      let jobs = hds.map(async hd => ({type, isMember: await redis.sismemberAsync(key, hd)}));
 
-      return await Promise.all(jobs);
+      return Promise.map(hds, async hd => ({type, isMember: await redis.sismemberAsync(key, hd)}));
     });
-    
-    let result = await Promise.all(jobs);
-    
   }
 
   async checkIntelFromCloud(dn) {
