@@ -561,15 +561,15 @@ class FlowAggregationSensor extends Sensor {
       if(Object.keys(allFlows).length > 0) {
         flowUtil.hashIntelFlows(allFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))
-        
+        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))        
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-
         await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options))
       } else {
         await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
-    })()
+    })().catch((err) => {
+      log.error(`Failed to clean app activity: `, err, {})
+    })
   }
 
   getCategoryFlow(category, options) {
@@ -654,7 +654,9 @@ class FlowAggregationSensor extends Sensor {
       } else {
         await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
-    })()
+    })().catch((err) => {
+      log.error(`Failed to clean category activity: `, err, {})
+    })
   }
 
 }
