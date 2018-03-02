@@ -290,6 +290,17 @@ module.exports = class {
       return
     }
 
+    this.familyDnsAddr((err, dnsaddrs) => {
+      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
+      if (state === true) {
+        dnsmasq.setDefaultNameServers("family", dnsaddrs);
+        dnsmasq.updateResolvConf(callback);
+      } else {
+        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+        dnsmasq.updateResolvConf(callback);
+      }
+    });
+
     log.info("PolicyManager:Family:Dnsmasq", ip, state);
     dnsmasq.controlFilter('family', state);
   }
