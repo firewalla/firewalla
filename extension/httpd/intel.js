@@ -12,7 +12,7 @@ Promise.promisifyAll(Redis.RedisClient.prototype);
 class Intel {
   constructor(types) {
     (async () => {
-      this.types = await Promise.map(await redis.keysAsync('dns:hashset:*'), key => key.split(':')[2]);
+      this.types = (await Promise.map(await redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
     })();
   }
   
@@ -26,8 +26,13 @@ class Intel {
 
   async check(dn) {
     try {
-      let result = await this.checkIntelLocally(dn);
-      log.info('local intel result:', util.inspect(result, {colors: true, depth: null}));
+      let intel = await this.checkIntelLocally(dn);
+
+      log.info('local intel result:', intel);
+
+      if (intel) {
+        return intel;
+      }
 
       return await this.checkIntelFromCloud(dn);
     } catch (err) {
@@ -36,22 +41,32 @@ class Intel {
   }
 
   async checkIntelLocally(dn) {
+    let inList = await this.getIntelLocally(dn);
+
+    if (inList.family) {
+      return 'porn'
+    } else if (inList.adblock) {
+      return 'ad';
+    }
+  }
+
+  async getIntelLocally(dn) {
     const hashedDomains = flowUtil.hashHost(dn, {keepOriginal: true});
-    log.info("hds:\n", util.inspect(hashedDomains, {colors: true}));
+    //log.info("hds:\n", util.inspect(hashedDomains, {colors: true}));
 
     return (await Promise.map(this.types, async type => {
       const key = `dns:hashset:${type}`;
 
       // hashedDomain[0]: domain name, [1]: short hash, [2]: full hash
-      let results = await Promise.map(hashedDomains, async hashedDomain => ({
-        dn: hashedDomain[0],
-        isMember: await redis.sismemberAsync(key, hashedDomain[2])
-      }));
+      let isMember = (await Promise.map(hashedDomains,
+        async hashedDomain => ({
+          dn: hashedDomain[0],
+          isMember: await redis.sismemberAsync(key, hashedDomain[2])
+        })))
+        .reduce((acc, cur) => acc || cur.isMember, false);
 
-      let result = results.reduce((acc, cur) => acc || cur.isMember, false);
-
-      return {type, member: result.isMember};
-    })).reduce((acc, cur) => Object.assign(acc, {[cur.type]: [cur.member]}), {});
+      return {type, isMember};
+    })).reduce((acc, cur) => Object.assign(acc, {[cur.type]: cur.isMember}), {});
   };
 
   async checkIntelFromCloud(dn) {
