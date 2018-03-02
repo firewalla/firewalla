@@ -39,7 +39,7 @@ class Intel {
     const hashedDomains = flowUtil.hashHost(dn, {keepOriginal: true});
     log.info("hds:\n", util.inspect(hashedDomains, {colors: true}));
 
-    return Promise.map(this.types, async type => {
+    return (await Promise.map(this.types, async type => {
       const key = `dns:hashset:${type}`;
 
       // hashedDomain[0]: domain name, [1]: short hash, [2]: full hash
@@ -48,9 +48,10 @@ class Intel {
         isMember: await redis.sismemberAsync(key, hashedDomain[2])
       }));
 
-      let result = results.reduce((acc, cur) => acc || cur.isMember);
-      return {[type]: result};
-    });
+      let result = results.reduce((acc, cur) => acc || cur.isMember, false);
+
+      return {type, member: result.isMember};
+    })).reduce((acc, cur) => Object.assign(acc, {[cur.type]: [cur.member]}), {});
   };
 
   async checkIntelFromCloud(dn) {
