@@ -696,8 +696,7 @@ class PolicyManager2 {
         return Block.block(policy.target);
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -748,8 +747,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -813,8 +811,7 @@ class PolicyManager2 {
       return Block.unblock(policy.target);
       break;
     case "mac":
-      let unblockMacAsync = Promise.promisify(Block.unblockMac);
-      return unblockMacAsync(policy.target);
+      return Block.unblockMac(policy.target);
       break;
     case "domain":
     case "dns":
@@ -860,8 +857,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let unblockMacAsync = Promise.promisify(Block.unblockMac)
-        return unblockMacAsync(policy.target)
+        return Block.unblockMac(policy.target)
         break;
       case "domain":
       case "dns":    
