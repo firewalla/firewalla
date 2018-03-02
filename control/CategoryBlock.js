@@ -40,7 +40,8 @@ const bone = require('../lib/Bone.js')
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
-  "social": "app.social"
+  "social": "app.social",
+  "porn": "app.porn"
 }
 
 function delay(t) {
