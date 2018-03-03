@@ -67,10 +67,7 @@ const categoryBlock = require('../control/CategoryBlock.js')()
 
 const scheduler = require('../extension/scheduler/scheduler.js')()
 
-const Queue = require('bull')
-
-
-
+const Queue = require('bee-queue')
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -101,18 +98,16 @@ class PolicyManager2 {
         
         switch(action) {
         case "enforce": {
-          async(() => {
+          return async(() => {
             await(this.enforce(policy))
-            done()
           })().catch((err) => {
             log.error("enforce policy failed:" + err)
           })
           break
         }
         case "unenforce": {
-          async(() => {
+          return async(() => {
             await(this.unenforce(policy))
-            done()
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
           })
@@ -120,7 +115,7 @@ class PolicyManager2 {
         }
         default:
           log.error("unrecoganized policy enforcement action:" + action)
-          done()
+          return Promise.reject(new Error("unsupported action"))
           break
         }
       })
@@ -138,7 +133,8 @@ class PolicyManager2 {
         }
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if(this.queue) {
-          this.queue.add(event)
+          const job = this.queue.createJob(event)
+          job.save()
         }
       }
     })
