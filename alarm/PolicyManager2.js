@@ -93,7 +93,7 @@ class PolicyManager2 {
 
       this.queue = new Queue('policy enforcement')
 
-      queue.process((event) => {
+      this.queue.process((event, done) => {
         const policy = event.policy
         const action = event.action
 
@@ -101,16 +101,18 @@ class PolicyManager2 {
         
         switch(action) {
         case "enforce": {
-          return async(() => {
+          async(() => {
             await(this.enforce(policy))
+            done()
           })().catch((err) => {
             log.error("enforce policy failed:" + err)
           })
           break
         }
         case "unenforce": {
-          return async(() => {
+          async(() => {
             await(this.unenforce(policy))
+            done()
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
           })
@@ -118,6 +120,7 @@ class PolicyManager2 {
         }
         default:
           log.error("unrecoganized policy enforcement action:" + action)
+          done()
           break
         }
       })
