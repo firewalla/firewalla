@@ -26,10 +26,15 @@ process.title = "FireBlue";
 class App {
   constructor() {
     this.app = express();
-    this.app.engine('pug', require('pug').__express);
+    //this.app.engine('pug', require('pug').__express);
+    //this.app.set('view engine', 'pug');
+
+    this.app.engine('pug', require('mustache-express')());
+    this.app.set('view engine', 'mustache');
+
     this.app.set('views', path.join(__dirname, VIEW_PATH));
-    this.app.set('view engine', 'pug');
-    //this.app.disable('view cache'); //for debug only
+    this.app.disable('view cache'); //for debug only
+
     this.routes();
   }
 
