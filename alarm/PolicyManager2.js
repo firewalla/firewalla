@@ -67,6 +67,11 @@ const categoryBlock = require('../control/CategoryBlock.js')()
 
 const scheduler = require('../extension/scheduler/scheduler.js')()
 
+const Queue = require('bull')
+
+
+
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -85,47 +90,53 @@ class PolicyManager2 {
       scheduler.unenforceCallback = (policy) => {
         return this._unenforce(policy)
       }
+
+      this.queue = new Queue('policy enforcement')
+
+      queue.process((event) => {
+        const policy = event.policy
+        const action = event.action
+
+        log.info("Processing", policy.pid, action, {})
+        
+        switch(action) {
+        case "enforce": {
+          return async(() => {
+            await(this.enforce(policy))
+          })().catch((err) => {
+            log.error("enforce policy failed:" + err)
+          })
+          break
+        }
+        case "unenforce": {
+          return async(() => {
+            await(this.unenforce(policy))
+          })().catch((err) => {
+            log.error("unenforce policy failed:" + err)
+          })
+          break
+        }
+        default:
+          log.error("unrecoganized policy enforcement action:" + action)
+          break
+        }
+      })
     }
     return instance;
   }
 
-  registerPolicyEnforcementListener() {
+  registerPolicyEnforcementListener() { // need to ensure it's serialized
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
         const policy = this.jsonToPolicy(event.policy)
+        if(policy) {
+          event.policy = policy // make it class object
+        }
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
-        async(()=>{
-          if (event.action && event.action == 'enforce') {
-            try {
-              await(this.enforce(policy))
-            } catch (err) {
-              log.error("enforce policy failed:" + err)
-            }
-          } else if (event && event.action == 'unenforce_and_delete') {
-            try {
-              await(this.unenforce(policy))
-            } catch (err) {
-              log.error("failed to unenforce policy:" + err)
-            }
-            
-            try {
-              await(this.deletePolicy(event.policy.pid))
-            } catch (err) {
-              log.error("failed to delete policy:" + err)
-            }
-          } else if (event && event.action == 'unenforce') {
-            try {
-              await(this.unenforce(policy))
-            } catch (err) {
-              log.error("failed to unenforce policy:" + err)
-            }
-          } else {
-            log.error("unrecoganized policy enforcement action:" + event.action)
-          }
-        })().catch((err) => {
-          log.error(`Failed to process policy enforce on policy ${policy.pid}, err: ${err}`)
-        })
+        if(this.queue) {
+          this.queue.add(event)
+        }
       }
     })
   }
@@ -368,14 +379,14 @@ class PolicyManager2 {
 
   disableAndDeletePolicy(policyID) {
     return async(() => {
-      let p = await (this.getPolicy(policyID))
+      let policy = await (this.getPolicy(policyID))
 
-      if(!p) {
+      if(!policy) {
         return Promise.resolve()
       }
 
       await (this.deletePolicy(policyID)) // delete before broadcast
-      
+
       this.tryPolicyEnforcement(policy, "unenforce")
       Bone.submitIntelFeedback('unblock', policy, 'policy');
     })()

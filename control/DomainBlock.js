@@ -66,6 +66,7 @@ class DomainBlock {
       }
 
       globalLock = true
+      log.info(`Block ${domain} is holding the lock`)
 
       await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
 
@@ -84,6 +85,7 @@ class DomainBlock {
       //   this.incrementalUpdateIPMapping(domain, options)
       // }, 60 * 1000) // reinforce in 60 seconds
     })().finally(() => {
+      log.info(`Block ${domain} released the lock`)
       globalLock = false
     })
   }
