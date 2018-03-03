@@ -269,6 +269,9 @@ module.exports = class {
       return
     }
 
+    // remove family_filter.conf from v2
+    require('fs').unlink(firwalla.getUserConfigFolder() + '/dns/family_filter.conf', err => log.warn('Error when rm family_filter.conf', err, {}));
+
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state == true) {
