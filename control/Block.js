@@ -155,7 +155,65 @@ function destroyBlockingEnv(tag) {
   })()
 }
 
+let ipsetQueue = [];
+let maxIpsetQueue = 158;
+let ipsetInterval = 3000;
+let ipsetTimerSet = false;
+
+function ipsetEnqueue(ipsetCmd) {
+  if (ipsetCmd != null) {
+    ipsetQueue.push(ipsetCmd);
+  }
+  if (ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+    let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
+    ipsetQueue = [];
+    let child = require('child_process').spawn('sudo',['ipset', 'restore']);
+    child.stdin.setEncoding('utf-8');
+//    child.stdout.pipe(process.stdout);
+    for (let i in _ipsetQueue) {
+      log.info("Control:Block:Processing", _ipsetQueue[i]);
+      child.stdin.write(_ipsetQueue[i]+"\n");
+    }
+    log.info("Control:Block:Processing:END", _ipsetQueue.length);
+    child.stdin.end();
+  } else {
+    if (ipsetTimerSet == false) {
+      setTimeout(()=>{
+        if (ipsetQueue.length>0) {
+          log.info("Control:Block:Timer", ipsetQueue.length);
+          ipsetEnqueue(null);
+        }
+        ipsetTimerSet = false;
+      },ipsetInterval);
+      ipsetTimerSet = true;
+    }
+  }
+}
+
 function block(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
+  let cmd = null;
+
+  if(iptool.isV4Format(destination)) {
+    cmd = `add ${ipset} ${destination}`
+  } else if(iptool.isV6Format(destination)) {
+    cmd = `add ${ipset}6 ${destination}`
+  } else {
+    // do nothing
+    return Promise.resolve()
+  }
+
+  ipsetEnqueue(cmd);
+  return Promise.resolve()
+}
+
+function blockImmediate(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
   // never block black hole ip, they are already blocked in setup scripts
