@@ -88,10 +88,22 @@ class PolicyManager2 {
         return this._unenforce(policy)
       }
 
-      this.queue = new Queue('policy enforcement')
+      this.queue = new Queue('policy')
 
-      this.queue.process((event, done) => {
-        const policy = event.policy
+      this.queue.removeOnFailure = true
+      this.queue.removeOnSuccess = true
+
+      this.queue.on('error', (err) => {
+        log.error("Queue got err:", err)
+      })
+
+      this.queue.on('failed', (job, err) => {
+        log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+      });
+
+      this.queue.process((job, done) => {
+        const event = job.data
+        const policy = this.jsonToPolicy(event.policy)
         const action = event.action
 
         log.info("Processing", policy.pid, action, {})
@@ -102,20 +114,25 @@ class PolicyManager2 {
             await(this.enforce(policy))
           })().catch((err) => {
             log.error("enforce policy failed:" + err)
+          }).finally(() => {
+            done()
           })
           break
         }
         case "unenforce": {
           return async(() => {
             await(this.unenforce(policy))
+            done()
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
+          }).finally(() => {
+            done()
           })
           break
         }
         default:
           log.error("unrecoganized policy enforcement action:" + action)
-          return Promise.reject(new Error("unsupported action"))
+          done()
           break
         }
       })
@@ -127,14 +144,10 @@ class PolicyManager2 {
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
-        const policy = this.jsonToPolicy(event.policy)
-        if(policy) {
-          event.policy = policy // make it class object
-        }
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if(this.queue) {
           const job = this.queue.createJob(event)
-          job.save()
+          job.save(function() {})
         }
       }
     })
@@ -558,7 +571,13 @@ class PolicyManager2 {
         return async(() => {
           rules.forEach((rule) => {
             try {
-              await (this.enforce(rule))
+              if(this.queue) {
+                const job = this.queue.createJob({
+                  policy: rule,
+                  action: "enforce"
+                })
+                job.save(function() {})
+              }
             } catch(err) {
               log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
             }            
