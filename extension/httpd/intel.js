@@ -4,7 +4,7 @@ const Promise = require('bluebird');
 const log = require("../../net2/logger")('intel');
 const flowUtil = require('../../net2/FlowUtil.js');
 
-module.exports = class Intel {
+class Intel {
   constructor(redis) {
     this.redis = redis;
     (async () => {
