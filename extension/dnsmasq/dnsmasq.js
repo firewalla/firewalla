@@ -278,8 +278,16 @@ module.exports = class DNSMASQ {
       });
   }
 
-  addPolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+  addPolicyFilterEntry(domain, options) {
+    options = options || {}
+
+    let entry = null
+    
+    if(options.use_blue_hole) {
+      util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
+    } else {
+      util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    }
     
     return async(() => {
       if(this.workingInProgress) {

@@ -67,7 +67,7 @@ class DomainBlock {
 
       globalLock = true
 
-      await (dnsmasq.addPolicyFilterEntry(domain).catch((err) => undefined))
+      await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
 
       sem.emitEvent({
         type: 'ReloadDNSRule',
