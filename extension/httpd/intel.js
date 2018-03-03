@@ -1,18 +1,14 @@
 const util = require('util');
 const Promise = require('bluebird');
-const Redis = require("redis");
-const request = require('request');
 
 const log = require("../../net2/logger")('intel');
 const flowUtil = require('../../net2/FlowUtil.js');
 
-const redis = Redis.createClient();
-Promise.promisifyAll(Redis.RedisClient.prototype);
-
-class Intel {
-  constructor() {
+module.exports = class Intel {
+  constructor(redis) {
+    this.redis = redis;
     (async () => {
-      this.types = (await Promise.map(await redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
+      this.types = (await Promise.map(await this.redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
     })();
   }
 
@@ -45,13 +41,10 @@ class Intel {
         type,
         isMember: (await Promise.map(hashedDomains,
           async hdn => ({ // hdn[0]: domain name, hdn[1]: short hash, hdn[2]: full hash
-            isMember: await redis.sismemberAsync(`dns:hashset:${type}`, hdn[2])
+            isMember: await this.redis.sismemberAsync(`dns:hashset:${type}`, hdn[2])
           })))
           .reduce((acc, cur) => acc || cur.isMember, false)
       })))
       .reduce((acc, cur) => Object.assign(acc, {[cur.type]: cur.isMember}), {});
   };
-
-}
-
-module.exports = new Intel();
+};
