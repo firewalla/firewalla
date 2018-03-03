@@ -10,12 +10,12 @@ const path = require('path');
 
 const port = 8880;
 const httpsPort = 8883;
-const enableHttps = false;
+const enableHttps = true;
 
-const promise = require('bluebird');
+const Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
-promise.promisifyAll(Redis.RedisClient.prototype);
+Promise.promisifyAll(Redis.RedisClient.prototype);
 
 const intel = require('./intel.js')(redis);
 

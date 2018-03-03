@@ -47,4 +47,6 @@ module.exports = class Intel {
       })))
       .reduce((acc, cur) => Object.assign(acc, {[cur.type]: cur.isMember}), {});
   };
-};
+}
+
+module.exports = redis => new Intel(redis);
