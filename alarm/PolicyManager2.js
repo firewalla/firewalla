@@ -367,18 +367,18 @@ class PolicyManager2 {
   }
 
   disableAndDeletePolicy(policyID) {
-    let p = this.getPolicy(policyID);
+    return async(() => {
+      let p = await (this.getPolicy(policyID))
 
-    if(!p) {
-      return Promise.resolve()
-    }
-    
-    return p.then((policy) => {
-      this.tryPolicyEnforcement(policy, "unenforce_and_delete")
+      if(!p) {
+        return Promise.resolve()
+      }
 
+      await (this.deletePolicy(policyID)) // delete before broadcast
+      
+      this.tryPolicyEnforcement(policy, "unenforce")
       Bone.submitIntelFeedback('unblock', policy, 'policy');
-      return Promise.resolve()
-    }).catch((err) => Promise.reject(err));
+    })()
   }
 
   deletePolicy(policyID) {
@@ -712,6 +712,8 @@ class PolicyManager2 {
         break;
       case "category":
         return categoryBlock.blockCategory(policy.target)
+      case "timer":
+        // just send notification, purely testing purpose only
       default:
         return Promise.reject("Unsupported policy");
       }
