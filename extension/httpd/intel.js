@@ -1,9 +1,9 @@
 const util = require('util');
 const Promise = require('bluebird');
 const Redis = require("redis");
+const request = require('request');
 
 const log = require("../../net2/logger")('intel');
-const bone = require('../../lib/Bone');
 const flowUtil = require('../../net2/FlowUtil.js');
 
 const redis = Redis.createClient();
@@ -70,7 +70,6 @@ class Intel {
 
   async checkIntelFromCloud(dn) {
     log.info("Checking intel for", dn);
-    bone.setToken(await this.jwt());
     //log.debug(`JWT: ${bone.getToken()}`);
 
     let origHost = {};
@@ -99,7 +98,7 @@ class Intel {
     let results, best;
 
     try {
-      results = await bone.intelAsync("*", "", "check", data);
+      results = await this.intel("*", "", "check", data);
     } catch (err) {
       log.error('Unable to get intel from cloud', err, {});
     }
@@ -109,6 +108,30 @@ class Intel {
     }
 
     return best ? best.c : null;
+  }
+
+  async intel(ip, type, action, intel) {
+    log.debug("/intel/host/" + ip + "/" + action);
+    let options = {
+      uri: getEndpoint() + '/intel/host/' + ip + '/' + action,
+      family: 4,
+      method: 'POST',
+      auth: {
+        bearer: await this.jwt()
+      },
+      json: intel,
+      timeout: 10000 // 10 seconds
+    };
+
+    return new Promise((resolve, reject) => {
+      request(options, (err, httpResponse, body) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(body);
+        }
+      });
+    });
   }
 }
 
