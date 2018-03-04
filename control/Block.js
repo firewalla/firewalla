@@ -159,23 +159,34 @@ let ipsetQueue = [];
 let maxIpsetQueue = 158;
 let ipsetInterval = 3000;
 let ipsetTimerSet = false;
+let ipsetProcessing = false;
 
 function ipsetEnqueue(ipsetCmd) {
   if (ipsetCmd != null) {
     ipsetQueue.push(ipsetCmd);
   }
   if (ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+    ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
     let child = require('child_process').spawn('sudo',['ipset', 'restore']);
     child.stdin.setEncoding('utf-8');
-//    child.stdout.pipe(process.stdout);
+    child.on('exit',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:END", code);
+      ipsetEnqueue(null);
+    });
+    child.on('error',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:Error", code);
+      ipsetEnqueue(null);
+    });
     for (let i in _ipsetQueue) {
       log.info("Control:Block:Processing", _ipsetQueue[i]);
       child.stdin.write(_ipsetQueue[i]+"\n");
     }
-    log.info("Control:Block:Processing:END", _ipsetQueue.length);
     child.stdin.end();
+    log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
   } else {
     if (ipsetTimerSet == false) {
       setTimeout(()=>{
