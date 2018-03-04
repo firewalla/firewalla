@@ -106,7 +106,7 @@ class PolicyManager2 {
         const policy = this.jsonToPolicy(event.policy)
         const action = event.action
 
-        log.info("Processing", policy.pid, action, {})
+        log.info("START ENFORCING POLICY", policy.pid, action, {})
         
         switch(action) {
         case "enforce": {
@@ -115,6 +115,7 @@ class PolicyManager2 {
           })().catch((err) => {
             log.error("enforce policy failed:" + err)
           }).finally(() => {
+            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
             done()
           })
           break
@@ -126,6 +127,7 @@ class PolicyManager2 {
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
           }).finally(() => {
+            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
             done()
           })
           break
@@ -136,6 +138,13 @@ class PolicyManager2 {
           break
         }
       })
+
+      setInterval(() => {
+        this.queue.checkHealth((error, counts) => {
+          log.info("Policy queue status:", counts)
+        })
+        
+      }, 10 * 1000)
     }
     return instance;
   }
@@ -574,7 +583,8 @@ class PolicyManager2 {
               if(this.queue) {
                 const job = this.queue.createJob({
                   policy: rule,
-                  action: "enforce"
+                  action: "enforce",
+                  booting: true
                 })
                 job.save(function() {})
               }

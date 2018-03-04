@@ -38,7 +38,10 @@ const dns = require('dns');
 const resolve4Async = Promise.promisify(dns.resolve4)
 const resolve6Async = Promise.promisify(dns.resolve6)
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const SysManager = require("./SysManager.js")
+const sysManager = new SysManager()
+
+const sem = require('../sensor/SensorEventManager.js').getInstance()
 
 let globalLock = false
 
@@ -72,11 +75,13 @@ class DomainBlock {
         await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
       }      
 
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain'
-      })
+      if(!options.no_dnsmasq_reload) {
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+      }
 
       await (this.syncDomainIPMapping(domain, options))
       if(!options.ignoreApplyBlock) {
@@ -116,11 +121,13 @@ class DomainBlock {
         await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
       }
 
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain'
-      })
+      if(!options.no_dnsmasq_reload) {
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain'
+        })
+      }
     })().finally(() => {
       globalLock = false
     })
@@ -180,10 +187,15 @@ class DomainBlock {
       const v4Addresses = await (resolve4Async(domain).catch((err) => []))
       await (dnsTool.addReverseDns(domain, v4Addresses))
 
-      const v6Addresses = await (resolve6Async(domain).catch((err) => []))
-      await (dnsTool.addReverseDns(domain, v6Addresses))
+      const gateway6 = sysManager.myGateway6()
+      if(gateway6) { // only query if ipv6 is supported
+        const v6Addresses = await (resolve6Async(domain).catch((err) => []))
+        await (dnsTool.addReverseDns(domain, v6Addresses))
+        return v4Addresses.concat(v6Addresses)
+      } else {
+        return v4Addresses
+      }
 
-      return v4Addresses.concat(v6Addresses)
     })()
   }
 

@@ -68,12 +68,13 @@ class CategoryBlock {
       const list = await (this.loadCategoryFromBone(category))
       if(list && list.length > 0) {
         await (this.saveDomains(category, list)) // used for unblock
-        list.forEach((domain) => {
-          let options = {ignoreApplyBlock: true}
+        list.forEach((domain) => {          
+          let options2 = JSON.parse(JSON.stringify(options))
+          options2.ignoreApplyBlock = true
           if(category === "porn" && fc.isFeatureOn("porn_redirect")) {
-            options.use_blue_hole = true
+            options2.use_blue_hole = true
           }
-          await (domainBlock.blockDomain(domain, options).catch((err) => undefined)) // may need to provide options argument in the future
+          await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
         await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
