@@ -91,8 +91,8 @@ class CategoryBlock {
     let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
     return async(() => {
-      await (cmd4)
-      await (cmd6)
+      await (exec(cmd4))
+      await (exec(cmd6))
     })()
   }
 
@@ -103,8 +103,8 @@ class CategoryBlock {
     let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
     return async(() => {
-      await (cmd4)
-      await (cmd6)
+      await (exec(cmd4))
+      await (exec(cmd6))
     })()
   }
 
