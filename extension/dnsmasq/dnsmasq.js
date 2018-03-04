@@ -20,6 +20,9 @@ let fHome = f.getFirewallaHome();
 let userID = f.getUserID();
 
 let Promise = require('bluebird');
+const Redis = require('redis');
+const redis = Redis.createClient();
+Promise.promisifyAll(Redis.RedisClient.prototype);
 let fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
@@ -217,7 +220,6 @@ module.exports = class DNSMASQ {
       setImmediate(this._reloadFilter.bind(this), type);
     }
   }
-
   _reloadFilter(type) {
     let preState = this.state[type];
     let nextState = this.nextState[type];
@@ -236,6 +238,9 @@ module.exports = class DNSMASQ {
 
         this.reload().finally(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
       });
+      
+      
+      
     } else {
       if (preState === false && nextState === false) {
         // disabled, no need do anything
@@ -380,7 +385,7 @@ module.exports = class DNSMASQ {
       log.error("Got error when reloading dnsmasq:", err, {})
     });
   }
-
+  
   _updateTmpFilter(type, force, callback) {
     callback = callback || function() {}
 
@@ -415,12 +420,19 @@ module.exports = class DNSMASQ {
                   callback(err);
                   return;
                 }
+
                 this._writeHashFilterFile(type, hashes, filterFileTmp, (err) => {
-                  if(err) {
+                  if (err) {
                     callback(err);
-                  } else {
-                    callback(null, 1);
+                    return;
                   }
+                  
+                  this._writeHashIntoRedis(type, hashes)
+                    .then(() => callback(null, 1))
+                    .catch(err => {
+                      log.error("Error when writing hashes into redis", err, {});
+                      callback(err);
+                    });
                 });
               });
             });
@@ -572,11 +584,21 @@ module.exports = class DNSMASQ {
       }
     });
   }
+  
+  _writeHashIntoRedis(type, hashes) {
+    return async(() => {
+      log.info(`Writing hash into redis for type: ${type}`);
+      let key = `dns:hashset:${type}`;
+      let jobs = hashes.map(hash => redis.saddAsync(key, hash));
+      await(Promise.all(jobs));
+      let count = await(redis.scardAsync(key));
+      log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
+    })();
+  }
 
   _writeHashFilterFile(type, hashes, file, callback) {
     callback = callback || function() {}
-
-
+    
     let writer = fs.createWriteStream(file);
 
     let targetIP = BLACK_HOLE_IP
