@@ -38,7 +38,7 @@ const dns = require('dns');
 const resolve4Async = Promise.promisify(dns.resolve4)
 const resolve6Async = Promise.promisify(dns.resolve6)
 
-const SysManager = require("./SysManager.js")
+const SysManager = require("../net2/SysManager.js")
 const sysManager = new SysManager()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance()
@@ -182,14 +182,63 @@ class DomainBlock {
     })()
   }
 
+  resolve4WithTimeout(domain, timeout) {
+    let callbackCalled = false
+    
+    return new Promise((resolve, reject) => {
+      resolve4Async(domain).then((addresses) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve(addresses)
+        }
+      }).catch((err) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case any error
+        }
+      })
+      setTimeout(() => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case timeout
+        }
+      }, timeout)
+    })    
+  }
+
+  resolve6WithTimeout(domain, timeout) {
+    let callbackCalled = false
+    
+    return new Promise((resolve, reject) => {
+      resolve6Async(domain).then((addresses) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve(addresses)
+        }
+      }).catch((err) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case any error
+        }
+      })
+      setTimeout(() => {
+        if(!callbackCalled) {
+          log.warn("Timeout when query domain", domain, {})
+          callbackCalled = true
+          resolve([]) // return empty array in case timeout
+        }
+      }, timeout)
+    })    
+  }
+
   resolveDomain(domain) {
     return async(() => {
-      const v4Addresses = await (resolve4Async(domain).catch((err) => []))
+      const v4Addresses = await (this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => [])) // 3 seconds for timeout
       await (dnsTool.addReverseDns(domain, v4Addresses))
 
       const gateway6 = sysManager.myGateway6()
       if(gateway6) { // only query if ipv6 is supported
-        const v6Addresses = await (resolve6Async(domain).catch((err) => []))
+        const v6Addresses = await (this.resolve6WithTimeout(domain, 3 * 1000).catch((err) => []))
         await (dnsTool.addReverseDns(domain, v6Addresses))
         return v4Addresses.concat(v6Addresses)
       } else {
