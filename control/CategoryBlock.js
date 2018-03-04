@@ -78,12 +78,13 @@ class CategoryBlock {
           }
           await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
-        await (this.batchApplyBlock(category, options))
-//        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+//        await (this.batchApplyBlock(category, options))
+        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
     })()
   }
 
+  // not used yet
   batchApplyBlock(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
@@ -91,6 +92,7 @@ class CategoryBlock {
     return exec(cmd)
   }
 
+  // not used yet
   batchUnapplyBlock(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
@@ -106,8 +108,8 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        await (this.batchUnapplyBlock(category, options))
-        //await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+        // await (this.batchUnapplyBlock(category, options))
+        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
       const list = await (this.loadDomains(category))
