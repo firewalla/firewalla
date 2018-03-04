@@ -78,26 +78,34 @@ class CategoryBlock {
           }
           await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
-//        await (this.batchApplyBlock(category, options))
-        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+        await (this.batchApplyBlock(category, options))
+//        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
     })()
   }
 
-  // not used yet
   batchApplyBlock(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
-    let cmd = `redis-cli smembers ${mapping} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    return exec(cmd)
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (cmd4)
+      await (cmd6)
+    })()
   }
 
-  // not used yet
   batchUnapplyBlock(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
-    let cmd = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-    return exec(cmd)
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (cmd4)
+      await (cmd6)
+    })()
   }
 
   unblockCategory(category, options) {
@@ -108,8 +116,8 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        // await (this.batchUnapplyBlock(category, options))
-        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+        await (this.batchUnapplyBlock(category, options))
+        // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
       const list = await (this.loadDomains(category))
