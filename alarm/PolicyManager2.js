@@ -141,7 +141,7 @@ class PolicyManager2 {
 
       setInterval(() => {
         this.queue.checkHealth((error, counts) => {
-          log.info("Policy queue status:", counts)
+          log.info("Policy queue status:", counts, {})
         })
         
       }, 10 * 1000)

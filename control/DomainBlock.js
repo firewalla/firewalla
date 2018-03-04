@@ -79,7 +79,8 @@ class DomainBlock {
         sem.emitEvent({
           type: 'ReloadDNSRule',
           message: 'DNSMASQ filter rule is updated',
-          toProcess: 'FireMain'
+          toProcess: 'FireMain',
+          suppressEventLogging: true
         })
       }
 
@@ -125,7 +126,8 @@ class DomainBlock {
         sem.emitEvent({
           type: 'ReloadDNSRule',
           message: 'DNSMASQ filter rule is updated',
-          toProcess: 'FireMain'
+          toProcess: 'FireMain',
+          suppressEventLogging: true,        
         })
       }
     })().finally(() => {
