@@ -7,17 +7,17 @@ const https = require('https');
 const forge = require('node-forge');
 const qs = require('querystring');
 const path = require('path');
-const intel = require('./intel.js');
 
 const port = 8880;
 const httpsPort = 8883;
-const enableHttps = false;
-const enableRedis = true;
+const enableHttps = true;
 
-const promise = require('bluebird');
-const redis = require('redis');
-const client = redis.createClient();
-promise.promisifyAll(redis.RedisClient.prototype);
+const Promise = require('bluebird');
+const Redis = require('redis');
+const redis = Redis.createClient();
+Promise.promisifyAll(Redis.RedisClient.prototype);
+
+const intel = require('./intel.js')(redis);
 
 const VIEW_PATH = 'firewalla_view';
 const STATIC_PATH = 'firewalla_static';
@@ -27,10 +27,13 @@ process.title = "FireBlue";
 class App {
   constructor() {
     this.app = express();
-    this.app.engine('pug', require('pug').__express);
+
+    this.app.engine('mustache', require('mustache-express')());
+    this.app.set('view engine', 'mustache');
+
     this.app.set('views', path.join(__dirname, VIEW_PATH));
-    this.app.set('view engine', 'pug');
     //this.app.disable('view cache'); //for debug only
+
     this.routes();
   }
 
@@ -41,10 +44,11 @@ class App {
       const url = qs.unescape(req.query.url);
       const ip = req.ip;
       const method = req.method;
+      const count = qs.unescape(req.query.count);
 
       log.info("Got a request in block views");
 
-      res.render('block', {hostname, url, ip, method});
+      res.render('block', {hostname, url, ip, method, count});
     })
 
     this.app.use('/' + VIEW_PATH, this.router);
@@ -60,10 +64,10 @@ class App {
 
         switch(cat) {
           case 'porn':
-            this.isPorn(req, res);
+            await this.isPorn(req, res);
             break;
           case 'ad':
-            this.isAd(req, res);
+            await this.isAd(req, res);
             break;
           default:
             res.status(200).send().end();
@@ -81,22 +85,16 @@ class App {
     }
   }
 
-  isPorn(req, res) {
-    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({url: req.originalUrl})}`).send().end();
-    if (enableRedis) {
-      client.hincrbyAsync('block:stats', 'porn', 1).then(value => {
-        log.info(`Total porn blocked: ${value}`);
-      });
-    }
+  async isPorn(req, res) {
+    let count = await redis.hincrbyAsync('block:stats', 'porn', 1);
+    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({hostname: req.hostname, url: req.originalUrl, count})}`).send().end();
+    log.info(`Total porn blocked: ${count}`);
   }
 
-  isAd(req, res) {
+  async isAd(req, res) {
     res.status(200).send().end();
-    if (enableRedis) {
-      client.hincrbyAsync('block:stats', 'ad', 1).then(value => {
-        log.info(`Total ad blocked: ${value}`);
-      });
-    }
+    let count = redis.hincrbyAsync('block:stats', 'ad', 1);
+    log.info(`Total ad blocked: ${count}`);
   }
 
   genHttpsOptions() {
