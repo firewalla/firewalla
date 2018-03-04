@@ -101,6 +101,10 @@ class PolicyManager2 {
         log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
       });
 
+      this.queue.destroy(() => {
+        log.info("policy queue is cleaned up")
+      })
+
       this.queue.process((job, done) => {
         const event = job.data
         const policy = this.jsonToPolicy(event.policy)
@@ -578,6 +582,7 @@ class PolicyManager2 {
       this.loadActivePolicys((err, rules) => {
         
         return async(() => {
+          await (delay(1000)) // pause for 1 second
           rules.forEach((rule) => {
             try {
               if(this.queue) {
