@@ -787,7 +787,8 @@ class PolicyManager2 {
             await (Block.advancedBlock(policy.pid, scope, []))
             return domainBlock.blockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid)
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
             })
           } else {
             return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
@@ -807,7 +808,10 @@ class PolicyManager2 {
         return async(() => {
           if(scope) {
             await (Block.advancedBlock(policy.pid, scope, []))
-            return categoryBlock.blockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+            return categoryBlock.blockCategory(policy.target, {
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
+            })
           } else {
             return categoryBlock.blockCategory(policy.target)
           }
@@ -897,7 +901,8 @@ class PolicyManager2 {
             await (Block.advancedUnblock(policy.pid, scope, []))
             return domainBlock.unblockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid)
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
             })
           } else {
             return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
@@ -919,7 +924,8 @@ class PolicyManager2 {
             await (Block.advancedUnblock(policy.pid, scope, []))
             return categoryBlock.unblockCategory(policy.target, {
               blockSet: Block.getDstSet(policy.pid),
-              ignoreUnapplyBlock: true
+              ignoreUnapplyBlock: true,
+              no_dnsmasq_entry: true
             })
           } else {
             return categoryBlock.unblockCategory(policy.target)

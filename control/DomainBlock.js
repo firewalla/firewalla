@@ -68,7 +68,9 @@ class DomainBlock {
       globalLock = true
       log.info(`Block ${domain} is holding the lock`)
 
-      await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
+      if(!options.no_dnsmasq_entry) {
+        await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
+      }      
 
       sem.emitEvent({
         type: 'ReloadDNSRule',
@@ -110,7 +112,9 @@ class DomainBlock {
         await (this.removeDomainIPMapping(domain, options))
       }      
 
-      await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
+      if(!options.no_dnsmasq_entry) {
+        await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
+      }
 
       sem.emitEvent({
         type: 'ReloadDNSRule',
