@@ -40,6 +40,8 @@ const bone = require('../lib/Bone.js')
 
 const fc = require('../net2/config.js')
 
+const exec = require('child-process-promise').exec
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -76,9 +78,24 @@ class CategoryBlock {
           }
           await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
-        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+        await (this.batchApplyBlock(category, options))
+//        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
     })()
+  }
+
+  batchApplyBlock(caetgory, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    let cmd = `redis-cli smembers ${mapping} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    return exec(cmd)
+  }
+
+  batchUnapplyBlock(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    let cmd = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    return exec(cmd)
   }
 
   unblockCategory(category, options) {
@@ -89,7 +106,8 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+        await (this.batchUnapplyBlock(category, options))
+        //await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
       const list = await (this.loadDomains(category))

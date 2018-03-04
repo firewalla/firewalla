@@ -582,7 +582,6 @@ class PolicyManager2 {
       this.loadActivePolicys((err, rules) => {
         
         return async(() => {
-          await (delay(1000)) // pause for 1 second
           rules.forEach((rule) => {
             try {
               if(this.queue) {
