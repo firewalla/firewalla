@@ -25,6 +25,8 @@ let country = require('../extension/country/country.js');
 let redis = require('redis');
 let rclient = redis.createClient();
 
+const f = require("../net2/Firewalla.js")
+
 let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -247,6 +249,10 @@ class DestIPFoundHook extends Hook {
       if(this.paused)
         return;
 
+      if(f.isReservedBlockingIP(ip)) {
+        return; // reserved black hole and blue hole...
+      }
+      
       this.appendNewIP(ip);
     });
 

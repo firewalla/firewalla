@@ -27,11 +27,11 @@ let inited = false;
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-const BLACK_HOLE_IP="198.51.100.99";
-
 const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
 
 const exec = require('child-process-promise').exec
+
+const f = require('../net2/Firewalla.js')
 
 // =============== block @ connection level ==============
 
@@ -155,9 +155,83 @@ function destroyBlockingEnv(tag) {
   })()
 }
 
+let ipsetQueue = [];
+let maxIpsetQueue = 158;
+let ipsetInterval = 3000;
+let ipsetTimerSet = false;
+let ipsetProcessing = false;
+
+function ipsetEnqueue(ipsetCmd) {
+  if (ipsetCmd != null) {
+    ipsetQueue.push(ipsetCmd);
+  }
+  if (ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+    ipsetProcessing = true;
+    let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
+    ipsetQueue = [];
+    let child = require('child_process').spawn('sudo',['ipset', 'restore']);
+    child.stdin.setEncoding('utf-8');
+    child.on('exit',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:END", code);
+      ipsetEnqueue(null);
+    });
+    child.on('error',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:Error", code);
+      ipsetEnqueue(null);
+    });
+    for (let i in _ipsetQueue) {
+      log.info("Control:Block:Processing", _ipsetQueue[i]);
+      child.stdin.write(_ipsetQueue[i]+"\n");
+    }
+    child.stdin.end();
+    log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
+  } else {
+    if (ipsetTimerSet == false) {
+      setTimeout(()=>{
+        if (ipsetQueue.length>0) {
+          log.info("Control:Block:Timer", ipsetQueue.length);
+          ipsetEnqueue(null);
+        }
+        ipsetTimerSet = false;
+      },ipsetInterval);
+      ipsetTimerSet = true;
+    }
+  }
+}
+
 function block(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
+  let cmd = null;
+
+  if(iptool.isV4Format(destination)) {
+    cmd = `add ${ipset} ${destination}`
+  } else if(iptool.isV6Format(destination)) {
+    cmd = `add ${ipset}6 ${destination}`
+  } else {
+    // do nothing
+    return Promise.resolve()
+  }
+
+  ipsetEnqueue(cmd);
+  return Promise.resolve()
+}
+
+function blockImmediate(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -197,12 +271,12 @@ function advancedBlock(tag, macAddresses, destinations) {
 
 function advancedUnblock(tag, macAddresses, destinations) {
   return async(() => {
-    macAddresses.forEach((mac) => {
-      await (advancedUnblockMAC(mac, getMacSet(tag)))
-    })
-    destinations.forEach((addr) => {
-      await (unblock(addr, getDstSet(tag)))
-    })
+    // macAddresses.forEach((mac) => {
+    //   await (advancedUnblockMAC(mac, getMacSet(tag)))
+    // })
+    // destinations.forEach((addr) => {
+    //   await (unblock(addr, getDstSet(tag)))
+    // })
     await (destroyBlockingEnv(tag))
   })()
 }
@@ -233,7 +307,7 @@ function unblock(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
   // never unblock black hole ip
-  if(destination === BLACK_HOLE_IP) {
+  if(f.isReservedBlockingIP(destination)) {
     return Promise.resolve()
   }
   
@@ -251,7 +325,7 @@ function unblock(destination, ipset) {
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
-        log.error("Unable to ipset remove ",cmd);
+        log.error("Unable to ipset remove ",cmd, err, {})
         reject(err);
         return;
       }
@@ -293,24 +367,24 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   }
 }
 
-function unblockMac(macAddress, callback) {
-  callback = callback || function() {}
+function blockMac(macAddress, ipset) {
+  ipset = ipset || "blocked_mac_set"
 
-  blockOutgoing(macAddress,null,false,false, (err)=>{
-    blockOutgoing(macAddress,null,false,true, (err)=>{
-      callback(err);
-    });
-  });  
+  let cmd = `sudo ipset add -! ${ipset} ${macAddress}`;
+  
+  log.info("Control:Block:",cmd);
+
+  return exec(cmd)
 }
 
-function blockMac(macAddress,callback) {
-  callback = callback || function() {}
+function unblockMac(macAddress, ipset) {
+  ipset = ipset || "blocked_mac_set"
 
-  blockOutgoing(macAddress,null,true,false, (err)=>{
-    blockOutgoing(macAddress,null,true,true, (err)=>{
-      callback(err);
-    });
-  });
+  let cmd = `sudo ipset del -! ${ipset} ${macAddress}`;
+  
+  log.info("Control:Block:",cmd);
+
+  return exec(cmd)
 }
 
 function blockPublicPort(localIPAddress, localPort, protocol) {

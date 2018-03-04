@@ -211,7 +211,9 @@
       "ipv6": false,
       "shadowsocks_server": false,
       "scisurf": false,
-      "naughty_monkey": false
+      "naughty_monkey": false,
+      "device_detection": false,
+      "porn_redirect": false
     }
 
 }

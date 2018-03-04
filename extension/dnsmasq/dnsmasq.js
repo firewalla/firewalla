@@ -283,8 +283,16 @@ module.exports = class DNSMASQ {
       });
   }
 
-  addPolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+  addPolicyFilterEntry(domain, options) {
+    options = options || {}
+
+    let entry = null
+    
+    if(options.use_blue_hole) {
+      entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
+    } else {
+      entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    }
     
     return async(() => {
       if(this.workingInProgress) {
@@ -484,9 +492,6 @@ module.exports = class DNSMASQ {
       subnets.forEach(subnet => {
         await (iptables.dnsChangeAsync(subnet, dns, true));
       })
-
-      await (require('../../control/Block.js').block(BLACK_HOLE_IP))
-      await (require('../../control/Block.js').block(BLUE_HOLE_IP))
     })();
   }
 
@@ -913,14 +918,14 @@ module.exports = class DNSMASQ {
         await (this.verifyDNSConnectivity())
               
       if(!checkResult) {
-        let psResult = await (exec("ps aux | grep dnsmasq"))
+        let psResult = await (exec("ps aux | grep dns[m]asq"))
         let stdout = psResult.stdout
         log.info("dnsmasq running status: \n", stdout, {})
   
         // restart this service, something is wrong
         this.rawRestart((err) => {
           if(err) {
-            log.error("Failed to restart ss_client:", err, {})
+            log.error("Failed to restart dnsmasq:", err, {})
           }
         })
       }

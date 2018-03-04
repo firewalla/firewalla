@@ -38,9 +38,12 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const bone = require('../lib/Bone.js')
 
+const fc = require('../net2/config.js')
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
-  "social": "app.social"
+  "social": "app.social",
+  "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
 }
 
 function delay(t) {
@@ -66,7 +69,11 @@ class CategoryBlock {
       if(list && list.length > 0) {
         await (this.saveDomains(category, list)) // used for unblock
         list.forEach((domain) => {
-          await (domainBlock.blockDomain(domain, {ignoreApplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
+          let options = {ignoreApplyBlock: true}
+          if(category === "porn" && fc.isFeatureOn("porn_redirect")) {
+            options.use_blue_hole = true
+          }
+          await (domainBlock.blockDomain(domain, options).catch((err) => undefined)) // may need to provide options argument in the future
         })
         await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
@@ -80,7 +87,10 @@ class CategoryBlock {
     domainBlock.externalMapping = this.getMapping(category)
 
     return async(() => {
-      await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+      if(!options.ignoreUnapplyBlock) {
+        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+      }
+
       const list = await (this.loadDomains(category))
       if(list && list.length > 0) {
         list.forEach((domain) => {

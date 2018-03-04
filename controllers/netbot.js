@@ -1799,7 +1799,7 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
               return
             } else {
-              this.simpleTxData(msg, policy2, err, callback);
+              this.simpleTxData(msg, policy2, err, callback)
             }
           });
         });
@@ -1810,7 +1810,7 @@ class netBot extends ControllerBot {
         if(policy) {
           await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
           policy.deleted = true // policy is marked ask deleted
-          this.simpleTxData(msg, policy, null, callback);
+          this.simpleTxData(msg, policy, null, callback);          
         } else {
           this.simpleTxData(msg, null, new Error("invalid policy"), callback);
         }

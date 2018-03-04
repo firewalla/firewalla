@@ -67,6 +67,8 @@ const categoryBlock = require('../control/CategoryBlock.js')()
 
 const scheduler = require('../extension/scheduler/scheduler.js')()
 
+const Queue = require('bee-queue')
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -85,47 +87,68 @@ class PolicyManager2 {
       scheduler.unenforceCallback = (policy) => {
         return this._unenforce(policy)
       }
+
+      this.queue = new Queue('policy')
+
+      this.queue.removeOnFailure = true
+      this.queue.removeOnSuccess = true
+
+      this.queue.on('error', (err) => {
+        log.error("Queue got err:", err)
+      })
+
+      this.queue.on('failed', (job, err) => {
+        log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+      });
+
+      this.queue.process((job, done) => {
+        const event = job.data
+        const policy = this.jsonToPolicy(event.policy)
+        const action = event.action
+
+        log.info("Processing", policy.pid, action, {})
+        
+        switch(action) {
+        case "enforce": {
+          return async(() => {
+            await(this.enforce(policy))
+          })().catch((err) => {
+            log.error("enforce policy failed:" + err)
+          }).finally(() => {
+            done()
+          })
+          break
+        }
+        case "unenforce": {
+          return async(() => {
+            await(this.unenforce(policy))
+            done()
+          })().catch((err) => {
+            log.error("unenforce policy failed:" + err)
+          }).finally(() => {
+            done()
+          })
+          break
+        }
+        default:
+          log.error("unrecoganized policy enforcement action:" + action)
+          done()
+          break
+        }
+      })
     }
     return instance;
   }
 
-  registerPolicyEnforcementListener() {
+  registerPolicyEnforcementListener() { // need to ensure it's serialized
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
       if (event && event.policy) {
-        const policy = this.jsonToPolicy(event.policy)
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
-        async(()=>{
-          if (event.action && event.action == 'enforce') {
-            try {
-              await(this.enforce(policy))
-            } catch (err) {
-              log.error("enforce policy failed:" + err)
-            }
-          } else if (event && event.action == 'unenforce_and_delete') {
-            try {
-              await(this.unenforce(policy))
-            } catch (err) {
-              log.error("failed to unenforce policy:" + err)
-            }
-            
-            try {
-              await(this.deletePolicy(event.policy.pid))
-            } catch (err) {
-              log.error("failed to delete policy:" + err)
-            }
-          } else if (event && event.action == 'unenforce') {
-            try {
-              await(this.unenforce(policy))
-            } catch (err) {
-              log.error("failed to unenforce policy:" + err)
-            }
-          } else {
-            log.error("unrecoganized policy enforcement action:" + event.action)
-          }
-        })().catch((err) => {
-          log.error(`Failed to process policy enforce on policy ${policy.pid}, err: ${err}`)
-        })
+        if(this.queue) {
+          const job = this.queue.createJob(event)
+          job.save(function() {})
+        }
       }
     })
   }
@@ -367,18 +390,18 @@ class PolicyManager2 {
   }
 
   disableAndDeletePolicy(policyID) {
-    let p = this.getPolicy(policyID);
+    return async(() => {
+      let policy = await (this.getPolicy(policyID))
 
-    if(!p) {
-      return Promise.resolve()
-    }
-    
-    return p.then((policy) => {
-      this.tryPolicyEnforcement(policy, "unenforce_and_delete")
+      if(!policy) {
+        return Promise.resolve()
+      }
 
+      await (this.deletePolicy(policyID)) // delete before broadcast
+
+      this.tryPolicyEnforcement(policy, "unenforce")
       Bone.submitIntelFeedback('unblock', policy, 'policy');
-      return Promise.resolve()
-    }).catch((err) => Promise.reject(err));
+    })()
   }
 
   deletePolicy(policyID) {
@@ -548,7 +571,13 @@ class PolicyManager2 {
         return async(() => {
           rules.forEach((rule) => {
             try {
-              await (this.enforce(rule))
+              if(this.queue) {
+                const job = this.queue.createJob({
+                  policy: rule,
+                  action: "enforce"
+                })
+                job.save(function() {})
+              }
             } catch(err) {
               log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
             }            
@@ -696,8 +725,7 @@ class PolicyManager2 {
         return Block.block(policy.target);
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -713,6 +741,8 @@ class PolicyManager2 {
         break;
       case "category":
         return categoryBlock.blockCategory(policy.target)
+      case "timer":
+        // just send notification, purely testing purpose only
       default:
         return Promise.reject("Unsupported policy");
       }
@@ -748,8 +778,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let blockMacAsync = Promise.promisify(Block.blockMac);
-        return blockMacAsync(policy.target);
+        return Block.blockMac(policy.target);
         break;
       case "domain":
       case "dns":    
@@ -804,7 +833,7 @@ class PolicyManager2 {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
     if(policy.scope) {
-      return this._advancedEnforce(policy)
+      return this._advancedUnenforce(policy)
     }
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
@@ -813,8 +842,7 @@ class PolicyManager2 {
       return Block.unblock(policy.target);
       break;
     case "mac":
-      let unblockMacAsync = Promise.promisify(Block.unblockMac);
-      return unblockMacAsync(policy.target);
+      return Block.unblockMac(policy.target);
       break;
     case "domain":
     case "dns":
@@ -860,8 +888,7 @@ class PolicyManager2 {
         }
         break;
       case "mac":
-        let unblockMacAsync = Promise.promisify(Block.unblockMac)
-        return unblockMacAsync(policy.target)
+        return Block.unblockMac(policy.target)
         break;
       case "domain":
       case "dns":    
@@ -890,7 +917,10 @@ class PolicyManager2 {
         return async(() => {
           if(scope) {
             await (Block.advancedUnblock(policy.pid, scope, []))
-            return categoryBlock.unblockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+            return categoryBlock.unblockCategory(policy.target, {
+              blockSet: Block.getDstSet(policy.pid),
+              ignoreUnapplyBlock: true
+            })
           } else {
             return categoryBlock.unblockCategory(policy.target)
           }
