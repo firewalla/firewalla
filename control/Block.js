@@ -165,7 +165,7 @@ function ipsetEnqueue(ipsetCmd) {
   if (ipsetCmd != null) {
     ipsetQueue.push(ipsetCmd);
   }
-  if (ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+  if (ipsetProcessing == false && ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
     ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
@@ -212,14 +212,15 @@ function block(destination, ipset) {
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
-    cmd = `add ${ipset} ${destination}`
+    cmd = `add -! ${ipset} ${destination}`
   } else if(iptool.isV6Format(destination)) {
-    cmd = `add ${ipset}6 ${destination}`
+    cmd = `add -! ${ipset}6 ${destination}`
   } else {
     // do nothing
     return Promise.resolve()
   }
 
+  log.info("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return Promise.resolve()
 }
