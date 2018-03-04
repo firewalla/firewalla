@@ -148,7 +148,7 @@ class PolicyManager2 {
           log.info("Policy queue status:", counts, {})
         })
         
-      }, 10 * 1000)
+      }, 60 * 1000)
     }
     return instance;
   }
