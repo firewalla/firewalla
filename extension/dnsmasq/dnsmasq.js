@@ -641,6 +641,7 @@ module.exports = class DNSMASQ {
 
   checkIfRestartNeeded() {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
+    log.info("need restart is", this.needRestart, {})
     if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
       this.needRestart = null
       this.rawRestart((err) => {        
@@ -782,7 +783,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     log.info("Restarting dnsmasq...")
-    
+
     let cmd = "sudo systemctl restart firemasq";
 
     if(require('fs').existsSync("/.dockerenv")) {
