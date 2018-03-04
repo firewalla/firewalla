@@ -84,7 +84,7 @@ class CategoryBlock {
     })()
   }
 
-  batchApplyBlock(caetgory, options) {
+  batchApplyBlock(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
     let cmd = `redis-cli smembers ${mapping} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
