@@ -403,6 +403,15 @@ class netBot extends ControllerBot {
       }
     });
   }
+  
+  _portforward(msg,callback) {
+    let c = require('../../net2/MessageBus.js');
+    this.channel = new c('debug');
+    this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, map);
+    if (callback) {
+      callback(null,null);
+    }
+  }
 
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
@@ -838,6 +847,11 @@ class netBot extends ControllerBot {
               break;
             case "notify":
               this._notify(msg.target, msg.data.value.notify, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "portforward":
+              this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
                 cb(err);
               });
               break;
