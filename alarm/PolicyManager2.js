@@ -127,7 +127,6 @@ class PolicyManager2 {
         case "unenforce": {
           return async(() => {
             await(this.unenforce(policy))
-            done()
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
           }).finally(() => {
