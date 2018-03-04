@@ -101,12 +101,16 @@ class PolicyManager2 {
         log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
       });
 
+      this.queue.destroy(() => {
+        log.info("policy queue is cleaned up")
+      })
+
       this.queue.process((job, done) => {
         const event = job.data
         const policy = this.jsonToPolicy(event.policy)
         const action = event.action
 
-        log.info("Processing", policy.pid, action, {})
+        log.info("START ENFORCING POLICY", policy.pid, action, {})
         
         switch(action) {
         case "enforce": {
@@ -115,6 +119,7 @@ class PolicyManager2 {
           })().catch((err) => {
             log.error("enforce policy failed:" + err)
           }).finally(() => {
+            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
             done()
           })
           break
@@ -126,6 +131,7 @@ class PolicyManager2 {
           })().catch((err) => {
             log.error("unenforce policy failed:" + err)
           }).finally(() => {
+            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
             done()
           })
           break
@@ -136,6 +142,13 @@ class PolicyManager2 {
           break
         }
       })
+
+      setInterval(() => {
+        this.queue.checkHealth((error, counts) => {
+          log.info("Policy queue status:", counts, {})
+        })
+        
+      }, 60 * 1000)
     }
     return instance;
   }
@@ -574,7 +587,8 @@ class PolicyManager2 {
               if(this.queue) {
                 const job = this.queue.createJob({
                   policy: rule,
-                  action: "enforce"
+                  action: "enforce",
+                  booting: true
                 })
                 job.save(function() {})
               }
@@ -787,7 +801,8 @@ class PolicyManager2 {
             await (Block.advancedBlock(policy.pid, scope, []))
             return domainBlock.blockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid)
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
             })
           } else {
             return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
@@ -807,7 +822,10 @@ class PolicyManager2 {
         return async(() => {
           if(scope) {
             await (Block.advancedBlock(policy.pid, scope, []))
-            return categoryBlock.blockCategory(policy.target, {blockSet: Block.getDstSet(policy.pid)})
+            return categoryBlock.blockCategory(policy.target, {
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
+            })
           } else {
             return categoryBlock.blockCategory(policy.target)
           }
@@ -897,7 +915,8 @@ class PolicyManager2 {
             await (Block.advancedUnblock(policy.pid, scope, []))
             return domainBlock.unblockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid)
+              blockSet: Block.getDstSet(policy.pid),
+              no_dnsmasq_entry: true
             })
           } else {
             return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
@@ -919,7 +938,8 @@ class PolicyManager2 {
             await (Block.advancedUnblock(policy.pid, scope, []))
             return categoryBlock.unblockCategory(policy.target, {
               blockSet: Block.getDstSet(policy.pid),
-              ignoreUnapplyBlock: true
+              ignoreUnapplyBlock: true,
+              no_dnsmasq_entry: true
             })
           } else {
             return categoryBlock.unblockCategory(policy.target)

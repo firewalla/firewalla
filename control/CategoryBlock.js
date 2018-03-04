@@ -40,6 +40,8 @@ const bone = require('../lib/Bone.js')
 
 const fc = require('../net2/config.js')
 
+const exec = require('child-process-promise').exec
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -68,15 +70,41 @@ class CategoryBlock {
       const list = await (this.loadCategoryFromBone(category))
       if(list && list.length > 0) {
         await (this.saveDomains(category, list)) // used for unblock
-        list.forEach((domain) => {
-          let options = {ignoreApplyBlock: true}
+        list.forEach((domain) => {          
+          let options2 = JSON.parse(JSON.stringify(options))
+          options2.ignoreApplyBlock = true
           if(category === "porn" && fc.isFeatureOn("porn_redirect")) {
-            options.use_blue_hole = true
+            options2.use_blue_hole = true
           }
-          await (domainBlock.blockDomain(domain, options).catch((err) => undefined)) // may need to provide options argument in the future
+          await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
-        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+        await (this.batchApplyBlock(category, options))
+//        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
+    })()
+  }
+
+  batchApplyBlock(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (exec(cmd4))
+      await (exec(cmd6))
+    })()
+  }
+
+  batchUnapplyBlock(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (exec(cmd4))
+      await (exec(cmd6))
     })()
   }
 
@@ -88,7 +116,8 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+        await (this.batchUnapplyBlock(category, options))
+        // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
       const list = await (this.loadDomains(category))

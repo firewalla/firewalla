@@ -169,7 +169,7 @@ function ipsetEnqueue(ipsetCmd) {
     ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
-    let child = require('child_process').spawn('sudo',['ipset', 'restore']);
+    let child = require('child_process').spawn('sudo',['ipset', 'restore', '-!']);
     child.stdin.setEncoding('utf-8');
     child.on('exit',(code,signal)=>{
       ipsetProcessing = false;
