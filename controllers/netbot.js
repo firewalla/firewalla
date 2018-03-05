@@ -1628,6 +1628,10 @@ class netBot extends ControllerBot {
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
       return;
+    } else if (msg.data.item === "sendlog") {
+      log.info("sendLog");
+      this._sendLog(msg,callback);
+      return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
         let code = 200;
