@@ -213,7 +213,8 @@
       "scisurf": false,
       "naughty_monkey": false,
       "device_detection": false,
-      "porn_redirect": false
+      "porn_redirect": false,
+      "redirect_httpd": false
     }
 
 }

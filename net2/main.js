@@ -45,6 +45,9 @@ var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
 
+const fc = require('./config.js')
+const cp = require('child_process')
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
@@ -124,6 +127,24 @@ function resetModeInInitStage() {
       await (mode.noneModeOn())
     }
   })()  
+}
+
+function enableFireBlue() {
+  // start firemain process only in v2 mode
+  cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
+    if(err) {
+        log.error("Failed to start firehttpd:", err, {})
+    }
+  })
+}
+
+function disableFireBlue() {
+  // stop firehttpd in v1
+  cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
+    if(err) {
+        log.error("Failed to stop firehttpd:", err, {})
+    }
+  })
 }
 
 function run() {
@@ -317,4 +338,23 @@ function run() {
   },20 * 1000);
 
 
+  // finally need to check if firehttpd should be started
+
+  if(fc.isFeatureOn("redirect_httpd")) {
+    enableFireBlue()
+  } else {
+    disableFireBlue()
+  }
+
+  fc.onFeature("redirect_httpd", (feature, status) => {
+    if(feature !== "redirect_httpd") {
+      return
+    }
+
+    if(status) {
+      enableFireBlue()
+    } else {
+      disableFireBlue()
+    }
+  })
 }

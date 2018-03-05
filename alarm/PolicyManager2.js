@@ -44,9 +44,6 @@ let policyIDKey = "policy:id";
 let policyPrefix = "policy:";
 let initID = 1;
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let extend = require('util')._extend;
