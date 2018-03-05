@@ -404,10 +404,11 @@ class netBot extends ControllerBot {
     });
   }
   
-  _portforward(msg,callback) {
-    let c = require('../../net2/MessageBus.js');
+  _portforward(ip, msg, callback) {
+    log.info("_portforward",ip,msg);
+    let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
-    this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, map);
+    this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
     if (callback) {
       callback(null,null);
     }
@@ -1627,6 +1628,10 @@ class netBot extends ControllerBot {
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
+      return;
+    } else if (msg.data.item === "sendlog") {
+      log.info("sendLog");
+      this._sendLog(msg,callback);
       return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
