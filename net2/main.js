@@ -129,7 +129,7 @@ function resetModeInInitStage() {
   })()  
 }
 
-function enableFireWeb() {
+function enableFireBlue() {
   // start firemain process only in v2 mode
   cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
     if(err) {
@@ -138,7 +138,7 @@ function enableFireWeb() {
   })
 }
 
-function disableFireWeb() {
+function disableFireBlue() {
   // stop firehttpd in v1
   cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
     if(err) {
@@ -341,9 +341,9 @@ function run() {
   // finally need to check if firehttpd should be started
 
   if(fc.isFeatureOn("redirect_httpd")) {
-    enableFireWeb()
+    enableFireBlue()
   } else {
-    disableFireWeb()
+    disableFireBlue()
   }
 
   fc.onFeature("redirect_httpd", (feature, status) => {
@@ -352,9 +352,9 @@ function run() {
     }
 
     if(status) {
-      enableFireWeb()
+      enableFireBlue()
     } else {
-      disableFireWeb()
+      disableFireBlue()
     }
   })
 }
