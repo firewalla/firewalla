@@ -59,6 +59,8 @@ let b = require('../control/Block.js');
 
 let features = require('../net2/features');
 
+const cp = require('child_process')
+
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
 1) "blockin"
@@ -301,6 +303,7 @@ module.exports = class {
       callback(null)
       return
     }
+
 
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
