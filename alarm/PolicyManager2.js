@@ -87,70 +87,72 @@ class PolicyManager2 {
       scheduler.unenforceCallback = (policy) => {
         return this._unenforce(policy)
       }
-
-      this.queue = new Queue('policy')
-
-      this.queue.removeOnFailure = true
-      this.queue.removeOnSuccess = true
-
-      this.queue.on('error', (err) => {
-        log.error("Queue got err:", err)
-      })
-
-      this.queue.on('failed', (job, err) => {
-        log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
-      });
-
-      this.queue.destroy(() => {
-        log.info("policy queue is cleaned up")
-      })
-
-      this.queue.process((job, done) => {
-        const event = job.data
-        const policy = this.jsonToPolicy(event.policy)
-        const action = event.action
-
-        log.info("START ENFORCING POLICY", policy.pid, action, {})
-        
-        switch(action) {
-        case "enforce": {
-          return async(() => {
-            await(this.enforce(policy))
-          })().catch((err) => {
-            log.error("enforce policy failed:" + err)
-          }).finally(() => {
-            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
-            done()
-          })
-          break
-        }
-        case "unenforce": {
-          return async(() => {
-            await(this.unenforce(policy))
-            done()
-          })().catch((err) => {
-            log.error("unenforce policy failed:" + err)
-          }).finally(() => {
-            log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
-            done()
-          })
-          break
-        }
-        default:
-          log.error("unrecoganized policy enforcement action:" + action)
-          done()
-          break
-        }
-      })
-
-      setInterval(() => {
-        this.queue.checkHealth((error, counts) => {
-          log.info("Policy queue status:", counts, {})
-        })
-        
-      }, 60 * 1000)
+      
     }
     return instance;
+  }
+
+  setupPolicyQueue() {
+    this.queue = new Queue('policy')
+
+    this.queue.removeOnFailure = true
+    this.queue.removeOnSuccess = true
+
+    this.queue.on('error', (err) => {
+      log.error("Queue got err:", err)
+    })
+
+    this.queue.on('failed', (job, err) => {
+      log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+    });
+
+    this.queue.destroy(() => {
+      log.info("policy queue is cleaned up")
+    })
+
+    this.queue.process((job, done) => {
+      const event = job.data
+      const policy = this.jsonToPolicy(event.policy)
+      const action = event.action
+
+      log.info("START ENFORCING POLICY", policy.pid, action, {})
+      
+      switch(action) {
+      case "enforce": {
+        return async(() => {
+          await(this.enforce(policy))
+        })().catch((err) => {
+          log.error("enforce policy failed:" + err)
+        }).finally(() => {
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          done()
+        })
+        break
+      }
+      case "unenforce": {
+        return async(() => {
+          await(this.unenforce(policy))
+        })().catch((err) => {
+          log.error("unenforce policy failed:" + err)
+        }).finally(() => {
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          done()
+        })
+        break
+      }
+      default:
+        log.error("unrecoganized policy enforcement action:" + action)
+        done()
+        break
+      }
+    })
+
+    setInterval(() => {
+      this.queue.checkHealth((error, counts) => {
+        log.info("Policy queue status:", counts, {})
+      })
+      
+    }, 60 * 1000)
   }
 
   registerPolicyEnforcementListener() { // need to ensure it's serialized

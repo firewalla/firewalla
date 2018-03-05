@@ -78,7 +78,7 @@ class CategoryBlock {
           }
           await (domainBlock.blockDomain(domain, options2).catch((err) => undefined)) // may need to provide options argument in the future
         })
-        await (this.batchApplyBlock(category, options))
+        await (this.batchApplyBlock(category, options).catch((err) => undefined))
 //        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
     })()
@@ -116,7 +116,7 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        await (this.batchUnapplyBlock(category, options))
+        await (this.batchUnapplyBlock(category, options).catch((err) => undefined))
         // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
