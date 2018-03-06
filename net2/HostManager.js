@@ -49,8 +49,6 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
-var PolicyManager = require('./PolicyManager.js');
-
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
@@ -632,6 +630,7 @@ class Host {
             if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
                 policy.monitor = false;
             }
+            let PolicyManager = require('./PolicyManager.js');
             let policyManager = new PolicyManager('info');
 
             policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
@@ -2430,6 +2429,7 @@ module.exports = class {
         this.loadPolicy((err, data) => {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
+                let PolicyManager = require('./PolicyManager.js');
                 let policyManager = new PolicyManager('info');
 
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
