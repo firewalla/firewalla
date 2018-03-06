@@ -316,9 +316,12 @@ class OldDataCleanSensor extends Sensor {
             const rule = await (pm2.findPolicy(mac, "mac"))
             if(!rule) {
               log.info(`Migrating blockin policy for host ${mac} to policyRule`)
+              const hostInfo = await (hostTool.getMACEntry(mac))
               const newRule = pm2.createPolicy({
                 target: mac,
-                type: "mac"
+                type: "mac",
+                target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
+                target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
               })
               const result = await (pm2.checkAndSaveAsync(newRule))
               if(result) {
@@ -342,7 +345,7 @@ class OldDataCleanSensor extends Sensor {
     this.listen();
 
     this.hostPolicyMigration()
-    
+
     setTimeout(() => {
       this.scheduledJob();
       this.oneTimeJob()
