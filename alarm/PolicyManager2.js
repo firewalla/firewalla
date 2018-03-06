@@ -236,6 +236,10 @@ class PolicyManager2 {
     callback(null, this.jsonToPolicy(json));
   }
 
+  createPolicy(json) {
+    return this.jsonToPolicy(json)
+  }
+
   updatePolicyAsync(policy) {
     const pid = policy.pid
     if(pid) {
@@ -322,6 +326,18 @@ class PolicyManager2 {
         callback(err)
       }
     })()
+  }
+
+  checkAndSaveAsync(policy) {
+    return new Promise((resolve, reject) => {
+      this.checkAndSave(policy, (err, resultPolicy) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(resultPolicy)
+        }
+      })
+    })
   }
 
   policyExists(policyID) {
@@ -969,6 +985,21 @@ class PolicyManager2 {
 
       callback(null, false)
     })
+  }
+
+
+  // utility functions
+  findPolicy(target, type) {
+    return async(() => {
+      let rules = await (this.loadActivePolicysAsync())
+      rules.forEach((rule) => {
+        if(rule.target === target && type === rule.type) {
+          return rule 
+        }
+      })
+
+      return null
+    })()
   }
 }
 

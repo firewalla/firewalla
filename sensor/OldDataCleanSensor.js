@@ -303,11 +303,46 @@ class OldDataCleanSensor extends Sensor {
     log.info("Listen on channel FlowDataCleanSensor");
   }
 
+
+  // could be disabled in the future when all policy blockin rule is migrated to general policy rules
+  hostPolicyMigration() {
+    return async(() => {
+      const keys = await (rclient.keysAsync("policy:mac:*"))
+      if(keys) {
+        keys.forEach((key) => {
+          const blockin = await (rclient.hgetAsync(key, "blockin"))
+          if(blockin) {
+            const mac = key.replace("policy:mac:", "")
+            const rule = await (pm2.findPolicy(mac, "mac"))
+            if(!rule) {
+              log.info(`Migrating blockin policy for host ${mac} to policyRule`)
+              const newRule = pm2.createPolicy({
+                target: mac,
+                type: "mac"
+              })
+              const result = await (pm2.checkAndSaveAsync(newRule))
+              if(result) {
+                await (rclient.hsetAsync(key, "blockin", false))
+                log.info("Migrated successfully")
+              } else {
+                log.error("Failed to migrate")
+              }
+            }
+          }
+        })
+      }
+    })().catch((err) => {
+      log.error("Failed to migrate host policy rules:", err, {})
+    })
+  }
+
   run() {
     super.run();
 
     this.listen();
 
+    this.hostPolicyMigration()
+    
     setTimeout(() => {
       this.scheduledJob();
       this.oneTimeJob()

@@ -52,11 +52,12 @@ const frp = fm.getSupportFRP()
 var PolicyManager = require('./PolicyManager.js');
 var policyManager = new PolicyManager('info');
 
-let AlarmManager2 = require('../alarm/AlarmManager2.js');
-let alarmManager2 = new AlarmManager2();
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const alarmManager2 = new AlarmManager2();
 
-let PolicyManager2 = require('../alarm/PolicyManager2.js');
-let policyManager2 = new PolicyManager2();
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const policyManager2 = new PolicyManager2();
+const pm2 = policyManager2
 
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
@@ -1135,6 +1136,8 @@ class Host {
 
     // policy:mac:xxxxx
     setPolicy(name, data, callback) {
+      callback = callback || function() {}
+
         if (name == "acl") {
             if (this.policy.acl == null) {
                 this.policy.acl = [data];
@@ -1162,6 +1165,47 @@ class Host {
                 }
                 this.policy.acl = acls;
             }
+        } else if (name === "blockin") { // legacy logic handling, code can be removed in the future
+          if(this.o && this.o.mac) {
+            if(data) {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created              
+                  callback(null, {blockin: true});
+                } else {
+                  // need to create one
+                  let rule = pm2.createPolicy({
+                    target: this.o.mac,
+                    type: "mac"
+                  })
+
+                  let resultPolicyRule = await (pm2.checkAndSaveAsync(rule))
+                  if(resultPolicyRule) {
+                    callback(null, {blockin: true})
+                  } else {
+                    callback(new Error("failed to apply blockin"))
+                  }
+                }
+              })().catch((err) => {
+                callback(err, null)
+              })
+              
+            } else {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created
+                  await (pm2.disableAndDeletePolicy(rule.pid))
+                } 
+
+                callback(null, {blockin: false});
+              })().catch((err) => {
+                callback(err, null)
+              })
+            }
+          }
+                   
         } else {
             if (this.policy[name] != null && this.policy[name] == data) {
                 callback(null, null);
@@ -1831,6 +1875,26 @@ module.exports = class {
         })();
     }
 
+    // convert host internet block to old format, this should be removed when all apps are migrated to latest format
+    legacyHostFlag(json) {
+      return async(() => {
+        const rules = json.policyRules
+        const hosts = json.hosts
+        rules.forEach((rule) => {
+          if(rule.type === "mac") {
+            let target = rule.target
+            for (const index in hosts) {
+              const host = hosts[index]
+              if(host.mac === target && host.policy) {
+                host.policy.blockin = true
+                break
+              }              
+            }
+          }
+        })        
+      })()
+    }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1865,6 +1929,8 @@ module.exports = class {
           await (requiredPromises);
 
           await (this.loadDDNSForInit(json));
+
+          await (this.legacyHostFlag(json))
 
           json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
 
