@@ -486,7 +486,7 @@ class HostTool {
     return async(() => {
       if(sysManager.isLocalIP(ip)) {
         const macEntry = await (this.getMacEntryByIP(ip))
-        return getPreferredBName(o)
+        return getPreferredBName(macEntry)
       } else {
         const intelEntry = await (intelTool.getIntel(ip))
         return intelEntry && intelEntry.host
