@@ -50,7 +50,6 @@ const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
 var PolicyManager = require('./PolicyManager.js');
-var policyManager = new PolicyManager('info');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -621,20 +620,6 @@ class Host {
                 this.applyPolicy((err)=>{
                 });
                 log.info("HostPolicy:Changed", channel, ip, type, obj);
-   /*
-                this.loadPolicy((err, data) => {
-                    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-                    policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
-                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
-                                if (err == null && changed == true) {
-                                    this.savePolicy(null);
-                                }
-                            });
-                        });
-                    });
-                });
-*/
             }
         });
     }
@@ -647,6 +632,8 @@ class Host {
             if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
                 policy.monitor = false;
             }
+            let policyManager = new PolicyManager('info');
+
             policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
                 dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
                     policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
@@ -1205,6 +1192,8 @@ class Host {
               })
             }
           }
+
+          return // no need to save policy for blockin case, it's already routed to new policy model
                    
         } else {
             if (this.policy[name] != null && this.policy[name] == data) {
@@ -2214,24 +2203,6 @@ module.exports = class {
                                 }
                             });
                         });
-                       /*
-                        hostbymac.loadPolicy((err, policy) => {
-                            this.syncHost(hostbymac, true, (err) => {
-                                if (this.type == "server") {
-                                    policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
-                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
-                                                if (err == null && changed == true) {
-                                                    hostbymac.savePolicy(null);
-                                                }
-                                            });
-                                        });
-                                    });
-                                }
-                                cb();
-                            });
-                        });
-                       */
                     } else {
                         cb();
                     }
@@ -2459,6 +2430,8 @@ module.exports = class {
         this.loadPolicy((err, data) => {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
+                let policyManager = new PolicyManager('info');
+
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
                     dnsManager.queryAcl(this.policy.acl,(err,acls,ipchanged)=> {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {

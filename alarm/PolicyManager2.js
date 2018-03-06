@@ -563,14 +563,15 @@ class PolicyManager2 {
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, options, callback) {
-    if(typeof options === 'function') {
-      callback = options
-      options = {}
-    }
 
     if(typeof(number) == 'function') {
       callback = number;
       number = 1000; // by default load last 1000 policy rules, for self-protection
+      options = {}
+    }
+
+    if(typeof options === 'function') {
+      callback = options
       options = {}
     }
 
@@ -993,11 +994,13 @@ class PolicyManager2 {
   findPolicy(target, type) {
     return async(() => {
       let rules = await (this.loadActivePolicysAsync())
-      rules.forEach((rule) => {
+
+      for (const index in rules) {
+        const rule = rules[index]
         if(rule.target === target && type === rule.type) {
           return rule 
         }
-      })
+      }
 
       return null
     })()
