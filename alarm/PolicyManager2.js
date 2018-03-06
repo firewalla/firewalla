@@ -548,6 +548,7 @@ class PolicyManager2 {
   }
 
   loadActivePolicysAsync(number) {
+    number = number || 1000 // default 1000
     return new Promise((resolve, reject) => {
       this.loadActivePolicys(number, (err, policies) => {
         if(err) {
