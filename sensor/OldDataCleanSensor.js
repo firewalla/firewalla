@@ -311,7 +311,7 @@ class OldDataCleanSensor extends Sensor {
       if(keys) {
         keys.forEach((key) => {
           const blockin = await (rclient.hgetAsync(key, "blockin"))
-          if(blockin) {
+          if(blockin && blockin == "true") {
             const mac = key.replace("policy:mac:", "")
             const rule = await (pm2.findPolicy(mac, "mac"))
             if(!rule) {
