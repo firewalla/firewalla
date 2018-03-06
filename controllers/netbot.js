@@ -1387,7 +1387,7 @@ class netBot extends ControllerBot {
       }
 
       if(msg.data.hourblock != "1" &&
-         msg.data.hourblock != "0" ) { // 0 => now, 1 => hour stats, other => overall stats (last 24 hours)
+         msg.data.hourblock != "0" ) { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
         options.queryall = true
       }
       
@@ -1399,7 +1399,7 @@ class netBot extends ControllerBot {
         if(hostObject && hostObject.ipv4Addr) {
           ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
         } else {
-          let error = new Error("Invalide Mac");
+          let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
         }        
@@ -1407,7 +1407,7 @@ class netBot extends ControllerBot {
 
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
-        let error = new Error("Invalide Host");
+        let error = new Error("Invalid Host");
         error.code = 404;
         return Promise.reject(error);
       }
