@@ -1720,7 +1720,8 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {
             policy: policy,
             otherAlarms: otherBlockedAlarms,
-            alreadyExists: alreadyExists
+            alreadyExists: alreadyExists === "duplicated",
+            updated: alreadyExists === "duplicated_and_updated"
           }, err, callback);
         } else {
           this.simpleTxData(msg, policy, err, callback);
@@ -1795,9 +1796,13 @@ class netBot extends ControllerBot {
           }
 
           pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists) {
+            if(alreadyExists == "duplicated") {
               this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
               return
+            } else if(alreadyExists == "duplicated_and_updated") {
+              const p = JSON.parse(JSON.stringify(policy2))
+              p.updated = true // a kind hacky, but works
+              this.simpleTxData(msg, p, err, callback)
             } else {
               this.simpleTxData(msg, policy2, err, callback)
             }

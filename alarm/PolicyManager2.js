@@ -317,7 +317,14 @@ class PolicyManager2 {
         let policies = await(this.getSamePolicies(policy))
         if (policies && policies.length > 0) {
           log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          callback(null, policies[0], true)
+          const samePolicy = policies[0]
+          if(samePolicy.disabled && samePolicy.disabled == "1") {
+            // there is a policy in place and disabled, just need to enable it
+            await (this.enablePolicy(samePolicy))
+            callback(null, samePolicy, "duplicated_and_updated")
+          } else {
+            callback(null, samePolicy, "duplicated")
+          }
         } else {
           this.savePolicy(policy, callback);
         }
@@ -375,7 +382,9 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(1000, (err, policies)=>{
+        pm2.loadActivePolicys(1000, {
+          includingDisabled: true
+        }, (err, policies)=>{
           if (err) {
             log.error("failed to load active policies:" + err)
             reject(err)
