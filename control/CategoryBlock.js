@@ -107,8 +107,8 @@ class CategoryBlock {
     const mapping = this.getMapping(category)
     const ipsetName = options.blockSet || "blocked_domain_set"
     const ipset6Name = ipsetName + "6"
-    let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `redis-cli smembers ${mapping} | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
     return async(() => {
       await (exec(cmd4))
       await (exec(cmd6))

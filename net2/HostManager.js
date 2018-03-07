@@ -1606,6 +1606,26 @@ module.exports = class {
     });
   }
 
+  extensionDataForInit(json) {
+    log.debug("Loading ExtentsionPolicy");
+    let extdata = {};
+    return new Promise((resolve,reject)=>{
+      rclient.get("extension.portforward.config",(err,data)=>{
+        try {
+          if (data != null) {
+            extdata['portforward'] = JSON.parse(data);
+          } 
+        } catch (e) {
+          log.error("ExtensionData:Unable to parse data",e,data);
+          resolve(json);
+          return;
+        }
+        json.extension = extdata;
+        resolve(json);
+      });
+    });    
+  }
+
   newAlarmDataForInit(json) {
     log.debug("Reading new alarms");
 
@@ -1838,6 +1858,7 @@ module.exports = class {
           let json = {};
           let requiredPromises = [
             this.policyDataForInit(json),
+            this.extensionDataForInit(json),
             this.modeForInit(json),
             this.policyRulesForInit(json),
             this.exceptionRulesForInit(json),
@@ -1901,6 +1922,7 @@ module.exports = class {
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
 //            this.last60MinTopTransferForInit(json),
+            this.extensionDataForInit(json),
             this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),

@@ -93,7 +93,7 @@ class App {
 
   async isAd(req, res) {
     res.status(200).send().end();
-    let count = redis.hincrbyAsync('block:stats', 'ad', 1);
+    let count = await redis.hincrbyAsync('block:stats', 'ad', 1);
     log.info(`Total ad blocked: ${count}`);
   }
 
