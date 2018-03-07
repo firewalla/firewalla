@@ -236,6 +236,10 @@ class PolicyManager2 {
     callback(null, this.jsonToPolicy(json));
   }
 
+  createPolicy(json) {
+    return this.jsonToPolicy(json)
+  }
+
   updatePolicyAsync(policy) {
     const pid = policy.pid
     if(pid) {
@@ -313,7 +317,14 @@ class PolicyManager2 {
         let policies = await(this.getSamePolicies(policy))
         if (policies && policies.length > 0) {
           log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          callback(null, policies[0], true)
+          const samePolicy = policies[0]
+          if(samePolicy.disabled && samePolicy.disabled == "1") {
+            // there is a policy in place and disabled, just need to enable it
+            await (this.enablePolicy(samePolicy))
+            callback(null, samePolicy, "duplicated_and_updated")
+          } else {
+            callback(null, samePolicy, "duplicated")
+          }
         } else {
           this.savePolicy(policy, callback);
         }
@@ -322,6 +333,18 @@ class PolicyManager2 {
         callback(err)
       }
     })()
+  }
+
+  checkAndSaveAsync(policy) {
+    return new Promise((resolve, reject) => {
+      this.checkAndSave(policy, (err, resultPolicy) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve(resultPolicy)
+        }
+      })
+    })
   }
 
   policyExists(policyID) {
@@ -359,7 +382,9 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(1000, (err, policies)=>{
+        pm2.loadActivePolicys(1000, {
+          includingDisabled: true
+        }, (err, policies)=>{
           if (err) {
             log.error("failed to load active policies:" + err)
             reject(err)
@@ -475,7 +500,7 @@ class PolicyManager2 {
         }
         
         let rr = results.map((r) => {
-          if(r.scope && r.scope.constructor.name === 'String') {
+          if(r && r.scope && r.scope.constructor.name === 'String') {
             try {
               r.scope = JSON.parse(r.scope)
             } catch(err) {
@@ -532,6 +557,7 @@ class PolicyManager2 {
   }
 
   loadActivePolicysAsync(number) {
+    number = number || 1000 // default 1000
     return new Promise((resolve, reject) => {
       this.loadActivePolicys(number, (err, policies) => {
         if(err) {
@@ -546,14 +572,15 @@ class PolicyManager2 {
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
   loadActivePolicys(number, options, callback) {
-    if(typeof options === 'function') {
-      callback = options
-      options = {}
-    }
 
     if(typeof(number) == 'function') {
       callback = number;
       number = 1000; // by default load last 1000 policy rules, for self-protection
+      options = {}
+    }
+
+    if(typeof options === 'function') {
+      callback = options
       options = {}
     }
 
@@ -969,6 +996,23 @@ class PolicyManager2 {
 
       callback(null, false)
     })
+  }
+
+
+  // utility functions
+  findPolicy(target, type) {
+    return async(() => {
+      let rules = await (this.loadActivePolicysAsync())
+
+      for (const index in rules) {
+        const rule = rules[index]
+        if(rule.target === target && type === rule.type) {
+          return rule 
+        }
+      }
+
+      return null
+    })()
   }
 }
 

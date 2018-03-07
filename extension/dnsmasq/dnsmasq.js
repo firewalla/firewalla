@@ -641,7 +641,8 @@ module.exports = class DNSMASQ {
 
   checkIfRestartNeeded() {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
-    log.info("need restart is", this.needRestart, {})
+    if(this.needRestart)
+      log.info("need restart is", this.needRestart, {})
     if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
       this.needRestart = null
       this.rawRestart((err) => {        

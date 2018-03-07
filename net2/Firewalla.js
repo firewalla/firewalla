@@ -270,6 +270,10 @@ function isReservedBlockingIP(ip) {
   return ip === BLACK_HOLE_IP || ip === BLUE_HOLE_IP
 }
 
+function isMain() {
+  return process.title === "FireMain"
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -303,5 +307,7 @@ module.exports = {
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,
-  isReservedBlockingIP: isReservedBlockingIP
+  isReservedBlockingIP: isReservedBlockingIP,
+
+  isMain:isMain
 }

@@ -1402,7 +1402,7 @@ class netBot extends ControllerBot {
       }
 
       if(msg.data.hourblock != "1" &&
-         msg.data.hourblock != "0" ) { // 0 => now, 1 => hour stats, other => overall stats (last 24 hours)
+         msg.data.hourblock != "0" ) { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
         options.queryall = true
       }
       
@@ -1414,7 +1414,7 @@ class netBot extends ControllerBot {
         if(hostObject && hostObject.ipv4Addr) {
           ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
         } else {
-          let error = new Error("Invalide Mac");
+          let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
         }        
@@ -1422,7 +1422,7 @@ class netBot extends ControllerBot {
 
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
-        let error = new Error("Invalide Host");
+        let error = new Error("Invalid Host");
         error.code = 404;
         return Promise.reject(error);
       }
@@ -1739,7 +1739,8 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {
             policy: policy,
             otherAlarms: otherBlockedAlarms,
-            alreadyExists: alreadyExists
+            alreadyExists: alreadyExists === "duplicated",
+            updated: alreadyExists === "duplicated_and_updated"
           }, err, callback);
         } else {
           this.simpleTxData(msg, policy, err, callback);
@@ -1814,9 +1815,13 @@ class netBot extends ControllerBot {
           }
 
           pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists) {
+            if(alreadyExists == "duplicated") {
               this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
               return
+            } else if(alreadyExists == "duplicated_and_updated") {
+              const p = JSON.parse(JSON.stringify(policy2))
+              p.updated = true // a kind hacky, but works
+              this.simpleTxData(msg, p, err, callback)
             } else {
               this.simpleTxData(msg, policy2, err, callback)
             }
