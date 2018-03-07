@@ -45,6 +45,7 @@ const exec = require('child-process-promise').exec
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
+  "video": "app.video",
   "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
 }
 

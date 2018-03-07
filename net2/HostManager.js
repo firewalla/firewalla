@@ -1869,7 +1869,8 @@ module.exports = class {
         const rules = json.policyRules
         const hosts = json.hosts
         rules.forEach((rule) => {
-          if(rule.type === "mac") {
+          if(rule.type === "mac" && 
+          (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
             let target = rule.target
             for (const index in hosts) {
               const host = hosts[index]
