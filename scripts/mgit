@@ -13,7 +13,7 @@ function marked_git {
     echo $2 > $marker_dir/url
     echo $3 > $marker_dir/branch
     shift 3
-    git "$@" || return 1
+    git "$@"
     rm -rf $marker_dir
 }
 
