@@ -2120,7 +2120,7 @@ module.exports = class {
         log.info("hostmanager:gethosts:started");
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethosts:mutx");
+            log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
             if (retry == null) {
