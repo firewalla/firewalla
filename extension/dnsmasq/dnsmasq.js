@@ -724,11 +724,14 @@ module.exports = class DNSMASQ {
       
       log.info("Second dnsmasq command:", cmdAlt);
 
+      require('child_process').execSync("echo '"+ cmdAlt +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq-alt.sh");
+
     }
 
     log.debug("Command to start dnsmasq: ", cmd);
 
     require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+
 
     if(f.isDocker()) {
 
