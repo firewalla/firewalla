@@ -101,6 +101,9 @@ let appTool = new AppTool();
 
 var linux = require('../util/linux.js');
 
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+
 /* alarms:
     alarmtype:  intel/newhost/scan/log
     severityscore: out of 100
@@ -2552,10 +2555,10 @@ module.exports = class {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
   }
 
-  getActiveHumanDevices() {   
+  getActiveHumanDevices() {
     const HUMAN_TRESHOLD = 0.05
 
     this.hosts.all.filter((host) => {
