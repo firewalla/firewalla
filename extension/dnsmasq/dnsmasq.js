@@ -17,6 +17,8 @@ const spawn = require('child_process').spawn
 let f = require('../../net2/Firewalla.js');
 let fHome = f.getFirewallaHome();
 
+const ip = require('ip');
+
 let userID = f.getUserID();
 
 let Promise = require('bluebird');
@@ -58,9 +60,10 @@ let networkTool = require('../../net2/NetworkTool')();
 
 let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
-let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
+let configFile = __dirname + "/dnsmasq.conf";
+let altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
-let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+let resolveFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = {};
 let upstreamDNS = null;
@@ -186,7 +189,7 @@ module.exports = class DNSMASQ {
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
     config += "\n";
-    fs.writeFileSync(dnsmasqResolvFile, config);
+    fs.writeFileSync(resolveFile, config);
     callback(null);
   }
 
@@ -659,8 +662,8 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${dnsmasqConfigFile} -r ${dnsmasqResolvFile} --local-service`;
-
+    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolveFile} --local-service`;
+    
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
@@ -695,6 +698,32 @@ module.exports = class DNSMASQ {
       sysManager.myDNS().forEach((dns) => {
         cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
       });
+      
+      let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolveFile} --local-service`;
+      let gw = sysManager.myGateway();
+      let mask = sysManager.myIpMask();
+      
+      let cidr = ip.cidrSubnet(sysManager.mySubnet());
+      let firstAddr = ip.toLong(cidr.firstAddress);
+      let lastAddr = ip.toLong(cidr.lastAddress);
+      let midAddr = firstAddr + (lastAddr - firstAddr) / 2;
+
+      cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
+        cmdAlt,
+        ip.fromLong(midAddr),
+        ip.fromLong(lastAddr - 3),
+        mask,
+        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+      );
+
+      cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
+
+      sysManager.myDNS().forEach(dns => {
+        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
+      });
+      
+      log.info("Second dnsmasq command:", cmdAlt);
+
     }
 
     log.debug("Command to start dnsmasq: ", cmd);
