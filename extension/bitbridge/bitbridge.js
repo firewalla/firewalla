@@ -187,7 +187,7 @@ class BitBridge {
 
   ipv6Off() {
     return async(() => {
-      await (exec("rm /home/pi/.firewalla/config/enablev6"))
+      await (exec("rm -f /home/pi/.firewalla/config/enablev6"))
       await (exec("sudo pkill bitbridge6"))      
     })()
   }

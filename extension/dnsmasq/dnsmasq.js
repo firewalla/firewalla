@@ -45,7 +45,7 @@ let sysManager = new SysManager();
 
 let fConfig = require('../../net2/config.js').getConfig();
 
-let bone = require("../../lib/Bone.js");
+const bone = require("../../lib/Bone.js");
 
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
@@ -87,6 +87,8 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
+      this.needRestart = null
+      this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
         adblock: 'ads',
@@ -117,6 +119,10 @@ module.exports = class DNSMASQ {
         this.shouldStart = false;
         this.stop();
       });
+
+      setInterval(() => {
+        this.checkIfRestartNeeded()
+      }, 10 * 1000) // every 10 seconds
     }
     return instance;
   }
@@ -283,8 +289,16 @@ module.exports = class DNSMASQ {
       });
   }
 
-  addPolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+  addPolicyFilterEntry(domain, options) {
+    options = options || {}
+
+    let entry = null
+    
+    if(options.use_blue_hole) {
+      entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
+    } else {
+      entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    }
     
     return async(() => {
       if(this.workingInProgress) {
@@ -484,9 +498,6 @@ module.exports = class DNSMASQ {
       subnets.forEach(subnet => {
         await (iptables.dnsChangeAsync(subnet, dns, true));
       })
-
-      await (require('../../control/Block.js').block(BLACK_HOLE_IP))
-      await (require('../../control/Block.js').block(BLUE_HOLE_IP))
     })();
   }
 
@@ -628,6 +639,22 @@ module.exports = class DNSMASQ {
     });
   }
 
+  checkIfRestartNeeded() {
+    const MINI_RESTART_INTERVAL = 10 // 10 seconds
+    if(this.needRestart)
+      log.info("need restart is", this.needRestart, {})
+    if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
+      this.needRestart = null
+      this.rawRestart((err) => {        
+        if(err) {
+          log.error("Failed to restart dnsmasq")
+        } else {
+          log.info("dnsmasq restarted")
+        }
+      }) // just restart to have new policy filters take effect
+    }
+  }
+
   rawStart(callback) {
     callback = callback || function() {}
 
@@ -755,6 +782,8 @@ module.exports = class DNSMASQ {
 
   rawRestart(callback) {
     callback = callback || function() {}
+
+    log.info("Restarting dnsmasq...")
 
     let cmd = "sudo systemctl restart firemasq";
 
@@ -913,16 +942,28 @@ module.exports = class DNSMASQ {
         await (this.verifyDNSConnectivity())
               
       if(!checkResult) {
-        let psResult = await (exec("ps aux | grep dnsmasq"))
-        let stdout = psResult.stdout
-        log.info("dnsmasq running status: \n", stdout, {})
-  
-        // restart this service, something is wrong
-        this.rawRestart((err) => {
-          if(err) {
-            log.error("Failed to restart ss_client:", err, {})
-          }
-        })
+        this.failCount++
+        if(this.failCount > 5) {
+          this.stop() // make sure iptables rules are also stopped..
+          bone.log("error",{
+            version: sysManager.version(),
+            type:'DNSMASQ CRASH',
+            msg:"dnsmasq failed to restart after 5 retries",
+          },null);
+        } else {
+          let psResult = await (exec("ps aux | grep dns[m]asq"))
+          let stdout = psResult.stdout
+          log.info("dnsmasq running status: \n", stdout, {})
+    
+          // restart this service, something is wrong
+          this.rawRestart((err) => {
+            if(err) {
+              log.error("Failed to restart dnsmasq:", err, {})
+            }
+          })
+        }        
+      } else {
+        this.failCount = 0 // reset
       }
     })()
   }

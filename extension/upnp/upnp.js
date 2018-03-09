@@ -181,6 +181,7 @@ module.exports = class {
     }
 
     removePortMapping(protocol, localPort, externalPort, callback) {
+       callback = callback || function() {}
         this.getCapability(()=>{
             try {
                 if (this.upnpEnabled == true) {

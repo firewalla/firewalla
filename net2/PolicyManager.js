@@ -59,6 +59,8 @@ let b = require('../control/Block.js');
 
 let features = require('../net2/features');
 
+const cp = require('child_process')
+
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
 1) "blockin"
@@ -269,6 +271,18 @@ module.exports = class {
       return
     }
 
+    // rm family_filter.conf from v2
+    log.info('Dnsmasq: remove family_filter.conf from v2');
+    require('fs').unlink(firewalla.getUserConfigFolder() + '/dns/family_filter.conf', err => {
+      if (err) {
+        if (err.code === 'ENOENT') {
+          log.info('Dnsmasq: No family_filter.conf, skip remove');
+        } else {
+          log.warn('Dnsmasq: Error when remove family_filter.conf', err, {});
+        }
+      }
+    });
+
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state == true) {
@@ -289,6 +303,7 @@ module.exports = class {
       callback(null)
       return
     }
+
 
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));

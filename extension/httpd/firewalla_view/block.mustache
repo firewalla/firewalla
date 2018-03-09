@@ -3,7 +3,7 @@
 <head><title>Blocked Site</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="/firewalla_static/assets/css/main.css">
 </head>
 <body>
 <!-- Wrapper-->
@@ -15,8 +15,11 @@
                 <h1> Blocked Site <span class="icon fa-ban" style="color: lightgray;"></span></h1>
                 <p class="major">This domain is <span style="color:darkred;">blocked</span> by Firewalla.</p>
             </header>
-            <p class="small">Firewalla is protecting you from #{hostname}. You can manage your blocked list in Firewalla
+            <p class="small">Firewalla is protecting you from {{hostname}}. You can manage your blocked list in Firewalla
                 App.</p>
+            <p>
+                <i style="color: darkgray"> Firewalla has prevented {{count}} inappropriate web content visits.</i>
+            </p>
             <ul class="actions vertical">
                 <li>
                     <a class="button medium wide smooth-scroll-middle" href="https://firewalla.com">Visit Our Site </a>
@@ -24,7 +27,7 @@
             </ul>
         </div>
         <div class="spotlight style2 major">
-            <img src="images/firewallas.png" alt="firewalla icon">
+            <img src="/firewalla_static/images/firewallas.png" alt="firewalla icon">
         </div>
     </section>
     
@@ -62,11 +65,11 @@
         </div>
     </footer>
 </div><!-- Scripts-->
-<script src="assets/js/jquery.min.js"></script>
-<script src="assets/js/jquery.scrollex.min.js"></script>
-<script src="assets/js/jquery.scrolly.min.js"></script>
-<script src="assets/js/skel.min.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/main.js"></script>
+<script src="/firewalla_static/assets/js/jquery.min.js"></script>
+<script src="/firewalla_static/assets/js/jquery.scrollex.min.js"></script>
+<script src="/firewalla_static/assets/js/jquery.scrolly.min.js"></script>
+<script src="/firewalla_static/assets/js/skel.min.js"></script>
+<script src="/firewalla_static/assets/js/util.js"></script>
+<script src="/firewalla_static/assets/js/main.js"></script>
 </body>
 </html>

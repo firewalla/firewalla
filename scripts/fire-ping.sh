@@ -28,7 +28,7 @@ DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
 touch /tmp/watchdog 
 
 for i in `seq 1 10`; do
-    if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null
+    if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null || sudo nmap -sP -PR $DEFAULT_ROUTE |grep "Host is up" &> /dev/null
     then
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
