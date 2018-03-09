@@ -493,6 +493,31 @@ class HostTool {
       }
     })()
   }
+
+  filterOldDevices(hostList) {
+    const validHosts = hostList.filter(host => host.mac != null)
+    const activeHosts = {}
+    for (const index in validHosts) {
+      const host = validHosts[index]
+      const ip = host.ipv4Addr
+      if(!ip) {
+        continue
+      }
+
+      if(!activeHosts[ip]) {
+        activeHosts[ip] = host
+      } else {
+        const existingHost = activeHosts[ip]
+
+        // new one is newer
+        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+          activeHosts[ip] = host
+        }
+      }      
+    }
+
+    return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
+  }
 }
 
 module.exports = HostTool;
