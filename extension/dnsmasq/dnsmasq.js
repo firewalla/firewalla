@@ -63,7 +63,7 @@ let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let configFile = __dirname + "/dnsmasq.conf";
 let altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
-let resolveFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+let resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = {};
 let upstreamDNS = null;
@@ -189,7 +189,7 @@ module.exports = class DNSMASQ {
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
     config += "\n";
-    fs.writeFileSync(resolveFile, config);
+    fs.writeFileSync(resolvFile, config);
     callback(null);
   }
 
@@ -662,7 +662,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolveFile} --local-service`;
+    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
@@ -699,7 +699,7 @@ module.exports = class DNSMASQ {
         cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
       });
       
-      let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolveFile} --local-service`;
+      let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
       let gw = sysManager.myGateway();
       let mask = sysManager.myIpMask();
       
