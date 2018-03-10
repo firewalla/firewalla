@@ -8,13 +8,15 @@
 MARKER_BASE=$HOME/git_in_progress
 
 function marked_git {
+    rc=0
     marker_dir=$MARKER_BASE/$1
     mkdir -p $marker_dir
     echo $2 > $marker_dir/url
     echo $3 > $marker_dir/branch
     shift 3
-    git "$@" || return 1
+    git "$@" || rc=$?
     rm -rf $marker_dir
+    return $rc
 }
 
 function recover {
