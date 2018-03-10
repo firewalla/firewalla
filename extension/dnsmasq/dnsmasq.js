@@ -850,7 +850,7 @@ module.exports = class DNSMASQ {
     let cidr = ip.cidrSubnet(sysManager.mySubnet());
     let firstAddr = ip.toLong(cidr.firstAddress);
     let lastAddr = ip.toLong(cidr.lastAddress);
-    let midAddr = firstAddr + (lastAddr - firstAddr) / 2;
+    let midAddr = firstAddr + (lastAddr - firstAddr) / 4;
 
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,
