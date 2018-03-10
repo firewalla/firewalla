@@ -213,7 +213,7 @@ function run() {
   })()
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-  let dnsmasq = new DNSMASQ(hostManager);
+  let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
 
   if (process.env.FWPRODUCTION) {
