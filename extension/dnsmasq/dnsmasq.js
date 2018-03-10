@@ -732,7 +732,6 @@ module.exports = class DNSMASQ {
 
     log.debug("Command to start dnsmasq: ", cmd);
 
-
     let prefix = '#!/bin/bash';
     let suffix1 = 'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT';
     let suffix2 = 'for job in `jobs -p`; do wait $job; echo "$job exited"; done';
@@ -746,8 +745,8 @@ module.exports = class DNSMASQ {
       childProcess.execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
     }
 
-    childProcess.execSync("echo '"+ suffix1 +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    childProcess.execSync("echo '"+ suffix2 +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    childProcess.execSync("echo '"+ suffix1 +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    childProcess.execSync("echo '"+ suffix2 +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     this.writeHostsFile();
 
