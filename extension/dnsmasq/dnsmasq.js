@@ -63,8 +63,8 @@ let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let configFile = __dirname + "/dnsmasq.conf";
 let altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
-let hostsFile = f.getRuntimeInfoFolder() + "dnsmasq-hosts";
-let hostsAltFile = f.getRuntimeInfoFolder() + "dnsmasq-alt-hosts";
+let hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
+let hostsAltFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 
 let resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
