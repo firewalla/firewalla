@@ -8,7 +8,7 @@ Type=simple
 Restart=always
 WorkingDirectory=/home/pi/firewalla/
 ExecStart=/home/pi/firewalla/extension/dnsmasq/dnsmasq.sh
-ExecReload=pkill -HUP dnsmasq
+ExecReload=/usr/bin/pkill -HUP dnsmasq
 
 [Install]
 WantedBy=multi-user.target
