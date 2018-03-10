@@ -89,11 +89,12 @@ let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 let statusCheckTimer = null
 
 module.exports = class DNSMASQ {
-  constructor(loglevel) {
+  constructor(hostManager) {
     if (instance == null) {
-      log = require("../../net2/logger.js")("dnsmasq", loglevel);
+      log = require("../../net2/logger.js")("dnsmasq");
 
       instance = this;
+
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
@@ -134,6 +135,9 @@ module.exports = class DNSMASQ {
         this.checkIfRestartNeeded()
       }, 10 * 1000) // every 10 seconds
     }
+
+    this.hostManager = hostManager || this.hostManager;
+
     return instance;
   }
 
@@ -667,17 +671,14 @@ module.exports = class DNSMASQ {
 
   writeHostsFile() {
     Promise.all(
-      Promise.map(redis.keysAsync("host:mac:*"), key => ({
-        mac: key.split('host:mac:', 2)[1],
-        spoofing: redis.hgetAsync(key, 'spoofing')
-      }))
+      Promise.map(redis.keysAsync("host:mac:*"), async key => await redis.hgetallAsync(key))
     ).then(spoofingMap => {
       let altHosts = spoofingMap.map(o => {
         let line = null;
         if (o.spoofing) {
-          line = `dhcp-host=${o.mac},set:alt,2m`;
+          line = `${o.mac},set:spoof,${o.bname},ignore`;
         } else {
-          line = `dhcp-host=${o.mac},set:spoof,ignore`;
+          line = `${o.mac},set:alt,${o.bname},2m`;
         }
         return line;
       });
@@ -685,9 +686,9 @@ module.exports = class DNSMASQ {
       let hosts = spoofingMap.map(o => {
         let line = null;
         if (o.spoofing) {
-          line = `dhcp-host=${o.mac},set:alt,ignore`;
+          line = `${o.mac},set:spoof,${o.bname},2m`;
         } else {
-          line = `dhcp-host=${o.mac},set:spoof,2m`;
+          line = `${o.mac},set:alt,${o.bname},ignore`;
         }
         return line;
       });
@@ -738,11 +739,11 @@ module.exports = class DNSMASQ {
 
     childProcess.execSync("echo '"+prefix +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
-    childProcess.execSync("echo '"+cmd +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    childProcess.execSync("echo '"+cmd +" & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     if (cmdAlt) {
       log.info("Second dnsmasq command:", cmdAlt);
-      childProcess.execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+      childProcess.execSync("echo '"+ cmdAlt +" & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
     }
 
     childProcess.execSync("echo '"+ suffix1 +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
