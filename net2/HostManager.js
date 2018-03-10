@@ -147,7 +147,7 @@ class Host {
         this.loadPolicy(callback);
       }
 
-      this.dnsmasq = new DNSMASQ(this);
+      this.dnsmasq = new DNSMASQ();
     }
 
     update(obj) {
