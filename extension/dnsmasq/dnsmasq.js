@@ -8,22 +8,23 @@
 let instance = null;
 let log = null;
 
-let util = require('util');
-let key = require('../common/key.js');
-let jsonfile = require('jsonfile');
+const util = require('util');
 
 const spawn = require('child_process').spawn
 
-let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
+const f = require('../../net2/Firewalla.js');
 
-let userID = f.getUserID();
+const ip = require('ip');
 
-let Promise = require('bluebird');
+const userID = f.getUserID();
+
+const childProcess = require('child_process');
+
+const Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
 Promise.promisifyAll(Redis.RedisClient.prototype);
-let fs = Promise.promisifyAll(require("fs"))
+const fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -37,13 +38,13 @@ const FILTER_FILE = {
   policy: FILTER_DIR + "/policy_filter.conf"
 }
 
-let policyFilterFile = FILTER_DIR + "/policy_filter.conf";
-let familyFilterFile = FILTER_DIR + "/family_filter.conf";
+const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
+const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
-let SysManager = require('../../net2/SysManager');
-let sysManager = new SysManager();
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
 
-let fConfig = require('../../net2/config.js').getConfig();
+const fConfig = require('../../net2/config.js').getConfig();
 
 const bone = require("../../lib/Bone.js");
 
@@ -54,18 +55,23 @@ const exec = require('child-process-promise').exec
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-let networkTool = require('../../net2/NetworkTool')();
+const networkTool = require('../../net2/NetworkTool')();
 
-let dnsmasqBinary = __dirname + "/dnsmasq";
-let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
-let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
+const dnsmasqBinary = __dirname + "/dnsmasq";
+const pidFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
+const altPidFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
+const startScriptFile = __dirname + "/dnsmasq.sh";
 
-let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+const configFile = __dirname + "/dnsmasq.conf";
+const altConfigFile = __dirname + "/dnsmasq-alt.conf";
+
+const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
+const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
+
+const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = {};
 let upstreamDNS = null;
-
-let dhcpFeature = false;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
@@ -76,7 +82,7 @@ let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8
 
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
-let statusCheckTimer = null
+let statusCheckTimer = null;
 
 module.exports = class DNSMASQ {
   constructor(loglevel) {
@@ -84,10 +90,13 @@ module.exports = class DNSMASQ {
       log = require("../../net2/logger.js")("dnsmasq", loglevel);
 
       instance = this;
+
+      this.dhcpMode = false;
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
-      this.needRestart = null
+      this.needRestart = null;
+      this.needReload = null;
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
@@ -123,7 +132,12 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfRestartNeeded()
       }, 10 * 1000) // every 10 seconds
+
+      setInterval(() => {
+        this.checkIfReloadNeeded()
+      }, 10 * 1000);
     }
+
     return instance;
   }
 
@@ -186,7 +200,7 @@ module.exports = class DNSMASQ {
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
     config += "\n";
-    fs.writeFileSync(dnsmasqResolvFile, config);
+    fs.writeFileSync(resolvFile, config);
     callback(null);
   }
 
@@ -655,56 +669,91 @@ module.exports = class DNSMASQ {
     }
   }
 
+  checkIfReloadNeeded() {
+    if(this.needReload) {
+      log.info("need reload is", this.needReload, {});
+    }
+    if(this.shouldStart && this.needReload) {
+      this.needReload = null;
+      this.reloadDnsmasq();
+    }
+  }
+
+  onSpoofChanged() {
+    if (this.dhcpMode) {
+      this.writeHostsFile().then(() => {
+        log.info("Spoof status changed, set need reload to be true");
+        this.needReload = true;
+      });
+    }
+  }
+
+  reloadDnsmasq() {
+    try {
+      childProcess.execSync('sudo systemctl reload firemasq');
+    } catch (err) {
+      log.error("Unable to reload firemasq service", err, {});
+    }
+    log.info("Dnsmasq has been Reloaded");
+  }
+
+  writeHostsFile() {
+    return Promise.all(
+      Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
+    ).then(hosts => {
+      let hostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:unmonitor,ignore` :
+        `${h.mac},set:monitor,24h`
+      );
+
+      let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:unmonitor,24h` :
+        `${h.mac},set:monitor,ignore`
+      );
+
+      let _hosts = hostsList.join("\n") + "\n";
+      let _altHosts = altHostsList.join("\n") + "\n";
+
+      log.debug("HostsFile:", util.inspect(hostsList));
+      log.debug("HostsAltFile:", util.inspect(altHostsList));
+
+      fs.writeFileSync(hostsFile, _hosts);
+      fs.writeFileSync(altHostsFile, _altHosts);
+    });
+  }
+
   rawStart(callback) {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${dnsmasqConfigFile} -r ${dnsmasqResolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmdAlt = null;
+
+    if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
+      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
+    }
+
+    if(this.dhcpMode && sysManager.secondaryIpnet && sysManager.secondaryMask) {
+      log.info("DHCP feature is enabled");
+
+      cmd = this.prepareDnsmasqCmd(cmd);
+      cmdAlt = this.prepareAltDnsmasqCmd();
+    }
 
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
+      cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
     }
 
-    if(dhcpFeature && (!sysManager.secondaryIpnet ||
-      !sysManager.secondaryMask)) {
-      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
-    }
-    if(dhcpFeature &&
-       sysManager.secondaryIpnet &&
-       sysManager.secondaryMask) {
-      log.info("DHCP feature is enabled");
+    this.writeStartScript(cmd, cmdAlt);
 
-      let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
-      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
-      let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
-
-      cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
-        cmd,
-        rangeBegin,
-        rangeEnd,
-        sysManager.secondaryMask,
-        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
-      );
-
-      // By default, dnsmasq sends some standard options to DHCP clients,
-      // the netmask and broadcast address are set to the same as the host running dnsmasq
-      // and the DNS server and default route are set to the address of the machine running dnsmasq.
-      cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
-
-      sysManager.myDNS().forEach((dns) => {
-        cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
-      });
-    }
-
-    log.debug("Command to start dnsmasq: ", cmd);
-
-    require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    this.writeHostsFile();
 
     if(f.isDocker()) {
 
       try {
-        require('child_process').execSync("sudo pkill dnsmasq")
+        childProcess.execSync("sudo pkill dnsmasq")
       } catch(err) {
         // do nothing
       }
@@ -736,21 +785,88 @@ module.exports = class DNSMASQ {
         callback(null)
       }, 1000)
     } else {
-      try {
-        require('child_process').execSync("sudo systemctl restart firemasq");
-        if(!statusCheckTimer) {
-          statusCheckTimer = setInterval(() => {
-            this.statusCheck()
-          }, 1000 * 60 * 1) // check status every minute
-          log.info("Status check timer installed")
-        }
-      } catch(err) {
-        log.error("Got error when restarting firemasq:", err, {})
-      }
+      this.restartDnsmasq();
       callback(null)
     }
+  }
 
+  restartDnsmasq() {
+    try {
+      childProcess.execSync("sudo systemctl restart firemasq");
+      if (!statusCheckTimer) {
+        statusCheckTimer = setInterval(() => {
+          this.statusCheck()
+        }, 1000 * 60 * 1) // check status every minute
+        log.info("Status check timer installed")
+      }
+    } catch (err) {
+      log.error("Got error when restarting firemasq:", err, {})
+    }
+  }
 
+  writeStartScript(cmd, cmdAlt) {
+    log.info("Command to start dnsmasq: ", cmd);
+
+    let content = [
+      '#!/bin/bash',
+      cmd + " &",
+      cmdAlt ? cmdAlt + " &" : "",
+      'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT',
+      'for job in `jobs -p`; do wait $job; echo "$job exited"; done',
+      ''
+    ];
+
+    fs.writeFileSync(startScriptFile, content.join("\n"));
+  }
+
+  prepareDnsmasqCmd(cmd) {
+    let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
+    let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+
+    cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
+      cmd,
+      rangeBegin,
+      rangeEnd,
+      sysManager.secondaryMask,
+      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+    );
+
+    // By default, dnsmasq sends some standard options to DHCP clients,
+    // the netmask and broadcast address are set to the same as the host running dnsmasq
+    // and the DNS server and default route are set to the address of the machine running dnsmasq.
+    cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
+
+    sysManager.myDNS().forEach((dns) => {
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
+    });
+    return cmd;
+  }
+
+  prepareAltDnsmasqCmd() {
+    let cmdAlt = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
+    let gw = sysManager.myGateway();
+    let mask = sysManager.myIpMask();
+
+    let cidr = ip.cidrSubnet(sysManager.mySubnet());
+    let firstAddr = ip.toLong(cidr.firstAddress);
+    let lastAddr = ip.toLong(cidr.lastAddress);
+    let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
+
+    cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
+      cmdAlt,
+      ip.fromLong(midAddr),
+      ip.fromLong(lastAddr - 3),
+      mask,
+      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+    );
+
+    cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
+
+    sysManager.myDNS().forEach(dns => {
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
+    });
+    return cmdAlt;
   }
 
   rawStop(callback) {
@@ -758,7 +874,7 @@ module.exports = class DNSMASQ {
 
     let cmd = null;
     if(f.isDocker()) {
-      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, altPidFile);
     } else {
       cmd = "sudo service firemasq stop";
     }
@@ -872,7 +988,7 @@ module.exports = class DNSMASQ {
   }
 
   enableDHCP() {
-    dhcpFeature = true;
+    this.dhcpMode = true;
     return new Promise((resolve, reject) => {
       this.start(false, (err) => {
         log.info("Started DHCP")
@@ -888,7 +1004,7 @@ module.exports = class DNSMASQ {
   }
 
   disableDHCP() {
-    dhcpFeature = false;
+    this.dhcpMode = false;
     return new Promise((resolve, reject) => {
       this.start(false, (err) => {
         if(err) {
@@ -902,12 +1018,8 @@ module.exports = class DNSMASQ {
     });
   }
 
-  dhcp() {
-    return dhcpFeature;
-  }
-
-  setDHCPFlag(flag) {
-    dhcpFeature = flag;
+  setDhcpMode(isEnabled) {
+    this.dhcpMode = isEnabled;
   }
 
   verifyDNSConnectivity() {

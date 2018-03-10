@@ -98,7 +98,7 @@ class DNSMASQSensor extends Sensor {
     return Mode.getSetupMode()
       .then((mode) => {
         if(mode === "dhcp") {
-          dnsmasq.setDHCPFlag(true);
+          dnsmasq.setDhcpMode(true);
         }
 
         return this._start()
