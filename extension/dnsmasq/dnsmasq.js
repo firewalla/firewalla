@@ -8,23 +8,23 @@
 let instance = null;
 let log = null;
 
-let util = require('util');
+const util = require('util');
 
 const spawn = require('child_process').spawn
 
-let f = require('../../net2/Firewalla.js');
+const f = require('../../net2/Firewalla.js');
 
 const ip = require('ip');
 
-let userID = f.getUserID();
+const userID = f.getUserID();
 
 const childProcess = require('child_process');
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
 Promise.promisifyAll(Redis.RedisClient.prototype);
-let fs = Promise.promisifyAll(require("fs"))
+const fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -38,13 +38,13 @@ const FILTER_FILE = {
   policy: FILTER_DIR + "/policy_filter.conf"
 }
 
-let policyFilterFile = FILTER_DIR + "/policy_filter.conf";
-let familyFilterFile = FILTER_DIR + "/family_filter.conf";
+const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
+const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
-let SysManager = require('../../net2/SysManager');
-let sysManager = new SysManager();
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
 
-let fConfig = require('../../net2/config.js').getConfig();
+const fConfig = require('../../net2/config.js').getConfig();
 
 const bone = require("../../lib/Bone.js");
 
@@ -55,19 +55,20 @@ const exec = require('child-process-promise').exec
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-let networkTool = require('../../net2/NetworkTool')();
+const networkTool = require('../../net2/NetworkTool')();
 
-let dnsmasqBinary = __dirname + "/dnsmasq";
-let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
-let dnsmasqAltPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
+const dnsmasqBinary = __dirname + "/dnsmasq";
+const pidFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
+const altPidFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
+const startScriptFile = __dirname + "/dnsmasq.sh";
 
-let configFile = __dirname + "/dnsmasq.conf";
-let altConfigFile = __dirname + "/dnsmasq-alt.conf";
+const configFile = __dirname + "/dnsmasq.conf";
+const altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
-let hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
-let hostsAltFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
+const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
+const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 
-let resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
 let defaultNameServers = {};
 let upstreamDNS = null;
@@ -81,7 +82,7 @@ let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8
 
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
-let statusCheckTimer = null
+let statusCheckTimer = null;
 
 module.exports = class DNSMASQ {
   constructor(loglevel) {
@@ -717,7 +718,7 @@ module.exports = class DNSMASQ {
       log.debug("HostsAltFile:", util.inspect(altHostsList));
 
       fs.writeFileSync(hostsFile, _hosts);
-      fs.writeFileSync(hostsAltFile, _altHosts);
+      fs.writeFileSync(altHostsFile, _altHosts);
     });
   }
 
@@ -815,7 +816,7 @@ module.exports = class DNSMASQ {
       ''
     ];
 
-    fs.writeFileSync('/home/pi/firewalla/extension/dnsmasq/dnsmasq.sh', content.join("\n"));
+    fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
   prepareDnsmasqCmd(cmd) {
@@ -873,7 +874,7 @@ module.exports = class DNSMASQ {
 
     let cmd = null;
     if(f.isDocker()) {
-      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqAltPIDFile);
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, altPidFile);
     } else {
       cmd = "sudo service firemasq stop";
     }
