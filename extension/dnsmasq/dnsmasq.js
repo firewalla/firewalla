@@ -699,23 +699,23 @@ module.exports = class DNSMASQ {
   writeHostsFile() {
     return Promise.all(
       Promise.map(redis.keysAsync("host:mac:*"), async key => await redis.hgetallAsync(key))
-    ).then(spoofingMap => {
-      let hosts = spoofingMap.map(o => {
+    ).then(spoofedHosts => {
+      let hosts = spoofedHosts.map(host => {
         let line = null;
-        if (o.spoofing) {
-          line = `${o.mac},set:spoof,${o.bname},2m`;
+        if (host.spoofing === false) {
+          line = `${host.mac},set:alt,${host.bname},ignore`;
         } else {
-          line = `${o.mac},set:alt,${o.bname},ignore`;
+          line = `${host.mac},set:spoof,${host.bname},2m`;
         }
         return line;
       });
 
-      let altHosts = spoofingMap.map(o => {
+      let altHosts = spoofedHosts.map(host => {
         let line = null;
-        if (o.spoofing) {
-          line = `${o.mac},set:spoof,${o.bname},ignore`;
+        if (host.spoofing === false) {
+          line = `${host.mac},set:alt,${host.bname},2m`;
         } else {
-          line = `${o.mac},set:alt,${o.bname},2m`;
+          line = `${host.mac},set:spoof,${host.bname},ignore`;
         }
         return line;
       });
@@ -723,8 +723,8 @@ module.exports = class DNSMASQ {
       let _hosts = hosts.join("\n") + "\n";
       let _altHosts = altHosts.join("\n") + "\n";
 
-      log.info("HostsFile:", util.inspect(hosts));
-      log.info("HostsAltFile:", util.inspect(altHosts));
+      log.debug("HostsFile:", util.inspect(hosts));
+      log.debug("HostsAltFile:", util.inspect(altHosts));
 
       fs.writeFileSync(hostsFile, _hosts);
       fs.writeFileSync(hostsAltFile, _altHosts);
