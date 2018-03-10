@@ -701,11 +701,11 @@ module.exports = class DNSMASQ {
     ).then(hosts => {
       let hostsList = hosts.map(h => (h.spoofing === 'false') ?
         `${h.mac},set:alt,${h.bname},ignore` :
-        `${h.mac},set:spoof,${h.bname},2m`
+        `${h.mac},set:spoof,${h.bname},24h`
       );
 
       let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:alt,${h.bname},2m` :
+        `${h.mac},set:alt,${h.bname},24h` :
         `${h.mac},set:spoof,${h.bname},ignore`
       );
 
