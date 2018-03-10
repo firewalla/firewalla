@@ -9,13 +9,10 @@ let instance = null;
 let log = null;
 
 let util = require('util');
-let key = require('../common/key.js');
-let jsonfile = require('jsonfile');
 
 const spawn = require('child_process').spawn
 
 let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
 
 const ip = require('ip');
 
