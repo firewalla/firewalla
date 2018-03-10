@@ -98,7 +98,8 @@ module.exports = class DNSMASQ {
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
-      this.needRestart = null
+      this.needRestart = null;
+      this.needReload = null;
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
@@ -134,6 +135,10 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfRestartNeeded()
       }, 10 * 1000) // every 10 seconds
+
+      setInterval(() => {
+        this.checkIfReloadNeeded()
+      }, 10 * 1000);
     }
 
     this.hostManager = hostManager || this.hostManager;
@@ -669,16 +674,26 @@ module.exports = class DNSMASQ {
     }
   }
 
+  checkIfReloadNeeded() {
+    if(this.needReload)
+      log.info("need reload is", this.needReload, {})
+    if(this.shouldStart && this.needReload) {
+      this.needReload = null;
+      this.reloadHostsFile();
+    }
+  }
+
   onSpoofChanged() {
     if (dhcpFeature) {
       this.writeHostsFile().then(() => {
-        this.reloadHostsFile();
+        this.needReload = true;
       });
     }
   }
 
   reloadHostsFile() {
-    childProcess.execSync('sudo systemctl reload firemasq')
+    childProcess.execSync('sudo systemctl reload firemasq');
+    log.info("Hosts file has been reloaded");
   }
 
   writeHostsFile() {
