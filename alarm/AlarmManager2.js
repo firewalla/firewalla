@@ -392,8 +392,15 @@ module.exports = class {
                  fConfig.policy.autoBlock &&
                  fc.isFeatureOn("cyber_security.autoBlock") &&
                  (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+
                 // auto block if num is greater than the threshold
-                this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+                this.blockFromAlarm(alarm.aid, {
+                  method: "auto", 
+                  info: {
+                    category: alarm["p.dest.category"] || ""
+                  }
+                }, callback)
+
                 if (alarm['p.dest.ip']) {
                   alarm["if.target"] = alarm['p.dest.ip'];
                   alarm["if.type"] = "ip";
@@ -796,7 +803,7 @@ module.exports = class {
           reason: alarm.type,
           "if.type": i_type,
           "if.target": i_target,
-          category: (userFeedback && userFeedback.category) || ""
+          category: (intelFeedback && intelFeedback.category) || ""
         });
 
         if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
