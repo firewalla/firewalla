@@ -44,6 +44,8 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq');
+
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -109,13 +111,13 @@ var linux = require('../util/linux.js');
 
 
 class Host {
-    constructor(obj,mgr, callback) {
-        this.callbacks = {};
-        this.o = obj;
-        this.mgr = mgr;
-        if (this.o.ipv4) {
-            this.o.ipv4Addr = this.o.ipv4;
-        }
+    constructor(obj, mgr, callback) {
+      this.callbacks = {};
+      this.o = obj;
+      this.mgr = mgr;
+      if (this.o.ipv4) {
+        this.o.ipv4Addr = this.o.ipv4;
+      }
 
       this._mark = false;
       this.parse();
@@ -123,28 +125,30 @@ class Host {
       let c = require('./MessageBus.js');
       this.subscriber = new c('debug');
 
-        if(this.mgr.type === 'server') {
-          this.spoofing = false;
-          sclient.on("message", (channel, message) => {
-            this.processNotifications(channel, message);
-          });
+      if (this.mgr.type === 'server') {
+        this.spoofing = false;
+        sclient.on("message", (channel, message) => {
+          this.processNotifications(channel, message);
+        });
 
-          if (obj != null) {
-            this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-            this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-            this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
-          }
-          this.spoofing = false;
-
-          /*
-           if (this.o.ipv6Addr) {
-           this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-           }
-           */
-          this.predictHostNameUsingUserAgent();
-
-          this.loadPolicy(callback);
+        if (obj != null) {
+          this.subscribe(this.o.ipv4Addr, "Notice:Detected");
+          this.subscribe(this.o.ipv4Addr, "Intel:Detected");
+          this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
         }
+        this.spoofing = false;
+
+        /*
+         if (this.o.ipv6Addr) {
+         this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
+         }
+         */
+        this.predictHostNameUsingUserAgent();
+
+        this.loadPolicy(callback);
+      }
+
+      this.dnsmasq = new DNSMASQ(this);
     }
 
     update(obj) {
@@ -525,7 +529,8 @@ class Host {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
-                .catch(err => log.error("Unable to set spoofing in redis", err));
+                .catch(err => log.error("Unable to set spoofing in redis", err))
+                .then(() => this.dnsmasq.onSpoofChanged());
               log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
@@ -535,7 +540,8 @@ class Host {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
-                .catch(err => log.error("Unable to set spoofing in redis", err));
+                .catch(err => log.error("Unable to set spoofing in redis", err))
+                .then(() => this.dnsmasq.onSpoofChanged());
               log.info("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = false;
             }).catch((err) => {
