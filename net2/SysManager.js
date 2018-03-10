@@ -410,7 +410,7 @@ module.exports = class {
   myIp2() {
     let secondInterface = this.sysinfo &&
         this.config.monitoringInterface2 &&
-        this.sysinfo[this.sysinfo.monitoringInterface2]
+        this.sysinfo[this.config.monitoringInterface2]
 
     if(secondInterface) {
       return secondInterface.ip_address
