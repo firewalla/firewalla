@@ -45,6 +45,9 @@ let familyFilterFile = FILTER_DIR + "/family_filter.conf";
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
 
+let HostManager = require('../../net2/HostManager');
+let hostManager = new HostManager("cli",'server','debug');
+
 let fConfig = require('../../net2/config.js').getConfig();
 
 const bone = require("../../lib/Bone.js");
@@ -62,6 +65,9 @@ let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let configFile = __dirname + "/dnsmasq.conf";
 let altConfigFile = __dirname + "/dnsmasq-alt.conf";
+
+let hostsFile = f.getRuntimeInfoFolder() + "dnsmasq-hosts";
+let hostsAltFile = f.getRuntimeInfoFolder() + "dnsmasq-alt-hosts";
 
 let resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
@@ -658,6 +664,37 @@ module.exports = class DNSMASQ {
     }
   }
 
+  writeHostsFile(spoofingMap) {
+    let altHosts = spoofingMap.map(o => {
+      let line = null;
+      if (o.spoofing) {
+        line = `dhcp-host=${o.mac},set:alt,2m`;
+      } else {
+        line = `dhcp-host=${o.mac},set:spoof,ignore`;
+      }
+      return line;
+    });
+
+    let hosts = spoofingMap.map(o => {
+      let line = null;
+      if (o.spoofing) {
+        line = `dhcp-host=${o.mac},set:alt,ignore`;
+      } else {
+        line = `dhcp-host=${o.mac},set:spoof,2m`;
+      }
+      return line;
+    });
+
+    let _hosts = hosts.join("\n");
+    let _altHosts = altHosts.join("\n");
+
+    log.info("HostsFile:", util.inspect(hosts, {colors: true}));
+    log.info("HostsAltFile:", util.inspect(altHosts, {colors: true}));
+
+    fs.writeFileSync(hostsFile, _hosts);
+    fs.writeFileSync(hostsAltFile, _altHosts);
+  }
+
   rawStart(callback) {
     callback = callback || function() {}
 
@@ -691,6 +728,13 @@ module.exports = class DNSMASQ {
       log.info("Second dnsmasq command:", cmdAlt);
       require('child_process').execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
     }
+
+    let spoofingMap = hostManager.hosts.all.map(h => ({
+      mac: h.o.mac,
+      spoofing: h.spoofing
+    }));
+
+    this.writeHostsFile(spoofingMap);
 
     if(f.isDocker()) {
 
