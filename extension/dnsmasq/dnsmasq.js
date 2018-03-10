@@ -700,13 +700,13 @@ module.exports = class DNSMASQ {
       Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
     ).then(hosts => {
       let hostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:alt,${h.bname},ignore` :
-        `${h.mac},set:spoof,${h.bname},24h`
+        `${h.mac},set:unmonitor,ignore` :
+        `${h.mac},set:monitor,24h`
       );
 
       let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:alt,${h.bname},24h` :
-        `${h.mac},set:spoof,${h.bname},ignore`
+        `${h.mac},set:unmonitor,24h` :
+        `${h.mac},set:monitor,ignore`
       );
 
       let _hosts = hostsList.join("\n") + "\n";
