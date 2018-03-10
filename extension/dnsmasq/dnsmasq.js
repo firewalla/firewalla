@@ -696,7 +696,7 @@ module.exports = class DNSMASQ {
     log.info("Dnsmasq has been Reloaded");
   }
 
-  async writeHostsFile() {
+  writeHostsFile() {
     return Promise.all(
       Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
     ).then(hosts => {
@@ -806,21 +806,16 @@ module.exports = class DNSMASQ {
   writeStartScript(cmd, cmdAlt) {
     log.info("Command to start dnsmasq: ", cmd);
 
-    let prefix = '#!/bin/bash';
-    let suffix1 = 'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT';
-    let suffix2 = 'for job in `jobs -p`; do wait $job; echo "$job exited"; done';
+    let content = [
+      '#!/bin/bash',
+      cmd + " &",
+      cmdAlt ? cmdAlt + " &" : "",
+      'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT',
+      'for job in `jobs -p`; do wait $job; echo "$job exited"; done',
+      ''
+    ];
 
-    childProcess.execSync("echo '" + prefix + " ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-
-    childProcess.execSync("echo '" + cmd + " & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-
-    if (cmdAlt) {
-      log.info("Second dnsmasq command:", cmdAlt);
-      childProcess.execSync("echo '" + cmdAlt + " & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    }
-
-    childProcess.execSync("echo '" + suffix1 + " ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    childProcess.execSync("echo '" + suffix2 + " ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    fs.writeFileSync('/home/pi/firewalla/extension/dnsmasq/dnsmasq.sh', content.join("\n"));
   }
 
   prepareDnsmasqCmd(cmd) {
