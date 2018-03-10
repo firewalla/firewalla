@@ -171,23 +171,6 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
-  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-  let dnsmasq = new DNSMASQ();
-  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-
-  if (process.env.FWPRODUCTION) {
-    /*
-      ssh.resetRandomPassword((err,password) => {
-      if(err) {
-      log.error("Failed to reset ssh password");
-      } else {
-      log.info("A new random SSH password is used!");
-      sysManager.sshPassword = password;
-      }
-      })
-    */
-  }
-
   // make sure there is at least one usable enternet
   d.discoverInterfaces(function(err, list) {
     var failure = 1;
@@ -229,6 +212,22 @@ function run() {
     })
   })()
 
+  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+  let dnsmasq = new DNSMASQ(hostManager);
+  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
+
+  if (process.env.FWPRODUCTION) {
+    /*
+      ssh.resetRandomPassword((err,password) => {
+      if(err) {
+      log.error("Failed to reset ssh password");
+      } else {
+      log.info("A new random SSH password is used!");
+      sysManager.sshPassword = password;
+      }
+      })
+    */
+  }
 
   // Launch PortManager
 
