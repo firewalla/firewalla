@@ -2117,14 +2117,19 @@ module.exports = class {
 
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
-        log.info("hostmanager:gethosts:started");
+        log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethosts:mutx");
+            log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
             if (retry == null) {
                 retrykey = Date.now();
+            }
+            if (Date.now()-retrykey > 1000*10) {
+                log.error("hostmanager:gethosts:mutx:timeout", retrykey, Date.now()-retrykey);
+                callback(null, this.hosts.all);
+                return;
             }
             log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {

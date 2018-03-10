@@ -279,7 +279,7 @@ module.exports = class DNSManager {
     let resolve = 0;
     let start = Math.ceil(Date.now() / 1000);
     log.info("Resoving list", list.length);
-    _async.eachLimit(list, 20, (o, cb) => {
+    _async.eachLimit(list, 5, (o, cb) => {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
       if (lhost) {
