@@ -724,20 +724,17 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = null;
+    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     let cmdAlt = null;
 
-    if(this.dhcpMode && (!sysManager.secondaryIpnet ||
-      !sysManager.secondaryMask)) {
+    if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
       log.warn("DHCPFeature is enabled but secondary network interface is not setup");
     }
-    if(this.dhcpMode &&
-       sysManager.secondaryIpnet &&
-       sysManager.secondaryMask) {
+
+    if(this.dhcpMode && sysManager.secondaryIpnet && sysManager.secondaryMask) {
       log.info("DHCP feature is enabled");
 
-      cmd = this.prepareDnsmasqCmd();
-
+      cmd = this.prepareDnsmasqCmd(cmd);
       cmdAlt = this.prepareAltDnsmasqCmd();
     }
 
@@ -825,9 +822,7 @@ module.exports = class DNSMASQ {
     childProcess.execSync("echo '" + suffix2 + " ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
   }
 
-  prepareDnsmasqCmd() {
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
-
+  prepareDnsmasqCmd(cmd) {
     let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
     let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
     let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
