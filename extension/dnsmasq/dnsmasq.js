@@ -675,35 +675,40 @@ module.exports = class DNSMASQ {
   }
 
   checkIfReloadNeeded() {
-    if(this.needReload)
-      log.info("need reload is", this.needReload, {})
+    if(this.needReload) {
+      log.info("need reload is", this.needReload, {});
+    }
     if(this.shouldStart && this.needReload) {
       this.needReload = null;
-      this.reloadHostsFile();
+      this.reloadDnsmasq();
     }
   }
 
   onSpoofChanged() {
     if (dhcpFeature) {
       this.writeHostsFile().then(() => {
-        log.info("set need reload to be true");
+        log.info("Spoof status changed, set need reload to be true");
         this.needReload = true;
       });
     }
   }
 
-  reloadHostsFile() {
+  reloadDnsmasq() {
     childProcess.execSync('sudo systemctl reload firemasq');
-    log.info("Hosts file has been reloaded");
+    log.info("Dnsmasq has been Reloaded");
   }
 
   writeHostsFile() {
-    return Promise.all(
+    /*
+    Promise.all(
       Promise.map(redis.keysAsync("host:mac:*"), async key => await redis.hgetallAsync(key))
-    ).then(spoofedHosts => {
+    )
+    */
+    return new Promise(resolve => {
+      let spoofedHosts = this.hostManager.hosts.all;
       let hosts = spoofedHosts.map(host => {
         let line = null;
-        if (host.spoofing === 'false') {
+        if (host.spoofing === 'false' || host.spoofing === false) {
           line = `${host.mac},set:alt,${host.bname},ignore`;
         } else {
           line = `${host.mac},set:spoof,${host.bname},2m`;
@@ -713,7 +718,7 @@ module.exports = class DNSMASQ {
 
       let altHosts = spoofedHosts.map(host => {
         let line = null;
-        if (host.spoofing === 'false') {
+        if (host.spoofing === 'false' || host.spoofing === false) {
           line = `${host.mac},set:alt,${host.bname},2m`;
         } else {
           line = `${host.mac},set:spoof,${host.bname},ignore`;
@@ -729,6 +734,8 @@ module.exports = class DNSMASQ {
 
       fs.writeFileSync(hostsFile, _hosts);
       fs.writeFileSync(hostsAltFile, _altHosts);
+
+      resolve();
     });
   }
 
@@ -758,23 +765,7 @@ module.exports = class DNSMASQ {
       cmdAlt = this.prepareAltDnsmasqCmd();
     }
 
-    log.debug("Command to start dnsmasq: ", cmd);
-
-    let prefix = '#!/bin/bash';
-    let suffix1 = 'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT';
-    let suffix2 = 'for job in `jobs -p`; do wait $job; echo "$job exited"; done';
-
-    childProcess.execSync("echo '"+prefix +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-
-    childProcess.execSync("echo '"+cmd +" & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-
-    if (cmdAlt) {
-      log.info("Second dnsmasq command:", cmdAlt);
-      childProcess.execSync("echo '"+ cmdAlt +" & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    }
-
-    childProcess.execSync("echo '"+ suffix1 +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
-    childProcess.execSync("echo '"+ suffix2 +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    this.writeStartScript(cmd, cmdAlt);
 
     this.writeHostsFile();
 
@@ -813,21 +804,45 @@ module.exports = class DNSMASQ {
         callback(null)
       }, 1000)
     } else {
-      try {
-        childProcess.execSync("sudo systemctl restart firemasq");
-        if(!statusCheckTimer) {
-          statusCheckTimer = setInterval(() => {
-            this.statusCheck()
-          }, 1000 * 60 * 1) // check status every minute
-          log.info("Status check timer installed")
-        }
-      } catch(err) {
-        log.error("Got error when restarting firemasq:", err, {})
-      }
+      this.restartDnsmasq();
       callback(null)
     }
 
 
+  }
+
+  restartDnsmasq() {
+    try {
+      childProcess.execSync("sudo systemctl restart firemasq");
+      if (!statusCheckTimer) {
+        statusCheckTimer = setInterval(() => {
+          this.statusCheck()
+        }, 1000 * 60 * 1) // check status every minute
+        log.info("Status check timer installed")
+      }
+    } catch (err) {
+      log.error("Got error when restarting firemasq:", err, {})
+    }
+  }
+
+  writeStartScript(cmd, cmdAlt) {
+    log.info("Command to start dnsmasq: ", cmd);
+
+    let prefix = '#!/bin/bash';
+    let suffix1 = 'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT';
+    let suffix2 = 'for job in `jobs -p`; do wait $job; echo "$job exited"; done';
+
+    childProcess.execSync("echo '" + prefix + " ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+
+    childProcess.execSync("echo '" + cmd + " & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+
+    if (cmdAlt) {
+      log.info("Second dnsmasq command:", cmdAlt);
+      childProcess.execSync("echo '" + cmdAlt + " & ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    }
+
+    childProcess.execSync("echo '" + suffix1 + " ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    childProcess.execSync("echo '" + suffix2 + " ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
   }
 
   prepareDnsmasqCmd() {
