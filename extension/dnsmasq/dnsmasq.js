@@ -669,20 +669,22 @@ module.exports = class DNSMASQ {
     }
   }
 
+  onSpoofChanged() {
+    if (dhcpFeature) {
+      this.writeHostsFile().then(() => {
+        this.reloadHostsFile();
+      });
+    }
+  }
+
+  reloadHostsFile() {
+    childProcess.execSync('sudo systemctl reload firemasq')
+  }
+
   writeHostsFile() {
-    Promise.all(
+    return Promise.all(
       Promise.map(redis.keysAsync("host:mac:*"), async key => await redis.hgetallAsync(key))
     ).then(spoofingMap => {
-      let altHosts = spoofingMap.map(o => {
-        let line = null;
-        if (o.spoofing) {
-          line = `${o.mac},set:spoof,${o.bname},ignore`;
-        } else {
-          line = `${o.mac},set:alt,${o.bname},2m`;
-        }
-        return line;
-      });
-
       let hosts = spoofingMap.map(o => {
         let line = null;
         if (o.spoofing) {
@@ -693,16 +695,25 @@ module.exports = class DNSMASQ {
         return line;
       });
 
-      let _hosts = hosts.join("\n");
-      let _altHosts = altHosts.join("\n");
+      let altHosts = spoofingMap.map(o => {
+        let line = null;
+        if (o.spoofing) {
+          line = `${o.mac},set:spoof,${o.bname},ignore`;
+        } else {
+          line = `${o.mac},set:alt,${o.bname},2m`;
+        }
+        return line;
+      });
 
-      log.info("HostsFile:", util.inspect(hosts, {colors: true}));
-      log.info("HostsAltFile:", util.inspect(altHosts, {colors: true}));
+      let _hosts = hosts.join("\n") + "\n";
+      let _altHosts = altHosts.join("\n") + "\n";
+
+      log.info("HostsFile:", util.inspect(hosts));
+      log.info("HostsAltFile:", util.inspect(altHosts));
 
       fs.writeFileSync(hostsFile, _hosts);
       fs.writeFileSync(hostsAltFile, _altHosts);
     });
-
   }
 
   rawStart(callback) {
