@@ -505,7 +505,7 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.debug("Host:Spoof:", state, this.spoofing);
+        log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
 
@@ -526,20 +526,20 @@ class Host {
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
                 .catch(err => log.error("Unable to set spoofing in redis", err));
-              log.debug("Started spoofing", this.o.ipv4Addr);
+              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
-            log.error("Failed to spoof", this.o.ipv4Addr);
+            log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
           })
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
                 .catch(err => log.error("Unable to set spoofing in redis", err));
-              log.debug("Stopped spoofing", this.o.ipv4Addr);
+              log.info("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = false;
             }).catch((err) => {
-            log.error("Failed to unspoof", this.o.ipv4Addr);
+            log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name);
           })
         }
 
