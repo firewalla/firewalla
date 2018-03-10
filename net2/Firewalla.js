@@ -263,6 +263,17 @@ function constants(name) {
   return __constants[name]
 }
 
+const BLACK_HOLE_IP = "198.51.100.99"
+const BLUE_HOLE_IP = "198.51.100.100"
+
+function isReservedBlockingIP(ip) {
+  return ip === BLACK_HOLE_IP || ip === BLUE_HOLE_IP
+}
+
+function isMain() {
+  return process.title === "FireMain"
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -295,5 +306,8 @@ module.exports = {
   isProductionOrBeta:isProductionOrBeta,
 
   getProdBranch: getProdBranch,
-  getReleaseType: getReleaseType
+  getReleaseType: getReleaseType,
+  isReservedBlockingIP: isReservedBlockingIP,
+
+  isMain:isMain
 }

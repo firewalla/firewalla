@@ -10,6 +10,8 @@
   "ALARM_BRO_NOTICE": "{{p.message}}",
   "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}}正在访问此设备的{{p.device.port}}端口, 该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。",
   "ALARM_INTEL_FROM_INSIDE": "此设备正在访问{{p.dest.name}}的{{p.dest.port}}端口,该地址已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址。",
+  "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "已自动阻止{{p.dest.name}}访问该设备，{{p.dest.name}}已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
+  "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已自动阻止设备\"{{p.device.name}}\"正在访问该设备，{{p.dest.name}}已被{{p.security.numOfReportSources}}家安全机构标记为可疑地址",
   "NOTIF_ALARM_PORN": "设备\"{{p.device.name}}\"访问了色情网站{{p.dest.name}}",
   "NOTIF_ALARM_VIDEO": "设备\"{{p.device.name}}\"访问了视频网站{{p.dest.name}}",
   "NOTIF_ALARM_GAME": "设备\"{{p.device.name}}\"玩了游戏{{p.dest.name}}.",

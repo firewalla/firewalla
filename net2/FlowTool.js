@@ -179,37 +179,6 @@ class FlowTool {
     }
   }
 
-  // FIXME: support dynamically load intel from cloud
-  _enrichDNSInfo(flows) {
-
-    return new Promise((resolve, reject) => {
-      async.eachLimit(flows, MAX_CONCURRENT_ACTIVITY, (flow, cb) => {
-        let ip = this._getRemoteIP(flow);
-
-        dnsManager.resolvehost(ip, (err, info, dnsData) => {
-          if (err) {
-            cb(err);
-            return;
-          }
-
-          if (info && info.name) {
-            flow.dhname = info.name;
-          }
-
-          cb();
-        });
-      }, (err) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-
-        resolve(flows);
-      });
-    });
-
-  }
-
   prepareRecentFlows(json, options) {
     options = options || {}
 
@@ -281,6 +250,7 @@ class FlowTool {
 
     f.ts = flow.ts;
     f.fd = flow.fd;
+    f.duration = flow.du
 
     if(flow.lh === flow.sh) {
       f.ip = flow.dh;
@@ -294,52 +264,6 @@ class FlowTool {
 
     return f;
   }
-
-  legacyGetRecentOutgoingConnections(ip) {
-
-     let key = "flow:conn:in:" + ip;
-     let to = new Date() / 1000;
-     let from = to - MAX_RECENT_INTERVAL;
-
-     return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , MAX_RECENT_FLOW])
-       .then((results) => {
-
-         if(results === null || results.length === 0)
-           return [];
-
-         let flowObjects = results
-           .map((x) => this._flowStringToJSON(x))
-           .filter((x) => this._isFlowValid(x));
-
-         flowObjects.forEach((x) => this.trimFlow(x));
-
-         let mergedFlowObjects = [];
-         let lastFlowObject = null;
-
-         flowObjects.forEach((flowObject) => {
-           if(!lastFlowObject) {
-             mergedFlowObjects.push(flowObject);
-             lastFlowObject = flowObject;
-             return;
-           }
-
-           if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
-             this._mergeFlow(lastFlowObject, flowObject);
-           } else {
-             mergedFlowObjects.push(flowObject);
-             lastFlowObject = flowObject;
-           }
-         });
-
-         // add country info
-         mergedFlowObjects.forEach(this._enrichCountryInfo);
-
-         return this._enrichDNSInfo(mergedFlowObjects);
-
-       }).catch((err) => {
-         log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
-       });
-   }
 
   getRecentOutgoingConnections(ip, options) {
     return this.getRecentConnections(ip, "in", options)
@@ -356,6 +280,53 @@ class FlowTool {
 
   getAllRecentIncomingConnections(options) {
     return this.getAllRecentConnections("out", options);
+  }
+
+  getAllRecentOutgoingConnectionsMixed(options) {
+    return async(() => {
+
+    //   {
+    //     country = US;
+    //     device = "9C:3D:CF:FA:95:75";
+    //     download = 11984;
+    //     duration = "1.121203";
+    //     fd = in;
+    //     host = "logs.us-west-2.amazonaws.com";
+    //     ip = "52.94.209.50";
+    //     ts = "1519653614.804147";
+    //     upload = 1392;
+    // }
+
+      const outgoing = await (this.getAllRecentOutgoingConnections(options))
+      const incoming = await (this.getAllRecentIncomingConnections(options))
+
+      const all = outgoing.concat(incoming)
+
+      all.sort((a, b) => a.ip < b.ip)      
+      
+      let merged = []
+      let last_entry = null
+
+      for (let i = 0; i < all.length; i++) {
+        const entry = all[i];
+        if(last_entry === null) {
+          last_entry = entry
+        } else {
+          if(last_entry.ip === entry.ip) {
+            last_entry.upload += entry.upload
+            last_entry.download += entry.download
+            last_entry.duration = parseFloat(last_entry.duration) + parseFloat(entry.duration)
+          } else {
+            merged.push(last_entry)
+            last_entry = entry
+          }
+        }
+      }
+
+      merged.push(last_entry)      
+
+      return merged
+    })()
   }
 
   // this is to get all recent connections in the network
@@ -415,8 +386,14 @@ class FlowTool {
 
       flowObjects.forEach((x) => this.trimFlow(x));
 
-      let mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts));
+      let mergedFlow = null
 
+      if(!options.no_merge) {
+        mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
+      } else {
+        mergedFlow = flowObjects
+      }
+      
       let simpleFlows = mergedFlow
             .map((f) => this.toSimpleFlow(f))
             .map((f) => {

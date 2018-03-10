@@ -10,10 +10,19 @@ module.exports = {
 
 // Take host and return hashed
 // [[a,a'],[b,b']]
-function hashHost(_domain) {
+function hashHost(_domain, opts) {
   let results = urlHash.canonicalizeAndHashExpressions(_domain);
   if(results) {
-    return results.map(x => x.slice(1,3))
+    if (opts && opts.keepOriginal) {
+      return results.map(x => {
+        if (x[0].endsWith('/')) {
+          x[0] = x[0].substr(0, x[0].length - 1);
+        }
+        return x;
+      });
+    } else {
+      return results.map(x => x.slice(1, 3));
+    }
   } else {
     return null;
   }
