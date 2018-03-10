@@ -691,7 +691,11 @@ module.exports = class DNSMASQ {
   }
 
   reloadDnsmasq() {
-    childProcess.execSync('sudo systemctl reload firemasq');
+    try {
+      childProcess.execSync('sudo systemctl reload firemasq');
+    } catch (err) {
+      log.error("Unable to reload firemasq service", err, {});
+    }
     log.info("Dnsmasq has been Reloaded");
   }
 
