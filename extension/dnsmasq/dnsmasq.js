@@ -662,8 +662,9 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
-    
+    let cmd = null;
+    let cmdAlt = null;
+
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
@@ -678,60 +679,18 @@ module.exports = class DNSMASQ {
        sysManager.secondaryMask) {
       log.info("DHCP feature is enabled");
 
-      let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
-      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
-      let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+      cmd = this.prepareDnsmasqCmd();
 
-      cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
-        cmd,
-        rangeBegin,
-        rangeEnd,
-        sysManager.secondaryMask,
-        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
-      );
-
-      // By default, dnsmasq sends some standard options to DHCP clients,
-      // the netmask and broadcast address are set to the same as the host running dnsmasq
-      // and the DNS server and default route are set to the address of the machine running dnsmasq.
-      cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
-
-      sysManager.myDNS().forEach((dns) => {
-        cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
-      });
-      
-      let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
-      let gw = sysManager.myGateway();
-      let mask = sysManager.myIpMask();
-      
-      let cidr = ip.cidrSubnet(sysManager.mySubnet());
-      let firstAddr = ip.toLong(cidr.firstAddress);
-      let lastAddr = ip.toLong(cidr.lastAddress);
-      let midAddr = firstAddr + (lastAddr - firstAddr) / 2;
-
-      cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
-        cmdAlt,
-        ip.fromLong(midAddr),
-        ip.fromLong(lastAddr - 3),
-        mask,
-        fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
-      );
-
-      cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
-
-      sysManager.myDNS().forEach(dns => {
-        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-      });
-      
-      log.info("Second dnsmasq command:", cmdAlt);
-
-      require('child_process').execSync("echo '"+ cmdAlt +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq-alt.sh");
-
+      cmdAlt = this.prepareAltDnsmasqCmd();
     }
 
     log.debug("Command to start dnsmasq: ", cmd);
-
     require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
+    if (cmdAlt) {
+      log.info("Second dnsmasq command:", cmdAlt);
+      require('child_process').execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    }
 
     if(f.isDocker()) {
 
@@ -783,6 +742,58 @@ module.exports = class DNSMASQ {
     }
 
 
+  }
+
+  prepareDnsmasqCmd() {
+    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+
+    let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
+    let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+
+    cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
+      cmd,
+      rangeBegin,
+      rangeEnd,
+      sysManager.secondaryMask,
+      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+    );
+
+    // By default, dnsmasq sends some standard options to DHCP clients,
+    // the netmask and broadcast address are set to the same as the host running dnsmasq
+    // and the DNS server and default route are set to the address of the machine running dnsmasq.
+    cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
+
+    sysManager.myDNS().forEach((dns) => {
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
+    });
+    return cmd;
+  }
+
+  prepareAltDnsmasqCmd() {
+    let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
+    let gw = sysManager.myGateway();
+    let mask = sysManager.myIpMask();
+
+    let cidr = ip.cidrSubnet(sysManager.mySubnet());
+    let firstAddr = ip.toLong(cidr.firstAddress);
+    let lastAddr = ip.toLong(cidr.lastAddress);
+    let midAddr = firstAddr + (lastAddr - firstAddr) / 2;
+
+    cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
+      cmdAlt,
+      ip.fromLong(midAddr),
+      ip.fromLong(lastAddr - 3),
+      mask,
+      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
+    );
+
+    cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
+
+    sysManager.myDNS().forEach(dns => {
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
+    });
+    return cmdAlt;
   }
 
   rawStop(callback) {
