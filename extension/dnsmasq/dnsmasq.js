@@ -21,6 +21,8 @@ const ip = require('ip');
 
 let userID = f.getUserID();
 
+const childProcess = require('child_process');
+
 let Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
@@ -60,6 +62,8 @@ let networkTool = require('../../net2/NetworkTool')();
 
 let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
+let dnsmasqAltPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
+
 let configFile = __dirname + "/dnsmasq.conf";
 let altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
@@ -727,19 +731,30 @@ module.exports = class DNSMASQ {
     }
 
     log.debug("Command to start dnsmasq: ", cmd);
-    require('child_process').execSync("echo '"+cmd +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+
+
+    let prefix = '#!/bin/bash';
+    let suffix1 = 'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT';
+    let suffix2 = 'for job in `jobs -p`; do wait $job; echo "$job exited"; done';
+
+    childProcess.execSync("echo '"+prefix +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+
+    childProcess.execSync("echo '"+cmd +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     if (cmdAlt) {
       log.info("Second dnsmasq command:", cmdAlt);
-      require('child_process').execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+      childProcess.execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
     }
+
+    childProcess.execSync("echo '"+ suffix1 +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
+    childProcess.execSync("echo '"+ suffix2 +" ' > /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
 
     this.writeHostsFile();
 
     if(f.isDocker()) {
 
       try {
-        require('child_process').execSync("sudo pkill dnsmasq")
+        childProcess.execSync("sudo pkill dnsmasq")
       } catch(err) {
         // do nothing
       }
@@ -772,7 +787,7 @@ module.exports = class DNSMASQ {
       }, 1000)
     } else {
       try {
-        require('child_process').execSync("sudo systemctl restart firemasq");
+        childProcess.execSync("sudo systemctl restart firemasq");
         if(!statusCheckTimer) {
           statusCheckTimer = setInterval(() => {
             this.statusCheck()
@@ -815,7 +830,7 @@ module.exports = class DNSMASQ {
   }
 
   prepareAltDnsmasqCmd() {
-    let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
+    let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqAltPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
