@@ -508,7 +508,7 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+        log.debug("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
 
