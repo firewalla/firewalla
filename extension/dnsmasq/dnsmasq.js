@@ -91,7 +91,7 @@ let statusCheckTimer = null
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
-      log = require("../../net2/logger.js")("dnsmasq")(loglevel);
+      log = require("../../net2/logger.js")("dnsmasq", loglevel);
 
       instance = this;
 
