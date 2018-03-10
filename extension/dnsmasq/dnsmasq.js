@@ -89,9 +89,9 @@ let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 let statusCheckTimer = null
 
 module.exports = class DNSMASQ {
-  constructor(hostManager) {
+  constructor(loglevel) {
     if (instance == null) {
-      log = require("../../net2/logger.js")("dnsmasq");
+      log = require("../../net2/logger.js")("dnsmasq")(loglevel);
 
       instance = this;
 
@@ -140,8 +140,6 @@ module.exports = class DNSMASQ {
         this.checkIfReloadNeeded()
       }, 10 * 1000);
     }
-
-    this.hostManager = hostManager || this.hostManager;
 
     return instance;
   }
@@ -698,44 +696,28 @@ module.exports = class DNSMASQ {
     log.info("Dnsmasq has been Reloaded");
   }
 
-  writeHostsFile() {
-    /*
-    Promise.all(
-      Promise.map(redis.keysAsync("host:mac:*"), async key => await redis.hgetallAsync(key))
-    )
-    */
-    return new Promise(resolve => {
-      let spoofedHosts = this.hostManager.hosts.all;
-      let hosts = spoofedHosts.map(host => {
-        let line = null;
-        if (host.spoofing === 'false' || host.spoofing === false) {
-          line = `${host.mac},set:alt,${host.bname},ignore`;
-        } else {
-          line = `${host.mac},set:spoof,${host.bname},2m`;
-        }
-        return line;
-      });
+  async writeHostsFile() {
+    return Promise.all(
+      Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
+    ).then(hosts => {
+      let hostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:alt,${h.bname},ignore` :
+        `${h.mac},set:spoof,${h.bname},2m`
+      );
 
-      let altHosts = spoofedHosts.map(host => {
-        let line = null;
-        if (host.spoofing === 'false' || host.spoofing === false) {
-          line = `${host.mac},set:alt,${host.bname},2m`;
-        } else {
-          line = `${host.mac},set:spoof,${host.bname},ignore`;
-        }
-        return line;
-      });
+      let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:alt,${h.bname},2m` :
+        `${h.mac},set:spoof,${h.bname},ignore`
+      );
 
-      let _hosts = hosts.join("\n") + "\n";
-      let _altHosts = altHosts.join("\n") + "\n";
+      let _hosts = hostsList.join("\n") + "\n";
+      let _altHosts = altHostsList.join("\n") + "\n";
 
-      log.debug("HostsFile:", util.inspect(hosts));
-      log.debug("HostsAltFile:", util.inspect(altHosts));
+      log.debug("HostsFile:", util.inspect(hostsList));
+      log.debug("HostsAltFile:", util.inspect(altHostsList));
 
       fs.writeFileSync(hostsFile, _hosts);
       fs.writeFileSync(hostsAltFile, _altHosts);
-
-      resolve();
     });
   }
 
@@ -745,11 +727,6 @@ module.exports = class DNSMASQ {
     // use restart to ensure the latest configuration is loaded
     let cmd = null;
     let cmdAlt = null;
-
-    if(upstreamDNS) {
-      log.info("upstream server", upstreamDNS, "is specified");
-      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
-    }
 
     if(dhcpFeature && (!sysManager.secondaryIpnet ||
       !sysManager.secondaryMask)) {
@@ -763,6 +740,12 @@ module.exports = class DNSMASQ {
       cmd = this.prepareDnsmasqCmd();
 
       cmdAlt = this.prepareAltDnsmasqCmd();
+    }
+
+    if(upstreamDNS) {
+      log.info("upstream server", upstreamDNS, "is specified");
+      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
+      cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
     }
 
     this.writeStartScript(cmd, cmdAlt);
