@@ -524,14 +524,18 @@ class Host {
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
-            log.debug("Started spoofing", this.o.ipv4Addr);
-            this.spoofing = true;
+              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
+                .catch(err => {});
+              log.debug("Started spoofing", this.o.ipv4Addr);
+              this.spoofing = true;
             }).catch((err) => {
             log.error("Failed to spoof", this.o.ipv4Addr);
           })
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
+              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
+                .catch(err => {});
               log.debug("Stopped spoofing", this.o.ipv4Addr);
               this.spoofing = false;
             }).catch((err) => {
@@ -1288,7 +1292,7 @@ class Host {
 }
 
 
-module.exports = class {
+module.exports = class HostManager {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
       loglevel = loglevel || 'info';
