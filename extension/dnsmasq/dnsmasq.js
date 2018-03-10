@@ -62,7 +62,7 @@ let networkTool = require('../../net2/NetworkTool')();
 
 let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
-let dnsmasqAltPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
+let dnsmasqAltPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
 
 let configFile = __dirname + "/dnsmasq.conf";
 let altConfigFile = __dirname + "/dnsmasq-alt.conf";
@@ -724,7 +724,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     let cmdAlt = null;
 
     if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
@@ -847,7 +847,7 @@ module.exports = class DNSMASQ {
   }
 
   prepareAltDnsmasqCmd() {
-    let cmdAlt = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqAltPIDFile} -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
+    let cmdAlt = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
@@ -877,7 +877,7 @@ module.exports = class DNSMASQ {
 
     let cmd = null;
     if(f.isDocker()) {
-      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqPIDFile);
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", dnsmasqPIDFile, dnsmasqAltPIDFile);
     } else {
       cmd = "sudo service firemasq stop";
     }
