@@ -45,9 +45,6 @@ let familyFilterFile = FILTER_DIR + "/family_filter.conf";
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
 
-let HostManager = require('../../net2/HostManager');
-let hostManager = new HostManager("cli",'server','debug');
-
 let fConfig = require('../../net2/config.js').getConfig();
 
 const bone = require("../../lib/Bone.js");
@@ -664,35 +661,43 @@ module.exports = class DNSMASQ {
     }
   }
 
-  writeHostsFile(spoofingMap) {
-    let altHosts = spoofingMap.map(o => {
-      let line = null;
-      if (o.spoofing) {
-        line = `dhcp-host=${o.mac},set:alt,2m`;
-      } else {
-        line = `dhcp-host=${o.mac},set:spoof,ignore`;
-      }
-      return line;
+  writeHostsFile() {
+    Promise.all(
+      Promise.map(redis.keysAsync("host:mac:*"), key => ({
+        mac: key.split('host:mac:', 2)[1],
+        spoofing: redis.hgetAsync(key, 'spoofing')
+      }))
+    ).then(spoofingMap => {
+      let altHosts = spoofingMap.map(o => {
+        let line = null;
+        if (o.spoofing) {
+          line = `dhcp-host=${o.mac},set:alt,2m`;
+        } else {
+          line = `dhcp-host=${o.mac},set:spoof,ignore`;
+        }
+        return line;
+      });
+
+      let hosts = spoofingMap.map(o => {
+        let line = null;
+        if (o.spoofing) {
+          line = `dhcp-host=${o.mac},set:alt,ignore`;
+        } else {
+          line = `dhcp-host=${o.mac},set:spoof,2m`;
+        }
+        return line;
+      });
+
+      let _hosts = hosts.join("\n");
+      let _altHosts = altHosts.join("\n");
+
+      log.info("HostsFile:", util.inspect(hosts, {colors: true}));
+      log.info("HostsAltFile:", util.inspect(altHosts, {colors: true}));
+
+      fs.writeFileSync(hostsFile, _hosts);
+      fs.writeFileSync(hostsAltFile, _altHosts);
     });
 
-    let hosts = spoofingMap.map(o => {
-      let line = null;
-      if (o.spoofing) {
-        line = `dhcp-host=${o.mac},set:alt,ignore`;
-      } else {
-        line = `dhcp-host=${o.mac},set:spoof,2m`;
-      }
-      return line;
-    });
-
-    let _hosts = hosts.join("\n");
-    let _altHosts = altHosts.join("\n");
-
-    log.info("HostsFile:", util.inspect(hosts, {colors: true}));
-    log.info("HostsAltFile:", util.inspect(altHosts, {colors: true}));
-
-    fs.writeFileSync(hostsFile, _hosts);
-    fs.writeFileSync(hostsAltFile, _altHosts);
   }
 
   rawStart(callback) {
@@ -729,12 +734,7 @@ module.exports = class DNSMASQ {
       require('child_process').execSync("echo '"+ cmdAlt +" ' >> /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh");
     }
 
-    let spoofingMap = hostManager.hosts.all.map(h => ({
-      mac: h.o.mac,
-      spoofing: h.spoofing
-    }));
-
-    this.writeHostsFile(spoofingMap);
+    this.writeHostsFile();
 
     if(f.isDocker()) {
 
