@@ -525,7 +525,7 @@ class Host {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
-                .catch(err => {});
+                .catch(err => log.error("Unable to set spoofing in redis", err));
               log.debug("Started spoofing", this.o.ipv4Addr);
               this.spoofing = true;
             }).catch((err) => {
@@ -535,7 +535,7 @@ class Host {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
-                .catch(err => {});
+                .catch(err => log.error("Unable to set spoofing in redis", err));
               log.debug("Stopped spoofing", this.o.ipv4Addr);
               this.spoofing = false;
             }).catch((err) => {
