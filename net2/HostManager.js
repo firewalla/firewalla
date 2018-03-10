@@ -44,8 +44,7 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq');
-
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
