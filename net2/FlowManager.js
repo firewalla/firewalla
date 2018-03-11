@@ -43,6 +43,9 @@ var async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
 var QUERY_MAX_FLOW = 10000;
 
 var bconfig;
@@ -153,10 +156,14 @@ module.exports = class FlowManager {
     constructor(loglevel) {
         if (instance == null) {
             let cache = {};
+            this.recordCache = []
+            this.recording = false
             instance = this;
         }
         return instance;
     }
+
+    
 
   // use redis hash to store last 24 hours stats
   recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, ip) {
@@ -305,6 +312,52 @@ module.exports = class FlowManager {
           });
       });
   }
+
+  recordHit(data) {
+    const ts = data.ts
+    const inBytes = data.inBytes
+    const outBytes = data.outBytes
+
+    return new Promise((resolve, reject) => {
+        timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
+            timeSeries.recordHit('download',ts, Number(outBytes)).exec(() => {
+                // do nothing
+                resolve()
+            })
+        })
+    })    
+  }
+
+  enableRecordHitsTimer() {
+      setInterval(() => {
+        this.recordHits()
+      }, 5 * 1000) // every 5 seconds
+  }
+
+  recordHits() {
+    if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
+        this.recording = true
+        const copy = JSON.parse(JSON.stringify(this.recordCache))
+        this.recordCache = []
+        async(() => {
+            copy.forEach((data) => {
+                await(this.recordHit(data))
+            })
+        })().finally(() => {
+            this.recording = false
+        })
+    }
+  }
+
+  recordTraffic(ts, inBytes, outBytes) {
+      if(this.recordCache) {
+          this.recordCache.push({
+            ts: ts,
+            inBytes: inBytes,
+            outBytes: outBytes
+        })
+      }
+  }
   
     // stats are 'hour', 'day'
     // stats:hour:ip_address score=bytes key=_ts-_ts%3600
@@ -326,16 +379,17 @@ module.exports = class FlowManager {
             return;
         }
  
-      timeSeries.recordHit('download',ts, Number(inBytes)).exec()
+        if(ip !== "0.0.0.0") {
+            recordTraffic(ts, inBytes, outBytes)
+        }
+
 
       rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
         if(err) {
           log.error("Failed to record stats on download bytes: " + err);
           callback(err);
           return;
-        }
-        
-        timeSeries.recordHit('upload',ts, Number(outBytes)).exec()
+        }    
 
         rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
           if(err) {
