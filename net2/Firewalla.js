@@ -66,7 +66,7 @@ function getBranch() {
 
 function getLastCommitDate() {
   if(_lastCommitDate == null) {
-    _lastCommitDate = require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", "")
+    _lastCommitDate = Number(require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
   }
   return _lastCommitDate
 }
