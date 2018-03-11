@@ -348,6 +348,9 @@ module.exports = class DNSManager {
       })
     }, (err) => {
       log.info("DNS:QUERY:RESOLVED:COUNT", resolve, list.length, Math.ceil(Date.now() / 1000) - start);
+      if(err) {
+        log.error("Failed to call dnsmanager.query:", err, {})
+      }
       callback(err);
     });
   }
