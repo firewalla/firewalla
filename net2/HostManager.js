@@ -1470,6 +1470,7 @@ module.exports = class {
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
     json.longVersion = f.getVersion();
+    json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;

@@ -895,6 +895,7 @@ module.exports = class {
             //     totalInBytes+=Number(o.ob);
             //     totalOutBytes+=Number(o.rb);
                 
+            // not sure to use tmpspec.ts or now???
                 if(tmpspec.fd == 'in') {
                     this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
                 } else {

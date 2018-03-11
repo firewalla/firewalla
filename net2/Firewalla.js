@@ -27,6 +27,7 @@ let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
 let _branch = null
+let _lastCommitDate = null
 
 let version = null;
 
@@ -61,6 +62,13 @@ function getBranch() {
     _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
   }
   return _branch
+}
+
+function getLastCommitDate() {
+  if(_lastCommitDate == null) {
+    _lastCommitDate = require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", "")
+  }
+  return _lastCommitDate
 }
 
 function getProdBranch() {
@@ -309,5 +317,6 @@ module.exports = {
   getReleaseType: getReleaseType,
   isReservedBlockingIP: isReservedBlockingIP,
 
-  isMain:isMain
+  isMain:isMain,
+  getLastCommitDate:getLastCommitDate
 }
