@@ -839,7 +839,7 @@ module.exports = class FlowMonitor {
                     }
                 }, (err)=> {
                     const endTime = new Date() /1000
-                    log.info(`FlowMonitor Running Process End with ${endTime - startTime} seconds :`, service, period, {});
+                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, {});
                     this.garbagecollect();
                 });
             });

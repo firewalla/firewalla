@@ -54,7 +54,9 @@ rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
 
 /*
@@ -894,9 +896,9 @@ module.exports = class {
             //     totalOutBytes+=Number(o.rb);
                 
                 if(tmpspec.fd == 'in') {
-                    this.recordTraffic(tmpspec.fd, tmpspec.rb, tmpspec.ob)
+                    this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
                 } else {
-                    this.recordTraffic(tmpspec.fd, tmpspec.ob, tmpspec.rb)
+                    this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
                 }
                     
 

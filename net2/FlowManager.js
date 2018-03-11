@@ -23,8 +23,6 @@ var redis = require("redis");
 var rclient = redis.createClient();
 
 let Promise = require('bluebird');
-
-const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 		
 // add promises to all redis functions
 Promise.promisifyAll(redis.RedisClient.prototype);
