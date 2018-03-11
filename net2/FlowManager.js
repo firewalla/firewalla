@@ -39,7 +39,7 @@ rclient.on("error", function (err) {
     log.info("Redis(alarm) Error " + err);
 });
 
-var async = require('async');
+const _async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
@@ -158,6 +158,7 @@ module.exports = class FlowManager {
             let cache = {};
             this.recordCache = []
             this.recording = false
+            this.enableRecording = false
             instance = this;
         }
         return instance;
@@ -329,6 +330,7 @@ module.exports = class FlowManager {
   }
 
   enableRecordHitsTimer() {
+      this.enableRecording = true
       setInterval(() => {
         this.recordHits()
       }, 5 * 1000) // every 5 seconds
@@ -350,7 +352,8 @@ module.exports = class FlowManager {
   }
 
   recordTraffic(ts, inBytes, outBytes) {
-      if(this.recordCache) {
+      if(this.recordCache && this.enableRecording) {
+          log.info("Recording..", ts, inBytes, outBytes, {})
           this.recordCache.push({
             ts: ts,
             inBytes: inBytes,
@@ -380,7 +383,7 @@ module.exports = class FlowManager {
         }
  
         if(ip !== "0.0.0.0") {
-            recordTraffic(ts, inBytes, outBytes)
+            this.recordTraffic(ts, inBytes, outBytes)
         }
 
 
@@ -820,7 +823,7 @@ module.exports = class FlowManager {
     }
 
     summarizeBytes2(hosts,from,to,block,callback) {
-        async.eachLimit(hosts, 1, (host, cb) => {
+        _async.eachLimit(hosts, 1, (host, cb) => {
             this.summarizeHostBytes(host,from,to,block,(err,data)=>{
                 host.flowsummary = data;
                 cb();
@@ -1175,7 +1178,7 @@ module.exports = class FlowManager {
     
     summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
-        async.each(ipList, (ip, cb) => {
+        _async.each(ipList, (ip, cb) => {
             let key = "flow:conn:" + direction + ":" + ip;
             rclient.zrevrangebyscore([key, from, to,"LIMIT",0,QUERY_MAX_FLOW], (err, result) => {
                 let conndb = {};

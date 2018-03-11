@@ -89,6 +89,8 @@ module.exports = class FlowMonitor {
             this.publisher = new c(loglevel);
             this.recordedFlows = {};
 
+            this.flowManager.enableRecordHitsTimer()
+
             instance = this;
           log = require("../net2/logger.js")("FlowMonitor", loglevel);
 
@@ -688,7 +690,7 @@ module.exports = class FlowMonitor {
     */
 
     run(service,period) {
-            log.info("FlowMonitor Running Process :", service);
+            log.info("FlowMonitor Running Process :", service, period, {});
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
                 result = result.filter(x => x) // workaround if host is undefined or null
@@ -837,7 +839,7 @@ module.exports = class FlowMonitor {
                         });
                     }
                 }, (err)=> {
-                    log.info("FlowMonitor Running Process End :", service);
+                    log.info("FlowMonitor Running Process End :", service, period, {});
                     this.garbagecollect();
                 });
             });
