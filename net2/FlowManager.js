@@ -156,9 +156,6 @@ module.exports = class FlowManager {
     constructor(loglevel) {
         if (instance == null) {
             let cache = {};
-            this.recordCache = []
-            this.recording = false
-            this.enableRecording = false
             instance = this;
         }
         return instance;
@@ -314,53 +311,7 @@ module.exports = class FlowManager {
       });
   }
 
-  recordHit(data) {
-    const ts = data.ts
-    const inBytes = data.inBytes
-    const outBytes = data.outBytes
-
-    return new Promise((resolve, reject) => {
-        timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
-            timeSeries.recordHit('download',ts, Number(outBytes)).exec(() => {
-                // do nothing
-                resolve()
-            })
-        })
-    })    
-  }
-
-  enableRecordHitsTimer() {
-      this.enableRecording = true
-      setInterval(() => {
-        this.recordHits()
-      }, 5 * 1000) // every 5 seconds
-  }
-
-  recordHits() {
-    if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-        this.recording = true
-        const copy = JSON.parse(JSON.stringify(this.recordCache))
-        this.recordCache = []
-        async(() => {
-            copy.forEach((data) => {
-                await(this.recordHit(data))
-            })
-        })().finally(() => {
-            this.recording = false
-        })
-    }
-  }
-
-  recordTraffic(ts, inBytes, outBytes) {
-      if(this.recordCache && this.enableRecording) {
-          log.info("Recording..", ts, inBytes, outBytes, {})
-          this.recordCache.push({
-            ts: ts,
-            inBytes: inBytes,
-            outBytes: outBytes
-        })
-      }
-  }
+  
   
     // stats are 'hour', 'day'
     // stats:hour:ip_address score=bytes key=_ts-_ts%3600
@@ -381,11 +332,6 @@ module.exports = class FlowManager {
         if (inBytes == null || outBytes == null) {
             return;
         }
- 
-        if(ip !== "0.0.0.0") {
-            this.recordTraffic(ts, inBytes, outBytes)
-        }
-
 
       rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
         if(err) {

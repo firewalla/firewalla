@@ -164,6 +164,7 @@ function run() {
 
   var BroDetector = require("./BroDetect.js");
   let bd = new BroDetector("bro_detector", config, "info");
+  bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");

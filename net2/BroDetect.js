@@ -241,6 +241,10 @@ module.exports = class {
             this.flowstash = {};
             this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
             this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
+
+            this.recordCache = []
+            this.recording = false
+            this.enableRecording = false
         }
     }
 
@@ -881,13 +885,32 @@ module.exports = class {
             if (tmpspec) {
                 let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
                 let strdata = JSON.stringify(tmpspec);
+
+            //     totalInBytes+=Number(o.rb);
+            //     totalOutBytes+=Number(o.ob);
+            //     this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
+            // } else {
+            //     totalInBytes+=Number(o.ob);
+            //     totalOutBytes+=Number(o.rb);
+                
+                if(tmpspec.fd == 'in') {
+                    this.recordTraffic(tmpspec.fd, tmpspec.rb, tmpspec.ob)
+                } else {
+                    this.recordTraffic(tmpspec.fd, tmpspec.ob, tmpspec.rb)
+                }
+                    
+
                 //let redisObj = [key, tmpspec.ts, strdata];
                 let redisObj = [key, now, strdata];
                 log.debug("Conn:Save:Temp", redisObj);
+
+
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
 
                       let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+
+
 
                       setTimeout(() => {
                         sem.emitEvent({
@@ -1538,5 +1561,58 @@ module.exports = class {
     on(something, callback) {
         this.callbacks[something] = callback;
     }
+
+
+    recordHit(data) {
+        const ts = data.ts
+        const inBytes = data.inBytes
+        const outBytes = data.outBytes
+    
+        return new Promise((resolve, reject) => {
+            timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
+                timeSeries.recordHit('download',ts, Number(outBytes)).exec(() => {
+                    // do nothing
+                    resolve()
+                })
+            })
+        })    
+      }
+    
+      enableRecordHitsTimer() {
+          this.enableRecording = true
+          setInterval(() => {
+            this.recordHits()
+          }, 5 * 1000) // every 5 seconds
+      }
+    
+      recordHits() {
+        if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
+            this.recording = true
+            const copy = JSON.parse(JSON.stringify(this.recordCache))
+            this.recordCache = []
+            async(() => {
+                copy.forEach((data) => {
+                    await(this.recordHit(data))
+                })
+            })().finally(() => {
+                this.recording = false
+            })
+        } else {
+            if(this.recording) {
+                log.info("still recording......")
+            }
+        }
+      }
+    
+      recordTraffic(ts, inBytes, outBytes) {
+          if(this.recordCache && this.enableRecording) {
+              log.debug("Recording..", ts, inBytes, outBytes, {})
+              this.recordCache.push({
+                ts: ts,
+                inBytes: inBytes,
+                outBytes: outBytes
+            })
+          }
+      }
 
 }
