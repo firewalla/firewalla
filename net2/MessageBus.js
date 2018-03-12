@@ -16,11 +16,8 @@
 
 let log = require('./logger.js')(__filename);
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
-
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 /*
  * Channels
@@ -51,29 +48,34 @@ module.exports = class {
           }
           this.sending = false;
           sclient.on("message", (channel, message) => {
-            let m = JSON.parse(message);
-            log.debug("Reciving Msg:", m, {});
-            let notified = 0;
-            let cbs = null;
-            if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
-              cbs = this.callbacks[channel + "." + m.type + "." + m.ip];
-              if(cbs) {
-                cbs.forEach((cb) => {
-                  cb(channel, m.type, m.ip, m.msg);
-                  notified += 1;
-                });
+            try {
+              let m = JSON.parse(message);
+              log.debug("Reciving Msg:", m, {});
+              let notified = 0;
+              let cbs = null;
+              if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
+                cbs = this.callbacks[channel + "." + m.type + "." + m.ip];
+                if(cbs) {
+                  cbs.forEach((cb) => {
+                    cb(channel, m.type, m.ip, m.msg);
+                    notified += 1;
+                  });
+                }
               }
-            }
-            if (this.callbacks[channel + "." + m.type]) {
-              cbs = this.callbacks[channel + "." + m.type]
-              if(cbs) {
-                cbs.forEach((cb) => {
-                  cb(channel, m.type, m.ip, m.msg);
-                  notified += 1;
-                });
+              if (this.callbacks[channel + "." + m.type]) {
+                cbs = this.callbacks[channel + "." + m.type]
+                if(cbs) {
+                  cbs.forEach((cb) => {
+                    cb(channel, m.type, m.ip, m.msg);
+                    notified += 1;
+                  });
+                }
               }
+              log.debug("Notified ", notified);
+            } catch(err) {
+              log.error("Error to process message:", message, "err:", err, {})
             }
-            log.debug("Notified ", notified);
+            
           });
         }
       return instance;
@@ -86,7 +88,7 @@ module.exports = class {
             msg: msg
         };
       log.debug("MBus:Publish", channel, o, {});
-      rclient.publish(channel, JSON.stringify(o));
+      pclient.publish(channel, JSON.stringify(o));
     }
 
   publishCompressed(channel, type, ip, msg) {

@@ -13,9 +13,7 @@ const httpsPort = 8883;
 const enableHttps = true;
 
 const Promise = require('bluebird');
-const Redis = require('redis');
-const redis = Redis.createClient();
-Promise.promisifyAll(Redis.RedisClient.prototype);
+const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const intel = require('./intel.js')(redis);
 
@@ -86,14 +84,14 @@ class App {
   }
 
   async isPorn(req, res) {
-    let count = await redis.hincrbyAsync('block:stats', 'porn', 1);
+    let count = await rclient.hincrbyAsync('block:stats', 'porn', 1);
     res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({hostname: req.hostname, url: req.originalUrl, count})}`).send().end();
     log.info(`Total porn blocked: ${count}`);
   }
 
   async isAd(req, res) {
     res.status(200).send().end();
-    let count = await redis.hincrbyAsync('block:stats', 'ad', 1);
+    let count = await rclient.hincrbyAsync('block:stats', 'ad', 1);
     log.info(`Total ad blocked: ${count}`);
   }
 

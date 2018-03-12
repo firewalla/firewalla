@@ -20,15 +20,10 @@ var os = require('os');
 var network = require('network');
 var instances = {};
 
-var redis = require("redis");
-var rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
-
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
 
 var _async = require('async');
 var instance = null;
@@ -348,6 +343,9 @@ module.exports = class DNSManager {
       })
     }, (err) => {
       log.info("DNS:QUERY:RESOLVED:COUNT", resolve, list.length, Math.ceil(Date.now() / 1000) - start);
+      if(err) {
+        log.error("Failed to call dnsmanager.query:", err, {})
+      }
       callback(err);
     });
   }

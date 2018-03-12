@@ -20,15 +20,12 @@ var os = require('os');
 var network = require('network');
 var instances = {};
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
@@ -82,13 +79,6 @@ var utils = require('../lib/utils.js');
 let fConfig = require('./config.js').getConfig();
 
 const fc = require('./config.js')
-
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-sclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
 
 var _async = require('async');
 
@@ -1470,6 +1460,7 @@ module.exports = class {
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
     json.longVersion = f.getVersion();
+    json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;

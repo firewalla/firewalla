@@ -21,9 +21,6 @@ var sysManager = new SysManager('info');
 var firewalla = require('../net2/Firewalla.js');
 var fHome = firewalla.getFirewallaHome();
 
-var redis = require("redis");
-var rclient = redis.createClient();
-
 var later = require('later');
 var publicIp = require('public-ip');
 

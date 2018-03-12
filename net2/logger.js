@@ -17,6 +17,8 @@ var winston = require('winston');
 
 let path = require('path');
 
+const moment = require('moment')
+
 String.prototype.capitalizeFirstLetter = function() {
     return this.charAt(0).toUpperCase() + this.slice(1);
 }
@@ -71,6 +73,57 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
     production = true;
 }
 
+let fileTransport = null
+let consoleTransport = null
+let testTransport = null
+
+function getFileTransport() {
+  if(!fileTransport) {
+    
+    fileTransport = new (winston.transports.File)({
+      level: 'info',
+      name:'log-file',
+      filename: process.title+".log",
+      json: false,
+      dirname: "/home/pi/logs",
+      maxsize: 1000000,
+      maxFiles: 3
+    })
+  }
+
+  return fileTransport
+}
+
+function getConsoleTransport() {
+  if(!consoleTransport) {
+    const loglevel = 'info'
+    if(production) 
+      loglevel = 'error'
+           
+    consoleTransport = new(winston.transports.Console)({})
+  }
+
+  return consoleTransport
+}
+
+function getTestTransport() {
+  if(!testTransport) {
+    testTransport = new (winston.transports.File)
+    ({level:'info',
+      name:'log-file-test',
+      filename: "test.log",
+      dirname: "/home/pi/.forever",
+      maxsize: 100000,
+      maxFiles: 1,
+      json: false,
+      timestamp:true,
+      colorize: true
+    });
+  }
+
+  return testTransport
+}
+
 module.exports = function (component, loglevel, filename) {
   component = path.basename(component).split(".")[0].capitalizeFirstLetter();
   
@@ -82,11 +135,8 @@ module.exports = function (component, loglevel, filename) {
     return debugMap[component];
   }
 
-  if(!filename) {
-    filename = process.title+".log";
-  }
-  
     let _loglevel = debugMapper[component];
+    
     if (_loglevel==null) {
         _loglevel = loglevel;
     }
@@ -96,67 +146,32 @@ module.exports = function (component, loglevel, filename) {
     if (production){
        consoleLogLevel = 'error';
     }
-    var consoleTransport = new(winston.transports.Console)({
-              level: consoleLogLevel,
-              timestamp: function() {
-                let d = new Date();
-                return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
-              },
-              formatter: function(options) {
-                let format = require('util').format("%s %s %s: %s",
-                                                    options.level.toUpperCase(),
-                                                    options.timestamp(),
-                                                    component,
-                                                    options.message);
-                return format;
-              }
-            });
   
-    var fileTransport = new (winston.transports.File)({level:_loglevel,
-                                                       name:'log-file',
-                                                       filename: filename,
-                                                       json: false,
-                                                       dirname: "/home/pi/logs",
-                                                       maxsize: 1000000,
-                                                       maxFiles: 3,
-                                                       timestamp:function() {
-                                                            let d = new Date();
-                                                            return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
-                                                       }});
-  
-    let transports = [fileTransport];
+    let transports = [getFileTransport()];
  
     if (production == false && process.env.NODE_ENV !== 'test') {
-//        console.log("Adding Console Transports",component);
-        transports.push(consoleTransport);
+        transports.push(getConsoleTransport());
     }
     
-    if(process.env.NODE_ENV === 'test') {
-      let transport = new (winston.transports.File)
-      ({level:_loglevel,
-        name:'log-file-test',
-        filename: "test.log",
-        dirname: "/home/pi/.forever",
-        maxsize: 100000,
-        maxFiles: 1,
-        json: false,
-        timestamp:true,
-        colorize: true,
-        formatter: (options) => {
-          let format = require('util').format("%s %s %s: %s",
-            options.level.toUpperCase(),
-            new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''),
-            component,
-            options.message);
-          return format;
-        }});
-      
-      transports.push(transport);
+    if(process.env.NODE_ENV === 'test') {      
+      transports.push(getTestTransport());
     }
   
-    let logger = new(winston.Logger)({
-        transports: transports
+	const { createLogger, format} = require('winston');
+	const { combine, timestamp, label, printf } = format;
+
+    const myFormat = printf(info => {
+      return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD hh:mm:ss')} ${info.label}: ${info.message}`;
     });
+
+    let logger = createLogger({
+      format: combine(
+        label({label: component}),
+//	format.splat(),
+        myFormat
+      ),
+      transports: transports,    
+    })
 
     if (production == false && logger.transports.console) {
         logger.transports.console.level = _loglevel;
@@ -169,5 +184,37 @@ module.exports = function (component, loglevel, filename) {
     }
 
     debugMap[component]=logger;
-    return logger;
+// pass in function arguments object and returns string with whitespaces
+function argumentsToString(v){
+    // convert arguments object to real array
+    var args = Array.prototype.slice.call(v);
+    for(var k in args){
+        if (typeof args[k] === "object"){
+            // args[k] = JSON.stringify(args[k]);
+            args[k] = require('util').inspect(args[k], false, null, true);
+        }
+    }
+    var str = args.join(" ");
+    return str;
+}
+
+
+    // wrapping the winston function to allow for multiple arguments
+    var wrap = {};
+    wrap.info = function () {
+        logger.log.apply(logger, ["info", argumentsToString(arguments)]);
+    };
+
+    wrap.error = function () {
+        logger.log.apply(logger, ["error", argumentsToString(arguments)]);
+    };
+
+    wrap.warn = function () {
+        logger.log.apply(logger, ["warn", argumentsToString(arguments)]);
+    };
+
+    wrap.debug = function () {
+        logger.log.apply(logger, ["debug", argumentsToString(arguments)]);
+    };
+    return wrap;
 };

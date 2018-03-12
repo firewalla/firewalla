@@ -27,12 +27,7 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let l2 = require('../util/Layer2.js');
 
-var redis = require("redis");
-var rclient = redis.createClient();
-
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');

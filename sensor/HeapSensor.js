@@ -20,12 +20,11 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let redis = require('redis');
-let rclient = redis.createClient();
-let sclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
+const Promise = require('bluebird');
 
 let heapdump = require('heapdump');
 
@@ -39,7 +38,7 @@ class HeapSensor extends Sensor {
   }
 
   run() {
-    rclient.on("message", (channel, message) => {
+    sclient.on("message", (channel, message) => {
       if(channel === "heapdump" && message) {
         try {
           let m = JSON.parse(message);
@@ -53,7 +52,7 @@ class HeapSensor extends Sensor {
       } 
     });
     
-    rclient.subscribe("heapdump");
+    sclient.subscribe("heapdump");
   }
   
   onComplete(err, file) {
@@ -72,7 +71,7 @@ class HeapSensor extends Sensor {
       title: process.title
     });
     
-    sclient.publish("heapdump_done", payload);
+    pclient.publish("heapdump_done", payload);
   }
   
 }

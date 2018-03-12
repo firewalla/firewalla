@@ -14,15 +14,14 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
 let util = require('util');
 
 let Sensor = require('./Sensor.js').Sensor;
 
-let redis = require("redis");
-let rclient = redis.createClient();
-let pubClient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
@@ -34,8 +33,6 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -294,12 +291,12 @@ class OldDataCleanSensor extends Sensor {
   }
 
   listen() {
-    pubClient.on("message", (channel, message) => {
+    sclient.on("message", (channel, message) => {
       if(channel === "OldDataCleanSensor" && message === "Start") {
         this.scheduledJob();
       }
     });
-    pubClient.subscribe("OldDataCleanSensor");
+    sclient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
   }
 

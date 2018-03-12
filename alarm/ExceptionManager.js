@@ -12,11 +12,7 @@ const minimatch = require('minimatch')
 let Exception = require('./Exception.js');
 let Bone = require('../lib/Bone.js');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let instance = null;
 

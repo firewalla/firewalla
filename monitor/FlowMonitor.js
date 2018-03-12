@@ -17,8 +17,7 @@ let log = require("../net2/logger.js")(__filename, 'info');
 let os = require('os');
 let network = require('network');
 
-let redis = require("redis");
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let FlowManager = require('../net2/FlowManager.js');
 let flowManager = new FlowManager('info');
@@ -35,10 +34,6 @@ let uuid = require('uuid');
 
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
-
-rclient.on("error", function (err) {
-    log.error("Redis(alarm) Error " + err);
-});
 
 let _async = require('async');
 
@@ -688,7 +683,8 @@ module.exports = class FlowMonitor {
     */
 
     run(service,period) {
-            log.info("FlowMonitor Running Process :", service);
+            log.info("FlowMonitor Running Process :", service, period, {});
+            const startTime = new Date() / 1000
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
                 result = result.filter(x => x) // workaround if host is undefined or null
@@ -837,7 +833,8 @@ module.exports = class FlowMonitor {
                         });
                     }
                 }, (err)=> {
-                    log.info("FlowMonitor Running Process End :", service);
+                    const endTime = new Date() /1000
+                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, {});
                     this.garbagecollect();
                 });
             });
