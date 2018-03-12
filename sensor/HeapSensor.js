@@ -22,6 +22,7 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const Promise = require('bluebird');
 
@@ -70,7 +71,7 @@ class HeapSensor extends Sensor {
       title: process.title
     });
     
-    sclient.publish("heapdump_done", payload);
+    pclient.publish("heapdump_done", payload);
   }
   
 }

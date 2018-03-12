@@ -48,29 +48,34 @@ module.exports = class {
           }
           this.sending = false;
           sclient.on("message", (channel, message) => {
-            let m = JSON.parse(message);
-            log.debug("Reciving Msg:", m, {});
-            let notified = 0;
-            let cbs = null;
-            if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
-              cbs = this.callbacks[channel + "." + m.type + "." + m.ip];
-              if(cbs) {
-                cbs.forEach((cb) => {
-                  cb(channel, m.type, m.ip, m.msg);
-                  notified += 1;
-                });
+            try {
+              let m = JSON.parse(message);
+              log.debug("Reciving Msg:", m, {});
+              let notified = 0;
+              let cbs = null;
+              if (m.ip && m.ip.length > 3 && this.callbacks[channel + '.' + m.type + "." + m.ip] != null) {
+                cbs = this.callbacks[channel + "." + m.type + "." + m.ip];
+                if(cbs) {
+                  cbs.forEach((cb) => {
+                    cb(channel, m.type, m.ip, m.msg);
+                    notified += 1;
+                  });
+                }
               }
-            }
-            if (this.callbacks[channel + "." + m.type]) {
-              cbs = this.callbacks[channel + "." + m.type]
-              if(cbs) {
-                cbs.forEach((cb) => {
-                  cb(channel, m.type, m.ip, m.msg);
-                  notified += 1;
-                });
+              if (this.callbacks[channel + "." + m.type]) {
+                cbs = this.callbacks[channel + "." + m.type]
+                if(cbs) {
+                  cbs.forEach((cb) => {
+                    cb(channel, m.type, m.ip, m.msg);
+                    notified += 1;
+                  });
+                }
               }
+              log.debug("Notified ", notified);
+            } catch(err) {
+              log.error("Error to process message:", message, "err:", err, {})
             }
-            log.debug("Notified ", notified);
+            
           });
         }
       return instance;
