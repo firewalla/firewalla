@@ -16,7 +16,6 @@
 
 let log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 

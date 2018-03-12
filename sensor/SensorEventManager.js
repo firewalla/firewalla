@@ -18,7 +18,7 @@ let log = require('../net2/logger.js')(__filename);
 
 const EventEmitter = require('events');
 
-const sclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
 let instance = null;
