@@ -17,6 +17,8 @@ var winston = require('winston');
 
 let path = require('path');
 
+const moment = require('moment')
+
 String.prototype.capitalizeFirstLetter = function() {
     return this.charAt(0).toUpperCase() + this.slice(1);
 }
@@ -155,17 +157,16 @@ module.exports = function (component, loglevel, filename) {
       transports.push(getTestTransport());
     }
   
-    const format = require('winston').format
-    const label = format.label
+	const { createLogger, format} = require('winston');
+	const { combine, timestamp, label, printf } = format;
 
     const myFormat = printf(info => {
-      return `${info.timestamp} [${info.component}] ${info.level}: ${info.message}`;
+      return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD hh:mm:ss')} ${info.label}: ${info.message}`;
     });
 
-    let logger = new(winston.Logger)({
+    let logger = createLogger({
       format: combine(
-        label({component: component}),
-        timestamp(),
+        label({label: component}),
         myFormat
       ),
       transports: transports,    
