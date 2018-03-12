@@ -18,6 +18,7 @@ let log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 /*
  * Channels
@@ -83,7 +84,7 @@ module.exports = class {
             msg: msg
         };
       log.debug("MBus:Publish", channel, o, {});
-      rclient.publish(channel, JSON.stringify(o));
+      pclient.publish(channel, JSON.stringify(o));
     }
 
   publishCompressed(channel, type, ip, msg) {

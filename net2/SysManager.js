@@ -27,6 +27,7 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 
 let Promise = require('bluebird');
@@ -211,7 +212,7 @@ module.exports = class {
     debugOn(callback) {
         rclient.set("system:debug", "1", (err) => {
             systemDebug = true;
-            rclient.publish("System:DebugChange", "1");
+            pclient.publish("System:DebugChange", "1");
             callback(err);
         });
     }
@@ -219,7 +220,7 @@ module.exports = class {
     debugOff(callback) {
         rclient.set("system:debug", "0", (err) => {
             systemDebug = false;
-            rclient.publish("System:DebugChange", "0");
+            pclient.publish("System:DebugChange", "0");
             callback(err);
         });
     }
@@ -265,7 +266,7 @@ module.exports = class {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
       }
-      rclient.publish("System:LanguageChange", language);
+      pclient.publish("System:LanguageChange", language);
       callback(err);
     });
   }
@@ -278,7 +279,7 @@ module.exports = class {
       if(err) {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
       }
-      rclient.publish("System:TimezoneChange", timezone);
+      pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
       async(() => {
