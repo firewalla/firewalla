@@ -77,17 +77,16 @@ let testTransport = null
 
 function getFileTransport() {
   if(!fileTransport) {
+    
     fileTransport = new (winston.transports.File)({
+      level: 'info',
       name:'log-file',
-      filename: filename,
+      filename: process.title+".log",
       json: false,
       dirname: "/home/pi/logs",
       maxsize: 1000000,
-      maxFiles: 3,
-      timestamp:function() {
-        let d = new Date();
-        return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
-      }});        
+      maxFiles: 3
+    })
   }
 
   return fileTransport
@@ -95,30 +94,20 @@ function getFileTransport() {
 
 function getConsoleTransport() {
   if(!consoleTransport) {
-    consoleTransport = new(winston.transports.Console)({
-      level: consoleLogLevel,
-      timestamp: function() {
-        let d = new Date();
-        return d.toLocaleString().replace(/T/, ' ').replace(/\..+/, '');
-      },
-      formatter: function(options) {
-        let format = require('util').format("%s %s %s: %s",
-          options.level.toUpperCase(),
-          options.timestamp(),
-          component,
-          options.message);
-        return format;
-      }
-    })
-
-    return consoleTransport
+    const loglevel = 'info'
+    if(production) 
+      loglevel = 'error'
+           
+    consoleTransport = new(winston.transports.Console)({})
   }
+
+  return consoleTransport
 }
 
 function getTestTransport() {
   if(!testTransport) {
     testTransport = new (winston.transports.File)
-    ({level:_loglevel,
+    ({level:'info',
       name:'log-file-test',
       filename: "test.log",
       dirname: "/home/pi/.forever",
@@ -126,15 +115,8 @@ function getTestTransport() {
       maxFiles: 1,
       json: false,
       timestamp:true,
-      colorize: true,
-      formatter: (options) => {
-        let format = require('util').format("%s %s %s: %s",
-          options.level.toUpperCase(),
-          new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''),
-          component,
-          options.message);
-        return format;
-      }});
+      colorize: true
+    });
   }
 
   return testTransport
@@ -151,11 +133,8 @@ module.exports = function (component, loglevel, filename) {
     return debugMap[component];
   }
 
-  if(!filename) {
-    filename = process.title+".log";
-  }
-  
     let _loglevel = debugMapper[component];
+    
     if (_loglevel==null) {
         _loglevel = loglevel;
     }
@@ -169,7 +148,6 @@ module.exports = function (component, loglevel, filename) {
     let transports = [getFileTransport()];
  
     if (production == false && process.env.NODE_ENV !== 'test') {
-//        console.log("Adding Console Transports",component);
         transports.push(getConsoleTransport());
     }
     
@@ -177,9 +155,21 @@ module.exports = function (component, loglevel, filename) {
       transports.push(getTestTransport());
     }
   
-    let logger = new(winston.Logger)({
-        transports: transports
+    const format = require('winston').format
+    const label = format.label
+
+    const myFormat = printf(info => {
+      return `${info.timestamp} [${info.component}] ${info.level}: ${info.message}`;
     });
+
+    let logger = new(winston.Logger)({
+      format: combine(
+        label({component: component}),
+        timestamp(),
+        myFormat
+      ),
+      transports: transports,    
+    })
 
     if (production == false && logger.transports.console) {
         logger.transports.console.level = _loglevel;
