@@ -37,7 +37,7 @@ function run0() {
 }
 
 let i18n = require('i18n');
-let rclient = require('redis').createClient();
+const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 let language = 'en';
 

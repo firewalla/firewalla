@@ -22,8 +22,8 @@ var request = require('request');
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 var bone = require("../lib/Bone.js");
 
 

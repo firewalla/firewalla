@@ -18,8 +18,9 @@
 let log = require('./logger.js')(__filename);
 
 var Tail = require('always-tail');
-var redis = require("redis");
-var rclient = redis.createClient();
+
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 var iptool = require("ip");
 var useragent = require('useragent');
 

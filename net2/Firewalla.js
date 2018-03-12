@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require("../net2/logger.js")(__filename)
+const log = require("../net2/logger.js")(__filename)
 let config;
 
 let cp = require('child_process');
@@ -36,10 +36,7 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 function getFirewallaHome() {
   return firewallaHome;

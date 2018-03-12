@@ -17,11 +17,7 @@
 const log = require("../net2/logger.js")(__filename);
 const Promise = require('bluebird');
 
-const redis = require('redis');
-const rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')

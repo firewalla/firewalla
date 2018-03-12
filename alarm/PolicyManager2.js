@@ -18,7 +18,7 @@
 const log = require('../net2/logger.js')(__filename, 'info');
 
 const redis = require('redis');
-const rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let flat = require('flat');
 

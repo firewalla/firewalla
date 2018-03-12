@@ -57,12 +57,8 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
 
-let redis = require('redis');
-let rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 

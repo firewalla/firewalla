@@ -6,11 +6,9 @@ let fs = require('fs');
 let f = require('./Firewalla.js');
 
 const redis = require('redis')
-const rclient = redis.createClient()
-const sclient_publish = redis.createClient()
-const sclient_subscribe = redis.createClient()
-sclient_publish.setMaxListeners(0)
-sclient_subscribe.setMaxListeners(0)
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient_subscribe = require('../util/redis_manager.js').getSubscriptionClient()
+const sclient_publish = require('../util/redis_manager.js').getPublishClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')

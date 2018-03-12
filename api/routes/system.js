@@ -226,8 +226,8 @@ router.get('/heapdump',
         break;
       case "FireMain":
       case "FireMon":
-        let rclient = redis.createClient();
-        let sclient = redis.createClient();
+        let rclient = require('../../util/redis_manager.js').getSubscriptionClient()
+        let sclient = require('../../util/redis_manager.js').getPublishClient()
 
         rclient.on("message", (channel, message) => {
           if(channel === "heapdump_done" && message ) {

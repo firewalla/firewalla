@@ -34,9 +34,7 @@ let networkTool = require('../net2/NetworkTool')();
 
 let license = require('../util/license.js');
 
-const redis = require('redis')
-const rclient = redis.createClient()
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";

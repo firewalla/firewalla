@@ -25,14 +25,11 @@ var upgradeManager = require("./UpgradeManager.js");
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');

@@ -17,8 +17,7 @@ let log = require("../net2/logger.js")(__filename, 'info');
 let os = require('os');
 let network = require('network');
 
-let redis = require("redis");
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let FlowManager = require('../net2/FlowManager.js');
 let flowManager = new FlowManager('info');

@@ -49,8 +49,7 @@
   let utils = require('../lib/utils.js');
   let uuid = require("uuid");
   let forever = require('forever-monitor');
-  let redis = require("redis");
-  let rclient = redis.createClient();
+  const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
   let led = require('../util/Led.js');
@@ -62,8 +61,6 @@
   let fConfig = require('../net2/config.js');
   
   let Promise = require('bluebird');
-  Promise.promisifyAll(redis.RedisClient.prototype);
-  Promise.promisifyAll(redis.Multi.prototype);
   
   let async = require('asyncawait/async');
   let await = require('asyncawait/await');

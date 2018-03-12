@@ -19,23 +19,14 @@ var os = require('os');
 var network = require('network');
 var stats = require('stats-lite');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-		
-// add promises to all redis functions
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('info');
 var bone = require("../lib/Bone.js");
 var firewalla = require("../net2/Firewalla.js");
-
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
 
 const _async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');

@@ -36,10 +36,7 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let curMode = null;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const AUTO_REVERT_INTERVAL = 240 * 1000 // 4 minutes
 

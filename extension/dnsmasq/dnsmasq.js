@@ -20,9 +20,9 @@ let fHome = f.getFirewallaHome();
 let userID = f.getUserID();
 
 let Promise = require('bluebird');
-const Redis = require('redis');
-const redis = Redis.createClient();
-Promise.promisifyAll(Redis.RedisClient.prototype);
+
+const rclient = require('../../util/redis_manager.js').getRedisClient()
+
 let fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
@@ -595,9 +595,9 @@ module.exports = class DNSMASQ {
     return async(() => {
       log.info(`Writing hash into redis for type: ${type}`);
       let key = `dns:hashset:${type}`;
-      let jobs = hashes.map(hash => redis.saddAsync(key, hash));
+      let jobs = hashes.map(hash => rclient.saddAsync(key, hash));
       await(Promise.all(jobs));
-      let count = await(redis.scardAsync(key));
+      let count = await(rclient.scardAsync(key));
       log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
     })();
   }

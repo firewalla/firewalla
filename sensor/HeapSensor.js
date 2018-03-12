@@ -20,12 +20,10 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let redis = require('redis');
-let rclient = redis.createClient();
-let sclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
+const Promise = require('bluebird');
 
 let heapdump = require('heapdump');
 
