@@ -17,6 +17,8 @@
 // config.discovery.networkInterface
 
 process.title = "FireMain";
+require('events').EventEmitter.prototype._maxListeners = 100;
+
 let log = require("./logger.js")(__filename);
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();

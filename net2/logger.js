@@ -167,6 +167,7 @@ module.exports = function (component, loglevel, filename) {
     let logger = createLogger({
       format: combine(
         label({label: component}),
+//	format.splat(),
         myFormat
       ),
       transports: transports,    
@@ -183,5 +184,37 @@ module.exports = function (component, loglevel, filename) {
     }
 
     debugMap[component]=logger;
-    return logger;
+// pass in function arguments object and returns string with whitespaces
+function argumentsToString(v){
+    // convert arguments object to real array
+    var args = Array.prototype.slice.call(v);
+    for(var k in args){
+        if (typeof args[k] === "object"){
+            // args[k] = JSON.stringify(args[k]);
+            args[k] = require('util').inspect(args[k], false, null, true);
+        }
+    }
+    var str = args.join(" ");
+    return str;
+}
+
+
+    // wrapping the winston function to allow for multiple arguments
+    var wrap = {};
+    wrap.info = function () {
+        logger.log.apply(logger, ["info", argumentsToString(arguments)]);
+    };
+
+    wrap.error = function () {
+        logger.log.apply(logger, ["error", argumentsToString(arguments)]);
+    };
+
+    wrap.warn = function () {
+        logger.log.apply(logger, ["warn", argumentsToString(arguments)]);
+    };
+
+    wrap.debug = function () {
+        logger.log.apply(logger, ["debug", argumentsToString(arguments)]);
+    };
+    return wrap;
 };

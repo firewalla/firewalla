@@ -39,6 +39,8 @@
   */
   
   process.title = "FireKick";
+  require('events').EventEmitter.prototype._maxListeners = 100;
+
   let log = require("../net2/logger.js")(__filename);
   
   let fs = require('fs');
