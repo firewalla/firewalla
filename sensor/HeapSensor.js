@@ -37,7 +37,7 @@ class HeapSensor extends Sensor {
   }
 
   run() {
-    rclient.on("message", (channel, message) => {
+    sclient.on("message", (channel, message) => {
       if(channel === "heapdump" && message) {
         try {
           let m = JSON.parse(message);
@@ -51,7 +51,7 @@ class HeapSensor extends Sensor {
       } 
     });
     
-    rclient.subscribe("heapdump");
+    sclient.subscribe("heapdump");
   }
   
   onComplete(err, file) {

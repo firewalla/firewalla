@@ -51,10 +51,6 @@ var linux = require('../util/linux.js');
 
 let l2 = require('../util/Layer2.js');
 
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();

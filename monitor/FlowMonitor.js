@@ -35,10 +35,6 @@ let uuid = require('uuid');
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
 
-rclient.on("error", function (err) {
-    log.error("Redis(alarm) Error " + err);
-});
-
 let _async = require('async');
 
 const async = require('asyncawait/async');
