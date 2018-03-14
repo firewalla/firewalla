@@ -1564,13 +1564,13 @@ module.exports = class {
 
 
     recordHit(data) {
-        const ts = data.ts
+        const ts = Math.floor(data.ts)
         const inBytes = data.inBytes
         const outBytes = data.outBytes
     
         return new Promise((resolve, reject) => {
             timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
-                timeSeries.recordHit('download',ts, Number(outBytes)).exec(() => {
+                timeSeries.recordHit('upload',ts, Number(outBytes)).exec(() => {
                     // do nothing
                     resolve()
                 })

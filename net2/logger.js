@@ -131,15 +131,7 @@ module.exports = function (component, loglevel, filename) {
     loglevel = "info"; // default level info
   }
 
-  if (debugMap[component]!=null) {
-    return debugMap[component];
-  }
-
-    let _loglevel = debugMapper[component];
-    
-    if (_loglevel==null) {
-        _loglevel = loglevel;
-    }
+    let _loglevel = loglevel;
     let consoleLogLevel = _loglevel;
     let fileLogLevel = _loglevel;
    
@@ -161,7 +153,7 @@ module.exports = function (component, loglevel, filename) {
 	const { combine, timestamp, label, printf } = format;
 
     const myFormat = printf(info => {
-      return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD hh:mm:ss')} ${info.label}: ${info.message}`;
+      return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD HH:mm:ss')} ${info.label}: ${info.message}`;
     });
 
     let logger = createLogger({
@@ -183,7 +175,7 @@ module.exports = function (component, loglevel, filename) {
       }
     }
 
-    debugMap[component]=logger;
+//    debugMap[component]=logger;
 // pass in function arguments object and returns string with whitespaces
 function argumentsToString(v){
     // convert arguments object to real array
@@ -202,18 +194,30 @@ function argumentsToString(v){
     // wrapping the winston function to allow for multiple arguments
     var wrap = {};
     wrap.info = function () {
+      if(logger.levels[logger.level] < logger.levels['info']) {
+        return // do nothing
+      }
         logger.log.apply(logger, ["info", argumentsToString(arguments)]);
     };
 
     wrap.error = function () {
+      if(logger.levels[logger.level] < logger.levels['error']) {
+        return // do nothing
+      }
         logger.log.apply(logger, ["error", argumentsToString(arguments)]);
     };
 
     wrap.warn = function () {
+      if(logger.levels[logger.level] < logger.levels['warn']) {
+        return // do nothing
+      }
         logger.log.apply(logger, ["warn", argumentsToString(arguments)]);
     };
 
     wrap.debug = function () {
+        if(logger.levels[logger.level] < logger.levels['debug']) {
+          return // do nothing
+        }
         logger.log.apply(logger, ["debug", argumentsToString(arguments)]);
     };
     return wrap;

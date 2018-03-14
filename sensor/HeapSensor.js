@@ -49,7 +49,10 @@ class HeapSensor extends Sensor {
         } catch (err) {
           log.error("Failed to parse JSON message: ", message, {});
         }
-      } 
+      } else if(channel === "gc" && message === process.title)  {
+        global.gc()
+        log.info("GC complete!")
+      }
     });
     
     sclient.subscribe("heapdump");
