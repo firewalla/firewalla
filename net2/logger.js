@@ -14,6 +14,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 var winston = require('winston');
+const config = winston.config;
 
 let path = require('path');
 
@@ -83,7 +84,19 @@ function getFileTransport() {
     json: false,
     dirname: "/home/pi/logs",
     maxsize: 1000000,
-    maxFiles: 3
+    maxFiles: 3,
+    timestamp: function() {
+        return moment().format('YYYY-MM-DD HH:mm:ss')
+      },
+      formatter: function(options) {
+        // - Return string will be passed to logger.
+        // - Optionally, use options.colorize(options.level, <string>) to
+        //   colorize output based on the log level.
+        return options.timestamp() + ' ' +
+          options.level.toUpperCase() + ' ' +
+          (options.message ? options.message : '') +
+          (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
+      }
   })
 }
 
@@ -93,7 +106,19 @@ function getConsoleTransport() {
     loglevel = 'error'
 
   return new(winston.transports.Console)({
-    loglevel: loglevel
+    loglevel: loglevel,
+    timestamp: function() {
+        return moment().format('YYYY-MM-DD HH:mm:ss')
+      },
+      formatter: function(options) {
+        // - Return string will be passed to logger.
+        // - Optionally, use options.colorize(options.level, <string>) to
+        //   colorize output based on the log level.
+        return options.timestamp() + ' ' +
+          config.colorize(options.level, options.level.toUpperCase()) + ' ' +
+          (options.message ? options.message : '') +
+          (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
+      }
   })
 }
 
@@ -124,33 +149,12 @@ if (process.env.NODE_ENV === 'test') {
 }
 
 function setupLogger(transports) {  
-  const {
-    createLogger,
-    format
-  } = require('winston');
-  const {
-    combine,
-    timestamp,
-    label,
-    printf
-  } = format;
-
-  const myFormat = printf(info => {
-    return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD HH:mm:ss')} ${info.label}: ${info.message}`;
+  var logger = new (winston.Logger)({
+    transports: transports
   });
 
-  let logger = createLogger({
-    format: combine(
-      label({
-        label: component
-      }),
-      //	format.splat(),
-      myFormat
-    ),
-    transports: transports,
-  })
-
   return logger
+
 }
 
 // pass in function arguments object and returns string with whitespaces
@@ -180,28 +184,28 @@ module.exports = function (component) {
     if (loglevelInt < logger.levels['info']) {
       return // do nothing
     }
-    logger.log.apply(logger, ["info", component + " " + argumentsToString(arguments)]);
+    logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.error = function () {
     if (loglevelInt < logger.levels['error']) {
       return // do nothing
     }
-    logger.log.apply(logger, ["error", component + " " + argumentsToString(arguments)]);
+    logger.log.apply(logger, ["error", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.warn = function () {
     if (loglevelInt < logger.levels['warn']) {
       return // do nothing
     }
-    logger.log.apply(logger, ["warn", component + " " + argumentsToString(arguments)]);
+    logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.debug = function () {
     if (loglevelInt < logger.levels['debug']) {
       return // do nothing
     }
-    logger.log.apply(logger, ["debug", component + " " + argumentsToString(arguments)]);
+    logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
   };
   return wrap;
 };
