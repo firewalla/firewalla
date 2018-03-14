@@ -50,7 +50,7 @@ class RuntimeConfigSensor extends Sensor {
     // 900 seconds (15min) for one key change
     // 500 seconds (8.3min) for 10 keys change
     // 2 mins for 10000 keys change
-    const saveConfig = "900 1 500 10 120 10000"
+    const saveConfig = "900 10 500 100 120 100000"
     return exec(`redis-cli config set save "${saveConfig}"`)
   }
 
