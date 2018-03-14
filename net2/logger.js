@@ -19,42 +19,42 @@ let path = require('path');
 
 const moment = require('moment')
 
-String.prototype.capitalizeFirstLetter = function() {
-    return this.charAt(0).toUpperCase() + this.slice(1);
+String.prototype.capitalizeFirstLetter = function () {
+  return this.charAt(0).toUpperCase() + this.slice(1);
 }
 
 var devDebug = {
-   'BroDetect': 'info',
-   'HostManager': 'info',
-   'VpnManager': 'info',
-   'AlarmManager': 'info',
-   'Discovery': 'info',
-   'Device Manager':'info',
-   'DNSManager':'info',
-   'FlowManager':'info',
-   'intel':'info',
-   'MessageBus':'info',
-   'SysManager':'info',
-   'PolicyManager':'info',
-   'main':'info',
-   'FlowMonitor':'info'
+  'BroDetect': 'info',
+  'HostManager': 'info',
+  'VpnManager': 'info',
+  'AlarmManager': 'info',
+  'Discovery': 'info',
+  'Device Manager': 'info',
+  'DNSManager': 'info',
+  'FlowManager': 'info',
+  'intel': 'info',
+  'MessageBus': 'info',
+  'SysManager': 'info',
+  'PolicyManager': 'info',
+  'main': 'info',
+  'FlowMonitor': 'info'
 };
-  
+
 var productionDebug = {
-   'BroDetect': 'error',
-   'HostManager': 'error',
-   'VpnManager': 'error',
-   'AlarmManager': 'error',
-   'Discovery': 'error',
-   'Device Manager':'error',
-   'DNSManager':'error',
-   'FlowManager':'error',
-   'intel':'error',
-   'MessageBus':'error',
-   'SysManager':'error',
-   'PolicyManager':'error',
-   'main':'error',
-   'FlowMonitor':'error'
+  'BroDetect': 'error',
+  'HostManager': 'error',
+  'VpnManager': 'error',
+  'AlarmManager': 'error',
+  'Discovery': 'error',
+  'Device Manager': 'error',
+  'DNSManager': 'error',
+  'FlowManager': 'error',
+  'intel': 'error',
+  'MessageBus': 'error',
+  'SysManager': 'error',
+  'PolicyManager': 'error',
+  'main': 'error',
+  'FlowMonitor': 'error'
 };
 
 var debugMapper = devDebug;
@@ -62,163 +62,146 @@ var production = false;
 var debugMap = {};
 
 if (process.env.FWPRODUCTION) {
-    debugMapper = productionDebug; 
-    console.log("FWDEBUG SET TO PRODUCTION");
-    production = true;
+  debugMapper = productionDebug;
+  console.log("FWDEBUG SET TO PRODUCTION");
+  production = true;
 }
 
 if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-    debugMapper = productionDebug; 
-    console.log("FWDEBUG SET TO PRODUCTION");
-    production = true;
+  debugMapper = productionDebug;
+  console.log("FWDEBUG SET TO PRODUCTION");
+  production = true;
 }
 
-let fileTransport = null
-let consoleTransport = null
-let testTransport = null
+
 
 function getFileTransport() {
-  if(!fileTransport) {
-    
-    fileTransport = new (winston.transports.File)({
-      level: 'info',
-      name:'log-file',
-      filename: process.title+".log",
-      json: false,
-      dirname: "/home/pi/logs",
-      maxsize: 1000000,
-      maxFiles: 3
-    })
-  }
-
-  return fileTransport
+  return new(winston.transports.File)({
+    level: 'info',
+    name: 'log-file',
+    filename: process.title + ".log",
+    json: false,
+    dirname: "/home/pi/logs",
+    maxsize: 1000000,
+    maxFiles: 3
+  })
 }
 
 function getConsoleTransport() {
-  if(!consoleTransport) {
-    const loglevel = 'info'
-    if(production) 
-      loglevel = 'error'
-           
-    consoleTransport = new(winston.transports.Console)({})
-  }
+  const loglevel = 'info'
+  if (production)
+    loglevel = 'error'
 
-  return consoleTransport
+  return new(winston.transports.Console)({
+    loglevel: loglevel
+  })
 }
 
 function getTestTransport() {
-  if(!testTransport) {
-    testTransport = new (winston.transports.File)
-    ({level:'info',
-      name:'log-file-test',
-      filename: "test.log",
-      dirname: "/home/pi/.forever",
-      maxsize: 100000,
-      maxFiles: 1,
-      json: false,
-      timestamp:true,
-      colorize: true
-    });
-  }
-
-  return testTransport
+  return new(winston.transports.File) ({
+    level: 'info',
+    name: 'log-file-test',
+    filename: "test.log",
+    dirname: "/home/pi/.forever",
+    maxsize: 100000,
+    maxFiles: 1,
+    json: false,
+    timestamp: true,
+    colorize: true
+  });
 }
 
-module.exports = function (component, loglevel, filename) {
-  component = path.basename(component).split(".")[0].capitalizeFirstLetter();
-  
-  if(!loglevel) {
-    loglevel = "info"; // default level info
-  }
+let fileTransport = getFileTransport()
 
-    let _loglevel = loglevel;
-    let consoleLogLevel = _loglevel;
-    let fileLogLevel = _loglevel;
-   
-    if (production){
-       consoleLogLevel = 'error';
-    }
-  
-    let transports = [getFileTransport()];
- 
-    if (production == false && process.env.NODE_ENV !== 'test') {
-        transports.push(getConsoleTransport());
-    }
-    
-    if(process.env.NODE_ENV === 'test') {      
-      transports.push(getTestTransport());
-    }
-  
-	const { createLogger, format} = require('winston');
-	const { combine, timestamp, label, printf } = format;
+let consoleTransport = null
+if( production == false ) {
+  consoleTransport = getConsoleTransport()
+} 
 
-    const myFormat = printf(info => {
-      return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD HH:mm:ss')} ${info.label}: ${info.message}`;
-    });
+let testTransport = null
+if (process.env.NODE_ENV === 'test') {
+  testTransport = getTestTransport()
+}
 
-    let logger = createLogger({
-      format: combine(
-        label({label: component}),
-//	format.splat(),
-        myFormat
-      ),
-      transports: transports,    
-    })
+function setupLogger(transports) {  
+  const {
+    createLogger,
+    format
+  } = require('winston');
+  const {
+    combine,
+    timestamp,
+    label,
+    printf
+  } = format;
 
-    if (production == false && logger.transports.console) {
-        logger.transports.console.level = _loglevel;
-    }
+  const myFormat = printf(info => {
+    return `${info.level.toUpperCase()} ${moment().format('YYYY-MM-DD HH:mm:ss')} ${info.label}: ${info.message}`;
+  });
 
-    if (production == true) {
-      for (key in winston.loggers.loggers) {
-        winston.loggers.loggers[key].remove(winston.transports.Console);
-      }
-    }
+  let logger = createLogger({
+    format: combine(
+      label({
+        label: component
+      }),
+      //	format.splat(),
+      myFormat
+    ),
+    transports: transports,
+  })
 
-//    debugMap[component]=logger;
+  return logger
+}
+
 // pass in function arguments object and returns string with whitespaces
-function argumentsToString(v){
-    // convert arguments object to real array
-    var args = Array.prototype.slice.call(v);
-    for(var k in args){
-        if (typeof args[k] === "object"){
-            // args[k] = JSON.stringify(args[k]);
-            args[k] = require('util').inspect(args[k], false, null, true);
-        }
+function argumentsToString(v) {
+  // convert arguments object to real array
+  var args = Array.prototype.slice.call(v);
+  for (var k in args) {
+    if (typeof args[k] === "object") {
+      // args[k] = JSON.stringify(args[k]);
+      args[k] = require('util').inspect(args[k], false, null, true);
     }
-    var str = args.join(" ");
-    return str;
+  }
+  var str = args.join(" ");
+  return str;
 }
 
+const logger = setupLogger([fileTransport, consoleTransport, testTransport].filter(x => x != null))
+const loglevelInt = logger.levels[logger.level]
 
-    // wrapping the winston function to allow for multiple arguments
-    var wrap = {};
-    wrap.info = function () {
-      if(logger.levels[logger.level] < logger.levels['info']) {
-        return // do nothing
-      }
-        logger.log.apply(logger, ["info", argumentsToString(arguments)]);
-    };
+module.exports = function (component) {
+  component = path.basename(component).split(".")[0].capitalizeFirstLetter();
 
-    wrap.error = function () {
-      if(logger.levels[logger.level] < logger.levels['error']) {
-        return // do nothing
-      }
-        logger.log.apply(logger, ["error", argumentsToString(arguments)]);
-    };
+  // wrapping the winston function to allow for multiple arguments
+  var wrap = {};
+  wrap.component = component
+  wrap.info = function () {
+    if (loglevelInt < logger.levels['info']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["info", component + " " + argumentsToString(arguments)]);
+  };
 
-    wrap.warn = function () {
-      if(logger.levels[logger.level] < logger.levels['warn']) {
-        return // do nothing
-      }
-        logger.log.apply(logger, ["warn", argumentsToString(arguments)]);
-    };
+  wrap.error = function () {
+    if (loglevelInt < logger.levels['error']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["error", component + " " + argumentsToString(arguments)]);
+  };
 
-    wrap.debug = function () {
-        if(logger.levels[logger.level] < logger.levels['debug']) {
-          return // do nothing
-        }
-        logger.log.apply(logger, ["debug", argumentsToString(arguments)]);
-    };
-    return wrap;
+  wrap.warn = function () {
+    if (loglevelInt < logger.levels['warn']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["warn", component + " " + argumentsToString(arguments)]);
+  };
+
+  wrap.debug = function () {
+    if (loglevelInt < logger.levels['debug']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["debug", component + " " + argumentsToString(arguments)]);
+  };
+  return wrap;
 };
