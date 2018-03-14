@@ -86,17 +86,17 @@ function getFileTransport() {
     maxsize: 1000000,
     maxFiles: 3,
     timestamp: function() {
-        return moment().format('YYYY-MM-DD HH:mm:ss')
-      },
-      formatter: function(options) {
-        // - Return string will be passed to logger.
-        // - Optionally, use options.colorize(options.level, <string>) to
-        //   colorize output based on the log level.
-        return options.timestamp() + ' ' +
-          options.level.toUpperCase() + ' ' +
-          (options.message ? options.message : '') +
-          (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
-      }
+      return moment().format('YYYY-MM-DD HH:mm:ss')
+    },
+    formatter: function(options) {
+      // - Return string will be passed to logger.
+      // - Optionally, use options.colorize(options.level, <string>) to
+      //   colorize output based on the log level.
+      return options.timestamp() + ' ' +
+        options.level.toUpperCase() + ' ' +
+        (options.message ? options.message : '') +
+        (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
+    }
   })
 }
 
@@ -108,17 +108,17 @@ function getConsoleTransport() {
   return new(winston.transports.Console)({
     loglevel: loglevel,
     timestamp: function() {
-        return moment().format('YYYY-MM-DD HH:mm:ss')
-      },
-      formatter: function(options) {
-        // - Return string will be passed to logger.
-        // - Optionally, use options.colorize(options.level, <string>) to
-        //   colorize output based on the log level.
-        return options.timestamp() + ' ' +
-          config.colorize(options.level, options.level.toUpperCase()) + ' ' +
-          (options.message ? options.message : '') +
-          (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
-      }
+      return moment().format('YYYY-MM-DD HH:mm:ss')
+    },
+    formatter: function(options) {
+      // - Return string will be passed to logger.
+      // - Optionally, use options.colorize(options.level, <string>) to
+      //   colorize output based on the log level.
+      return options.timestamp() + ' ' +
+        config.colorize(options.level, options.level.toUpperCase()) + ' ' +
+        (options.message ? options.message : '') +
+        (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
+    }
   })
 }
 
