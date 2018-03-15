@@ -723,19 +723,19 @@ module.exports = class DNSMASQ {
             h = null;
           }
 
-          log.debug("static host:", util.inspect(h));
+          //log.debug("static host:", util.inspect(h));
 
           let idx_in_hosts = hosts.findIndex(h => h.mac === mac);
 
           if (idx_in_hosts > -1 && h) {
             hosts[idx_in_hosts] = h;
-            return null;
-          } else {
-            return h;
+            h = null;
           }
+
+          return h;
         }).filter(x => x);
 
-        return hosts.concat(_hosts);
+        return hosts.concat(_hosts).sort((a, b) => a.mac.localeCompare(b.mac));
       }).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
           `${h.mac},set:unmonitor,ignore` :
