@@ -700,7 +700,7 @@ module.exports = class DNSMASQ {
   writeHostsFile() {
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
-    let lease_time = '2h';
+    let lease_time = '24h';
 
     return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
       .then(async hosts => {
