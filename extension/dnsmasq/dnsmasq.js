@@ -705,12 +705,14 @@ module.exports = class DNSMASQ {
       .then(async hosts => {
         let static_hosts = await redis.hgetallAsync('dhcp:static');
 
+        log.info("static hosts:", util.inspect(static_hosts));
+
         if (!static_hosts) {
           return hosts;
         }
 
-        let _hosts = static_hosts.map((k, v) => {
-          let mac = k, ip = v;
+        let _hosts = Object.entries(static_hosts).map(kv => {
+          let mac = kv[0], ip = kv[1];
           let h = {mac, ip};
           if (cidrPri.contains(ip)) {
             h.spoofing = false;
@@ -719,6 +721,8 @@ module.exports = class DNSMASQ {
           } else {
             h = null;
           }
+
+          log.info("static host:", util.inspect(h));
           return h;
         }).filter(x => x);
         
