@@ -751,10 +751,10 @@ module.exports = class DNSMASQ {
 
           //log.debug("static host:", util.inspect(h));
 
-          let idx_in_hosts = hosts.findIndex(h => h.mac === mac);
+          let idx = hosts.findIndex(h => h.mac === mac);
 
-          if (idx_in_hosts > -1 && h) {
-            hosts[idx_in_hosts] = h;
+          if (idx > -1 && h) {
+            hosts[idx] = h;
             h = null;
           }
 
