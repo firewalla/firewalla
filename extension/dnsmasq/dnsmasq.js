@@ -703,7 +703,13 @@ module.exports = class DNSMASQ {
 
     return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
       .then(async hosts => {
-        let static_hosts = (await redis.hgetallAsync('dhcp:static')).map((k, v) => {
+        let static_hosts = await redis.hgetallAsync('dhcp:static');
+
+        if (!static_hosts) {
+          return hosts;
+        }
+
+        let _hosts = static_hosts.map((k, v) => {
           let mac = k, ip = v;
           let h = {mac, ip};
           if (cidrPri.contains(ip)) {
@@ -716,7 +722,7 @@ module.exports = class DNSMASQ {
           return h;
         }).filter(x => x);
         
-        return hosts.concat(static_hosts);
+        return hosts.concat(_hosts);
       }).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
           `${h.mac},set:unmonitor,ignore` :
