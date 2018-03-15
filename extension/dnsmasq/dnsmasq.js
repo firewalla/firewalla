@@ -700,12 +700,13 @@ module.exports = class DNSMASQ {
   writeHostsFile() {
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
+    let lease_time = '2h';
 
     return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
       .then(async hosts => {
         let static_hosts = await redis.hgetallAsync('dhcp:static');
 
-        log.info("static hosts:", util.inspect(static_hosts));
+        log.debug("static hosts:", util.inspect(static_hosts));
 
         if (!static_hosts) {
           return hosts;
@@ -722,7 +723,7 @@ module.exports = class DNSMASQ {
             h = null;
           }
 
-          log.info("static host:", util.inspect(h));
+          log.debug("static host:", util.inspect(h));
           return h;
         }).filter(x => x);
 
@@ -730,11 +731,11 @@ module.exports = class DNSMASQ {
       }).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
           `${h.mac},set:unmonitor,ignore` :
-          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}1h`
+          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
         );
 
         let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}1h` :
+          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
           `${h.mac},set:monitor,ignore`
         );
 
