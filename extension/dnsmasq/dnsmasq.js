@@ -728,7 +728,7 @@ module.exports = class DNSMASQ {
           let idx_in_hosts = hosts.findIndex(h => h.mac === mac);
 
           if (idx_in_hosts > -1 && h) {
-            hosts[idx_in_hosts] = hl;
+            hosts[idx_in_hosts] = h;
             return null;
           } else {
             return h;
