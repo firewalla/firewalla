@@ -729,13 +729,13 @@ module.exports = class DNSMASQ {
         return hosts.concat(_hosts);
       }).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
-          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}ignore` :
-          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}24h`
+          `${h.mac},set:unmonitor,ignore` :
+          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}1h`
         );
 
         let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}24h` :
-          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}ignore`
+          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}1h` :
+          `${h.mac},set:monitor,ignore`
         );
 
         let _hosts = hostsList.join("\n") + "\n";
