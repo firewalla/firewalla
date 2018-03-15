@@ -97,6 +97,7 @@ module.exports = class DNSMASQ {
       this.shouldStart = false;
       this.needRestart = null;
       this.needReload = null;
+      this.needWriteHostsFile = null;
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
@@ -136,6 +137,10 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfReloadNeeded()
       }, 10 * 1000);
+
+      setInterval(() => {
+        this.checkIfWriteHostsFile();
+      }, 5 * 1000);
     }
 
     return instance;
@@ -679,12 +684,20 @@ module.exports = class DNSMASQ {
     }
   }
 
+  checkIfWriteHostsFile() {
+    if(this.needWriteHostsFile) {
+      log.info("need writeHostsFile is", this.needWriteHostsFile, {});
+    }
+    if(this.shouldStart && this.needWriteHostsFile) {
+      this.needWriteHostsFile = null;
+      this.writeHostsFile().then(() => {this.needReload = true});
+    }
+  }
+
   onSpoofChanged() {
     if (this.dhcpMode) {
-      this.writeHostsFile().then(() => {
-        log.info("Spoof status changed, set need reload to be true");
-        this.needReload = true;
-      });
+      this.needWriteHostsFile = true;
+      log.info("Spoof status changed, set need write hosts file to be true");
     }
   }
 
@@ -703,8 +716,8 @@ module.exports = class DNSMASQ {
     let lease_time = '24h';
 
     return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
-      .then(async(hosts => {
-        let static_hosts = await(redis.hgetallAsync('dhcp:static'));
+      .then(async (hosts => {
+        let static_hosts = await (redis.hgetallAsync('dhcp:static'));
 
         log.debug("static hosts:", util.inspect(static_hosts));
 
@@ -736,7 +749,7 @@ module.exports = class DNSMASQ {
         }).filter(x => x);
 
         return hosts.concat(_hosts).sort((a, b) => a.mac.localeCompare(b.mac));
-      })()).then(hosts => {
+      })).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
           `${h.mac},set:unmonitor,ignore` :
           `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
