@@ -125,6 +125,13 @@ module.exports = class DNSMASQ {
         family: []
       }
 
+      this.counters = {
+        reloadDnsmasq: 0,
+        writeHostsFile: 0,
+        restart: 0
+
+      }
+
       process.on('exit', () => {
         this.shouldStart = false;
         this.stop();
@@ -140,7 +147,7 @@ module.exports = class DNSMASQ {
 
       setInterval(() => {
         this.checkIfWriteHostsFile();
-      }, 5 * 1000);
+      }, 8 * 1000);
     }
 
     return instance;
@@ -660,15 +667,18 @@ module.exports = class DNSMASQ {
 
   checkIfRestartNeeded() {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
-    if(this.needRestart)
-      log.info("need restart is", this.needRestart, {})
+
+    if (this.needRestart) {
+      log.info("need restart is", this.needRestart, {});
+    }
+
     if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
       this.needRestart = null
       this.rawRestart((err) => {        
         if(err) {
           log.error("Failed to restart dnsmasq")
         } else {
-          log.info("dnsmasq restarted")
+          log.info("dnsmasq restarted:", this.counters.restart);
         }
       }) // just restart to have new policy filters take effect
     }
@@ -702,15 +712,18 @@ module.exports = class DNSMASQ {
   }
 
   reloadDnsmasq() {
+    this.counters.reloadDnsmasq ++;
     try {
       childProcess.execSync('sudo systemctl reload firemasq');
     } catch (err) {
       log.error("Unable to reload firemasq service", err, {});
     }
-    log.info("Dnsmasq has been Reloaded");
+    log.info("Dnsmasq has been Reloaded:", this.counters.reloadDnsmasq);
   }
 
   writeHostsFile() {
+    this.counters.writeHostsFile ++;
+
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
     let lease_time = '24h';
@@ -768,6 +781,8 @@ module.exports = class DNSMASQ {
 
         fs.writeFileSync(hostsFile, _hosts);
         fs.writeFileSync(altHostsFile, _altHosts);
+
+        log.info("Hosts file has been updated:", this.counters.writeHostsFile);
       });
   }
 
@@ -949,6 +964,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     log.info("Restarting dnsmasq...")
+    this.counters.restart ++;
 
     let cmd = "sudo systemctl restart firemasq";
 
