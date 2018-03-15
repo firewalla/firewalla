@@ -715,9 +715,9 @@ module.exports = class DNSMASQ {
           let mac = kv[0], ip = kv[1];
           let h = {mac, ip};
           if (cidrPri.contains(ip)) {
-            h.spoofing = false;
+            h.spoofing = 'false';
           } else if (cidrSec.contains(ip)) {
-            h.spoofing = true;
+            h.spoofing = 'true';
           } else {
             h = null;
           }
