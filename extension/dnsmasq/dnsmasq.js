@@ -698,28 +698,45 @@ module.exports = class DNSMASQ {
   }
 
   writeHostsFile() {
-    return Promise.all(
-      Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
-    ).then(hosts => {
-      let hostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:unmonitor,ignore` :
-        `${h.mac},set:monitor,24h`
-      );
+    let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
+    let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
 
-      let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:unmonitor,24h` :
-        `${h.mac},set:monitor,ignore`
-      );
+    return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
+      .then(async hosts => {
+        let static_hosts = (await redis.hgetallAsync('dhcp:static')).map((k, v) => {
+          let mac = k, ip = v;
+          let h = {mac, ip};
+          if (cidrPri.contains(ip)) {
+            h.spoofing = false;
+          } else if (cidrSec.contains(ip)) {
+            h.spoofing = true;
+          } else {
+            h = null;
+          }
+          return h;
+        }).filter(x => x);
+        
+        return hosts.concat(static_hosts);
+      }).then(hosts => {
+        let hostsList = hosts.map(h => (h.spoofing === 'false') ?
+          `${h.mac},set:unmonitor,ignore` :
+          `${h.mac},set:monitor,24h`
+        );
 
-      let _hosts = hostsList.join("\n") + "\n";
-      let _altHosts = altHostsList.join("\n") + "\n";
+        let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
+          `${h.mac},set:unmonitor,24h` :
+          `${h.mac},set:monitor,ignore`
+        );
 
-      log.debug("HostsFile:", util.inspect(hostsList));
-      log.debug("HostsAltFile:", util.inspect(altHostsList));
+        let _hosts = hostsList.join("\n") + "\n";
+        let _altHosts = altHostsList.join("\n") + "\n";
 
-      fs.writeFileSync(hostsFile, _hosts);
-      fs.writeFileSync(altHostsFile, _altHosts);
-    });
+        log.debug("HostsFile:", util.inspect(hostsList));
+        log.debug("HostsAltFile:", util.inspect(altHostsList));
+
+        fs.writeFileSync(hostsFile, _hosts);
+        fs.writeFileSync(altHostsFile, _altHosts);
+      });
   }
 
   rawStart(callback) {
