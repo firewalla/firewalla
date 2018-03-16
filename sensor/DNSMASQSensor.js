@@ -65,18 +65,14 @@ class DNSMASQSensor extends Sensor {
 
   _stop() {
     return new Promise((resolve, reject) => {
-      dnsmasq.stop((err) => {
-        if(!err) {
-          log.info("dnsmasq service is stopped successfully");
-          require('../util/delay.js').delay(1000)
-          .then(() => {
-            resolve();
-          })
-        } else {
-          log.error("Failed to stop dnsmasq: " + err);
-          reject(err);
-        }
-      })
+      dnsmasq.stop().then(() => {
+        log.info("dnsmasq service is stopped successfully");
+      }).then(() => {
+        require('../util/delay.js').delay(1000).then(() => resolve());
+      }).catch(err => {
+        log.error("Failed to stop dnsmasq: " + err);
+        reject(err);
+      });
     });
   }
 
