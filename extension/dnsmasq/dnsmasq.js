@@ -209,14 +209,14 @@ module.exports = class DNSMASQ {
 
   async updateFilter(type, force) {
     let result = await this._updateTmpFilter(type, force);
-    const filter = FILTER_FILE[type];
-    const filterTmp = FILTER_FILE[type + 'Tmp'];
-
     if (!result) {
       return;
     }
       
-    // need update
+    // needs update
+    const filter = FILTER_FILE[type];
+    const filterTmp = FILTER_FILE[type + 'Tmp'];
+
     log.info(`${type} filter file is `, filter);
     log.info(`${type} tmp filter file is `, filterTmp);
     await fs.renameAsync(filterTmp, filter);
@@ -392,6 +392,7 @@ module.exports = class DNSMASQ {
       await mkdirp(FILTER_DIR);
     } catch (err) {
       log.error("Error when mkdir:", FILTER_DIR, err, {});
+      return;
     }
     
     const filterFile = FILTER_FILE[type];
@@ -410,7 +411,7 @@ module.exports = class DNSMASQ {
       noent = true;
     }
         
-    // to update only if tmp file has not been updated recently
+    // to update only if filter file has not been updated recently or doesn't exsit
     if(force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
       try {
         await fs.statAsync(filterFileTmp);
@@ -426,21 +427,21 @@ module.exports = class DNSMASQ {
         hashes = await this._loadFilterFromBone(type);
       } catch (err) {
         log.error("Error when load filter from bone", err);
-        throw err;
+        return;
       }
       
       try {
         await this._writeHashFilterFile(type, hashes, filterFileTmp);
       } catch (err) {
         log.error("Error when writing hashes into filter file", err, {});
-        throw err;
+        return;
       }
 
       try {
         await this._writeHashIntoRedis(type, hashes);
       } catch (err) {
         log.error("Error when writing hashes into filter redis", err, {});
-        throw err;
+        return;
       }
       
       return true; // successfully updated hash filter files
