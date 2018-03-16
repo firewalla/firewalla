@@ -53,9 +53,6 @@ const bone = require("../../lib/Bone.js");
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const networkTool = require('../../net2/NetworkTool')();
 
 const dnsmasqBinary = __dirname + "/dnsmasq";
@@ -286,64 +283,59 @@ module.exports = class DNSMASQ {
     });
   }
 
-  addPolicyFilterEntry(domain, options) {
+  async addPolicyFilterEntry(domain, options) {
     options = options || {}
 
-    let entry = null
+    let entry = null;
     
-    if(options.use_blue_hole) {
+    if (options.use_blue_hole) {
       entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
     } else {
       entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
     }
-    
-    return async(() => {
-      if(this.workingInProgress) {
-        await (this.delay(1000))  // try again later
-        return this.addPolicyFilterEntry(domain);
-      }
 
-      this.workingInProgress = true
-      await (fs.appendFileAsync(policyFilterFile, entry))
-      this.workingInProgress = false
-    })().catch((err) => {
-      this.workingInProgress = false
-    })
+    try {
+      if(this.workingInProgress) {
+        await this.delay(1000);  // try again later
+        await this.addPolicyFilterEntry(domain, options);
+      }
+      this.workingInProgress = true;
+      await fs.appendFileAsync(policyFilterFile, entry);
+    } catch (err) {
+      log.error("Failed to write policy data file:", err, {});
+    } finally {
+      this.workingInProgress = false;
+    }
   }
 
-  removePolicyFilterEntry(domain) {
+  async removePolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
 
-    if(this.workingInProgress) {
-        return this.delay(1000)  // try again later
-          .then(() => {
-            return this.removePolicyFilterEntry(domain);
-          })
+    if (this.workingInProgress) {
+        await this.delay(1000);  // try again later
+        await this.removePolicyFilterEntry(domain);
     }
-
     this.workingInProgress = true;
 
-    return fs.readFileAsync(policyFilterFile, 'utf8')
-      .then((data) => {
+    try {
+      let data = await fs.readFileAsync(policyFilterFile, 'utf8');
 
       let newData = data.split("\n")
-        .filter((line) => line !== entry)
+        .filter(line => line !== entry)
         .join("\n");
 
-        return fs.writeFileAsync(policyFilterFile, newData)
-          .then(() => {
-            this.workingInProgress = false;
-          }).catch((err) => {
-            log.error("Failed to write policy data file:", err, {});
-            this.workingInProgress = false; // make sure the flag is reset back
-          });
-      })
+      await fs.writeFileAsync(policyFilterFile, newData);
+    } catch (err) {
+      log.error("Failed to write policy data file:", err, {});
+    } finally {
+      this.workingInProgress = false; // make sure the flag is reset back
+    }
   }
 
-  addPolicyFilterEntries(domains) {
-    let entries = domains.map((domain) => util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP));
-    let data = entries.join("");
-    return fs.appendFileAsync(policyFilterFile, data);
+  async addPolicyFilterEntries(domains) {
+    let entries = domains.map(domain => util.format("address=/%s/%s", domain, BLACK_HOLE_IP));
+    let data = entries.join("\n");
+    await fs.appendFileAsync(policyFilterFile, data);
   }
 
   setDefaultNameServers(key, nameservers) {
