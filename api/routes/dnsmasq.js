@@ -40,25 +40,17 @@ router.post('/filter/renew',
 router.post('/iptables/add',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.add_iptables_rules((err, result) => {
-      if(err) {
-        res.status(500).send('');
-      } else {
-        res.status(200).send('');
-      }
-    });
+    d.add_iptables_rules()
+      .then(result => res.status(200).send(''))
+      .catch(err => res.status(500).send(''));
   });
 
 router.post('/iptables/remove',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.remove_iptables_rules((err, result) => {
-      if(err) {
-        res.status(500).send('');
-      } else {
-        res.status(200).send('');
-      }
-    });
+    d.remove_iptables_rules()
+      .then(result => res.status(200).send(''))
+      .catch(err => res.status(500).send(''));
   });
 
 router.get('/detail_status',
