@@ -796,7 +796,7 @@ module.exports = class {
           reason: alarm.type,
           "if.type": i_type,
           "if.target": i_target,
-          category: (userFeedback && userFeedback.category) || ""
+          category: (intelFeedback && intelFeedback.category) || ""
         });
 
         if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
