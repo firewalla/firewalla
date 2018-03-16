@@ -697,6 +697,7 @@ module.exports = class DNSMASQ {
 
   reloadDnsmasq() {
     this.counter.reloadDnsmasq ++;
+    log.info("start to reload dnsmasq (-HUP):", this.counter.reloadDnsmasq);
     try {
       childProcess.execSync('sudo systemctl reload firemasq');
     } catch (err) {
@@ -707,6 +708,7 @@ module.exports = class DNSMASQ {
 
   writeHostsFile() {
     this.counter.writeHostsFile ++;
+    log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
@@ -719,7 +721,7 @@ module.exports = class DNSMASQ {
         log.debug("static hosts:", util.inspect(static_hosts));
 
         if (!static_hosts) {
-          return hosts;
+          return hosts.sort((a, b) => a.mac.localeCompare(b.mac));
         }
 
         let _hosts = Object.entries(static_hosts).map(kv => {
@@ -765,9 +767,7 @@ module.exports = class DNSMASQ {
 
         fs.writeFileSync(hostsFile, _hosts);
         fs.writeFileSync(altHostsFile, _altHosts);
-
-        log.info("Hosts file has been updated:", this.counter.writeHostsFile);
-      });
+      }).then(() => log.info("Hosts file has been updated:", this.counter.writeHostsFile));
   }
 
   rawStart(callback) {
