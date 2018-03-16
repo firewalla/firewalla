@@ -20,19 +20,10 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let bonjour = require('bonjour')();
-let ip = require('ip');
-
-let async = require('async');
-
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
-let Promise = require('bluebird');
-
 let Mode = require('../net2/Mode.js');
-
-let flowControl = require('../util/FlowControl');
 
 class DNSMASQSensor extends Sensor {
   constructor() {
