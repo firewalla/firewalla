@@ -53,7 +53,6 @@ const bone = require("../../lib/Bone.js");
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
 
-const execAsync = require('child-process-promise').exec
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
@@ -192,22 +191,20 @@ module.exports = class DNSMASQ {
     }
   }
 
-  updateResolvConf() {
-    return async(() => {
-      let nameservers = this.getAllDefaultNameServers()
-      if (!nameservers || nameservers.length === 0) {
-        nameservers = sysManager.myDNS();
-      }
+  async updateResolvConf() {
+    let nameservers = this.getAllDefaultNameServers()
+    if (!nameservers || nameservers.length === 0) {
+      nameservers = sysManager.myDNS();
+    }
 
-      if (!nameservers || nameservers.length === 0) {
-        nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
-      }
+    if (!nameservers || nameservers.length === 0) {
+      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
+    }
 
-      let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
-      let config = entries.join('\n');
-      config += "\n";
-      fs.writeFileSync(resolvFile, config);
-    });
+    let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
+    let config = entries.join('\n');
+    config += "\n";
+    fs.writeFileSync(resolvFile, config);
   }
 
   updateFilter(type, force, callback) {
@@ -648,7 +645,7 @@ module.exports = class DNSMASQ {
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
     log.info("Command to check dnsmasq: ", cmd);
 
-    await execAsync(cmd);
+    let {stdout, stderr} = await execAsync(cmd);
     return stdout !== "";
   }
 
