@@ -52,15 +52,13 @@ class DNSMASQSensor extends Sensor {
         }
 
         // no force update
-        dnsmasq.start(false, (err) => {
-          if(!err) {
-            log.info("dnsmasq service is started successfully");
-            resolve();
-          } else {
-            log.error("Failed to start dnsmasq: " + err);
-            reject(err);
-          }
-        })
+        dnsmasq.start(false).then(() => {
+          log.info("dnsmasq service is started successfully");
+          resolve();
+        }).catch(err => {
+          log.error("Failed to start dnsmasq: " + err);
+          reject(err);
+        });
       })
     });
   }
