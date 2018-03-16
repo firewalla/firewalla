@@ -392,21 +392,15 @@ module.exports = class DNSMASQ {
     });
   }
 
-  reload() {
+  async reload() {
     log.info("Dnsmasq reloading.");
-    let self = this
-    return new Promise((resolve, reject) => {
-      self.start(false, (err) => {
-        if (err) {
-          reject(err);
-        }
-        resolve();
-      });
-    }).then(() => {
+    let self = this;
+    try {
+      await self.start(false);
       log.info("Dnsmasq reload complete.");
-    }).catch((err) => {
+    } catch (err) {
       log.error("Got error when reloading dnsmasq:", err, {})
-    });
+    }
   }
   
   _updateTmpFilter(type, force, callback) {
@@ -499,124 +493,101 @@ module.exports = class DNSMASQ {
     });
   }
 
-  _add_all_iptables_rules() {
-    return async(() => {
-      await (this._add_iptables_rules())
-      await (this._add_ip6tables_rules())
-    });
+  async _add_all_iptables_rules() {
+    await this._add_iptables_rules();
+    await this._add_ip6tables_rules();
   }
   
-  _add_iptables_rules() {
-    return async(() => {
-      let subnets = await (networkTool.getLocalNetworkSubnets());
-      let localIP = sysManager.myIp();
-      let dns = `${localIP}:8853`;
+  async _add_iptables_rules() {
+    let subnets = await networkTool.getLocalNetworkSubnets();
+    let localIP = sysManager.myIp();
+    let dns = `${localIP}:8853`;
 
-      subnets.forEach(subnet => {
-        await (iptables.dnsChangeAsync(subnet, dns, true));
-      })
-    });
+    subnets.forEach(subnet => {
+      await (iptables.dnsChangeAsync(subnet, dns, true));
+    })
   }
 
-  _add_ip6tables_rules() {
-    return async(() => {
-      let ipv6s = sysManager.myIp6();
+  async _add_ip6tables_rules() {
+    let ipv6s = sysManager.myIp6();
 
-      for(let index in ipv6s) {
-        let ip6 = ipv6s[index]
-        if(ip6.startsWith("fe80::")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-          await (ip6tables.dnsRedirectAsync(ip6, 8853))
-        }
+    for(let index in ipv6s) {
+      let ip6 = ipv6s[index]
+      if(ip6.startsWith("fe80::")) {
+        // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+        await ip6tables.dnsRedirectAsync(ip6, 8853)
       }
-    })();
+    }
   }
 
-  _remove_ip6tables_rules() {
-    return async(() => {
-      let ipv6s = sysManager.myIp6();
+  async _remove_ip6tables_rules() {
+    let ipv6s = sysManager.myIp6();
 
-      for(let index in ipv6s) {
-        let ip6 = ipv6s[index]
-        if(ip6.startsWith("fe80:")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-          await (ip6tables.dnsUnredirectAsync(ip6, 8853))
-        }
+    for(let index in ipv6s) {
+      let ip6 = ipv6s[index]
+      if(ip6.startsWith("fe80:")) {
+        // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+        await ip6tables.dnsUnredirectAsync(ip6, 8853)
       }
-    })();
+    }
   }    
 
-  add_iptables_rules(callback) {
-    callback = callback || function() {}
-
+  async add_iptables_rules() {
     let dnses = sysManager.myDNS();
     let dnsString = dnses.join(" ");
     let localIP = sysManager.myIp();
 
     let rule = util.format("DNS_IPS=\"%s\" LOCAL_IP=%s bash %s", dnsString, localIP, require('path').resolve(__dirname, "add_iptables.template.sh"));
     log.info("Command to add iptables rules: ", rule);
-
-    require('child_process').exec(rule, (err, out, code) => {
-      if(err) {
-        log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules: " + err);
-        callback(err);
-      } else {
-        log.info("DNSMASQ:IPTABLES", "Iptables rules are added successfully");
-        callback();
-      }
-    });
+    
+    try {
+      await execAsync(rule);
+      log.info("DNSMASQ:IPTABLES", "Iptables rules are added successfully");
+    } catch (err) {
+      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err, {});
+      throw err;
+    }
   }
 
-  _remove_all_iptables_rules() {
-    return async(() => {
-      await (this._remove_iptables_rules())
-      await (this._remove_ip6tables_rules())
-    })()
+  async _remove_all_iptables_rules() {
+    await this._remove_iptables_rules()
+    await this._remove_ip6tables_rules();
   }
   
-  _remove_iptables_rules() {
-    return async(() => {
-      let subnets = await (networkTool.getLocalNetworkSubnets());
-      let localIP = sysManager.myIp();
-      let dns = `${localIP}:8853`;
+  async _remove_iptables_rules() {
+    let subnets = await (networkTool.getLocalNetworkSubnets());
+    let localIP = sysManager.myIp();
+    let dns = `${localIP}:8853`;
 
-      subnets.forEach(subnet => {
-        await (iptables.dnsChangeAsync(subnet, dns, false, true));
-      })
+    subnets.forEach(async subnet => {
+      await iptables.dnsChangeAsync(subnet, dns, false, true);
+    })
 
-      await (require('../../control/Block.js').unblock(BLACK_HOLE_IP));
-    })();
+    await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
   }
 
-  remove_iptables_rules(callback) {
-    callback = callback || function() {}
-
+  async remove_iptables_rules() {
     let dnses = sysManager.myDNS();
     let dnsString = dnses.join(" ");
     let localIP = sysManager.myIp();
 
     let rule = util.format("DNS_IPS=\"%s\" LOCAL_IP=%s bash %s", dnsString, localIP, require('path').resolve(__dirname, "remove_iptables.template.sh"));
 
-    require('child_process').exec(rule, (err, out, code) => {
-      if(err) {
-        log.error("DNSMASQ:IPTABLES:Error", "Failed to remove iptables rules: " + err);
-        callback(err);
-      } else {
-        log.info("DNSMASQ:IPTABLES", "Iptables rules are removed successfully");
-        callback();
-      }
-    });
+    try {
+      await execAsync(rule);
+      log.info("DNSMASQ:IPTABLES", "Iptables rules are removed successfully");
+    } catch (err) {
+      log.error("DNSMASQ:IPTABLES:Error", "Failed to remove iptables rules: " + err);
+      throw err;
+    }
   }
   
-  _writeHashIntoRedis(type, hashes) {
-    return async(() => {
-      log.info(`Writing hash into redis for type: ${type}`);
-      let key = `dns:hashset:${type}`;
-      let jobs = hashes.map(hash => redis.saddAsync(key, hash));
-      await(Promise.all(jobs));
-      let count = await(redis.scardAsync(key));
-      log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
-    })();
+  async _writeHashIntoRedis(type, hashes) {
+    log.info(`Writing hash into redis for type: ${type}`);
+    let key = `dns:hashset:${type}`;
+    await Promise.map(hashes, async hash => await redis.saddAsync(key, hash));
+    let count = await redis.scardAsync(key);
+    log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
   }
 
   _writeHashFilterFile(type, hashes, file, callback) {
