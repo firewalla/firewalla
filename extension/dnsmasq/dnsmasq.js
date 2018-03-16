@@ -982,7 +982,7 @@ module.exports = class DNSMASQ {
       await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity();
 
-    if (!checkResult) {
+    if (checkResult) {
       this.failCount = 0 // reset
       return;
     }
