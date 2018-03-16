@@ -243,6 +243,7 @@ module.exports = class DNSMASQ {
       setImmediate(this._reloadFilter.bind(this), type);
     }
   }
+  
   _reloadFilter(type) {
     let preState = this.state[type];
     let nextState = this.nextState[type];
@@ -259,7 +260,7 @@ module.exports = class DNSMASQ {
           log.info(`Update ${type} filters successful.`);
         }
 
-        this.reload().finally(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
+        this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
       });
       
       
@@ -274,7 +275,7 @@ module.exports = class DNSMASQ {
       log.info(`Start to clean up ${type} filters.`);
       this.cleanUpFilter(type)
         .catch(err => log.error(`Error when clean up ${type} filters`, err, {}))
-        .then(() => this.reload().finally(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
+        .then(() => this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
     }
   }
 
