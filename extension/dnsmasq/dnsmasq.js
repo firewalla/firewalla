@@ -387,10 +387,8 @@ module.exports = class DNSMASQ {
     return list
   }
 
-  delay(t) {
-    return new Promise(function(resolve) {
-      setTimeout(resolve, t)
-    });
+  async delay(t) {
+    return new Promise(resolve => setTimeout(resolve, t));
   }
 
   async reload() {
@@ -504,17 +502,17 @@ module.exports = class DNSMASQ {
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
 
-    subnets.forEach(subnet => {
-      await (iptables.dnsChangeAsync(subnet, dns, true));
+    subnets.forEach(async subnet => {
+      await iptables.dnsChangeAsync(subnet, dns, true);
     })
   }
 
   async _add_ip6tables_rules() {
     let ipv6s = sysManager.myIp6();
 
-    for(let index in ipv6s) {
+    for (let index in ipv6s) {
       let ip6 = ipv6s[index]
-      if(ip6.startsWith("fe80::")) {
+      if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
         await ip6tables.dnsRedirectAsync(ip6, 8853)
       }
@@ -522,14 +520,18 @@ module.exports = class DNSMASQ {
   }
 
   async _remove_ip6tables_rules() {
-    let ipv6s = sysManager.myIp6();
+    try {
+      let ipv6s = sysManager.myIp6();
 
-    for(let index in ipv6s) {
-      let ip6 = ipv6s[index]
-      if(ip6.startsWith("fe80:")) {
-        // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-        await ip6tables.dnsUnredirectAsync(ip6, 8853)
+      for (let index in ipv6s) {
+        let ip6 = ipv6s[index]
+        if (ip6.startsWith("fe80:")) {
+          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+          await ip6tables.dnsUnredirectAsync(ip6, 8853)
+        }
       }
+    } catch (err) {
+      log.error("Error when remove ip6tables rules", err, {});
     }
   }    
 
@@ -556,15 +558,19 @@ module.exports = class DNSMASQ {
   }
   
   async _remove_iptables_rules() {
-    let subnets = await (networkTool.getLocalNetworkSubnets());
-    let localIP = sysManager.myIp();
-    let dns = `${localIP}:8853`;
+    try {
+      let subnets = await networkTool.getLocalNetworkSubnets();
+      let localIP = sysManager.myIp();
+      let dns = `${localIP}:8853`;
 
-    subnets.forEach(async subnet => {
-      await iptables.dnsChangeAsync(subnet, dns, false, true);
-    })
+      subnets.forEach(async subnet => {
+        await iptables.dnsChangeAsync(subnet, dns, false, true);
+      })
 
-    await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
+      await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
+    } catch (err) {
+      log.error("Error when removing iptable rules", err, {});
+    }
   }
 
   async remove_iptables_rules() {
@@ -586,7 +592,7 @@ module.exports = class DNSMASQ {
   async _writeHashIntoRedis(type, hashes) {
     log.info(`Writing hash into redis for type: ${type}`);
     let key = `dns:hashset:${type}`;
-    await Promise.map(hashes, async hash => await redis.saddAsync(key, hash));
+    await Promise.map(hashes, async hash => redis.saddAsync(key, hash));
     let count = await redis.scardAsync(key);
     log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
   }
@@ -657,11 +663,11 @@ module.exports = class DNSMASQ {
     }
   }
 
-  reloadDnsmasq() {
+  async reloadDnsmasq() {
     this.counter.reloadDnsmasq ++;
     log.info("start to reload dnsmasq (-HUP):", this.counter.reloadDnsmasq);
     try {
-      childProcess.execSync('sudo systemctl reload firemasq');
+      await execAsync('sudo systemctl reload firemasq');
     } catch (err) {
       log.error("Unable to reload firemasq service", err, {});
     }
@@ -669,67 +675,64 @@ module.exports = class DNSMASQ {
   }
 
   async writeHostsFile() {
-    this.counter.writeHostsFile ++;
+    this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
     let lease_time = '24h';
 
-    return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
-      .then(async hosts => {
-        let static_hosts = await redis.hgetallAsync('dhcp:static');
+    let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
+    let static_hosts = await redis.hgetallAsync('dhcp:static');
 
-        log.debug("static hosts:", util.inspect(static_hosts));
+    log.debug("static hosts:", util.inspect(static_hosts));
 
-        if (!static_hosts) {
-          return hosts.sort((a, b) => a.mac.localeCompare(b.mac));
+    if (static_hosts) {
+      let _hosts = Object.entries(static_hosts).map(kv => {
+        let mac = kv[0], ip = kv[1];
+        let h = {mac, ip};
+        
+        if (cidrPri.contains(ip)) {
+          h.spoofing = 'false';
+        } else if (cidrSec.contains(ip)) {
+          h.spoofing = 'true';
+        } else {
+          h = null;
         }
+        //log.debug("static host:", util.inspect(h));
+        
+        let idx = hosts.findIndex(h => h.mac === mac);
+        if (idx > -1 && h) {
+          hosts[idx] = h;
+          h = null;
+        }
+        return h;
+      }).filter(x => x);
 
-        let _hosts = Object.entries(static_hosts).map(kv => {
-          let mac = kv[0], ip = kv[1];
-          let h = {mac, ip};
-          if (cidrPri.contains(ip)) {
-            h.spoofing = 'false';
-          } else if (cidrSec.contains(ip)) {
-            h.spoofing = 'true';
-          } else {
-            h = null;
-          }
+      hosts = hosts.concat(_hosts);
+    }
 
-          //log.debug("static host:", util.inspect(h));
+    hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
-          let idx = hosts.findIndex(h => h.mac === mac);
+    let hostsList = hosts.map(h => (h.spoofing === 'false') ?
+      `${h.mac},set:unmonitor,ignore` :
+      `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
+    );
 
-          if (idx > -1 && h) {
-            hosts[idx] = h;
-            h = null;
-          }
+    let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
+      `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
+      `${h.mac},set:monitor,ignore`
+    );
 
-          return h;
-        }).filter(x => x);
+    let _hosts = hostsList.join("\n") + "\n";
+    let _altHosts = altHostsList.join("\n") + "\n";
 
-        return hosts.concat(_hosts).sort((a, b) => a.mac.localeCompare(b.mac));
-      }).then(hosts => {
-        let hostsList = hosts.map(h => (h.spoofing === 'false') ?
-          `${h.mac},set:unmonitor,ignore` :
-          `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
-        );
+    log.debug("HostsFile:", util.inspect(hostsList));
+    log.debug("HostsAltFile:", util.inspect(altHostsList));
 
-        let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-          `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
-          `${h.mac},set:monitor,ignore`
-        );
-
-        let _hosts = hostsList.join("\n") + "\n";
-        let _altHosts = altHostsList.join("\n") + "\n";
-
-        log.debug("HostsFile:", util.inspect(hostsList));
-        log.debug("HostsAltFile:", util.inspect(altHostsList));
-
-        fs.writeFileSync(hostsFile, _hosts);
-        fs.writeFileSync(altHostsFile, _altHosts);
-      }).then(() => log.info("Hosts file has been updated:", this.counter.writeHostsFile));
+    fs.writeFileSync(hostsFile, _hosts);
+    fs.writeFileSync(altHostsFile, _altHosts);
+    log.info("Hosts file has been updated:", this.counter.writeHostsFile)
   }
 
   async rawStart() {
@@ -774,31 +777,16 @@ module.exports = class DNSMASQ {
       p.stderr.on('data', (data) => {
         log.info("DNSMASQ STDERR:", data.toString(), {})
       })
-
-      // p.on('exit', (code, signal) => {
-      //   if(code === 0) {
-      //     log.info(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      //   } else {
-      //     log.error(`DNSMASQ exited with code ${code}, signal ${signal}`)
-      //   }
-
-      //   if(this.shouldStart) {
-      //     log.info("Restarting dnsmasq...")
-      //     this.rawStart() // auto restart if failed unexpectedly
-      //   }
-      // })
-
-      setTimeout(() => {
-        callback(null)
-      }, 1000)
+      
+      await this.delay(1000);
     } else {
-      this.restartDnsmasq();
+      await this.restartDnsmasq();
     }
   }
 
-  restartDnsmasq() {
+  async restartDnsmasq() {
     try {
-      childProcess.execSync("sudo systemctl restart firemasq");
+      await execAsync("sudo systemctl restart firemasq");
       if (!statusCheckTimer) {
         statusCheckTimer = setInterval(() => {
           this.statusCheck()
@@ -843,7 +831,7 @@ module.exports = class DNSMASQ {
     // and the DNS server and default route are set to the address of the machine running dnsmasq.
     cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
 
-    sysManager.myDNS().forEach((dns) => {
+    sysManager.myDNS().forEach(dns => {
       cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
     });
     return cmd;
