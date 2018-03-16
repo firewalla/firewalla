@@ -98,7 +98,7 @@ class DNSMASQSensor extends Sensor {
         return this._start()
           .then(() => {
             if(!this.registered) {
-              log.info("Registering dnsmasq events");
+              log.info("Registering dnsmasq events listeners");
 
               sem.on("StartDNS", (event) => {
                 // NO NEED TO RELOAD DNSMASQ if it's gone, it's going to be managed by systemctl
