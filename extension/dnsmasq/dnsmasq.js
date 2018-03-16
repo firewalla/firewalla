@@ -997,7 +997,7 @@ module.exports = class DNSMASQ {
       }, null);
     } else {
       let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
-      log.info("dnsmasq running status: \n", stdout, {})
+      log.debug("dnsmasq running status: \n", stdout, {})
 
       // restart this service, something is wrong
       try {
