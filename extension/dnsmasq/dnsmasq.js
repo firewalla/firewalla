@@ -152,7 +152,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
-    require('child_process').exec(install_cmd, (err, out, code) => {
+    require('child_process').exec(install_cmd, (err, stdout, stderr) => {
       if (err) {
         log.error("DNSMASQ:INSTALL:Error", "Failed to execute script install.sh", err);
       } else {
