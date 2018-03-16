@@ -572,11 +572,12 @@ module.exports = class DNSMASQ {
 
   async _writeHashFilterFile(type, hashes, file) {
     return new Promise((resolve, reject) => {
-      log.info("Write hash filter file:", file);
+      log.info("Writing hash filter file:", file);
 
       let writer = fs.createWriteStream(file);
 
       writer.on('finish', () => {
+        log.info("Finished writing hash filter file", file);
         resolve();
       });
       
