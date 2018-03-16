@@ -207,28 +207,19 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(resolvFile, config);
   }
 
-  updateFilter(type, force, callback) {
-    callback = callback || function() {}
+  async updateFilter(type, force) {
+    let result = await this._updateTmpFilter(type, force);
+    const filter = FILTER_FILE[type];
+    const filterTmp = FILTER_FILE[type + 'Tmp'];
 
-    this._updateTmpFilter(type, force, (err, result) => {
-      if (err) {
-        callback(err);
-        return;
-      }
-
-      const filter = FILTER_FILE[type];
-      const filterTmp = FILTER_FILE[type + 'Tmp'];
-
-      if (result) {
-        // need update
-        log.debug(`${type} filter file is `, filter);
-        log.debug(`${type} tmp filter file is `, filterTmp);
-        fs.rename(filterTmp, filter, callback);
-      } else {
-        // no need to update
-        callback(null);
-      }
-    });
+    if (!result) {
+      return;
+    }
+      
+    // need update
+    log.info(`${type} filter file is `, filter);
+    log.info(`${type} tmp filter file is `, filterTmp);
+    await fs.renameAsync(filterTmp, filter);
   }
 
   _scheduleNextReload(type, oldNextState, curNextState) {
@@ -253,18 +244,13 @@ module.exports = class DNSMASQ {
 
     if (nextState === true) {
       log.info(`Start to update ${type} filters.`);
-      this.updateFilter(type, true, (err) => {
-        if (err) {
-          log.error(`Update ${type} filters Failed!`, err, {});
-        } else {
+      this.updateFilter(type, true)
+        .then(result => {
           log.info(`Update ${type} filters successful.`);
-        }
-
-        this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
-      });
-      
-      
-      
+          this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
+        }).catch(err => {
+          log.error(`Update ${type} filters Failed!`, err, {});
+        });
     } else {
       if (preState === false && nextState === false) {
         // disabled, no need do anything
@@ -294,17 +280,14 @@ module.exports = class DNSMASQ {
     const file = FILTER_FILE[type];
 
     log.info("Clean up filter file:", file);
-    return fs.unlinkAsync(file)
-      .catch(err => {
-        if (err) {
-          if (err.code === 'ENOENT') {
-            // ignore
-            log.info(`Filter file '${file}' not exist, ignore`);
-          } else {
-            log.error(`Failed to remove filter file: '${file}'`, err, {})
-          }
-        }
-      });
+    return fs.unlinkAsync(file).catch(err => {
+      if (err.code === 'ENOENT') {
+        // ignore
+        log.info(`Filter file '${file}' not exist, ignore`);
+      } else {
+        log.error(`Failed to remove filter file: '${file}'`, err, {})
+      }
+    });
   }
 
   addPolicyFilterEntry(domain, options) {
@@ -402,93 +385,82 @@ module.exports = class DNSMASQ {
     }
   }
   
-  _updateTmpFilter(type, force, callback) {
-    callback = callback || function() {}
+  async _updateTmpFilter(type, force) {
+    let mkdirp = util.promisify(require('mkdirp'));
 
-    let mkdirp = require('mkdirp');
-    mkdirp(FILTER_DIR, (err) => {
+    try {
+      await mkdirp(FILTER_DIR);
+    } catch (err) {
+      log.error("Error when mkdir:", FILTER_DIR, err, {});
+    }
+    
+    const filterFile = FILTER_FILE[type];
+    const filterFileTmp = FILTER_FILE[type + 'Tmp'];
 
-      if(err) {
-        callback(err);
-        return;
+    // Check if the filter file is older enough that needs to refresh
+    let stats, noent;
+    try {
+      stats = await fs.statAsync(filterFile);
+    } catch (err) {
+      // no such file, need to crate one
+      //log.error("Error when fs.stat", filterFile, err, {});
+      if(err.code !== "ENOENT") {
+        throw err;
+      }
+      noent = true;
+    }
+        
+    // to update only if tmp file has not been updated recently
+    if(force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
+      try {
+        await fs.statAsync(filterFileTmp);
+        await fs.unlinkAsync(filterFileTmp);
+      } catch (err) {
+        if(err.code !== "ENOENT") {
+          throw err;
+        }
+      }
+      
+      let hashes = null;
+      try {
+        hashes = await this._loadFilterFromBone(type);
+      } catch (err) {
+        log.error("Error when load filter from bone", err);
+        throw err;
+      }
+      
+      try {
+        await this._writeHashFilterFile(type, hashes, filterFileTmp);
+      } catch (err) {
+        log.error("Error when writing hashes into filter file", err, {});
+        throw err;
       }
 
-      const filterFile = FILTER_FILE[type];
-      const filterFileTmp = FILTER_FILE[type + 'Tmp'];
-
-      // Check if the filter file is older enough that needs to refresh
-      fs.stat(filterFile, (err, stats) => {
-        if (!err) { // already exists
-          if(force === true ||
-             (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
-
-            fs.stat(filterFileTmp, (err, stats) => {
-              if(!err) {
-                fs.unlinkSync(filterFileTmp);
-              } else if(err.code !== "ENOENT") {
-                // unexpected err
-                callback(err);
-                return;
-              }
-
-              this._loadFilterFromBone(type, (err, hashes) => {
-                if(err) {
-                  callback(err);
-                  return;
-                }
-
-                this._writeHashFilterFile(type, hashes, filterFileTmp, (err) => {
-                  if (err) {
-                    callback(err);
-                    return;
-                  }
-                  
-                  this._writeHashIntoRedis(type, hashes)
-                    .then(() => callback(null, 1))
-                    .catch(err => {
-                      log.error("Error when writing hashes into redis", err, {});
-                      callback(err);
-                    });
-                });
-              });
-            });
-          } else {
-            // nothing to update if tmp file is already updated recently
-            callback(null, 0);
-          }
-        } else { // no such file, need to crate one
-          this._loadFilterFromBone(type, (err, hashes) => {
-            if(err) {
-              callback(err);
-              return;
-            }
-            this._writeHashFilterFile(type, hashes, filterFileTmp, (err) => {
-              if(err) {
-                callback(err);
-              } else {
-                callback(null, 1);
-              }
-            });
-          });
-        }
-      });
-    });
+      try {
+        await this._writeHashIntoRedis(type, hashes);
+      } catch (err) {
+        log.error("Error when writing hashes into filter redis", err, {});
+        throw err;
+      }
+      
+      return true; // successfully updated hash filter files
+    } 
   }
 
-  _loadFilterFromBone(type, callback) {
-    callback = callback || function() {}
-
+  async _loadFilterFromBone(type) {
     const name = f.isProduction() ? this.hashTypes[type] : this.hashTypes[type] + '-dev';
 
     log.info(`Load data set from bone: ${name}`);
 
-    bone.hashset(name, (err,data) => {
-      if(err) {
-        callback(err);
-      } else {
-        let d = JSON.parse(data)
-        callback(null, d);
-      }
+    return new Promise((resolve, reject) => {
+      bone.hashset(name, (err, data) => {
+        if (err) {
+          reject(err);
+        } else {
+          let d = JSON.parse(data)
+          resolve(d);
+        }
+      });
     });
   }
 
@@ -597,28 +569,33 @@ module.exports = class DNSMASQ {
     log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
   }
 
-  _writeHashFilterFile(type, hashes, file, callback) {
-    callback = callback || function() {}
-    
-    let writer = fs.createWriteStream(file);
+  async _writeHashFilterFile(type, hashes, file) {
+    return new Promise((resolve, reject) => {
+      let writer = fs.createWriteStream(file);
 
-    let targetIP = BLACK_HOLE_IP
+      writer.on('finish', () => {
+        resolve();
+      });
+      
+      writer.on('error', err => {
+        reject(err);
+      });
 
-    if(type === "family") {
-      targetIP = BLUE_HOLE_IP
-    }
+      let targetIP = BLACK_HOLE_IP
 
-    hashes.forEach((hash) => {
-      let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
-      writer.write(line);
-    });
+      if (type === "family") {
+        targetIP = BLUE_HOLE_IP
+      }
 
-    writer.end((err) => {
-      callback(err);
+      hashes.forEach((hash) => {
+        let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
+        writer.write(line);
+      });
+      
+      writer.end();
     });
   }
-
-
+  
   async checkStatus() {
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
     log.info("Command to check dnsmasq: ", cmd);
