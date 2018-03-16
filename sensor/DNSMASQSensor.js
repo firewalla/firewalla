@@ -39,46 +39,32 @@ class DNSMASQSensor extends Sensor {
     super();
 
     this.dhcpMode = false;
-    this.dnsMode = false;
     this.registered = false;
   }
 
   _start() {
-    return new Promise((resolve, reject) => {
-      dnsmasq.install((err) => {
-        if(err) {
-          log.error("Fail to install dnsmasq: " + err);
-          return;
-        }
-
-        // no force update
-        dnsmasq.start(false).then(() => {
-          log.info("dnsmasq service is started successfully");
-          resolve();
-        }).catch(err => {
-          log.error("Failed to start dnsmasq: " + err);
-          reject(err);
-        });
+    return dnsmasq.install()
+      .catch(err => {
+        log.error("Fail to install dnsmasq: " + err);
+        throw err;
       })
-    });
+      .then(() => dnsmasq.start(false) /*no force update*/ )
+      .catch(err => log.error("Failed to start dnsmasq: " + err))
+      .then(() => log.info("dnsmasq service is started successfully"));
   }
 
   _stop() {
-    return new Promise((resolve, reject) => {
-      dnsmasq.stop().then(() => {
-        log.info("dnsmasq service is stopped successfully");
-      }).then(() => {
-        require('../util/delay.js').delay(1000).then(() => resolve());
-      }).catch(err => {
+    return dnsmasq.stop()
+      .catch(err => {
         log.error("Failed to stop dnsmasq: " + err);
-        reject(err);
-      });
-    });
+        throw err;
+      })
+      .then(() => log.info("dnsmasq service is stopped successfully"))
+      .then(() => require('../util/delay.js').delay(1000));
   }
 
   reload() {
     dnsmasq.needRestart = new Date() / 1000
-    //return flowControl.reload(dnsmasq.reload, dnsmasq);
   }
 
   run() {

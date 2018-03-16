@@ -148,22 +148,18 @@ module.exports = class DNSMASQ {
     return instance;
   }
 
-  install(callback) {
-    callback = callback || function() {}
-
+  async install() {
     let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
-    require('child_process').exec(install_cmd, (err, stdout, stderr) => {
-      if (err) {
-        log.error("DNSMASQ:INSTALL:Error", "Failed to execute script install.sh", err);
-      } else {
-        log.info("DNSMASQ:INSTALL:Success", "Dnsmasq is installed successfully");
-      }
-
-      callback(err, null);
-    });
+    try {
+      await execAsync(install_cmd);
+      log.info("DNSMASQ:INSTALL:Success", "Dnsmasq is installed successfully");
+    } catch (err) {
+      log.error("DNSMASQ:INSTALL:Error", "Failed to execute script install.sh", err);
+      throw err;
+    }
   }
 
-  uninstall(callback) {
+  async uninstall() {
     // TODO
   }
 
