@@ -20,6 +20,8 @@ const userID = f.getUserID();
 
 const childProcess = require('child_process');
 
+const execAsync = util.promisify(childProcess.exec);
+
 const Promise = require('bluebird');
 const Redis = require('redis');
 const redis = Redis.createClient();
@@ -51,7 +53,7 @@ const bone = require("../../lib/Bone.js");
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
 
-const exec = require('child-process-promise').exec
+const execAsync = require('child-process-promise').exec
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
@@ -167,7 +169,7 @@ module.exports = class DNSMASQ {
   }
 
   // in format 127.0.0.1#5353
-  setUpstreamDNS(dns) {
+  async setUpstreamDNS(dns) {
     if(dns === upstreamDNS) {
       log.info("upstreamdns is same as dns, ignored. (" + dns + ")");
       return;
@@ -176,38 +178,36 @@ module.exports = class DNSMASQ {
     log.info("upstream dns is set to", dns);
     upstreamDNS = dns;
 
-    this.checkStatus((enabled) => {
-      if(enabled) {
-        this.start(false, (err) => {
-          if(err) {
-            log.error("Failed to restart dnsmasq to apply new upstream dns");
-          } else {
-            log.info("dnsmasq is restarted to apply new upstream dns");
-          }
-        });
-      } else {
-        // do nothing if it is not enabled
+    let enabled = await this.checkStatus();
+    
+    if(enabled) {
+      try {
+        await this.start(false);
+        log.info("dnsmasq is restarted to apply new upstream dns");
+      } catch (err) {
+        log.error("Failed to restart dnsmasq to apply new upstream dns");
       }
-    });
+    } else {
+      // do nothing if it is not enabled
+    }
   }
 
-  updateResolvConf(callback) {
-    callback = callback || function() {}
+  updateResolvConf() {
+    return async(() => {
+      let nameservers = this.getAllDefaultNameServers()
+      if (!nameservers || nameservers.length === 0) {
+        nameservers = sysManager.myDNS();
+      }
 
-    let nameservers = this.getAllDefaultNameServers()
-    if(!nameservers || nameservers.length === 0) {
-      nameservers = sysManager.myDNS();
-    }
+      if (!nameservers || nameservers.length === 0) {
+        nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
+      }
 
-    if(!nameservers || nameservers.length === 0) {
-      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
-    }
-
-    let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
-    let config = entries.join('\n');
-    config += "\n";
-    fs.writeFileSync(resolvFile, config);
-    callback(null);
+      let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
+      let config = entries.join('\n');
+      config += "\n";
+      fs.writeFileSync(resolvFile, config);
+    });
   }
 
   updateFilter(type, force, callback) {
@@ -506,7 +506,7 @@ module.exports = class DNSMASQ {
     return async(() => {
       await (this._add_iptables_rules())
       await (this._add_ip6tables_rules())
-    })()
+    });
   }
   
   _add_iptables_rules() {
@@ -518,7 +518,7 @@ module.exports = class DNSMASQ {
       subnets.forEach(subnet => {
         await (iptables.dnsChangeAsync(subnet, dns, true));
       })
-    })();
+    });
   }
 
   _add_ip6tables_rules() {
@@ -644,19 +644,12 @@ module.exports = class DNSMASQ {
   }
 
 
-  checkStatus(callback) {
-    callback = callback || function() {}
-
+  async checkStatus() {
     let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
     log.info("Command to check dnsmasq: ", cmd);
 
-    require('child_process').exec(cmd, (err, stdout, stderr) => {
-      if(stdout !== "") {
-        callback(true);
-      } else {
-        callback(false);
-      }
-    });
+    await execAsync(cmd);
+    return stdout !== "";
   }
 
   checkIfRestartNeeded() {
@@ -706,7 +699,7 @@ module.exports = class DNSMASQ {
     log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
   }
 
-  writeHostsFile() {
+  async writeHostsFile() {
     this.counter.writeHostsFile ++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
@@ -715,8 +708,8 @@ module.exports = class DNSMASQ {
     let lease_time = '24h';
 
     return Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key))
-      .then(async (hosts => {
-        let static_hosts = await (redis.hgetallAsync('dhcp:static'));
+      .then(async hosts => {
+        let static_hosts = await redis.hgetallAsync('dhcp:static');
 
         log.debug("static hosts:", util.inspect(static_hosts));
 
@@ -748,7 +741,7 @@ module.exports = class DNSMASQ {
         }).filter(x => x);
 
         return hosts.concat(_hosts).sort((a, b) => a.mac.localeCompare(b.mac));
-      })).then(hosts => {
+      }).then(hosts => {
         let hostsList = hosts.map(h => (h.spoofing === 'false') ?
           `${h.mac},set:unmonitor,ignore` :
           `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
@@ -770,9 +763,7 @@ module.exports = class DNSMASQ {
       }).then(() => log.info("Hosts file has been updated:", this.counter.writeHostsFile));
   }
 
-  rawStart(callback) {
-    callback = callback || function() {}
-
+  async rawStart() {
     // use restart to ensure the latest configuration is loaded
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     let cmdAlt = null;
@@ -796,10 +787,9 @@ module.exports = class DNSMASQ {
 
     this.writeStartScript(cmd, cmdAlt);
 
-    this.writeHostsFile();
+    await this.writeHostsFile();
 
     if(f.isDocker()) {
-
       try {
         childProcess.execSync("sudo pkill dnsmasq")
       } catch(err) {
@@ -834,7 +824,6 @@ module.exports = class DNSMASQ {
       }, 1000)
     } else {
       this.restartDnsmasq();
-      callback(null)
     }
   }
 
@@ -917,11 +906,9 @@ module.exports = class DNSMASQ {
     return cmdAlt;
   }
 
-  rawStop(callback) {
-    callback = callback || function() {}
-
+  async rawStop() {
     let cmd = null;
-    if(f.isDocker()) {
+    if (f.isDocker()) {
       cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, altPidFile);
     } else {
       cmd = "sudo service firemasq stop";
@@ -929,45 +916,36 @@ module.exports = class DNSMASQ {
 
     log.debug("Command to stop dnsmasq: ", cmd);
 
-    require('child_process').exec(cmd, (err, out, code) => {
-      if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code: " + err);
-      } else {
-        if(statusCheckTimer) {
-          clearInterval(statusCheckTimer)
-          statusCheckTimer = null
-          log.info("status check timer is stopped")
-        }
+    try {
+      await execAsync(cmd);
+      if (statusCheckTimer) {
+        clearInterval(statusCheckTimer)
+        statusCheckTimer = null
+        log.info("status check timer is stopped")
       }
-
-      callback(err);
-    })
+    } catch (err) {
+      log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code:", err, {});
+    }
   }
 
-  rawRestart(callback) {
-    callback = callback || function() {}
-
+  async rawRestart() {
     log.info("Restarting dnsmasq...")
-    this.counter.restart ++;
+    this.counter.restart++;
 
     let cmd = "sudo systemctl restart firemasq";
 
-    if(require('fs').existsSync("/.dockerenv")) {
+    if (require('fs').existsSync("/.dockerenv")) {
       cmd = "sudo service dnsmasq restart";
     }
 
-    require('child_process').exec(cmd, (err, out, code) => {
-      if (err) {
-        log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq: " + err);
-      }
-
-      callback(err);
-    })
+    try {
+      await execAsync(cmd);
+    } catch (err) {
+      log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq:", err, {});
+    }
   }
 
-  start(force, callback) {
-    callback = callback || function() {}
-
+  async start(force) {
     // 0. update resolv.conf
     // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
@@ -976,156 +954,121 @@ module.exports = class DNSMASQ {
 
     this.shouldStart = false
 
-    this.updateResolvConf((err) => {
-      if(err) {
-        callback(err);
-        return;
-      }
+    await this.updateResolvConf();
+    await this.rawStop();
+    try {
+      await this.rawStart();
+    } catch (err) {
+      await this.rawStop();
+    }
 
-      this.rawStop((err) => {
-        this.rawStart((err) => {
-          if(err) {
-            this.rawStop();
-            callback(err);
-            return;
-          }
+    try {
+      await this._add_all_iptables_rules();
+    } catch (err) {
+      await this.rawStop();
+      await this._remove_all_iptables_rules();
+    }
 
-          this._add_all_iptables_rules()
-          .then(() => {
-            log.info("DNSMASQ is started successfully");
-            this.shouldStart = true
-            callback();
-          }).catch((err) => {
-            this.rawStop();
-            this._remove_all_iptables_rules()
-            .then(() => {
-              callback(err);
-            }).catch(() => {
-              callback(err);
-            })
-          })
-        });
-      });
-    });
+    log.info("DNSMASQ is started successfully");
+    this.shouldStart = true;
   }
 
-  stop(callback) {
-    callback = callback || function() {}
-
+  async stop() {
     // 1. remove iptables rules
     // 2. stop service
     // optional to remove filter file
-
     this.shouldStart = false;
 
     log.info("Stopping DNSMASQ:", {});
-    this._remove_all_iptables_rules()
-    .then(() => {
-      this.rawStop((err) => {
-        callback(err);
-      });
-    })
+    await this._remove_all_iptables_rules();
+    await this.rawStop();
   }
 
-  restart(callback) {
-    require('child_process').exec("sudo systemctl restart firemasq", (err, out, code) => {
-      if(err) {
-        log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
-      }
-      callback(err);
-    });
+  async restart() {
+    try {
+      await execAsync("sudo systemctl restart firemasq");
+    } catch (err) {
+      log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
+    }
   }
 
-  enableDHCP() {
+  async enableDHCP() {
     this.dhcpMode = true;
-    return new Promise((resolve, reject) => {
-      this.start(false, (err) => {
-        log.info("Started DHCP")
-        if(err) {
-          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
-          reject(err);
-          return;
-        }
-
-        resolve();
-      });
-    });
+    try {
+      log.info("Enabling DHCP mode");
+      await this.start(false);
+      log.info("DHCP mode is enabled");
+    } catch (err) {
+      log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+    }
   }
 
-  disableDHCP() {
+  async disableDHCP() {
     this.dhcpMode = false;
-    return new Promise((resolve, reject) => {
-      this.start(false, (err) => {
-        if(err) {
-          log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
-          reject(err);
-          return;
-        }
-
-        resolve();
-      });
-    });
+    try {
+      log.info("Disabling DHCP mode");
+      await (this.start(false));
+      log.info("DHCP mode is disabled");
+    } catch (err) {
+      log.error("Failed to restart dnsmasq when disabling DHCP: " + err);
+    }
   }
 
   setDhcpMode(isEnabled) {
     this.dhcpMode = isEnabled;
   }
 
-  verifyDNSConnectivity() {
+  async verifyDNSConnectivity() {
     let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
     log.info("Verifying DNS connectivity...")
-    
-    return async(() => {
-      try {
-        let result = await (exec(cmd))
-        if(result.stdout === "") {
-          log.error("Got empty dns result when verifying dns connectivity:", {})
-          return false
-        } else if(result.stderr !== "") {
-          log.error("Got error output when verifying dns connectivity:", result.stderr, {})
-          return false
-        } else {
-          log.info("DNS connectivity looks good")
-          return true
-        }
-      } catch(err) {
-        log.error("Got error when verifying dns connectivity:", err, {})
+
+    try {
+      let {stdout, stderr} = await execAsync(cmd);
+      if (stdout === "") {
+        log.error("Got empty dns result when verifying dns connectivity:", {})
         return false
+      } else if (stderr !== "") {
+        log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+        return false
+      } else {
+        log.info("DNS connectivity looks good")
+        return true
       }
-    })()    
+    } catch (err) {
+      log.error("Got error when verifying dns connectivity:", err, {})
+      return false
+    }
   }
 
-  statusCheck() {
-    return async(() => {
-      log.info("Keep-alive checking dnsmasq status")
-      let checkResult = await (this.verifyDNSConnectivity()) ||
-        await (this.verifyDNSConnectivity()) ||
-        await (this.verifyDNSConnectivity())
-              
-      if(!checkResult) {
-        this.failCount++
-        if(this.failCount > 5) {
-          this.stop() // make sure iptables rules are also stopped..
-          bone.log("error",{
-            version: sysManager.version(),
-            type:'DNSMASQ CRASH',
-            msg:"dnsmasq failed to restart after 5 retries",
-          },null);
-        } else {
-          let psResult = await (exec("ps aux | grep dns[m]asq"))
-          let stdout = psResult.stdout
-          log.info("dnsmasq running status: \n", stdout, {})
+  async statusCheck() {
+    log.info("Keep-alive checking dnsmasq status")
+    let checkResult = await this.verifyDNSConnectivity() ||
+      await this.verifyDNSConnectivity() ||
+      await this.verifyDNSConnectivity();
+
+    if (!checkResult) {
+      this.failCount = 0 // reset
+      return;
+    }
     
-          // restart this service, something is wrong
-          this.rawRestart((err) => {
-            if(err) {
-              log.error("Failed to restart dnsmasq:", err, {})
-            }
-          })
-        }        
-      } else {
-        this.failCount = 0 // reset
+    this.failCount ++
+    if (this.failCount > 5) {
+      await this.stop(); // make sure iptables rules are also stopped..
+      bone.log("error", {
+        version: sysManager.version(),
+        type: 'DNSMASQ CRASH',
+        msg: "dnsmasq failed to restart after 5 retries",
+      }, null);
+    } else {
+      let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
+      log.info("dnsmasq running status: \n", stdout, {})
+
+      // restart this service, something is wrong
+      try {
+        await this.rawRestart();
+      } catch (err) {
+        log.error("Failed to restart dnsmasq:", err, {})
       }
-    })()
+    }
   }
 };
