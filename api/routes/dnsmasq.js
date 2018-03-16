@@ -18,15 +18,15 @@ let express = require('express');
 const passport = require('passport');
 let router = express.Router();
 
-let dnsmasq = require('../../extension/dnsmasq/dnsmasq.js');
-let d = new dnsmasq('info');
+let DNSMASQ = require('../../extension/dnsmasq/dnsmasq.js');
+let dnsmasq = new DNSMASQ('info');
 
 /* dnsmasq api */
 
 router.post('/filter/renew',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.updateFilter(true)
+    dnsmasq.updateFilter(true)
       .then(result => res.status(200).send(''))
       .catch(err => res.status(500).send(''));
   });
@@ -34,7 +34,7 @@ router.post('/filter/renew',
 router.post('/iptables/add',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.add_iptables_rules()
+    dnsmasq.add_iptables_rules()
       .then(result => res.status(200).send(''))
       .catch(err => res.status(500).send(''));
   });
@@ -42,7 +42,7 @@ router.post('/iptables/add',
 router.post('/iptables/remove',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    d.remove_iptables_rules()
+    dnsmasq.remove_iptables_rules()
       .then(result => res.status(200).send(''))
       .catch(err => res.status(500).send(''));
   });
@@ -50,50 +50,41 @@ router.post('/iptables/remove',
 router.get('/detail_status',
   passport.authenticate('bearer', {session: false}),
   function (req, res, next) {
-    d.checkStatus((err) => {
-      if (err) {
-        console.log("Got error when checking dnsmasq status: ", err);
+    dnsmasq.checkStatus()
+      .then(result => res.status(200).send(''))
+      .catch(err => {
+        console.error('Error when check status:', err);
         res.status(500).send('');
-      } else {
-        res.status(200).send('');
-      }
-    });
+      });
   }
 );
 
 router.get('/status',
   passport.authenticate('bearer', {session: false}),
   function (req, res, next) {
-    d.checkStatus((result) => {
-      res.json({status: result});
-    });
+    dnsmasq.checkStatus()
+      .then(result => res.json({status: result}))
+      .catch(err => {
+        console.error('Error when check status:', err);
+        res.status(500).send('');
+      });
   }
 );
 
 router.post('/:action',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    var action = req.params.action;
+    let action = req.params.action;
     if (action === "start") {
-      d.start(true, (err, result) => {
-        if(err) {
-          console.log(err);
-          res.status(500).send('');
-        } else {
-          res.status(200).send('');
-        }
-      });
+      dnsmasq.start(true)
+        .then(result => res.status(200).send(''))
+        .catch(err => res.status(500).send(''));
     } else if (action === "stop") {
-      d.stop((err, result) => {
-        if(err) {
-          console.log(err);
-          res.status(500).send('');
-        } else {
-          res.status(200).send('');
-        }
-      });
+      dnsmasq.stop()
+        .then(result => res.status(200).send(''))
+        .catch(err => res.status(500).send(''));
     } else if (action === "install") {
-      d.install((err, result) => {
+      dnsmasq.install((err, result) => {
         if(err) {
           console.log(err);
           res.status(500).send('');
