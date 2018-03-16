@@ -286,6 +286,11 @@ module.exports = class DNSMASQ {
   async addPolicyFilterEntry(domain, options) {
     options = options || {}
 
+    while (this.workingInProgress) {
+      await this.delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+
     let entry = null;
     
     if (options.use_blue_hole) {
@@ -295,11 +300,6 @@ module.exports = class DNSMASQ {
     }
 
     try {
-      if(this.workingInProgress) {
-        await this.delay(1000);  // try again later
-        await this.addPolicyFilterEntry(domain, options);
-      }
-      this.workingInProgress = true;
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
       log.error("Failed to write policy data file:", err, {});
@@ -309,14 +309,12 @@ module.exports = class DNSMASQ {
   }
 
   async removePolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
-
-    if (this.workingInProgress) {
+    while (this.workingInProgress) {
         await this.delay(1000);  // try again later
-        await this.removePolicyFilterEntry(domain);
     }
     this.workingInProgress = true;
 
+    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
     try {
       let data = await fs.readFileAsync(policyFilterFile, 'utf8');
 
