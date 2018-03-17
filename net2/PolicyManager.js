@@ -287,10 +287,10 @@ module.exports = class {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state == true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf(callback);
+        dnsmasq.updateResolvConf().then(() => callback());
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf(callback);
+        dnsmasq.updateResolvConf().then(() => callback());
       }
     });
   }
@@ -309,10 +309,10 @@ module.exports = class {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state === true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf(callback);
+        dnsmasq.updateResolvConf().then(() => callback());
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf(callback);
+        dnsmasq.updateResolvConf().then(() => callback());
       }
     });
 

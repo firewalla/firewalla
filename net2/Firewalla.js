@@ -97,7 +97,7 @@ function getOverlayUpperDirPartition() {
 
 function isDevelopmentVersion() {
   let branch = getBranch()
-  if(branch == "master") {
+  if(branch === "master" || branch.includes("master")) {
     return true
   } else {
     return false
