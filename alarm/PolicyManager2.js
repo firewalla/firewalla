@@ -674,6 +674,9 @@ class PolicyManager2 {
         return async(() => {
           await (delay(policy.getExpireDiffFromNow() * 1000 ))
           await (this._disablePolicy(policy))
+          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+            await (this.deletePolicy(pid))
+          }
         })()
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
