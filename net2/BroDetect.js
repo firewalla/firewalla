@@ -1577,6 +1577,23 @@ module.exports = class {
             })
         })    
       }
+
+      recordManyHits(datas) {
+          datas.forEach((data) => {
+            const ts = Math.floor(data.ts)
+            const inBytes = data.inBytes
+            const outBytes = data.outBytes
+
+            timeSeries.recordHit('download',ts, Number(inBytes))
+            timeSeries.recordHit('upload',ts, Number(outBytes))
+          })
+
+          return new Promise((resolve, reject) => {
+            timeSeries.exec(() => {
+                resolve()
+            })
+          })
+      }
     
       enableRecordHitsTimer() {
           this.enableRecording = true
@@ -1591,9 +1608,7 @@ module.exports = class {
             const copy = JSON.parse(JSON.stringify(this.recordCache))
             this.recordCache = []
             async(() => {
-                copy.forEach((data) => {
-                    await(this.recordHit(data))
-                })
+                await(this.recordManyHits(copy))
             })().finally(() => {
                 this.recording = false
             })

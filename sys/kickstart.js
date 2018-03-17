@@ -330,6 +330,7 @@
   function login() {
     eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
       if (err == null) {
+        log.info("Cloud Logged In")
         initializeGroup(function (err, gid) {
           let groupid = gid;
           if (gid) {

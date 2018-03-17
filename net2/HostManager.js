@@ -1790,8 +1790,15 @@ module.exports = class {
               }
             }
 
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+
             json.exceptionRules = rules
-            json.exceptionCount = rules.length
             resolve();
           });
         }

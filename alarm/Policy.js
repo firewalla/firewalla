@@ -84,7 +84,7 @@ module.exports = class {
   }
 
   isDisabled() {
-    return this.disabled == '1'
+    return this.disabled && this.disabled == '1'
   }
 
   match(alarm) {
