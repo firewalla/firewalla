@@ -266,6 +266,13 @@ class PolicyManager2 {
       const policyKey = policyPrefix + pid;
       return async(() => {
         await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
+        if(policy.expire == "") {
+          await (rclient.hdelAsync(policyKey, expire))
+        }
+        if(policy.cronTime == "") {
+          await (rclient.hdelAsync(policyKey, cronTime))
+          await (rclient.hdelAsync(policyKey, duration))
+        }
       })()
     } else {
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
