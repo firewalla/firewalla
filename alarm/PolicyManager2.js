@@ -675,7 +675,7 @@ class PolicyManager2 {
           await (delay(policy.getExpireDiffFromNow() * 1000 ))
           await (this._disablePolicy(policy))
           if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await (this.deletePolicy(pid))
+            await (this.deletePolicy(policy.pid))
           }
         })()
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
