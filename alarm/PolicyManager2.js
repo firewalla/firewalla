@@ -267,11 +267,11 @@ class PolicyManager2 {
       return async(() => {
         await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
         if(policy.expire == "") {
-          await (rclient.hdelAsync(policyKey, expire))
+          await (rclient.hdelAsync(policyKey, "expire"))
         }
         if(policy.cronTime == "") {
-          await (rclient.hdelAsync(policyKey, cronTime))
-          await (rclient.hdelAsync(policyKey, duration))
+          await (rclient.hdelAsync(policyKey, "cronTime"))
+          await (rclient.hdelAsync(policyKey, "duration"))
         }
       })()
     } else {
