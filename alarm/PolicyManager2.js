@@ -110,6 +110,7 @@ class PolicyManager2 {
     this.queue.process((job, done) => {
       const event = job.data
       const policy = this.jsonToPolicy(event.policy)
+      const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
 
       log.info("START ENFORCING POLICY", policy.pid, action, {})
@@ -126,9 +127,27 @@ class PolicyManager2 {
         })
         break
       }
+
       case "unenforce": {
         return async(() => {
           await(this.unenforce(policy))
+        })().catch((err) => {
+          log.error("unenforce policy failed:" + err)
+        }).finally(() => {
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          done()
+        })
+        break
+      }
+
+      case "reenforce": {
+        return async(() => {
+          if(!oldPolicy) {
+            // do nothing
+          } else {
+            await(this.unenforce(oldPolicy))
+            await(this.enforce(policy))
+          }
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
@@ -165,7 +184,7 @@ class PolicyManager2 {
     })
   }
 
-  tryPolicyEnforcement(policy, action) {
+  tryPolicyEnforcement(policy, action, oldPolicy) {
     if (policy) {
       action = action || 'enforce'
       log.info("try policy enforcement:" + action + ":" + policy.pid)
@@ -174,8 +193,9 @@ class PolicyManager2 {
         type: 'PolicyEnforcement',
         toProcess: 'FireMain',//make sure firemain process handle enforce policy event
         message: 'Policy Enforcement:' + action,
-        action : action, //'enforce', 'unenforce'
-        policy : policy
+        action : action, //'enforce', 'unenforce', 'reenforce'
+        policy : policy,
+        oldPolicy: oldPolicy
       })
     }
   }

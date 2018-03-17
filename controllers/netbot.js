@@ -1827,6 +1827,26 @@ class netBot extends ControllerBot {
           });
         });
         break;
+
+      case "policy:update":
+        async(() => {
+          const value = msg.data.value
+          try {
+            const policy = JSON.parse(value)
+            const pid = policy.pid
+            const oldPolicy = pm2.getPolicy(pid)
+            await (pm2.updatePolicyAsync(policy))
+            await (pm2.tryPolicyEnforcement(policy, 'reenforce', oldPolicy))
+            this.simpleTxData(msg, policy, null, callback)
+          } catch(err) {
+            log.error("Failed to parse the policy json to be updated:", value, "err", err, {})
+            this.simpleTxData(msg, null, err, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+
+        break;    
     case "policy:delete":
       async(() => {
         let policy = await (pm2.getPolicy(msg.data.value.policyID))
