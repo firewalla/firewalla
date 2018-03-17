@@ -692,7 +692,10 @@ class PolicyManager2 {
 
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
               await (this.unenforce(policy))
-              await (this._disablePolicy(policy)) 
+              await (this._disablePolicy(policy))
+              if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+                await (this.deletePolicy(pid))
+              }
             })()
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
         })()
