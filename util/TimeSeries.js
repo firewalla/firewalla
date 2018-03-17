@@ -19,7 +19,7 @@ let log = require('../net2/logger.js')(__filename);
 
 const TimeSeries = require('redis-timeseries')
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
+const rclient = require('../util/redis_manager.js').getMetricsRedisClient()
 
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {

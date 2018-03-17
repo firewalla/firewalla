@@ -35,6 +35,16 @@ class RedisManager {
     return this.rclient
   }
 
+  getMetricsRedisClient() {
+    if(!this.mclient) {
+      this.mclient = redis.createClient()
+      this.mclient.on('error', (err) => {
+        log.error("Redis metrics client got error:", err, {})
+      })
+    }
+    return this.mclient
+  }
+
   getSubscriptionClient() {
     if(!this.sclient) {
       this.sclient = redis.createClient()
