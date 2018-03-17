@@ -1827,6 +1827,21 @@ class netBot extends ControllerBot {
           });
         });
         break;
+
+      case "policy:update":
+        async(() => {
+          const policy = msg.data.value
+          const pid = policy.pid
+          const oldPolicy = pm2.getPolicy(pid)
+          await (pm2.updatePolicyAsync(policy))
+          const newPolicy = await (pm2.getPolicy(pid))
+          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+          this.simpleTxData(msg,newPolicy, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+
+        break;    
     case "policy:delete":
       async(() => {
         let policy = await (pm2.getPolicy(msg.data.value.policyID))
