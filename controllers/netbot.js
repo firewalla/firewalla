@@ -1830,18 +1830,12 @@ class netBot extends ControllerBot {
 
       case "policy:update":
         async(() => {
-          const value = msg.data.value
-          try {
-            const policy = JSON.parse(value)
-            const pid = policy.pid
-            const oldPolicy = pm2.getPolicy(pid)
-            await (pm2.updatePolicyAsync(policy))
-            await (pm2.tryPolicyEnforcement(policy, 'reenforce', oldPolicy))
-            this.simpleTxData(msg, policy, null, callback)
-          } catch(err) {
-            log.error("Failed to parse the policy json to be updated:", value, "err", err, {})
-            this.simpleTxData(msg, null, err, callback);
-          }
+          const policy = msg.data.value
+          const pid = policy.pid
+          const oldPolicy = pm2.getPolicy(pid)
+          await (pm2.updatePolicyAsync(policy))
+          await (pm2.tryPolicyEnforcement(policy, 'reenforce', oldPolicy))
+          this.simpleTxData(msg, policy, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
