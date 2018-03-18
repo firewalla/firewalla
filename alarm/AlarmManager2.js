@@ -18,8 +18,7 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 let Alarm = require('./Alarm.js');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var bone = require("../lib/Bone.js");
 
@@ -34,8 +33,6 @@ const await = require('asyncawait/await');
 const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let IM = require('../net2/IntelManager.js')
 let im = new IM('info');
@@ -392,8 +389,15 @@ module.exports = class {
                  fConfig.policy.autoBlock &&
                  fc.isFeatureOn("cyber_security.autoBlock") &&
                  (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+
                 // auto block if num is greater than the threshold
-                this.blockFromAlarm(alarm.aid, {method: "auto"}, callback);
+                this.blockFromAlarm(alarm.aid, {
+                  method: "auto", 
+                  info: {
+                    category: alarm["p.dest.category"] || ""
+                  }
+                }, callback)
+
                 if (alarm['p.dest.ip']) {
                   alarm["if.target"] = alarm['p.dest.ip'];
                   alarm["if.type"] = "ip";

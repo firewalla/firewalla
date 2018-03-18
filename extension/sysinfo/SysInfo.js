@@ -24,16 +24,13 @@ let os  = require('os-utils');
 
 let exec = require('child-process-promise').exec;
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../../util/redis_manager.js').getRedisClient()
 let _async = require('async');
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
 let cpuUsage = 0;
 let memUsage = 0;

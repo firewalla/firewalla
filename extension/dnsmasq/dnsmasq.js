@@ -9,23 +9,14 @@ let instance = null;
 let log = null;
 
 const util = require('util');
-
 const spawn = require('child_process').spawn
-
 const f = require('../../net2/Firewalla.js');
-
 const ip = require('ip');
-
 const userID = f.getUserID();
-
 const childProcess = require('child_process');
-
 const execAsync = util.promisify(childProcess.exec);
-
 const Promise = require('bluebird');
-const Redis = require('redis');
-const redis = Redis.createClient();
-Promise.promisifyAll(Redis.RedisClient.prototype);
+const rclient = require('../../util/redis_manager.js').getRedisClient()
 const fs = Promise.promisifyAll(require("fs"))
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
@@ -547,12 +538,12 @@ module.exports = class DNSMASQ {
       throw err;
     }
   }
-  
+
   async _writeHashIntoRedis(type, hashes) {
     log.info(`Writing hash into redis for type: ${type}`);
     let key = `dns:hashset:${type}`;
-    await Promise.map(hashes, async hash => redis.saddAsync(key, hash));
-    let count = await redis.scardAsync(key);
+    await Promise.map(hashes, async hash => rclient.saddAsync(key, hash));
+    let count = await rclient.scardAsync(key);
     log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
   }
 

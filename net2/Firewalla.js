@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require("../net2/logger.js")(__filename)
+const log = require("../net2/logger.js")(__filename)
 let config;
 
 let cp = require('child_process');
@@ -27,6 +27,7 @@ let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
 let _branch = null
+let _lastCommitDate = null
 
 let version = null;
 
@@ -35,10 +36,7 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 function getFirewallaHome() {
   return firewallaHome;
@@ -61,6 +59,13 @@ function getBranch() {
     _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
   }
   return _branch
+}
+
+function getLastCommitDate() {
+  if(_lastCommitDate == null) {
+    _lastCommitDate = Number(require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
+  }
+  return _lastCommitDate
 }
 
 function getProdBranch() {
@@ -309,5 +314,6 @@ module.exports = {
   getReleaseType: getReleaseType,
   isReservedBlockingIP: isReservedBlockingIP,
 
-  isMain:isMain
+  isMain:isMain,
+  getLastCommitDate:getLastCommitDate
 }

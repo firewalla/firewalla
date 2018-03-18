@@ -20,15 +20,12 @@ var os = require('os');
 var network = require('network');
 var instances = {};
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
@@ -84,13 +81,6 @@ let fConfig = require('./config.js').getConfig();
 
 const fc = require('./config.js')
 
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-sclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-
 var _async = require('async');
 
 var MobileDetect = require('mobile-detect');
@@ -101,6 +91,9 @@ let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
 var linux = require('../util/linux.js');
+
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -1476,6 +1469,7 @@ module.exports = class HostManager {
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
     json.longVersion = f.getVersion();
+    json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
@@ -1805,8 +1799,15 @@ module.exports = class HostManager {
               }
             }
 
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+
             json.exceptionRules = rules
-            json.exceptionCount = rules.length
             resolve();
           });
         }
@@ -2123,14 +2124,19 @@ module.exports = class HostManager {
 
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
-        log.info("hostmanager:gethosts:started");
+        log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethosts:mutx");
+            log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
             if (retry == null) {
                 retrykey = Date.now();
+            }
+            if (Date.now()-retrykey > 1000*10) {
+                log.error("hostmanager:gethosts:mutx:timeout", retrykey, Date.now()-retrykey);
+                callback(null, this.hosts.all);
+                return;
             }
             log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
@@ -2561,10 +2567,10 @@ module.exports = class HostManager {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
   }
 
-  getActiveHumanDevices() {   
+  getActiveHumanDevices() {
     const HUMAN_TRESHOLD = 0.05
 
     this.hosts.all.filter((host) => {

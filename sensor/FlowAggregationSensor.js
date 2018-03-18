@@ -22,12 +22,9 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Sensor = require('./Sensor.js').Sensor;
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -196,6 +193,7 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
+        log.info("FlowAggrSensor on mac", mac, {})
         await (this.aggr(mac, ts));
         await (this.aggr(mac, ts + this.config.interval));
         await (this.aggrActivity(mac, ts));

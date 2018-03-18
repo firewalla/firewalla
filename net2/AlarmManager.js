@@ -20,10 +20,8 @@ var os = require('os');
 var network = require('network');
 var instance = null;
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 var uuid = require('uuid');
 

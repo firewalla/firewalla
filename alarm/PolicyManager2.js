@@ -18,7 +18,7 @@
 const log = require('../net2/logger.js')(__filename, 'info');
 
 const redis = require('redis');
-const rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let flat = require('flat');
 
@@ -110,6 +110,7 @@ class PolicyManager2 {
     this.queue.process((job, done) => {
       const event = job.data
       const policy = this.jsonToPolicy(event.policy)
+      const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
 
       log.info("START ENFORCING POLICY", policy.pid, action, {})
@@ -126,9 +127,27 @@ class PolicyManager2 {
         })
         break
       }
+
       case "unenforce": {
         return async(() => {
           await(this.unenforce(policy))
+        })().catch((err) => {
+          log.error("unenforce policy failed:" + err)
+        }).finally(() => {
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          done()
+        })
+        break
+      }
+
+      case "reenforce": {
+        return async(() => {
+          if(!oldPolicy) {
+            // do nothing
+          } else {
+            await(this.unenforce(oldPolicy))
+            await(this.enforce(policy))
+          }
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
@@ -165,7 +184,7 @@ class PolicyManager2 {
     })
   }
 
-  tryPolicyEnforcement(policy, action) {
+  tryPolicyEnforcement(policy, action, oldPolicy) {
     if (policy) {
       action = action || 'enforce'
       log.info("try policy enforcement:" + action + ":" + policy.pid)
@@ -174,8 +193,9 @@ class PolicyManager2 {
         type: 'PolicyEnforcement',
         toProcess: 'FireMain',//make sure firemain process handle enforce policy event
         message: 'Policy Enforcement:' + action,
-        action : action, //'enforce', 'unenforce'
-        policy : policy
+        action : action, //'enforce', 'unenforce', 'reenforce'
+        policy : policy,
+        oldPolicy: oldPolicy
       })
     }
   }
@@ -246,6 +266,13 @@ class PolicyManager2 {
       const policyKey = policyPrefix + pid;
       return async(() => {
         await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
+        if(policy.expire == "") {
+          await (rclient.hdelAsync(policyKey, "expire"))
+        }
+        if(policy.cronTime == "") {
+          await (rclient.hdelAsync(policyKey, "cronTime"))
+          await (rclient.hdelAsync(policyKey, "duration"))
+        }
       })()
     } else {
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
@@ -674,23 +701,31 @@ class PolicyManager2 {
         return async(() => {
           await (delay(policy.getExpireDiffFromNow() * 1000 ))
           await (this._disablePolicy(policy))
+          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+            await (this.deletePolicy(policy.pid))
+          }
         })()
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
         return async(() => {
           await (this._enforce(policy))
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
+          const pid = policy.pid          
           setTimeout(() => {
             async(() => {
+              log.info(`About to revoke policy ${pid} `)
               // make sure policy is still enabled before disabling it
-              const policy = await (this.getPolicy(policy.pid))
+              const policy = await (this.getPolicy(pid))
               if(policy.isDisabled()) {
                 return
               }
 
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
               await (this.unenforce(policy))
-              await (this._disablePolicy(policy)) 
+              await (this._disablePolicy(policy))
+              if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+                await (this.deletePolicy(pid))
+              }
             })()
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
         })()

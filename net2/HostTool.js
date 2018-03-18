@@ -16,12 +16,9 @@
 
 let log = require('./logger.js')(__filename);
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
@@ -492,6 +489,31 @@ class HostTool {
         return intelEntry && intelEntry.host
       }
     })()
+  }
+
+  filterOldDevices(hostList) {
+    const validHosts = hostList.filter(host => host.mac != null)
+    const activeHosts = {}
+    for (const index in validHosts) {
+      const host = validHosts[index]
+      const ip = host.ipv4Addr
+      if(!ip) {
+        continue
+      }
+
+      if(!activeHosts[ip]) {
+        activeHosts[ip] = host
+      } else {
+        const existingHost = activeHosts[ip]
+
+        // new one is newer
+        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+          activeHosts[ip] = host
+        }
+      }      
+    }
+
+    return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
   }
 }
 
