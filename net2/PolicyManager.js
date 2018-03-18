@@ -411,8 +411,9 @@ module.exports = class {
         } else {
           log.info("SciSurf feature is enabled successfully");
           log.info("chinadns:", ss_client.getChinaDNS());
-          dnsmasq.setUpstreamDNS(ss_client.getChinaDNS());
-          log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
+          dnsmasq.setUpstreamDNS(ss_client.getChinaDNS()).then(() => {
+            log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
+          });
         }
       });
     } else {
