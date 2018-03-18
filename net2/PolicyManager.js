@@ -303,7 +303,6 @@ module.exports = class {
       return
     }
 
-
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state === true) {
@@ -331,7 +330,18 @@ module.exports = class {
     dnsmasq.controlFilter('adblock', state);
   }
 
+  upstreamDns(dnsHost, state, callback) {
+    callback = callback || function() {};
 
+    if (state === true) {
+      dnsmasq.setDefaultNameServers("default", dnsHost);
+      dnsmasq.updateResolvConf().then(() => callback());
+    } else {
+      dnsmasq.unsetDefaultNameServers("default"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+      dnsmasq.updateResolvConf().then(() => callback());
+    }
+
+  }
 
     hblock(host, state) {
       log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
