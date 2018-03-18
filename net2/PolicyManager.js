@@ -333,6 +333,8 @@ module.exports = class {
   upstreamDns(dnsHost, state, callback) {
     callback = callback || function() {};
 
+    log.info("PolicyManager:UpstreamDns:Dnsmasq", dnsHost, state);
+
     if (state === true) {
       dnsmasq.setDefaultNameServers("default", dnsHost);
       dnsmasq.updateResolvConf().then(() => callback());
