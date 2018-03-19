@@ -33,7 +33,7 @@ let util = require('util');
 
 let f = require('../../net2/Firewalla.js');
 
-let natpmp = require('nat-pmp');
+let natpmp = require('./nat-pmp');
 let natupnp = require('nat-upnp');
 
 let upnpClient = natupnp.createClient();
