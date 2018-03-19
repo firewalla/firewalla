@@ -893,7 +893,8 @@ class PolicyManager2 {
             return categoryBlock.blockCategory(policy.target)
           }
         })()
-      
+        break;
+
       default:
         return Promise.reject("Unsupported policy");
       }

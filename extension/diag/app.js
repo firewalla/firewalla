@@ -29,7 +29,7 @@ const Promise = require('bluebird')
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const SysInfo = require('../sysinfo/SysInfo.js')
+const sysinfo = require('../sysinfo/SysInfo.js')
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
