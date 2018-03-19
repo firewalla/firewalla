@@ -167,7 +167,7 @@ class PolicyScheduler {
 
     if(!job) {
       job.stop()
-      delete runningCronJobs[job]
+      delete runningCronJobs[pid]
     }    
 
     if(timer) {
