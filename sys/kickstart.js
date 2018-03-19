@@ -79,6 +79,8 @@
   // nmapSensor.suppressAlarm = true;
   
   let FWInvitation = require('./invitation.js');
+
+  const Diag = require('../extension/diag/app.js')
   
   async(() => {
     await (sysManager.setConfig(firewallaConfig));
@@ -217,6 +219,11 @@
   
   function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin:", gid);
+
+    // start a diagnostic page for people to access during first binding process
+    const diag = new Diag()
+    diag.start()
+
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
         log.info("Error looking up group", err, err.stack, {});
