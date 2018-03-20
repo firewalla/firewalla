@@ -273,7 +273,7 @@
             });
           }
           
-          diag.totalTimeout = 3600
+          diag.expireDate = new Date() / 1000 + 3600
           fwInvitation.broadcast(onSuccess, onTimeout);
           
         } else {
@@ -308,7 +308,7 @@
             });
           }
           
-          diag.totalTimeout = 600
+          diag.expireDate = new Date() / 1000 + 600
           fwInvitation.broadcast(onSuccess, onTimeout);
           
           callback(null, true);

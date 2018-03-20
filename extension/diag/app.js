@@ -107,7 +107,7 @@ class App {
 
   getSystemMemory() {
     return async(() => {
-      const result = exec("free -m")
+      const result = await (exec("free -m"))
       const stdout = result.stdout
       const lines = stdout.split(/\n/g)
 
@@ -115,7 +115,7 @@ class App {
         lines[i] = lines[i].split(/\s+/)
       }
 
-      allMem = parseInt(lines[1][1])
+      const allMem = parseInt(lines[1][1])
 
       if(allMem > 490) {
         return 0
@@ -160,8 +160,8 @@ class App {
   getPrimaryIP() {
     return async(() => {
       try {
-        const ip = await (exec("ifconfig eth0 | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"))        
-        return ip
+        const ipOutput = await (exec("ifconfig eth0 | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"))        
+        return ipOutput.stdout
       } catch(err) {
         return ""
       }
@@ -187,12 +187,13 @@ class App {
         const memory = await(this.getSystemMemory())
         const connected = this.getCloudConnectivity()
         const systemServices = await(this.getSystemServices())
+        const expireDate = this.expireDate
         
         if(ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0 ) {
           // make sure device local time is displayed on the screen
           res.render('diag', {time, ip, gid, database, uptime, nodeVersion, memory, connected, systemServices})
         } else {
-          res.render('welcome', {broadcastInfo: this.broadcastInfo, time: time})
+          res.render('welcome', {broadcastInfo: this.broadcastInfo, time: time, expireDate: expireDate})
         }
         
       })()
