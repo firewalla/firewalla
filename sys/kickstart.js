@@ -67,6 +67,8 @@
   let async = require('asyncawait/async');
   let await = require('asyncawait/await');
   
+  const bone = require("../lib/Bone.js");
+
   let SysManager = require('../net2/SysManager.js');
   let sysManager = new SysManager();
   let firewallaConfig = require('../net2/config.js').getConfig();

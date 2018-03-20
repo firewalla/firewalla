@@ -159,11 +159,11 @@ class App {
 
   getPrimaryIP() {
     return async(() => {
-      const eth0s = os.networkInterfaces()["eth0"]
+      const eth0s = require('os').networkInterfaces()["eth0"]
 
       for (let index = 0; index < eth0s.length; index++) {
         const eth0 = eth0s[index]
-        if(eth0.family == "IPv4" && address != "192.168.218.1") {
+        if(eth0.family == "IPv4" && eth0.address != "192.168.218.1") {
           return eth0.address
         }
       }
@@ -193,7 +193,8 @@ class App {
         const systemServices = await(this.getSystemServices())
         const expireDate = this.expireDate
         
-        if(ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0) {
+        
+        if(!this.broadcastInfo || ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0) {
           // make sure device local time is displayed on the screen
           res.render('diag', {time, ip, gid, database, uptime, nodeVersion, memory, connected, systemServices})
         } else {
