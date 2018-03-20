@@ -207,6 +207,10 @@ class FWInvitation {
         'licensemode': '1',
     };
 
+    if(this.diag) {
+      this.diag.broadcastInfo = txtfield
+    }
+
     if (intercomm.bcapable()==false) {
       txtfield.verifymode = "qr";
     } else {
