@@ -95,8 +95,8 @@ then
 fi
 
 function sync_time() {
-    time_website = $1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | egrep "^Date:" | awk -F ": " '{print $2}')
+    time_website=$1
+    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
     if [[ "x$time" == "x" ]]; then
         return 1
     else
