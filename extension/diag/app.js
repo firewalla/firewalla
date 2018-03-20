@@ -159,12 +159,16 @@ class App {
 
   getPrimaryIP() {
     return async(() => {
-      try {
-        const ipOutput = await (exec("ifconfig eth0 | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1'"))        
-        return ipOutput.stdout
-      } catch(err) {
-        return ""
+      const eth0s = os.networkInterfaces()["eth0"]
+
+      for (let index = 0; index < eth0s.length; index++) {
+        const eth0 = eth0s[index]
+        if(eth0.family == "IPv4" && address != "192.168.218.1") {
+          return eth0.address
+        }
       }
+
+      return ''
     })()
   }
   
@@ -189,7 +193,7 @@ class App {
         const systemServices = await(this.getSystemServices())
         const expireDate = this.expireDate
         
-        if(ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0 ) {
+        if(ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0) {
           // make sure device local time is displayed on the screen
           res.render('diag', {time, ip, gid, database, uptime, nodeVersion, memory, connected, systemServices})
         } else {
