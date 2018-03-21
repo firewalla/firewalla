@@ -72,24 +72,28 @@ class App {
       try {
         await (exec(fireKickCmd))
       } catch(err) {
+        log.error("firekick is not alive", err, {})
         return errorCodes.firekick
       }
 
       try {
         await (exec(fireMainCmd))
       } catch(err) {
+        log.error("firemain is not alive", err, {})
         return errorCodes.firemain
       }
       
       try {
         await (exec(fireApiCmd))
       } catch(err) {
+        log.error("fireapi is not alive", err, {})
         return errorCodes.fireapi
       }
 
       try {
         await (exec(fireMonCmd))
       } catch(err) {
+        log.error("firemon is not alive", err, {})
         return errorCodes.firemon
       }
 
@@ -134,6 +138,7 @@ class App {
       try {
         await (exec("systemctl is-active redis-server"))
       } catch(err) {
+        log.error("Failed to check database", err, {})
         return errorCodes.database
       }
 
@@ -145,8 +150,9 @@ class App {
     return async(() => {
       try {
         const gid = await (exec("redis-cli hget sys:ept gid"))
-        return gid.slice(0,8)
+        return gid.substring(0,8)
       } catch(err) {
+        log.error("Failed to get gid", err, {})
         return null
       }
     })()
