@@ -2138,7 +2138,7 @@ module.exports = class HostManager {
                 callback(null, this.hosts.all);
                 return;
             }
-            log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
+            log.debug("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
                 this.getHosts(callback,retrykey);
             },3000);
