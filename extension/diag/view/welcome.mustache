@@ -1,27 +1,6 @@
 <link href="./static/diag.css" rel="stylesheet" type="text/css" />
 <script type="text/javascript" charset="utf-8" src="./static/diag.js"></script>
 
-<script language='javascript'>
-{{#success}} 
-var div = document.getElementById("error_page");
-{{/success}}
-{{^success}}
-var div = document.getElementById("welcome_page");
-{{/success}}
-div.style.display = "none";
-
-var piNow = {{now}}
-var browserNow = new Date() / 1000
-
-// more than one hour
-if(Math.abs(browserNow - piNow) > 3600) {
-  var clock_td = document.getElementById("clock")
-  clock_td.style.color = "#C8322D"
-  clock_td.innerHTML = "Out of Sync"
-}
-
-</script>
-
 <div id="error_page" class="outer">
   <div class="middle">
     <div class="inner">
@@ -167,3 +146,30 @@ if(Math.abs(browserNow - piNow) > 3600) {
     </div>
   </div>
 </div>
+
+
+
+
+
+<script language='javascript'>
+(function () {
+{{#success}}
+var div = document.getElementById("error_page");
+{{/success}}
+{{^success}}
+var div = document.getElementById("welcome_page");
+{{/success}}
+div.style.display = "none";
+
+var piNow = {{now}}
+var browserNow = new Date() / 1000
+
+// more than one hour
+if(Math.abs(browserNow - piNow) > 3600) {
+  var clock_td = document.getElementById("clock")
+  clock_td.style.color = "#C8322D"
+  clock_td.innerHTML = "Out of Sync"
+}
+})();
+
+</script>
