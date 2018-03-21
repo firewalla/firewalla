@@ -150,7 +150,7 @@ class App {
     return async(() => {
       try {
         const gid = await (exec("redis-cli hget sys:ept gid"))
-        return gid.substring(0,8)
+        return gid && gid.stdout && gid.stdout.substring(0,8)
       } catch(err) {
         log.error("Failed to get gid", err, {})
         return null
