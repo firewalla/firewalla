@@ -29,11 +29,7 @@ const Promise = require('bluebird')
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const sysinfo = require('../sysinfo/SysInfo.js')
-
 const exec = require('child-process-promise').exec
-
-const moment = require('moment')
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -148,12 +144,11 @@ class App {
   getGID() {
     return async(() => {
       try {
-        await (exec("redis-cli hget sys:ept gid"))
+        const gid = await (exec("redis-cli hget sys:ept gid"))
+        return gid.slice(0,8)
       } catch(err) {
-        return errorCodes.gid
+        return null
       }
-
-      return 0
     })()
   }
 
@@ -161,10 +156,12 @@ class App {
     return async(() => {
       const eth0s = require('os').networkInterfaces()["eth0"]
 
-      for (let index = 0; index < eth0s.length; index++) {
-        const eth0 = eth0s[index]
-        if(eth0.family == "IPv4" && eth0.address != "192.168.218.1") {
-          return eth0.address
+      if(eth0s) {
+        for (let index = 0; index < eth0s.length; index++) {
+          const eth0 = eth0s[index]
+          if(eth0.family == "IPv4" && eth0.address != "192.168.218.1") {
+            return eth0.address
+          }
         }
       }
 
@@ -193,15 +190,52 @@ class App {
         const systemServices = await(this.getSystemServices())
         const expireDate = this.expireDate
         
-        
-        if(!this.broadcastInfo || ip == "" || gid != 0 || database != 0 || memory != 0 || connected != true || systemServices != 0) {
-          // make sure device local time is displayed on the screen
-          res.render('diag', {time, ip, gid, database, uptime, nodeVersion, memory, connected, systemServices})
-        } else {
-          res.render('welcome', {broadcastInfo: this.broadcastInfo, time: time, expireDate: expireDate})
+        let success = true
+        let values = {}
+
+        if(!this.broadcastInfo) {
+          values.err_binding = true
+          success = false
         }
+
+        if(ip == "") {
+          values.err_ip = true
+          success = false
+        }
+
+        if(gid == null) {
+          values.err_gid = true
+          success = false
+        }
+
+        if(database != 0) {
+          values.err_database = true
+          success = false
+        }
+
+        if(memory != 0) {
+          values.err_memory = true
+          success = false
+        }
+
+        if(connected != true) {
+          values.err_cloud = true
+          success = false
+        }
+
+        if(systemServices != 0) {
+          values.err_service = true
+          success = false
+        }
+
+        values.success = success
+
+        res.render('welcome', values)
         
-      })()
+      })().catch((err) => {
+        log.error("Failed to process request", err, {})
+        res.status(500).send({})
+      })
     })
   }
 

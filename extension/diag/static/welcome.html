@@ -1,6 +1,6 @@
-<link href="diag.css" rel="stylesheet" type="text/css" />
+<link href="./static/diag.css" rel="stylesheet" type="text/css" />
 
-<div class="outer error_page">
+<div class="outer error_page" style="display: none;">
   <div class="middle">
     <div class="inner">
       <div class="header">
@@ -23,12 +23,7 @@
           </tr>
           <tr>
             <td class="row_item">Cloud Connectivity</td>
-            {{#err_cloud}}
-            <td class="row_status error">Error</td>
-            {{/err_cloud}}
-            {{^err_cloud}}
             <td class="row_status">OK</td>
-            {{/err_cloud}}
           </tr>
           <tr>
             <td class="row_item">System Memory</td>
@@ -71,7 +66,7 @@
 </div>
 
 
-<div class="outer welcome_page" style="display: none;">
+<div class="outer welcome_page">
   <div class="middle">
     <div class="inner">
 
