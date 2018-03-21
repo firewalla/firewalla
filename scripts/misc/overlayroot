@@ -694,7 +694,7 @@ FW_RESET_FILE=${ROOTMNT}/fw_reset
 
 if [[ -f ${FW_RESET_FILE} ]]; then
   # reformat p4 if reset flag is in place
-  ${ROOTMNT}/sbin/mkfs.ext4 ${device}
+  ${ROOTMNT}/usr/bin/yes | ${ROOTMNT}/sbin/mkfs.ext4 ${device}
 	mount -o remount,rw ${ROOTMNT}
   rm -f ${FW_RESET_FILE}
 	mount -o remount,ro ${ROOTMNT}
