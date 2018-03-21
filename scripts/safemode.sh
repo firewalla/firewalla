@@ -2,10 +2,10 @@
 
 CMD=$(basename $0)
 BOOTMODE_FILE=/data/bootmode.txt
-OVERLAYROOT_CONF=/tmp/overlayroot.conf
 ROOT_RO_MNT=/media/root-ro
 ROOT_RO_PART=/dev/mmcblk0p1
 ROOT_RW_PART=/dev/mmcblk0p4
+OVERLAYROOT_CONF=$ROOT_RO_MNT/etc/overlayroot.conf
 
 
 usage() {
@@ -36,6 +36,7 @@ set_overlayroot() {
     echo -n update overlayroot configuration to use tmpfs as upper fs ...
 
     sed -e "s/^ *overlayroot=.*/overlayroot=\"${fstype},recurse=0\"/" $OVERLAYROOT_CONF >| $OVERLAYROOT_CONF.new \
+        && chmod 0640 $OVERLAYROOT_CONF.new \
         && mv -f $OVERLAYROOT_CONF.new $OVERLAYROOT_CONF || _rc=1
     if $_rc -eq 0
     then
