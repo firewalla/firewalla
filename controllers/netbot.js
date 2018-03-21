@@ -28,8 +28,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 const URL = require("url");
-
-
+const bone = require("../lib/Bone");
 
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
@@ -1888,6 +1887,26 @@ class netBot extends ControllerBot {
         }
       })()
       break;
+    case "intel:finger":
+      (async () => {
+        const target = msg.data.value.target;
+        if (target) {
+          let result;
+          try {
+            result = await bone.intelFinger(target);
+          } catch (err) {
+            log.error("Error when intel finger", err, {});
+          }
+          if (result && result.whois) {
+            this.simpleTxData(msg, result, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+          }
+        } else {
+          this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
+        }
+      })();
+      break;
     case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
@@ -2441,8 +2460,6 @@ class netBot extends ControllerBot {
   }
 
 }
-
-let bone = require('../lib/Bone.js');
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
