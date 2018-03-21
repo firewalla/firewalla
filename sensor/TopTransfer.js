@@ -19,11 +19,8 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const redis = require('redis');
-const rclient = redis.createClient();
-
+const rclient = require('../util/redis_manager.js').getRedisClient()
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');

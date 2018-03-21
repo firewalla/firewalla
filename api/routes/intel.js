@@ -16,17 +16,10 @@
 'use strict'
 
 let log = require('../../net2/logger.js')(__filename);
+const bone = require("../../lib/Bone");
 
 let express = require('express');
 let router = express.Router();
-let bodyParser = require('body-parser')
-
-let Promise = require('bluebird');
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-
 
 router.get('/:ip',
   (req, res, next) => {
@@ -53,5 +46,25 @@ router.get('/:ip',
         });
       });
   });
+
+router.get('/finger/:target', async (req, res, next) => {
+  let target = req.params.target;
+  log.info("/intel/finger/" + target);
+  let result;
+  try {
+    result = await bone.intelFinger(target);
+  } catch (err) {
+    log.error("Error when intel finger", err, {});
+  }
+  
+  if (!result) {
+    log.info("invalid result:", target);
+    res.status(500).send();
+    return;
+  }
+  
+  res.json(result).send();      
+});
+
 
 module.exports = router;

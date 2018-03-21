@@ -58,6 +58,7 @@
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
+    "HeapSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},

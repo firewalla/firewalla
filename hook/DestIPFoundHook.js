@@ -22,14 +22,11 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let country = require('../extension/country/country.js');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const f = require("../net2/Firewalla.js")
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
