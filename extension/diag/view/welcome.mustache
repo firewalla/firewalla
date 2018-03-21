@@ -1,6 +1,28 @@
 <link href="./static/diag.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" charset="utf-8" src="./static/diag.js"></script>
 
-<div class="outer error_page">
+<script language='javascript'>
+{{#success}} 
+var div = document.getElementById("error_page");
+{{/success}}
+{{^success}}
+var div = document.getElementById("welcome_page");
+{{/success}}
+div.style.display = "none";
+
+var piNow = {{now}}
+var browserNow = new Date() / 1000
+
+// more than one hour
+if(Math.abs(browserNow - piNow) > 3600) {
+  var clock_td = document.getElementById("clock")
+  clock_td.style.color = "#C8322D"
+  clock_td.innerHTML = "Out of Sync"
+}
+
+</script>
+
+<div id="error_page" class="outer">
   <div class="middle">
     <div class="inner">
       <div class="header">
@@ -25,38 +47,73 @@
             <td class="row_item">Cloud Connectivity</td>
             {{#err_cloud}}
             <td class="row_status error">Error</td>
-            {{/err_cloud}}
-            {{^err_cloud}}
+            {{/err_cloud}} {{^err_cloud}}
             <td class="row_status">OK</td>
             {{/err_cloud}}
           </tr>
           <tr>
             <td class="row_item">System Memory</td>
+            {{#err_memory}}
             <td class="row_status error">Error</td>
+            {{/err_memory}} {{^err_memory}}
+            <td class="row_status">OK</td>
+            {{/err_memory}}
+
           </tr>
           <tr>
             <td class="row_item">System Services</td>
+            {{#err_service}}
+            <td class="row_status error">Error</td>
+
+            {{/err_service}} {{^err_service}}
             <td class="row_status">OK</td>
+
+            {{/err_service}}
+
           </tr>
           <tr>
             <td class="row_item">Database</td>
+            {{#err_database}}
+            <td class="row_status error">Error</td>
+
+            {{/err_database}} {{^err_database}}
             <td class="row_status">OK</td>
-          </tr>
+
+            {{/err_database}} </tr>
           <tr>
             <td class="row_item">System Clock</td>
-            <td class="row_status">OK</td>
+            <td id='clock' class="row_status">OK</td>
           </tr>
           <tr>
-              <td class="row_item">Binding Service</td>
-              <td class="row_status">OK</td>
-            </tr>
+            <td class="row_item">Binding Service</td>
+            {{#err_binding}}
+            <td class="row_status error">Error</td>
+
+            {{/err_binding}} {{^err_binding}}
+            <td class="row_status">OK</td>
+
+            {{/err_binding}}
+          </tr>
           <tr>
             <td class="row_item">Configuration</td>
+
+            {{#err_config}}
+            <td class="row_status error">Error</td>
+            {{/err_config}} 
+            
+            {{^err_config}}
             <td class="row_status">OK</td>
+            {{/err_config}}
           </tr>
           <tr>
             <td class="row_item">IP Address</td>
-            <td class="row_status">10.0.1.180</td>
+            {{#err_ip}}
+            <td class="row_status error">Error</td>
+
+            {{/err_ip}} {{^err_ip}}
+            <td class="row_status">{{ip}}</td>
+
+            {{/err_ip}}
           </tr>
         </table>
 
@@ -71,7 +128,7 @@
 </div>
 
 
-<div class="outer welcome_page" style="display: none;">
+<div id="welcome_page" class="outer welcome_page">
   <div class="middle">
     <div class="inner">
 

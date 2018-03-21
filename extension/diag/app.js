@@ -191,7 +191,9 @@ class App {
         const expireDate = this.expireDate
         
         let success = true
-        let values = {}
+        let values = {
+          now: new Date() / 1000
+        }
 
         if(!this.broadcastInfo) {
           values.err_binding = true
@@ -201,10 +203,12 @@ class App {
         if(ip == "") {
           values.err_ip = true
           success = false
+        } else {
+          values.ip = ip
         }
 
         if(gid == null) {
-          values.err_gid = true
+          values.err_config = true
           success = false
         }
 
