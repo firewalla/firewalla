@@ -716,7 +716,9 @@ class PolicyManager2 {
               log.info(`About to revoke policy ${pid} `)
               // make sure policy is still enabled before disabling it
               const policy = await (this.getPolicy(pid))
-              if(policy.isDisabled()) {
+
+              // do not do anything if policy doesn't exist any more or it's disabled already
+              if(!policy || policy.isDisabled()) {
                 return
               }
 
@@ -891,7 +893,8 @@ class PolicyManager2 {
             return categoryBlock.blockCategory(policy.target)
           }
         })()
-      
+        break;
+
       default:
         return Promise.reject("Unsupported policy");
       }

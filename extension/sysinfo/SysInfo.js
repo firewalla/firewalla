@@ -284,6 +284,10 @@ function getHeapDump(file, callback) {
   // heapdump.writeSnapshot(file, callback);
 }
 
+function getSystemInfo() {
+  return "a good test"
+}
+
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
@@ -291,5 +295,6 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump
+  getHeapDump: getHeapDump,
+  getSystemInfo: getSystemInfo
 };
