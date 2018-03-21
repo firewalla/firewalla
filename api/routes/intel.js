@@ -60,7 +60,7 @@ router.get('/finger/:target', async (req, res, next) => {
   log.info("/intel/finger/" + target);
   
   if (!result) {
-    log.info("invalid result" + target);
+    log.info("invalid result:", target);
     res.status(500).send();
     return;
   }
