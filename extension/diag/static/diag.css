@@ -86,7 +86,6 @@
 
 .outer {
     display: table;
-    position: absolute;
     height: 100%;
     width: 100%;
 }
@@ -180,3 +179,23 @@
     font-size:20px
   }
 }
+
+@media only screen 
+  and (min-device-width: 414px) 
+  and (max-device-width: 736px) 
+  and (-webkit-min-device-pixel-ratio: 3) { 
+  .title {
+    font-size: 20px;
+  }
+  .error_logo {
+    width: 47px;
+  }
+  .welcome {
+    font-size:32px
+  }
+  .connect {
+    font-size:20px
+  }
+
+}
+
