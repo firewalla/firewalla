@@ -3,7 +3,6 @@
 CMD=$(basename $0)
 BOOTMODE_FILE=/data/bootmode.txt
 ROOT_RO_MNT=/media/root-ro
-ROOT_RO_PART=/dev/mmcblk0p1
 ROOT_RW_PART=/dev/mmcblk0p4
 OVERLAYROOT_CONF=$ROOT_RO_MNT/etc/overlayroot.conf
 
@@ -61,7 +60,7 @@ do_check() {
     bootmode=$(cat $BOOTMODE_FILE)
     case $bootmode in
         safe)
-            fsck.ext4 -p -C0 $ROOT_RO_PART
+            fsck.ext4 -p -C0 $ROOT_RW_PART
             set_overlayroot $ROOT_RW_PART
             ;;
         reset)
