@@ -10,7 +10,7 @@ ROOT_RW_PART=/dev/mmcblk0p4
 
 usage() {
     cat <<EOS
-usage: $CMD {prep|check}
+usage: $CMD {check|safe|reset}
 EOS
 }
 
@@ -20,7 +20,7 @@ err() {
 
 set_boot_mode() {
     m=$1
-    echo -n "set boot mode to '$mode' in $BOOTMODE_FILE ... "
+    echo -n "set boot mode to '$m' in $BOOTMODE_FILE ... "
     echo $m >| $BOOTMODE_FILE && echo OK || { echo fail; return 1; }
 }
 
@@ -53,7 +53,7 @@ set_overlayroot() {
 
 do_prep() {
     set_overlayroot tmpfs || return 1
-    set_boot_mode $mode || return 1
+    set_boot_mode $1 || return 1
 }
 
 do_check() {
@@ -93,7 +93,8 @@ test $# -ge 1 || {
 
 case $op in
     check) do_check ;;
-    prep) do_prep ;;
+    safe) do_prep safe ;;
+    reset) do_prep reset ;;
 esac
 
 
