@@ -19,6 +19,11 @@ sudo rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
 sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
 sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
+# touch a fw reset file to support new image
+sudo mount -o remount,rw /media/root-ro
+sudo touch /media/root-ro/fw_reset
+sudo mount -o remount,ro /media/root-ro
+
 sync
 sync
 : ${FIREWALLA_POST_RESET_OP:='reboot'}
