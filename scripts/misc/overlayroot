@@ -690,10 +690,12 @@ case "${overlayroot_driver}" in
 		;;
 esac
 
-if [[ -f ${ROOTMNT}/fw_reset ]]; then
+FW_RESET_FILE=${ROOTMNT}/fw_reset
+
+if [[ -f ${FW_RESET_FILE} ]]; then
   # reformat p4 if reset flag is in place
   mkfs.ext4 ${device}
-  rm -f ${ROOTMNT}/fw_reset
+  rm -f ${FW_RESET_FILE}
 else
   # check filesystem before mount
   fsck -f -a -C0 ${device}
