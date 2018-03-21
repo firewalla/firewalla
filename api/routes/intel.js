@@ -56,8 +56,6 @@ router.get('/finger/:target', async (req, res, next) => {
   } catch (err) {
     log.error("Error when intel finger", err, {});
   }
-
-  log.info("/intel/finger/" + target);
   
   if (!result) {
     log.info("invalid result:", target);
