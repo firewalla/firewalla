@@ -38,7 +38,7 @@ set_overlayroot() {
     sed -e "s/^ *overlayroot=.*/overlayroot=\"${fstype},recurse=0\"/" $OVERLAYROOT_CONF >| $OVERLAYROOT_CONF.new \
         && chmod 0640 $OVERLAYROOT_CONF.new \
         && mv -f $OVERLAYROOT_CONF.new $OVERLAYROOT_CONF || _rc=1
-    if $_rc -eq 0
+    if [[ $_rc -eq 0 ]]
     then
         echo OK
     else
