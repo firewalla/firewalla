@@ -37,7 +37,8 @@ var app = express();
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
+app.engine('mustache', require('mustache-express')());
+app.set('view engine', 'mustache');
 app.set('json spaces', 2);
 
 // uncomment after placing your favicon in /public
