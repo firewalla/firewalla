@@ -108,7 +108,6 @@ class DestIPFoundHook extends Hook {
       let hashes = [intel.ip, intel.host].map(
         x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
       )
-
       hashes = [].concat.apply([], hashes);
 */
 
@@ -135,6 +134,14 @@ class DestIPFoundHook extends Hook {
 
       if(info.action && info.action.block) {
         intel.action = "block"
+      }
+      
+      if(info.s) {
+        intel.s = info.s;
+      }
+ 
+      if(info.t) {
+        intel.t = info.t;
       }
       //      }
     });
