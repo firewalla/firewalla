@@ -20,8 +20,10 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
+const f = require('../net2/Firewalla.js')
 
 const iptool = require('ip')
 
@@ -88,6 +90,10 @@ class DNSTool {
   addReverseDns(dns, addresses, expire) {
     expire = expire || 24 * 3600; // one day by default
     addresses = addresses || []
+
+    addresses = addresses.filter((addr) => {
+      return f.isReservedBlockingIP(addr) != true
+    })
 
     let key = this.getReverseDNSKey(dns)
 
