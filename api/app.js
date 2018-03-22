@@ -5,16 +5,13 @@
 
 var express = require('express');
 var path = require('path');
-var favicon = require('serve-favicon');
 var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
-var argv = require('minimist')(process.argv.slice(2));
 const passport = require('passport');
 var Strategy = require('passport-http-bearer').Strategy;
 var db = require('./db');
 
-let firewalla = require('../net2/Firewalla.js');
 let log = require('../net2/logger.js')(__filename, 'info')
 
 passport.use(new Strategy(
