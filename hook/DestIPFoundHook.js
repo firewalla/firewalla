@@ -265,6 +265,12 @@ class DestIPFoundHook extends Hook {
   run() {
     sem.on('DestIPFound', (event) => {
       let ip = event.ip;
+
+      // ignore reserved ip address
+      if(f.isReservedBlockingIP(ip)) {
+        return;
+      }
+
       let fd = event.fd;
       if (fd == null) {
         fd = 'in'
