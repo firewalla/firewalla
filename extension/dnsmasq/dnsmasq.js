@@ -336,16 +336,14 @@ module.exports = class DNSMASQ {
   }
 
   setDefaultNameServers(key, ips) {
-    const isIP = (ip) => validator.isIPv4(ip) || validator.isIPv6(ip);
     let _ips;
     if (Array.isArray(ips)) {
-      _ips = ips.filter(isIP);
+      _ips = ips.filter(validator.isIP);
     } else {
-      if (isIP(ips.toString())) {
-        _ips = [ips.toString()];
-      } else {
+      if (!validator.isIP(ips.toString())) {
         return;
       }
+      _ips = [ips.toString()];
     }
     defaultNameServers[key] = _ips;
   }
