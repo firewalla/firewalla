@@ -333,11 +333,11 @@ module.exports = class {
     dnsmasq.controlFilter('adblock', state);
   }
 
-  async upstreamDns(dnsHost, state) {
-    log.info("PolicyManager:UpstreamDns:Dnsmasq", dnsHost, state);
+  async upstreamDns(ips, state) {
+    log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
 
     if (state === true) {
-      dnsmasq.setDefaultNameServers("default", dnsHost);
+      dnsmasq.setDefaultNameServers("default", ips);
       await dnsmasq.updateResolvConf();
     } else {
       dnsmasq.unsetDefaultNameServers("default"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
