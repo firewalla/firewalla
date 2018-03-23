@@ -302,14 +302,16 @@ module.exports = class DNSMASQ {
     
     return async(() => {
       if(this.workingInProgress) {
+        log.info("deferred due to dnsmasq is working in progress")
         await (this.delay(1000))  // try again later
         return this.addPolicyFilterEntry(domain);
       }
 
       this.workingInProgress = true
       await (fs.appendFileAsync(policyFilterFile, entry))
-      this.workingInProgress = false
     })().catch((err) => {
+      log.error("Failed to add policy filter entry", err, {})
+    }).finally(() => {
       this.workingInProgress = false
     })
   }
@@ -317,30 +319,28 @@ module.exports = class DNSMASQ {
   removePolicyFilterEntry(domain) {
     let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
 
-    if(this.workingInProgress) {
-        return this.delay(1000)  // try again later
-          .then(() => {
-            return this.removePolicyFilterEntry(domain);
-          })
-    }
+    return async(() => {
+      if(this.workingInProgress) {
+        log.info("deferred due to dnsmasq is working in progress")
+        await(this.delay(1000))
+        return this.removePolicyFilterEntry(domain);
+      }
 
-    this.workingInProgress = true;
+      this.workingInProgress = true;
 
-    return fs.readFileAsync(policyFilterFile, 'utf8')
-      .then((data) => {
+      const data = await (fs.readFileAsync(policyFilterFile, 'utf8'))
 
       let newData = data.split("\n")
         .filter((line) => line !== entry)
-        .join("\n");
+        .join("\n")
 
-        return fs.writeFileAsync(policyFilterFile, newData)
-          .then(() => {
-            this.workingInProgress = false;
-          }).catch((err) => {
-            log.error("Failed to write policy data file:", err, {});
-            this.workingInProgress = false; // make sure the flag is reset back
-          });
-      })
+      await (fs.writeFileAsync(policyFilterFile, newData))      
+
+    })().catch((err) => {
+      log.error("Failed to remove policy filter entry", err, {})
+    }).finally(() => {
+      this.workingInProgress = false
+    })
   }
 
   addPolicyFilterEntries(domains) {
