@@ -131,13 +131,17 @@ class DomainBlock {
     const patternDomainKey = `ipmapping:domain:*`
     const domainKeys = await (rclient.keysAsync(patternDomainKey))
     if(domainKeys) {
-      await (rclient.delAsync(domainKeys))
+      domainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
     }
 
     const patternExactDomainKey = `ipmapping:exactdomain:*`
     const exactDomainKeys = await (rclient.keysAsync(patternExactDomainKey))
     if(exactDomainKeys) {
-      await (rclient.delAsync(exactDomainKeys))
+      exactDomainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
     }
   }
 
