@@ -2199,7 +2199,7 @@ class netBot extends ControllerBot {
     case "dns:upstream": {
       (async () => {
         try {
-          await policyManager.upstreamDns(msg.data.value.ip, msg.data.value.state);
+          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
           this.simpleTxData(msg, {}, null, callback);
         } catch (err) {
           log.error("Error when set upstream dns", err, {});
