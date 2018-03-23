@@ -337,10 +337,10 @@ module.exports = class {
     log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
 
     if (state === true) {
-      dnsmasq.setDefaultNameServers("default", ips);
+      dnsmasq.setDefaultNameServers("upstream", ips);
       await dnsmasq.updateResolvConf();
     } else {
-      dnsmasq.unsetDefaultNameServers("default"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+      dnsmasq.unsetDefaultNameServers("upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }
   }
