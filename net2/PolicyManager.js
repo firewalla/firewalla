@@ -334,7 +334,6 @@ module.exports = class {
   }
 
   async upstreamDns(dnsHost, state) {
-
     log.info("PolicyManager:UpstreamDns:Dnsmasq", dnsHost, state);
 
     if (state === true) {
@@ -344,7 +343,6 @@ module.exports = class {
       dnsmasq.unsetDefaultNameServers("default"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }
-
   }
 
   hblock(host, state) {
