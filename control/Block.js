@@ -124,6 +124,8 @@ function destroyBlockingEnv(tag) {
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
   return async(() => {
+    log.info("destroying block enviornment for", tag)
+    
     const macSet = getMacSet(tag)
     const dstSet = getDstSet(tag)
     const dstSet6 = getDstSet6(tag)
@@ -152,6 +154,7 @@ function destroyBlockingEnv(tag) {
     await (exec(cmdDeleteDstSet))
     await (exec(cmdDeleteDstSet6))
 
+    log.info("finish destroying block enviornment for", tag)
   })()
 }
 

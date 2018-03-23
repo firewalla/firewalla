@@ -123,12 +123,12 @@ class CategoryBlock {
         // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
-      const list = await (this.loadDomains(category))
-      if(list && list.length > 0) {
-        list.forEach((domain) => {
-          await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
-        })
-      }
+      // const list = await (this.loadDomains(category))
+      // if(list && list.length > 0) {
+      //   list.forEach((domain) => {
+      //     await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
+      //   })
+      // }
       await (rclient.delAsync(this.getMapping(category))) // ipmapping:category:games
       await (rclient.delAsync(this.getCategoryDomainKey(category))) // categoryDomain:games
     })()
