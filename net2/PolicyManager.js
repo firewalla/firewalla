@@ -309,10 +309,10 @@ module.exports = class {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
       if (state === true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf().then(() => callback());
+        dnsmasq.updateResolvConf().then(callback);
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf().then(() => callback());
+        dnsmasq.updateResolvConf().then(callback);
       }
     });
 
@@ -337,10 +337,10 @@ module.exports = class {
     log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
 
     if (state === true) {
-      dnsmasq.setDefaultNameServers("upstream", ips);
+      dnsmasq.setDefaultNameServers("00-upstream", ips);
       await dnsmasq.updateResolvConf();
     } else {
-      dnsmasq.unsetDefaultNameServers("upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+      dnsmasq.unsetDefaultNameServers("00-upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }
   }
