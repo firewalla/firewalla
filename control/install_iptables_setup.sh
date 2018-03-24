@@ -22,8 +22,8 @@ sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
 
-sudo ipset add blocked_ip_set $BLACK_HOLE_IP
-sudo ipset add blocked_ip_set $BLUE_HOLE_IP
+sudo ipset add -! blocked_ip_set $BLACK_HOLE_IP
+sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
 
 # This is to remove all customized ip sets, to have a clean start
 for set in `sudo ipset list -name | egrep "^c_"`; do
