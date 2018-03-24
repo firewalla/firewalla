@@ -24,7 +24,7 @@ const Promise = require('bluebird');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const PolicyManager2 = require('./PolicyManager2.js')
+const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
 class PolicyGuardSensor extends Sensor {
