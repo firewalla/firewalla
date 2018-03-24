@@ -16,8 +16,9 @@ const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-const fs = Promise.promisifyAll(require("fs"))
+const rclient = require('../../util/redis_manager.js').getRedisClient();
+const fs = Promise.promisifyAll(require("fs"));
+const validator = require('validator');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -185,10 +186,16 @@ module.exports = class DNSMASQ {
       nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
 
-    let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
+    let entries = nameservers.map(ip => "nameserver " + ip);
     let config = entries.join('\n');
     config += "\n";
-    fs.writeFileSync(resolvFile, config);
+
+    try {
+      await fs.writeFileAsync(resolvFile, config);
+    } catch (err) {
+      log.error("Error when updating resolv.conf:", resolveFile, "error msg:", err.message, {});
+      throw err;
+    }
   }
 
   async updateFilter(type, force) {
@@ -328,8 +335,17 @@ module.exports = class DNSMASQ {
     await fs.appendFileAsync(policyFilterFile, data);
   }
 
-  setDefaultNameServers(key, nameservers) {
-    defaultNameServers[key] = nameservers;
+  setDefaultNameServers(key, ips) {
+    let _ips;
+    if (Array.isArray(ips)) {
+      _ips = ips.filter(validator.isIP);
+    } else {
+      if (!validator.isIP(ips.toString())) {
+        return;
+      }
+      _ips = [ips.toString()];
+    }
+    defaultNameServers[key] = _ips;
   }
 
   unsetDefaultNameServers(key) {
@@ -337,13 +353,13 @@ module.exports = class DNSMASQ {
   }
 
   getAllDefaultNameServers() {
-    let list = []
-    for(let key in defaultNameServers) {
-      let l = defaultNameServers[key]
-      if(l.constructor.name === 'Array') {
-        list.push.apply(list, l)
+    let list = [];
+    Object.keys(defaultNameServers).sort().forEach(key => {
+      let ips = defaultNameServers[key]
+      if (Array.isArray(ips)) {
+        Array.prototype.push.apply(list, ips);
       }
-    }
+    });
     return list
   }
 

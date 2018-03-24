@@ -108,6 +108,9 @@ let spooferManager = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager')
 
+const PolicyManager = require('../net2/PolicyManager.js');
+const policyManager = new PM();
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -2192,6 +2195,18 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, err, callback)
       })
       break
+    }
+    case "dns:upstream": {
+      (async () => {
+        try {
+          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
+          this.simpleTxData(msg, {}, null, callback);
+        } catch (err) {
+          log.error("Error when set upstream dns", err, {});
+          this.simpleTxData(msg, {}, err, callback);
+        }
+      })();
+      break;
     }
     default:
       // unsupported action
