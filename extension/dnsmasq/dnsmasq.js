@@ -60,7 +60,7 @@ let dnsmasqBinary = __dirname + "/dnsmasq";
 let dnsmasqPIDFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 let dnsmasqConfigFile = __dirname + "/dnsmasq.conf";
 
-let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+let dnsmasqResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf"
 
 let defaultNameServers = {};
 let upstreamDNS = null;
@@ -186,8 +186,15 @@ module.exports = class DNSMASQ {
     let entries = nameservers.map((nameserver) => "nameserver " + nameserver);
     let config = entries.join('\n');
     config += "\n";
-    fs.writeFileSync(dnsmasqResolvFile, config);
-    callback(null);
+
+    async(() => {
+      await (fs.writeFileAsync(dnsmasqResolvFile, config))
+      await (exec("pkill -SIGHUP dnsmasq"))
+      callback(null)
+    })().catch((err) => {
+      log.error("Got error when writing dnsmasq resolve file", err, {})
+      callback(err)
+    })    
   }
 
   updateFilter(type, force, callback) {
