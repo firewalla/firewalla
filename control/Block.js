@@ -288,7 +288,7 @@ function advancedUnblock(tag, macAddresses, destinations) {
 function advancedBlockMAC(macAddress, setName) {
   return async(() => {
     if(macAddress && setName) {
-      const cmd = `sudo ipset add ${setName} ${macAddress}`
+      const cmd = `sudo ipset add -! ${setName} ${macAddress}`
       return exec(cmd)
     } else {
       return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
