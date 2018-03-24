@@ -192,6 +192,7 @@ module.exports = class DNSMASQ {
       await (exec("pkill -SIGHUP dnsmasq"))
       callback(null)
     })().catch((err) => {
+      log.error("Got error when writing dnsmasq resolve file", err, {})
       callback(err)
     })    
   }
