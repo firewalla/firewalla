@@ -48,7 +48,6 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
-    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
