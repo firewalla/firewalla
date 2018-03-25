@@ -189,7 +189,9 @@ module.exports = class DNSMASQ {
 
     async(() => {
       await (fs.writeFileAsync(dnsmasqResolvFile, config))
-      await (exec("pkill -SIGHUP dnsmasq"))
+      await (exec("pkill -SIGHUP dnsmasq").catch((err) => {
+        // ignore error if dnsmasq not exists
+      }))
       callback(null)
     })().catch((err) => {
       log.error("Got error when writing dnsmasq resolve file", err, {})
