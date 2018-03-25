@@ -668,7 +668,7 @@ module.exports = class DNSMASQ {
     callback = callback || function() {}
 
     // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k -x ${dnsmasqPIDFile} -u ${userID} -C ${dnsmasqConfigFile} -r ${dnsmasqResolvFile} --local-service`;
+    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -x ${dnsmasqPIDFile} -u ${userID} -C ${dnsmasqConfigFile} -r ${dnsmasqResolvFile} --local-service`;
 
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
