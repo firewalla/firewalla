@@ -198,7 +198,7 @@ module.exports = class DNSMASQ {
     }
 
     try {
-      await exec("pkill -SIGHUP dnsmasq");
+      await execAsync("pkill -SIGHUP dnsmasq");
     } catch (err) {
       // ignore error if dnsmasq not exists 
     }
