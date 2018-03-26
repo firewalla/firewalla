@@ -67,6 +67,8 @@
   let async = require('asyncawait/async');
   let await = require('asyncawait/await');
   
+  const bone = require("../lib/Bone.js");
+
   let SysManager = require('../net2/SysManager.js');
   let sysManager = new SysManager();
   let firewallaConfig = require('../net2/config.js').getConfig();
@@ -79,6 +81,8 @@
   // nmapSensor.suppressAlarm = true;
   
   let FWInvitation = require('./invitation.js');
+
+  const Diag = require('../extension/diag/app.js')
   
   async(() => {
     await (sysManager.setConfig(firewallaConfig));
@@ -138,7 +142,10 @@
   
   let symmetrickey = generateEncryptionKey(_license);
   
-  
+  // start a diagnostic page for people to access during first binding process
+  const diag = new Diag()
+  diag.start()
+
   let eptcloud = new cloud(eptname, null);
   eptcloud.debug(false);
   let service = null;
@@ -166,8 +173,7 @@
     };
   }
   
-  function initializeGroup(callback) {
-    
+  function initializeGroup(callback) {    
     let groupId = storage.getItemSync('groupId');
     if (groupId != null) {
       log.info("Found stored group x", groupId);
@@ -217,6 +223,7 @@
   
   function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin:", gid);
+
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
         log.info("Error looking up group", err, err.stack, {});
@@ -240,6 +247,7 @@
         led.on();
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+          fwInvitation.diag = diag
           
           let onSuccess = function(payload) {
             return async(() => {
@@ -267,6 +275,7 @@
             });
           }
           
+          diag.expireDate = new Date() / 1000 + 3600
           fwInvitation.broadcast(onSuccess, onTimeout);
           
         } else {
@@ -280,6 +289,7 @@
           }
           
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+          fwInvitation.diag = diag
           fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
           fwInvitation.recordFirstBinding = false // don't record for additional binding
           
@@ -300,6 +310,7 @@
             });
           }
           
+          diag.expireDate = new Date() / 1000 + 600
           fwInvitation.broadcast(onSuccess, onTimeout);
           
           callback(null, true);
@@ -331,6 +342,9 @@
     eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
       if (err == null) {
         log.info("Cloud Logged In")
+
+        diag.connected = true
+
         initializeGroup(function (err, gid) {
           let groupid = gid;
           if (gid) {

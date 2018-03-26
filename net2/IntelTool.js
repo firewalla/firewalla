@@ -104,8 +104,11 @@ class IntelTool {
     return rclient.delAsync(key);
   }
 
-  checkIntelFromCloud(ipList, domainList, appList, flow) {
-    log.debug("Checking intel for", ipList, domainList, {});
+  checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
+    log.debug("Checking intel for",fd, ipList, domainList, {});
+    if (fd == null) {
+      fd = 'in';
+    }
 
     let flowList = [];
     let _ipList = [];
@@ -136,13 +139,13 @@ class IntelTool {
         _iplist:_ipList,
         _hlist:_hList,
         _alist:_aList,
-        flow:{fd:'in'}});
+        flow:{fd:fd}});
     } else {
       flowList.push({
         _iplist:_ipList,
         _hlist:_hList,
         _alist:_aList,
-        flow:{fd:'in'}});
+        flow:{fd:fd}});
     }
 
     let data = {flowlist:flowList, hashed:1};
@@ -151,10 +154,11 @@ class IntelTool {
 
     return new Promise((resolve, reject) => {
       bone.intel("*","", "check", data, (err, data) => {
-        if(err)
+        if(err) {
+          log.info("IntelCheck Result FAIL:",ipList, data, {});
           reject(err)
-        else {
-          //          log.info("IntelCheck Result:", data, {});
+        } else {
+          log.debug("IntelCheck Result:",ipList, data, {});
           resolve(data);
         }
 

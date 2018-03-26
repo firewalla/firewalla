@@ -156,6 +156,33 @@ class PolicyManager2 {
         })
         break
       }
+
+      case "incrementalUpdate": {
+        return async(() => {
+          const list = await (domainBlock.getAllIPMappings())
+          list.forEach((l) => {
+            const matchDomain = l.match(/ipmapping:domain:(.*)/)
+            if(matchDomain) {
+              const domain = matchDomain[1]
+              await (domainBlock.incrementalUpdateIPMapping(domain, {}))
+              return
+            } 
+            
+            const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
+            if(matchExactDomain) {
+              const domain = matchExactDomain[1]
+              await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
+              return
+            }
+          })
+        })().catch((err) => {
+          log.error("incremental update policy failed:", err, {})
+        }).finally(() => {
+          log.info("COMPLETE incremental update policy", {})
+          done()
+        })
+      }
+
       default:
         log.error("unrecoganized policy enforcement action:" + action)
         done()
@@ -178,7 +205,7 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if(this.queue) {
           const job = this.queue.createJob(event)
-          job.save(function() {})
+          job.timeout(60 * 1000).save(function() {})
         }
       }
     })
@@ -630,6 +657,13 @@ class PolicyManager2 {
     });
   }
 
+  // cleanup before use
+  cleanupPolicyData() {
+    return async(() => {
+      await (domainBlock.removeAllDomainIPMapping())
+    })() 
+  }
+
   enforceAllPolicies() {
     return new Promise((resolve, reject) => {
       this.loadActivePolicys((err, rules) => {
@@ -643,7 +677,7 @@ class PolicyManager2 {
                   action: "enforce",
                   booting: true
                 })
-                job.save(function() {})
+                job.timeout(60000).save(function() {})
               }
             } catch(err) {
               log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
@@ -716,7 +750,9 @@ class PolicyManager2 {
               log.info(`About to revoke policy ${pid} `)
               // make sure policy is still enabled before disabling it
               const policy = await (this.getPolicy(pid))
-              if(policy.isDisabled()) {
+
+              // do not do anything if policy doesn't exist any more or it's disabled already
+              if(!policy || policy.isDisabled()) {
                 return
               }
 
@@ -891,7 +927,8 @@ class PolicyManager2 {
             return categoryBlock.blockCategory(policy.target)
           }
         })()
-      
+        break;
+
       default:
         return Promise.reject("Unsupported policy");
       }

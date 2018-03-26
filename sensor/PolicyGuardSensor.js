@@ -19,13 +19,13 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
 const Promise = require('bluebird');
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const domainBlock = require('../control/DomainBlock.js')()
+const PolicyManager2 = require('../alarm/PolicyManager2.js')
+const pm2 = new PolicyManager2()
 
 class PolicyGuardSensor extends Sensor {
   constructor() {
@@ -34,24 +34,17 @@ class PolicyGuardSensor extends Sensor {
 
   job() {
     log.info("reinforce policy...")
-    return async(() => {
-      const list = await (domainBlock.getAllIPMappings())
-      list.forEach((l) => {
-        const matchDomain = l.match(/ipmapping:domain:(.*)/)
-        if(matchDomain) {
-          const domain = matchDomain[1]
-          await (domainBlock.incrementalUpdateIPMapping(domain, {}))
-          return
-        } 
-        
-        const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
-        if(matchExactDomain) {
-          const domain = matchExactDomain[1]
-          await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
-          return
-        }
+    if(pm2.queue) {
+      const job = pm2.queue.createJob({
+        action: "incrementalUpdate"
       })
-    })()
+      job.timeout(60000) // 60 seconds at most
+        .save()
+        .then((job) => {
+          log.info("reinforce job is queue-ed")
+        })
+
+    }
   }
 
   run() {

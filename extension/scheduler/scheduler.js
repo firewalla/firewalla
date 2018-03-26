@@ -155,19 +155,21 @@ class PolicyScheduler {
     }
   }
 
-  deregisterPolicy(policy) {
+  deregisterPolicy(policy) {    
     const pid = policy.pid
     if(pid == undefined) {
       // ignore
       return Promise.resolve()
     }
 
+    log.info(`deregistering policy ${pid}`)
+
     const timer = policyTimers[pid]
     const job = runningCronJobs[pid]
 
     if(!job) {
       job.stop()
-      delete runningCronJobs[job]
+      delete runningCronJobs[pid]
     }    
 
     if(timer) {

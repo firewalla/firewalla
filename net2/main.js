@@ -270,12 +270,13 @@ function run() {
       pm2.registerPolicyEnforcementListener()
 
       setTimeout(() => {
-        pm2.enforceAllPolicies()
-          .then(() => {
-            log.info("All existing policy rules are applied");
-          }).catch((err) => {
-            log.error("Failed to apply some policy rules: ", err, {});
-          });
+        async(() => {
+          await (pm2.cleanupPolicyData())
+          await (pm2.enforceAllPolicies())
+          log.info("========= All existing policy rules are applied =========");
+        })().catch((err) => {
+          log.error("Failed to apply some policy rules: ", err, {});
+        });          
       }, 1000 * 10); // delay for 10 seconds
       require('./UpgradeManager').finishUpgrade();
     });
