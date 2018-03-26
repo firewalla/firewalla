@@ -33,7 +33,7 @@ let util = require('util');
 
 let f = require('../../net2/Firewalla.js');
 
-let natpmp = require('nat-pmp');
+let natpmp = require('./nat-pmp');
 let natupnp = require('nat-upnp');
 
 let upnpClient = natupnp.createClient();
@@ -181,6 +181,7 @@ module.exports = class {
     }
 
     removePortMapping(protocol, localPort, externalPort, callback) {
+       callback = callback || function() {}
         this.getCapability(()=>{
             try {
                 if (this.upnpEnabled == true) {
@@ -188,7 +189,9 @@ module.exports = class {
                 } else if (this.natpmpEnabled == true) {
                     return this.removePortMappingNATPMP(protocol, localPort, externalPort, callback);
                 } else {
-                    callback(new Error("no upnp/natpmp"));
+                    if (typeof callback === 'function') {
+                        callback(new Error("no upnp/natpmp"));
+                    }
                 }
             } catch(e) {
                 log.error("UPNP.removePortMapping Exception",e,{});

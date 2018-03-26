@@ -1,5 +1,5 @@
 {
-  "version": 1.95,
+  "version": 1.954,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -48,7 +48,6 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
-    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -58,10 +57,15 @@
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
+    "HeapSensor": {},
+    "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
+    "PolicyGuardSensor": {
+      "interval": 7200000
+    },
     "FlowUploadSensor" : {
       "interval":900,
       "maxFlows": 50000,
@@ -191,7 +195,8 @@
 
     "features": {
       "intel:feedback": true,
-      "ss_client:statusCheck": true
+      "ss_client:statusCheck": true,
+      "familyMode": "v1"
     },
     
     "userFeatures": {
@@ -201,13 +206,16 @@
       "large_upload": true,
       "new_device": true,
       "cyber_security": true,
+      "cyber_security.autoBlock": true,
       "vulnerability": false,
       "ipv6": false,
       "shadowsocks_server": false,
       "scisurf": false,
       "naughty_monkey": false,
-      "ss_client:statusCheck": true
-
+      "device_detection": false,
+      "porn_redirect": false,
+      "redirect_httpd": false,
+      "social_hour": true
     }
 
 }

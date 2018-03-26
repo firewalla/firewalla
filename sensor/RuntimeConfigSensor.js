@@ -38,11 +38,9 @@ class RuntimeConfigSensor extends Sensor {
         log.error("Failed to update redis config:", err, {})
       }
 
-      try {
-        await (this.updateFakeClock())
-      } catch(err) {
-        log.error("Failed to record latest time to fake-hwlock:", err, {})
-      }
+      setInterval(() => {
+        this.schedule()
+      }, 3600 * 1000) // update fake hw clock every hour
     })()
   }
 
@@ -50,8 +48,18 @@ class RuntimeConfigSensor extends Sensor {
     // 900 seconds (15min) for one key change
     // 500 seconds (8.3min) for 10 keys change
     // 2 mins for 10000 keys change
-    const saveConfig = "900 1 500 10 120 10000"
+    const saveConfig = "900 10 500 100 120 100000"
     return exec(`redis-cli config set save "${saveConfig}"`)
+  }
+
+  schedule() {
+    return async(() => {
+      try {
+        await (this.updateFakeClock())
+      } catch(err) {
+        log.error("Failed to record latest time to fake-hwlock:", err, {})
+      }
+    })()
   }
 
   updateFakeClock() {

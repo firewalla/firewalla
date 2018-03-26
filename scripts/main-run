@@ -24,6 +24,9 @@ logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+# remove overlay backup files
+sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
 
@@ -34,6 +37,8 @@ logger "FIREWALLA:MAIN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
+logger "Broadcast booting"
+(cd $FIREWALLA_HOME; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
 $FIREWALLA_HOME/scripts/fire-time.sh
@@ -52,16 +57,22 @@ $FIREWALLA_HOME/scripts/main-start
 sudo rm -rf /media/root-rw/overlay.bak
 sudo rm -rf /media/root-rw/overlay-workdir.bak
 
-# this will touch and init watchdog
-$FIREWALLA_HOME/scripts/fire-ping.sh
-sleep 1
-$FIREWALLA_HOME/scripts/fire-ping.sh
-echo "Launching WatchDog"
-sleep 1
-$FIREWALLA_HOME/scripts/fire-ping.sh
-sudo service watchdog stop
-echo "WatchDog Stopped"
-$FIREWALLA_HOME/scripts/fire-ping.sh
-sleep 3 
-sudo service watchdog start
-echo "WatchDog Started"
+if [ -e /home/pi/.firewalla/config/disable_watchdog ]; then
+    sudo service watchdog stop
+    logger "FIREWALLA:WATCHDOG:DISABLED"
+else
+    # this will touch and init watchdog
+    $FIREWALLA_HOME/scripts/fire-ping.sh
+    sleep 1
+    $FIREWALLA_HOME/scripts/fire-ping.sh
+    echo "Launching WatchDog"
+    sleep 1
+    $FIREWALLA_HOME/scripts/fire-ping.sh
+    sudo service watchdog stop
+    echo "WatchDog Stopped"
+    $FIREWALLA_HOME/scripts/fire-ping.sh
+    sleep 3
+    sudo service watchdog start
+    echo "WatchDog Started"
+    logger "FIREWALLA:WATCHDOG:ENABLED"
+fi

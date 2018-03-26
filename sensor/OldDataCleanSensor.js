@@ -14,19 +14,25 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
 let util = require('util');
 
 let Sensor = require('./Sensor.js').Sensor;
 
-let redis = require("redis");
-let rclient = redis.createClient();
-let pubClient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+
+const PolicyManager2 = require('../alarm/PolicyManager2.js')
+const pm2 = new PolicyManager2()
+
+const ExceptionManager = require('../alarm/ExceptionManager.js')
+const em = new ExceptionManager()
+
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -194,6 +200,75 @@ class OldDataCleanSensor extends Sensor {
       });
   }
 
+  cleanDuplicatedPolicy() {
+    return async(() => {
+
+      const policies = await (pm2.loadActivePolicysAsync(1000))
+      
+      let toBeDeleted = []
+
+      for(let i = 0; i < policies.length; i++) {
+        let p = policies[i]
+        for(let j = i+1; j< policies.length; j++) {
+          let p2 = policies[j]
+          if(p && p2 && p.isEqualToPolicy(p2)) {
+            toBeDeleted.push(p)
+            break
+          }
+        }
+      }
+
+      for(let k in toBeDeleted) {
+        let p = toBeDeleted[k]
+        await (pm2.deletePolicy(p.pid))
+      }
+    })()
+  }
+
+  cleanDuplicatedException() {
+    return async(() => {
+      const exceptions = await (em.loadExceptionsAsync())
+
+      let toBeDeleted = []
+
+      for(let i = 0; i < exceptions.length; i++) {
+        let e = exceptions[i]
+        for(let j = i+1; j< exceptions.length; j++) {
+          let e2 = exceptions[j]
+          if(e && e2 && e.isEqualToException(e2)) {
+            toBeDeleted.push(e)
+            break
+          }
+        }
+      }
+
+      for(let k in toBeDeleted) {
+        let e = toBeDeleted[k]
+        await (em.deleteException(e.eid))
+      }
+    })()
+  }
+
+  cleanInvalidMACAddress() {
+    return async(() => {
+      const macs = await (hostTool.getAllMACs())
+      const invalidMACs = macs.filter((m) => {
+        return m.match(/[a-f]+/) != null
+      })
+      invalidMACs.forEach((m) => {
+        await (hostTool.deleteMac(m))
+      })
+    })()
+  }
+
+  oneTimeJob() {
+    return async(() => {
+      await (this.cleanDuplicatedPolicy())
+      await (this.cleanDuplicatedException())
+      await (this.cleanInvalidMACAddress())
+    })()
+  }
+
   scheduledJob() {
     return async(() => {
       log.info("Start cleaning old data in redis")
@@ -211,19 +286,54 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
-
       log.info("scheduledJob is executed successfully");
     })();
   }
 
   listen() {
-    pubClient.on("message", (channel, message) => {
+    sclient.on("message", (channel, message) => {
       if(channel === "OldDataCleanSensor" && message === "Start") {
         this.scheduledJob();
       }
     });
-    pubClient.subscribe("OldDataCleanSensor");
+    sclient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
+  }
+
+
+  // could be disabled in the future when all policy blockin rule is migrated to general policy rules
+  hostPolicyMigration() {
+    return async(() => {
+      const keys = await (rclient.keysAsync("policy:mac:*"))
+      if(keys) {
+        keys.forEach((key) => {
+          const blockin = await (rclient.hgetAsync(key, "blockin"))
+          if(blockin && blockin == "true") {
+            const mac = key.replace("policy:mac:", "")
+            const rule = await (pm2.findPolicy(mac, "mac"))
+            if(!rule) {
+              log.info(`Migrating blockin policy for host ${mac} to policyRule`)
+              const hostInfo = await (hostTool.getMACEntry(mac))
+              const newRule = pm2.createPolicy({
+                target: mac,
+                type: "mac",
+                target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
+                target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
+              })
+              const result = await (pm2.checkAndSaveAsync(newRule))
+              if(result) {
+                await (rclient.hsetAsync(key, "blockin", false))
+                log.info("Migrated successfully")
+              } else {
+                log.error("Failed to migrate")
+              }
+            }
+          }
+        })
+      }
+    })().catch((err) => {
+      log.error("Failed to migrate host policy rules:", err, {})
+    })
   }
 
   run() {
@@ -231,8 +341,11 @@ class OldDataCleanSensor extends Sensor {
 
     this.listen();
 
+    this.hostPolicyMigration()
+
     setTimeout(() => {
       this.scheduledJob();
+      this.oneTimeJob()
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour

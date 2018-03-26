@@ -16,22 +16,22 @@
 
 const log = require('./logger.js')(__filename);
 
-const redis = require('redis');
-const rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
+const f = require('../net2/Firewalla.js')
+
+const iptool = require('ip')
 
 const util = require('util');
 
 const firewalla = require('../net2/Firewalla.js');
 
-const instance = null;
+let instance = null;
 
 class DNSTool {
 
@@ -49,6 +49,10 @@ class DNSTool {
 
   getDNSKey(ip) {
     return util.format("dns:ip:%s", ip);
+  }
+
+  getReverseDNSKey(dns) {
+    return `rdns:domain:${dns}`
   }
 
 
@@ -73,14 +77,63 @@ class DNSTool {
 
     let key = this.getDnsKey(ip);
 
-    log.info("Storing dns for ip", ip);
-
     dns.updateTime = `${new Date() / 1000}`
 
     return rclient.hmsetAsync(key, dns)
       .then(() => {
         return rclient.expireAsync(key, expire);
       });
+  }
+
+  // doesn't have to keep it long, it's only used for instant blocking
+  
+  addReverseDns(dns, addresses, expire) {
+    expire = expire || 24 * 3600; // one day by default
+    addresses = addresses || []
+
+    addresses = addresses.filter((addr) => {
+      return f.isReservedBlockingIP(addr) != true
+    })
+
+    let key = this.getReverseDNSKey(dns)
+
+    return async(() => {
+      let updated = false
+      
+      addresses.forEach((addr) => {
+        if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+          await (rclient.zaddAsync(key, new Date() / 1000, addr))
+          updated = true
+        }
+      })
+
+      if(updated) {
+        await (rclient.expireAsync(key, expire))
+      }
+    })()
+  }
+
+  getAddressesByDNS(dns) {
+    let key = this.getReverseDNSKey(dns)
+    return async(() => {
+      return rclient.zrangeAsync(key, "0", "-1")
+    })()
+  }
+
+  getAddressesByDNSPattern(dnsPattern) {
+    let pattern = `rdns:domain:*.${dnsPattern}`
+    
+    return async(() => {
+      let keys = await (rclient.keysAsync(pattern))
+      let list = []
+      if(keys) {
+        keys.forEach((key) => {
+          let l = await(rclient.zrangeAsync(key, "0", "-1"))
+          list.push.apply(list, l)
+        })
+      }
+      return list
+    })()
   }
 
   removeDns(ip) {

@@ -18,8 +18,9 @@
 let log = require('./logger.js')(__filename);
 
 var Tail = require('always-tail');
-var redis = require("redis");
-var rclient = redis.createClient();
+
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 var iptool = require("ip");
 var useragent = require('useragent');
 
@@ -27,8 +28,6 @@ const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager();
-const AlarmManager = require('./AlarmManager.js');
-const alarmManager = new AlarmManager('info');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -36,6 +35,12 @@ const am2 = new AM2();
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager('cli', 'server');
 
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+
+
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -46,11 +51,9 @@ var linux = require('../util/linux.js');
 
 let l2 = require('../util/Layer2.js');
 
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
 
 /*
@@ -91,11 +94,11 @@ function ValidateIPaddress(ipaddress)
 
 module.exports = class {
     initWatchers() {
-        log.info("Initializing watchers", this.config.bro);
+        log.debug("Initializing watchers", this.config.bro);
         if (this.intelLog == null) {
             this.intelLog = new Tail(this.config.bro.intel.path, '\n');
             if (this.intelLog != null) {
-                log.info("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
+                log.debug("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
                 this.intelLog.on('line', (data) => {
                     log.debug("Detect:Intel ", data);
                     this.processIntelData(data);
@@ -108,7 +111,7 @@ module.exports = class {
         if (this.noticeLog == null) {
             this.noticeLog = new Tail(this.config.bro.notice.path, '\n');
             if (this.noticeLog != null) {
-                log.info("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
+                log.debug("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
                 this.noticeLog.on('line', (data) => {
                     log.debug("Detect:Notice", data);
                     this.processNoticeData(data);
@@ -121,7 +124,7 @@ module.exports = class {
         if (this.dnsLog == null) {
             this.dnsLog = new Tail(this.config.bro.dns.path, '\n');
             if (this.dnsLog != null) {
-                log.info("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
+                log.debug("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
                 this.dnsLog.on('line', (data) => {
                     this.processDnsData(data);
                 });
@@ -133,7 +136,7 @@ module.exports = class {
         if (this.softwareLog == null) {
             this.softwareLog = new Tail(this.config.bro.software.path, '\n');
             if (this.softwareLog != null) {
-                log.info("Initializing watchers: software initialized", this.config.bro.software.path);
+                log.debug("Initializing watchers: software initialized", this.config.bro.software.path);
                 this.softwareLog.on('line', (data) => {
                     log.debug("Detect:Software", data);
                     this.processSoftwareData(data);
@@ -146,7 +149,7 @@ module.exports = class {
         if (this.httpLog == null) {
             this.httpLog = new Tail(this.config.bro.http.path, '\n');
             if (this.httpLog != null) {
-                log.info("Initializing watchers: http initialized", this.config.bro.http.path);
+                log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
                 this.httpLog.on('line', (data) => {
                     log.debug("Detect:Http", data);
                     this.processHttpData(data);
@@ -159,7 +162,7 @@ module.exports = class {
         if (this.sslLog == null) {
             this.sslLog = new Tail(this.config.bro.ssl.path, '\n');
             if (this.sslLog != null) {
-                log.info("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
+                log.debug("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
                 this.sslLog.on('line', (data) => {
                     log.debug("Detect:SSL", data);
                     this.processSslData(data);
@@ -172,7 +175,7 @@ module.exports = class {
         if (this.connLog == null) {
             this.connLog = new Tail(this.config.bro.conn.path, '\n');
             if (this.connLog != null) {
-                log.info("Initializing watchers: connInitialized", this.config.bro.conn.path);
+                log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
                 this.connLog.on('line', (data) => {
                     this.processConnData(data);
                 });
@@ -183,7 +186,7 @@ module.exports = class {
         if (this.connLogdev == null) {
             this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
             if (this.connLogdev != null) {
-                log.info("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
+                log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
                 this.connLogdev.on('line', (data) => {
                     this.processConnData(data);
                 });
@@ -195,7 +198,7 @@ module.exports = class {
         if (this.x509Log == null) {
             this.x509Log = new Tail(this.config.bro.x509.path, '\n');
             if (this.x509Log != null) {
-                log.info("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
+                log.debug("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
                 this.x509Log.on('line', (data) => {
                     this.processX509Data(data);
                 });
@@ -207,7 +210,7 @@ module.exports = class {
         if (this.knownHostsLog == null) {
             this.knownHostsLog = new Tail(this.config.bro.knownHosts.path, '\n');
             if (this.knownHostsLog != null) {
-                log.info("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
+                log.debug("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
                 this.knownHostsLog.on('line', (data) => {
                     this.processknownHostsData(data);
                 });
@@ -237,16 +240,20 @@ module.exports = class {
             this.flowstash = {};
             this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
             this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
+
+            this.recordCache = []
+            this.recording = false
+            this.enableRecording = false
         }
     }
 
     start() {
         if (this.intelLog) {
-            log.info("Start watching intel log");
+            log.debug("Start watching intel log");
             this.intelLog.watch();
         }
         if (this.noticeLog) {
-            log.info("Start watching notice log");
+            log.debug("Start watching notice log");
             this.noticeLog.watch();
         }
     }
@@ -365,6 +372,12 @@ module.exports = class {
             }
             if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
                 // NOTE write up a look up flow here
+
+                // record reverse dns as well for future reverse lookup
+                async(() => {
+                  await (dnsTool.addReverseDns(obj['query'], obj['answers']))
+                })()
+
                 for (let i in obj['answers']) {
                     let key = "dns:ip:" + obj['answers'][i];
                     let value = {
@@ -516,6 +529,16 @@ module.exports = class {
       }
 
         // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      }
+    } else if(m === 'spoof' || m === 'autoSpoof') {
+      let myip = sysManager.myIp()
+
+      // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
+      if(myip && 
+        (data["id.orig_h"] === myip ||
+        data["id.resp_h"] === myip) && 
+        !this.isMonitoring(myip)) {        
+            return false // set it to invalid if walla itself is set to "monitoring off"
       }
     }
 
@@ -861,18 +884,41 @@ module.exports = class {
             if (tmpspec) {
                 let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
                 let strdata = JSON.stringify(tmpspec);
+
+            //     totalInBytes+=Number(o.rb);
+            //     totalOutBytes+=Number(o.ob);
+            //     this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
+            // } else {
+            //     totalInBytes+=Number(o.ob);
+            //     totalOutBytes+=Number(o.rb);
+                
+            // not sure to use tmpspec.ts or now???
+                if(tmpspec.fd == 'in') {
+                    this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+                } else {
+                    this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+                }
+                    
+
                 //let redisObj = [key, tmpspec.ts, strdata];
                 let redisObj = [key, now, strdata];
                 log.debug("Conn:Save:Temp", redisObj);
+
+
                 rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
 
                       let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
+
+
                       setTimeout(() => {
                         sem.emitEvent({
                           type: 'DestIPFound',
                           ip: remoteIPAddress,
+                          fd: tmpspec.fd,
+                          ob: tmpspec.ob,
+                          rb: tmpspec.rb,
                           suppressEventLogging: true
                         });
                       }, 15 * 1000); // send out in 15 seconds
@@ -1195,6 +1241,10 @@ module.exports = class {
       if(obj["san.dns"] && obj["san.dns"].constructor === Array) {
         obj["san.dns"] = JSON.stringify(obj["san.dns"]);
       }
+
+      if(obj["san.ip"] && obj["san.ip"].constructor === Array) {
+        obj["san.ip"] = JSON.stringify(obj["san.ip"]);
+      }
     }
 
 /*
@@ -1416,7 +1466,7 @@ module.exports = class {
 //                log.error("Notice:Drop My IP", obj);
                 return;
             }
-            log.info("Notice:Processing",obj);
+            log.debug("Notice:Processing",obj);
             if (this.config.bro.notice.ignore[obj.note] == null) {
                 let strdata = JSON.stringify(obj);
                 let key = "notice:" + obj.src;
@@ -1455,60 +1505,54 @@ module.exports = class {
                      obj: obj
                 };
 
-                dnsManager.resolvehost(obj.src,(err,__src)=>{
-                    dnsManager.resolvehost(obj.dst,(err,__dst)=>{
-                      actionobj.shname =dnsManager.name(__src);
-                      actionobj.dhname =dnsManager.name(__dst);
+                async(() => {
+                    const srcName = await (hostTool.getName(obj.src))
+                    const dstName = await (hostTool.getName(obj.dst))
+                    if(srcName) {
+                        actionobj.shname = srcName
+                    }
+                    if(dstName) {
+                        actionobj.dhname = dstName
+                    }
 
-                      let localIP = lh;
-                      let message = obj.msg;
-                      let noticeType = obj.note;
-                      let timestamp = parseFloat(obj.ts);
+                    let localIP = lh;
+                    let message = obj.msg;
+                    let noticeType = obj.note;
+                    let timestamp = parseFloat(obj.ts);
 
-                      // TODO: create dedicate alarm type for each notice type
-                      let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-                        "p.device.ip": localIP,
-                        "p.dest.ip": dh
-                      });
+                    // TODO: create dedicate alarm type for each notice type
+                    let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
+                      "p.device.ip": localIP,
+                      "p.dest.ip": dh
+                    });
 
-                      if(noticeType == 'SSH::Password_Guessing') {
-                        const subMessage = obj.sub
-                        // sub message:
-                        //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
-                        
-                        let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
-                        addresses = addresses.filter((v, i, array) => {
-                          return array.indexOf(v) === i
-                        })
+                    if(noticeType == 'SSH::Password_Guessing') {
+                      const subMessage = obj.sub
+                      // sub message:
+                      //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
+                      
+                      let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+                      addresses = addresses.filter((v, i, array) => {
+                        return array.indexOf(v) === i
+                      })
 
-                        if(addresses.length > 0) {
-                          alarm["p.device.ip"] = addresses[0]
-                          alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
-                        }
-
-                        alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+                      if(addresses.length > 0) {
+                        alarm["p.device.ip"] = addresses[0]
+                        alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
                       }
 
-                      async(() => {
-                        if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
-                          await (am2.enrichDestInfo(alarm))
-                        }
-                        await (am2.enrichDeviceInfo(alarm))
-                        am2.checkAndSave(alarm, (err) => {
-                          if(err) {
-                            log.error("Failed to save alarm: " + err);
-                          }
-                        });
-                      })()
+                      alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+                    }
 
-                      alarmManager.alarm(lh, "notice", 'info', '0', {"msg":obj.msg}, actionobj, (err,obj,action)=> {
-                        // if (obj != null) {
-                        //          this.publisher.publish("DiscoveryEvent", "Notice:Detected", lh, obj);
-                        // }
-                      });
-                    });
-                });
+                    if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
+                        await (am2.enrichDestInfo(alarm))
+                    }
 
+                    await (am2.enrichDeviceInfo(alarm))
+                    await (am2.checkAndSaveAsync(alarm))
+                })().catch((err) => {
+                    log.error("Failed to generate alarm:", err, {})
+                })
             } else {
 //              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
             }
@@ -1520,5 +1564,73 @@ module.exports = class {
     on(something, callback) {
         this.callbacks[something] = callback;
     }
+
+
+    recordHit(data) {
+        const ts = Math.floor(data.ts)
+        const inBytes = data.inBytes
+        const outBytes = data.outBytes
+    
+        return new Promise((resolve, reject) => {
+            timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
+                timeSeries.recordHit('upload',ts, Number(outBytes)).exec(() => {
+                    // do nothing
+                    resolve()
+                })
+            })
+        })    
+      }
+
+      recordManyHits(datas) {
+          datas.forEach((data) => {
+            const ts = Math.floor(data.ts)
+            const inBytes = data.inBytes
+            const outBytes = data.outBytes
+
+            timeSeries.recordHit('download',ts, Number(inBytes))
+            timeSeries.recordHit('upload',ts, Number(outBytes))
+          })
+
+          return new Promise((resolve, reject) => {
+            timeSeries.exec(() => {
+                resolve()
+            })
+          })
+      }
+    
+      enableRecordHitsTimer() {
+          this.enableRecording = true
+          setInterval(() => {
+            this.recordHits()
+          }, 5 * 1000) // every 5 seconds
+      }
+    
+      recordHits() {
+        if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
+            this.recording = true
+            const copy = JSON.parse(JSON.stringify(this.recordCache))
+            this.recordCache = []
+            async(() => {
+                await(this.recordManyHits(copy))
+            })().finally(() => {
+                this.recording = false
+            })
+        } else {
+            if(this.recording) {
+                log.info("still recording......")
+            }
+        }
+      }
+    
+      recordTraffic(ts, inBytes, outBytes) {
+          if(this.recordCache && this.enableRecording) {
+              log.debug("Recording..", ts, inBytes, outBytes, {})
+              this.recordCache.push({
+                ts: ts,
+                inBytes: inBytes,
+                outBytes: outBytes
+            })
+          }
+      }
 
 }

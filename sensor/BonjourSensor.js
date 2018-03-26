@@ -23,8 +23,8 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 let bonjour = require('bonjour')();
 let ip = require('ip');
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+const SysManager = require('../net2/SysManager.js')
+const sysManager = new SysManager('info')
 
 let async = require('async');
 
@@ -112,7 +112,7 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    log.info("Found a bonjour service from host:", ipv4Addr, service, {});
+    log.info("Found a bonjour service from host:", ipv4Addr, service.name, {});
 
     l2.getMAC(ipv4Addr, (err, mac) => {
       
@@ -120,6 +120,15 @@ class BonjourSensor extends Sensor {
         // not found, ignore this host
         log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
         return;
+      }
+
+      if(!mac) { // mac address not found
+        if(ipv4Addr === sysManager.myIp()) { // if the found device is firewalla itself
+          mac = sysManager.myMAC()
+        } else {
+          log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
+          return;
+        }
       }
 
       let host = {

@@ -19,8 +19,7 @@ var log = null;
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var later = require('later');
 var iptable = require('./Iptables.js');
@@ -56,6 +55,10 @@ let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
 var ip = require('ip');
 
 let b = require('../control/Block.js');
+
+let features = require('../net2/features');
+
+const cp = require('child_process')
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -96,7 +99,7 @@ module.exports = class {
        callback(null);
        return;
     }
-    
+
        iptable.flush6((err,data)=> {
         iptable.flush((err, data) => {
             let defaultTable = config['iptables']['defaults'];
@@ -111,7 +114,7 @@ module.exports = class {
                     defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
                 }
             }
-            log.info("PolicyManager:flush", defaultTable, {});
+            log.debug("PolicyManager:flush", defaultTable, {});
           iptable.run(defaultTable);
 
           // Setup iptables so that it's ready for blocking
@@ -136,7 +139,7 @@ module.exports = class {
             this.block4(mac, protocol,src,dst,sport,dport,state,callback);
         } else {
             // there is a problem with these kind of block.  Ipv6 blocking is not
-            // supported for incoming (dst is home and src is some where in 
+            // supported for incoming (dst is home and src is some where in
             // internet
             if (ip.isV4Format(dst)) {
                 callback(null,null);
@@ -243,29 +246,78 @@ module.exports = class {
           } else {
               callback(null, FAMILY_DNS);
           }
-      }); 
+      });
   }
 
-
   family(ip, state, callback) {
-    callback = callback || function() {}
-    
-    if(ip !== "0.0.0.0") {
+    const ver = features.getVersion('familyMode');
+    switch (ver) {
+      case 'v2':
+        this.familyV2(ip, state, callback);
+        break;
+      case 'v1':
+      default:
+        this.familyV1(ip, state, callback);
+    }
+  }
+
+  familyV1(ip, state, callback) {
+    callback = callback || function () {
+    }
+
+    if (ip !== "0.0.0.0") {
       callback(null)
       return
     }
 
-    this.familyDnsAddr((err,dnsaddrs)=>{
-      log.info("PolicyManager:Family:IPTABLE", ip, state,dnsaddrs.join(" "));
-        if (state == true) {
-          dnsmasq.setDefaultNameServers("family", dnsaddrs);
-          dnsmasq.updateResolvConf(callback);
+    // rm family_filter.conf from v2
+    log.info('Dnsmasq: remove family_filter.conf from v2');
+    require('fs').unlink(firewalla.getUserConfigFolder() + '/dns/family_filter.conf', err => {
+      if (err) {
+        if (err.code === 'ENOENT') {
+          log.info('Dnsmasq: No family_filter.conf, skip remove');
         } else {
-          dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-          dnsmasq.updateResolvConf(callback);
+          log.warn('Dnsmasq: Error when remove family_filter.conf', err, {});
         }
-     });
-   }
+      }
+    });
+
+    this.familyDnsAddr((err, dnsaddrs) => {
+      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
+      if (state == true) {
+        dnsmasq.setDefaultNameServers("family", dnsaddrs);
+        dnsmasq.updateResolvConf(callback);
+      } else {
+        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+        dnsmasq.updateResolvConf(callback);
+      }
+    });
+  }
+
+  familyV2(ip, state, callback) {
+    callback = callback || function () {
+    }
+
+    if (ip !== "0.0.0.0") {
+      callback(null)
+      return
+    }
+
+
+    this.familyDnsAddr((err, dnsaddrs) => {
+      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
+      if (state === true) {
+        dnsmasq.setDefaultNameServers("family", dnsaddrs);
+        dnsmasq.updateResolvConf(callback);
+      } else {
+        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+        dnsmasq.updateResolvConf(callback);
+      }
+    });
+
+    log.info("PolicyManager:Family:Dnsmasq", ip, state);
+    dnsmasq.controlFilter('family', state);
+  }
 
   adblock(ip, state, callback) {
     callback = callback || function() {}
@@ -276,21 +328,10 @@ module.exports = class {
     }
 
     log.info("PolicyManager:Adblock:Dnsmasq", ip, state);
-    if (state === true) {
-      dnsmasq.updateAdblockFilter(true, (err) => {
-        if (err) {
-          log.error("Update Adblock filters Failed!", err, {});
-        } else {
-          dnsmasq.reload();
-          log.info("Update Adblock filters successful.");
-        }
-      });
-    } else {
-      dnsmasq.cleanUpAdblockFilter()
-        .then(() => dnsmasq.reload())
-        .catch(err => log.error('Error when clean up adblock filters', err, {}));
-    }
+    dnsmasq.controlFilter('adblock', state);
   }
+
+
 
     hblock(host, state) {
       log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
@@ -299,8 +340,8 @@ module.exports = class {
       } else {
         b.unblockMac(host.o.mac);
       }
- /* 
-        
+ /*
+
         this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
            this.block(null,host.o.ipv4Addr, null, null, null, state, (err, data) => {
             for (let i in host.ipv6Addr) {
@@ -363,7 +404,7 @@ module.exports = class {
       if(config.config) {
         ss_client.setConfig(config.config);
       }
-      
+
       ss_client.start((err) => {
         if(err) {
           log.error("Failed to enable SciSurf feature: " + err);
@@ -379,7 +420,7 @@ module.exports = class {
         if(err) {
           log.error("Failed to disable SciSurf feature: " + err);
         } else {
-          log.info("SciSurf feature is disabled successfully");          
+          log.info("SciSurf feature is disabled successfully");
         }
         dnsmasq.setUpstreamDNS(null);
       });
@@ -434,7 +475,7 @@ module.exports = class {
         log.info("Cancel addAPIPortMapping scheduler since externalAccessFlag is now off");
         return; // exit if the flag is still off
       }
-      
+
       let upnp = new UPNP();
       upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
       this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
@@ -449,7 +490,7 @@ module.exports = class {
         log.info("Cancel removeAPIPortMapping scheduler since externalAccessFlag is now on");
         return; // exit if the flag is still on
       }
-      
+
       let upnp = new UPNP();
       upnp.removePortMapping("tcp", localPort, externalPort);
       this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
@@ -501,14 +542,14 @@ module.exports = class {
               }
             }
           }
-          
+
             if (p == "acl") {
                 continue;
             } else if (p == "blockout") {
                 this.block(null,null,ip, null, null, null, policy[p]);
             } else if (p == "blockin") {
                 this.hblock(host, policy[p]);
-                //    this.block(null,ip,null,null,policy[p]); 
+                //    this.block(null,ip,null,null,policy[p]);
             } else if (p == "family") {
                 this.family(ip, policy[p], null);
             } else if (p == "adblock") {
@@ -623,9 +664,9 @@ module.exports = class {
       if(policy.length > 1000) {
           log.warn("Too many policy rules for host", host.shname);
           callback(null, null); // self protection
-          return; 
+          return;
         }
-        
+
       /* iterate policies and see if anything need to be modified */
         for (let p in policy) {
             let block = policy[p];
@@ -633,12 +674,12 @@ module.exports = class {
                 let newblock = JSON.parse(JSON.stringify(block));
                 block.state = false;
                 if (block._src) {
-                    newblock.src = block._src; 
+                    newblock.src = block._src;
                     delete block._src;
                     delete newblock._src;
-                } 
+                }
                 if (block._dst) {
-                    newblock.dst = block._dst; 
+                    newblock.dst = block._dst;
                     delete block._dst;
                     delete newblock._dst;
                 }
@@ -646,7 +687,7 @@ module.exports = class {
                 log.info("PolicyManager:ModifiedACL",block,newblock,{});
             }
         }
-      
+
         async.eachLimit(policy, 10, (block, cb) => {
             if (policy.done != null && policy.done == true) {
                 cb();

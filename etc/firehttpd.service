@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla HTTPD
+After=network.target
+
+[Service]
+User=pi
+Restart=always
+WorkingDirectory=/home/pi/firewalla/
+ExecStart=/bin/sh /home/pi/firewalla/extension/httpd/httpd.sh
+
+[Install]
+WantedBy=multi-user.target

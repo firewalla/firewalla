@@ -83,7 +83,8 @@ class DNSMASQSensor extends Sensor {
   }
 
   reload() {
-    return flowControl.reload(dnsmasq.reload, dnsmasq);
+    dnsmasq.needRestart = new Date() / 1000
+    //return flowControl.reload(dnsmasq.reload, dnsmasq);
   }
 
   run() {

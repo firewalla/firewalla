@@ -22,6 +22,13 @@ let fs = require('fs')
 let spawn = require('child_process').spawn
 let Promise = require('bluebird');
 
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const exec = require('child-process-promise').exec
+
+const fc = require('../../net2/config.js')
+
 let instance = null
 
 function delay(t) {
@@ -108,9 +115,28 @@ class BitBridge {
                          `export BINARY_ARGUMENTS='${args.join(" ")}'`)
         
         require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
+
+        async(() => {
+          if(fc.isFeatureOn("ipv6")) {
+            await (this.ipv6On())
+          } else {
+            await (this.ipv6Off())
+          }
+          fc.onFeature("ipv6", (feature, status) => {
+            if(feature != "ipv6")
+              return
+            
+            if(status) {
+              this.ipv6On()
+            } else {
+              this.ipv6Off()
+            }
+          })          
+        })()
+
       } else {
         log.info("IPV6 not supported in current network environment, lacking ipv6 router")
-      }
+      }                 
     }
 
     this.started = true
@@ -152,6 +178,19 @@ class BitBridge {
     return firewalla.getFirewallaHome() + "/bin/bitbridge6";
   }
 
+  ipv6On() {
+    return async(() => {
+      await (exec("touch /home/pi/.firewalla/config/enablev6"))
+      await (exec("sudo pkill bitbridge6"))      
+    })()
+  }
+
+  ipv6Off() {
+    return async(() => {
+      await (exec("rm -f /home/pi/.firewalla/config/enablev6"))
+      await (exec("sudo pkill bitbridge6"))      
+    })()
+  }
 }
 
 module.exports = BitBridge

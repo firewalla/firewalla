@@ -17,6 +17,8 @@
 // config.discovery.networkInterface
 
 process.title = "FireMain";
+require('events').EventEmitter.prototype._maxListeners = 100;
+
 let log = require("./logger.js")(__filename);
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -44,6 +46,9 @@ var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
+
+const fc = require('./config.js')
+const cp = require('child_process')
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
@@ -126,6 +131,24 @@ function resetModeInInitStage() {
   })()  
 }
 
+function enableFireBlue() {
+  // start firemain process only in v2 mode
+  cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
+    if(err) {
+        log.error("Failed to start firehttpd:", err, {})
+    }
+  })
+}
+
+function disableFireBlue() {
+  // stop firehttpd in v1
+  cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
+    if(err) {
+        log.error("Failed to stop firehttpd:", err, {})
+    }
+  })
+}
+
 function run() {
 
   const firewallaConfig = require('../net2/config.js').getConfig();
@@ -143,6 +166,7 @@ function run() {
 
   var BroDetector = require("./BroDetect.js");
   let bd = new BroDetector("bro_detector", config, "info");
+  bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
@@ -152,7 +176,7 @@ function run() {
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
-  dnsmasq.cleanUpPolicyFilter().then(() => {}).catch(()=>{});
+  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
 
   if (process.env.FWPRODUCTION) {
     /*
@@ -198,8 +222,21 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  // always create the secondary interface
-  ModeManager.enableSecondaryInterface();
+  async(() => {
+    // always create the secondary interface
+    await (ModeManager.enableSecondaryInterface())
+    d.discoverInterfaces((err, list) => {
+      if(!err && list && list.length >= 2) {
+        sysManager.update(null) // if new interface is found, update sysManager
+      }
+    })
+  })()
+
+
+  // Launch PortManager
+
+  let PortForward = require("../extension/portforward/portforward.js");
+  let portforward = new PortForward();
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
@@ -225,19 +262,22 @@ function run() {
         
         // when mode is changed by anyone else, reapply automatically
         ModeManager.listenOnChange();        
+        await (portforward.start());
       })()     
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
+      pm2.setupPolicyQueue()
       pm2.registerPolicyEnforcementListener()
 
       setTimeout(() => {
-        pm2.enforceAllPolicies()
-          .then(() => {
-            log.info("All existing policy rules are applied");
-          }).catch((err) => {
-            log.error("Failed to apply some policy rules: ", err, {});
-          });
+        async(() => {
+          await (pm2.cleanupPolicyData())
+          await (pm2.enforceAllPolicies())
+          log.info("========= All existing policy rules are applied =========");
+        })().catch((err) => {
+          log.error("Failed to apply some policy rules: ", err, {});
+        });          
       }, 1000 * 10); // delay for 10 seconds
       require('./UpgradeManager').finishUpgrade();
     });
@@ -302,4 +342,23 @@ function run() {
   },20 * 1000);
 
 
+  // finally need to check if firehttpd should be started
+
+  if(fc.isFeatureOn("redirect_httpd")) {
+    enableFireBlue()
+  } else {
+    disableFireBlue()
+  }
+
+  fc.onFeature("redirect_httpd", (feature, status) => {
+    if(feature !== "redirect_httpd") {
+      return
+    }
+
+    if(status) {
+      enableFireBlue()
+    } else {
+      disableFireBlue()
+    }
+  })
 }

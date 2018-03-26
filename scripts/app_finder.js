@@ -23,12 +23,9 @@ const await = require('asyncawait/await');
 
 const util = require('util')
 
-const redis = require('redis')
-const rclient = redis.createClient()
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
-Promise.promisifyAll(redis.RedisClient.prototype);
-
 
 const flowTool = require('../net2/FlowTool.js')()
 

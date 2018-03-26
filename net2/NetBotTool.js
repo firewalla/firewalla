@@ -16,12 +16,9 @@
 
 let log = require('./logger.js')(__filename);
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -426,14 +423,16 @@ class NetBotTool {
               // intel not exists in redis, create a new one
               return async(() => {
                 intel = await (destIPFoundHook.processIP(f.ip));
-                f.country = intel.country;
-                f.host = intel.host;
-                if(intel.category) {
-                  f.category = intel.category
-                }
-                if(intel.app) {
-                  f.app = intel.app
-                }
+                if(intel) {
+                  f.country = intel.country;
+                  f.host = intel.host;
+                  if(intel.category) {
+                    f.category = intel.category
+                  }
+                  if(intel.app) {
+                    f.app = intel.app
+                  }
+                }                
                 return f;
               })();
             }

@@ -20,15 +20,15 @@ var os = require('os');
 var network = require('network');
 var instances = {};
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
+
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -41,17 +41,17 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
-let FRP = require('../extension/frp/frp.js')
-let frp = new FRP();
 
-var PolicyManager = require('./PolicyManager.js');
-var policyManager = new PolicyManager('info');
+const FRPManager = require('../extension/frp/FRPManager.js')
+const fm = new FRPManager()
+const frp = fm.getSupportFRP()
 
-let AlarmManager2 = require('../alarm/AlarmManager2.js');
-let alarmManager2 = new AlarmManager2();
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const alarmManager2 = new AlarmManager2();
 
-let PolicyManager2 = require('../alarm/PolicyManager2.js');
-let policyManager2 = new PolicyManager2();
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const policyManager2 = new PolicyManager2();
+const pm2 = policyManager2
 
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
@@ -64,6 +64,8 @@ let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
 let f = require('./Firewalla.js');
+
+const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const license = require('../util/license.js')
 
@@ -78,13 +80,6 @@ let fConfig = require('./config.js').getConfig();
 
 const fc = require('./config.js')
 
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-sclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-
 var _async = require('async');
 
 var MobileDetect = require('mobile-detect');
@@ -95,6 +90,9 @@ let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
 var linux = require('../util/linux.js');
+
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -608,145 +606,11 @@ class Host {
                     this.callbacks[e](channel, ip, type, obj);
                 }
             } else if (type == "Intel:Detected") {
-                let hip = obj['id.resp_h'];
-                let dip = obj['id.orig_h'];
-                if (sysManager.isLocalIP(obj['id.orig_h']) == false) {
-                    hip = obj['id.orig_h'];
-                    dip = obj['id.resp_h'];
-                }
-                log.debug("Host:Subscriber:Intel", hip);
-                if (sysManager.isLocalIP(hip) == true || sysManager.ignoreIP(hip) == true) {
-                    log.error("Host:Subscriber:Intel Error related to local ip", hip);
-                    return;
-                }
-
-                // damp the notifications a bit
-                let intel = obj['id.resp_h'] + obj['id.orig_h'];
-                if (this.lastIntel != null && this.lastIntel == intel) {
-                    log.info("Host:Subscriber:Intel:Damp ", this.lastIntel);
-                    return;
-                } else {
-                    this.lastIntel = intel;
-                    setTimeout(() => {
-                        this.lastIntel = null;
-                    }, 3000);
-                }
-                dnsManager.resolveRemoteHost(hip, (err, name) => {
-                    log.debug("Host:Subscriber:Intel:Resolved", hip, name);
-                    if (name != null) {
-                        obj['target_host_name'] = name;
-                    }
-                    intelManager.lookup(hip, (err, iobj, url) => {
-                        log.debug("Host:Subscriber:Intel:Lookup", hip, url);
-                        if (err != null || iobj == null) {
-                            log.error("Host:Subscriber:Intel:NOTVERIFIED", hip);
-                            return;
-                        }
-
-                        if (iobj.severityscore < 4) {
-                            log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-                            return;
-                        }
-
-                        obj.alarmtype = "intel";
-
-                        if (iobj.severityscore > 50) {
-                            obj.alarmseverity = "major";
-                        } else {
-                            obj.alarmseverity = "minor";
-                        }
-
-                        if (err == null && iobj != null) {
-                            obj['intel'] = iobj;
-                            obj['intelurl'] = url;
-                        }
-
-                        let actionobj = {
-                            title: "Warning",
-                            actions: ["block","ignore"],
-                            src: "0.0.0.0",
-                            dst: hip,
-                            target:"0.0.0.0",
-                            //info: "",
-                            cmd: {
-                                type: "jsonmsg",
-                                mtype: "set",
-                                target: "0.0.0.0",
-                                data: {
-                                    item: 'policy',
-                                    value: {
-                                        acl: {
-                                            src: "0.0.0.0",
-                                            dst: hip,
-                                            state: true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        log.debug("Host:Subscriber:Intel:Write", obj);
-
-                        if (alarmManager == null) {
-                            let AlarmManager = require("./AlarmManager.js");
-                            alarmManager = new AlarmManager("info");
-                        }
-                        alarmManager.alarm(hip, "intel", obj.alarmseverity, iobj.severityscore, obj, actionobj, (err, data) => {
-                            if (this.callbacks[e]) {
-                                log.debug("Callbacks: ", channel, ip, type, obj);
-                                this.callbacks[e](channel, ip, type, obj);
-                            } else {
-                                log.debug("No callbacks with ", e, this.callbacks);
-                            }
-                        });
-
-                        // Alarms are stored as alarm:ip4:<ip> //timestamp//data
-                        /*
-                        let key = "alarm:ip4:"+hip;
-                        obj['id']=uuid.v4();
-                        let redisObj = [key,obj.ts,JSON.stringify(obj)];
-                        log.debug("alarm:ip4:",redisObj);
-                        rclient.zadd(redisObj,(err,response)=>{
-                            if (err) {
-                                log.error("alarm:save:error", err);
-                            } else {
-                                rclient.expireat(key, parseInt((+new Date)/1000) + 60*60*24*7);
-                            }
-                            if (this.callbacks[e]) {
-                                log.debug("Callbacks: ",channel,ip,type,obj);
-                                this.callbacks[e](channel,ip,type,obj);
-                            } else {
-                                log.debug("No callbacks with ",e,this.callbacks);
-                            }
-                        });
-
-                        let key2 = "alarm:ip4:0.0.0.0";
-                        rclient.zadd([key2,obj.ts,JSON.stringify(obj)],(err,response)=>{
-                            if (err) {
-                                log.error("alarm:save:error", err,key2);
-                            }
-                        });
-                        */
-                    });
-                });
+                // no need to handle intel here.                
             } else if (type == "HostPolicy:Changed" && this.type == "server") {
                 this.applyPolicy((err)=>{
                 });
                 log.info("HostPolicy:Changed", channel, ip, type, obj);
-   /*
-                this.loadPolicy((err, data) => {
-                    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-                    policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
-                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
-                                if (err == null && changed == true) {
-                                    this.savePolicy(null);
-                                }
-                            });
-                        });
-                    });
-                });
-*/
             }
         });
     }
@@ -759,6 +623,9 @@ class Host {
             if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
                 policy.monitor = false;
             }
+            let PolicyManager = require('./PolicyManager.js');
+            let policyManager = new PolicyManager('info');
+
             policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
                 dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
                     policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
@@ -994,31 +861,7 @@ class Host {
     }
 
     name() {
-        return dnsManager.name(this.o);
-        /*
-                if (this.hasBeenGivenName() == true) {
-                    return this.o.name;
-                }
-                if (this.o.bname) {
-                    return this.o.bname;
-                }
-                if (this.predictedName) {
-                    return this.predictedName;
-                }
-                if (this.hostname) {
-                    return this.hostname;
-                }
-                let name = this.o.ipv4Addr;
-                if (this.o.name != null) {
-                    name = this.o.name;
-                   return name;
-                } else if (this.o.macVendor != null) {
-                    name = "(?)"+this.o.macVendor;
-                  return name;
-                }
-
-                return  this.o.ipv4Addr;
-        */
+        return getPreferredBName(this.o)
     }
 
 
@@ -1272,6 +1115,8 @@ class Host {
 
     // policy:mac:xxxxx
     setPolicy(name, data, callback) {
+      callback = callback || function() {}
+
         if (name == "acl") {
             if (this.policy.acl == null) {
                 this.policy.acl = [data];
@@ -1299,6 +1144,49 @@ class Host {
                 }
                 this.policy.acl = acls;
             }
+        } else if (name === "blockin") { // legacy logic handling, code can be removed in the future
+          if(this.o && this.o.mac) {
+            if(data) {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created              
+                  callback(null, {blockin: true});
+                } else {
+                  // need to create one
+                  let rule = pm2.createPolicy({
+                    target: this.o.mac,
+                    type: "mac"
+                  })
+
+                  let resultPolicyRule = await (pm2.checkAndSaveAsync(rule))
+                  if(resultPolicyRule) {
+                    callback(null, {blockin: true})
+                  } else {
+                    callback(new Error("failed to apply blockin"))
+                  }
+                }
+              })().catch((err) => {
+                callback(err, null)
+              })
+              
+            } else {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created
+                  await (pm2.disableAndDeletePolicy(rule.pid))
+                } 
+
+                callback(null, {blockin: false});
+              })().catch((err) => {
+                callback(err, null)
+              })
+            }
+          }
+
+          return // no need to save policy for blockin case, it's already routed to new policy model
+                   
         } else {
             if (this.policy[name] != null && this.policy[name] == data) {
                 callback(null, null);
@@ -1412,6 +1300,23 @@ module.exports = class {
             log.info("System Manager Updated");
             if(!f.isDocker()) {
               spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false, true);
+            } else {
+              // for docker
+              spoofer = {
+                isSecondaryInterfaceIP: () => {},
+                newSpoof: () => new Promise(resolve => resolve()),
+                newUnspoof: () => new Promise(resolve => resolve()),
+                newSpoof6: () => new Promise(resolve => resolve()),
+                newUnspoof6: () => new Promise(resolve => resolve()),
+                spoof: () => {},
+                spoofMac6: () => {},
+                clean: () => {},
+                clean7: () => {},
+                clean6byIp: () => {},
+                clean6: () => {},
+                validateV6Spoofs: () => {},
+                validateV4Spoofs: () => {},
+              };
             }
           }
         });
@@ -1510,6 +1415,7 @@ module.exports = class {
     }
 
     json.cpuid = utils.getCpuId();
+    json.uptime = process.uptime()
 
     if(sysManager.language) {
       json.language = sysManager.language;
@@ -1554,6 +1460,7 @@ module.exports = class {
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
     json.longVersion = f.getVersion();
+    json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
@@ -1595,6 +1502,86 @@ module.exports = class {
     });
   }
 
+  last60MinStatsForInit(json) {
+      return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1minute", 61))
+        if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
+            downloadStats = downloadStats.slice(0, 60)
+        } else {
+            downloadStats = downloadStats.slice(1)
+        }
+        let uploadStats = await (getHitsAsync("upload", "1minute", 61))
+        if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
+            uploadStats = uploadStats.slice(0, 60)
+        } else {
+            uploadStats = uploadStats.slice(1)
+        }
+
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last60 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
+  last60MinTopTransferForInit(json) {
+    return async(() => {
+      const top = await (rclient.hgetallAsync("last60stats"))
+      let values = Object.values(top)
+
+      values = values.map((value) => {
+        try {
+          return JSON.parse(value)
+        } catch(err) {
+          return null
+        }
+      })
+
+      values.sort((x, y) => {
+        return x.ts - y.ts
+      })
+
+      json.last60top = values
+
+    })()
+  }
+
+  last30daysStatsForInit(json) {
+    return async(() => {
+        let downloadStats = await (getHitsAsync("download", "1day", 30))
+        let uploadStats = await (getHitsAsync("upload", "1day", 30))
+    
+        let totalDownload = 0
+        downloadStats.forEach((s) => {
+            totalDownload += s[1]
+        })
+
+        let totalUpload = 0
+        uploadStats.forEach((s) => {
+            totalUpload += s[1]
+        })
+
+        json.last30 = {
+            upload: uploadStats,
+            download: downloadStats,
+            totalUpload: totalUpload,
+            totalDownload: totalDownload
+        }        
+      })()
+  }
+
   policyDataForInit(json) {
     log.debug("Loading polices");
 
@@ -1613,49 +1600,24 @@ module.exports = class {
     });
   }
 
-  alarmDataForInit(json) {
-
-    log.debug("Reading Alarms");
-    if (alarmManager == null) {
-      let AlarmManager = require("./AlarmManager.js");
-      alarmManager = new AlarmManager("info");
-    }
-
-    return new Promise((resolve, reject) => {
-      alarmManager.read("0.0.0.0", 60 * 60 * 12, null, null, null, (err, results) => {
-        log.debug("Done Reading Alarms");
-        if (err == null && results && results.length > 0) {
-          json.alarms = [];
-          for (let i in results) {
-            let alarm = JSON.parse(results[i]);
-            if(alarm.alarmtype === "intel") {
-              if (alarm.intel && alarm.intel.results) {
-                  delete alarm.intel.results; // trim intel details
-              } else {
-                  log.error("Alarm Clean Problems: ",JSON.stringify(alarm),results[i])
-              }
-            }
-
-            if (alarm["id.orig_h"]) {
-              let origHost = this.hostsdb["host:ip4:" + alarm["id.orig_h"]];
-              let toHost = this.hostsdb["host:ip4:" + alarm["id.resp_h"]];
-              alarm.hostName = alarm["id.orig_h"];
-              if (origHost && origHost.name()) {
-                alarm.hostName = origHost.name();
-              } else if (toHost && toHost.name()) {
-                alarm.hostName = toHost.name();
-              }
-            }
-            json.alarms.push(alarm);
-          }
+  extensionDataForInit(json) {
+    log.debug("Loading ExtentsionPolicy");
+    let extdata = {};
+    return new Promise((resolve,reject)=>{
+      rclient.get("extension.portforward.config",(err,data)=>{
+        try {
+          if (data != null) {
+            extdata['portforward'] = JSON.parse(data);
+          } 
+        } catch (e) {
+          log.error("ExtensionData:Unable to parse data",e,data);
           resolve(json);
-        } else {
-          if(err)
-            reject(err);
-          resolve(json);
+          return;
         }
+        json.extension = extdata;
+        resolve(json);
       });
-    });
+    });    
   }
 
   newAlarmDataForInit(json) {
@@ -1760,7 +1722,7 @@ module.exports = class {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicys((err, rules) => {
+      policyManager2.loadActivePolicys(1000, {includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
@@ -1782,7 +1744,16 @@ module.exports = class {
               }
             }
 
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+
             json.policyRules = rules;
+
             resolve();
           });
         }
@@ -1798,6 +1769,10 @@ module.exports = class {
         if(err) {
           reject(err);
         } else {
+
+          rules = rules.filter((r) => {
+            return r.type != "ALARM_NEW_DEVICE" // allow new device is default
+          })
 
           let alarmIDs = rules.map((p) => p.aid);
 
@@ -1815,7 +1790,15 @@ module.exports = class {
               }
             }
 
-            json.exceptionRules = rules;
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+
+            json.exceptionRules = rules
             resolve();
           });
         }
@@ -1876,6 +1859,7 @@ module.exports = class {
           let json = {};
           let requiredPromises = [
             this.policyDataForInit(json),
+            this.extensionDataForInit(json),
             this.modeForInit(json),
             this.policyRulesForInit(json),
             this.exceptionRulesForInit(json),
@@ -1901,6 +1885,27 @@ module.exports = class {
         })();
     }
 
+    // convert host internet block to old format, this should be removed when all apps are migrated to latest format
+    legacyHostFlag(json) {
+      return async(() => {
+        const rules = json.policyRules
+        const hosts = json.hosts
+        rules.forEach((rule) => {
+          if(rule.type === "mac" && 
+          (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
+            let target = rule.target
+            for (const index in hosts) {
+              const host = hosts[index]
+              if(host.mac === target && host.policy) {
+                host.policy.blockin = true
+                break
+              }              
+            }
+          }
+        })        
+      })()
+    }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1916,6 +1921,10 @@ module.exports = class {
 
           let requiredPromises = [
             this.last24StatsForInit(json),
+            this.last60MinStatsForInit(json),
+//            this.last60MinTopTransferForInit(json),
+            this.extensionDataForInit(json),
+            this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
             this.modeForInit(json),
@@ -1933,6 +1942,8 @@ module.exports = class {
 
           await (this.loadDDNSForInit(json));
 
+          await (this.legacyHostFlag(json))
+
           json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
 
           // for any pi doesn't have firstBinding key, they are old versions
@@ -1945,10 +1956,6 @@ module.exports = class {
 
           if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
             await (this.legacyStats(json));
-          }
-
-          if(!appTool.isAppReadyToDiscardLegacyAlarm(options.appInfo)) {
-            await (this.alarmDataForInit(json));
           }
 
           try {
@@ -2108,14 +2115,19 @@ module.exports = class {
 
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
-        log.info("hostmanager:gethosts:started");
+        log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethosts:mutx");
+            log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
             if (retry == null) {
                 retrykey = Date.now();
+            }
+            if (Date.now()-retrykey > 1000*10) {
+                log.error("hostmanager:gethosts:mutx:timeout", retrykey, Date.now()-retrykey);
+                callback(null, this.hosts.all);
+                return;
             }
             log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
@@ -2219,24 +2231,6 @@ module.exports = class {
                                 }
                             });
                         });
-                       /*
-                        hostbymac.loadPolicy((err, policy) => {
-                            this.syncHost(hostbymac, true, (err) => {
-                                if (this.type == "server") {
-                                    policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
-                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
-                                                if (err == null && changed == true) {
-                                                    hostbymac.savePolicy(null);
-                                                }
-                                            });
-                                        });
-                                    });
-                                }
-                                cb();
-                            });
-                        });
-                       */
                     } else {
                         cb();
                     }
@@ -2464,6 +2458,9 @@ module.exports = class {
         this.loadPolicy((err, data) => {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
+                let PolicyManager = require('./PolicyManager.js');
+                let policyManager = new PolicyManager('info');
+
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
                     dnsManager.queryAcl(this.policy.acl,(err,acls,ipchanged)=> {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
@@ -2561,7 +2558,27 @@ module.exports = class {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+  }
+
+  getActiveHumanDevices() {
+    const HUMAN_TRESHOLD = 0.05
+
+    this.hosts.all.filter((host) => {
+      if(h.o && h.o.mac) {
+        const dtype = h.o.dtype
+        try {
+          const dtypeObject = JSON.parse(dtype)
+          const human = dtypeObject.human
+          return human > HUMAN_TRESHOLD
+        } catch(err) {
+          return false
+        }
+      } else {
+        return false
+      }
+    })   
+    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null)
   }
 
   getActiveHostsFromSpoofList(limit) {

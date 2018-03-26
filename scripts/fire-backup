@@ -1,0 +1,47 @@
+#!/bin/bash
+
+#
+#    Copyright 2018 Firewalla LLC
+#
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# $1 encryption password
+
+if [ -z "$1" ]
+    then
+       echo "Password is required to backup. This data is important"
+       exit 1
+    else 
+       echo "Starting Back Firewalla"
+fi
+
+: ${FIREWALLA_HOME:='/home/pi/firewalla'}
+: ${FIREWALLA_TMP:='/home/pi/tmp'}
+today=`date '+%Y_%m_%d__%H_%M_%S'`
+filename="firebackup$today"
+
+mkdir $FIREWALLA_TMP
+cd $FIREWALLA_TMP
+rm -r -f firebackup*
+mkdir firebackup
+cd firebackup
+cp -r -f /home/pi/.firewalla . 
+cp -r -f /home/pi/.encipher .
+cp /data/redis/dump.rdb .
+cd ..
+tar -zcvf $filename.tar.gz firebackup
+gpg --passphrase $1 --symmetric --cipher-algo AES256 /home/pi/tmp/$filename.tar.gz
+rm $filename.tar.gz
+rm -r -f firebackup
+
