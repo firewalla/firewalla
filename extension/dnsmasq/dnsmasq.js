@@ -292,6 +292,7 @@ module.exports = class DNSMASQ {
     options = options || {}
 
     while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
       await this.delay(1000);  // try again later
     }
     this.workingInProgress = true;
@@ -303,12 +304,11 @@ module.exports = class DNSMASQ {
     } else {
       entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
     }
-<<<<<<< HEAD
 
     try {
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
-      log.error("Failed to write policy data file:", err, {});
+      log.error("Failed to add policy filter entry into file:", err, {});
     } finally {
       this.workingInProgress = false;
     }
@@ -316,7 +316,8 @@ module.exports = class DNSMASQ {
 
   async removePolicyFilterEntry(domain) {
     while (this.workingInProgress) {
-        await this.delay(1000);  // try again later
+      log.info("deferred due to dnsmasq is working in progress");
+      await this.delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -334,50 +335,6 @@ module.exports = class DNSMASQ {
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
-=======
-    
-    return async(() => {
-      if(this.workingInProgress) {
-        log.info("deferred due to dnsmasq is working in progress")
-        await (this.delay(1000))  // try again later
-        return this.addPolicyFilterEntry(domain);
-      }
-
-      this.workingInProgress = true
-      await (fs.appendFileAsync(policyFilterFile, entry))
-    })().catch((err) => {
-      log.error("Failed to add policy filter entry", err, {})
-    }).finally(() => {
-      this.workingInProgress = false
-    })
-  }
-
-  removePolicyFilterEntry(domain) {
-    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
-
-    return async(() => {
-      if(this.workingInProgress) {
-        log.info("deferred due to dnsmasq is working in progress")
-        await(this.delay(1000))
-        return this.removePolicyFilterEntry(domain);
-      }
-
-      this.workingInProgress = true;
-
-      const data = await (fs.readFileAsync(policyFilterFile, 'utf8'))
-
-      let newData = data.split("\n")
-        .filter((line) => line !== entry)
-        .join("\n")
-
-      await (fs.writeFileAsync(policyFilterFile, newData))      
-
-    })().catch((err) => {
-      log.error("Failed to remove policy filter entry", err, {})
-    }).finally(() => {
-      this.workingInProgress = false
-    })
->>>>>>> aec8e3e7c1fc33c98070ef869a4d9919bfa2ca53
   }
 
   async addPolicyFilterEntries(domains) {
@@ -681,17 +638,12 @@ module.exports = class DNSMASQ {
     }
   }
 
-<<<<<<< HEAD
   onSpoofChanged() {
     if (this.dhcpMode) {
       this.needWriteHostsFile = true;
       log.info("Spoof status changed, set need write hosts file to be true");
     }
   }
-=======
-    // use restart to ensure the latest configuration is loaded
-    let cmd = `sudo ${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -x ${dnsmasqPIDFile} -u ${userID} -C ${dnsmasqConfigFile} -r ${dnsmasqResolvFile} --local-service`;
->>>>>>> aec8e3e7c1fc33c98070ef869a4d9919bfa2ca53
 
   async reloadDnsmasq() {
     this.counter.reloadDnsmasq ++;
@@ -767,7 +719,7 @@ module.exports = class DNSMASQ {
 
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
-    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     let cmdAlt = null;
 
     if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
