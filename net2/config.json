@@ -48,7 +48,6 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
-    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -215,7 +214,8 @@
       "naughty_monkey": false,
       "device_detection": false,
       "porn_redirect": false,
-      "redirect_httpd": false
+      "redirect_httpd": false,
+      "social_hour": true
     }
 
 }

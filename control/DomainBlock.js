@@ -57,14 +57,6 @@ class DomainBlock {
   blockDomain(domain, options) {
     options = options || {}
     return async(() => {
-      if(globalLock) {
-        log.info("blockDomain is deferred due to lock")
-
-        await(delay(5000))
-        return this.blockDomain(domain, options)
-      }
-
-      globalLock = true
       log.info(`Block ${domain} is holding the lock`)
 
       if(!options.no_dnsmasq_entry) {
@@ -88,24 +80,11 @@ class DomainBlock {
       // setTimeout(() => {
       //   this.incrementalUpdateIPMapping(domain, options)
       // }, 60 * 1000) // reinforce in 60 seconds
-    })().finally(() => {
-      log.info(`Block ${domain} released the lock`)
-      globalLock = false
-    })
+    })()
   }
 
   unblockDomain(domain, options) {
     return async(() => {
-
-      if(globalLock) {
-        log.info("unblockDomain is deferred due to lock")
-
-        await(delay(5000))
-        return this.unblockDomain(domain, options)
-      }
-
-      globalLock = true
-
       if(!options.ignoreUnapplyBlock) {
         await (this.unapplyBlock(domain, options))
       }      
@@ -126,9 +105,7 @@ class DomainBlock {
           suppressEventLogging: true,        
         })
       }
-    })().finally(() => {
-      globalLock = false
-    })
+    })()
   }
 
   getDomainIPMappingKey(domain, options) {
@@ -148,6 +125,24 @@ class DomainBlock {
   removeDomainIPMapping(domain, options) {
     const key = this.getDomainIPMappingKey(domain, options)
     return rclient.delAsync(key)
+  }
+
+  removeAllDomainIPMapping() {
+    const patternDomainKey = `ipmapping:domain:*`
+    const domainKeys = await (rclient.keysAsync(patternDomainKey))
+    if(domainKeys) {
+      domainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
+    }
+
+    const patternExactDomainKey = `ipmapping:exactdomain:*`
+    const exactDomainKeys = await (rclient.keysAsync(patternExactDomainKey))
+    if(exactDomainKeys) {
+      exactDomainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
+    }
   }
 
   getMappedIPAddresses(domain, options) {
@@ -271,6 +266,7 @@ class DomainBlock {
   }
 
   // incremental update mapping to reinforce ip blocking
+  // this function should be executed in a serial way with other policy enforcements to avoid race conditions
   incrementalUpdateIPMapping(domain, options) {
     options = options || {}
 
@@ -279,15 +275,6 @@ class DomainBlock {
     const key = this.getDomainIPMappingKey(domain, options)
 
     return async(() => {
-
-      if(globalLock) {
-        log.info("incrementalUpdate is deferred due to lock")
-        await(delay(5000))
-        return this.incrementalUpdateIPMapping(domain, options)
-      }
-
-      globalLock = true
-
       const existing = await(rclient.existsAsync(key))
 
       if(!existing) {
@@ -326,9 +313,7 @@ class DomainBlock {
         }
       }
 
-    })().finally(() => {
-      globalLock = false
-    })
+    })()
   }
 
   getAllIPMappings() {

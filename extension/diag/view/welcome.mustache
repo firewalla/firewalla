@@ -1,0 +1,180 @@
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link href="./static/diag.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" charset="utf-8" src="./static/diag.js"></script>
+
+<div id="error_page" class="outer">
+  <div class="middle">
+    <div class="inner">
+      <div class="header">
+        <table class="table">
+          <tr>
+            <td>
+              <img class="error_logo" src="./static/firewalla.png" />
+            </td>
+            <td class="title">Something went wrong with this Firewalla device</td>
+          </tr>
+        </table>
+      </div>
+      <br>
+
+      <div class="table">
+        <table class="table">
+          <tr>
+            <th class="header_item">Item</th>
+            <th class="header_status">Status</th>
+          </tr>
+          <tr>
+            <td class="row_item">Cloud Connectivity</td>
+            {{#err_cloud}}
+            <td class="row_status error">Error</td>
+            {{/err_cloud}} {{^err_cloud}}
+            <td class="row_status">OK</td>
+            {{/err_cloud}}
+          </tr>
+          <tr>
+            <td class="row_item">System Memory</td>
+            {{#err_memory}}
+            <td class="row_status error">Error</td>
+            {{/err_memory}} {{^err_memory}}
+            <td class="row_status">OK</td>
+            {{/err_memory}}
+
+          </tr>
+          <tr>
+            <td class="row_item">System Services</td>
+            {{#err_service}}
+            <td class="row_status error">Error</td>
+
+            {{/err_service}} {{^err_service}}
+            <td class="row_status">OK</td>
+
+            {{/err_service}}
+
+          </tr>
+          <tr>
+            <td class="row_item">Database</td>
+            {{#err_database}}
+            <td class="row_status error">Error</td>
+
+            {{/err_database}} {{^err_database}}
+            <td class="row_status">OK</td>
+
+            {{/err_database}} </tr>
+          <tr>
+            <td class="row_item">System Clock</td>
+            <td id='clock' class="row_status">OK</td>
+          </tr>
+          <tr>
+            <td class="row_item">Binding Service</td>
+            {{#err_binding}}
+            <td class="row_status error">Error</td>
+
+            {{/err_binding}} {{^err_binding}}
+            <td class="row_status">OK</td>
+
+            {{/err_binding}}
+          </tr>
+          <tr>
+            <td class="row_item">Configuration</td>
+
+            {{#err_config}}
+            <td class="row_status error">Error</td>
+            {{/err_config}} 
+            
+            {{^err_config}}
+            <td class="row_status">OK</td>
+            {{/err_config}}
+          </tr>
+          <tr>
+            <td class="row_item">IP Address</td>
+            {{#err_ip}}
+            <td class="row_status error">Error</td>
+
+            {{/err_ip}} {{^err_ip}}
+            <td class="row_status">{{ip}}</td>
+
+            {{/err_ip}}
+          </tr>
+        </table>
+
+      </div>
+      <br>
+      <p class="footer">
+        Open an issue on our site
+        <a href="http://help.firewalla.com" style="color:#C8322D">help.firewalla.com</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+
+<div id="welcome_page" class="outer">
+  <div class="middle">
+    <div class="inner">
+
+
+
+      <img class="logo" src="./static/firewalla.png" />
+      <p class="welcome">Welcome!</p>
+      <p class="connect">Open Firewalla App to connect.</p>
+      <br>
+      <p class="available">Firewalla App available on iOS and Android</p>
+      <table class="download_table">
+        <tr>
+          <td class="download">
+            <a href="https://itunes.apple.com/us/app/firewalla/id1180904053">
+              <img style="height:44px" src="./static/appstore.png" />
+            </a>
+          </td>
+          <td style="width:15px">
+
+          </td>
+          <td class="download">
+            <a href="https://play.google.com/store/apps/details?id=com.firewalla.chancellor">
+              <img style="height:44px" src="./static/googleplay.png" />
+            </a>
+          </td>
+        </tr>
+      </table>
+      <br>
+      <p class="footer">
+        Visit our site
+        <a href="http://firewalla.com" style="color:#C8322D">firewalla.com</a>
+      </p>
+
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+<script language='javascript'>
+(function () {
+{{#success}}
+var div = document.getElementById("error_page");
+{{/success}}
+{{^success}}
+var div = document.getElementById("welcome_page");
+{{/success}}
+div.style.display = "none";
+
+var piNow = {{now}}
+var browserNow = new Date() / 1000
+
+// more than one hour
+if(Math.abs(browserNow - piNow) > 3600) {
+  var clock_td = document.getElementById("clock")
+  clock_td.style.color = "#C8322D"
+  clock_td.innerHTML = "Out of Sync"
+  document.getElementById("welcome_page").style.display = "none";
+  document.getElementById("error_page").style.display = "";
+}
+})();
+
+</script>

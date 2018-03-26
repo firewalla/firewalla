@@ -196,6 +196,12 @@ module.exports = class DNSMASQ {
       log.error("Error when updating resolv.conf:", resolveFile, "error msg:", err.message, {});
       throw err;
     }
+
+    try {
+      await execAsync("pkill -SIGHUP dnsmasq");
+    } catch (err) {
+      // ignore error if dnsmasq not exists 
+    }
   }
 
   async updateFilter(type, force) {
@@ -286,6 +292,7 @@ module.exports = class DNSMASQ {
     options = options || {}
 
     while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
       await this.delay(1000);  // try again later
     }
     this.workingInProgress = true;
@@ -301,7 +308,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
-      log.error("Failed to write policy data file:", err, {});
+      log.error("Failed to add policy filter entry into file:", err, {});
     } finally {
       this.workingInProgress = false;
     }
@@ -309,7 +316,8 @@ module.exports = class DNSMASQ {
 
   async removePolicyFilterEntry(domain) {
     while (this.workingInProgress) {
-        await this.delay(1000);  // try again later
+      log.info("deferred due to dnsmasq is working in progress");
+      await this.delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -711,7 +719,7 @@ module.exports = class DNSMASQ {
 
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
-    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
     let cmdAlt = null;
 
     if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {

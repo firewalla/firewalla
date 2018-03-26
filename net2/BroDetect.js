@@ -916,6 +916,9 @@ module.exports = class {
                         sem.emitEvent({
                           type: 'DestIPFound',
                           ip: remoteIPAddress,
+                          fd: tmpspec.fd,
+                          ob: tmpspec.ob,
+                          rb: tmpspec.rb,
                           suppressEventLogging: true
                         });
                       }, 15 * 1000); // send out in 15 seconds

@@ -25,10 +25,21 @@
 ntp_process_cnt=`sudo systemctl status ntp |grep 'active (running)' | wc -l`
 logger "FIREWALLA.FIRETIME.ENTER "+`date`
 
+function sync_time() {
+    time_website = $1
+    time=$(curl -D - ${time_website} -o /dev/null --silent | egrep "^Date:" | awk -F ": " '{print $2}')
+    if [[ "x$time" == "x" ]]; then
+        return 1
+    else
+        sudo date -s "$time"
+    fi    
+}
+
 if [[ $ntp_process_cnt == 0 ]]; then
     logger `date`
     if [[ ! -f /.dockerenv ]]; then
         logger "FIREWALLA.DATE.SYNC"
+        sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
         sudo systemctl stop ntp
         sudo ntpdate -b -u -s time.nist.gov
         sudo timeout 30 ntpd -gq

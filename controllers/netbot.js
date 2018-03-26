@@ -1834,7 +1834,7 @@ class netBot extends ControllerBot {
         async(() => {
           const policy = msg.data.value
           const pid = policy.pid
-          const oldPolicy = pm2.getPolicy(pid)
+          const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))
           const newPolicy = await (pm2.getPolicy(pid))
           await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))

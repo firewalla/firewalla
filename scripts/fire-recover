@@ -1,0 +1,55 @@
+#!/bin/bash
+
+#
+#    Copyright 2018 Firewalla LLC
+#
+#    This program is free software: you can redistribute it and/or  modify
+#    it under the terms of the GNU Affero General Public License, version 3,
+#    as published by the Free Software Foundation.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# $1 filename 
+# $2 encryption password
+
+if [ -z "$1" ] && [ -z "$2" ] 
+    then
+       echo "Password and file name is required"
+       exit 1
+    else 
+       echo "Starting Back Firewalla"
+fi
+
+: ${FIREWALLA_HOME:='/home/pi/firewalla'}
+: ${FIREWALLA_TMP:='/home/pi/tmp'}
+today=`date '+%Y_%m_%d__%H_%M_%S'`
+
+cd $FIREWALLA_TMP
+gpg  --passphrase $2 --decrypt $1 | tar -zxvf -
+cd firebackup
+sudo chown redis dump.rdb
+
+sudo service redis-server stop
+mkdir ~/.firewalla
+mkdir ~/.encipher
+
+if [ -z "$3" ] 
+   then
+      echo "Copying"
+      cp -r ./.firewalla/* ~/.firewalla/.
+      cp -r ./.encipher/* ~/.encipher/.
+      sudo cp ./dump.rdb /data/redis/.
+   else
+      cp -n -r ./.firewalla/* ~/.firewalla/.
+      cp -n -r ./.encipher/* ~/.encipher/.
+      sudo cp -n ./dump.rdb /data/redis/.
+fi
+
+sudo service redis-server start
