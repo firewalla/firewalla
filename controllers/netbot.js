@@ -109,7 +109,7 @@ let spooferManager = require('../net2/SpooferManager.js')
 const extMgr = require('../sensor/ExtensionManager')
 
 const PolicyManager = require('../net2/PolicyManager.js');
-const policyManager = new PM();
+const policyManager = new PolicyManager();
 
 class netBot extends ControllerBot {
 
