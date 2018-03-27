@@ -17,11 +17,7 @@
 const log = require("../net2/logger.js")(__filename);
 const Promise = require('bluebird');
 
-const redis = require('redis');
-const rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -38,7 +34,10 @@ const dns = require('dns');
 const resolve4Async = Promise.promisify(dns.resolve4)
 const resolve6Async = Promise.promisify(dns.resolve6)
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const SysManager = require("../net2/SysManager.js")
+const sysManager = new SysManager()
+
+const sem = require('../sensor/SensorEventManager.js').getInstance()
 
 let globalLock = false
 
@@ -58,23 +57,20 @@ class DomainBlock {
   blockDomain(domain, options) {
     options = options || {}
     return async(() => {
-      if(globalLock) {
-        log.info("blockDomain is deferred due to lock")
-
-        await(delay(5000))
-        return this.blockDomain(domain, options)
-      }
-
-      globalLock = true
       log.info(`Block ${domain} is holding the lock`)
 
-      await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
+      if(!options.no_dnsmasq_entry) {
+        await (dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined))
+      }      
 
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain'
-      })
+      if(!options.no_dnsmasq_reload) {
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain',
+          suppressEventLogging: true
+        })
+      }
 
       await (this.syncDomainIPMapping(domain, options))
       if(!options.ignoreApplyBlock) {
@@ -84,24 +80,11 @@ class DomainBlock {
       // setTimeout(() => {
       //   this.incrementalUpdateIPMapping(domain, options)
       // }, 60 * 1000) // reinforce in 60 seconds
-    })().finally(() => {
-      log.info(`Block ${domain} released the lock`)
-      globalLock = false
-    })
+    })()
   }
 
   unblockDomain(domain, options) {
     return async(() => {
-
-      if(globalLock) {
-        log.info("unblockDomain is deferred due to lock")
-
-        await(delay(5000))
-        return this.unblockDomain(domain, options)
-      }
-
-      globalLock = true
-
       if(!options.ignoreUnapplyBlock) {
         await (this.unapplyBlock(domain, options))
       }      
@@ -110,16 +93,19 @@ class DomainBlock {
         await (this.removeDomainIPMapping(domain, options))
       }      
 
-      await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
+      if(!options.no_dnsmasq_entry) {
+        await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
+      }
 
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain'
-      })
-    })().finally(() => {
-      globalLock = false
-    })
+      if(!options.no_dnsmasq_reload) {
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain',
+          suppressEventLogging: true,        
+        })
+      }
+    })()
   }
 
   getDomainIPMappingKey(domain, options) {
@@ -139,6 +125,24 @@ class DomainBlock {
   removeDomainIPMapping(domain, options) {
     const key = this.getDomainIPMappingKey(domain, options)
     return rclient.delAsync(key)
+  }
+
+  removeAllDomainIPMapping() {
+    const patternDomainKey = `ipmapping:domain:*`
+    const domainKeys = await (rclient.keysAsync(patternDomainKey))
+    if(domainKeys) {
+      domainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
+    }
+
+    const patternExactDomainKey = `ipmapping:exactdomain:*`
+    const exactDomainKeys = await (rclient.keysAsync(patternExactDomainKey))
+    if(exactDomainKeys) {
+      exactDomainKeys.forEach((key) => {
+        await (rclient.delAsync(key))
+      })
+    }
   }
 
   getMappedIPAddresses(domain, options) {
@@ -171,15 +175,69 @@ class DomainBlock {
     })()
   }
 
+  resolve4WithTimeout(domain, timeout) {
+    let callbackCalled = false
+    
+    return new Promise((resolve, reject) => {
+      resolve4Async(domain).then((addresses) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve(addresses)
+        }
+      }).catch((err) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case any error
+        }
+      })
+      setTimeout(() => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case timeout
+        }
+      }, timeout)
+    })    
+  }
+
+  resolve6WithTimeout(domain, timeout) {
+    let callbackCalled = false
+    
+    return new Promise((resolve, reject) => {
+      resolve6Async(domain).then((addresses) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve(addresses)
+        }
+      }).catch((err) => {
+        if(!callbackCalled) {
+          callbackCalled = true
+          resolve([]) // return empty array in case any error
+        }
+      })
+      setTimeout(() => {
+        if(!callbackCalled) {
+          log.warn("Timeout when query domain", domain, {})
+          callbackCalled = true
+          resolve([]) // return empty array in case timeout
+        }
+      }, timeout)
+    })    
+  }
+
   resolveDomain(domain) {
     return async(() => {
-      const v4Addresses = await (resolve4Async(domain).catch((err) => []))
+      const v4Addresses = await (this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => [])) // 3 seconds for timeout
       await (dnsTool.addReverseDns(domain, v4Addresses))
 
-      const v6Addresses = await (resolve6Async(domain).catch((err) => []))
-      await (dnsTool.addReverseDns(domain, v6Addresses))
+      const gateway6 = sysManager.myGateway6()
+      if(gateway6) { // only query if ipv6 is supported
+        const v6Addresses = await (this.resolve6WithTimeout(domain, 3 * 1000).catch((err) => []))
+        await (dnsTool.addReverseDns(domain, v6Addresses))
+        return v4Addresses.concat(v6Addresses)
+      } else {
+        return v4Addresses
+      }
 
-      return v4Addresses.concat(v6Addresses)
     })()
   }
 
@@ -208,6 +266,7 @@ class DomainBlock {
   }
 
   // incremental update mapping to reinforce ip blocking
+  // this function should be executed in a serial way with other policy enforcements to avoid race conditions
   incrementalUpdateIPMapping(domain, options) {
     options = options || {}
 
@@ -216,15 +275,6 @@ class DomainBlock {
     const key = this.getDomainIPMappingKey(domain, options)
 
     return async(() => {
-
-      if(globalLock) {
-        log.info("incrementalUpdate is deferred due to lock")
-        await(delay(5000))
-        return this.incrementalUpdateIPMapping(domain, options)
-      }
-
-      globalLock = true
-
       const existing = await(rclient.existsAsync(key))
 
       if(!existing) {
@@ -263,9 +313,7 @@ class DomainBlock {
         }
       }
 
-    })().finally(() => {
-      globalLock = false
-    })
+    })()
   }
 
   getAllIPMappings() {

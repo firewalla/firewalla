@@ -19,8 +19,7 @@ var log = null;
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var redis = require("redis");
-var rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var later = require('later');
 var iptable = require('./Iptables.js');
@@ -58,6 +57,8 @@ var ip = require('ip');
 let b = require('../control/Block.js');
 
 let features = require('../net2/features');
+
+const cp = require('child_process')
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -301,6 +302,7 @@ module.exports = class {
       callback(null)
       return
     }
+
 
     this.familyDnsAddr((err, dnsaddrs) => {
       log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));

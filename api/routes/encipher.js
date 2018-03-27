@@ -32,6 +32,8 @@ let sc = require('../lib/SystemCheck.js');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const jsonfile = require('jsonfile')
+
 router.post('/message/:gid',
 
   sc.debugInfo,

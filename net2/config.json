@@ -48,7 +48,6 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
-    "IPv6in4Sensor": {},
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -58,6 +57,7 @@
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
+    "HeapSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "FlowAggregationSensor": {},
@@ -213,7 +213,9 @@
       "scisurf": false,
       "naughty_monkey": false,
       "device_detection": false,
-      "porn_redirect": false
+      "porn_redirect": false,
+      "redirect_httpd": false,
+      "social_hour": true
     }
 
 }

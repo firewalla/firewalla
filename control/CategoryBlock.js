@@ -17,11 +17,7 @@
 const log = require("../net2/logger.js")(__filename);
 const Promise = require('bluebird');
 
-const redis = require('redis');
-const rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -40,9 +36,12 @@ const bone = require('../lib/Bone.js')
 
 const fc = require('../net2/config.js')
 
+const exec = require('child-process-promise').exec
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
+  "video": "app.video",
   "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
 }
 
@@ -68,15 +67,47 @@ class CategoryBlock {
       const list = await (this.loadCategoryFromBone(category))
       if(list && list.length > 0) {
         await (this.saveDomains(category, list)) // used for unblock
-        list.forEach((domain) => {
-          let options = {ignoreApplyBlock: true}
-          if(category === "porn" && fc.isFeatureOn("porn_redirect")) {
-            options.use_blue_hole = true
-          }
-          await (domainBlock.blockDomain(domain, options).catch((err) => undefined)) // may need to provide options argument in the future
-        })
-        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+
+        let options2 = JSON.parse(JSON.stringify(options))
+        options2.ignoreApplyBlock = true
+        if(category === "porn" && fc.isFeatureOn("porn_redirect")) {
+          options2.use_blue_hole = true
+        }
+
+        let i,j,temparray,chunk = 10 // 10 domains at same time
+        for (i=0,j=list.length; i<j; i+=chunk) {
+          temparray = list.slice(i,i+chunk)          
+          let promises = temparray.map((domain) => domainBlock.syncDomainIPMapping(domain, options2).catch((err) => undefined))
+          await (promises) // batch wait, wait until any of them completes
+        }
+
+        await (this.batchApplyBlock(category, options).catch((err) => undefined))
+//        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
+    })()
+  }
+
+  batchApplyBlock(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (exec(cmd4))
+      await (exec(cmd6))
+    })()
+  }
+
+  batchUnapplyBlock(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = options.blockSet || "blocked_domain_set"
+    const ipset6Name = ipsetName + "6"
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+    return async(() => {
+      await (exec(cmd4))
+      await (exec(cmd6))
     })()
   }
 
@@ -88,15 +119,16 @@ class CategoryBlock {
 
     return async(() => {
       if(!options.ignoreUnapplyBlock) {
-        await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
+        await (this.batchUnapplyBlock(category, options).catch((err) => undefined))
+        // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
-      const list = await (this.loadDomains(category))
-      if(list && list.length > 0) {
-        list.forEach((domain) => {
-          await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
-        })
-      }
+      // const list = await (this.loadDomains(category))
+      // if(list && list.length > 0) {
+      //   list.forEach((domain) => {
+      //     await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
+      //   })
+      // }
       await (rclient.delAsync(this.getMapping(category))) // ipmapping:category:games
       await (rclient.delAsync(this.getCategoryDomainKey(category))) // categoryDomain:games
     })()

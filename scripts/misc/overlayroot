@@ -1,0 +1,837 @@
+#!/bin/sh
+#  Copyright, 2012 Dustin Kirkland <kirkland@ubuntu.com>
+#  Copyright, 2012 Scott Moser <smoser@ubuntu.com>
+#  Copyright, 2012 Axel Heider
+#
+#  Based on scripts from
+#    Sebastian P.
+#    Nicholas A. Schembri State College PA USA
+#    Axel Heider
+#    Dustin Kirkland
+#    Scott Moser
+#
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see
+#    <http://www.gnu.org/licenses/>.
+
+case "$1" in
+	# no pre-reqs
+	prereqs) echo ""; exit 0;;
+esac
+
+. /scripts/functions
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+MYTAG="overlayroot"
+
+TEMP_D="${TMPDIR:-/tmp}/${0##*/}.configs"
+VARIABLES="overlayroot overlayroot_cfgdisk"
+
+# generic settings 
+# ${ROOT} and ${rootmnt} are predefined by caller of this script. Note that
+# the root fs ${rootmnt} it mounted readonly on the initrams, which fits
+# nicely for our purposes.
+root_rw=/media/root-rw
+root_ro=/media/root-ro
+ROOTMNT=${rootmnt} # use global name to indicate created outside this
+OVERLAYROOT_DEBUG=0
+# PERSIST_DIR will persist after pivot-root.  It is used for log file
+# and for the mktemp-made password file in crypt.
+PERSIST_DIR=/run/initramfs
+if [ ! -d "$PERSIST_DIR" -a -d /dev/.initramfs ]; then
+	PERSIST_DIR="/dev/.initramfs"
+fi
+if [ ! -d "$PERSIST_DIR" ]; then
+	mkdir -p "$PERSIST_DIR" ||
+		echo "WARNING: $MYTAG: failed to create ${PERSIST_DIR}" 1>&2
+fi
+LOG_FILE="${PERSIST_DIR}/${MYTAG}.log"
+
+log() {
+	"log_${1}_msg" "$MYTAG: $2";
+	_debug "[$1]:" "$2"
+}
+log_fail() { log failure "$*"; }
+log_success() { log success "$*"; }
+log_warn() { log warning "$*"; }
+fail() {
+	[ $# -eq 0 ] || log_fail "$@";
+	exit 0; # why do we exit success?
+}
+cleanup() {
+	[ -d "${TEMP_D}" ] && rm -Rf "${TEMP_D}"
+}
+debug() {
+	_debug "$@"
+	[ "${OVERLAYROOT_DEBUG:-0}" = "0" ] && return
+	echo "$MYTAG:" "$@"
+}
+_debug() {
+	if [ "${DEBUG_BUSTED:-0}" ]; then
+		{ echo "$@" >> "$LOG_FILE"; } 2>/dev/null ||
+			{ DEBUG_BUSTED=1; log_warn "debug is busted"; }
+	fi
+}
+
+safe_string() {
+	local prev="$1" allowed="$2" cur=""
+	[ -n "$prev" ] || return 1
+	while cur="${prev#[${allowed}]}"; do
+		[ -z "$cur" ] && return 0
+		[ "$cur" = "$prev" ] && break
+		prev="$cur"
+	done
+	return 1
+}
+
+parse_string() {
+	# parse a key/value string like:
+	# name=mapper,pass=foo,fstype=ext4,mkfs=1
+	# set variables under namespace 'ns'.
+	#  _RET_name=mapper
+	#  _RET_pass=foo
+	#  _RET_fstype=ext4
+	# set _RET to the list of variables found
+	local input="${1}" delim="${2:-,}" ns="${3:-_RET_}"
+	local oifs="$IFS" tok="" keys="" key="" val=""
+
+	set -f; IFS="$delim"; set -- $input; IFS="$oifs"; set +f;
+	_RET=""
+	for tok in "$@"; do
+		key="${tok%%=*}"
+		val="${tok#${key}}"
+		val=${val#=}
+		safe_string "$key" "0-9a-zA-Z_" ||
+			{ debug "$key not a safe variable name"; return 1; }
+		eval "${ns}${key}"='${val}' || return 1
+		keys="${keys} ${ns}${key}"
+	done
+	_RET=${keys# }
+	return
+}
+get_varval() { eval _RET='${'$1'}'; }
+write_kernel_cmdline_cfg() {
+	local cfg="$1" desc="${2:-kernel cmdline}"
+	local cmdline="" var=""
+	read cmdline < /proc/cmdline || return 1
+	: > "${cfg}" || return
+	set -f
+	{
+	echo "desc='${desc}'"
+	for tok in $cmdline; do
+		for var in $VARIABLES; do
+			if [ "$tok" = "$var" ]; then
+				log_warn "kernel param without value '${tok}'";
+				continue;
+			elif [ "${tok}" = "${var}=" ]; then
+				echo "${var}=''";
+			elif [ "${tok#${var}=}" != "${tok}" ]; then
+				echo "${var}='${tok#${var}=}'"
+			fi
+		done
+	done
+	} >> "$cfg"
+	set +f
+}
+
+wait_for_dev() {
+	local dev="$1" timeout="${2:-0}"
+	[ -b "$dev" ] && return 0
+	[ "$timeout" = "0" ] && return 1
+	# wait-for-root writes fstype to stdout, redirect to null
+	wait-for-root "$dev" "$timeout" >/dev/null
+}
+crypto_setup() {
+	local fstype="ext4" pass="" mapname="secure" mkfs="1" dev=""
+	local timeout=0
+	local entropy_sources="/proc/sys/kernel/random/boot_id /proc/sys/kernel/random/uuid /dev/urandom"
+	local seed="" rootseed="$ROOTMNT/var/lib/urandom/random-seed"
+	if [ ! -f "$rootseed" -a -f "$ROOTMNT/var/lib/systemd/random-seed" ]; then
+		rootseed="$ROOTMNT/var/lib/systemd/random-seed"
+	fi
+	# Seed the psuedo random number generator with available seeds
+	for seed in "/.random-seed" "$rootseed"; do
+		[ -f "${seed}" ] ||
+			{ debug "missing rng seed [${seed}]"; continue; }
+		cat "${seed}" > /dev/urandom ||
+			debug "failed seeding /dev/urandom from $seed"
+	done
+	# this does necessary crypto setup and sets _RET
+	# to the appropriate block device (ie /dev/mapper/secure)
+
+	# mkfs (default is 1):
+	#  0: never create filesystem
+	#  1: if pass is given and mount fails, create a new one
+	#     if no pass given, create new
+	#  2: if pass is given and mount fails, fail
+	#     if no pass given, create new
+	local options="$1"
+	parse_string "${options}" ||
+		{ log_fail "failed parsing '${options}'"; return 1; }
+
+	fstype=${_RET_fstype:-${fstype}}
+	pass=${_RET_pass:-${pass}}
+	mapname=${_RET_mapname:-${mapname}}
+	mkfs=${_RET_mkfs:-${mkfs}}
+	dev=${_RET_dev:-${dev}}
+	timeout=${_RET_timeout:-${timeout}}
+
+	[ -n "$dev" ] ||
+		{ log_fail "dev= argument not provided in '${options}'"; return 1; }
+
+	short2dev "$dev" ||
+		{ log_fail "failed to convert $dev to a device"; return 1; }
+	dev="${_RET}"
+
+	debug "fstype=${fstype} pass=${pass} mapname=${mapname}"
+	debug "mkfs=${mkfs} dev=${dev} timeout=${timeout}"
+
+	wait_for_dev "$dev" "$timeout" || {
+		log_fail "crypt dev device $dev does not exist after ${timeout}s";
+		return 1;
+	}
+
+	if [ -n "$pass" ]; then
+		printf "%s" "$pass" |
+			cryptsetup luksOpen "$dev" "$mapname" --key-file -
+		if [ $? -eq 0 ]; then
+			local tdev="/dev/mapper/$mapname"
+			log_warn "reusing existing luks device at $dev"
+			wait_for_dev "$tdev" 20 ||
+				{ log_fail "$tdev did not appear"; return 1; }
+			_RET_DEVICE="/dev/mapper/$mapname"
+			return 0
+		fi
+		if [ "$mkfs" != "1" ]; then
+			log_fail "luksOpen failed on $dev with mkfs=$mkfs";
+			return 1;
+		fi
+		log_warn "re-opening $dev failed with mkfs=$mkfs will create new"
+	else
+		[ "$mkfs" = "0" ] &&
+			{ log_fail "mkfs=0, but no password provided"; return 1; }
+		entropy_sources="$entropy_sources $dev"
+		local pass_file=""
+		pass_file=$(mktemp "${PERSIST_DIR}/${MYTAG}.XXXXXX") ||
+			{ log_fail "failed creation of password file"; return 1; }
+		stat -L /dev/* /proc/* /sys/* >"${pass_file}" 2>&1 ||
+			{ log_warn "could not seed with stat entropy [$entropy_sources]"; }
+		head -c 4096 $entropy_sources >> "${pass_file}" ||
+			{ log_fail "failed reading entropy [$entropy_sources]"; return 1; }
+		pass=$(sha512sum "${pass_file}") ||
+			{ log_fail "failed generation of password"; return 1; }
+		pass=${pass%% *}
+		printf "%s" "${pass}" > "${pass_file}"
+	fi
+
+	log_warn "setting up new luks device at $dev"
+	# clear backing device
+	wipefs -a "$dev" ||
+		{ log_fail "failed to wipe $dev"; return 1; }
+	printf "%s" "$pass" | cryptsetup luksFormat "$dev" --key-file - ||
+		{ log_fail "luksFormat $dev failed"; return 1; }
+	printf "%s" "$pass" |
+		cryptsetup luksOpen "$dev" "$mapname" --key-file - ||
+		{ log_fail "luksOpen $dev failed"; return 1; }
+	mke2fs -t "${fstype}" "/dev/mapper/${mapname}" || {
+		log_fail "failed to mkfs -t $fstype on map $mapname";
+		return 1;
+	}
+
+	_RET_DEVICE="/dev/mapper/$mapname"
+	return 0
+}
+
+dev_setup() {
+	local options="$1" dev="" timeout=0 path="/"
+	# options supported:
+	#    dev=device,timeout=X,path=/
+	parse_string "${options}" ||
+		{ log_fail "failed parsing '${options}'"; return 1; }
+
+	dev=${_RET_dev:-${dev}}
+	timeout=${_RET_timeout:-${timeout}}
+
+	[ -n "$dev" ] ||
+		{ log_fail "dev= argument not provided in '${options}'"; return 1; }
+
+	short2dev "$dev" ||
+		{ log_fail "failed to convert $dev to a device"; return 1; }
+	dev="${_RET}"
+
+	debug "dev=${dev} timeout=${timeout}"
+
+	wait_for_dev "$dev" "$timeout"
+	_RET_DEVICE="$dev"
+}
+
+clean_path() {
+	# remove '//' in a path.
+	local p="$1" tmp=""
+	while [ "${p#*//}" != "$p" ]; do
+		tmp=${p#*//}
+		p="${p%%//*}/${tmp}"
+	done
+	_RET="$p"
+}
+
+get_workdir() {
+	local root_rw="$1" dir_prefix="$2" file="$3"
+	file=${file%/}
+	if [ "$file" = "/" -o "$file" = "" ]; then
+		file="_"
+	fi
+	clean_path "${root_rw}/${dir_prefix%/}-workdir/${file}"
+}
+
+overlayrootify_fstab() {
+	# overlayrootify_fstab(input, root_ro, root_rw, dir_prefix, recurse, swap)
+	# read input fstab file, write an overlayroot version to stdout
+	# also returns (_RET) a list of directories that will need to be made
+	local input="$1" root_ro="${2:-/media/root-ro}"
+	local root_rw="${3:-/media/root-rw}" dir_prefix="${4:-/}"
+	local recurse=${5:-1} swap=${6:-0} fstype=${7:-overlayfs}
+	local hash="#" oline="" ospec="" upper="" dirs="" copy_opts=""
+	local spec file vfstype opts pass freq line ro_line
+	local workdir="" use_orig="" relfile="" needs_workdir=false
+	
+	[ -f "$input" ] || return 1
+
+	needs_workdir && needs_workdir=true || needs_workdir=false
+	while read spec file vfstype opts pass freq; do
+		line="$spec $file $vfstype $opts $pass $freq"
+		case ",$opts," in
+			*,ro,*) ro_opts="$opts";;
+			*) ro_opts="ro,${opts}";;
+		esac
+		ro_line="$spec ${root_ro}$file $vfstype ${ro_opts} $pass $freq"
+
+		use_orig=""
+		if [ "${spec#${hash}}" != "$spec" ]; then
+			use_orig="comment"
+		elif [ -z "$freq" ]; then
+			use_orig="malformed-line"
+		else
+			case "$vfstype" in
+				vfat|fat) use_orig="fs-unsupported";;
+				proc|sys|tmpfs|dev|udev) use_orig="fs-virtual";;
+			esac
+		fi
+
+		rel_file=${file#/}
+		if [ -n "$use_orig" ]; then
+			if [ "$use_orig" != "comment" ]; then
+				echo "$line # $MYTAG:$use_orig"
+			else
+				echo "$line"
+			fi
+		elif [ "$vfstype" = "swap" ]; then
+			if [ "$swap" = "0" ]; then
+				# comment out swap lines
+				echo "#$MYTAG:swap=${swap}#${line}"
+			elif [ "${spec#/}" != "${spec}" ] &&
+			     [ "${spec#/dev/}" = "${spec}" ]; then
+				# comment out swap files (spec starts with / and not in /dev)
+				echo "#$MYTAG:swapfile#${line}"
+			else
+				echo "${line}"
+			fi
+		else
+			ospec="${root_ro}${file}"
+			copy_opts=""
+			[ "${opts#*nobootwait*}" != "${opts}" ] &&
+				copy_opts=",nobootwait"
+			clean_path "${root_rw}/${dir_prefix}${file}"
+			upper="$_RET"
+
+			oline="${ospec} ${file} $fstype "
+			clean_path "${root_ro}${file}"
+			oline="${oline}lowerdir=$_RET"
+			oline="${oline},upperdir=${upper}${copy_opts}"
+			if [ "$fstype" = "overlayfs" -o "$fstype" = "overlay" ] &&
+				${needs_workdir}; then
+				get_workdir "$root_rw" "$dir_prefix" "$file"
+				workdir="$_RET"
+				oline="${oline},workdir=$workdir"
+				dirs="${dirs} $workdir"
+			fi
+ 			oline="${oline} $pass $freq"
+
+			if [ "$recurse" != "0" ]; then
+				echo "$ro_line"
+				echo "$oline"
+				dirs="${dirs} ${upper}"
+			else
+				echo "$line"
+				[ "$file" = "/" ] && dirs="${dirs} ${upper}"
+			fi
+		fi
+	done < "$input"
+	_RET=${dirs# }
+}
+
+short2dev() {
+	# turn 'LABEL=' or 'UUID=' into a device path
+	# also support /dev/* and 'vdb' or 'xvda'
+	local input="$1" oifs="$IFS" dev newdev s
+	case "$input" in
+		LABEL=*)
+			dev="${input#LABEL=}"
+			case "${dev}" in
+				*/*) dev="$(echo "${dev}" | sed 's,/,\\x2f,g')";;
+			esac
+			dev="/dev/disk/by-label/${dev}"
+			;;
+		UUID=*) dev="/dev/disk/by-uuid/${input#UUID=}" ;;
+		/dev/*) dev="${input}";;
+		*) dev="/dev/${input}";;
+	esac
+	_RET=$dev
+}
+
+get_cfg() {
+	# get_cfg(device, file, cfg, timeout=0)
+	# copy the file $cfg off $device to $file, waiting $timeout for
+	# $device to appear
+	local dev="$1" file="$2" cfg="${3:-overlayroot.conf}" timeout="${4:-0}"
+	local cfgdev="" success=0 didmnt=false mp="" pre="get_cfg($dev):"
+	[ -z "$dev" ] && return 1
+
+	if [ "$timeout" != "0" ]; then
+		wait_for_dev "$dev" "$timeout" ||
+			{ debug "$pre did not appear in $timeout"; return 1; }
+	else
+		udevadm settle
+	fi
+
+	short2dev "$dev" && cfgdev="$_RET" && [ -b "$cfgdev" ] ||
+		{ debug "$pre not present"; return 1; }
+
+	if mp="${TEMP_D}/mp" && mkdir "$mp" &&
+		mount -o ro "$cfgdev" "$mp"; then
+		if [ -f "$mp/$cfg" ]; then
+			cp "$mp/$cfg" "$file" && success=1 ||
+				debug "$pre copy failed"
+		else
+			debug "$pre '$file' file not found"
+		fi
+		umount "$mp"
+	else
+		debug "$pre mount failed"
+	fi
+	[ -d "$mp" ] || rmdir "$mp"
+	[ $success -eq 1 ] || return 1
+	_RET="$dev/$cfg"
+}
+
+parse_cfg() {
+	# parse_cfg($file,$desc,$vars)
+	# this reasonably safely sources the "config" file $file
+	# and then declares the variables listed to stdout
+	#
+	# known issues:
+	# * sourced file could re-define 'echo'
+	# * just fails if a value has a ' in it 
+	[ -f "$1" ] || return 0
+	tick="'" sh -c '
+		__tick=$tick
+		__file=$1; __desc=$2;
+		__unset__="__unset__"
+		shift 2
+		__vars="$*"
+		readonly __tick __file __desc __vars
+		. "${__file}"
+		if [ $? -ne 0 ]; then
+			echo "failed source \"${__file}\" ($__desc)" 1>&2
+			return 1
+		fi
+		set -e
+		echo "desc=${__tick}${__desc}${__tick}"
+		for var in ${__vars}; do
+			eval val=\${${var}-${__unset__}} || 
+				{ echo "eval of $var failed"; exit 1; }
+			[ "${val#*${__tick}}" = "${val}" ] || {
+				echo "variable \"$var\" had single tick in it. fail";
+				exit 1;
+			}
+			[ "${val}" = "${__unset__}" ] ||
+				echo "$var=${__tick}${val}${__tick}"
+		done
+	' -- "$@"
+}
+
+readcfgd() {
+	local cfg_d="$1"
+	# this kind of stinks, each VARIABLE goes into global scope
+	local or="" or_cfgdisk=""
+	_RET_desc_oroot=""
+	_RET_desc_cfgdisk=""
+	set +f
+	for f in "${cfg_d}"/*; do
+		. "$f" || fail "failed reading $f"
+		[ "$or" != "${overlayroot}" ] &&
+			_RET_desc_oroot="$desc"
+		[ "${or_cfgdisk}" != "${overlayroot_cfgdisk}" ] &&
+			_RET_desc_cfgdisk="$desc"
+		or=${overlayroot}
+		or_cfgdisk=${overlayroot_cfgdisk}
+	done
+	set -f
+}
+
+fix_upstart_overlayfs() {
+	# inotify events on an overlayfs underlay do not propogate through
+	# a newly created overlay.  This causes job creation and deletion issues
+	# for upstart, which uses inotify on /etc/init. So ensure that the overlay
+	# explicitly has a /etc/init (LP: #1213925)
+	local root="$1"
+	local initctl="$root/sbin/initctl"
+	local eifile="/etc/init/.overlayfs-upstart-helper"
+
+	[ -e "$initctl" -o -L "$initctl" ] || return 0
+	[ -d "$root/etc/init" ] || return 0
+	echo "#upstart needs help for overlayfs (LP: #1213925)." \
+		> "$root/$eifile" ||
+		{ log_fail "failed to write $root/$eifile"; return 1; }
+	debug "created $eifile under $root (LP: #1213925)"
+}
+
+needs_workdir() {
+	local uname_r="${UNAME_R}"
+	if [ -z "$uname_r" ]; then
+		uname_r=$(uname -r) && UNAME_R="$uname_r" ||
+			{ log_warn "failed to read uname!"; return 2; }
+	fi
+	# 3.18+ require 'workdir=' option.
+	case "${uname_r}" in
+		2*|3.1[01234567]*|3.[0-9].*) return 1;;
+		*) return 0;;
+	esac
+}
+
+
+search_fs_driver() {
+	# search_fs_driver(driver1, driver2...)
+	# return the first supported filesystem driver in the list.
+	# if no drivers are provided, search default list.
+	# assumes that name in /proc/filesystems and module name are the same.
+	local m="" driver="" tab='	'
+	for m in "$@"; do
+		grep -q "${tab}$m$" /proc/filesystems && driver="$m" && 
+			{ debug "/proc/filesystems support for '$m'"; break; }
+	done
+	if [ -z "$driver" ]; then
+		for m in "$@"; do
+			if modprobe -qb "$m"; then
+				if grep -q "${tab}$m$" /proc/filesystems; then
+					debug "loaded module '$m'";
+					driver="$m"
+					break;
+				else
+					log_warn "loaded '$m' module but no '$m' in /proc/filesystems"
+				fi
+			fi
+		done
+	fi
+	[ -n "$driver" ] ||
+		{ debug "Unable to find driver/module. searched: $*"; return 1; }
+	_RET="$driver"
+}
+
+cfgd="${TEMP_D}/configs"
+mkdir -p "${cfgd}" || fail "failed to create tempdir"
+trap cleanup EXIT
+
+# collect the different config locations into a file
+# write individual config files in $cfgd that contain
+{
+echo "desc='builtin'"
+echo "overlayroot=''"
+echo "overlayroot_cfgdisk='disabled'"
+} > "$cfgd/00-builtin"
+
+write_kernel_cmdline_cfg "${cfgd}/90-kernel" ||
+	fail "failed to read kernel command line!"
+
+parse_cfg "/conf/conf.d/overlayroot" "initramfs config" \
+	"$VARIABLES" > "${cfgd}/10-initramfs" ||
+	fail "failed parsing initramfs config"
+
+parse_cfg "${ROOTMNT}/etc/overlayroot.conf" "$ROOT/etc/overlayroot.conf" \
+	"$VARIABLES" > "${cfgd}/20-root-config" ||
+	fail "failed parsing root config"
+
+parse_cfg "${ROOTMNT}/etc/overlayroot.local.conf" \
+	"$ROOT/etc/overlayroot.local.conf" \
+	"$VARIABLES" > "${cfgd}/30-root-local-config" ||
+	fail "failed parsing root config"
+
+# now read the trusted configs, to see if overlayroot_cfgdisk is set
+readcfgd "$cfgd" ||
+	fail "reading configs failed"
+used_desc="${_RET_desc_oroot}"
+
+[ -n "${_RET_desc_cfgdisk}" ] &&
+	debug "${_RET_desc_cfgdisk} set cfgdisk='${overlayroot_cfgdisk}'"
+
+# if one of the trusted configs above gave us set the overlayroot_cfgdisk
+# variable, then look for such a device and read a config from it.
+cfgdisk=0
+if [ "${overlayroot_cfgdisk:-disabled}" != "disabled" ] &&
+	get_cfg "${overlayroot_cfgdisk}" "${TEMP_D}/cfgdisk"; then
+	desc=${_RET}
+	parse_cfg "${TEMP_D}/cfgdisk" "${desc}" "$VARIABLES" \
+		> "${cfgd}/80-cfgdisk" ||
+		fail "reading config from ${desc} failed"
+	used_desc="${_RET_desc_oroot}"
+
+	# now read the parsed configs again.
+	readcfgd "$cfgd" ||
+		fail "reading configs failed"
+
+	[ -n "${_RET_desc_cfgdisk}" ] &&
+		debug "${_RET_desc_cfgdisk} set cfgdisk=${overlayroot_cfgdisk}"
+	[ -n "${_RET_desc_oroot}" ] &&
+		debug "${_RET_desc_oroot} set overlayroot=${overlayroot}"
+fi
+
+opts=""
+cfgmsg="${used_desc:+ (per ${used_desc})}"
+case "${overlayroot:-disabled}" in
+	tmpfs|tmpfs:*)
+		mode="tmpfs"
+		opts="${overlayroot#tmpfs}";
+		opts=${opts#:}
+		;;
+	/dev/*|device:*)
+		case "$overlayroot" in
+			/dev/*) opts="dev=${overlayroot}";;
+			*) opts="${overlayroot#device:}";;
+		esac
+		dev_setup "${opts}" ||
+			fail "failed setup overlay for ${overlayroot} [$opts]${cfgmsg}"
+		mode="device"
+		device="$_RET_DEVICE"
+		;;
+	crypt:*)
+		mode="crypt"
+		opts=${overlayroot#crypt:}
+		crypto_setup "${opts}" ||
+			fail "failed setup crypt for ${overlayroot}${cfgmsg}"
+		device="$_RET_DEVICE"
+		;;
+	disabled)
+		debug "overlayroot disabled${cfgmsg}"
+		exit 0;;
+	*)
+		fail "invalid value for overlayroot: ${overlayroot}${cfgmsg}"
+		exit 0;;
+esac
+
+parse_string "$opts" "," _RET_common_
+swap=${_RET_common_swap:-0}
+recurse=${_RET_common_recurse:-1}
+OVERLAYROOT_DEBUG=${_RET_common_debug:-${OVERLAYROOT_DEBUG}}
+dir_prefix=${_RET_common_dir:-"/overlay"}
+overlayroot_driver=${_RET_common_driver}
+
+if [ "${overlayroot_driver:-auto}" = "auto" ]; then
+	search_fs_driver overlay overlayfs ||
+		fail "Unable to find a driver. searched: overlay overlayfs"
+	overlayroot_driver="$_RET"
+else
+	search_fs_driver ${overlayroot_driver} ||
+		fail "Unable to find a driver named '${overlayroot_driver}'"
+	overlayroot_driver="$_RET"
+fi
+
+debug "swap=$swap recurse=$recurse debug=$OVERLAYROOT_DEBUG dir=$dir_prefix"
+debug "device=$device mode=$mode driver=${overlayroot_driver}"
+
+[ "$swap" = "0" -o "$swap" = "1" ] ||
+	fail "invalid setting for swap: $swap. must be '0' or '1'"
+[ "$recurse" = "0" -o "$recurse" = "1" ] ||
+	fail "invalid setting for recurse: $recurse. must be '0' or '1'"
+
+log_warn "configuring overlayroot with driver=${overlayroot_driver} mode=$mode opts='$opts' per $used_desc"
+
+# settings based on overlayroot_driver
+workdir=""
+case "${overlayroot_driver}" in
+	overlayfs|overlay)
+		mount_type="${overlayroot_driver}"
+		mount_opts="-o lowerdir=${root_ro},upperdir=${root_rw}/${dir_prefix}"
+		if needs_workdir; then
+			get_workdir "$root_rw" "$dir_prefix" "/"
+			workdir="$_RET"
+			mount_opts="${mount_opts},workdir=$workdir"
+		fi
+		clean_path "${mount_opts} overlayroot ${ROOTMNT}"
+		mount_opts="$_RET"
+		;;
+	aufs)
+		mount_type="aufs"
+		mount_opts="-o dirs=${root_rw}/${dir_prefix}:${root_ro}=ro aufs-root ${ROOTMNT}"
+		;;
+	*)
+		log_fail "invalid overlayroot driver: ${overlayroot_driver}"
+		panic "$MYTAG"
+		;;
+esac
+
+FW_RESET_FILE=${ROOTMNT}/fw_reset
+
+if [[ -f ${FW_RESET_FILE} ]]; then
+  # reformat p4 if reset flag is in place
+  ${ROOTMNT}/usr/bin/yes | ${ROOTMNT}/sbin/mkfs.ext4 ${device}
+	mount -o remount,rw ${ROOTMNT}
+  rm -f ${FW_RESET_FILE}
+	mount -o remount,ro ${ROOTMNT}
+else
+  # check filesystem before mount
+  fsck -f -a -C0 ${device}
+fi
+
+# make the mount point on the init root fs ${root_rw}
+mkdir -p "${root_rw}" ||
+	fail "failed to create ${root_rw}"
+
+# make the mount point on the init root fs ${root_ro}
+mkdir -p "${root_ro}" ||
+	fail "failed to create ${root_ro}"
+
+# mount the backing device to $root_rw
+if [ "$mode" = "tmpfs" ]; then
+	# mount a tmpfs using the device name tmpfs-root
+	mount -t tmpfs tmpfs-root "${root_rw}" ||
+		fail "failed to create tmpfs"
+else
+	# dev or crypto
+	mount "$device" "${root_rw}" ||
+		fail "failed mount backing device $device"
+fi
+
+mkdir -p "${root_rw}/${dir_prefix}" ||
+	fail "failed to create ${dir_prefix} on ${device}"
+
+[ -z "$workdir" ] || mkdir -p "$workdir" ||
+	fail "failed to create workdir '$workdir' on ${device}"
+
+# root is mounted on ${ROOTMNT}, move it to ${ROOT_RO}.
+mount --move "${ROOTMNT}" "${root_ro}" ||
+	fail "failed to move root away from ${ROOTMNT} to ${root_ro}"
+
+# there is nothing left at ${ROOTMNT} now. So for any error we get we should
+# either do recovery to restore ${ROOTMNT} for drop to a initramfs shell using
+# "panic". Otherwise the boot process is very likely to fail with even more 
+# errors and leave the system in a wired state. 
+
+# mount virtual fs ${ROOTMNT} with rw-fs ${root_rw} on top or ro-fs ${root_ro}.
+debug mount -t "$mount_type" $mount_opts
+mount -t "$mount_type" $mount_opts
+if [ $? -ne 0 ]; then
+	log_fail "failed to create new ro/rw layered ${ROOTMNT}"
+	log_fail "mount command was: mount -t $mount_type $mount_opts"
+	# do recovery and try restoring the mount for ${ROOTMNT}
+	mount --move ${root_ro} ${ROOTMNT}
+	if [ $? -ne 0 ]; then
+		# thats bad, drop to shell to let the user try fixing this
+		log_fail "RECOVERY_ERROR: failed to move $root_ro back to ${ROOTMNT}"
+		panic "$MYTAG"
+	fi
+	exit 0
+fi
+
+# now the real root fs is on ${root_ro} of the init file system, our
+# layered root fs is set up at ${ROOTMNT}. So we can write anywhere in
+# {ROOTMNT} and the changes will end up in ${root_rw} while ${root_ro} it
+# not touched. However ${root_ro} and ${root_rw} are on the initramfs root
+# fs, which will be removed an replaced by ${ROOTMNT}. Thus we must move
+# ${root_ro} and ${root_rw} to the rootfs visible later, ie.
+# ${ROOTMNT}${root_ro} and ${ROOTMNT}${root_ro}.  Since the layered ro/rw
+# is already up, these changes also end up on ${root_rw} while ${root_ro}
+# is not touched.
+
+# move mount from ${root_ro} to ${ROOTMNT}${root_ro} 
+mkdir -p "${ROOTMNT}/${root_ro}"
+mount --move ${root_ro} "${ROOTMNT}${root_ro}" ||
+	fail "failed to move ${root_ro} to ${ROOTMNT}${root_ro}"
+
+# move mount from ${root_rw} to ${ROOTMNT}${root_rw} 
+[ -d ${ROOTMNT}${root_rw} ] || mkdir -p ${ROOTMNT}${root_rw}
+mount --move "${root_rw}" "${ROOTMNT}${root_rw}" ||
+	fail "failed to move ${root_rw} to ${ROOTMNT}${root_rw}"
+
+# technically, everything is set up nicely now. Since ${ROOTMNT} had beend
+# mounted read-only on the initfamfs already, ${ROOTMNT}${root_ro} is it,
+# too.  Now we init process could run - but unfortunately, we may have to
+# prepare some more things here. 
+# Basically, there are two ways to deal with the read-only root fs. If the
+# system is made aware of this, things can be simplified a lot.  If it is
+# not, things need to be done to our best knowledge. 
+#
+# So we assume here, the system does not really know about our read-only
+# root fs.
+#
+# Let's deal with /etc/fstab first. It usually contains an entry for the
+# root fs, which is no longer valid now. We have to remove it and add our
+# new ${root_ro} entry. 
+# Remember we are still on the initramfs root fs here, so we have to work
+# on ${ROOTMNT}/etc/fstab. The original fstab is
+# ${ROOTMNT}${root_ro}/etc/fstab.
+cat <<EOF >${ROOTMNT}/etc/fstab
+#
+#  This fstab is in an ${overlayroot_driver}. The real one can be found at
+#  ${root_ro}/etc/fstab
+#  The original entry for '/' and other mounts have been updated to be placed
+#  under $root_ro.
+#  To permanently modify this (or any other file), you should change-root into
+#  a writable view of the underlying filesystem using:
+#      sudo overlayroot-chroot
+#
+EOF
+
+[ $? -eq 0 ] || log_fail "failed to modify /etc/fstab (step 1)"
+overlayrootify_fstab ""${ROOTMNT}${root_ro}/etc/fstab"" "$root_ro" \
+	"$root_rw" "$dir_prefix" "$recurse" "$swap" "${overlayroot_driver}" \
+	>> "${ROOTMNT}/etc/fstab" ||
+	log_fail "failed to modify /etc/fstab (step 2)"
+
+# we have to make the directories in ${root_rw} because if they do not
+# exist, then the 'upper=' argument to overlayfs will fail.
+for d in ${_RET}; do
+	mkdir -p "${ROOTMNT}/$d"
+done
+
+if [ "${overlayroot_driver}" = "overlayfs" ]; then
+	fix_upstart_overlayfs "$ROOTMNT" ||
+		log_fail "failed to fix upstart for overlayfs"
+fi
+
+# if / is supposed to be mounted read-only (cmdline with 'ro')
+# then mount our overlayfs as read-only just to be more normal
+read cmdline < /proc/cmdline
+cmdline=" $cmdline "
+if [ "${cmdline#* ro }" != "$cmdline" ]; then
+	mount -o remount,ro "$ROOTMNT" ||
+		log_fail "failed to remount overlayroot read-only"
+	debug "mounted $ROOTMNT read-only per kernel cmdline"
+fi
+
+msg="configured root with '$overlayroot' using ${overlayroot_driver} per"
+msg="$msg ${used_desc}"
+log_success "$msg"
+
+exit 0 
+# vi: ts=4 noexpandtab

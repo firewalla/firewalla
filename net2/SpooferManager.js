@@ -34,8 +34,7 @@ const await = require('asyncawait/await')
 
 const iptool = require('ip')
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let log = require("./logger.js")(__filename, 'info');
 
@@ -54,10 +53,6 @@ let hostTool = new HostTool();
 let exec = require('child-process-promise').exec
 
 let spoofStarted = false;
-
-// add promises to all redis functions
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 // WORKAROUND VERSION HERE, will move to a better place
 function startSpoofing() {

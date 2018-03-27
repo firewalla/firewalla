@@ -16,16 +16,12 @@
 
 const Promise = require('bluebird');
 
-const redis = require("redis");
-const rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
 const log = require('./logger.js')(__filename)
-
-// add promises to all redis functions
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 let _setupMode = null
 

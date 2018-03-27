@@ -20,15 +20,12 @@ var os = require('os');
 var network = require('network');
 var instances = {};
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
@@ -49,14 +46,12 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
-var PolicyManager = require('./PolicyManager.js');
-var policyManager = new PolicyManager('info');
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const alarmManager2 = new AlarmManager2();
 
-let AlarmManager2 = require('../alarm/AlarmManager2.js');
-let alarmManager2 = new AlarmManager2();
-
-let PolicyManager2 = require('../alarm/PolicyManager2.js');
-let policyManager2 = new PolicyManager2();
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const policyManager2 = new PolicyManager2();
+const pm2 = policyManager2
 
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
@@ -85,13 +80,6 @@ let fConfig = require('./config.js').getConfig();
 
 const fc = require('./config.js')
 
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-sclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
-
 var _async = require('async');
 
 var MobileDetect = require('mobile-detect');
@@ -102,6 +90,9 @@ let AppTool = require('./AppTool');
 let appTool = new AppTool();
 
 var linux = require('../util/linux.js');
+
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -620,20 +611,6 @@ class Host {
                 this.applyPolicy((err)=>{
                 });
                 log.info("HostPolicy:Changed", channel, ip, type, obj);
-   /*
-                this.loadPolicy((err, data) => {
-                    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-                    policyManager.execute(this, this.o.ipv4Addr, this.policy, (err) => {
-                        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
-                            policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
-                                if (err == null && changed == true) {
-                                    this.savePolicy(null);
-                                }
-                            });
-                        });
-                    });
-                });
-*/
             }
         });
     }
@@ -646,6 +623,9 @@ class Host {
             if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
                 policy.monitor = false;
             }
+            let PolicyManager = require('./PolicyManager.js');
+            let policyManager = new PolicyManager('info');
+
             policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
                 dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
                     policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
@@ -1135,6 +1115,8 @@ class Host {
 
     // policy:mac:xxxxx
     setPolicy(name, data, callback) {
+      callback = callback || function() {}
+
         if (name == "acl") {
             if (this.policy.acl == null) {
                 this.policy.acl = [data];
@@ -1162,6 +1144,49 @@ class Host {
                 }
                 this.policy.acl = acls;
             }
+        } else if (name === "blockin") { // legacy logic handling, code can be removed in the future
+          if(this.o && this.o.mac) {
+            if(data) {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created              
+                  callback(null, {blockin: true});
+                } else {
+                  // need to create one
+                  let rule = pm2.createPolicy({
+                    target: this.o.mac,
+                    type: "mac"
+                  })
+
+                  let resultPolicyRule = await (pm2.checkAndSaveAsync(rule))
+                  if(resultPolicyRule) {
+                    callback(null, {blockin: true})
+                  } else {
+                    callback(new Error("failed to apply blockin"))
+                  }
+                }
+              })().catch((err) => {
+                callback(err, null)
+              })
+              
+            } else {
+              async(() => {
+                // TODO: performance enhancement needed
+                let rule = await (pm2.findPolicy(this.o.mac, "mac"))
+                if(rule) { // already created
+                  await (pm2.disableAndDeletePolicy(rule.pid))
+                } 
+
+                callback(null, {blockin: false});
+              })().catch((err) => {
+                callback(err, null)
+              })
+            }
+          }
+
+          return // no need to save policy for blockin case, it's already routed to new policy model
+                   
         } else {
             if (this.policy[name] != null && this.policy[name] == data) {
                 callback(null, null);
@@ -1435,6 +1460,7 @@ module.exports = class {
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
     json.longVersion = f.getVersion();
+    json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
@@ -1572,6 +1598,26 @@ module.exports = class {
         resolve(json);
       });
     });
+  }
+
+  extensionDataForInit(json) {
+    log.debug("Loading ExtentsionPolicy");
+    let extdata = {};
+    return new Promise((resolve,reject)=>{
+      rclient.get("extension.portforward.config",(err,data)=>{
+        try {
+          if (data != null) {
+            extdata['portforward'] = JSON.parse(data);
+          } 
+        } catch (e) {
+          log.error("ExtensionData:Unable to parse data",e,data);
+          resolve(json);
+          return;
+        }
+        json.extension = extdata;
+        resolve(json);
+      });
+    });    
   }
 
   newAlarmDataForInit(json) {
@@ -1744,8 +1790,15 @@ module.exports = class {
               }
             }
 
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+
             json.exceptionRules = rules
-            json.exceptionCount = rules.length
             resolve();
           });
         }
@@ -1806,6 +1859,7 @@ module.exports = class {
           let json = {};
           let requiredPromises = [
             this.policyDataForInit(json),
+            this.extensionDataForInit(json),
             this.modeForInit(json),
             this.policyRulesForInit(json),
             this.exceptionRulesForInit(json),
@@ -1831,6 +1885,27 @@ module.exports = class {
         })();
     }
 
+    // convert host internet block to old format, this should be removed when all apps are migrated to latest format
+    legacyHostFlag(json) {
+      return async(() => {
+        const rules = json.policyRules
+        const hosts = json.hosts
+        rules.forEach((rule) => {
+          if(rule.type === "mac" && 
+          (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
+            let target = rule.target
+            for (const index in hosts) {
+              const host = hosts[index]
+              if(host.mac === target && host.policy) {
+                host.policy.blockin = true
+                break
+              }              
+            }
+          }
+        })        
+      })()
+    }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1848,6 +1923,7 @@ module.exports = class {
             this.last24StatsForInit(json),
             this.last60MinStatsForInit(json),
 //            this.last60MinTopTransferForInit(json),
+            this.extensionDataForInit(json),
             this.last30daysStatsForInit(json),
             this.policyDataForInit(json),
             this.legacyHostsStats(json),
@@ -1865,6 +1941,8 @@ module.exports = class {
           await (requiredPromises);
 
           await (this.loadDDNSForInit(json));
+
+          await (this.legacyHostFlag(json))
 
           json.nameInNotif = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
 
@@ -2037,14 +2115,19 @@ module.exports = class {
 
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
-        log.info("hostmanager:gethosts:started");
+        log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
         if (this.getHostsActive == true) {
-            log.info("hostmanager:gethosts:mutx");
+            log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
             if (retry == null) {
                 retrykey = Date.now();
+            }
+            if (Date.now()-retrykey > 1000*10) {
+                log.error("hostmanager:gethosts:mutx:timeout", retrykey, Date.now()-retrykey);
+                callback(null, this.hosts.all);
+                return;
             }
             log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
@@ -2148,24 +2231,6 @@ module.exports = class {
                                 }
                             });
                         });
-                       /*
-                        hostbymac.loadPolicy((err, policy) => {
-                            this.syncHost(hostbymac, true, (err) => {
-                                if (this.type == "server") {
-                                    policyManager.execute(hostbymac, hostbymac.o.ipv4Addr, hostbymac.policy, (err, data) => {
-                                        dnsManager.queryAcl(hostbymac.policy.acl,(err,acls)=> {
-                                            policyManager.executeAcl(hostbymac, hostbymac.o.ipv4Addr, acls, (err, changed) => {
-                                                if (err == null && changed == true) {
-                                                    hostbymac.savePolicy(null);
-                                                }
-                                            });
-                                        });
-                                    });
-                                }
-                                cb();
-                            });
-                        });
-                       */
                     } else {
                         cb();
                     }
@@ -2393,6 +2458,9 @@ module.exports = class {
         this.loadPolicy((err, data) => {
             log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
             if (this.type == "server") {
+                let PolicyManager = require('./PolicyManager.js');
+                let policyManager = new PolicyManager('info');
+
                 policyManager.execute(this, "0.0.0.0", this.policy, (err) => {
                     dnsManager.queryAcl(this.policy.acl,(err,acls,ipchanged)=> {
                         policyManager.executeAcl(this, "0.0.0.0", acls, (err, changed) => {
@@ -2490,10 +2558,10 @@ module.exports = class {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return this.hosts.all.map(h => h.o.mac).filter(mac => mac != null);
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
   }
 
-  getActiveHumanDevices() {   
+  getActiveHumanDevices() {
     const HUMAN_TRESHOLD = 0.05
 
     this.hosts.all.filter((host) => {

@@ -27,6 +27,7 @@ const ControllerBot = require('../lib/ControllerBot.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
+const URL = require("url");
 
 
 
@@ -56,12 +57,8 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
 
-let redis = require('redis');
-let rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
@@ -384,12 +381,14 @@ class netBot extends ControllerBot {
   _sendLog(msg,callback) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid+".tar.gz.gpg";
+    let path = "";
     log.info("sendLog: ", filename, password,{});
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
       log.info("sendLog: Storage ", filename, password,url,{});
       if (url == null || url.url == null) {
         this.simpleTxData(msg,{},"Unable to get storage",callback);   
       } else {
+        path = URL.parse(url.url).pathname;
         let cmdline = '/home/pi/firewalla/scripts/encrypt-upload-s3.sh '+filename+' '+password+' '+"'"+url.url+"'";
         log.info("sendLog: cmdline", filename, password,cmdline,{});
         require('child_process').exec(cmdline, (err, out, code) => {
@@ -399,9 +398,19 @@ class netBot extends ControllerBot {
           } else {
           }
         });
-        this.simpleTxData(msg,{password:password,filename:filename},null,callback);   
+        this.simpleTxData(msg,{password:password,filename:path},null,callback);   
       }
     });
+  }
+  
+  _portforward(ip, msg, callback) {
+    log.info("_portforward",ip,msg);
+    let c = require('../net2/MessageBus.js');
+    this.channel = new c('debug');
+    this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
+    if (callback) {
+      callback(null,null);
+    }
   }
 
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
@@ -838,6 +847,11 @@ class netBot extends ControllerBot {
               break;
             case "notify":
               this._notify(msg.target, msg.data.value.notify, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "portforward":
+              this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
                 cb(err);
               });
               break;
@@ -1387,7 +1401,7 @@ class netBot extends ControllerBot {
       }
 
       if(msg.data.hourblock != "1" &&
-         msg.data.hourblock != "0" ) { // 0 => now, 1 => hour stats, other => overall stats (last 24 hours)
+         msg.data.hourblock != "0" ) { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
         options.queryall = true
       }
       
@@ -1399,7 +1413,7 @@ class netBot extends ControllerBot {
         if(hostObject && hostObject.ipv4Addr) {
           ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
         } else {
-          let error = new Error("Invalide Mac");
+          let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
         }        
@@ -1407,7 +1421,7 @@ class netBot extends ControllerBot {
 
       let host = await (this.hostManager.getHostAsync(ip));
       if(!host || !host.o.mac) {
-        let error = new Error("Invalide Host");
+        let error = new Error("Invalid Host");
         error.code = 404;
         return Promise.reject(error);
       }
@@ -1614,6 +1628,10 @@ class netBot extends ControllerBot {
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
       return;
+    } else if (msg.data.item === "sendlog") {
+      log.info("sendLog");
+      this._sendLog(msg,callback);
+      return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
         let code = 200;
@@ -1720,7 +1738,8 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {
             policy: policy,
             otherAlarms: otherBlockedAlarms,
-            alreadyExists: alreadyExists
+            alreadyExists: alreadyExists === "duplicated",
+            updated: alreadyExists === "duplicated_and_updated"
           }, err, callback);
         } else {
           this.simpleTxData(msg, policy, err, callback);
@@ -1795,15 +1814,34 @@ class netBot extends ControllerBot {
           }
 
           pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists) {
+            if(alreadyExists == "duplicated") {
               this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
               return
+            } else if(alreadyExists == "duplicated_and_updated") {
+              const p = JSON.parse(JSON.stringify(policy2))
+              p.updated = true // a kind hacky, but works
+              this.simpleTxData(msg, p, err, callback)
             } else {
               this.simpleTxData(msg, policy2, err, callback)
             }
           });
         });
         break;
+
+      case "policy:update":
+        async(() => {
+          const policy = msg.data.value
+          const pid = policy.pid
+          const oldPolicy = await (pm2.getPolicy(pid))
+          await (pm2.updatePolicyAsync(policy))
+          const newPolicy = await (pm2.getPolicy(pid))
+          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+          this.simpleTxData(msg,newPolicy, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+
+        break;    
     case "policy:delete":
       async(() => {
         let policy = await (pm2.getPolicy(msg.data.value.policyID))

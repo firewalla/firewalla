@@ -16,12 +16,8 @@
 
 let log = require('./logger.js')(__filename);
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
+const rclient = require('../util/redis_manager.js').getRedisClient()
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -190,9 +186,18 @@ class FlowTool {
 
     return async(() => {
 
-      let flows = await(this.getAllRecentOutgoingConnections(options));
+      let flows = await(this.getAllRecentOutgoingConnections(options))
       flows = flows.slice(0, MAX_RECENT_FLOW);
+
+      let flows2 = await(this.getAllRecentIncomingConnections(options))
+      flows2 = flows2.slice(0, MAX_RECENT_FLOW);
+
       Array.prototype.push.apply(json.flows.recent, flows);
+      Array.prototype.push.apply(json.flows.recent, flows2);
+
+      json.flows.recent.sort((a, b) => {
+        return b.ts - a.ts;
+      })
     })();
   }
 
@@ -212,6 +217,12 @@ class FlowTool {
           f.device = mac;
         });
         allFlows.push.apply(allFlows, flows);
+
+        let flows2 = await(this.getRecentIncomingConnections(ip, options));
+        flows2.forEach((f) => {
+          f.device = mac;
+        });
+        allFlows.push.apply(allFlows, flows2);
       })
 
       allFlows.sort((a, b) => {

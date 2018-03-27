@@ -20,11 +20,8 @@ let Promise = require('bluebird');
 let cloud = require('../encipher');
 
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let storage = require('node-persist');
 

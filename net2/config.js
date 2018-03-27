@@ -6,11 +6,9 @@ let fs = require('fs');
 let f = require('./Firewalla.js');
 
 const redis = require('redis')
-const rclient = redis.createClient()
-const sclient_publish = redis.createClient()
-const sclient_subscribe = redis.createClient()
-sclient_publish.setMaxListeners(0)
-sclient_subscribe.setMaxListeners(0)
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -103,7 +101,7 @@ function syncDynamicFeaturesConfigs() {
 function enableDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hsetAsync(dynamicConfigKey, featureName, '1'))
-    sclient_publish.publish("config:feature:dynamic:enable", featureName)
+    pclient.publish("config:feature:dynamic:enable", featureName)
     dynamicConfigs[featureName] = '1'
   })()
 }
@@ -111,7 +109,7 @@ function enableDynamicFeature(featureName) {
 function disableDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hsetAsync(dynamicConfigKey, featureName, '0'))
-    sclient_publish.publish("config:feature:dynamic:disable", featureName)
+    pclient.publish("config:feature:dynamic:disable", featureName)
     dynamicConfigs[featureName] = '0'
   })()
 }
@@ -119,7 +117,7 @@ function disableDynamicFeature(featureName) {
 function clearDynamicFeature(featureName) {
   return async(() => {
     await (rclient.hdel(dynamicConfigKey, featureName))
-    sclient_publish.publish("config:feature:dynamic:clear", featureName)
+    pclient.publish("config:feature:dynamic:clear", featureName)
     delete dynamicConfigs[featureName]
   })()
 }
@@ -149,11 +147,11 @@ function getFeatures() {
   return merged
 }
 
-sclient_subscribe.subscribe("config:feature:dynamic:enable")
-sclient_subscribe.subscribe("config:feature:dynamic:disable")
-sclient_subscribe.subscribe("config:feature:dynamic:clear")
+sclient.subscribe("config:feature:dynamic:enable")
+sclient.subscribe("config:feature:dynamic:disable")
+sclient.subscribe("config:feature:dynamic:clear")
 
-sclient_subscribe.on("message", (channel, message) => {
+sclient.on("message", (channel, message) => {
   log.info(`got message from ${channel}: ${message}`)
   const theFeature = message
   switch(channel) {
