@@ -24,11 +24,16 @@ exports.ping6= function(intf, ipv6addr,cb) {
 };
 
 function trim_exec_sync(cmd) {
-   let r = require('child_process').execSync(cmd);
-   if (r) {
-       return r.toString().trim();
-   }
-   return null;
+  let r;
+  try {
+    r = require('child_process').execSync(cmd);
+  } catch (err) {
+    log.error("Error when executing:" + cmd, err);
+  }
+  if (r) {
+    return r.toString().trim();
+  }
+  return null;
 }
 
 // If no wifi, then there is no error but cbed get's a null in second param.
