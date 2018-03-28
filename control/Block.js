@@ -102,7 +102,9 @@ function setupBlockingEnv(tag) {
     await (exec(cmdCreateIncomingRule6))
     await (exec(cmdCreateOutgoingTCPRule6))
     await (exec(cmdCreateIncomingTCPRule6))
-  })()
+  })().catch(err => {
+    log.error('Error when setup blocking env', err);
+  })
 }
 
 function existsBlockingEnv(tag) {
@@ -114,7 +116,9 @@ function existsBlockingEnv(tag) {
     } else {
       return false
     }
-  })()
+  })().catch(err => {
+    log.error('Error when check blocking env existence', err);
+  })
 }
 
 function destroyBlockingEnv(tag) {
@@ -155,7 +159,9 @@ function destroyBlockingEnv(tag) {
     await (exec(cmdDeleteDstSet6))
 
     log.info("finish destroying block enviornment for", tag)
-  })()
+  })().catch(err => {
+    log.error('Error when destroy blocking env', err);
+  })
 }
 
 let ipsetQueue = [];
@@ -263,7 +269,8 @@ function blockImmediate(destination, ipset) {
 
 function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {
-    await (setupBlockingEnv(tag))
+    await(setupBlockingEnv(tag))
+    
     macAddresses.forEach((mac) => {
       await (advancedBlockMAC(mac, getMacSet(tag)))
     })
@@ -293,7 +300,9 @@ function advancedBlockMAC(macAddress, setName) {
     } else {
       return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
     }
-  })()
+  })().catch(err => {
+    log.error('Error when advancedBlockMAC', err);
+  })
 }
 
 function advancedUnblockMAC(macAddress, setName) {
@@ -304,7 +313,9 @@ function advancedUnblockMAC(macAddress, setName) {
     } else {
       return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
     }
-  })()
+  })().catch(err => {
+    log.error('Error when advancedUnblockMAC', err);
+  })
 }
 
 function unblock(destination, ipset) {
