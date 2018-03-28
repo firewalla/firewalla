@@ -192,7 +192,7 @@ class BitBridge {
       await (exec("rm -f /home/pi/.firewalla/config/enablev6"))
       await (exec("sudo pkill bitbridge6"))      
     })().catch(err => {
-      log.warn("Error when turn on ipv6", err);
+      log.warn("Error when turn off ipv6", err);
     })
   }
 }
