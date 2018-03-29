@@ -1308,16 +1308,21 @@ class netBot extends ControllerBot {
 
       let hashCache = {}
 
-
       let appFlows = flows.appDetails
 
       if(Object.keys(appFlows).length > 0) {
         flowUtil.hashIntelFlows(appFlows, hashCache)
+
+        let data;
+        try {
+          data = await(bone.flowgraphAsync('summarizeApp', appFlows))
+        } catch (err) {
+          log.error("Error when summarizing flowgraph for app", err);
+        }
         
-        let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-        
-        flows.appDetails = unhashedData
+        if (data) {
+          flows.appDetails = flowUtil.unhashIntelFlows(data, hashCache)
+        }
       }
     })()
   }
@@ -1334,10 +1339,16 @@ class netBot extends ControllerBot {
       if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        let data;
+        try {
+          data = await(bone.flowgraphAsync('summarizeActivity', categoryFlows))
+        } catch (err) {
+          log.error("Error when summarizing flowgraph for activity", err);
+        }
         
-        flows.categoryDetails = unhashedData
+        if (data) {
+          flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
+        }
       }
     })()
   }
