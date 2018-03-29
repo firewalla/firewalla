@@ -143,6 +143,10 @@ class DestIPFoundHook extends Hook {
       if(info.t) {
         intel.t = info.t;
       }
+
+      if(info.cc) {
+        intel.cc = info.cc;
+      }
       //      }
     });
 

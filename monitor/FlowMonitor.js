@@ -313,6 +313,7 @@ module.exports = class FlowMonitor {
                             uid: uuid.v4(),
                             ts: flow.ts,
                             fd: flow.fd,
+                            intel: flow.intel,
                             "id.orig_h": flow.sh,
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
@@ -339,12 +340,13 @@ module.exports = class FlowMonitor {
                             mac: flow["mac"],
                             target: flow.lh,
                             fd: flow.fd,
+                            intel: flow.intel,
                             appr: flow["appr"],
                             org: flow["org"],
                             "id.orig_h": flow.dh,
-                          "id.resp_h": flow.sh,
-                          "id.orig_p": flow.dp,
-                          "id.resp_p": flow.sp,
+                            "id.resp_h": flow.sh,
+                            "id.orig_p": flow.dp,
+                            "id.resp_p": flow.sp,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
 
@@ -373,8 +375,8 @@ module.exports = class FlowMonitor {
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
 
-                  // Process intel to generate Alarm about it
-                  this.processIntelFlow(intelobj);
+                    // Process intel to generate Alarm about it
+                    this.processIntelFlow(intelobj);
                   }
                 } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
@@ -901,7 +903,7 @@ module.exports = class FlowMonitor {
         const name = await (hostTool.getName(remoteIP))
         let remoteHostname = name || remoteIP;
 
-        intelManager.lookup(remoteIP, (err, iobj, url) => {
+        intelManager.lookup(remoteIP, flowObj.intel, (err, iobj) => {
   
           if (err != null || iobj == null) {
             log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
@@ -936,6 +938,10 @@ module.exports = class FlowMonitor {
     
             if (flowObj && flowObj.categoryArray) {
               alarm['p.security.category']=flowObj.categoryArray;
+            }
+
+            if (iobj.tags) {
+              alarm['p.security.tags']=iobj.tags;
             }
     
             log.info("Host:ProcessIntelFlow:Alarm",alarm);

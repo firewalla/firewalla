@@ -67,7 +67,7 @@ module.exports = class {
         });
     }
 
-    lookup(ip, callback) {
+    lookup(ip, intel, callback) {
         if (ip == null || ip == "8.8.8.8" || sysManager.isLocalIP(ip) == true) {
             callback(null, null, null);
             return;
@@ -82,24 +82,56 @@ module.exports = class {
             }
             this.cachelookup(ip, "cymon", (err, result) => {
                 if (result != null && result != "none") {
-                    let weburl = "https://cymon.io/" + ip;
-                    let obj = JSON.parse(result);
-                    if (obj == null || obj.count == 0) {
-                        callback(null, null, null);
-                        return;
-                    }
                     this._location(ip,(err,lobj)=>{ 
-                        obj.lobj = lobj;
-                        log.info("Intel:Location",ip,obj.lobj);
-                        this._packageCymon(ip, obj);
-                        callback(err, obj, weburl);
+                        let weburl = "https://cymon.io/" + ip;
+                        let obj = JSON.parse(result);
+                        if (obj == null || obj.count == 0) {
+                            obj = {}
+                            obj.lobj = lobj;
+                            obj = this._packageIntel(ip,obj,intel);
+                            callback(null, obj); 
+                        } else {
+                            obj.lobj = lobj;
+                            log.info("Intel:Location",ip,obj.lobj);
+                            this._packageCymon(ip, obj);
+                            callback(err, obj);
+                        }
                     });
                 } else {
-                    //            callback(null,null,null);
-                    this._lookup(ip, callback);
+                    this._lookup(ip, intel, (err,obj)=>{
+                        callback(err,obj);
+                    });
                 }
             });
         });
+    }
+
+    _packageIntel(ip,obj,intel) {
+        let weburl = "https://intel.firewalla.com/";
+        log.info("IntelManger:PackageIntel:",ip,JSON.stringify(intel,null,2));
+        if (intel == null) {
+            return null;
+        }
+        if (intel.t) {
+            obj.count = Math.abs(intel.t/10);  
+        } else {
+            obj.count = 4;
+        }
+        if (intel.s) {
+            obj.severityscore = intel.s;
+        } else {
+            obj.severityscore = 20;
+        }
+        obj.summary = "";
+        obj.weburl = weburl;
+        if (intel.cc) {
+            try {
+                obj.tags = JSON.parse(intel.cc);
+            } catch(e) {
+            } 
+        }
+        log.info("IntelManger:PackageIntel:Done",ip,JSON.stringify(intel,null,2),JSON.stringify(obj,null,2));
+        return obj;
     }
 
     _packageCymon(ip, obj) {
@@ -228,7 +260,7 @@ module.exports = class {
       });
     }
 
-    _lookup(ip, callback) {
+    _lookup(ip, intel, callback) {
         let weburl = "https://cymon.io/" + ip;
         let url = "https://cymon.io" + "/api/nexus/v1/ip/" + ip + "/events?limit=100";
 
@@ -239,45 +271,49 @@ module.exports = class {
             // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
         };
 
-        request(options, (err, httpResponse, body) => {
-            if (err != null) {
-                let stack = new Error().stack;
-                log.info("Error while requesting ", err, stack);
-                callback(err, null, null);
-                return;
-            }
-            if (httpResponse == null) {
-                let stack = new Error().stack;
-                log.info("Error while response ", err, stack);
-                callback(500, null, null);
-                return;
-            }
-            if (httpResponse.statusCode < 200 ||
-                httpResponse.statusCode > 299) {
-                log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                callback(httpResponse.statusCode, null, null);
-                return;
-            }
-            if (err === null && body != null) {
-                this.cacheAdd(ip, "cymon", body);
-                let obj = JSON.parse(body);
-                if (obj != null) {
-                    if (obj.count == 0) {
-                        log.info("INFO:====== No Intel Information!!", ip);
-                        callback(null, null, null);
+        this._location(ip,(err,lobj)=>{ 
+            let obj = {};
+            obj.lobj = lobj;
+            log.info("Intel:Location",ip,lobj);
+            obj = this._packageIntel(ip,obj,intel);
+            request(options, (err, httpResponse, body) => {
+                if (err != null) {
+                    let stack = new Error().stack;
+                    log.info("Error while requesting ", err, stack);
+                    callback(err, null, null);
+                    return;
+                }
+                if (httpResponse == null) {
+                    let stack = new Error().stack;
+                    log.info("Error while response ", err, stack);
+                    callback(500, null, null);
+                    return;
+                }
+                if (httpResponse.statusCode < 200 ||
+                    httpResponse.statusCode > 299) {
+                    log.error("**** Error while response HTTP ", httpResponse.statusCode);
+                    callback(httpResponse.statusCode, null, null);
+                    return;
+                }
+                if (err === null && body != null) {
+                    this.cacheAdd(ip, "cymon", body);
+                    let cobj = JSON.parse(body);
+                    if (cobj != null) {
+                        if (cobj.count == 0) {
+                            log.info("INFO:====== No Intel Information!!", ip,obj);
+                            callback(null,obj);
+                        } else {
+                            cobj.lobj = lobj;
+                            this._packageCymon(ip, cobj);
+                            callback(err, cobj, cobj.weburl);
+                        }
                     } else {
-                        this._location(ip,(err,lobj)=>{ 
-                            obj.lobj = lobj;
-                            log.info("Intel:Location",ip,obj.lobj);
-                            this._packageCymon(ip, obj);
-                            callback(err, obj, obj.weburl);
-                        });
+                        callback(null,obj);
                     }
                 } else {
-                    callback(null, null, null);
+                    callback(null,obj);
                 }
-            }
+            });
         });
-
     }
 }
