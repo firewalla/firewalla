@@ -84,6 +84,8 @@ class PolicyManager2 {
       scheduler.unenforceCallback = (policy) => {
         return this._unenforce(policy)
       }
+
+      this.enabledTimers = {}
       
     }
     return instance;
@@ -745,7 +747,7 @@ class PolicyManager2 {
           await (this._enforce(policy))
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid          
-          setTimeout(() => {
+          const policyTimer = setTimeout(() => {
             async(() => {
               log.info(`About to revoke policy ${pid} `)
               // make sure policy is still enabled before disabling it
@@ -764,6 +766,9 @@ class PolicyManager2 {
               }
             })()
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
+
+          this.invalidateExpireTimer(policy) // remove old one if exists
+          this.enabledTimers[pid] = policyTimer
         })()
       }
     } else if (policy.cronTime) {
@@ -936,11 +941,21 @@ class PolicyManager2 {
     })()
   }
 
+  invalidateExpireTimer(policy) {
+    const pid = policy.pid
+    if(this.enabledTimers[pid]) {
+      log.info("Invalidate expire timer for policy", pid, {})
+      clearTimeout(this.enabledTimers[pid])
+      delete this.enabledTimers[pid]
+    }    
+  }
+
   unenforce(policy) {
     if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.deregisterPolicy(policy)
     } else {
+      this.invalidateExpireTimer(policy) // invalidate timer if exists
       return this._unenforce(policy) // regular unenforce
     }
   }
