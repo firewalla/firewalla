@@ -6,10 +6,8 @@ firebro_mem=$(pidof bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{
 
 (( firebro_mem >= 150000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Bro Critical Memory Restarting"+$firebro_mem
 (( firebro_mem >= 150000)) && sudo /usr/local/bro/bin/broctl restart
-(( firemon_mem <= 120000)) && exit 1
 
-/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Free Memory Process Countdown"+$firemon_mem
-sleep 3 
+sleep 1
 
 firemon_mem2=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 fireapi_mem2=$(pidof FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
@@ -17,7 +15,22 @@ firemain_mem2=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' |
 
 (( firemon_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
 (( firemon_mem2 >= 120000)) && sudo service firemon restart
-(( firemain_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
-(( firemain_mem2 >= 100000)) && sudo service firemain restart
+(( firemain_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
+(( firemain_mem2 >= 120000)) && sudo service firemain restart
 (( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
 (( fireapi_mem2 >= 100000)) && sudo service fireapi restart
+
+NOP=`ps -ef |wc -l`
+NOT=`ps -eo nlwp | tail -n +2 | awk '{ num_threads += $1 } END { print num_threads }'`
+if [ $NOP -gt 2000 ]
+then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: PROCESS > 2000 REBOOT $NOP"
+   /home/pi/firewalla/scripts/fire-rebootf
+fi
+
+if [ $NOT -gt 10000 ]
+then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: THREADS > 10000 REBOOT $NOT"
+   /home/pi/firewalla/scripts/fire-rebootf
+fi
+
