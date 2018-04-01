@@ -7,7 +7,24 @@ sudo /usr/local/bro/bin/broctl restart
 sleep 2 
 sudo service firemain restart
 #node /home/pi/firewalla/scripts/clean-redis.js &
-mem=$(free -m | awk '/-/{print $4}')
+swapmem=$(free -m | awk '/Swap:/{print $4}')
+realmem=$(free -m | awk '/Mem:/{print $7}')
+totalmem=$(( swapmem + realmem ))
+
+if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+  mem=$totalmem
+  (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+else
+  mem=$realmem
+  (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+fi
+
+echo "Last Resort Memory $mem $swapmem $realmem"
+
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+
 (( mem <= 20 )) && logger "REBOOT: Memory less than 20 $mem"
 (( mem <= 20 )) && /home/pi/firewalla/scripts/fire-rebootf
+
+echo "Last Resort Memory End"
+logger "FIREWALLA: LAST RESPORT DONE"
