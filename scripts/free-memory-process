@@ -19,3 +19,18 @@ firemain_mem2=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' |
 (( firemain_mem2 >= 120000)) && sudo service firemain restart
 (( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
 (( fireapi_mem2 >= 100000)) && sudo service fireapi restart
+
+NOP=`ps -ef |wc -l`
+NOT=`ps -eo nlwp | tail -n +2 | awk '{ num_threads += $1 } END { print num_threads }'`
+if [ $NOP -gt 2000 ]
+then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: PROCESS > 2000 REBOOT $NOP"
+   /home/pi/firewalla/scripts/fire-rebootf
+fi
+
+if [ $NOT -gt 10000 ]
+then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: THREADS > 10000 REBOOT $NOT"
+   /home/pi/firewalla/scripts/fire-rebootf
+fi
+
