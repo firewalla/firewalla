@@ -744,22 +744,30 @@ module.exports = class DNSMASQ {
     await this.writeHostsFile();
 
     if(f.isDocker()) {
-      try {
-        childProcess.execSync("sudo pkill dnsmasq")
-      } catch(err) {
-        // do nothing
-      }
-
-      try {
-        await execAsync("sudo systemctl restart firemasq");
-      } catch (err) {
-        log.error("Error when (re)start firemasq service", err);
-      }
-      
-      await this.delay(1000);
+      await this.restartDnsmasqDocker();
     } else {
       await this.restartDnsmasq();
     }
+  }
+  
+  async restartDnsmasqDocker() {
+    try {
+      childProcess.execSync("sudo pkill dnsmasq")
+    } catch(err) {
+      // do nothing
+    }
+
+    const p = spawn('/bin/bash', ['-c', cmd])
+
+    p.stdout.on('data', (data) => {
+      log.info("DNSMASQ STDOUT:", data.toString(), {})
+    })
+
+    p.stderr.on('data', (data) => {
+      log.info("DNSMASQ STDERR:", data.toString(), {})
+    })
+
+    await this.delay(1000);
   }
 
   async restartDnsmasq() {
@@ -846,10 +854,10 @@ module.exports = class DNSMASQ {
     if (f.isDocker()) {
       cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, altPidFile);
     } else {
-      cmd = "sudo service firemasq stop";
+      cmd = "sudo systemctl stop firemasq";
     }
 
-    log.debug("Command to stop dnsmasq: ", cmd);
+    log.info("Command to stop dnsmasq: ", cmd);
 
     try {
       await execAsync(cmd);
@@ -895,14 +903,20 @@ module.exports = class DNSMASQ {
     try {
       await this.rawStart();
     } catch (err) {
+      log.error('Error when raw start dnsmasq', err);
       await this.rawStop();
+      log.error("Dnsmasq start is aborted due to failed to raw start");
+      return;
     }
 
     try {
       await this._add_all_iptables_rules();
     } catch (err) {
+      log.error('Error when add iptables rules', err);
       await this.rawStop();
       await this._remove_all_iptables_rules();
+      log.error("Dnsmasq start is aborted due to failed to add iptables rules");
+      return;
     }
 
     log.info("DNSMASQ is started successfully");
