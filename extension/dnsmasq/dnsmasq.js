@@ -16,7 +16,7 @@ const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
-const rclient = require('../../util/redis_manager.js').getRedisClient();
+const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 
@@ -566,8 +566,8 @@ module.exports = class DNSMASQ {
   async _writeHashIntoRedis(type, hashes) {
     log.info(`Writing hash into redis for type: ${type}`);
     let key = `dns:hashset:${type}`;
-    await Promise.map(hashes, async hash => rclient.saddAsync(key, hash));
-    let count = await rclient.scardAsync(key);
+    await Promise.map(hashes, async hash => redis.saddAsync(key, hash));
+    let count = await redis.scardAsync(key);
     log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
   }
 
