@@ -749,16 +749,12 @@ module.exports = class DNSMASQ {
       } catch(err) {
         // do nothing
       }
-      
-      const p = spawn('/bin/bash', ['-c', cmd])
 
-      p.stdout.on('data', (data) => {
-        log.info("DNSMASQ STDOUT:", data.toString(), {})
-      })
-
-      p.stderr.on('data', (data) => {
-        log.info("DNSMASQ STDERR:", data.toString(), {})
-      })
+      try {
+        await execAsync("sudo systemctl restart firemasq");
+      } catch (err) {
+        log.error("Error when (re)start firemasq service", err);
+      }
       
       await this.delay(1000);
     } else {
