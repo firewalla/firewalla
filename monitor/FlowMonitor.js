@@ -684,8 +684,10 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-    run(service,period) {
-            log.info("FlowMonitor Running Process :", service, period, {});
+    run(service,period,callback) {
+            callback = callback || function() {}
+            let runid = new Date()/1000
+            log.info("FlowMonitor Running Process :", service, period, runid, {});
             const startTime = new Date() / 1000
             hostManager.getHosts((err, result) => {
                 this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
@@ -704,6 +706,7 @@ module.exports = class FlowMonitor {
                             log.debug("monitor:flow:", host.toShortString());
                             log.debug("inspec", inSpec);
                             log.debug("outspec", outSpec);
+                            cb();
                             if (outSpec) {
                                 if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
                                     (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
@@ -827,17 +830,17 @@ module.exports = class FlowMonitor {
                                 }
                             }
                         });
-                        cb();
                     } else if (service == "detect") {
-                        log.info("Running Detect");
+                        log.info("Running Detect:",host.mac);
                         this.detect(listip, period, host, (err) => {
                             cb();
                         });
                     }
                 }, (err)=> {
                     const endTime = new Date() /1000
-                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, {});
+                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid,{});
                     this.garbagecollect();
+                    callback();
                 });
             });
         }

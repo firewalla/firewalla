@@ -88,7 +88,7 @@ function run() {
   // heapSensor = new HeapSensor();
   // heapSensor.run();
   
-  const tick = 60 * 15; // waking up every 5 min
+  const tick = 60 * 2; // waking up every 5 min
   const monitorWindow = 60 * 60 * 4; // eight hours window
   
   const FlowMonitor = require('./FlowMonitor.js');
@@ -99,8 +99,22 @@ function run() {
   log.info("================================================================================");
 
 flowMonitor.run();
+
 setInterval(() => {
-    flowMonitor.run("dlp",tick);
+    let dlpRunning = false;
+    setTimeout(()=>{
+        if (dlpRunning) {
+            log.error("DLP Timeout");
+            let error = new Error("Monitor DLP Timeout");
+            throw error;
+        } else {
+            log.info("Last DLP Ran Successful");
+        }
+    }, tick/2*1000);
+    dlpRunning = true;
+    flowMonitor.run("dlp",tick,()=>{
+       dlpRunning = false;
+    });
     try {
       if (global.gc) {
        global.gc();
@@ -110,7 +124,20 @@ setInterval(() => {
 }, tick * 1000);
 
 setInterval(()=>{
-    flowMonitor.run("detect",60);
+    let detectRunning = false;
+    setTimeout(()=>{
+        if (detectRunning) {
+            log.error("Last Detection Timeeout");
+            let error = new Error("Monitor Detect Timeout");
+            throw error;
+        } else {
+            log.info("Detect Ran Successful");
+        }
+    },55*1000);
+    detectRunning = true;
+    flowMonitor.run("detect",60, ()=>{
+        detectRunning = false;
+    });
     try {
       if (global.gc) {
        global.gc();
