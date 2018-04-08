@@ -88,7 +88,7 @@ function run() {
   // heapSensor = new HeapSensor();
   // heapSensor.run();
   
-  const tick = 60 * 2; // waking up every 5 min
+  const tick = 60 * 15; // waking up every 5 min
   const monitorWindow = 60 * 60 * 4; // eight hours window
   
   const FlowMonitor = require('./FlowMonitor.js');
