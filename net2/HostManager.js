@@ -933,7 +933,7 @@ class Host {
           ipv6: this.ipv6Addr,
           mac: this.o.mac,
           lastActive: this.o.lastActiveTimestamp,
-          firstFound: this.firstFoundTimestamp,
+          firstFound: this.o.firstFoundTimestamp,
           macVendor: this.o.macVendor,
           recentActivity: this.o.recentActivity,
           manualSpoof: this.o.manualSpoof,
