@@ -77,15 +77,14 @@ module.exports = class {
 
         rclient.hgetall("intel:action:"+ip, (err,data) => {
             if (data) {
-                if (data.ignore == true) {
+                if (data.ignore) {
                     log.info("Intel:Lookup:Ignored",ip);
                     callback(null,null,null);
                 }
             }
             this.cachelookup(ip, "cymon", (err, result) => {
-                if (result != null && result != "none") {
-                    this._location(ip,(err,lobj)=>{ 
-                        let weburl = "https://cymon.io/" + ip;
+                if (result && result !== "none") {
+                    this._location(ip,(err,lobj)=>{
                         let obj = JSON.parse(result);
                         if (obj == null || obj.count == 0) {
                             obj = {}
@@ -258,7 +257,7 @@ module.exports = class {
     }
 
     _lookup(ip, intel, callback) {
-        let url = "https://cymon.io" + "/api/nexus/v1/ip/" + ip + "/events?limit=100";
+        let url = "https://cymon.io/api/nexus/v1/ip/" + ip + "/events?limit=100";
 
         let options = {
             uri: url,
