@@ -898,7 +898,6 @@ module.exports = class FlowMonitor {
     }
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
-
     async(() => {
         const name = await (hostTool.getName(remoteIP))
         let remoteHostname = name || remoteIP;
