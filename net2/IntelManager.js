@@ -14,18 +14,20 @@
  */
 'use strict';
 
-var instance = null;
+let instance = null;
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var request = require('request');
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const request = require('request');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 
+/* malware, botnet, spam, phishing, malicious activity, blacklist, dnsbl */
+const IGNORED_TAGS = ['dnsbl', 'spam'];
 
 module.exports = class {
     constructor(loglevel) {
@@ -68,7 +70,7 @@ module.exports = class {
     }
 
     lookup(ip, intel, callback) {
-        if (ip == null || ip == "8.8.8.8" || sysManager.isLocalIP(ip) == true) {
+        if (!ip || ip === "8.8.8.8" || sysManager.isLocalIP(ip)) {
             callback(null, null, null);
             return;
         }
@@ -134,22 +136,17 @@ module.exports = class {
         return obj;
     }
 
+    
     _packageCymon(ip, obj) {
         let weburl = "https://cymon.io/" + ip;
         log.info("INFO:------ Intel Information", obj.count);
+        
+        let results = obj.results.filter(x => !IGNORED_TAGS.includes(x.tag));
+        obj.count = results.length;
         let summary = obj.count + " reported this IP.\n";
-        let max = 4;
-        let severity = 0;
-        /*
-        for (let i in obj.results) {
-           if (max<=0) { break ;}
-           summary +="- " +obj.results[i].title+"\n";
-           max--;
-        }
-        */
+       
         let tags = {};
-        for (let i in obj.results) {
-            let r = obj.results[i];
+        for (let r of obj.results) {
             if (r.tag) {
                 if (tags[r.tag] == null) {
                     tags[r.tag] = {
@@ -162,39 +159,39 @@ module.exports = class {
             }
         }
 
-        let tagsarray = [];
+        let tagArray = [], tagCount = 0, severity = 0;
         for (let i in tags) {
-            tagsarray.push(tags[i]);
+            let tag = tags[i];
+            tagArray.push(tag);
             if (i.includes("malicious")) {
-                severity += tags[i].count * 3;
+              severity += tag.count * 3;
             } else if (i.includes("malware")) {
-                severity += tags[i].count * 3;
+              severity += tag.count * 3;
             } else if (i == "blacklist") {
-                severity += tags[i].count * 3;
+              severity += tag.count * 3;
             } else {
-                severity += 1;
+              severity += 1;
             }
+            tagCount += tag.count;
         }
 
+        tagArray.sort((a, b) => b.count - a.count);
+
         obj.severityscore = severity;
-
-        tagsarray.sort(function (a, b) {
-            return Number(b.count) - Number(a.count);
-        })
-
         obj.summary = summary;
         obj.weburl = weburl;
-        obj.tags = tagsarray;
-
-        if (obj.tags != null && obj.tags.length > 0) {
-            let reason = "Possible: ";
+        obj.tags = tagArray;
+        
+        if (obj.tags && obj.tags.length > 0) {
+          const reasonize = (tag) => `${tag.tag} - ${Math.round(tag.count / tagCount * 100)}%`;
+          let reason = "Possibility: ";
             let first = true;
-            for (let i in obj.tags) {
+            for (let tag of obj.tags) {
                 if (first) {
-                    reason += obj.tags[i].tag;
+                    reason += reasonize(tag);
                     first = false;
                 } else {
-                    reason += " or " + obj.tags[i].tag;
+                    reason += ", " + reasonize(tag);
                 }
             }
             obj.reason = reason;
@@ -261,10 +258,9 @@ module.exports = class {
     }
 
     _lookup(ip, intel, callback) {
-        let weburl = "https://cymon.io/" + ip;
         let url = "https://cymon.io" + "/api/nexus/v1/ip/" + ip + "/events?limit=100";
 
-        var options = {
+        let options = {
             uri: url,
             method: 'GET',
             family: 4
@@ -276,26 +272,23 @@ module.exports = class {
             obj.lobj = lobj;
             log.info("Intel:Location",ip,lobj);
             obj = this._packageIntel(ip,obj,intel);
-            request(options, (err, httpResponse, body) => {
-                if (err != null) {
-                    let stack = new Error().stack;
-                    log.info("Error while requesting ", err, stack);
+            request(options, (err, resp, body) => {
+                if (err) {
+                    log.info(`Error while requesting ${url}`, err);
                     callback(err, null, null);
                     return;
                 }
-                if (httpResponse == null) {
-                    let stack = new Error().stack;
-                    log.info("Error while response ", err, stack);
+                if (!resp) {
+                    log.info("Error while response ", err);
                     callback(500, null, null);
                     return;
                 }
-                if (httpResponse.statusCode < 200 ||
-                    httpResponse.statusCode > 299) {
-                    log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                    callback(httpResponse.statusCode, null, null);
+                if (resp.statusCode < 200 || resp.statusCode > 299) {
+                    log.error("**** Error while response HTTP ", resp.statusCode);
+                    callback(resp.statusCode, null, null);
                     return;
                 }
-                if (err === null && body != null) {
+                if (body) {
                     this.cacheAdd(ip, "cymon", body);
                     let cobj = JSON.parse(body);
                     if (cobj != null) {
