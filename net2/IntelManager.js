@@ -87,10 +87,11 @@ module.exports = class {
 
       let result = await this.cacheLookupAsync(domain, "cymon");
 
-      if (result && result !== "none") {
-
+      if (!result || result === "none") {
+        result = await this._lookupDomain(domain, intel);
       }
-
+      
+      return result;
     }
 
   async _lookupDomain(domain, intel) {
@@ -251,7 +252,7 @@ module.exports = class {
         });
     }
 
-    _packageIntel(ip,obj,intel) {
+    _packageIntel(ip, obj, intel) {
         let weburl = "https://intel.firewalla.com/";
         log.info("IntelManger:PackageIntel:",ip,JSON.stringify(intel,null,2));
         if (intel == null) {
