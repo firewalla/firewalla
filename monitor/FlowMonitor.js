@@ -49,8 +49,7 @@ let stddev_limit = 8;
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('debug');
 
-let IntelManager = require('../net2/IntelManager.js');
-let intelManager = new IntelManager('debug');
+let intelManager = new require('../net2/IntelManager.js')('debug');
 
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager('info');
@@ -61,6 +60,8 @@ let dnsManager = new DNSManager('info');
 let fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
+
+const validator = require('validator');
 
 function getDomain(ip) {
     if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
@@ -897,18 +898,85 @@ module.exports = class FlowMonitor {
     }
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
-    this.checkIpAlarm(remoteIP, deviceIP, flowObj);
-    this.checkDomainAlarm(remoteIP, deviceIP, flowObj);
+    this.checkIpAlarm(remoteIP, deviceIP, flowObj)
+      .catch(err => log.error("Error when check IP alarms", err))
+      .then(() => this.checkDomainAlarm(remoteIP, deviceIP, flowObj))
+      .catch(err => log.error("Error when check domain alarms", err));
   }
 
   async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
-    const name = await (hostTool.getName(remoteIP))
-    let remoteHostname = name || remoteIP;
+    const domain = await hostTool.getName(remoteIP);
     
+    if (!validator.isFQDN(domain)) {
+      return;
+    }
+
+    let iobj;
+    try {
+      iobj = await intelManager.lookupDomain(domain, remoteIp, flowObj.intel);
+    } catch (err) {
+      log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP, domain);
+      return;
+    }
+
+    if (!iobj) {
+      log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP, domain);
+      return;
+    }
+
+    if (iobj.severityscore < 4) {
+      log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
+      return;
+    }
+
+    let severity = iobj.severityscore > 50 ? "major" : "minor";
+    let reason = iobj.reason;
+
+    if (!fc.isFeatureOn("cyber_security")) {
+      return;
+    }
+
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+      "p.device.ip": deviceIP,
+      "p.device.port": this.getDevicePort(flowObj),
+      "p.dest.id": remoteIP,
+      "p.dest.ip": remoteIP,
+      "p.dest.name": domain,
+      "p.dest.port": this.getRemotePort(flowObj),
+      "p.security.reason": reason,
+      "p.security.numOfReportSources": iobj.count,
+      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
+    });
+
+    if (flowObj && flowObj.action && flowObj.action === "block") {
+      alarm["p.action.block"] = true
+    }
+
+    if (flowObj && flowObj.categoryArray) {
+      alarm['p.security.category'] = flowObj.categoryArray;
+    }
+
+    if (iobj.tags) {
+      alarm['p.security.tags'] = iobj.tags;
+    }
+
+    log.info("Host:ProcessIntelFlow:Alarm", alarm);
+
+    alarmManager2.enrichDeviceInfo(alarm)
+      .then(alarmManager2.enrichDestInfo)
+      .then((alarm) => {
+        alarmManager2.checkAndSave(alarm, (err) => {
+          if (err) {
+            log.error("Fail to save alarm:", err);
+          }
+        });
+      })
+      .catch((err) => {
+        log.error("Failed to create alarm:", err);
+      });
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
-
     intelManager.lookup(remoteIP, flowObj.intel, (err, iobj) => {
       if (err || !iobj) {
         log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
