@@ -1,5 +1,5 @@
 #!/bin/bash
-
+
 track_process() {
   PROCESS_NAME=$1
   REDIS_KEY_NAME=$2
@@ -12,10 +12,14 @@ track_process() {
   if [[ -z $MEM || -z $UTS || -z $UTS_EXPIRE ]]; then
     echo > /dev/null
   else
-    redis-cli zadd $REDIS_KEY_NAME $UTS $MEM
-    redis-cli ZREMRANGEBYSCORE $REDIS_KEY_NAME -inf $UTS_EXPIRE
+    redis-cli zadd $REDIS_KEY_NAME $UTS $MEM &>/dev/null
+    redis-cli ZREMRANGEBYSCORE $REDIS_KEY_NAME -inf $UTS_EXPIRE &>/dev/null
   fi  
 }
+
+if [[ $(cat /tmp/REPO_BRANCH) != "master" ]]; then
+  exit 0
+fi
 
 track_process FireMain memory_firemain
 track_process FireApi memory_fireapi
