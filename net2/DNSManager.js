@@ -44,6 +44,8 @@ var flowUtil = require('../net2/FlowUtil.js');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const DNSQUERYBATCHSIZE=5;
+
 
 var hostManager = null;
 
@@ -272,9 +274,12 @@ module.exports = class DNSManager {
       return;
     }
     let resolve = 0;
+    let enrichDstCount = 0;
+    let enrichDeviceCount = 0;
     let start = Math.ceil(Date.now() / 1000);
-    log.info("Resoving list", list.length);
-    _async.eachLimit(list, 5, (o, cb) => {
+    let tid = Math.ceil(start+Math.random()*100);
+    log.info("QUERY: Resoving list[",tid,"] ", list.length);
+    _async.eachLimit(list, DNSQUERYBATCHSIZE, (o, cb) => {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
       if (lhost) {
@@ -328,21 +333,25 @@ module.exports = class DNSManager {
         const _ipdst = o[ipdst]
 
         if(sysManager.isLocalIP(_ipsrc)) {
+          enrichDeviceCount++;
           await(this.enrichDeviceIP(_ipsrc, o, "src"))
         } else {
+          enrichDstCount++;
           await (this.enrichDestIP(_ipsrc, o, "src"))
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
+          enrichDeviceCount++;
           await(this.enrichDeviceIP(_ipdst, o, "dst"))
         } else {
+          enrichDstCount++;
           await (this.enrichDestIP(_ipdst, o, "dst"))
         }
       })().finally(() => {
         cb()
       })
     }, (err) => {
-      log.info("DNS:QUERY:RESOLVED:COUNT", resolve, list.length, Math.ceil(Date.now() / 1000) - start);
+      log.info("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
       if(err) {
         log.error("Failed to call dnsmanager.query:", err, {})
       }
