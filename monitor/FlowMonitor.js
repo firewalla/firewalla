@@ -831,7 +831,7 @@ module.exports = class FlowMonitor {
                             }
                         });
                     } else if (service == "detect") {
-                        log.info("Running Detect:",host.mac);
+                        log.info("Running Detect:",listip,{});
                         this.detect(listip, period, host, (err) => {
                             cb();
                         });
