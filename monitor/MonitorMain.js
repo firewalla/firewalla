@@ -133,6 +133,7 @@ function run() {
       log.warn("Detect check is already running, ignore");
       return;
     }
+
     running.detect = true;
     flowMonitor.run("detect", 60);
     running.detect = false;
@@ -141,12 +142,28 @@ function run() {
   });
 
   setInterval(() => {
+    if (running.dlp) {
+      log.warn("DLP check is already running, ignore");
+      return;
+    }
+
+    running.dlp = true;
     flowMonitor.run("dlp", tick);
+    running.dlp = false;
+
     gc();
   }, tick * 1000);
 
   setInterval(() => {
+    if (running.detect) {
+      log.warn("Detect check is already running, ignore");
+      return;
+    }
+
+    running.detect = true;
     flowMonitor.run("detect", 60);
+    running.detect = false;
+
     gc();
   }, 60 * 1000);
 }
