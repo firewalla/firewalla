@@ -25,7 +25,9 @@ const sysManager = new SysManager('info');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const bone = require("../lib/Bone.js");
-const intelTool = new require('./IntelTool');
+const IntelTool = new require('./IntelTool');
+const intelTool = new IntelTool();
+
 const A_WEEK = 3600 * 24 * 7;
 
 /* malware, botnet, spam, phishing, malicious activity, blacklist, dnsbl */
