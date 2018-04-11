@@ -153,7 +153,7 @@ module.exports = class FlowMonitor {
     }
 
     checkIntelClass(intel,_class) {
-        if (intel == null || _class == null) {
+        if (!intel || !_class) {
             return false;
         }
 
@@ -166,31 +166,28 @@ module.exports = class FlowMonitor {
 
         const featureName = intelFeatureMapping[_class]
         if(!featureName) {
-            return false
+          return false
         }
 
         if(!fc.isFeatureOn(featureName)) {
           log.warn(`Feature ${featureName} is not enabled`)
-            return false
+          return false
         }
 
-        if (intel.category) {
-          if (intel.category == _class) {
-              return true;
-          }
-      }
-
-        if (intel.c) {
-            if (intel.c == _class) {
-                return true;
-            }
+        if (intel.category && intel.category === _class) {
+          return true;
         }
+
+        if (intel.c && intel.c === _class) {
+          return true;
+        }
+
         if (intel.cs) {
             let cs = intel.cs;
             if (!Array.isArray(intel.cs)) {
                 cs = JSON.parse(intel.cs);
             }
-            if (cs.indexOf(_class)!=-1) {
+            if (cs.indexOf(_class) !== -1) {
                 return true;
             }
         }
@@ -201,17 +198,17 @@ module.exports = class FlowMonitor {
         for (let i in flows) {
             let flow = flows[i];
             log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
-            if (flow['intel'] && flow['intel']['category'] && flowUtil.checkFlag(flow,'l')==false) {
+            if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
               log.info("########## flowIntel",JSON.stringify(flow),{});
-              let c = flow['intel']['category'];
-              let cs = flow['intel']['cs'];
+              let c = flow.intel.category;
+              let cs = flow.intel.cs;
 
               hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
-               if (ignore == true) {
+               if (ignore) {
                    log.info("######## flowIntel:Ignored",flow);
+                   return;
                }
 
-               if (ignore == false) {
                 log.info("######## flowIntel Processing",JSON.stringify(flow));
                 if (this.checkIntelClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
@@ -309,18 +306,18 @@ module.exports = class FlowMonitor {
                        log.info("Intel:On:Partial:Flows", flow,{});
                     } else {
                     let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
-                  let intelobj = null;
-                    if (flow.fd == "in") {
+                    let intelobj = null;
+                    if (flow.fd === "in") {
                         intelobj = {
-                            uid: uuid.v4(),
-                            ts: flow.ts,
-                            fd: flow.fd,
-                            intel: flow.intel,
-                            "id.orig_h": flow.sh,
+                          uid: uuid.v4(),
+                          ts: flow.ts,
+                          fd: flow.fd,
+                          intel: flow.intel,
+                          "id.orig_h": flow.sh,
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
                           "id.resp_p": flow.dp,
-                            "seen.indicator_type":"Intel::DOMAIN",
+                          "seen.indicator_type": "Intel::DOMAIN",
                         };
                         if (flow.intel && flow.intel.action ) {
                             intelobj.action = flow.intel.action;
@@ -421,7 +418,6 @@ module.exports = class FlowMonitor {
                         });
                     }
                 }
-               }
               });
             }
         }
@@ -889,7 +885,7 @@ module.exports = class FlowMonitor {
     //TODO
   }
 
-  processIntelFlow(flowObj) {
+  async processIntelFlow(flowObj) {
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
@@ -899,13 +895,31 @@ module.exports = class FlowMonitor {
     }
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
-    this.checkDomainAlarm(remoteIP, deviceIP, flowObj)
-      .catch(err => log.error("Error when check domain alarm", err))
-      .then(() => this.checkIpAlarm(remoteIP, deviceIP, flowObj))
-      .catch(err => log.error("Error when check IP alarm", err));
+    let success;
+    try {
+      success = await this.checkDomainAlarm(remoteIP, deviceIP, flowObj);
+    } catch(err) {
+      log.error("Error when check domain alarm", err);
+    }
+
+    if (success) {
+      log.info("Successfully triggered domain alarm, skip IP alarm triggering");
+      return;
+    }
+
+    try {
+      await this.checkIpAlarm(remoteIP, deviceIP, flowObj);
+    } catch(err) {
+      log.error("Error when check IP alarm", err);
+    }
   }
 
   async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
+    if (!fc.isFeatureOn("cyber_security")) {
+      log.info("Feature cyber_security is off, skip...");
+      return;
+    }
+
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
     log.info("Domain for IP ", remoteIP, "is", domain);
@@ -955,11 +969,6 @@ module.exports = class FlowMonitor {
     intel.summary = '';
     
     log.info("Domain", domain, "'s intel is", intel);
-
-    if (!fc.isFeatureOn("cyber_security")) {
-      log.info("Feature cyber_security is off, skip...");
-      return;
-    }
     
     log.info("Start to generate alarm for domain", domain);
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
@@ -986,18 +995,22 @@ module.exports = class FlowMonitor {
 
     log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
 
-    alarmManager2.enrichDeviceInfo(alarm)
-      .then(alarmManager2.enrichDestInfo)
-      .then(alarm => {
-        alarmManager2.checkAndSave(alarm, err => {
-          if (err) {
-            log.error("Fail to save alarm:", err);
-          }
-        });
-      })
-      .catch(err => {
-        log.error("Failed to create domain cyber alarm:", err);
-      });
+    try {
+      alarm = await alarmManager2.enrichDeviceInfo(alarm);
+      alarm = await alarmManager2.enrichDestInfo(alarm);
+    } catch (err) {
+      log.error("Error when enrich domain cyber alarm:", err);
+      return;
+    }
+
+    try {
+      await alarmManager2.checkAndSaveAsync(alarm);
+    } catch (err) {
+      log.error("Error when save alarm:", err);
+      return;
+    }
+
+    return true;
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
