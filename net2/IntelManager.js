@@ -139,46 +139,48 @@ module.exports = class {
     async _lookupDomain(domain, ip) {
       let boneIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
       let intel = {};
-      
       log.info("Bone intel for ", domain, "is: ", boneIntel);
 
-      boneIntel.forEach(info => {
-        // check if the host matches the result from cloud
-
-        // FIXME: ignore IP check because intel result from cloud does
-        // NOT have "ip" all the time.
-        if(info.apps) {
-          intel.apps = JSON.stringify(info.apps);
-          let keys = Object.keys(info.apps);
-          if(keys && keys[0]) {
-            intel.app = keys[0];
-          }
+      let info = boneIntel[0];
+      if (!info) {
+        return null;
+      }
+      
+      // check if the host matches the result from cloud
+      // FIXME: ignore IP check because intel result from cloud does
+      // NOT have "ip" all the time.
+      if(info.apps) {
+        intel.apps = JSON.stringify(info.apps);
+        let keys = Object.keys(info.apps);
+        if(keys && keys[0]) {
+          intel.app = keys[0];
         }
+      }
 
-        if(info.c) {
-          if (Array.isArray(info.c)) {
-            intel.category = info.c[0];  
-          } else {
-            intel.category = info.c;
-          }
+      if(info.c) {
+        if (info.c.startsWith('["' && info.c.endsWith('"]'))) {
+          info.c = JSON.stringify(info.c);
+          intel.category = info.c[0];
+        } else {
+          intel.category = info.c;
         }
+      }
 
-        if(info.action && info.action.block) {
-          intel.action = "block"
-        }
+      if(info.action && info.action.block) {
+        intel.action = "block"
+      }
 
-        if(info.s) {
-          intel.s = info.s;
-        }
+      if(info.s) {
+        intel.s = info.s;
+      }
 
-        if(info.t) {
-          intel.t = info.t;
-        }
+      if(info.t) {
+        intel.t = info.t;
+      }
 
-        if(info.cc) {
-          intel.cc = info.cc;
-        }
-      });
+      if(info.cc) {
+        intel.cc = info.cc;
+      }
       
       return intel;
     }
