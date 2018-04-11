@@ -247,7 +247,7 @@ module.exports = class FlowMonitor {
                         }).catch((err) => {
                           if(err)
                             log.error("Failed to create alarm: " + err);
-                        });;
+                        });
                     }
                 } else if (this.checkIntelClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
@@ -682,7 +682,7 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-    run(service,period) {
+    run(service,period, running) {
             log.info("FlowMonitor Running Process :", service, period, {});
             const startTime = new Date() / 1000
             hostManager.getHosts((err, result) => {
@@ -834,7 +834,8 @@ module.exports = class FlowMonitor {
                     }
                 }, (err)=> {
                     const endTime = new Date() /1000
-                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, {});
+                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period);
+                    running = false;
                     this.garbagecollect();
                 });
             });

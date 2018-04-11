@@ -85,6 +85,9 @@ function gc() {
   }
 }
 
+
+let running = false;
+
 function run() {
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
@@ -108,61 +111,52 @@ function run() {
 
   flowMonitor.run();
 
-  let running = {
-    dlp: false,
-    detect: false
-  };
-
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');
-    if (running.dlp) {
+    if (running) {
       log.warn("DLP check is already running, ignore");
       return;
     }
 
-    running.dlp = true;
-    flowMonitor.run("dlp", tick);
-    running.dlp = false;
+    running = true;
+    flowMonitor.run("dlp", tick, running);
 
     gc();
   });
 
   process.on('SIGUSR2', () => {
     log.info('Received SIGUSR2. Trigger Detect check.');
-    if (running.detect) {
+    if (running) {
       log.warn("Detect check is already running, ignore");
       return;
     }
 
-    running.detect = true;
-    flowMonitor.run("detect", 60);
-    running.detect = false;
+    running = true;
+    flowMonitor.run("detect", 60, running);
 
     gc();
   });
 
   setInterval(() => {
-    if (running.dlp) {
+    if (running) {
       log.warn("DLP check is already running, ignore");
       return;
     }
 
-    running.dlp = true;
-    flowMonitor.run("dlp", tick);
-    running.dlp = false;
+    running = true;
+    flowMonitor.run("dlp", tick, running);
 
     gc();
   }, tick * 1000);
 
   setInterval(() => {
-    if (running.detect) {
+    if (running) {
       log.warn("Detect check is already running, ignore");
       return;
     }
 
-    running.detect = true;
-    flowMonitor.run("detect", 60);
-    running.detect = false;
+    running = true;
+    flowMonitor.run("detect", 60, running);
 
     gc();
   }, 60 * 1000);
