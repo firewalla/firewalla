@@ -76,8 +76,16 @@ process.on('unhandledRejection', (reason, p)=>{
 
 let heapSensor = null;
 
-function run() {
+function gc() {
+  try {
+    if (global.gc) {
+      global.gc();
+    }
+  } catch (err) {
+  }
+}
 
+function run() {
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
   
@@ -98,25 +106,47 @@ function run() {
   log.info("Monitor Running ");
   log.info("================================================================================");
 
-flowMonitor.run();
-setInterval(() => {
-    flowMonitor.run("dlp",tick);
-    try {
-      if (global.gc) {
-       global.gc();
-      }
-    } catch(e) {
-    }
-}, tick * 1000);
+  flowMonitor.run();
 
-setInterval(()=>{
-    flowMonitor.run("detect",60);
-    try {
-      if (global.gc) {
-       global.gc();
-      }
-    } catch(e) {
-    }
-}, 60*1000);
+  let running = {
+    dlp: false,
+    detect: false
+  };
 
+  process.on('SIGUSR1', () => {
+    log.info('Received SIGUSR1. Trigger DLP check.');
+    if (running.dlp) {
+      log.warn("DLP check is already running, ignore");
+      return;
+    }
+
+    running.dlp = true;
+    flowMonitor.run("dlp", tick);
+    running.dlp = false;
+
+    gc();
+  });
+
+  process.on('SIGUSR2', () => {
+    log.info('Received SIGUSR2. Trigger Detect check.');
+    if (running.detect) {
+      log.warn("Detect check is already running, ignore");
+      return;
+    }
+    running.detect = true;
+    flowMonitor.run("detect", 60);
+    running.detect = false;
+
+    gc();
+  });
+
+  setInterval(() => {
+    flowMonitor.run("dlp", tick);
+    gc();
+  }, tick * 1000);
+
+  setInterval(() => {
+    flowMonitor.run("detect", 60);
+    gc();
+  }, 60 * 1000);
 }
