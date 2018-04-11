@@ -139,6 +139,8 @@ module.exports = class {
     async _lookupDomain(domain, ip) {
       let boneIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
       let intel = {};
+      
+      log.info("Bone intel for ", domain, "is: ", boneIntel);
 
       boneIntel.forEach(info => {
         // check if the host matches the result from cloud

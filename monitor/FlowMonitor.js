@@ -924,7 +924,7 @@ module.exports = class FlowMonitor {
     try {
       log.info("Start to lookup intel for domain:", domain);
       intel = await intelManager.lookupDomain(domain, remoteIP);
-      log.info("Finish lookup intel for domain:", domain);
+      log.info("Finish lookup intel for domain:", domain, "intel is", intel);
     } catch (err) {
       log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
       return;
