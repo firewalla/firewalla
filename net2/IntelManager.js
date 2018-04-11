@@ -84,7 +84,7 @@ module.exports = class {
         return;
       }
   
-      if (this.isIgnored(domain)) {
+      if (await this.isIgnored(domain)) {
         log.info("Ignored domain:", domain, "skip...");
         return;
       }
@@ -109,6 +109,7 @@ module.exports = class {
     
     async isIgnored(target) {
       let data = await rclient.hgetallAsync("intel:action:" + target);
+      log.info("Ignore check for domain:", target, " is", data);
       return data && data.ignore;
     }
 
