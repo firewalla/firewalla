@@ -930,7 +930,7 @@ module.exports = class FlowMonitor {
       return;
     }
 
-    let reason = 'Access a ';
+    let _category, reason = 'Access a ';
     switch (intel.category) {
       case 'spam':
       case 'phishing':
@@ -938,10 +938,12 @@ module.exports = class FlowMonitor {
       case 'suspicious':
         reason += intel.category;
         intel.severityscore = 30;
+        _category = intel.category;
         break;
       case 'intel':
         reason += intel.cc;
         intel.severityscore = 70;
+        _category = intel.cc;
         break;
       default:
         return;
@@ -975,11 +977,9 @@ module.exports = class FlowMonitor {
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true
     }
-
-    if (flowObj && flowObj.categoryArray) {
-      alarm['p.security.category'] = flowObj.categoryArray;
-    }
-
+    
+    alarm['p.security.category'] = [_category];
+    
     if (intel.tags) {
       alarm['p.security.tags'] = intel.tags;
     }
