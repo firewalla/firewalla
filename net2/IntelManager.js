@@ -158,12 +158,7 @@ module.exports = class {
       }
 
       if(info.c) {
-        if (info.c.startsWith('["' && info.c.endsWith('"]'))) {
-          info.c = JSON.stringify(info.c);
-          intel.category = info.c[0];
-        } else {
-          intel.category = info.c;
-        }
+        intel.category = info.c;
       }
 
       if(info.action && info.action.block) {
@@ -179,7 +174,12 @@ module.exports = class {
       }
 
       if(info.cc) {
-        intel.cc = info.cc;
+        if (info.cc.startsWith('["' && info.cc.endsWith('"]'))) {
+          info.cc = JSON.stringify(info.cc);
+          intel.category = info.cc[0];
+        } else {
+          intel.category = info.cc;
+        }
       }
       
       return intel;

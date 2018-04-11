@@ -944,12 +944,8 @@ module.exports = class FlowMonitor {
         reason += intel.category;
         intel.severityscore = 30;
         break;
-      case 'intel.malware':
-        reason += 'malware';
-        intel.severityscore = 70;
-        break;
-      case 'intel.spyware':
-        reason += 'spyware';
+      case 'intel':
+        reason += intel.cc;
         intel.severityscore = 70;
         break;
       default:
