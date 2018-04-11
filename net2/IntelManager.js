@@ -174,11 +174,12 @@ module.exports = class {
       }
 
       if(info.cc) {
-        if (info.cc.startsWith('["')) { // it's a stringified array
-          info.cc = JSON.stringify(info.cc);
+        try {
+          info.cc = JSON.parse(info.cc);
           intel.cc = info.cc[0];
-        } else {
+        } catch (err) {
           intel.cc = info.cc;
+          log.warn("Error when parsing info.cc:", info.cc, err);
         }
       }
       
