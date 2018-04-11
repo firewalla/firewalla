@@ -664,8 +664,8 @@ module.exports = class DNSMASQ {
     let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
     let lease_time = '24h';
 
-    let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
-    let static_hosts = await redis.hgetallAsync('dhcp:static');
+    let hosts = await Promise.map(rclient.keysAsync("host:mac:*"), key => rclient.hgetallAsync(key));
+    let static_hosts = await rclient.hgetallAsync('dhcp:static');
 
     log.debug("static hosts:", util.inspect(static_hosts));
 
