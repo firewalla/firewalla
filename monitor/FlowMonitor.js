@@ -899,15 +899,10 @@ module.exports = class FlowMonitor {
     }
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
-    /*
-    this.checkIpAlarm(remoteIP, deviceIP, flowObj)
-      .catch(err => log.error("Error when check IP alarms", err))
-      .then(() => this.checkDomainAlarm(remoteIP, deviceIP, flowObj))
-      .catch(err => log.error("Error when check domain alarms", err));
-    */
-
     this.checkDomainAlarm(remoteIP, deviceIP, flowObj)
-      .catch(err => log.error("Error when check domain alarms", err));
+      .catch(err => log.error("Error when check domain alarm", err))
+      .then(() => this.checkIpAlarm(remoteIP, deviceIP, flowObj))
+      .catch(err => log.error("Error when check IP alarm", err));
   }
 
   async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
