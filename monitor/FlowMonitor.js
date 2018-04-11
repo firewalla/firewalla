@@ -911,50 +911,55 @@ module.exports = class FlowMonitor {
   }
 
   async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
+    log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
+    log.info("Domain for IP ", remoteIP, "is", domain);
     
     if (!validator.isFQDN(domain)) {
+      log.info("not a valid domain, skip check alarm");
       return;
     }
 
-    let iobj;
+    let intel = null;
     try {
-      iobj = await intelManager.lookupDomain(domain, remoteIP, flowObj.intel);
+      log.info("Start to lookup intel for domain:", domain);
+      intel = await intelManager.lookupDomain(domain, remoteIP);
+      log.info("Finish lookup intel for domain:", domain);
     } catch (err) {
       log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
       return;
     }
 
-    if (!iobj) {
+    if (!intel) {
       log.info("No intel for domain:", domain, deviceIP, remoteIP);
       return;
     }
 
     let reason = 'Access a ';
-    switch (iobj.category) {
+    switch (intel.category) {
       case 'spam':
       case 'phishing':
       case 'piracy':
       case 'suspicious':
-        reason += iobj.category;
-        iobj.severityscore = 30;
+        reason += intel.category;
+        intel.severityscore = 30;
         break;
       case 'intel.malware':
         reason += 'malware';
-        iobj.severityscore = 70;
+        intel.severityscore = 70;
         break;
       case 'intel.spyware':
         reason += 'spyware';
-        iobj.severityscore = 70;
+        intel.severityscore = 70;
         break;
       default:
         return;
     }
 
     reason += ' domain or host';
-    let severity = iobj.severityscore > 50 ? "major" : "minor";
-    iobj.reason = reason;
-    iobj.summary = '';
+    let severity = intel.severityscore > 50 ? "major" : "minor";
+    intel.reason = reason;
+    intel.summary = '';
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
@@ -980,8 +985,8 @@ module.exports = class FlowMonitor {
       alarm['p.security.category'] = flowObj.categoryArray;
     }
 
-    if (iobj.tags) {
-      alarm['p.security.tags'] = iobj.tags;
+    if (intel.tags) {
+      alarm['p.security.tags'] = intel.tags;
     }
 
     log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);

@@ -75,29 +75,36 @@ module.exports = class {
         });
     }
 
-  currentTime() {
-    return Math.round(Date.now() / 1000);
-  }
-
-  async lookupDomain(domain, ip) {
+    currentTime() {
+      return Math.round(Date.now() / 1000);
+    }
+  
+    async lookupDomain(domain, ip) {
       if (!domain || domain === "firewalla.com") {
         return;
       }
-
+  
       if (this.isIgnored(domain)) {
+        log.info("Ignored domain:", domain, "skip...");
         return;
       }
-      
-      let result = await this.cacheDomainIntelLookup(domain);
-
-      if (!result) {
-        result = await this._lookupDomain(domain, ip);
-        if (result) {
-          await this.cacheDomainIntelAdd(domain, result);
+  
+      log.info("Lookup domain intel in cache", domain);
+      let intel = await this.cacheDomainIntelLookup(domain);
+      log.info(`Domain intel for ${domain} from cache:`, intel);
+  
+  
+      if (!intel) {
+        log.info("No intel for domain", domain, "from cache, look up Bone");
+        intel = await this._lookupDomain(domain, ip);
+        log.info(`Intel from bone for domain ${domain} is`, intel);
+        if (intel) {
+          log.info(`Save domain intel into cache for ${domain}`);
+          await this.cacheDomainIntelAdd(domain, intel);
         }
       }
-      
-      return result;
+  
+      return intel;
     }
     
     async isIgnored(target) {
@@ -114,8 +121,12 @@ module.exports = class {
         return;
       }
       let key = this.getDomainIntelKey(domain);
+      log.info("Domain intel key is", key);
+      
       await rclient.hmsetAsync(key, intel);
       await rclient.expireatAsync(key, this.currentTime() + A_WEEK);
+      
+      log.info("Save cache success", key, "=>", intel);
     }
 
     async cacheDomainIntelLookup(domain) {
