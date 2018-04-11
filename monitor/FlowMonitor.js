@@ -682,7 +682,7 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-    run(service,period, running) {
+    run(service, period, resetStatus) {
         log.info("FlowMonitor Running Process :", service, period, {});
         const startTime = new Date() / 1000
         hostManager.getHosts((err, result) => {
@@ -836,7 +836,6 @@ module.exports = class FlowMonitor {
                 const endTime = new Date() /1000
                 log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period);
                 this.garbagecollect();
-                running.status = false;
             });
         });
     }

@@ -120,6 +120,7 @@ function run() {
 
     running.status = true;
     flowMonitor.run("dlp", tick, running);
+    running.status = false;
 
     gc();
   });
@@ -133,6 +134,7 @@ function run() {
 
     running.status = true;
     flowMonitor.run("detect", 60, running);
+    running.status = false;
 
     gc();
   });
@@ -145,6 +147,7 @@ function run() {
 
     running.status = true;
     flowMonitor.run("dlp", tick, running);
+    running.status = false;
 
     gc();
   }, tick * 1000);
@@ -157,6 +160,7 @@ function run() {
 
     running.status = true;
     flowMonitor.run("detect", 60, running);
+    running.status = false;
 
     gc();
   }, 60 * 1000);
