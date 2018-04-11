@@ -915,22 +915,39 @@ module.exports = class FlowMonitor {
     try {
       iobj = await intelManager.lookupDomain(domain, remoteIp, flowObj.intel);
     } catch (err) {
-      log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP, domain);
+      log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP);
       return;
     }
 
     if (!iobj) {
-      log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP, domain);
+      log.info("No intel for domain:", domain, deviceIP, remoteIP);
       return;
     }
 
-    if (iobj.severityscore < 4) {
-      log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-      return;
+    let reason = 'Access a ';
+    switch (iobj.category) {
+      case 'spam':
+      case 'phishing':
+      case 'piracy':
+      case 'suspicious':
+        reason += iobj.category;
+        iobj.severityscore = 30;
+        break;
+      case 'intel.malware':
+        reason += 'malware';
+        iobj.severityscore = 70;
+        break;
+      case 'intel.spyware':
+        reason += 'spyware';
+        iobj.severityscore = 70;
+        break;
+      default:
+        return;
     }
 
+    reason += ' domain or host';
     let severity = iobj.severityscore > 50 ? "major" : "minor";
-    let reason = iobj.reason;
+    iobj.reason = reason;
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
@@ -944,7 +961,7 @@ module.exports = class FlowMonitor {
       "p.dest.name": domain,
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reason,
-      "p.security.numOfReportSources": iobj.count,
+      "p.security.numOfReportSources": 1,
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
     });
 
@@ -960,19 +977,19 @@ module.exports = class FlowMonitor {
       alarm['p.security.tags'] = iobj.tags;
     }
 
-    log.info("Host:ProcessIntelFlow:Alarm", alarm);
+    log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
 
     alarmManager2.enrichDeviceInfo(alarm)
       .then(alarmManager2.enrichDestInfo)
-      .then((alarm) => {
-        alarmManager2.checkAndSave(alarm, (err) => {
+      .then(alarm => {
+        alarmManager2.checkAndSave(alarm, err => {
           if (err) {
             log.error("Fail to save alarm:", err);
           }
         });
       })
-      .catch((err) => {
-        log.error("Failed to create alarm:", err);
+      .catch(err => {
+        log.error("Failed to create domain cyber alarm:", err);
       });
   }
   
