@@ -26,6 +26,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const bone = require("../lib/Bone.js");
 const intelTool = new require('./IntelTool');
+const A_WEEK = 3600 * 24 * 7;
 
 /* malware, botnet, spam, phishing, malicious activity, blacklist, dnsbl */
 const IGNORED_TAGS = ['dnsbl', 'spam'];
@@ -70,11 +71,15 @@ module.exports = class {
             value = "none";
         }
         rclient.set("cache.intel:" + origin + ":" + ip, value, (err, result) => {
-            rclient.expireat("cache.intel:" + origin + ":" + ip, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7);
+          rclient.expireat("cache.intel:" + origin + ":" + ip, this.currentTime() + A_WEEK);
         });
     }
 
-    async lookupDomain(domain, ip) {
+  currentTime() {
+    return Math.round(Date.now() / 1000);
+  }
+
+  async lookupDomain(domain, ip) {
       if (!domain || domain === "firewalla.com") {
         return;
       }
@@ -110,7 +115,7 @@ module.exports = class {
       }
       let key = this.getDomainIntelKey(domain);
       await rclient.hmsetAsync(key, intel);
-      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7);
+      await rclient.expireatAsync(key, this.currentTime() + A_WEEK);
     }
 
     async cacheDomainIntelLookup(domain) {
@@ -156,73 +161,6 @@ module.exports = class {
       });
       
       return intel;
-    }
-
-    _packageCymonDomain(ip, obj) {
-      let weburl = "https://cymon.io/" + ip;
-      log.info("INFO:------ Intel Information", obj.count);
-      let summary = obj.count + " reported this IP.\n";
-      let max = 4;
-      let severity = 0;
-      /*
-      for (let i in obj.results) {
-         if (max<=0) { break ;}
-         summary +="- " +obj.results[i].title+"\n";
-         max--;
-      }
-      */
-      let tags = {};
-      for (let i in obj.results) {
-        let r = obj.results[i];
-        if (r.tag) {
-          if (tags[r.tag] == null) {
-            tags[r.tag] = {
-              tag: r.tag,
-              count: 1
-            };
-          } else {
-            tags[r.tag].count += 1;
-          }
-        }
-      }
-  
-      let tagsarray = [];
-      for (let i in tags) {
-        tagsarray.push(tags[i]);
-        if (i.includes("malicious")) {
-          severity += tags[i].count * 3;
-        } else if (i.includes("malware")) {
-          severity += tags[i].count * 3;
-        } else if (i == "blacklist") {
-          severity += tags[i].count * 3;
-        } else {
-          severity += 1;
-        }
-      }
-  
-      obj.severityscore = severity;
-  
-      tagsarray.sort(function (a, b) {
-        return Number(b.count) - Number(a.count);
-      })
-  
-      obj.summary = summary;
-      obj.weburl = weburl;
-      obj.tags = tagsarray;
-  
-      if (obj.tags != null && obj.tags.length > 0) {
-        let reason = "Possible: ";
-        let first = true;
-        for (let i in obj.tags) {
-          if (first) {
-            reason += obj.tags[i].tag;
-            first = false;
-          } else {
-            reason += " or " + obj.tags[i].tag;
-          }
-        }
-        obj.reason = reason;
-      }
     }
 
     lookup(ip, intel, callback) {

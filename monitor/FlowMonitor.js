@@ -948,6 +948,7 @@ module.exports = class FlowMonitor {
     reason += ' domain or host';
     let severity = iobj.severityscore > 50 ? "major" : "minor";
     iobj.reason = reason;
+    iobj.summary = '';
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
