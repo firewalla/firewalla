@@ -174,11 +174,11 @@ module.exports = class {
       }
 
       if(info.cc) {
-        if (info.cc.startsWith('["' && info.cc.endsWith('"]'))) {
+        if (info.cc.startsWith('["')) { // it's a stringified array
           info.cc = JSON.stringify(info.cc);
-          intel.category = info.cc[0];
+          intel.cc = info.cc[0];
         } else {
-          intel.category = info.cc;
+          intel.cc = info.cc;
         }
       }
       
