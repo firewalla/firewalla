@@ -1,27 +1,20 @@
 #!/bin/bash -
-firemon_mem=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-fireapi_mem=$(pidof FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-firemain_mem=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-firebro_mem=$(pidof bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-
-(( firebro_mem >= 150000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Bro Critical Memory Restarting"+$firebro_mem
-(( firebro_mem >= 150000)) && sudo /usr/local/bro/bin/broctl restart
-
-sleep 1
 
 firemon_mem2=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 fireapi_mem2=$(pidof FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 firemain_mem2=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+NOP=`ps -ef |wc -l`
+NOT=`ps -aHx | wc -l`
 
-(( firemon_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
-(( firemon_mem2 >= 120000)) && sudo service firemon restart
+/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: FireApi Critical Memory Restart2 $firemon_mem2, $fireapi_mem2, $firemain_mem2,$NOP, $NOT"
+
 (( firemain_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
 (( firemain_mem2 >= 120000)) && sudo service firemain restart
+(( firemon_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
+(( firemon_mem2 >= 120000)) && sudo service firemon restart
 (( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
 (( fireapi_mem2 >= 100000)) && sudo service fireapi restart
 
-NOP=`ps -ef |wc -l`
-NOT=`ps -eo nlwp | tail -n +2 | awk '{ num_threads += $1 } END { print num_threads }'`
 if [ $NOP -gt 2000 ]
 then
    /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: PROCESS > 2000 REBOOT $NOP"
