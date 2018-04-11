@@ -960,11 +960,15 @@ module.exports = class FlowMonitor {
     let severity = intel.severityscore > 50 ? "major" : "minor";
     intel.reason = reason;
     intel.summary = '';
+    
+    log.info("Domain", domain, "'s intel is", intel);
 
     if (!fc.isFeatureOn("cyber_security")) {
+      log.info("Feature cyber_security is off, skip...");
       return;
     }
-
+    
+    log.info("Start to generate alarm for domain", domain);
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
