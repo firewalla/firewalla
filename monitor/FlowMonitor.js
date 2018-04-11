@@ -890,8 +890,8 @@ module.exports = class FlowMonitor {
   }
 
   processIntelFlow(flowObj) {
-    let deviceIP = this.getDeviceIP(flowObj);
-    let remoteIP = this.getRemoteIP(flowObj);
+    const deviceIP = this.getDeviceIP(flowObj);
+    const remoteIP = this.getRemoteIP(flowObj);
 
     if (sysManager.isLocalIP(remoteIP) || sysManager.ignoreIP(remoteIP)) {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
@@ -914,9 +914,9 @@ module.exports = class FlowMonitor {
 
     let iobj;
     try {
-      iobj = await intelManager.lookupDomain(domain, remoteIp, flowObj.intel);
+      iobj = await intelManager.lookupDomain(domain, remoteIP, flowObj.intel);
     } catch (err) {
-      log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP);
+      log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
       return;
     }
 
@@ -996,6 +996,8 @@ module.exports = class FlowMonitor {
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
+    const domain = await hostTool.getName(remoteIP);
+      
     intelManager.lookup(remoteIP, flowObj.intel, (err, iobj) => {
       if (err || !iobj) {
         log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
@@ -1019,7 +1021,7 @@ module.exports = class FlowMonitor {
         "p.device.port": this.getDevicePort(flowObj),
         "p.dest.id": remoteIP,
         "p.dest.ip": remoteIP,
-        "p.dest.name": remoteHostname,
+        "p.dest.name": domain,
         "p.dest.port": this.getRemotePort(flowObj),
         "p.security.reason": reason,
         "p.security.numOfReportSources": iobj.count,

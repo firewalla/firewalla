@@ -383,7 +383,7 @@ module.exports = class {
                     let cobj = JSON.parse(body);
                     if (cobj) {
                         if (cobj.count === 0) {
-                            log.info("INFO:====== No Intel Information!!", ip,obj);
+                            log.info("INFO:====== No Intel Information!!", ip, obj);
                             callback(null,obj);
                         } else {
                             cobj.lobj = lobj;
