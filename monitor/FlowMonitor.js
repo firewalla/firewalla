@@ -49,7 +49,8 @@ let stddev_limit = 8;
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('debug');
 
-let intelManager = new require('../net2/IntelManager.js')('debug');
+let IntelManager = require('../net2/IntelManager.js');
+let intelManager = new IntelManager('debug');
 
 let SysManager = require('../net2/SysManager.js');
 let sysManager = new SysManager('info');
