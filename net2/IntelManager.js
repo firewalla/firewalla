@@ -25,7 +25,7 @@ const sysManager = new SysManager('info');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const bone = require("../lib/Bone.js");
-const IntelTool = new require('./IntelTool');
+const IntelTool = require('./IntelTool');
 const intelTool = new IntelTool();
 
 const A_WEEK = 3600 * 24 * 7;
