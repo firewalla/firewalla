@@ -95,8 +95,8 @@ module.exports = class {
       return result;
     }
     
-    async isIgnored(domain) {
-      let data = await rclient.hgetallAsync("intel:action:" + domain);
+    async isIgnored(target) {
+      let data = await rclient.hgetallAsync("intel:action:" + target);
       return data && data.ignore;
     }
 
