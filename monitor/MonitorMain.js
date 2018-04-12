@@ -129,7 +129,7 @@ function run() {
     setTimeout(()=>{
       if (_status.running && _status.runBy !== 'signal') {
         log.error("DLP Timeout");
-        throw new Error("Monitor DLP Timeout");
+        throw new Error("Monitor DLP Timeout", status);
       } else {
         log.info("Last DLP Ran Successful");
       }
@@ -151,7 +151,7 @@ function run() {
     const _status = status.detect;
     setTimeout(()=>{
       if (_status.running && _status.runBy !== 'signal') {
-        log.error("Last Detection Timeout");
+        log.error("Last Detection Timeout", status);
         throw new Error("Monitor Detect Timeout");
       } else {
         log.info("Last Detect Ran Successful");
