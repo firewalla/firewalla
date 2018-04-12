@@ -91,16 +91,22 @@ module.exports = class {
         return;
       }
 
-      let intel = flowObj.intel;
+      log.info("FlowObj:", flowObj);
 
-      intel.category = intel.category || flowObj.category;
+      let intel = flowObj.intel;
 
       if (!intel.category) {
         log.info("No intel for domain", domain, "look up Bone...");
         intel = await this._lookupDomain(domain, ip);
       } else {
         log.info("Intel for domain", domain, " exists in flowObj");
-        intel = this.processCloudIntel(intel);
+        if (intel.cc) {
+          try {
+            intel.cc = JSON.parse(intel.cc)[0];
+          } catch (err) {
+            log.warn("Error when parsing info.cc:", intel.cc, err);
+          }
+        }
       }
       log.info(`Intel for domain ${domain} is`, intel);
   
