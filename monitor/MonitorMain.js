@@ -126,48 +126,48 @@ function run() {
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
-    setTimeout(()=>{
+    setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("DLP Timeout", status);
         throw new Error("Monitor DLP Timeout");
       } else {
         log.info("Last DLP Ran Successful");
       }
-    }, tick/2*1000);
+    }, tick / 2 * 1000);
 
     if (_status.running) {
-      log.warn('Already a dlp session run by signal trigger, skip this time', status);
+      log.warn('Already a dlp session running by signal trigger, skip this time', status);
       return;
     }
 
     setStatus(_status, {running: true, runBy: 'scheduler'});
     flowMonitor.run(type, tick, () => {
-      log.info('Clean up after ', type, 'run');
+      log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
     });
   }, tick * 1000);
 
-  setInterval(()=>{
+  setInterval(() => {
     const type = 'detect';
     const _status = status[type];
-    setTimeout(()=>{
+    setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("Last Detection Timeout", status);
         throw new Error("Monitor Detect Timeout");
       } else {
         log.info("Last Detect Ran Successful");
       }
-    },55*1000);
+    }, 55 * 1000);
 
     if (_status.running) {
-      log.warn('Already a detect session run by signal trigger, skip this time', status);
+      log.warn('Already a detect session running by signal trigger, skip this time', status);
       return;
     }
     
     setStatus(_status, {running: true, runBy: 'scheduler'});
     flowMonitor.run(type, 60, () => {
-      log.info('Clean up after ', type, 'run');
+      log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
     });
@@ -184,7 +184,7 @@ function run() {
     }
     setStatus(_status, {running: true, runBy: 'signal'});
     flowMonitor.run(type, tick, () => {
-      log.info('Clean up after ', type, 'run');
+      log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
     });
@@ -201,7 +201,7 @@ function run() {
     }
     setStatus(_status, {running: true, runBy: 'signal'});
     flowMonitor.run(type, 60, () => {
-      log.info('Clean up after ', type, 'run');
+      log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
     });
