@@ -81,7 +81,7 @@ module.exports = class {
       return Math.round(Date.now() / 1000);
     }
   
-    async lookupDomain(domain, ip) {
+    async lookupDomain(domain, ip, _intel) {
       if (!domain || domain === "firewalla.com") {
         return;
       }
@@ -90,21 +90,17 @@ module.exports = class {
         log.info("Ignored domain:", domain, "skip...");
         return;
       }
-  
-      log.info("Lookup domain intel in cache", domain);
-      let intel = await this.cacheDomainIntelLookup(domain);
-      log.info(`Domain intel for ${domain} from cache:`, intel);
-  
-  
-      if (!intel) {
-        log.info("No intel for domain", domain, "from cache, look up Bone...");
+
+      let intel;
+
+      if (!_intel) {
+        log.info("No intel for domain", domain, "look up Bone...");
         intel = await this._lookupDomain(domain, ip);
-        log.info(`Intel from bone for domain ${domain} is`, intel);
-        if (intel) {
-          log.info(`Save domain intel into cache for ${domain}`);
-          await this.cacheDomainIntelAdd(domain, intel);
-        }
+      } else {
+        log.info("Intel for domain", domain, " exists in flowObj");
+        intel = this.processCloudIntel(_intel);
       }
+      log.info(`Intel for domain ${domain} is`, intel);
   
       return intel;
     }
@@ -137,56 +133,63 @@ module.exports = class {
     }
     
     async _lookupDomain(domain, ip) {
-      let boneIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
-      let intel = {};
-      log.info("Bone intel for ", domain, "is: ", boneIntel);
+      let cloudIntel;
+      try {
+        cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
+      } catch (err) {
+        log.info("Error when check intel from cloud", err);
+      }
+      log.info("Bone intel for ", domain, "is: ", cloudIntel);
 
-      let info = boneIntel[0];
-      if (!info) {
-        return null;
-      }
-      
-      // check if the host matches the result from cloud
-      // FIXME: ignore IP check because intel result from cloud does
-      // NOT have "ip" all the time.
-      if(info.apps) {
-        intel.apps = JSON.stringify(info.apps);
-        let keys = Object.keys(info.apps);
-        if(keys && keys[0]) {
-          intel.app = keys[0];
-        }
-      }
-
-      if(info.c) {
-        intel.category = info.c;
-      }
-
-      if(info.action && info.action.block) {
-        intel.action = "block"
-      }
-
-      if(info.s) {
-        intel.s = info.s;
-      }
-
-      if(info.t) {
-        intel.t = info.t;
-      }
-
-      if(info.cc) {
-        try {
-          info.cc = JSON.parse(info.cc);
-          intel.cc = info.cc[0];
-        } catch (err) {
-          intel.cc = info.cc;
-          log.warn("Error when parsing info.cc:", info.cc, err);
-        }
-      }
-      
-      return intel;
+      return this.processCloudIntel(cloudIntel[0]);
     }
 
-    lookup(ip, intel, callback) {
+  processCloudIntel(cloudIntel) {
+    if (!cloudIntel) {
+      return;
+    }
+
+    let intel = {};
+    // check if the host matches the result from cloud
+    // FIXME: ignore IP check because intel result from cloud does
+    // NOT have "ip" all the time.
+    if (cloudIntel.apps) {
+      intel.apps = JSON.stringify(cloudIntel.apps);
+      let keys = Object.keys(cloudIntel.apps);
+      if (keys && keys[0]) {
+        intel.app = keys[0];
+      }
+    }
+
+    if (cloudIntel.c) {
+      intel.category = cloudIntel.c;
+    }
+
+    if (cloudIntel.action && cloudIntel.action.block) {
+      intel.action = "block"
+    }
+
+    if (cloudIntel.s) {
+      intel.s = cloudIntel.s;
+    }
+
+    if (cloudIntel.t) {
+      intel.t = cloudIntel.t;
+    }
+
+    if (cloudIntel.cc) {
+      try {
+        cloudIntel.cc = JSON.parse(cloudIntel.cc);
+        intel.cc = cloudIntel.cc[0];
+      } catch (err) {
+        intel.cc = cloudIntel.cc;
+        log.warn("Error when parsing info.cc:", cloudIntel.cc, err);
+      }
+    }
+    return intel;
+  }
+
+  lookup(ip, intel, callback) {
         if (!ip || ip === "8.8.8.8" || sysManager.isLocalIP(ip)) {
             callback(null, null, null);
             return;
