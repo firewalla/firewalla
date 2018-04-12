@@ -96,9 +96,8 @@ let status = {
   }
 };
 
-function setStatus(type, isRunning, runBy) {
-  status[type].running = isRunning;
-  status[type].runBy = runBy;
+function setStatus(type, opts) {
+  Object.assign(type, opts);
 }
 
 function run() {
@@ -125,7 +124,8 @@ function run() {
   flowMonitor.run();
   
   setInterval(() => {
-    const _status = status.dlp;
+    const type = 'dlp';
+    const _status = status[type];
     setTimeout(()=>{
       if (_status.running && _status.runBy !== 'signal') {
         log.error("DLP Timeout");
@@ -139,16 +139,18 @@ function run() {
       log.warn('Already a dlp session run by signal trigger, skip this time');
       return;
     }
-    
-    setStatus('dlp', true, 'scheduler');
-    flowMonitor.run("dlp", tick, () => {
-      setStatus('dlp', false, '');
+
+    setStatus(_status, {running: true, runBy: 'scheduler'});
+    flowMonitor.run(type, tick, () => {
+      log.info('Clean up after ', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
       gc();
     });
   }, tick * 1000);
 
   setInterval(()=>{
-    const _status = status.detect;
+    const type = 'detect';
+    const _status = status[type];
     setTimeout(()=>{
       if (_status.running && _status.runBy !== 'signal') {
         log.error("Last Detection Timeout", status);
@@ -163,37 +165,44 @@ function run() {
       return;
     }
     
-    setStatus('detect', true, 'scheduler');
-    flowMonitor.run("detect",60, () => {
-      setStatus('dlp', false, '');
+    setStatus(_status, {running: true, runBy: 'scheduler'});
+    flowMonitor.run(type, 60, () => {
+      log.info('Clean up after ', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
       gc();
     });
   }, 60 * 1000);
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');
-    const _status = status.dlp;
+    const type = 'dlp';
+    const _status = status[type];
+    
     if (_status.running) {
       log.warn("DLP check is already running, skip firing");
       return;
     }
-    setStatus('dlp', true, 'signal');
-    flowMonitor.run("dlp", tick, () => {
-      setStatus('dlp', false, '');
+    setStatus(_status, {running: true, runBy: 'signal'});
+    flowMonitor.run(type, tick, () => {
+      log.info('Clean up after ', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
       gc();
     });
   });
 
   process.on('SIGUSR2', () => {
     log.info('Received SIGUSR2. Trigger Detect check.');
-    const _status = status.dlp;
+    const type = 'detect';
+    const _status = status[type];
+    
     if (_status.running) {
       log.warn("Detect check is already running, skip firing");
       return;
     }
-    setStatus('dlp', true, 'scheduler');
-    flowMonitor.run("detect", 60, () => {
-      setStatus('dlp', false, '');
+    setStatus(_status, {running: true, runBy: 'signal'});
+    flowMonitor.run(type, 60, () => {
+      log.info('Clean up after ', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
       gc();
     });
   });
