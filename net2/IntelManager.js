@@ -81,7 +81,7 @@ module.exports = class {
       return Math.round(Date.now() / 1000);
     }
   
-    async lookupDomain(domain, ip, _intel) {
+    async lookupDomain(domain, ip, flowObj) {
       if (!domain || domain === "firewalla.com") {
         return;
       }
@@ -91,14 +91,16 @@ module.exports = class {
         return;
       }
 
-      let intel;
+      let intel = flowObj.intel;
 
-      if (!_intel) {
+      intel.category = intel.category || flowObj.category;
+
+      if (!intel.category) {
         log.info("No intel for domain", domain, "look up Bone...");
         intel = await this._lookupDomain(domain, ip);
       } else {
         log.info("Intel for domain", domain, " exists in flowObj");
-        intel = this.processCloudIntel(_intel);
+        intel = this.processCloudIntel(intel);
       }
       log.info(`Intel for domain ${domain} is`, intel);
   
