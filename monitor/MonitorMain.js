@@ -85,8 +85,21 @@ function gc() {
   }
 }
 
+let status = {
+  dlp: {
+    running: false,
+    runBy: ''
+  },
+  detect: {
+    running: false,
+    runBy: ''
+  }
+};
 
-let running = {status: false};
+function setStatus(type, isRunning, runBy) {
+  status[type].running = isRunning;
+  status[type].runBy = runBy;
+}
 
 function run() {
   const firewallaConfig = require('../net2/config.js').getConfig();
@@ -108,60 +121,78 @@ function run() {
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
-
+  
   flowMonitor.run();
+  
+  setInterval(() => {
+    const _status = status.dlp;
+    setTimeout(()=>{
+      if (_status.running) {
+        if (_status.runBy !== 'signal') {
+          log.error("DLP Timeout");
+          throw new Error("Monitor DLP Timeout");
+        } else {
+          log.warn('Already a dlp session run by signal trigger, skip this time');
+        }
+      } else {
+        log.info("Last DLP Ran Successful");
+      }
+    }, tick/2*1000);
+
+    setStatus('dlp', true, 'scheduler');
+    flowMonitor.run("dlp", tick, () => {
+      setStatus('dlp', false, '');
+      gc();
+    });
+    gc();
+  }, tick * 1000);
+
+  setInterval(()=>{
+    const _status = status.detect;
+    setTimeout(()=>{
+      if (_status.running) {
+        if (_status.runBy !== 'signal') {
+          log.error("Last Detection Timeeout");
+          throw new Error("Monitor Detect Timeout");
+        } else {
+          log.warn('Already a detect session run by signal trigger, skip this time');  
+        }
+      } else {
+        log.info("Last Detect Ran Successful");
+      }
+    },55*1000);
+    setStatus('detect', true, 'scheduler');
+    flowMonitor.run("detect",60, () => {
+      setStatus('dlp', false, '');
+      gc();
+    });
+  }, 60 * 1000);
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');
-    if (running.status) {
+    const _status = status.dlp;
+    if (_status.running) {
       log.warn("DLP check is already running, ignore");
       return;
     }
-
-    running.status = true;
-    flowMonitor.run("dlp", tick, running);
-    running.status = false;
-
-    gc();
+    setStatus('dlp', true, 'signal');
+    flowMonitor.run("dlp", tick, () => {
+      setStatus('dlp', false, '');
+      gc();
+    });
   });
 
   process.on('SIGUSR2', () => {
     log.info('Received SIGUSR2. Trigger Detect check.');
-    if (running.status) {
+    const _status = status.dlp;
+    if (_status.running) {
       log.warn("Detect check is already running, ignore");
       return;
     }
-
-    running.status = true;
-    flowMonitor.run("detect", 60, running);
-    running.status = false;
-
-    gc();
+    setStatus('dlp', true, 'scheduler');
+    flowMonitor.run("detect", 60, () => {
+      setStatus('dlp', false, '');
+      gc();
+    });
   });
-
-  setInterval(() => {
-    if (running.status) {
-      log.warn("DLP check is already running, ignore");
-      return;
-    }
-
-    running.status = true;
-    flowMonitor.run("dlp", tick, running);
-    running.status = false;
-
-    gc();
-  }, tick * 1000);
-
-  setInterval(() => {
-    if (running.status) {
-      log.warn("Detect check is already running, ignore");
-      return;
-    }
-
-    running.status = true;
-    flowMonitor.run("detect", 60, running);
-    running.status = false;
-
-    gc();
-  }, 60 * 1000);
 }
