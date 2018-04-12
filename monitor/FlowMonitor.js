@@ -991,6 +991,7 @@ module.exports = class FlowMonitor {
     }
     
     alarm['p.security.category'] = [_category];
+    alarm['p.alarm.trigger'] = 'domain';
     
     if (intel.tags) {
       alarm['p.security.tags'] = intel.tags;
@@ -1064,6 +1065,8 @@ module.exports = class FlowMonitor {
       if (iobj.tags) {
         alarm['p.security.tags'] = iobj.tags;
       }
+
+      alarm['p.alarm.trigger'] = 'ip';
 
       log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
