@@ -96,7 +96,7 @@ module.exports = class {
       let intel = flowObj.intel;
 
       if (!intel.category) {
-        log.info("No intel for domain", domain, "look up Bone...");
+        log.info("No intel for domain", domain, "look up from cloud...");
         intel = await this._lookupDomain(domain, ip);
       } else {
         log.info("Intel for domain", domain, " exists in flowObj");
@@ -118,27 +118,6 @@ module.exports = class {
       log.info("Ignore check for domain:", target, " is", data);
       return data && data.ignore;
     }
-
-    getDomainIntelKey(domain) {
-      return `intel:domain:${domain}`;
-    }
-      
-    async cacheDomainIntelAdd(domain, intel) {
-      if (!domain || !intel) {
-        return;
-      }
-      let key = this.getDomainIntelKey(domain);
-      log.info("Domain intel key is", key);
-      
-      await rclient.hmsetAsync(key, intel);
-      await rclient.expireatAsync(key, this.currentTime() + A_WEEK);
-      
-      log.info("Save cache success", key, "=>", intel);
-    }
-
-    async cacheDomainIntelLookup(domain) {
-      return await rclient.hgetallAsync(this.getDomainIntelKey(domain));
-    }
     
     async _lookupDomain(domain, ip) {
       let cloudIntel;
@@ -147,7 +126,7 @@ module.exports = class {
       } catch (err) {
         log.info("Error when check intel from cloud", err);
       }
-      log.info("Bone intel for ", domain, "is: ", cloudIntel);
+      log.info("Cloud intel for ", domain, "is: ", cloudIntel);
 
       return this.processCloudIntel(cloudIntel[0]);
     }
