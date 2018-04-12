@@ -128,15 +128,15 @@ function run() {
     const _status = status[type];
     setTimeout(()=>{
       if (_status.running && _status.runBy !== 'signal') {
-        log.error("DLP Timeout");
-        throw new Error("Monitor DLP Timeout", status);
+        log.error("DLP Timeout", status);
+        throw new Error("Monitor DLP Timeout");
       } else {
         log.info("Last DLP Ran Successful");
       }
     }, tick/2*1000);
 
     if (_status.running) {
-      log.warn('Already a dlp session run by signal trigger, skip this time');
+      log.warn('Already a dlp session run by signal trigger, skip this time', status);
       return;
     }
 
@@ -161,7 +161,7 @@ function run() {
     },55*1000);
 
     if (_status.running) {
-      log.warn('Already a detect session run by signal trigger, skip this time');
+      log.warn('Already a detect session run by signal trigger, skip this time', status);
       return;
     }
     
@@ -179,7 +179,7 @@ function run() {
     const _status = status[type];
     
     if (_status.running) {
-      log.warn("DLP check is already running, skip firing");
+      log.warn("DLP check is already running, skip firing", status);
       return;
     }
     setStatus(_status, {running: true, runBy: 'signal'});
@@ -196,7 +196,7 @@ function run() {
     const _status = status[type];
     
     if (_status.running) {
-      log.warn("Detect check is already running, skip firing");
+      log.warn("Detect check is already running, skip firing", status);
       return;
     }
     setStatus(_status, {running: true, runBy: 'signal'});
