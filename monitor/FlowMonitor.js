@@ -152,46 +152,70 @@ module.exports = class FlowMonitor {
       }
     }
 
-    checkIntelClass(intel,_class) {
-        if (!intel || !_class) {
-            return false;
-        }
-
-        const intelFeatureMapping = {
-            "av": "video",
-            "games": "game",
-            "porn": "porn",
-            "intel": "cyber_security"
-        }
-
-        const featureName = intelFeatureMapping[_class]
-        if(!featureName) {
-          return false
-        }
-
-        if(!fc.isFeatureOn(featureName)) {
-          log.warn(`Feature ${featureName} is not enabled`)
-          return false
-        }
-
-        if (intel.category && intel.category === _class) {
-          return true;
-        }
-
-        if (intel.c && intel.c === _class) {
-          return true;
-        }
-
-        if (intel.cs) {
-            let cs = intel.cs;
-            if (!Array.isArray(intel.cs)) {
-                cs = JSON.parse(intel.cs);
-            }
-            if (cs.indexOf(_class) !== -1) {
-                return true;
-            }
-        }
+    isFlowIntelInClass(intel, classes) {
+      if (!intel || !classes) {
         return false;
+      }
+
+      if (!Array.isArray(classes)) {
+        classes = [classes];
+      }
+
+      const intelFeatureMapping = {
+        "av": "video",
+        "games": "game",
+        "porn": "porn",
+        "intel": "cyber_security",
+        'spam': "cyber_security",
+        'phishing': "cyber_security",
+        'piracy': "cyber_security",
+        'suspicious': "cyber_security"
+      }
+
+      let enabled = classes.map(c => {
+        const featureName = intelFeatureMapping[c];
+        if (!featureName) {
+          return false;
+        }
+        if (!fc.isFeatureOn(featureName)) {
+          log.warn(`Feature ${featureName} is not enabled`);
+          return false;
+        }
+        return true;
+      }).reduce((acc, cur) => acc || cur);
+
+      if (!enabled) {
+        return false;
+      }
+
+      if (classes.includes(intel.category)) {
+        return true;
+      }
+
+      if (classes.includes(intel.c)) {
+        return true;
+      }
+
+      function isMatch(_classes, v) {
+        let matched;
+        try {
+          let _v = new Set(Array.isArray(v) ? v : JSON.parse(v));
+          matched = _classes.filter(x => _v.has(x)).length > 0;
+        } catch (err) {
+          log.warn("Error when match classes", _classes, "with value", v, err);
+        }
+        return matched;
+      }
+
+      if (intel.cs && isMatch(classes, intel.cs)) {
+        return true;
+      }
+
+      if (intel.cc && isMatch(classes, intel.cc)) {
+        return true;
+      }
+
+      return false;
     }
 
     flowIntel(flows) {
@@ -210,7 +234,7 @@ module.exports = class FlowMonitor {
                }
 
                 log.info("######## flowIntel Processing",JSON.stringify(flow));
-                if (this.checkIntelClass(flow['intel'],"av")) {
+                if (this.isFlowIntelInClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
@@ -249,7 +273,7 @@ module.exports = class FlowMonitor {
                             log.error("Failed to create alarm: " + err);
                         });
                     }
-                } else if (this.checkIntelClass(flow['intel'],"porn")) {
+                } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
                       (flow.rb && Number(flow.rb)>1000000) ||
                       this.flowIntelRecordFlow(flow,3)) {
@@ -295,7 +319,7 @@ module.exports = class FlowMonitor {
                           log.error("Failed to create alarm: " + err);
                       });
                     }
-                } else if (this.checkIntelClass(flow['intel'],"intel")) {
+                } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
@@ -377,7 +401,7 @@ module.exports = class FlowMonitor {
                     // Process intel to generate Alarm about it
                     this.processIntelFlow(intelobj);
                   }
-                } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
+                } else if (this.isFlowIntelInClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
                         let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
@@ -935,7 +959,7 @@ module.exports = class FlowMonitor {
     let intel = null;
     try {
       log.info("Start to lookup intel for domain:", domain);
-      intel = await intelManager.lookupDomain(domain, remoteIP);
+      intel = await intelManager.lookupDomain(domain, remoteIP, flowObj.intel);
       log.info("Finish lookup intel for domain:", domain, "intel is", intel);
     } catch (err) {
       log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
