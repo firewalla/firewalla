@@ -2560,7 +2560,7 @@ module.exports = class HostManager {
                 cb();
             });
         } , (err) => {
-            log.info("HostManager:isIgnoredIPs:",ips,ignored);
+            log.debug("HostManager:isIgnoredIPs:",ips,ignored);
             callback(null,ignored );
         });
     }
