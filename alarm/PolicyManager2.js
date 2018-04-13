@@ -114,12 +114,11 @@ class PolicyManager2 {
       const policy = this.jsonToPolicy(event.policy)
       const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
-
-      log.info("START ENFORCING POLICY", policy.pid, action, {})
       
       switch(action) {
       case "enforce": {
         return async(() => {
+          log.info("START ENFORCING POLICY", policy.pid, action, {})
           await(this.enforce(policy))
         })().catch((err) => {
           log.error("enforce policy failed:" + err)
@@ -132,6 +131,7 @@ class PolicyManager2 {
 
       case "unenforce": {
         return async(() => {
+          log.info("START UNENFORCING POLICY", policy.pid, action, {})
           await(this.unenforce(policy))
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
@@ -147,6 +147,8 @@ class PolicyManager2 {
           if(!oldPolicy) {
             // do nothing
           } else {
+            log.info("START REENFORCING POLICY", policy.pid, action, {})
+
             await(this.unenforce(oldPolicy))
             await(this.enforce(policy))
           }
