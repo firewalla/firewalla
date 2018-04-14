@@ -447,6 +447,12 @@ class FlowAggregationSensor extends Sensor {
   recordCategory(mac, traffic) {
     return async(() => {
       for(let category in traffic) {
+
+        // FIXME
+        // ignore technology and search-portal for better performanced
+        if(category === "technology" || category === "search-portal") {
+          continue
+        }
         let object = traffic[category]
         await (categoryFlowTool.addCategoryFlowObject(mac, category, object))
       }
