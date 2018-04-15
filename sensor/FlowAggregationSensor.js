@@ -124,6 +124,12 @@ class FlowAggregationSensor extends Sensor {
           appInfos.push(intel[x])
 
         appInfos.forEach((app) => {
+
+          // no need to group traffic for these two types in particular, FIXME
+          if(app === "technology" || app === "search-portal") {
+            return
+          }
+
           let t = traffic[app];
 
           if(typeof t === 'undefined') {
