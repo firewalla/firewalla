@@ -351,12 +351,10 @@ module.exports = class {
                 if (obj) {
                     this.cacheAdd(ip, "ipinfo", body);
                     callback(null, obj);
-                } else {
-                    callback(null, null);
+                    return;
                 }
-            } else {
-              callback(null, null);
-            }
+            } 
+            callback(null, null);
         });
       });
     }
