@@ -205,14 +205,16 @@ class App {
         let lines = result.split("\n")
         lines = lines.map((originLine) => {
           let line = originLine
-          line = line.replace(/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]/, '')
+          line = line.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
           line = line.replace(new RegExp(gid, "g"), "<****gid****>")
           line = line.replace(/type in this key:.*$/g, "type in this key: <****key****>")
           line = line.replace(/Inviting .{10,40} to group/g, "Inviting <****rid****> to group")
           line = line.replace(/Set SYS:EPT.*/, "Set SYS:EPT<****token****>")
           return line
         })
-        res.send(lines.join("\n"))
+
+        res.setHeader('content-type', 'text/plain');
+        res.end(lines.join("\n"))
       })().catch((err) => {
         log.error("Failed to fetch log", err, {})
         res.status(404).send('')
