@@ -160,6 +160,18 @@ class App {
     })()
   }
 
+  getFullGID() {
+    return async(() => {
+      try {
+        const gid = await (exec("redis-cli hget sys:ept gid"))
+        return gid && gid.stdout && gid.stdout.replace("\n", "")
+      } catch(err) {
+        log.error("Failed to get gid", err, {})
+        return null
+      }
+    })()
+  }
+
   getPrimaryIP() {
     return async(() => {
       const eth0s = require('os').networkInterfaces()["eth0"]
@@ -186,14 +198,25 @@ class App {
     this.app.use('/log', (req, res) => {
       const filename = "/home/pi/logs/FireKick.log"
       async(() => {
-        const gid = await (this.getGID())
+        const gid = await (this.getFullGID())
         await (fs.accessAsync(filename, fs.constants.F_OK))
-        let result = exec(`tail -n 1000 ${filename} | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"`)
-        result = result.replace(gid, "<****gid****>")
-        result = result.replace(/type in this key:.*$/, "type in this key: <****key****>")
-        result = result.replace(/Inviting .{10,40} to group/, "Inviting <****rid****> to group")
-        res.send(result)
+        //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
+        const result = await (exec(`tail -n 1000 ${filename}`)).stdout
+        let lines = result.split("\n")
+        lines = lines.map((originLine) => {
+          let line = originLine
+          line = line.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
+          line = line.replace(new RegExp(gid, "g"), "<****gid****>")
+          line = line.replace(/type in this key:.*$/g, "type in this key: <****key****>")
+          line = line.replace(/Inviting .{10,40} to group/g, "Inviting <****rid****> to group")
+          line = line.replace(/Set SYS:EPT.*/, "Set SYS:EPT<****token****>")
+          return line
+        })
+
+        res.setHeader('content-type', 'text/plain');
+        res.end(lines.join("\n"))
       })().catch((err) => {
+        log.error("Failed to fetch log", err, {})
         res.status(404).send('')
       })
     })
