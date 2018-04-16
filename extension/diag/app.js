@@ -188,11 +188,18 @@ class App {
       async(() => {
         const gid = await (this.getGID())
         await (fs.accessAsync(filename, fs.constants.F_OK))
-        let result = exec(`tail -n 1000 ${filename} | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"`)
-        result = result.replace(gid, "<****gid****>")
-        result = result.replace(/type in this key:.*$/, "type in this key: <****key****>")
-        result = result.replace(/Inviting .{10,40} to group/, "Inviting <****rid****> to group")
-        res.send(result)
+        //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
+        const result = await (exec(`tail -n 1000 ${filename} | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"`)).stdout
+        const lines = result.split("\n")
+        lines.map((originLine) => {
+          let line = originLine
+          line = line.replace(/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]/, '')
+          line = line.replace(new RegExp(gid, "g"), "<****gid****>")
+          line = line.replace(/type in this key:.*$/g, "type in this key: <****key****>")
+          line = line.replace(/Inviting .{10,40} to group/g, "Inviting <****rid****> to group")
+          return line
+        })
+        res.send(lines.join("\n"))
       })().catch((err) => {
         res.status(404).send('')
       })
