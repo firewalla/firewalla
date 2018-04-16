@@ -164,7 +164,7 @@ class App {
     return async(() => {
       try {
         const gid = await (exec("redis-cli hget sys:ept gid"))
-        return gid && gid.stdout
+        return gid && gid.stdout && gid.stdout.replace("\n", "")
       } catch(err) {
         log.error("Failed to get gid", err, {})
         return null
@@ -209,7 +209,7 @@ class App {
           line = line.replace(new RegExp(gid, "g"), "<****gid****>")
           line = line.replace(/type in this key:.*$/g, "type in this key: <****key****>")
           line = line.replace(/Inviting .{10,40} to group/g, "Inviting <****rid****> to group")
-          line = line.replace(/Set SYS:EPT null OK.*/, "Set SYS:EPT null OK <****token****>")
+          line = line.replace(/Set SYS:EPT.*/, "Set SYS:EPT<****token****>")
           return line
         })
         res.send(lines.join("\n"))
