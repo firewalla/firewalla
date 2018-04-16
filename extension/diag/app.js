@@ -30,6 +30,8 @@ const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
+const fs = require('fs')
+Promise.promisifyAll(fs)
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -180,6 +182,21 @@ class App {
 
     this.app.use('/' + VIEW_PATH, this.router);
     this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
+
+    this.app.use('/log', (req, res) => {
+      const filename = "/home/pi/logs/FireKick.log"
+      async(() => {
+        const gid = await (this.getGID())
+        await (fs.accessAsync(filename, fs.constants.F_OK))
+        let result = exec(`tail -n 1000 ${filename} | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"`)
+        result = result.replace(gid, "<****gid****>")
+        result = result.replace(/type in this key:.*$/, "type in this key: <****key****>")
+        result = result.replace(/Inviting .{10,40} to group/, "Inviting <****rid****> to group")
+        res.send(result)
+      })().catch((err) => {
+        res.status(404).send('')
+      })
+    })
 
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")
