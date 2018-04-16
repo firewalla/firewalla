@@ -330,33 +330,32 @@ module.exports = class {
             // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
         };
 
-        request(options, (err, httpResponse, body) => {
-            if (err != null) {
-                let stack = new Error().stack;
-                log.info("Error while requesting ", err, stack);
-                callback(err, null, null);
+        request(options, (err, resp, body) => {
+            if (err) {
+                log.warn(`Error while requesting ${weburl}`, err);
+                callback(null, null);
                 return;
             }
-            if (httpResponse == null) {
-                let stack = new Error().stack;
-                log.info("Error while response ", err, stack);
-                callback(500, null, null);
+            if (!resp) {
+                log.warn(`Error - null response from ${weburl}`);
+                callback(null, null);
                 return;
             }
-            if (httpResponse.statusCode < 200 ||
-                httpResponse.statusCode > 299) {
-                log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                callback(httpResponse.statusCode, null, null);
+            if (resp.statusCode < 200 || resp.statusCode > 299) {
+                log.warn("Error in response code", resp.statusCode);
+                callback(null, null);
                 return;
             }
-            if (err === null && body != null) {
-                this.cacheAdd(ip, "ipinfo", body);
+            if (body) {
                 let obj = JSON.parse(body);
-                if (obj != null) {
-                    callback(null,obj);
+                if (obj) {
+                    this.cacheAdd(ip, "ipinfo", body);
+                    callback(null, obj);
                 } else {
-                    callback(null,null);
+                    callback(null, null);
                 }
+            } else {
+              callback(null, null);
             }
         });
       });
@@ -371,7 +370,7 @@ module.exports = class {
             family: 4
         };
 
-        this._location(ip, (err,lobj)=>{
+        this._location(ip, (err, lobj)=>{
             let obj = {lobj};
             log.info("Intel:Location",ip,lobj);
             obj = this._packageIntel(ip,obj,intel);
