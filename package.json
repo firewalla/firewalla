@@ -68,7 +68,7 @@
     "qrcode-terminal": "^0.10.0",
     "random-seed": "0.3.0",
     "redis": "^2.6.0-2",
-    "redis-timeseries": "0.4.0",
+    "redis-timeseries": "git+https://git@github.com/melvinto/node-redis-timeseries.git",
     "request": "^2.67.0",
     "request-promise": "4.2.2",
     "serve-favicon": "~2.3.0",
