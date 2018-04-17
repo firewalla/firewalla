@@ -347,13 +347,18 @@ module.exports = class {
                 return;
             }
             if (body) {
-                let obj = JSON.parse(body);
-                if (obj) {
-                    this.cacheAdd(ip, "ipinfo", body);
-                    callback(null, obj);
-                    return;
-                }
-            } 
+              let obj;
+              try {
+                obj = JSON.parse(body);
+              } catch (err) {
+                log.error("Error when parse ip info:", body, err);
+              }
+              if (obj) {
+                this.cacheAdd(ip, "ipinfo", body);
+                callback(null, obj);
+                return;
+              }
+            }
             callback(null, null);
         });
       });
