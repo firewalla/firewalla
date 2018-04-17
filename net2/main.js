@@ -166,7 +166,7 @@ function run() {
 
   var BroDetector = require("./BroDetect.js");
   let bd = new BroDetector("bro_detector", config, "info");
-  bd.enableRecordHitsTimer()
+  //bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
@@ -211,6 +211,9 @@ function run() {
     d.discoverInterfaces((err, list) => {
       if(!err && list && list.length >= 2) {
         sysManager.update(null) // if new interface is found, update sysManager
+
+        // recreate port direct after secondary interface is created
+        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
       }
     })
   })()
