@@ -1617,26 +1617,36 @@ module.exports = class {
     //         }
     //     }
     //   }
-    
+
       recordTraffic(ts, inBytes, outBytes) {
           if(this.recordCache && this.enableRecording) {
 
-            timeSeries
-            .recordHit('download',ts, Number(inBytes))
-            .recordHit('upload',ts, Number(outBytes))
-
-            this.cc ++
-
-            if(this.cc >= 50) {
-                timeSeries.exec(() => {})
-                this.cc = 0
+            let normalizedTS = Math.floor(ts) / 15 // only record every 15 seconds
+                        
+            if(!this.lastNTS) {
+                this.lastNTS = normalizedTS
+                this.fullLastNTS = ts
+                this.lastNTS_download = 0
+                this.lastNTS_upload = 0
             }
-            //   log.debug("Recording..", ts, inBytes, outBytes, {})
-            //   this.recordCache.push({
-            //     ts: ts,
-            //     inBytes: inBytes,
-            //     outBytes: outBytes
-            // })
+
+            if(this.lastNTS == normalizedTS) {
+                // append current status
+                this.lastNTS_download += Number(inBytes)
+                this.lastNTS_upload += Number(outBytes)
+
+            } else {
+                log.info("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
+
+                timeSeries
+                .recordHit('download',this.fullLastNTS, this.lastNTS_download)
+                .recordHit('upload',this.fullLastNTS, this.lastNTS_upload)
+                .exec()
+                
+                this.lastNTS = null
+
+                this.recordTraffic(ts, inBytes, outBytes)
+            }           
           }
       }
 
