@@ -1,15 +1,38 @@
 #!/bin/bash -
+
 if [[ -e "/tmp/fire-last-resort" ]]; then
    logger "FIREWALLA: LAST RESPORT HAPPENING + SKIP"
    echo "FIREWALLA: LAST RESPORT HAPPENING + SKIP"
    exit 1
 fi
-
 touch /tmp/fire-last-resort
-
 logger "FIREWALLA: LAST RESPORT"
 date
 redis-cli publish "OldDataCleanSensor" "Start"
+sleep 2
+/home/pi/firewalla/scripts/free-memory-process
+
+function get_free_mem() {
+    swapmem=$(free -m | awk '/Swap:/{print $4}')
+    realmem=$(free -m | awk '/Mem:/{print $7}')
+    totalmem=$(( swapmem + realmem ))
+    
+    if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+       mem=$totalmem
+       (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+    else
+       mem=$realmem
+       (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+    fi
+}
+
+get_free_mem
+
+(( mem > 45 )) && logger "FIREWALLA: memory problems resolved $mem"
+(( mem > 45 )) && rm -ff /tmp/fire-last-resort; exit 1
+
+echo $mem
+
 sudo service firemon restart
 echo "Restarted FireMon"
 sleep 2
@@ -17,18 +40,6 @@ sudo service brofish restart
 echo "Restarted BroFish"
 sudo service firemain restart
 echo "Restarted firemain"
-#node /home/pi/firewalla/scripts/clean-redis.js &
-swapmem=$(free -m | awk '/Swap:/{print $4}')
-realmem=$(free -m | awk '/Mem:/{print $7}')
-totalmem=$(( swapmem + realmem ))
-
-if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
-  mem=$totalmem
-  (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
-else
-  mem=$realmem
-  (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
-fi
 
 echo "Last Resort Memory $mem $swapmem $realmem"
 
