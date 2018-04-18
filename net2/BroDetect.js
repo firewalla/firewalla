@@ -895,9 +895,12 @@ module.exports = class {
                 
             // not sure to use tmpspec.ts or now???
                 if(tmpspec.fd == 'in') {
-                    this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+                  // use now instead of the start time of this flow
+                  this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
+                  //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
                 } else {
-                    this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+                  this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
+                  //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
                 }
                     
 
@@ -1621,11 +1624,11 @@ module.exports = class {
       recordTraffic(ts, inBytes, outBytes) {
           if(this.recordCache && this.enableRecording) {
 
-            let normalizedTS = Math.floor(ts) / 15 // only record every 15 seconds
-                        
+            let normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
+                                    
             if(!this.lastNTS) {
                 this.lastNTS = normalizedTS
-                this.fullLastNTS = ts
+                this.fullLastNTS = Math.floor(ts)
                 this.lastNTS_download = 0
                 this.lastNTS_upload = 0
             }
