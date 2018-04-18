@@ -288,15 +288,28 @@ function run() {
   },1000*2);
 
   setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
       if (global.gc) {
         global.gc();
-        log.debug("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }
-  },1000*60*8);
+  },1000*60*5);
 
+  setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    if (memoryUsage>=110) {
+        try {
+          if (global.gc) {
+            global.gc();
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+          }
+        } catch(e) {
+        }
+    }
+  },1000*60);
 
 /*
   Bug: when two firewalla's are on the same network, this will change the upnp
