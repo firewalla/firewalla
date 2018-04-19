@@ -120,4 +120,4 @@ class APIRelaySensor extends Sensor {
   }
 }
 
-module.exports = RelaySensor;
+module.exports = APIRelaySensor;
