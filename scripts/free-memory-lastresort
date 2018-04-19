@@ -1,10 +1,55 @@
 #!/bin/bash -
+
+if [[ -e "/tmp/fire-last-resort" ]]; then
+   logger "FIREWALLA: LAST RESPORT HAPPENING + SKIP"
+   echo "FIREWALLA: LAST RESPORT HAPPENING + SKIP"
+   exit 1
+fi
+touch /tmp/fire-last-resort
 logger "FIREWALLA: LAST RESPORT"
-sudo service firemon restart
-sudo /usr/local/bro/bin/broctl restart
+date
 redis-cli publish "OldDataCleanSensor" "Start"
-#node /home/pi/firewalla/scripts/clean-redis.js &
-mem=$(free -m | awk '/-/{print $4}')
+sleep 2
+/home/pi/firewalla/scripts/free-memory-process
+
+function get_free_mem() {
+    swapmem=$(free -m | awk '/Swap:/{print $4}')
+    realmem=$(free -m | awk '/Mem:/{print $7}')
+    totalmem=$(( swapmem + realmem ))
+    
+    if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+       mem=$totalmem
+       (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+    else
+       mem=$realmem
+       (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+    fi
+}
+
+get_free_mem
+
+(( mem > 45 )) && logger "FIREWALLA: memory problems resolved $mem"
+(( mem > 45 )) && rm -ff /tmp/fire-last-resort; exit 1
+
+echo $mem
+
+sudo service firemon restart
+echo "Restarted FireMon"
+sleep 2
+sudo service brofish restart
+echo "Restarted BroFish"
+sudo service firemain restart
+echo "Restarted firemain"
+
+echo "Last Resort Memory $mem $swapmem $realmem"
+
+rm -f /tmp/fire-last-resort
+
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+
 (( mem <= 20 )) && logger "REBOOT: Memory less than 20 $mem"
 (( mem <= 20 )) && /home/pi/firewalla/scripts/fire-rebootf
+
+echo "Last Resort Memory End"
+date
+logger "FIREWALLA: LAST RESPORT DONE"
