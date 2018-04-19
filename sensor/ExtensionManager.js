@@ -64,7 +64,7 @@ class ExtensionManager {
   }
 
   get(key, msg) {
-    if(hasGet(key)) {
+    if(this.hasGet(key)) {
       return this.onGets[key](msg)
     }
 
@@ -72,7 +72,7 @@ class ExtensionManager {
   }
 
   set(key, msg, data) {
-    if(hasSet(key)){
+    if(this.hasSet(key)){
       return this.onSets[key](msg, data)
     }
 
