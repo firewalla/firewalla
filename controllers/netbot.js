@@ -106,7 +106,7 @@ let appTool = require('../net2/AppTool')();
 
 let spooferManager = require('../net2/SpooferManager.js')
 
-const extMgr = require('../sensor/ExtensionManager')
+const extMgr = require('../sensor/ExtensionManager.js')
 
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
@@ -772,6 +772,15 @@ class netBot extends ControllerBot {
     // invalidate cache
     this.invalidateCache();
 
+    if(extMgr.hasSet(msg.data.item)) {
+      async(() => {
+        const result = extMgr.set(msg.data.item, msg, msg.data.value)
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "policy":
@@ -1105,6 +1114,15 @@ class netBot extends ControllerBot {
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
+    if(extMgr.hasGet(msg.data.item)) {
+      async(() => {
+        const result = extMgr.get(msg.data.item, msg)
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "host":
