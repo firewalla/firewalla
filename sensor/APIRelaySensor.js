@@ -57,8 +57,13 @@ class APIRelaySensor extends Sensor {
           this.turnOff()
         }
       })          
-    })()
-    
+    })()        
+  }
+
+  apiRun() {
+
+    // register get/set handlers for fireapi
+
     extensionManager.onGet("apiRelayService", (msg) => {
       return this.getRelayConfig()
     })

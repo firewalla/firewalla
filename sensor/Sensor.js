@@ -40,9 +40,21 @@ let Sensor = class {
     require('util')._extend(this.config, config);
   }
 
+  // main entry for firemain
   run() {
     // do nothing in base class
     log.info(require('util').format("%s is launched", typeof this.constructor));
+  }
+
+
+  // main entry for fireapi
+  apiRun() {
+
+  }
+
+  // main entry for firemon
+  monitorRun() {
+
   }
   
   delay(t) {
