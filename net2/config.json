@@ -45,6 +45,9 @@
   "policy": {
     "autoBlock": true
   },
+  "apiSensors": {
+    "APIRelaySensor": {}
+  },
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},

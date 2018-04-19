@@ -22,7 +22,7 @@ let sensors = [];
 let sensorsHash = {}
 
 function initSensors() {
-  let sensorConfigs = config.sensors;
+  let sensorConfigs = config.apiSensors;
 
   if(!sensorConfigs)
     return;
