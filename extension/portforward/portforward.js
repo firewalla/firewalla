@@ -155,7 +155,9 @@ class PortForward {
       
       log.info("PORTMAP: Add",map);
       map.state = true;
-      let state = await (iptable.portforwardAsync(map));
+      const dupMap = JSON.parse(JSON.stringify(map))
+      dupMap.destIP = sysManager.myIp()
+      let state = await (iptable.portforwardAsync(dupMap));
       return state;
     })()
   }
@@ -172,7 +174,9 @@ class PortForward {
       } 
       map.state = false;
       // we call remove anyway ... even there is no entry
-      let state = await (iptable.portforwardAsync(map));
+      const dupMap = JSON.parse(JSON.stringify(map))
+      dupMap.destIP = sysManager.myIp()
+      let state = await (iptable.portforwardAsync(dupMap));
       return state;
     })()
   }
