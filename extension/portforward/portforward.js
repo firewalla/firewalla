@@ -159,7 +159,9 @@ class PortForward {
       dupMap.destIP = sysManager.myIp()
       let state = await (iptable.portforwardAsync(dupMap));
       return state;
-    })()
+    })().catch((err) => {
+      log.error("Failed to add port mapping:", err, {})
+    }) 
   }
 
   // save config should follow this
