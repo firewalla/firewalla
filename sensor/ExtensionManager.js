@@ -23,6 +23,8 @@ class ExtensionManager {
     if(!instance) {
       this.extensions = {}
       this.hooks = {}
+      this.onGets = {}
+      this.onSets = {}
       instance = this
     }
     return instance
@@ -43,6 +45,38 @@ class ExtensionManager {
 
   getHook(extName, hookName) {
     return this.hooks[extName][hookName].bind(this.extensions[extName])
+  }
+
+  hasGet(key) {
+    return this.onGets[key] != null
+  }
+
+  hasSet(key) {
+    return this.onSets[key] != null
+  }
+
+  onGet(key, callback) {
+    this.onGets[key] = callback
+  }
+
+  onSet(key, callback) {
+    this.onSets[key] = callback
+  }
+
+  get(key, msg) {
+    if(this.hasGet(key)) {
+      return this.onGets[key](msg)
+    }
+
+    return undefined
+  }
+
+  set(key, msg, data) {
+    if(this.hasSet(key)){
+      return this.onSets[key](msg, data)
+    }
+
+    return undefined
   }
   
 }
