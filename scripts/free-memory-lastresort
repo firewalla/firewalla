@@ -10,6 +10,7 @@ logger "FIREWALLA: LAST RESPORT"
 date
 redis-cli publish "OldDataCleanSensor" "Start"
 sleep 2
+sudo echo 3 > /proc/sys/vm/drop_caches
 /home/pi/firewalla/scripts/free-memory-process
 
 function get_free_mem() {
