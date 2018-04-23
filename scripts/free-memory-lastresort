@@ -34,6 +34,8 @@ get_free_mem
 
 echo $mem
 
+redis-cli KEYS "intel:ip:*" | xargs redis-cli DEL
+
 sudo service firemon restart
 echo "Restarted FireMon"
 sleep 2
