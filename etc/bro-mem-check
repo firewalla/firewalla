@@ -19,13 +19,13 @@ else
 fi
 
 #(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= 511 )) && /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Memeory Critical Simulation "+$mem
+(( mem <= 511 )) && /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Memeory Critical Simulation "+$mem+","+$swapmem+","+$realmem
 (( mem <= 30 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Memory reboot"+$mem
 (( mem <= 30 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 30 )) && free -m 2>&1 >> /home/pi/.forever/top_before_reboot.log
 (( mem <= 30 )) && echo $mem >> /home/pi/.forever/top_before_reboot.log
-(( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
-(( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
+#(( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
+#(( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
 
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Disk Delete "+$disk
