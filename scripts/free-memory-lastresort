@@ -7,11 +7,16 @@ if [[ -e "/tmp/fire-last-resort" ]]; then
 fi
 touch /tmp/fire-last-resort
 logger "FIREWALLA: LAST RESPORT"
+date >> /home/pi/.forever/top_before_reboot.log
+top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
+
 date
 redis-cli publish "OldDataCleanSensor" "Start"
 sleep 2
-sudo echo 3 > /proc/sys/vm/drop_caches
+sudo sh -c  'echo 3 > /proc/sys/vm/drop_caches'
+
 /home/pi/firewalla/scripts/free-memory-process
+
 
 function get_free_mem() {
     swapmem=$(free -m | awk '/Swap:/{print $4}')
@@ -30,7 +35,10 @@ function get_free_mem() {
 get_free_mem
 
 (( mem > 45 )) && logger "FIREWALLA: memory problems resolved $mem"
-(( mem > 45 )) && (sleep 10 ; rm -f /tmp/fire-last-resort; exit 1)
+(( mem > 45 )) && sleep 10 ; rm -f /tmp/fire-last-resort; exit 1
+
+date >> /home/pi/.forever/top_before_reboot.log
+top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
 
 echo $mem
 
