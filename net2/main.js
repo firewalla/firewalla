@@ -300,7 +300,7 @@ function run() {
 
   setInterval(()=>{
     let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
-    if (memoryUsage>=110) {
+    if (memoryUsage>=100) {
         try {
           if (global.gc) {
             global.gc();

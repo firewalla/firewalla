@@ -9,6 +9,7 @@ touch /tmp/fire-last-resort
 logger "FIREWALLA: LAST RESPORT"
 date >> /home/pi/.forever/top_before_reboot.log
 top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
+ps -eLf >> /home/pi/.forever/top_before_reboot.log
 
 date
 redis-cli publish "OldDataCleanSensor" "Start"
@@ -39,6 +40,7 @@ get_free_mem
 
 date >> /home/pi/.forever/top_before_reboot.log
 top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
+ps -eLf >> /home/pi/.forever/top_before_reboot.log
 
 echo $mem
 
