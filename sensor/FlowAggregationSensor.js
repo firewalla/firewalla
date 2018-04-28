@@ -22,12 +22,9 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Sensor = require('./Sensor.js').Sensor;
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -127,6 +124,12 @@ class FlowAggregationSensor extends Sensor {
           appInfos.push(intel[x])
 
         appInfos.forEach((app) => {
+
+          // no need to group traffic for these two types in particular, FIXME
+          if(app === "technology" || app === "search-portal") {
+            return
+          }
+
           let t = traffic[app];
 
           if(typeof t === 'undefined') {
@@ -196,6 +199,7 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
+        log.info("FlowAggrSensor on mac", mac, {})
         await (this.aggr(mac, ts));
         await (this.aggr(mac, ts + this.config.interval));
         await (this.aggrActivity(mac, ts));
@@ -449,6 +453,12 @@ class FlowAggregationSensor extends Sensor {
   recordCategory(mac, traffic) {
     return async(() => {
       for(let category in traffic) {
+
+        // FIXME
+        // ignore technology and search-portal for better performanced
+        if(category === "technology" || category === "search-portal") {
+          continue
+        }
         let object = traffic[category]
         await (categoryFlowTool.addCategoryFlowObject(mac, category, object))
       }
@@ -561,15 +571,15 @@ class FlowAggregationSensor extends Sensor {
       if(Object.keys(allFlows).length > 0) {
         flowUtil.hashIntelFlows(allFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))
-        
+        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))        
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-
         await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options))
       } else {
         await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
-    })()
+    })().catch((err) => {
+      log.error(`Failed to clean app activity: `, err, {})
+    })
   }
 
   getCategoryFlow(category, options) {
@@ -654,7 +664,9 @@ class FlowAggregationSensor extends Sensor {
       } else {
         await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
-    })()
+    })().catch((err) => {
+      log.error(`Failed to clean category activity: `, err, {})
+    })
   }
 
 }

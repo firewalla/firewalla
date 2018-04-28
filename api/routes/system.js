@@ -43,6 +43,8 @@ let flowTool = require('../../net2/FlowTool')();
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const jsonfile = require('jsonfile')
+
 
 /* system api */
 router.get('/info',
@@ -89,6 +91,8 @@ router.get('/status',
 
              });
            });
+
+
 
 router.get('/flow',
     function(req, res, next) {
@@ -222,10 +226,10 @@ router.get('/heapdump',
         break;
       case "FireMain":
       case "FireMon":
-        let rclient = redis.createClient();
-        let sclient = redis.createClient();
+        const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
+        const pclient = require('../../util/redis_manager.js').getPublishClient()
 
-        rclient.on("message", (channel, message) => {
+        sclient.on("message", (channel, message) => {
           if(channel === "heapdump_done" && message ) {
             try {
               let msg = JSON.parse(message);
@@ -239,8 +243,8 @@ router.get('/heapdump',
             }
           }
         });
-        rclient.subscribe("heapdump_done");
-        sclient.publish("heapdump", JSON.stringify({
+        sclient.subscribe("heapdump_done");
+        pclient.publish("heapdump", JSON.stringify({
           title: process,
           file: file
         }));

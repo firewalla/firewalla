@@ -15,8 +15,7 @@
 
 'use strict'
 
-const redis = require('redis')
-const rclient = redis.createClient()
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const program = require('commander');
 

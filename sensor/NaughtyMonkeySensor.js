@@ -42,8 +42,7 @@ class NaughtyMonkeySensor extends Sensor {
       if(fc.isFeatureOn("naughty_monkey")) {
         await (this.delay(this.getRandomTime()))
 
-        // do stuff   
-        this.malware()
+        this.release()
       }
     })()
   }
@@ -62,15 +61,35 @@ class NaughtyMonkeySensor extends Sensor {
     }
   }
 
+  randomFindTarget() {
+    const list = ["204.85.191.30",
+      "46.235.227.70",
+      "193.107.85.56",
+      "5.79.68.161",
+      "204.8.156.142",
+      "37.48.120.196",
+      "37.187.7.74",
+      "162.247.72.199"]
+
+    return list[Math.floor(Math.random() * list.length)]
+
+  }
+
+  release() {
+    // do stuff   
+    this.malware()
+  }
+
   malware() {
     const host = this.randomFindDevice()
+    const remote = this.randomFindTarget()
 
     // node malware_simulator.js --src 176.10.107.180  --dst 192.168.2.166 --duration 1000 --length 100000
 
     if(host && host.ipv4Addr) {
       const ip = host.ipv4Addr
 
-      const cmd = `node malware_simulator.js --src 176.10.107.180  --dst ${ip} --duration 1000 --length 100000`
+      const cmd = `node malware_simulator.js --src ${remote}  --dst ${ip} --duration 1000 --length 100000`
       log.info("Release a monkey:", cmd)
       return exec(cmd, {
         cwd: f.getFirewallaHome() + "/testLegacy/"
@@ -86,8 +105,14 @@ class NaughtyMonkeySensor extends Sensor {
 
     // if(!f.isDevelopmentVersion()) {
     //   return // do nothing if non dev version
-    // }
+    // }    
     this.job()
+
+    sem.on('ReleaseMonkey', (event) => {
+      if(fc.isFeatureOn("naughty_monkey")) {
+        this.release()
+      }
+    })
 
     setInterval(() => {
       this.job()

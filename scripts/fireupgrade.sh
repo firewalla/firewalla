@@ -94,9 +94,19 @@ then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
 fi
 
+function sync_time() {
+    time_website=$1
+    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
+    if [[ "x$time" == "x" ]]; then
+        return 1
+    else
+        sudo date -s "$time"
+    fi    
+}
 
 if [[ ! -f /.dockerenv ]]; then
     logger "FIREWALLA.UPGRADE.DATE.SYNC"
+    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
     sudo systemctl stop ntp
     sudo ntpdate -b -u -s time.nist.gov
     sudo timeout 30 ntpd -gq
@@ -128,6 +138,7 @@ echo $branch > /tmp/REPO_BRANCH
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
   exit 0
 fi
 

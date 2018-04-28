@@ -31,8 +31,7 @@ const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
 
-let r = require('redis');
-let rclient = r.createClient();
+const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 let f = require('../../net2/Firewalla.js');
 const fc = require('../../net2/config.js')
@@ -197,7 +196,7 @@ function start(callback) {
                   if(err) {
                     stop(); // stop everything if anything wrong.
                   } else {
-                    if(!statusCheckTimer && fc.isFeatureOn("ss_client:statusCheck")) {
+                    if(!statusCheckTimer) {
                       statusCheckTimer = setInterval(() => {
                         statusCheck()
                       }, 1000 * 60) // check status every minute
@@ -306,7 +305,7 @@ function _stopDNSForwarder(callback) {
 
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {
-      log.error("Failed to kill dns forwarder:", err, {})
+      log.debug("Failed to kill dns forwarder:", err, {})
     } else {
       log.info("DNS Forwarder killed")
     }

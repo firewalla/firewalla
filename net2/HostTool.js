@@ -16,18 +16,18 @@
 
 let log = require('./logger.js')(__filename);
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
-let SysManager = require('./SysManager.js');
-let sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
+
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
 let instance = null;
 
@@ -35,6 +35,9 @@ let maxV6Addr = 8;
 
 var _async = require('async');
 
+const iptool = require('ip');
+
+const getPreferredBName = require('../util/util.js').getPreferredBName
 
 class HostTool {
   constructor() {
@@ -208,9 +211,25 @@ class HostTool {
 
   getMacByIP(ip) {
     return async(() => {
-      let host = await (this.getIPv4Entry(ip));
-      return host && host.mac;
+      let host = null
+
+      if (iptool.isV4Format(ip)) {
+        host = await (this.getIPv4Entry(ip))        
+      } else if(iptool.isV6Format(ip)) {
+        host = await (this.getIPv6Entry(ip))
+      } else {
+        return null
+      }
+
+      return host && host.mac
     })();
+  }
+
+  getMacEntryByIP(ip) {
+    return async(() => {
+      const mac = await (this.getMacByIP(ip))
+      return this.getMACEntry(mac)
+    })()
   }
 
   getAllMACs() {
@@ -458,6 +477,43 @@ class HostTool {
   isMacAddress(mac) {
     const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
     return macAddressPattern.test(mac)
+  }
+
+  getName(ip) {
+    return async(() => {
+      if(sysManager.isLocalIP(ip)) {
+        const macEntry = await (this.getMacEntryByIP(ip))
+        return getPreferredBName(macEntry)
+      } else {
+        const intelEntry = await (intelTool.getIntel(ip))
+        return intelEntry && intelEntry.host
+      }
+    })()
+  }
+
+  filterOldDevices(hostList) {
+    const validHosts = hostList.filter(host => host.mac != null)
+    const activeHosts = {}
+    for (const index in validHosts) {
+      const host = validHosts[index]
+      const ip = host.ipv4Addr
+      if(!ip) {
+        continue
+      }
+
+      if(!activeHosts[ip]) {
+        activeHosts[ip] = host
+      } else {
+        const existingHost = activeHosts[ip]
+
+        // new one is newer
+        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+          activeHosts[ip] = host
+        }
+      }      
+    }
+
+    return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
   }
 }
 

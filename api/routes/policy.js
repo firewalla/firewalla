@@ -25,6 +25,10 @@ let pm2 = new PM2();
 let AM2 = require('../../alarm/AlarmManager2');
 let am2 = new AM2();
 
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
 router.get('/list', (req, res, next) => {
   pm2.loadActivePolicys((err, list) => {
     if(err) {
@@ -128,5 +132,31 @@ router.delete('/:policy',
                   res.status(400).send('Failed to delete policy: ' + err);
                 });
             });
+
+router.post('/:policy/enable',
+  (req, res, next) => {
+    let id = req.params.policy;
+
+    return async(() => {
+      let policy = await (pm2.getPolicy(id))
+      await (pm2.enablePolicy(policy))
+      res.status(200).json({status: "success"});
+    })().catch((err) => {
+      res.status(400).send('Failed to enable policy: ' + err);
+    })
+  })
+
+router.post('/:policy/disable',
+  (req, res, next) => {
+    let id = req.params.policy;
+
+    return async(() => {
+      let policy = await (pm2.getPolicy(id))
+      await (pm2.disablePolicy(policy))
+      res.status(200).json({status: "success"});
+    })().catch((err) => {
+      res.status(400).send('Failed to disable policy: ' + err);
+    })
+  })
 
 module.exports = router;

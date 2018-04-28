@@ -27,18 +27,11 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let l2 = require('../util/Layer2.js');
 
-var redis = require("redis");
-var rclient = redis.createClient();
-
-rclient.on("error", function (err) {
-    log.info("Redis(alarm) Error " + err);
-});
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
-var AlarmManager = require('./AlarmManager.js');
-var alarmManager = new AlarmManager('debug');
 
 let Alarm = require('../alarm/Alarm.js');
 let AM2 = require('../alarm/AlarmManager2.js');
@@ -140,8 +133,17 @@ module.exports = class {
 
     this.discoverInterfaces((err, list) => {
       log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces, {});
-      for (let i in this.config.discovery.networkInterfaces) {
-        let intf = this.interfaces[this.config.discovery.networkInterfaces[i]];
+      let found = null;
+      async.eachLimit(this.config.discovery.networkInterfaces, 1, (name, cb) => {
+        let intf = this.interfaces[name];
+        if (intf == null) {
+          cb();
+          return;
+        }
+        if (found) {
+          cb();
+          return;
+        }
         if (intf != null) {
           log.debug("Prepare to scan subnet", intf, {});
           if (this.nmap == null) {
@@ -153,30 +155,71 @@ module.exports = class {
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
             if(err) {
               log.error("Failed to scan: " + err);
+              cb();
               return;
             }
             
             this.hosts = [];
 
-            let found = null;
-            
             for (let i in hosts) {
               let host = hosts[i];
               if(host.mac && host.mac === mac) {
                 found = host;
-                callback(null, found);
-                break;
+                cb();
+                return;
               }
             }
-
-            if(!found) {
+            cb();
+          });
+        }
+      }, (err)=>{
+        log.info("Discovery::DiscoveryMAC:Found", found);
+        if (found) {
+          callback(null, found); 
+        } else {
+          this.getAndSaveArpTable((err,arpList,arpTable)=>{ 
+            log.info("discoverMac:miss", mac);
+            if (arpTable[mac]) {
+              log.info("discoverMac:found via ARP", arpTable[mac]);
+              callback(null, arpTable[mac]);
+            } else{
               callback(null, null);
             }
           });
         }
-      }
+      });
     });
   }   
+
+  getAndSaveArpTable(cb) {
+    let fs = require('fs');
+    try {
+      fs.readFile('/proc/net/arp', (err, data)=> {
+        let cols, i, lines;
+        let arpList = []; 
+        this.arpTable = {};
+      
+        if (err) return cb(err, arpList,this.arpTable);
+        lines = data.toString().split('\n');
+        for (i = 0; i < lines.length; i++) {
+          if (i === 0) continue;
+          cols = lines[i].replace(/ [ ]*/g, ' ').split(' ');
+          if ((cols.length > 3) && (cols[0].length !== 0) && (cols[3].length !== 0)) {
+            let now=Date.now()/1000;
+            let mac = cols[3].toUpperCase();
+            let ipv4 = cols[0];
+            let arpData = {ipv4Addr: cols[0], mac: mac, uid:ipv4, lastActiveTimestamp:now, firstFoundTimestamp:now};
+            arpList.push(arpData);
+            this.arpTable[mac] = arpData;
+          }
+        }
+        cb(null, arpList,this.arpTable);
+      });
+    } catch(e){
+      log.error("getAndArpTable Exception: ",e,null);
+      cb(null,[],{});
+    }
+  }
 
   start() {
     }
@@ -187,7 +230,6 @@ module.exports = class {
      */
     release() {
         rclient.quit();
-        alarmManager.release();
         sysManager.release();
         log.debug("Calling release function of Discovery");
     }
@@ -456,18 +498,7 @@ module.exports = class {
                   mac: data.mac,
                   macVendor: data.macVendor,
                   message: "new device event by process host"
-                });
-                
-                let d = JSON.parse(JSON.stringify(data));
-                let actionobj = {
-                  title: "New Host",
-                  actions: ["hblock","ignore"],
-                  target: data.ipv4Addr,
-                  mac: data.mac, 
-                }
-                alarmManager.alarm(data.ipv4Addr, "newhost", 'info', '0', d, actionobj, (err,alarm) => {
-                  //                                  this.publisher.publish("DiscoveryEvent", "Host:Found", "0", alarm);
-                });
+                });              
               }
             });
           } else {

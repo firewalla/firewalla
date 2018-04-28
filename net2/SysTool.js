@@ -16,12 +16,9 @@
 
 const log = require('./logger.js')(__filename);
 
-const redis = require('redis');
-const rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -42,15 +39,15 @@ class SysTool {
 
   // call main-run
   restartServices() {
-    return exec(`${firewalla.getFirewallaHome()}/scripts/main-run`)
+    return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
 
   rebootServices() {
-    return exec("sync & NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fire-reboot-normal")
+    return exec("sync & /home/pi/firewalla/scripts/fire-reboot-normal")
   }
 
   shutdownServices() {
-    return exec("sudo shutdown -h")
+    return exec("sleep 3; sudo shutdown -h now")
   }
 
   restartFireKickService() {

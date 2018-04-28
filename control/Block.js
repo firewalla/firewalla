@@ -18,11 +18,20 @@ let util = require('util');
 let cp = require('child_process');
 let path = require('path');
 let log = require("../net2/logger.js")(__filename);
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
 let iptool = require("ip");
 
 let inited = false;
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
+
+const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
+
+const exec = require('child-process-promise').exec
+
+const f = require('../net2/Firewalla.js')
 
 // =============== block @ connection level ==============
 
@@ -47,13 +56,201 @@ function setupBlockChain() {
   inited = true;
 }
 
-function block(destination) {
+function getMacSet(tag) {
+  return `c_bm_${tag}_set`
+}
+
+function getDstSet(tag) {
+  return `c_bd_${tag}_set`
+}
+
+function getDstSet6(tag) {
+  return `c_bd_${tag}_set6`
+}
+
+function setupBlockingEnv(tag) {
+  if(!tag) {
+    return Promise.resolve()
+  }
+
+  // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
+  return async(() => {
+    const macSet = getMacSet(tag)
+    const dstSet = getDstSet(tag)
+    const dstSet6 = getDstSet6(tag)
+
+    const cmdCreateMacSet = `sudo ipset create -! ${macSet} hash:mac`
+    const cmdCreateDstSet = `sudo ipset create -! ${dstSet} hash:ip family inet hashsize 128 maxelem 65536`
+    const cmdCreateDstSet6 = `sudo ipset create -! ${dstSet6} hash:ip family inet6 hashsize 128 maxelem 65536`
+    const cmdCreateOutgoingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
+    const cmdCreateIncomingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
+    const cmdCreateOutgoingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
+    const cmdCreateIncomingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
+    const cmdCreateOutgoingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
+    const cmdCreateIncomingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
+    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
+    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
+
+    await (exec(cmdCreateMacSet))
+    await (exec(cmdCreateDstSet))
+    await (exec(cmdCreateDstSet6))
+    await (exec(cmdCreateOutgoingRule))
+    await (exec(cmdCreateIncomingRule))
+    await (exec(cmdCreateOutgoingTCPRule))
+    await (exec(cmdCreateIncomingTCPRule))
+    await (exec(cmdCreateOutgoingRule6))
+    await (exec(cmdCreateIncomingRule6))
+    await (exec(cmdCreateOutgoingTCPRule6))
+    await (exec(cmdCreateIncomingTCPRule6))
+  })().catch(err => {
+    log.error('Error when setup blocking env', err);
+  })
+}
+
+function existsBlockingEnv(tag) {
+  const cmd = `sudo iptables -L FW_BLOCK | grep ${getMacSet(tag)} | wc -l`
+  return async(() => {
+    let output = await (exec(cmd))
+    if(output.stdout == 4) {
+      return true
+    } else {
+      return false
+    }
+  })().catch(err => {
+    log.error('Error when check blocking env existence', err);
+  })
+}
+
+function destroyBlockingEnv(tag) {
+  if(!tag) {
+    return Promise.resolve()
+  }
+
+  // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
+  return async(() => {
+    log.info("destroying block enviornment for", tag)
+    
+    const macSet = getMacSet(tag)
+    const dstSet = getDstSet(tag)
+    const dstSet6 = getDstSet6(tag)
+
+    const cmdDeleteOutgoingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
+    const cmdDeleteIncomingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
+    const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
+    const cmdDeleteOutgoingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
+    const cmdDeleteIncomingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
+    const cmdDeleteOutgoingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
+    const cmdDeleteMacSet = `sudo ipset destroy ${macSet}`
+    const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`
+    const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`
+
+    await (exec(cmdDeleteOutgoingRule6))
+    await (exec(cmdDeleteIncomingRule6))
+    await (exec(cmdDeleteOutgoingTCPRule6))
+    await (exec(cmdDeleteIncomingTCPRule6))
+    await (exec(cmdDeleteOutgoingRule))
+    await (exec(cmdDeleteIncomingRule))
+    await (exec(cmdDeleteOutgoingTCPRule))
+    await (exec(cmdDeleteIncomingTCPRule))
+    await (exec(cmdDeleteMacSet))
+    await (exec(cmdDeleteDstSet))
+    await (exec(cmdDeleteDstSet6))
+
+    log.info("finish destroying block enviornment for", tag)
+  })().catch(err => {
+    log.error('Error when destroy blocking env', err);
+  })
+}
+
+let ipsetQueue = [];
+let maxIpsetQueue = 158;
+let ipsetInterval = 3000;
+let ipsetTimerSet = false;
+let ipsetProcessing = false;
+
+function ipsetEnqueue(ipsetCmd) {
+  if (ipsetCmd != null) {
+    ipsetQueue.push(ipsetCmd);
+  }
+  if (ipsetProcessing == false && ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+    ipsetProcessing = true;
+    let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
+    ipsetQueue = [];
+    let child = require('child_process').spawn('sudo',['ipset', 'restore', '-!']);
+    child.stdin.setEncoding('utf-8');
+    child.on('exit',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:END", code);
+      ipsetEnqueue(null);
+    });
+    child.on('error',(code,signal)=>{
+      ipsetProcessing = false;
+      log.info("Control:Block:Processing:Error", code);
+      ipsetEnqueue(null);
+    });
+    for (let i in _ipsetQueue) {
+      log.info("Control:Block:Processing", _ipsetQueue[i]);
+      child.stdin.write(_ipsetQueue[i]+"\n");
+    }
+    child.stdin.end();
+    log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
+  } else {
+    if (ipsetTimerSet == false) {
+      setTimeout(()=>{
+        if (ipsetQueue.length>0) {
+          log.info("Control:Block:Timer", ipsetQueue.length);
+          ipsetEnqueue(null);
+        }
+        ipsetTimerSet = false;
+      },ipsetInterval);
+      ipsetTimerSet = true;
+    }
+  }
+}
+
+function block(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
-    cmd = "sudo ipset add -! blocked_ip_set " + destination;    
+    cmd = `add -! ${ipset} ${destination}`
+  } else if(iptool.isV6Format(destination)) {
+    cmd = `add -! ${ipset}6 ${destination}`
   } else {
-    cmd = "sudo ipset add -! blocked_ip_set6 " + destination;
+    // do nothing
+    return Promise.resolve()
+  }
+
+  log.info("Control:Block:Enqueue", cmd);
+  ipsetEnqueue(cmd);
+  return Promise.resolve()
+}
+
+function blockImmediate(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
+  // never block black hole ip, they are already blocked in setup scripts
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
+  let cmd = null;
+
+  if(iptool.isV4Format(destination)) {
+    cmd = `sudo ipset add -! ${ipset} ${destination}`
+  } else if(iptool.isV6Format(destination)) {
+    cmd = `sudo ipset add -! ${ipset}6 ${destination}`
+  } else {
+    // do nothing
+    return Promise.resolve()
   }
   log.info("Control:Block:",cmd);
 
@@ -64,18 +261,78 @@ function block(destination) {
         reject(err);
         return;
       }
-
+      
       resolve();
     });
   });
 }
 
-function unblock(destination) {
+function advancedBlock(tag, macAddresses, destinations) {
+  return async(() => {
+    await(setupBlockingEnv(tag))
+    
+    macAddresses.forEach((mac) => {
+      await (advancedBlockMAC(mac, getMacSet(tag)))
+    })
+    destinations.forEach((addr) => {
+      await (block(addr, getDstSet(tag)))
+    })
+  })()
+}
+
+function advancedUnblock(tag, macAddresses, destinations) {
+  return async(() => {
+    // macAddresses.forEach((mac) => {
+    //   await (advancedUnblockMAC(mac, getMacSet(tag)))
+    // })
+    // destinations.forEach((addr) => {
+    //   await (unblock(addr, getDstSet(tag)))
+    // })
+    await (destroyBlockingEnv(tag))
+  })()
+}
+
+function advancedBlockMAC(macAddress, setName) {
+  return async(() => {
+    if(macAddress && setName) {
+      const cmd = `sudo ipset add -! ${setName} ${macAddress}`
+      return exec(cmd)
+    } else {
+      return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
+    }
+  })().catch(err => {
+    log.error('Error when advancedBlockMAC', err);
+  })
+}
+
+function advancedUnblockMAC(macAddress, setName) {
+  return async(() => {
+    if(macAddress && setName) {
+      const cmd = `sudo ipset del ${setName} ${macAddress}`
+      return exec(cmd)
+    } else {
+      return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
+    }
+  })().catch(err => {
+    log.error('Error when advancedUnblockMAC', err);
+  })
+}
+
+function unblock(destination, ipset) {
+  ipset = ipset || "blocked_ip_set"
+
+  // never unblock black hole ip
+  if(f.isReservedBlockingIP(destination)) {
+    return Promise.resolve()
+  }
+  
   let cmd = null;
   if(iptool.isV4Format(destination)) {
-    cmd = "sudo ipset del -! blocked_ip_set " + destination;
+    cmd = `sudo ipset del -! ${ipset} ${destination}`
+  } else if(iptool.isV6Format(destination)) {
+    cmd = `sudo ipset del -! ${ipset}6 ${destination}`
   } else {
-    cmd = "sudo ipset del -! blocked_ip_set6 " + destination;
+    // do nothing
   }
 
   log.info("Control:UnBlock:",cmd);
@@ -83,7 +340,7 @@ function unblock(destination) {
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {
       if(err) {
-        log.error("Unable to ipset remove ",cmd);
+        log.error("Unable to ipset remove ",cmd, err, {})
         reject(err);
         return;
       }
@@ -111,7 +368,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
         if(err) {
           log.info("BLOCK:OUTGOING==> ", addCMD);
           cp.exec(addCMD, (err, stdout, stderr) => {
-            log.info(err, stdout, stderr);
+            log.debug(err, stdout, stderr);
             callback(err);        
           });
         }
@@ -119,30 +376,30 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   } else {
       let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
-        log.info(err, stdout, stderr);
+        log.debug(err, stdout, stderr);
         callback(err);        
       });
   }
 }
 
-function unblockMac(macAddress, callback) {
-  callback = callback || function() {}
+function blockMac(macAddress, ipset) {
+  ipset = ipset || "blocked_mac_set"
 
-  blockOutgoing(macAddress,null,false,false, (err)=>{
-    blockOutgoing(macAddress,null,false,true, (err)=>{
-      callback(err);
-    });
-  });  
+  let cmd = `sudo ipset add -! ${ipset} ${macAddress}`;
+  
+  log.info("Control:Block:",cmd);
+
+  return exec(cmd)
 }
 
-function blockMac(macAddress,callback) {
-  callback = callback || function() {}
+function unblockMac(macAddress, ipset) {
+  ipset = ipset || "blocked_mac_set"
 
-  blockOutgoing(macAddress,null,true,false, (err)=>{
-    blockOutgoing(macAddress,null,true,true, (err)=>{
-      callback(err);
-    });
-  });
+  let cmd = `sudo ipset del -! ${ipset} ${macAddress}`;
+  
+  log.info("Control:Block:",cmd);
+
+  return exec(cmd)
 }
 
 function blockPublicPort(localIPAddress, localPort, protocol) {
@@ -188,6 +445,13 @@ module.exports = {
   unblockMac: unblockMac,
   block: block,
   unblock: unblock,
+  advancedBlock: advancedBlock,
+  advancedUnblock: advancedUnblock,
   blockPublicPort:blockPublicPort,
-  unblockPublicPort:unblockPublicPort
+  unblockPublicPort: unblockPublicPort,
+  setupBlockingEnv: setupBlockingEnv,
+  getDstSet: getDstSet,
+  getDstSet6: getDstSet6,
+  getMacSet: getMacSet,
+  existsBlockingEnv: existsBlockingEnv
 }

@@ -22,12 +22,11 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let country = require('../extension/country/country.js');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
+const f = require("../net2/Firewalla.js")
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -59,13 +58,21 @@ class DestIPFoundHook extends Hook {
   constructor() {
     super();
 
-    this.config.intelExpireTime = 7 * 24 * 3600; // one week
+    this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
   }
 
   appendNewIP(ip) {
     log.debug("Enqueue new ip for intels", ip, {});
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
+  }
+
+  appendNewFlow(ip,fd) {
+    let flow = {
+       ip:ip,
+       fd:fd
+    };
+    return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
 
   isFirewalla(host) {
@@ -91,6 +98,7 @@ class DestIPFoundHook extends Hook {
     if(sslInfo && sslInfo.server_name) {
       intel.host = sslInfo.server_name
       intel.sslHost = sslInfo.server_name
+      intel.org = sslInfo.O
     }
 
     // app
@@ -100,7 +108,6 @@ class DestIPFoundHook extends Hook {
       let hashes = [intel.ip, intel.host].map(
         x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
       )
-
       hashes = [].concat.apply([], hashes);
 */
 
@@ -123,6 +130,18 @@ class DestIPFoundHook extends Hook {
 
       if(info.c) {
         intel.category = info.c;
+      }
+
+      if(info.action && info.action.block) {
+        intel.action = "block"
+      }
+      
+      if(info.s) {
+        intel.s = info.s;
+      }
+ 
+      if(info.t) {
+        intel.t = info.t;
       }
       //      }
     });
@@ -154,7 +173,25 @@ class DestIPFoundHook extends Hook {
   //   }
   // }
 
-  processIP(ip, options) {
+  processIP(flow, options) {
+    let ip = null;
+    let fd = 'in';
+
+    if (flow) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(flow);
+        if (parsed.fd) {
+          fd = parsed.fd;
+          ip = parsed.ip;
+        } else {
+          ip = flow;
+          fd = 'in';
+        }
+      } catch(e) {
+        ip = flow;
+      }
+    } 
     options = options || {};
 
     let skipRedisUpdate = options.skipUpdate;
@@ -170,7 +207,7 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      log.info("Found new IP " + ip + ", checking intels...");
+      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+", checking intels...");
 
       let sslInfo = await (intelTool.getSSLCertificate(ip));
       let dnsInfo = await (intelTool.getDNS(ip));
@@ -182,16 +219,10 @@ class DestIPFoundHook extends Hook {
 
       // ignore if domain contain firewalla domain
       if(domains.filter(d => this.isFirewalla(d)).length === 0) {
-        cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains));
+        cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains, fd));
       }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      if(!skipRedisUpdate) {
-        if(cloudIntelInfo.constructor.name === 'Array' && cloudIntelInfo.length > 0) {
-          await (intelTool.updateIntelKeyInDNS(ip, cloudIntelInfo[0], this.config.intelExpireTime));
-        }
-      }
-
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country
 
@@ -242,13 +273,27 @@ class DestIPFoundHook extends Hook {
     sem.on('DestIPFound', (event) => {
       let ip = event.ip;
 
+      // ignore reserved ip address
+      if(f.isReservedBlockingIP(ip)) {
+        return;
+      }
+
+      let fd = event.fd;
+      if (fd == null) {
+        fd = 'in'
+      }
+
       if(!ip)
         return;
 
       if(this.paused)
         return;
 
-      this.appendNewIP(ip);
+      if(f.isReservedBlockingIP(ip)) {
+        return; // reserved black hole and blue hole...
+      }
+      
+      this.appendNewFlow(ip,fd);
     });
 
     this.job();

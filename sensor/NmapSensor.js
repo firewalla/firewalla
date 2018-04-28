@@ -29,6 +29,8 @@ let Firewalla = require('../net2/Firewalla');
 
 let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
+const SysManager = require('../net2/SysManager.js')
+const sysManager = new SysManager('info')
 
 class NmapSensor extends Sensor {
   constructor() {
@@ -252,6 +254,17 @@ class NmapSensor extends Sensor {
   }
 
   _processHost(host) {
+    if(!host.mac) {
+      if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp()) {
+        host.mac = sysManager.myMAC()
+      } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
+        return // do nothing on secondary ip
+      } else {
+        log.error("Invalid MAC Address for host", host, {})
+        return
+      }
+    }
+    
     if(host && host.mac) {
       sem.emitEvent({
         type: "DeviceUpdate",

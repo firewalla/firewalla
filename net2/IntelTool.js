@@ -16,12 +16,9 @@
 
 let log = require('./logger.js')(__filename);
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -107,8 +104,11 @@ class IntelTool {
     return rclient.delAsync(key);
   }
 
-  checkIntelFromCloud(ipList, domainList, appList, flow) {
-    log.debug("Checking intel for", ipList, domainList, {});
+  checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
+    log.debug("Checking intel for",fd, ipList, domainList, {});
+    if (fd == null) {
+      fd = 'in';
+    }
 
     let flowList = [];
     let _ipList = [];
@@ -139,13 +139,13 @@ class IntelTool {
         _iplist:_ipList,
         _hlist:_hList,
         _alist:_aList,
-        flow:{fd:'in'}});
+        flow:{fd:fd}});
     } else {
       flowList.push({
         _iplist:_ipList,
         _hlist:_hList,
         _alist:_aList,
-        flow:{fd:'in'}});
+        flow:{fd:fd}});
     }
 
     let data = {flowlist:flowList, hashed:1};
@@ -154,10 +154,11 @@ class IntelTool {
 
     return new Promise((resolve, reject) => {
       bone.intel("*","", "check", data, (err, data) => {
-        if(err)
+        if(err) {
+          log.info("IntelCheck Result FAIL:",ipList, data, {});
           reject(err)
-        else {
-          //          log.info("IntelCheck Result:", data, {});
+        } else {
+          log.debug("IntelCheck Result:",ipList, data, {});
           resolve(data);
         }
 
@@ -180,8 +181,9 @@ class IntelTool {
         if(subject) {
           let result = this._parseX509Subject(subject);
           if(result) {
-            sslInfo.CN = result.CN;
-            sslInfo.OU = result.OU;
+            sslInfo.CN = result.CN || ""
+            sslInfo.OU = result.OU || ""
+            sslInfo.O = result.O || ""
           }
         }
 
@@ -226,6 +228,9 @@ class IntelTool {
       // let keys = await (rclient.keysAsync(key))
       // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
 //      if(keys.length > 0) {
+        if (intel && intel.ip) {
+            delete intel.ip;
+        }
         let intelJSON = JSON.stringify(intel);
         await (rclient.hsetAsync(key, "_intel", intelJSON))
         await (rclient.expireAsync(key, expireTime))
