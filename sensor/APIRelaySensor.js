@@ -35,6 +35,11 @@ const frp = new FRP()
 
 const featureName = "api_relay"
 
+const configKey = "ext.apiRelayService"
+
+const EncipherTool = require('../net2/EncipherTool.js')
+const encipherTool = new EncipherTool()
+
 class APIRelaySensor extends Sensor {
   constructor() {
     super();
@@ -76,15 +81,20 @@ class APIRelaySensor extends Sensor {
   turnOn() {
     return async(() => {
       const config = await (this.getRelayConfig())
+      config.internalPort = 8833 // api port
+      config.name =  "api-" + await (encipherTool.getGID())
+      config.protocol = "tcp"
+      
+
       const valid = this.validateConfig(config)
       if(valid) {
         const output = await (frp.createConfigFile("apiRelay", config))
         if(output) {
           const filePath = output.filePath
           const port = output.port
-          await (frp._start(configPath))
+          await (frp._start(filePath))
           if(!config.port && port) {
-            await (rclient.hsetAsync("ext.apiRelayService", "port", port))
+            await (rclient.hsetAsync(configKey, "port", port))
           }
         } else {
           return Promise.reject(new Error("Failed to create api relay config file"))
@@ -102,15 +112,23 @@ class APIRelaySensor extends Sensor {
   }
 
   validateConfig(config) {
+    // four key info
+    // 1. server name => server
+    // 2. server port => serverPort
+    // 3. token => token
     return true
   }
 
   getRelayConfig() {
-    return rclient.hgetallAsync("ext.apiRelayService")
+    return rclient.hgetallAsync(configKey)
   }
 
   setRelayConfig(data) {
-    return rclient.hmsetAsync("ext.apiRelayService", data)
+    return async(() => {
+      await(rclient.delAsync(configKey))
+      return rclient.hmsetAsync(configKey, data)  
+    })()
+    
   }
 }
 
