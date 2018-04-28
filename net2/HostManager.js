@@ -1348,7 +1348,8 @@ module.exports = class {
                     return;
                 };
 
-                this.execPolicy();
+                this.safeExecPolicy()
+                
                 /*
                 this.loadPolicy((err,data)=> {
                     log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
@@ -2115,6 +2116,26 @@ module.exports = class {
     })
   }
 
+  safeExecPolicy() {
+      // a very dirty hack, only call system policy change every 5 seconds
+      const now = new Date() / 1000
+      if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
+          // just run execPolicy, defer this one
+          this.pendingExecPolicy = true
+          setTimeout(() => {
+              if(this.pendingExecPolicy) {
+                  this.lastExecPolicyTime = new Date() / 1000
+                  this.execPolicy()
+                  this.pendingExecPolicy = false
+              }
+          }, (this.lastExecPolicyTime + 5 - now) * 1000)
+      } else {
+          this.lastExecPolicyTime = new Date() / 1000
+          this.execPolicy()
+          this.pendingExecPolicy = false
+      }
+  }
+
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started",retry);
@@ -2147,7 +2168,7 @@ module.exports = class {
         }
       this.getHostsActive = Math.floor(new Date() / 1000);
       if(this.type === "server") {
-        this.execPolicy();
+        this.safeExecPolicy()
       }
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
