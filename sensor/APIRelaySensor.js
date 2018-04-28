@@ -106,22 +106,11 @@ class APIRelaySensor extends Sensor {
   }
 
   getRelayConfig() {
-    return async(() => {
-      const content = await (rclient.hgetAsync("ext.apiRelayService"))
-      try {
-        let c = JSON.parse(content)
-        return c
-      } catch(err) {
-        return null
-      }
-    })
+    return rclient.hgetallAsync("ext.apiRelayService")
   }
 
   setRelayConfig(data) {
-    return async(() => {
-      const payload = JSON.stringify(data)
-      return await (rclient.hmsetAsync("ext.apiRelayService", payload))
-    })
+    return rclient.hmsetAsync("ext.apiRelayService", data)
   }
 }
 

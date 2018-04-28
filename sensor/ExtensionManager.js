@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename)
+const Promise = require('bluebird')
 
 let instance = null
 
@@ -68,7 +69,7 @@ class ExtensionManager {
       return this.onGets[key](msg)
     }
 
-    return undefined
+    return Promise.reject(new Error("no such key:" + key))
   }
 
   set(key, msg, data) {
@@ -76,7 +77,7 @@ class ExtensionManager {
       return this.onSets[key](msg, data)
     }
 
-    return undefined
+    return Promise.reject(new Error("no such key:" + key))
   }
   
 }

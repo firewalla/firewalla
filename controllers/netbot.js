@@ -774,7 +774,7 @@ class netBot extends ControllerBot {
 
     if(extMgr.hasSet(msg.data.item)) {
       async(() => {
-        const result = extMgr.set(msg.data.item, msg, msg.data.value)
+        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1116,7 +1116,7 @@ class netBot extends ControllerBot {
     // data.item = [app, alarms, host]
     if(extMgr.hasGet(msg.data.item)) {
       async(() => {
-        const result = extMgr.get(msg.data.item, msg)
+        const result = await (extMgr.get(msg.data.item, msg))
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
