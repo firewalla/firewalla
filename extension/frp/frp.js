@@ -87,7 +87,7 @@ module.exports = class {
       }
 
       if(config.protocol) {
-        templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.internalPort)
+        templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
       }
 
       const filePath = `${frpDirectory}/frpc.customized.${name}.ini`
