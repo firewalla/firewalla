@@ -25,14 +25,12 @@ var upgradeManager = require("./UpgradeManager.js");
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-var redis = require("redis");
-var rclient = redis.createClient();
-var sclient = redis.createClient();
-sclient.setMaxListeners(0);
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
+
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -214,7 +212,7 @@ module.exports = class {
     debugOn(callback) {
         rclient.set("system:debug", "1", (err) => {
             systemDebug = true;
-            rclient.publish("System:DebugChange", "1");
+            pclient.publish("System:DebugChange", "1");
             callback(err);
         });
     }
@@ -222,7 +220,7 @@ module.exports = class {
     debugOff(callback) {
         rclient.set("system:debug", "0", (err) => {
             systemDebug = false;
-            rclient.publish("System:DebugChange", "0");
+            pclient.publish("System:DebugChange", "0");
             callback(err);
         });
     }
@@ -268,7 +266,7 @@ module.exports = class {
       if(err) {
         log.error("Failed to set language " + language + ", err: " + err);
       }
-      rclient.publish("System:LanguageChange", language);
+      pclient.publish("System:LanguageChange", language);
       callback(err);
     });
   }
@@ -281,7 +279,7 @@ module.exports = class {
       if(err) {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
       }
-      rclient.publish("System:TimezoneChange", timezone);
+      pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
       async(() => {
@@ -410,7 +408,7 @@ module.exports = class {
   myIp2() {
     let secondInterface = this.sysinfo &&
         this.config.monitoringInterface2 &&
-        this.sysinfo[this.sysinfo.monitoringInterface2]
+        this.sysinfo[this.config.monitoringInterface2]
 
     if(secondInterface) {
       return secondInterface.ip_address

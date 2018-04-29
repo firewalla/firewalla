@@ -44,10 +44,9 @@ let instance = null;
 
 let Bone = require('./../../lib/Bone');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../../util/redis_manager.js').getRedisClient()
+
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');

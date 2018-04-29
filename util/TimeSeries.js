@@ -1,0 +1,45 @@
+
+
+/*    Copyright 2016 Firewalla LLC 
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict';
+let log = require('../net2/logger.js')(__filename);
+
+const TimeSeries = require('redis-timeseries')
+
+const rclient = require('../util/redis_manager.js').getMetricsRedisClient()
+
+const timeSeries = new TimeSeries(rclient, "timedTraffic")
+timeSeries.granularities = {
+  '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
+  '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
+  '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
+  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
+  '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) },
+  '1month'     : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
+}
+
+const boneAPITimeSeries = new TimeSeries(rclient, "boneAPIUsage")
+boneAPITimeSeries.granularities = {
+  '1minute'  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
+  '5minutes' : { ttl: boneAPITimeSeries.days(1)   , duration: boneAPITimeSeries.minutes(5) },
+  '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
+  '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
+}
+
+module.exports = {
+  getTimeSeries: function() {return timeSeries},
+  getBoneAPITimeSeries: function() {return boneAPITimeSeries}
+}

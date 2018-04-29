@@ -18,9 +18,8 @@ let log = require('../net2/logger.js')(__filename);
 
 const EventEmitter = require('events');
 
-const redis = require('redis');
-const rclient = redis.createClient();
-const sclient = redis.createClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 let instance = null;
 
@@ -36,7 +35,7 @@ class SensorEventManager extends EventEmitter {
   }
 
   subscribeEvent() {
-    rclient.on("message", (channel, message) => {
+    sclient.on("message", (channel, message) => {
       if(channel === this.getRemoteChannel(process.title)) {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
@@ -50,7 +49,7 @@ class SensorEventManager extends EventEmitter {
       }
     });
 
-    rclient.subscribe(this.getRemoteChannel(process.title));
+    sclient.subscribe(this.getRemoteChannel(process.title));
   }
 
   clearEventType(eventType) {
@@ -66,7 +65,7 @@ class SensorEventManager extends EventEmitter {
     if(event.toProcess && event.toProcess !== process.title) {
       // this event is meant to send to another process
       let channel = this.getRemoteChannel(event.toProcess);
-      sclient.publish(channel, JSON.stringify(event));
+      pclient.publish(channel, JSON.stringify(event));
       return;
     }
 
@@ -85,7 +84,7 @@ class SensorEventManager extends EventEmitter {
 
   on(event, callback) {
     // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.info("Subscribing event", event, "from",
+    log.debug("Subscribing event", event, "from",
       new Error().stack.split("\n")[2]
         .replace("     at", "")
         .replace(/.*\//, "")

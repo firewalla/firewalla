@@ -36,8 +36,7 @@ let fConfig = require('./config.js').getConfig();
 
 let Promise = require('bluebird');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let cp = require('child_process');
 
@@ -47,9 +46,6 @@ const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
 const minimatch = require('minimatch')
-// add promises to all redis functions
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 module.exports = class {
 

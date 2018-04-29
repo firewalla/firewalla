@@ -14,6 +14,8 @@
  */
 'use strict';
 process.title = 'FireMon';
+require('events').EventEmitter.prototype._maxListeners = 100;
+
 let log = require("../net2/logger.js")(__filename, "info");
 
 var bone = require("../lib/Bone.js");

@@ -20,9 +20,8 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let redis = require('redis');
-let rclient = redis.createClient();
-let sclient = redis.createClient();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
@@ -31,7 +30,6 @@ let NetworkTool = require('../net2/NetworkTool');
 let networkTool = new NetworkTool();
 
 let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
 
 class InterfaceDiscoverSensor extends Sensor {
   constructor() {

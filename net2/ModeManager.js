@@ -36,10 +36,10 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let curMode = null;
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
-Promise.promisifyAll(redis.RedisClient.prototype);
+
 
 const AUTO_REVERT_INTERVAL = 240 * 1000 // 4 minutes
 
@@ -262,7 +262,7 @@ function mode() {
 
 // listen on mode change, if anyone update mode in redis, re-apply it
 function listenOnChange() {
-  rclient.on("message", (channel, message) => {
+  sclient.on("message", (channel, message) => {
     if(channel === "Mode:Change") {
       if(curMode !== message) {
         log.info("Mode is changed to " + message);                
@@ -276,18 +276,18 @@ function listenOnChange() {
       sm.loadManualSpoofs(hostManager)
     }
   });
-  rclient.subscribe("Mode:Change");
-  rclient.subscribe("ManualSpoof:Update");
+  sclient.subscribe("Mode:Change");
+  sclient.subscribe("ManualSpoof:Update");
 }
 
 // this function can only used by non-main.js process
 // it is used to notify main.js that mode has been changed
 function publish(mode) {
-  return rclient.publishAsync("Mode:Change", mode);
+  return pclient.publishAsync("Mode:Change", mode);
 }
 
 function publishManualSpoofUpdate() {
-  return rclient.publishAsync("ManualSpoof:Update", "1")
+  return pclient.publishAsync("ManualSpoof:Update", "1")
 }
 
 function setSpoofAndPublish() {
