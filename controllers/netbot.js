@@ -1148,7 +1148,7 @@ class netBot extends ControllerBot {
         break;
       case "vpn":
       case "vpnreset":
-        let regenerate = true;
+        let regenerate = false
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
