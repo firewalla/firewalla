@@ -60,13 +60,13 @@ module.exports = class {
     const port = config.port || this.getRandomPort(config.portBase, config.portLength)
 
     return async(() => {
-      const templateData = await (readFile(genericTemplate, 'utf8'))
+      let templateData = await (readFile(genericTemplate, 'utf8'))
 
       if(config.name) {
         templateData = templateData.replace(/FRP_SERVICE_NAME/g, config.name)
       }
 
-      if(config.port) {
+      if(port) {
         templateData = templateData.replace(/FRP_SERVICE_PORT/g, port)
       }
 
@@ -75,7 +75,7 @@ module.exports = class {
       }
 
       if(config.server) {
-        templateData = templateData.replace(/FRP_SERVER/g, config.server)
+        templateData = templateData.replace(/FRP_SERVER_ADDR/g, config.server)
       }
 
       if(config.serverPort) {
@@ -84,6 +84,10 @@ module.exports = class {
 
       if(config.internalPort) {
         templateData = templateData.replace(/FRP_SERVICE_INTERNAL_PORT/g, config.internalPort)
+      }
+
+      if(config.protocol) {
+        templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
       }
 
       const filePath = `${frpDirectory}/frpc.customized.${name}.ini`
