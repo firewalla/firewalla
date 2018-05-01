@@ -26,9 +26,6 @@ let jsonfile = require('jsonfile');
 const p = require('child_process');
 const _async = require('async');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const exec = require('child-process-promise').exec
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
@@ -482,50 +479,46 @@ function getChinaDNS() {
   return chinaDNSAddress + "#" + chinaDNSPort;
 }
 
-function statusCheck() {
-  return async(() => {
-    let checkResult = await (verifyDNSConnectivity()) ||
-      await (verifyDNSConnectivity()) ||
-      await (verifyDNSConnectivity())
-            
-    if(!checkResult) {
-      let psResult = await (exec("ps aux | grep ss"))
-      let stdout = psResult.stdout
-      log.info("ss client running status: \n", stdout, {})
+async function statusCheck() {
+  let checkResult = await verifyDNSConnectivity() ||
+    await verifyDNSConnectivity() ||
+    await verifyDNSConnectivity()
 
-      // restart this service, something is wrong
-      start((err) => {
-        if(err) {
-          log.error("Failed to restart ss_client:", err, {})
-        }
-      })
-    }
-  })()
+  if(!checkResult) {
+    let psResult = await exec("ps aux | grep ss")
+    let stdout = psResult.stdout
+    log.info("ss client running status: \n", stdout, {})
+
+    // restart this service, something is wrong
+    start((err) => {
+      if(err) {
+        log.error("Failed to restart ss_client:", err, {})
+      }
+    })
+  }
 }
 
-function verifyDNSConnectivity() {
+async function verifyDNSConnectivity() {
   let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
   log.info("Verifying DNS connectivity...")
-  
-  return async(() => {
-    try {
-      let result = await (exec(cmd))
-      if(result.stdout === "") {
-        log.error("Got empty dns result when verifying dns connectivity:", {})
-        return false
-      } else if(result.stderr !== "") {
-        log.error("Got error output when verifying dns connectivity:", result.stderr, {})
-        return false
-      } else {
-        log.info("DNS connectivity looks good")
-        return true
-      }
-    } catch(err) {
-      log.error("Got error when verifying dns connectivity:", err, {})
+
+  try {
+    let result = await exec(cmd)
+    if(result.stdout === "") {
+      log.error("Got empty dns result when verifying dns connectivity:", {})
       return false
+    } else if(result.stderr !== "") {
+      log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+      return false
+    } else {
+      log.info("DNS connectivity looks good")
+      return true
     }
-  })()
-  
+  } catch(err) {
+    log.error("Got error when verifying dns connectivity:", err, {})
+    return false
+  }
+
 }
 
 module.exports = {
