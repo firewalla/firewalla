@@ -287,18 +287,21 @@ async function selectConfig() {
   }
 
   // multiple server configurations
-  if(config.constructor.name === 'Array') {
+  if(config.servers && config.servers.constructor.name === 'Array') {
+    const servers = config.servers
+    
     if(selectedConfig == null) {
-      const len = config.length
+      const len = servers.length
       const selectIndex = Math.floor(Math.random() * len)
-      selectedConfig = config[selectIndex]
-      return config[selectIndex]
+      selectedConfig = servers[selectIndex]
+      return servers[selectIndex]
     } else {
-      const filteredList = config.filter((x) => x.server !== selectedConfig.server)
-      const len = filteredList.length
+      // do not select the current selected server
+      const filteredServers = servers.filter((x) => x.server !== selectedConfig.server)
+      const len = filteredServers.length
       const selectIndex = Math.floor(Math.random() * len)
-      selectedConfig = filteredList[selectIndex]
-      return filteredList[selectIndex]
+      selectedConfig = filteredServers[selectIndex]
+      return filteredServers[selectIndex]
     }
   } else {
     selectedConfig = config
@@ -628,5 +631,6 @@ module.exports = {
   configExists:configExists,
   getChinaDNS:getChinaDNS,
   loadConfig:loadConfig,
-  clearConfig:clearConfig
+  clearConfig:clearConfig,
+  selectedConfig: selectedConfig
 };
