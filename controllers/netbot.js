@@ -677,10 +677,61 @@ class netBot extends ControllerBot {
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
              break;
+         case "SS:DOWN":
+           if (msg) {
+             let notifyMsg = {
+               title: `Shadowsocks server ${msg} is down`,
+               body: ""
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data);
+           }
+           break;
+         case "SS:FAILOVER":
+           if (msg) {
+             let json = null
+             try {
+               json = JSON.parse(msg)
+               const oldServer = json.oldServer
+               const newServer = json.newServer
+               
+               if(oldServer && newServer) {
+                 let notifyMsg = {
+                   title: "Shadowsocks Failover",
+                   body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
+                 }
+                 let data = {
+                   gid: this.primarygid,
+                 };
+                 this.tx2(this.primarygid, "", notifyMsg, data)
+               }
+               
+             } catch(err) {
+               log.error("Failed to parse SS:FAILOVER payload:", err)
+             }
+           }
+           break;
+         case "SS:START:FAILED":
+           if (msg) {
+             let notifyMsg = {
+               title: "SciSurf service is down!",
+               body: `Failed to start scisurf service with ss server ${msg}.`
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data)
+           }
+           break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
+    sclient.subscribe("SS:DOWN")
+    sclient.subscribe("SS:FAILOVER")
+    sclient.subscribe("SS:START:FAILED")
 
 
   }
@@ -1148,7 +1199,7 @@ class netBot extends ControllerBot {
         break;
       case "vpn":
       case "vpnreset":
-        let regenerate = true;
+        let regenerate = false
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
