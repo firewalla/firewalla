@@ -416,27 +416,29 @@ module.exports = class {
       if (config.config) {
         ss_client.setConfig(config.config);
       }
+      
+      (async () => {
+        await ss_client.startAsync()
 
-      ss_client.start((err) => {
-        if (err) {
-          log.error("Failed to enable SciSurf feature: " + err);
-        } else {
-          log.info("SciSurf feature is enabled successfully");
-          log.info("chinadns:", ss_client.getChinaDNS());
-          dnsmasq.setUpstreamDNS(ss_client.getChinaDNS()).then(() => {
-            log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
-          });
-        }
-      });
+        log.info("SciSurf feature is enabled successfully");
+        log.info("chinadns:", ss_client.getChinaDNS());
+        
+        await dnsmasq.setUpstreamDNS(ss_client.getChinaDNS())
+        log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
+      })().catch((err) => {
+        log.error("Failed to start scisurf feature:", err, {})
+      })
+
     } else {
-      ss_client.stop((err) => {
-        if (err) {
-          log.error("Failed to disable SciSurf feature: " + err);
-        } else {
-          log.info("SciSurf feature is disabled successfully");
-        }
+      
+      (async () => {
+        await ss_client.stopAsync()
+        log.info("SciSurf feature is disabled successfully");
         dnsmasq.setUpstreamDNS(null);
-      });
+      })().catch((err) => {
+        log.error("Failed to disable SciSurf feature: " + err);
+      })
+      
     }
   }
 

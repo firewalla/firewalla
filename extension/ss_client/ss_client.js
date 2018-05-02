@@ -30,6 +30,8 @@ const exec = require('child-process-promise').exec
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
+const Promise = require('bluebird')
+
 let f = require('../../net2/Firewalla.js');
 const fc = require('../../net2/config.js')
 let fHome = f.getFirewallaHome();
@@ -130,6 +132,26 @@ function clearConfig(callback) {
  * 5. setup chinadns
  * 6. setup iptables
  */
+
+async function startAsync() {
+  const config = await selectConfig()
+  
+  log.info("Starting with ss config:", config.server, {})
+  
+  await stopAsync
+  
+  try {
+    await _installAsync
+    await _enableIpsetAsync
+    await _startDNSForwarderAsync
+    await _startRedirectionAsync
+    await _enableChinaDNSAsync
+    await _enableIptablesRuleAsync
+  } catch(err) {
+    log.error("Got error when starting ss:", err, {})
+    await stopAsync
+  }
+}
 
 function start(callback) {
   callback = callback || function() {}
@@ -239,11 +261,15 @@ function stop(callback) {
                         });
 }
 
+const stopAsync = Promise.promisify(stop)
+
 function _install(callback) {
   callback = callback || function() {}
 
   p.exec("bash -c 'sudo which ipset &>/dev/null || sudo apt-get install -y ipset'", callback);
 }
+
+const _installAsync = Promise.promisify(_install)
 
 function uninstall(callback) {
   // TODO
@@ -260,9 +286,16 @@ async function selectConfig() {
   // multiple server configurations
   if(config.constructor.name === 'Array') {
     if(selectedConfig == null) {
-
+      const len = config.length
+      const selectIndex = Math.floor(Math.random() * len)
+      selectedConfig = config[selectIndex]
+      return config[selectIndex]
     } else {
-
+      const filteredList = config.filter((x) => x.server !== selectedConfig.server)
+      const len = filteredList.length
+      const selectIndex = Math.floor(Math.random() * len)
+      selectedConfig = filteredList[selectIndex]
+      return filteredList[selectIndex]
     }
   } else {
     selectedConfig = config
@@ -318,6 +351,9 @@ function _startDNSForwarder(callback) {
   callback(null)  
 }
 
+const _startDNSForwarderAsync = Promise.promisify(_startDNSForwarder)
+
+
 function _stopDNSForwarder(callback) {
   callback = callback || function() {}
 
@@ -332,6 +368,8 @@ function _stopDNSForwarder(callback) {
     callback(err)
   })
 }
+
+const _stopDNSForwarderAsync = Promise.promisify(_stopDNSForwarder)
 
 function _startRedirection(callback) {
   callback = callback || function() {}
@@ -355,6 +393,9 @@ function _startRedirection(callback) {
   });
 }
 
+const _startRedirectionAsync = Promise.promisify(_startRedirection)
+
+
 function _stopRedirection(callback) {
   callback = callback || function() {}
 
@@ -369,6 +410,9 @@ function _stopRedirection(callback) {
   });
   callback(null);
 }
+
+const _stopRedirectionAsync = Promise.promisify(_stopRedirection)
+
 
 function _enableIpset(callback) {
   callback = callback || function() {}
@@ -385,6 +429,9 @@ function _enableIpset(callback) {
   });
 }
 
+const _enableIpsetAsync = Promise.promisify(_enableIpset)
+
+
 function _disableIpset(callback) {
   callback = callback || function() {}
 
@@ -399,6 +446,9 @@ function _disableIpset(callback) {
     callback(null);
   });
 }
+
+const _disableIpsetAsync = Promise.promisify(_disableIpset)
+
 
 function _enableIptablesRule(callback) {
   callback = callback || function() {}
@@ -421,6 +471,9 @@ function _enableIptablesRule(callback) {
   });
 }
 
+const _enableIptablesRuleAsync = Promise.promisify(_enableIptablesRule)
+
+
 function _disableIptablesRule(callback) {
   callback = callback || function() {}
 
@@ -436,6 +489,9 @@ function _disableIptablesRule(callback) {
     callback(null);
   });
 }
+
+const _disableIptablesRuleAsync = Promise.promisify(_disableIptablesRule)
+
 
 function _enableChinaDNS(callback) {
   callback = callback || function() {}
@@ -466,6 +522,9 @@ function _enableChinaDNS(callback) {
   callback(null);
 }
 
+const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
+
+
 function _disableChinaDNS(callback) {
   callback = callback || function() {}
 
@@ -480,6 +539,8 @@ function _disableChinaDNS(callback) {
     callback(null);
   });
 }
+
+const _disableChinaDNSAsync = Promise.promisify(_disableChinaDNS)
 
 function isStarted() {
   return started;
@@ -546,7 +607,9 @@ async function verifyDNSConnectivity() {
 
 module.exports = {
   start:start,
+  startAsync: startAsync,
   stop:stop,
+  stopAsync: stopAsync,
   saveConfig:saveConfig,
   isStarted:isStarted,
   configExists:configExists,
