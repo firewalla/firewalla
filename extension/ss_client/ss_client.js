@@ -74,6 +74,8 @@ const localDNSForwarderPort = 8857
 const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
 
+let selectedConfig = null
+
 
 let statusCheckTimer = null
 
@@ -245,6 +247,27 @@ function _install(callback) {
 
 function uninstall(callback) {
   // TODO
+}
+
+// random select one server config if multiple configurations exist
+async function selectConfig() {
+  const configString = await rclient.getAsync(ssConfigKey)
+  const config = JSON.parse(configString)
+  if(!config) {
+    return null
+  }
+
+  // multiple server configurations
+  if(config.constructor.name === 'Array') {
+    if(selectedConfig == null) {
+
+    } else {
+
+    }
+  } else {
+    selectedConfig = config
+    return selectedConfig
+  }
 }
 
 function saveConfigToFile() {
