@@ -677,11 +677,23 @@ class netBot extends ControllerBot {
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
              break;
+         case "SS:DOWN":
+           if (msg) {
+             let notifyMsg = {
+               title: `Shadowsocks server ${msg} is down`,
+               body: ""
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data);
+           }
+           break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
-
+    sclient.subscribe("SS:DOWN")
 
   }
 

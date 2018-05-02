@@ -29,6 +29,7 @@ const _async = require('async');
 const exec = require('child-process-promise').exec
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const pclient = require('../../util/redis_manager.js').getPublishClient()
 
 const Promise = require('bluebird')
 
@@ -596,12 +597,13 @@ async function statusCheck() {
     let stdout = psResult.stdout
     log.info("ss client running status: \n", stdout)
 
-    // restart this service, something is wrong
-    start((err) => {
-      if(err) {
-        log.error("Failed to restart ss_client:", err)
-      }
-    })
+    await pclient.publishAsync("SS:DOWN", selectedConfig.server)
+
+    try {
+      await startAsync()  
+    } catch(err) {
+      log.error("Failed to restart ss_client:", err)
+    }
   }
 }
 
