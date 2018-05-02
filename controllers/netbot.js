@@ -689,6 +689,40 @@ class netBot extends ControllerBot {
              this.tx2(this.primarygid, "", notifyMsg, data);
            }
            break;
+         case "SS:FAILOVER":
+           if (msg) {
+             let json = null
+             try {
+               json = JSON.parse(msg)
+               const oldServer = json.oldServer
+               const newSserver = json.newServer
+               
+               if(oldServer && newSserver) {
+                 let notifyMsg = {
+                   title: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`,
+                   body: ""
+                 }
+                 let data = {
+                   gid: this.primarygid,
+                 };
+                 this.tx2(this.primarygid, "", notifyMsg, data)
+               }
+               
+             }
+           }
+           break;
+         case "SS:START:FAILED":
+           if (msg) {
+             let notifyMsg = {
+               title: `Failed to start scisurf service with ss server ${msg}.`,
+               body: ""
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data)
+           }
+           break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");

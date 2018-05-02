@@ -80,7 +80,7 @@ const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
 
 let selectedConfig = null
-
+let oldSelectedConfig = null
 
 let statusCheckTimer = null
 
@@ -136,7 +136,9 @@ function clearConfig(callback) {
  * 6. setup iptables
  */
 
-async function startAsync() {
+async function startAsync(options) { 
+  options = options || {}
+  
   const config = await selectConfig()
   
   log.info("Starting with ss config:", config.server)
@@ -151,8 +153,30 @@ async function startAsync() {
     await _startRedirectionAsync()
     await _enableChinaDNSAsync()
     await _enableIptablesRuleAsync()
+
+    if(!statusCheckTimer) {
+      statusCheckTimer = setInterval(() => {
+        statusCheck()
+      }, 1000 * 60) // check status every minute
+      log.info("Status check timer installed")
+    }
+    started = true;
+    
+    if(options.failover && oldSelectedConfig) {
+      await pclient.publishAsync("SS:FAILOVER", JSON.stringify({
+        newServer: selectedConfig.server,
+        oldServer: oldSelectedConfig.server
+      }))
+    }
+    
   } catch(err) {
     log.error("Got error when starting ss:", err)
+    if(options.failover) {
+      await pclient.publishAsync("SS:DOWN", config.server)
+    } else {
+      await pclient.publishAsync("SS:START:FAILED", config.server)
+    }
+
     await stopAsync()
   }
 }
@@ -294,6 +318,8 @@ async function selectConfig() {
     return null
   }
 
+  oldSelectedConfig = selectedConfig
+  
   // multiple server configurations
   if(config.servers && config.servers.constructor.name === 'Array') {
     const servers = config.servers
@@ -587,20 +613,28 @@ function getChinaDNS() {
   return chinaDNSAddress + "#" + chinaDNSPort;
 }
 
+function hasMultipleServers() {
+  return ssConfig && ssConfig.servers
+}
+
 async function statusCheck() {
-  let checkResult = await verifyDNSConnectivity() ||
-    await verifyDNSConnectivity() ||
-    await verifyDNSConnectivity()
+  let checkResult = await verifyDNSConnectivity()
+  
+  // retry if failed
+  if(!checkResult) {
+    checkResult = await verifyDNSConnectivity()
+  }
+  if(!checkResult) {
+    checkResult = await verifyDNSConnectivity()
+  }
 
   if(!checkResult) {
     let psResult = await exec("ps aux | grep ss")
     let stdout = psResult.stdout
     log.info("ss client running status: \n", stdout)
 
-    await pclient.publishAsync("SS:DOWN", selectedConfig.server)
-
     try {
-      await startAsync()  
+      await startAsync({failover: true})  
     } catch(err) {
       log.error("Failed to restart ss_client:", err)
     }
