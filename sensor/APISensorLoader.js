@@ -22,7 +22,7 @@ let sensors = [];
 let sensorsHash = {}
 
 function initSensors() {
-  let sensorConfigs = config.sensors;
+  let sensorConfigs = config.apiSensors;
 
   if(!sensorConfigs)
     return;
@@ -45,7 +45,7 @@ function run() {
   sensors.forEach((s) => {
     log.info("Installing Sensor:", s.constructor.name, {});
     try {
-      s.run()
+      s.apiRun()
     } catch(err) {
       log.error(`Failed to install sensor: ${s.constructor.name}, err: ${err}`)
     }

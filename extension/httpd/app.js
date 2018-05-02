@@ -85,7 +85,10 @@ class App {
 
   async isPorn(req, res) {
     let count = await rclient.hincrbyAsync('block:stats', 'porn', 1);
-    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({hostname: req.hostname, url: req.originalUrl, count})}`).send().end();
+    let params = qs.stringify({hostname: req.hostname, url: req.originalUrl, count});
+    let location = `/${VIEW_PATH}/block`;
+    
+    res.status(303).location(`${location}?${params}`).send().end();
     log.info(`Total porn blocked: ${count}`);
   }
 

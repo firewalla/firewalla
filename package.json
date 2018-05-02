@@ -82,6 +82,7 @@
     "usage": "^0.7.1",
     "useragent": "^2.1.9",
     "uuid": "^2.0.1",
+    "validator": "^9.4.1",
     "vorpal": "^1.7.7",
     "winston": "^1.0.1"
   }

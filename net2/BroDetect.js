@@ -1639,7 +1639,7 @@ module.exports = class {
                 this.lastNTS_upload += Number(outBytes)
 
             } else {
-                log.info("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
+                log.debug("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
 
                 timeSeries
                 .recordHit('download',this.fullLastNTS, this.lastNTS_download)

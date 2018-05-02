@@ -76,8 +76,31 @@ process.on('unhandledRejection', (reason, p)=>{
 
 let heapSensor = null;
 
-function run() {
+function gc() {
+  try {
+    if (global.gc) {
+      global.gc();
+    }
+  } catch (err) {
+  }
+}
 
+let status = {
+  dlp: {
+    running: false,
+    runBy: ''
+  },
+  detect: {
+    running: false,
+    runBy: ''
+  }
+};
+
+function setStatus(type, opts) {
+  Object.assign(type, opts);
+}
+
+function run() {
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
   
@@ -97,26 +120,90 @@ function run() {
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
-
-flowMonitor.run();
-setInterval(() => {
-    flowMonitor.run("dlp",tick);
-    try {
-      if (global.gc) {
-       global.gc();
+  
+  flowMonitor.run();
+  
+  setInterval(() => {
+    const type = 'dlp';
+    const _status = status[type];
+    setTimeout(() => {
+      if (_status.running && _status.runBy !== 'signal') {
+        log.error("DLP Timeout", status);
+        throw new Error("Monitor DLP Timeout");
+      } else {
+        log.info("Last DLP Ran Successful");
       }
-    } catch(e) {
-    }
-}, tick * 1000);
+    }, tick / 2 * 1000);
 
-setInterval(()=>{
-    flowMonitor.run("detect",60);
-    try {
-      if (global.gc) {
-       global.gc();
+    if (_status.running) {
+      log.warn('Already a dlp session running by signal trigger, skip this time', status);
+      return;
+    }
+
+    setStatus(_status, {running: true, runBy: 'scheduler'});
+    flowMonitor.run(type, tick, () => {
+      log.info('Clean up after', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
+      gc();
+    });
+  }, tick * 1000);
+
+  setInterval(() => {
+    const type = 'detect';
+    const _status = status[type];
+    setTimeout(() => {
+      if (_status.running && _status.runBy !== 'signal') {
+        log.error("Last Detection Timeout", status);
+        throw new Error("Monitor Detect Timeout");
+      } else {
+        log.info("Last Detect Ran Successful");
       }
-    } catch(e) {
-    }
-}, 60*1000);
+    }, 55 * 1000);
 
+    if (_status.running) {
+      log.warn('Already a detect session running by signal trigger, skip this time', status);
+      return;
+    }
+    
+    setStatus(_status, {running: true, runBy: 'scheduler'});
+    flowMonitor.run(type, 60, () => {
+      log.info('Clean up after', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
+      gc();
+    });
+  }, 60 * 1000);
+
+  process.on('SIGUSR1', () => {
+    log.info('Received SIGUSR1. Trigger DLP check.');
+    const type = 'dlp';
+    const _status = status[type];
+    
+    if (_status.running) {
+      log.warn("DLP check is already running, skip firing", status);
+      return;
+    }
+    setStatus(_status, {running: true, runBy: 'signal'});
+    flowMonitor.run(type, tick, () => {
+      log.info('Clean up after', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
+      gc();
+    });
+  });
+
+  process.on('SIGUSR2', () => {
+    log.info('Received SIGUSR2. Trigger Detect check.');
+    const type = 'detect';
+    const _status = status[type];
+    
+    if (_status.running) {
+      log.warn("Detect check is already running, skip firing", status);
+      return;
+    }
+    setStatus(_status, {running: true, runBy: 'signal'});
+    flowMonitor.run(type, 60, () => {
+      log.info('Clean up after', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
+      gc();
+    });
+  });
 }

@@ -5,15 +5,14 @@
 
 var express = require('express');
 var path = require('path');
-var favicon = require('serve-favicon');
 var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var argv = require('minimist')(process.argv.slice(2));
 var swagger = require("swagger-node-express");
 const passport = require('passport');
-var Strategy = require('passport-http-bearer').Strategy;
-var db = require('./db');
+//var Strategy = require('passport-http-bearer').Strategy;
+//var db = require('./db');
 
 let firewalla = require('../net2/Firewalla.js');
 let log = require('../net2/logger.js')(__filename, 'info')
@@ -37,7 +36,8 @@ var app = express();
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
+app.engine('mustache', require('mustache-express')());
+app.set('view engine', 'mustache');
 app.set('json spaces', 2);
 
 // uncomment after placing your favicon in /public

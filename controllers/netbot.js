@@ -28,8 +28,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 const URL = require("url");
-
-
+const bone = require("../lib/Bone");
 
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
@@ -107,7 +106,10 @@ let appTool = require('../net2/AppTool')();
 
 let spooferManager = require('../net2/SpooferManager.js')
 
-const extMgr = require('../sensor/ExtensionManager')
+const extMgr = require('../sensor/ExtensionManager.js')
+
+const PolicyManager = require('../net2/PolicyManager.js');
+const policyManager = new PolicyManager();
 
 class netBot extends ControllerBot {
 
@@ -675,10 +677,61 @@ class netBot extends ControllerBot {
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
              break;
+         case "SS:DOWN":
+           if (msg) {
+             let notifyMsg = {
+               title: `Shadowsocks server ${msg} is down`,
+               body: ""
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data);
+           }
+           break;
+         case "SS:FAILOVER":
+           if (msg) {
+             let json = null
+             try {
+               json = JSON.parse(msg)
+               const oldServer = json.oldServer
+               const newServer = json.newServer
+               
+               if(oldServer && newServer) {
+                 let notifyMsg = {
+                   title: "Shadowsocks Failover",
+                   body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
+                 }
+                 let data = {
+                   gid: this.primarygid,
+                 };
+                 this.tx2(this.primarygid, "", notifyMsg, data)
+               }
+               
+             } catch(err) {
+               log.error("Failed to parse SS:FAILOVER payload:", err)
+             }
+           }
+           break;
+         case "SS:START:FAILED":
+           if (msg) {
+             let notifyMsg = {
+               title: "SciSurf service is down!",
+               body: `Failed to start scisurf service with ss server ${msg}.`
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data)
+           }
+           break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
+    sclient.subscribe("SS:DOWN")
+    sclient.subscribe("SS:FAILOVER")
+    sclient.subscribe("SS:START:FAILED")
 
 
   }
@@ -770,6 +823,15 @@ class netBot extends ControllerBot {
     // invalidate cache
     this.invalidateCache();
 
+    if(extMgr.hasSet(msg.data.item)) {
+      async(() => {
+        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "policy":
@@ -1103,6 +1165,15 @@ class netBot extends ControllerBot {
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
+    if(extMgr.hasGet(msg.data.item)) {
+      async(() => {
+        const result = await (extMgr.get(msg.data.item, msg))
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "host":
@@ -1128,7 +1199,7 @@ class netBot extends ControllerBot {
         break;
       case "vpn":
       case "vpnreset":
-        let regenerate = true;
+        let regenerate = false
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
@@ -1306,16 +1377,21 @@ class netBot extends ControllerBot {
 
       let hashCache = {}
 
-
       let appFlows = flows.appDetails
 
       if(Object.keys(appFlows).length > 0) {
         flowUtil.hashIntelFlows(appFlows, hashCache)
+
+        let data;
+        try {
+          data = await(bone.flowgraphAsync('summarizeApp', appFlows))
+        } catch (err) {
+          log.error("Error when summarizing flowgraph for app", err);
+        }
         
-        let data = await (bone.flowgraphAsync('summarizeApp', appFlows))
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-        
-        flows.appDetails = unhashedData
+        if (data) {
+          flows.appDetails = flowUtil.unhashIntelFlows(data, hashCache)
+        }
       }
     })()
   }
@@ -1332,10 +1408,16 @@ class netBot extends ControllerBot {
       if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
         
-        let data = await (bone.flowgraphAsync('summarizeActivity', categoryFlows))
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        let data;
+        try {
+          data = await(bone.flowgraphAsync('summarizeActivity', categoryFlows))
+        } catch (err) {
+          log.error("Error when summarizing flowgraph for activity", err);
+        }
         
-        flows.categoryDetails = unhashedData
+        if (data) {
+          flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
+        }
       }
     })()
   }
@@ -1888,6 +1970,26 @@ class netBot extends ControllerBot {
         }
       })()
       break;
+    case "intel:finger":
+      (async () => {
+        const target = msg.data.value.target;
+        if (target) {
+          let result;
+          try {
+            result = await bone.intelFinger(target);
+          } catch (err) {
+            log.error("Error when intel finger", err, {});
+          }
+          if (result && result.whois) {
+            this.simpleTxData(msg, result, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+          }
+        } else {
+          this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
+        }
+      })();
+      break;
     case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
@@ -2174,6 +2276,18 @@ class netBot extends ControllerBot {
       })
       break
     }
+    case "dns:upstream": {
+      (async () => {
+        try {
+          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
+          this.simpleTxData(msg, {}, null, callback);
+        } catch (err) {
+          log.error("Error when set upstream dns", err, {});
+          this.simpleTxData(msg, {}, err, callback);
+        }
+      })();
+      break;
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -2441,8 +2555,6 @@ class netBot extends ControllerBot {
   }
 
 }
-
-let bone = require('../lib/Bone.js');
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
