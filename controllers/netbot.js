@@ -695,12 +695,12 @@ class netBot extends ControllerBot {
              try {
                json = JSON.parse(msg)
                const oldServer = json.oldServer
-               const newSserver = json.newServer
+               const newServer = json.newServer
                
-               if(oldServer && newSserver) {
+               if(oldServer && newServer) {
                  let notifyMsg = {
-                   title: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`,
-                   body: ""
+                   title: "Shadowsocks Failover",
+                   body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
                  }
                  let data = {
                    gid: this.primarygid,
@@ -716,8 +716,8 @@ class netBot extends ControllerBot {
          case "SS:START:FAILED":
            if (msg) {
              let notifyMsg = {
-               title: `Failed to start scisurf service with ss server ${msg}.`,
-               body: ""
+               title: "SciSurf service is down!",
+               body: `Failed to start scisurf service with ss server ${msg}.`
              }
              let data = {
                gid: this.primarygid,
