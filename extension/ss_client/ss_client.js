@@ -136,20 +136,20 @@ function clearConfig(callback) {
 async function startAsync() {
   const config = await selectConfig()
   
-  log.info("Starting with ss config:", config.server, {})
+  log.info("Starting with ss config:", config.server)
   
-  await stopAsync
+  await stopAsync()
   
   try {
-    await _installAsync
-    await _enableIpsetAsync
-    await _startDNSForwarderAsync
-    await _startRedirectionAsync
-    await _enableChinaDNSAsync
-    await _enableIptablesRuleAsync
+    await _installAsync()
+    await _enableIpsetAsync()
+    await _startDNSForwarderAsync()
+    await _startRedirectionAsync()
+    await _enableChinaDNSAsync()
+    await _enableIptablesRuleAsync()
   } catch(err) {
-    log.error("Got error when starting ss:", err, {})
-    await stopAsync
+    log.error("Got error when starting ss:", err)
+    await stopAsync()
   }
 }
 
@@ -571,12 +571,12 @@ async function statusCheck() {
   if(!checkResult) {
     let psResult = await exec("ps aux | grep ss")
     let stdout = psResult.stdout
-    log.info("ss client running status: \n", stdout, {})
+    log.info("ss client running status: \n", stdout)
 
     // restart this service, something is wrong
     start((err) => {
       if(err) {
-        log.error("Failed to restart ss_client:", err, {})
+        log.error("Failed to restart ss_client:", err)
       }
     })
   }
@@ -589,17 +589,17 @@ async function verifyDNSConnectivity() {
   try {
     let result = await exec(cmd)
     if(result.stdout === "") {
-      log.error("Got empty dns result when verifying dns connectivity:", {})
+      log.error("Got empty dns result when verifying dns connectivity")
       return false
     } else if(result.stderr !== "") {
-      log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+      log.error("Got error output when verifying dns connectivity:", result.stderr)
       return false
     } else {
       log.info("DNS connectivity looks good")
       return true
     }
   } catch(err) {
-    log.error("Got error when verifying dns connectivity:", err, {})
+    log.error("Got error when verifying dns connectivity:", err)
     return false
   }
 
