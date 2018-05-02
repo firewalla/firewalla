@@ -32,6 +32,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
 
+const jsonfileWrite = Promise.promisify(jsonfile.writeFile)
+
 let f = require('../../net2/Firewalla.js');
 const fc = require('../../net2/config.js')
 let fHome = f.getFirewallaHome();
@@ -141,6 +143,7 @@ async function startAsync() {
   await stopAsync()
   
   try {
+    await _prepareSSConfigAsync()
     await _installAsync()
     await _enableIpsetAsync()
     await _startDNSForwarderAsync()
@@ -303,12 +306,21 @@ async function selectConfig() {
   }
 }
 
+async function _prepareSSConfigAsync() {
+  if(selectedConfig) {
+    await jsonfileWrite(ssConfigPath, selectedConfig)
+  } else {
+    log.error("No ss config is selected");
+    return Promise.reject(new Error("No ss config is selected"))
+  }
+}
+
 function saveConfigToFile() {
   if(!ssConfig.server_port)
     ssConfig.server_port = ssConfig.port
   
   if(!ssConfig.method) {
-    ssConfig.method = "aes-256-cfb";
+    ssConfig.method = "chacha20-ietf-poly1305";
   }
   
   jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
@@ -322,7 +334,8 @@ function saveConfig(config, callback) {
     }
     
     ssConfig = config;
-    saveConfigToFile();
+    // ss config file will be runtime generated, since multiple servers could be available for choose
+//    saveConfigToFile();
     callback(null);
   });
 }
