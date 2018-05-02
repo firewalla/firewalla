@@ -46,7 +46,8 @@
     "autoBlock": true
   },
   "apiSensors": {
-    "APIRelaySensor": {}
+    "APIRelaySensor": {},
+    "VPNRelaySensor": {}
   },
   "sensors": {
     "DHCPSensor": {},
