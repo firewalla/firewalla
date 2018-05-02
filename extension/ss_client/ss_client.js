@@ -142,6 +142,10 @@ async function startAsync(options) {
   const config = await selectConfig()
   
   log.info("Starting with ss config:", config.server)
+
+  if(options.failover && oldSelectedConfig) {
+    log.info(`Switching ss server from ${oldSelectedConfig.server} to ${selectedConfig.server}.`)
+  }
   
   await stopAsync({supressError: true})
   

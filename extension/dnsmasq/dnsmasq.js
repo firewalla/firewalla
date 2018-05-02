@@ -995,6 +995,7 @@ module.exports = class DNSMASQ {
     log.info("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity() ||
+      await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity();
 
     if (checkResult) {

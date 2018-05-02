@@ -708,6 +708,8 @@ class netBot extends ControllerBot {
                  this.tx2(this.primarygid, "", notifyMsg, data)
                }
                
+             } catch(err) {
+               log.error("Failed to parse SS:FAILOVER payload:", err)
              }
            }
            break;
@@ -728,6 +730,9 @@ class netBot extends ControllerBot {
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
     sclient.subscribe("SS:DOWN")
+    sclient.subscribe("SS:FAILOVER")
+    sclient.subscribe("SS:START:FAILED")
+
 
   }
 
