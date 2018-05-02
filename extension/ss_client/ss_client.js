@@ -454,7 +454,7 @@ function _enableIptablesRule(callback) {
   callback = callback || function() {}
 
   let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
-                        ssConfig.server,
+                        selectedConfig.server,
                         localRedirectionPort,
                         remoteDNS,
                         remoteDNSPort,
