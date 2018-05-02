@@ -140,7 +140,7 @@ async function startAsync() {
   
   log.info("Starting with ss config:", config.server)
   
-  await stopAsync()
+  await stopAsync({supressError: true})
   
   try {
     await _prepareSSConfigAsync()
@@ -175,7 +175,7 @@ function start(callback) {
     
     // always stop before start
 
-    stop((err) => {
+    stop({supressError: true}, (err) => {
 
       // ignore stop error
       
@@ -239,7 +239,14 @@ function start(callback) {
   });
 }
 
-function stop(callback) {
+function stop(options, callback) {
+  options = options || {}
+  
+  if(typeof options === 'function') {
+    callback = options
+    options = {}
+  }
+  
   callback = callback || function() {}
 
   log.info("Stopping everything on ss_client");
@@ -256,7 +263,7 @@ function stop(callback) {
                           _stopDNSForwarder,
                           _disableIpset],
                         (err) => {
-                          if(err) {
+                          if(err && ! options.supressError ) {
                             log.error("Got error when stop: " + err);
                           }
                           started=false;
