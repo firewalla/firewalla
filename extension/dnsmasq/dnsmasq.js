@@ -736,7 +736,8 @@ module.exports = class DNSMASQ {
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
-      cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
+      if(cmdAlt) 
+        cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
     }
 
     this.writeStartScript(cmd, cmdAlt);
