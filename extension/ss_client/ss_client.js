@@ -257,7 +257,7 @@ function stop(callback) {
                             log.error("Got error when stop: " + err);
                           }
                           started=false;
-                          callback(err);
+                          callback(null); // never report error on stop
                         });
 }
 
