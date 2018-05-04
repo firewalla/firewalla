@@ -46,7 +46,8 @@
     "autoBlock": true
   },
   "apiSensors": {
-    "APIRelaySensor": {}
+    "APIRelaySensor": {},
+    "VPNRelaySensor": {}
   },
   "sensors": {
     "DHCPSensor": {},
@@ -220,7 +221,8 @@
       "porn_redirect": false,
       "redirect_httpd": false,
       "social_hour": true,
-      "api_relay": false
+      "api_relay": false,
+      "vpn_relay": false
     }
 
 }
