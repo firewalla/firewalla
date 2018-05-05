@@ -599,6 +599,8 @@ module.exports = class {
                     return;
                 }
             }
+
+            //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
             if (obj.resp_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop",obj);
@@ -615,6 +617,8 @@ module.exports = class {
                     return;
                 }
             }
+
+
             if (obj.orig_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop:Orig",obj);
@@ -648,6 +652,12 @@ module.exports = class {
                 } else {
                     log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
                 }
+            }
+
+            if ((obj.orig_bytes>obj.orig_ip_bytes || obj.resp_bytes>obj.resp_ip_bytes) && obj.proto == "tcp") {
+                log.error("Conn:Burst:Adjust1",obj);
+                obj.orig_bytes = obj.orig_ip_bytes;
+                obj.resp_bytes = obj.resp_ip_bytes;
             }
 
             /*
@@ -762,6 +772,9 @@ module.exports = class {
             // Warning for long running tcp flows, the conn structure logs the ts as the
             // first packet.  when this happens, if the flow started a while back, it
             // will get summarize here
+            //if (host == "192.168.2.164" || dst == "192.168.2.164") {
+            //    log.error("Conn:192.168.2.164:",JSON.stringify(obj),null);
+            // }
 
             let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
