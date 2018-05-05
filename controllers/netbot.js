@@ -2473,4 +2473,15 @@ process.on('uncaughtException', (err) => {
   }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
+setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    try {
+      if (global.gc) {
+        global.gc();
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+      }
+    } catch(e) {
+    }
+},1000*60*5);
+
 module.exports = netBot;

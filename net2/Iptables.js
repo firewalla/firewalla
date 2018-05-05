@@ -158,6 +158,7 @@ function iptables(rule, callback) {
         let dport = rule.dport;
         let toIP = rule.toIP;
         let toPort = rule.toPort;
+        const destIP = rule.destIP
         let action = "-A";
         if (state == false || state == null) {
             action = "-D";
@@ -166,16 +167,16 @@ function iptables(rule, callback) {
         let cmd = "iptables";
         let cmdline = "";
 
-        let getCommand = function(action, protocol, dport, toIP, toPort) {
-          return `sudo iptables -t nat ${action} PREROUTING -p ${protocol} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+        let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
+          return `sudo iptables -t nat ${action} PREROUTING -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
           case "-A":
-            cmdline += `(${getCommand("-C", protocol, dport,toIP,toPort)} || ${getCommand(action, protocol, dport, toIP, toPort)})`
+            cmdline += `(${getCommand("-C", protocol, destIP, dport,toIP,toPort)} || ${getCommand(action, protocol, destIP, dport, toIP, toPort)})`
           break;
           case "-D":
-            cmdline += `(${getCommand("-C", protocol, dport, toIP, toPort)} && ${getCommand(action, protocol, dport, toIP, toPort)})`
+            cmdline += `(${getCommand("-C", protocol, destIP, dport, toIP, toPort)} && ${getCommand(action, protocol, destIP, dport, toIP, toPort)})`
             cmdline += ` ; true` // delete always return true FIXME
           break;
         }

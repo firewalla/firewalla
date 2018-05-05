@@ -46,7 +46,7 @@ class OldDataCleanSensor extends Sensor {
 
   getExpiredDate(type) {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
-    let minInterval = 8 * 60 * 60;
+    let minInterval = 30 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
 
     return Date.now() / 1000 - expireInterval;
