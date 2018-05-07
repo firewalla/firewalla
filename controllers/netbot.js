@@ -2290,11 +2290,24 @@ class netBot extends ControllerBot {
           }
           this.simpleTxData(msg, {}, null, callback);
         } catch (err) {
-          log.error("Error when set upstream dns", err, {});
+          log.error("Error when set upstream dns", err);
           this.simpleTxData(msg, {}, err, callback);
         }
       })();
       break;
+    }
+    case "getFeatureUpstreamDns": {
+      (async () => {
+        const attributes = msg.data.value.attributes;
+        let response = {};
+        try {
+          response = await policyManager.getUpstreamDns(attributes);
+          this.simpleTxData(msg, response, null, callback);
+        } catch (err) {
+          log.error("Error when get upstream dns attributes", err);
+          this.simpleTxData(msg, {}, err, callback);
+        }
+      })();
     }
     default:
       // unsupported action
