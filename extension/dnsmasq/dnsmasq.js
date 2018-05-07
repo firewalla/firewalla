@@ -346,7 +346,7 @@ module.exports = class DNSMASQ {
   setDefaultNameServers(key, ips) {
     let _ips;
     if (Array.isArray(ips)) {
-      _ips = ips.filter(validator.isIP);
+      _ips = ips.filter(x => validator.isIP(x));
     } else {
       if (!validator.isIP(ips.toString())) {
         return;
