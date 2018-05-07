@@ -2308,6 +2308,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         }
       })();
+      break;
     }
     default:
       // unsupported action
