@@ -19,6 +19,7 @@ let log = require('../net2/logger.js')(__filename);
 let config = require('../net2/config.js').getConfig();
 
 let sensors = [];
+let sensorsHash = {}
 
 function initSensors() {
   let sensorConfigs = config.sensors;
@@ -33,6 +34,7 @@ function initSensors() {
       let ss = new s();
       ss.setConfig(sensorConfigs[sensorName]);
       sensors.push(ss);
+      sensorsHash[sensorName] = ss
     } catch(err) {
       log.error(`Failed to load sensor: ${sensorName}: ${err}`)
     }
@@ -50,7 +52,12 @@ function run() {
   });
 }
 
+function getSensor(name) {
+  return sensorsHash[name]
+}
+
 module.exports = {
   initSensors:initSensors,
-  run:run
+  run:run,
+  getSensor: getSensor
 };

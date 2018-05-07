@@ -344,7 +344,9 @@ module.exports = class {
         log.warn("Same alarm is already generated, skipped this time");
         log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
         log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
-        callback(new Error("duplicated with existing alarms"));
+        let err = new Error("duplicated with existing alarms");
+        err.code = 'ERR_DUP_ALARM';
+        callback(err);
         return;
       }
 

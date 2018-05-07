@@ -46,7 +46,7 @@ class OldDataCleanSensor extends Sensor {
 
   getExpiredDate(type) {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
-    let minInterval = 8 * 60 * 60;
+    let minInterval = 30 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
 
     return Date.now() / 1000 - expireInterval;
@@ -227,7 +227,12 @@ class OldDataCleanSensor extends Sensor {
 
   cleanDuplicatedException() {
     return async(() => {
-      const exceptions = await (em.loadExceptionsAsync())
+      let exceptions = [];
+      try {
+        exceptions = await(em.loadExceptionsAsync());
+      } catch (err) {
+        log.error("Error when loadExceptions", err);
+      }
 
       let toBeDeleted = []
 
@@ -244,7 +249,11 @@ class OldDataCleanSensor extends Sensor {
 
       for(let k in toBeDeleted) {
         let e = toBeDeleted[k]
-        await (em.deleteException(e.eid))
+        try {
+          await(em.deleteException(e.eid))
+        } catch (err) {
+          log.error("Error when delete exception", err);
+        }
       }
     })()
   }

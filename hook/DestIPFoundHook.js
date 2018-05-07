@@ -108,7 +108,6 @@ class DestIPFoundHook extends Hook {
       let hashes = [intel.ip, intel.host].map(
         x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
       )
-
       hashes = [].concat.apply([], hashes);
 */
 
@@ -135,6 +134,18 @@ class DestIPFoundHook extends Hook {
 
       if(info.action && info.action.block) {
         intel.action = "block"
+      }
+      
+      if(info.s) {
+        intel.s = info.s;
+      }
+ 
+      if(info.t) {
+        intel.t = info.t;
+      }
+
+      if(info.cc) {
+        intel.cc = info.cc;
       }
       //      }
     });
@@ -265,6 +276,12 @@ class DestIPFoundHook extends Hook {
   run() {
     sem.on('DestIPFound', (event) => {
       let ip = event.ip;
+
+      // ignore reserved ip address
+      if(f.isReservedBlockingIP(ip)) {
+        return;
+      }
+
       let fd = event.fd;
       if (fd == null) {
         fd = 'in'

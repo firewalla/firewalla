@@ -243,7 +243,8 @@ module.exports = class {
 
             this.recordCache = []
             this.recording = false
-            this.enableRecording = false
+            this.enableRecording = true
+            this.cc = 0
         }
     }
 
@@ -599,6 +600,8 @@ module.exports = class {
                     return;
                 }
             }
+
+            //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
             if (obj.resp_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop",obj);
@@ -615,6 +618,8 @@ module.exports = class {
                     return;
                 }
             }
+
+
             if (obj.orig_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop:Orig",obj);
@@ -648,6 +653,12 @@ module.exports = class {
                 } else {
                     log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
                 }
+            }
+
+            if ((obj.orig_bytes>obj.orig_ip_bytes || obj.resp_bytes>obj.resp_ip_bytes) && obj.proto == "tcp") {
+                log.error("Conn:Burst:Adjust1",obj);
+                obj.orig_bytes = obj.orig_ip_bytes;
+                obj.resp_bytes = obj.resp_ip_bytes;
             }
 
             /*
@@ -762,6 +773,9 @@ module.exports = class {
             // Warning for long running tcp flows, the conn structure logs the ts as the
             // first packet.  when this happens, if the flow started a while back, it
             // will get summarize here
+            //if (host == "192.168.2.164" || dst == "192.168.2.164") {
+            //    log.error("Conn:192.168.2.164:",JSON.stringify(obj),null);
+            // }
 
             let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
@@ -894,9 +908,12 @@ module.exports = class {
                 
             // not sure to use tmpspec.ts or now???
                 if(tmpspec.fd == 'in') {
-                    this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+                  // use now instead of the start time of this flow
+                  this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
+                  //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
                 } else {
-                    this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+                  this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
+                  //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
                 }
                     
 
@@ -1566,70 +1583,86 @@ module.exports = class {
     }
 
 
-    recordHit(data) {
-        const ts = Math.floor(data.ts)
-        const inBytes = data.inBytes
-        const outBytes = data.outBytes
+    // recordHit(data) {
+    //     const ts = Math.floor(data.ts)
+    //     const inBytes = data.inBytes
+    //     const outBytes = data.outBytes
     
-        return new Promise((resolve, reject) => {
-            timeSeries.recordHit('download',ts, Number(inBytes)).exec(() => {
-                timeSeries.recordHit('upload',ts, Number(outBytes)).exec(() => {
-                    // do nothing
-                    resolve()
-                })
-            })
-        })    
-      }
+    //     timeSeries
+    //     .recordHit('download',ts, Number(inBytes))
+    //     .recordHit('upload',ts, Number(outBytes))
+    // }
 
-      recordManyHits(datas) {
-          datas.forEach((data) => {
-            const ts = Math.floor(data.ts)
-            const inBytes = data.inBytes
-            const outBytes = data.outBytes
+    //   recordManyHits(datas) {
+    //       datas.forEach((data) => {
+    //         const ts = Math.floor(data.ts)
+    //         const inBytes = data.inBytes
+    //         const outBytes = data.outBytes
 
-            timeSeries.recordHit('download',ts, Number(inBytes))
-            timeSeries.recordHit('upload',ts, Number(outBytes))
-          })
+    //         timeSeries.recordHit('download',ts, Number(inBytes))
+    //         timeSeries.recordHit('upload',ts, Number(outBytes))
+    //       })
 
-          return new Promise((resolve, reject) => {
-            timeSeries.exec(() => {
-                resolve()
-            })
-          })
-      }
+    //       return new Promise((resolve, reject) => {
+    //         timeSeries.exec(() => {
+    //             resolve()
+    //         })
+    //       })
+    //   }
     
       enableRecordHitsTimer() {
-          this.enableRecording = true
           setInterval(() => {
-            this.recordHits()
-          }, 5 * 1000) // every 5 seconds
+            timeSeries.exec(() => {})
+            this.cc = 0
+          }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
       }
     
-      recordHits() {
-        if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-            this.recording = true
-            const copy = JSON.parse(JSON.stringify(this.recordCache))
-            this.recordCache = []
-            async(() => {
-                await(this.recordManyHits(copy))
-            })().finally(() => {
-                this.recording = false
-            })
-        } else {
-            if(this.recording) {
-                log.info("still recording......")
-            }
-        }
-      }
-    
+    //   recordHits() {
+    //     if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
+    //         this.recording = true
+    //         const copy = JSON.parse(JSON.stringify(this.recordCache))
+    //         this.recordCache = []
+    //         async(() => {
+    //             await(this.recordManyHits(copy))
+    //         })().finally(() => {
+    //             this.recording = false
+    //         })
+    //     } else {
+    //         if(this.recording) {
+    //             log.info("still recording......")
+    //         }
+    //     }
+    //   }
+
       recordTraffic(ts, inBytes, outBytes) {
           if(this.recordCache && this.enableRecording) {
-              log.debug("Recording..", ts, inBytes, outBytes, {})
-              this.recordCache.push({
-                ts: ts,
-                inBytes: inBytes,
-                outBytes: outBytes
-            })
+
+            let normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
+                                    
+            if(!this.lastNTS) {
+                this.lastNTS = normalizedTS
+                this.fullLastNTS = Math.floor(ts)
+                this.lastNTS_download = 0
+                this.lastNTS_upload = 0
+            }
+
+            if(this.lastNTS == normalizedTS) {
+                // append current status
+                this.lastNTS_download += Number(inBytes)
+                this.lastNTS_upload += Number(outBytes)
+
+            } else {
+                log.debug("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
+
+                timeSeries
+                .recordHit('download',this.fullLastNTS, this.lastNTS_download)
+                .recordHit('upload',this.fullLastNTS, this.lastNTS_upload)
+                .exec()
+                
+                this.lastNTS = null
+
+                this.recordTraffic(ts, inBytes, outBytes)
+            }           
           }
       }
 

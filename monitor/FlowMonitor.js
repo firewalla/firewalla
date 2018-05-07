@@ -62,6 +62,8 @@ let fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
 
+const validator = require('validator');
+
 function getDomain(ip) {
     if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
         let splited = ip.split(".");
@@ -150,68 +152,89 @@ module.exports = class FlowMonitor {
       }
     }
 
-    checkIntelClass(intel,_class) {
-        if (intel == null || _class == null) {
-            return false;
-        }
-
-        const intelFeatureMapping = {
-            "av": "video",
-            "games": "game",
-            "porn": "porn",
-            "intel": "cyber_security"
-        }
-
-        const featureName = intelFeatureMapping[_class]
-        if(!featureName) {
-            return false
-        }
-
-        if(!fc.isFeatureOn(featureName)) {
-          log.warn(`Feature ${featureName} is not enabled`)
-            return false
-        }
-
-        if (intel.category) {
-          if (intel.category == _class) {
-              return true;
-          }
+    isFlowIntelInClass(intel, classes) {
+      if (!intel || !classes) {
+        return false;
       }
 
-        if (intel.c) {
-            if (intel.c == _class) {
-                return true;
-            }
+      if (!Array.isArray(classes)) {
+        classes = [classes];
+      }
+
+      const intelFeatureMapping = {
+        "av": "video",
+        "games": "game",
+        "porn": "porn",
+        "intel": "cyber_security",
+        'spam': "cyber_security",
+        'phishing': "cyber_security",
+        'piracy': "cyber_security",
+        'suspicious': "cyber_security"
+      }
+
+      let enabled = classes.map(c => {
+        const featureName = intelFeatureMapping[c];
+        if (!featureName) {
+          return false;
         }
-        if (intel.cs) {
-            let cs = intel.cs;
-            if (!Array.isArray(intel.cs)) {
-                cs = JSON.parse(intel.cs);
-            }
-            if (cs.indexOf(_class)!=-1) {
-                return true;
-            }
+        if (!fc.isFeatureOn(featureName)) {
+          log.warn(`Feature ${featureName} is not enabled`);
+          return false;
         }
+        return true;
+      }).reduce((acc, cur) => acc || cur);
+
+      if (!enabled) {
         return false;
+      }
+
+      if (classes.includes(intel.category)) {
+        return true;
+      }
+
+      if (classes.includes(intel.c)) {
+        return true;
+      }
+
+      function isMatch(_classes, v) {
+        let matched;
+        try {
+          let _v = new Set(Array.isArray(v) ? v : JSON.parse(v));
+          matched = _classes.filter(x => _v.has(x)).length > 0;
+        } catch (err) {
+          log.warn("Error when match classes", _classes, "with value", v, err);
+        }
+        return matched;
+      }
+
+      if (intel.cs && isMatch(classes, intel.cs)) {
+        return true;
+      }
+
+      if (intel.cc && isMatch(classes, intel.cc)) {
+        return true;
+      }
+
+      return false;
     }
 
     flowIntel(flows) {
         for (let i in flows) {
             let flow = flows[i];
             log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
-            if (flow['intel'] && flow['intel']['category'] && flowUtil.checkFlag(flow,'l')==false) {
+            if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
               log.info("########## flowIntel",JSON.stringify(flow),{});
-              let c = flow['intel']['category'];
-              let cs = flow['intel']['cs'];
+              let c = flow.intel.category;
+              let cs = flow.intel.cs;
 
               hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
-               if (ignore == true) {
+               if (ignore) {
                    log.info("######## flowIntel:Ignored",flow);
+                   return;
                }
 
-               if (ignore == false) {
                 log.info("######## flowIntel Processing",JSON.stringify(flow));
-                if (this.checkIntelClass(flow['intel'],"av")) {
+                if (this.isFlowIntelInClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
@@ -248,9 +271,9 @@ module.exports = class FlowMonitor {
                         }).catch((err) => {
                           if(err)
                             log.error("Failed to create alarm: " + err);
-                        });;
+                        });
                     }
-                } else if (this.checkIntelClass(flow['intel'],"porn")) {
+                } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
                       (flow.rb && Number(flow.rb)>1000000) ||
                       this.flowIntelRecordFlow(flow,3)) {
@@ -296,7 +319,7 @@ module.exports = class FlowMonitor {
                           log.error("Failed to create alarm: " + err);
                       });
                     }
-                } else if (this.checkIntelClass(flow['intel'],"intel")) {
+                } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
@@ -307,17 +330,18 @@ module.exports = class FlowMonitor {
                        log.info("Intel:On:Partial:Flows", flow,{});
                     } else {
                     let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
-                  let intelobj = null;
-                    if (flow.fd == "in") {
+                    let intelobj = null;
+                    if (flow.fd === "in") {
                         intelobj = {
-                            uid: uuid.v4(),
-                            ts: flow.ts,
-                            fd: flow.fd,
-                            "id.orig_h": flow.sh,
+                          uid: uuid.v4(),
+                          ts: flow.ts,
+                          fd: flow.fd,
+                          intel: flow.intel,
+                          "id.orig_h": flow.sh,
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
                           "id.resp_p": flow.dp,
-                            "seen.indicator_type":"Intel::DOMAIN",
+                          "seen.indicator_type": "Intel::DOMAIN",
                         };
                         if (flow.intel && flow.intel.action ) {
                             intelobj.action = flow.intel.action;
@@ -339,12 +363,13 @@ module.exports = class FlowMonitor {
                             mac: flow["mac"],
                             target: flow.lh,
                             fd: flow.fd,
+                            intel: flow.intel,
                             appr: flow["appr"],
                             org: flow["org"],
                             "id.orig_h": flow.dh,
-                          "id.resp_h": flow.sh,
-                          "id.orig_p": flow.dp,
-                          "id.resp_p": flow.sp,
+                            "id.resp_h": flow.sh,
+                            "id.orig_p": flow.dp,
+                            "id.resp_p": flow.sp,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
 
@@ -373,10 +398,10 @@ module.exports = class FlowMonitor {
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
 
-                  // Process intel to generate Alarm about it
-                  this.processIntelFlow(intelobj);
+                    // Process intel to generate Alarm about it
+                    this.processIntelFlow(intelobj);
                   }
-                } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
+                } else if (this.isFlowIntelInClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
                     if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
                         let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
                         let actionobj = {
@@ -417,7 +442,6 @@ module.exports = class FlowMonitor {
                         });
                     }
                 }
-               }
               });
             }
         }
@@ -543,8 +567,8 @@ module.exports = class FlowMonitor {
     detect(listip, period,host,callback) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
-      log.info("Detect",listip);
-      flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
+        log.info("Detect",listip);
+        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
             if (activities !=null) {
@@ -682,163 +706,166 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-    run(service,period) {
-            log.info("FlowMonitor Running Process :", service, period, {});
-            const startTime = new Date() / 1000
-            hostManager.getHosts((err, result) => {
-                this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
-                result = result.filter(x => x) // workaround if host is undefined or null
-                _async.eachLimit(result,2, (host, cb) => {
-                    let listip = [];
-                    listip.push(host.o.ipv4Addr);
-                    if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-                        for (let p in host['ipv6Addr']) {
-                            listip.push(host['ipv6Addr'][p]);
+    run(service, period, callback) {
+        callback = callback || function() {}
+        let runid = new Date()/1000
+        log.info("FlowMonitor Running Process :", service, period, runid);
+        const startTime = new Date() / 1000
+        hostManager.getHosts((err, result) => {
+            this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
+            result = result.filter(x => x) // workaround if host is undefined or null
+            _async.eachLimit(result,2, (host, cb) => {
+                let listip = [];
+                listip.push(host.o.ipv4Addr);
+                if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+                    for (let p in host['ipv6Addr']) {
+                        listip.push(host['ipv6Addr'][p]);
+                    }
+                }
+                if (!service || service === "dlp") {
+                    log.debug("DLP",listip);
+                    this.flows(listip, period,host, (err, inSpec, outSpec) => {
+                        log.debug("monitor:flow:", host.toShortString());
+                        log.debug("inspec", inSpec);
+                        log.debug("outspec", outSpec);
+                      cb();
+                    if (outSpec) {
+                        if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
+                            (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
+                            (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
+                            this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
+                                if (flow) {
+                                    let copy = JSON.parse(JSON.stringify(flow));
+                                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
+                                    copy.msg = msg;
+                                    let actionobj = {
+                                        title: "Suspicious Large Upload",
+                                        actions: ["block","ignore"],
+                                        src: flow.dh,
+                                        dst: flow.sh,
+                                        target: flow.lh,
+                                      //info: ,
+                                      //infourl:
+                                        msg: msg
+                                    }
+                                    let remoteHost = flow.dh;
+                                    if (flow.lh == flow.dh) {
+                                        remoteHost = flow.sh;
+                                    }
+
+                                    intelManager._location(remoteHost,(err,loc)=>{
+                                        if (loc) {
+                                            copy.lobj = loc;
+                                        }
+
+                                        if(fc.isFeatureOn("large_upload")) {
+                                            let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
+                                                "p.device.id" : flow.dhname,
+                                                "p.device.name" : flow.dhname,
+                                                "p.device.ip" : flow.dh,
+                                                "p.device.port" : flow.dp || 0,
+                                                "p.dest.name": flow.shname || flow.sh,
+                                                "p.dest.ip": flow.sh,
+                                                "p.dest.port" : flow.sp,
+                                                "p.transfer.outbound.size" : flow.rb,
+                                                "p.transfer.inbound.size" : flow.ob,
+                                                "p.transfer.duration" : flow.du,
+                                                "p.local_is_client": 0, // connection is initiated from local
+                                                "p.flow": JSON.stringify(flow)
+                                              });
+
+                                              async(() => {
+                                                await (alarmManager2.enrichDeviceInfo(alarm))
+                                                await (alarmManager2.enrichDestInfo(alarm))
+                                                await (alarmManager2.checkAndSaveAsync(alarm))
+                                              })().catch((err) => {
+                                                log.error("Failed to enrich and save alarm", err, {})
+                                              })
+
+                                        }
+
+                                    });
+                                }
+                            });
                         }
                     }
-                    if (service == null || service == "dlp") {
-                        log.debug("DLP",listip);
-                        this.flows(listip, period,host, (err, inSpec, outSpec) => {
-                            log.debug("monitor:flow:", host.toShortString());
-                            log.debug("inspec", inSpec);
-                            log.debug("outspec", outSpec);
-                            if (outSpec) {
-                                if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
-                                    (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
-                                    (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
-                                    this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
-                                        if (flow) {
-                                            let copy = JSON.parse(JSON.stringify(flow));
-                                            let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
-                                            copy.msg = msg;
-                                            let actionobj = {
-                                                title: "Suspicious Large Upload",
-                                                actions: ["block","ignore"],
-                                                src: flow.dh,
-                                                dst: flow.sh,
-                                                target: flow.lh,
-                                              //info: ,
-                                              //infourl:
-                                                msg: msg
-                                            }
-                                            let remoteHost = flow.dh;
-                                            if (flow.lh == flow.dh) {
-                                                remoteHost = flow.sh;
-                                            }
+                    if (inSpec) {
+                        if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
+                            (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
+                            (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
+                            this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
+                                if (flow) {
+                                    let copy = JSON.parse(JSON.stringify(flow));
+                                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
+                                    copy.msg = msg;
+                                    let actionobj = {
+                                        title: "Suspicious Large Upload",
+                                        actions: ["block","ignore"],
+                                        src: flow.sh,
+                                        dst: flow.dh,
+                                        target: flow.lh,
+                                        msg: msg
+                                    }
+                                    let remoteHost = flow.dh;
+                                    if (flow.lh == flow.dh) {
+                                        remoteHost = flow.sh;
+                                    }
 
-                                            intelManager._location(remoteHost,(err,loc)=>{
-                                                if (loc) {
-                                                    copy.lobj = loc;
-                                                }
-
-                                                if(fc.isFeatureOn("large_upload")) {
-                                                    let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
-                                                        "p.device.id" : flow.dhname,
-                                                        "p.device.name" : flow.dhname,
-                                                        "p.device.ip" : flow.dh,
-                                                        "p.device.port" : flow.dp || 0,
-                                                        "p.dest.name": flow.shname || flow.sh,
-                                                        "p.dest.ip": flow.sh,
-                                                        "p.dest.port" : flow.sp,
-                                                        "p.transfer.outbound.size" : flow.rb,
-                                                        "p.transfer.inbound.size" : flow.ob,
-                                                        "p.transfer.duration" : flow.du,
-                                                        "p.local_is_client": 0, // connection is initiated from local
-                                                        "p.flow": JSON.stringify(flow)
-                                                      });
-        
-                                                      async(() => {
-                                                        await (alarmManager2.enrichDeviceInfo(alarm))
-                                                        await (alarmManager2.enrichDestInfo(alarm))
-                                                        alarmManager2.checkAndSaveAsync(alarm)
-                                                      })().catch((err) => {
-                                                        log.error("Failed to enrich and save alarm", err, {})
-                                                      })
-        
-                                                }
-
-                                            });
+                                    intelManager._location(remoteHost,(err,loc)=>{
+                                        if (loc) {
+                                            copy.lobj = loc;
                                         }
+
+                                        if(fc.isFeatureOn("large_upload")) {
+                                            // flow in means connection initiated from inside
+                                            // flow out means connection initiated from outside (more dangerous)
+
+                                            let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
+                                            "p.device.id" : flow.shname,
+                                            "p.device.name" : flow.shname,
+                                            "p.device.ip" : flow.sh,
+                                            "p.device.port" : flow.sp || 0,
+                                            "p.dest.name": flow.dhname || flow.dh,
+                                            "p.dest.ip": flow.dh,
+                                            "p.dest.port" : flow.dp,
+                                            "p.transfer.outbound.size" : flow.ob,
+                                            "p.transfer.inbound.size" : flow.rb,
+                                            "p.transfer.duration" : flow.du,
+                                            "p.local_is_client": 1, // connection is initiated from local
+                                            "p.flow": JSON.stringify(flow)
+                                            });
+
+                                            // ideally each destination should have a unique ID, now just use hostname as a workaround
+                                            // so destionationName, destionationHostname, destionationID are the same for now
+                                            async(() => {
+                                              await (alarmManager2.enrichDeviceInfo(alarm))
+                                              await (alarmManager2.enrichDestInfo(alarm))
+                                              await (alarmManager2.checkAndSaveAsync(alarm))
+                                            })().catch((err) => {
+                                              log.error("Failed to enrich and save alarm", err, {})
+                                            })
+                                        }
+
                                     });
                                 }
-                            }
-                            if (inSpec) {
-                                if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
-                                    (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
-                                    (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
-                                    this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
-                                        if (flow) {
-                                            let copy = JSON.parse(JSON.stringify(flow));
-                                            let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
-                                            copy.msg = msg;
-                                            let actionobj = {
-                                                title: "Suspicious Large Upload",
-                                                actions: ["block","ignore"],
-                                                src: flow.sh,
-                                                dst: flow.dh,
-                                                target: flow.lh,
-                                                msg: msg
-                                            }
-                                            let remoteHost = flow.dh;
-                                            if (flow.lh == flow.dh) {
-                                                remoteHost = flow.sh;
-                                            }
-
-                                            intelManager._location(remoteHost,(err,loc)=>{
-                                                if (loc) {
-                                                    copy.lobj = loc;
-                                                }
-
-                                                if(fc.isFeatureOn("large_upload")) {
-                                                    // flow in means connection initiated from inside
-                                                    // flow out means connection initiated from outside (more dangerous)
-
-                                                    let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
-                                                    "p.device.id" : flow.shname,
-                                                    "p.device.name" : flow.shname,
-                                                    "p.device.ip" : flow.sh,
-                                                    "p.device.port" : flow.sp || 0,
-                                                    "p.dest.name": flow.dhname || flow.dh,
-                                                    "p.dest.ip": flow.dh,
-                                                    "p.dest.port" : flow.dp,
-                                                    "p.transfer.outbound.size" : flow.ob,
-                                                    "p.transfer.inbound.size" : flow.rb,
-                                                    "p.transfer.duration" : flow.du,
-                                                    "p.local_is_client": 1, // connection is initiated from local
-                                                    "p.flow": JSON.stringify(flow)
-                                                    });
-
-                                                    // ideally each destination should have a unique ID, now just use hostname as a workaround
-                                                    // so destionationName, destionationHostname, destionationID are the same for now
-                                                    async(() => {
-                                                      await (alarmManager2.enrichDeviceInfo(alarm))
-                                                      await (alarmManager2.enrichDestInfo(alarm))
-                                                      alarmManager2.checkAndSaveAsync(alarm)
-                                                    })().catch((err) => {
-                                                      log.error("Failed to enrich and save alarm", err, {})
-                                                    })
-                                                }
-
-                                            });
-                                        }
-                                    });
-                                }
-                            }
-                        });
-                        cb();
-                    } else if (service == "detect") {
-                        log.info("Running Detect");
-                        this.detect(listip, period, host, (err) => {
-                            cb();
-                        });
+                            });
+                        }
                     }
-                }, (err)=> {
-                    const endTime = new Date() /1000
-                    log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, {});
-                    this.garbagecollect();
                 });
-            });
-        }
+            } else if (service === "detect") {
+                log.info("Running Detect:",listip,{});
+                this.detect(listip, period, host, (err) => {
+                    cb();
+                });
+            }
+        }, (err)=> {
+            const endTime = new Date() /1000
+            log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
+            this.garbagecollect();
+            callback();
+        });
+    });
+  }
   // Reslve v6 or v4 address into a local host
 
   getDeviceIP(obj) {
@@ -885,74 +912,201 @@ module.exports = class FlowMonitor {
     //TODO
   }
 
-  processIntelFlow(flowObj) {
-    let deviceIP = this.getDeviceIP(flowObj);
-    let remoteIP = this.getRemoteIP(flowObj);
+  async processIntelFlow(flowObj) {
+    const deviceIP = this.getDeviceIP(flowObj);
+    const remoteIP = this.getRemoteIP(flowObj);
 
-    if (sysManager.isLocalIP(remoteIP) == true ||
-        sysManager.ignoreIP(remoteIP) == true) {
+    if (sysManager.isLocalIP(remoteIP) || sysManager.ignoreIP(remoteIP)) {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
       return;
     }
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
+    let success;
+    try {
+      success = await this.checkDomainAlarm(remoteIP, deviceIP, flowObj);
+    } catch(err) {
+      log.error("Error when check domain alarm", err);
+    }
 
-    async(() => {
-        const name = await (hostTool.getName(remoteIP))
-        let remoteHostname = name || remoteIP;
+    if (success) {
+      log.info("Successfully triggered domain alarm, skip IP alarm triggering");
+      return;
+    }
 
-        intelManager.lookup(remoteIP, (err, iobj, url) => {
-  
-          if (err != null || iobj == null) {
-            log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
-            return;
-          }
-  
-          if (iobj.severityscore < 4) {
-            log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-            return;
-          }
-  
-          let severity = iobj.severityscore > 50 ? "major" : "minor";
-          let reason = iobj.reason;
-  
-          if(fc.isFeatureOn("cyber_security")) {
-            let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
-              "p.device.ip": deviceIP,
-              "p.device.port": this.getDevicePort(flowObj),
-              "p.dest.id": remoteIP,
-              "p.dest.ip": remoteIP,
-              "p.dest.name": remoteHostname,
-              "p.dest.port": this.getRemotePort(flowObj),
-              "p.security.reason": reason,
-              "p.security.numOfReportSources": iobj.count,
-              "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
-            });
-      
-    
-            if (flowObj && flowObj.action && flowObj.action === "block") {
-              alarm["p.action.block"]=true
-            }
-    
-            if (flowObj && flowObj.categoryArray) {
-              alarm['p.security.category']=flowObj.categoryArray;
-            }
-    
-            log.info("Host:ProcessIntelFlow:Alarm",alarm);
-    
-            alarmManager2.enrichDeviceInfo(alarm)
-              .then(alarmManager2.enrichDestInfo)
-              .then((alarm) => {
-                alarmManager2.checkAndSave(alarm, (err) => {
-                  if(err)
-                    log.error("Fail to save alarm: " + err);
-                });
-              }).catch((err) => {
-                log.error("Failed to create alarm: " + err);
-              });
-          }
-          
-        });
-    })()
+    try {
+      await this.checkIpAlarm(remoteIP, deviceIP, flowObj);
+    } catch(err) {
+      log.error("Error when check IP alarm", err);
+    }
   }
+
+  async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
+    if (!fc.isFeatureOn("cyber_security")) {
+      log.info("Feature cyber_security is off, skip...");
+      return;
+    }
+
+    log.info("Start check domain alarm for:", remoteIP);
+    const domain = await hostTool.getName(remoteIP);
+    log.info("Domain for IP ", remoteIP, "is", domain);
+    
+    if (!validator.isFQDN(domain)) {
+      log.info("not a valid domain, skip check alarm");
+      return;
+    }
+
+    let intel = null;
+    try {
+      log.info("Start to lookup intel for domain:", domain);
+      intel = await intelManager.lookupDomain(domain, remoteIP, flowObj);
+      log.info("Finish lookup intel for domain:", domain, "intel is", intel);
+    } catch (err) {
+      log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
+      return;
+    }
+
+    if (!intel) {
+      log.info("No intel for domain:", domain, deviceIP, remoteIP);
+      return;
+    }
+
+    let _category, reason = 'Access a ';
+    switch (intel.category) {
+      case 'spam':
+      case 'phishing':
+      case 'piracy':
+      case 'suspicious':
+        reason += intel.category;
+        intel.severityscore = 30;
+        _category = intel.category;
+        break;
+      case 'intel':
+        reason += intel.cc;
+        intel.severityscore = 70;
+        _category = intel.cc;
+        break;
+      default:
+        return;
+    }
+
+    reason += ' domain or host';
+    let severity = intel.severityscore > 50 ? "major" : "minor";
+    intel.reason = reason;
+    intel.summary = '';
+    
+    log.info("Domain", domain, "'s intel is", intel);
+    
+    log.info("Start to generate alarm for domain", domain);
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+      "p.device.ip": deviceIP,
+      "p.device.port": this.getDevicePort(flowObj),
+      "p.dest.id": remoteIP,
+      "p.dest.ip": remoteIP,
+      "p.dest.name": domain,
+      "p.dest.port": this.getRemotePort(flowObj),
+      "p.security.reason": reason,
+      "p.security.numOfReportSources": "Firewalla global security intel",
+      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
+    });
+
+    if (flowObj && flowObj.action && flowObj.action === "block") {
+      alarm["p.action.block"] = true
+    }
+    
+    alarm['p.security.category'] = [_category];
+    alarm['p.alarm.trigger'] = 'domain';
+    
+    if (intel.tags) {
+      alarm['p.security.tags'] = intel.tags;
+    }
+
+    log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
+
+    try {
+      alarm = await alarmManager2.enrichDeviceInfo(alarm);
+      alarm = await alarmManager2.enrichDestInfo(alarm);
+    } catch (err) {
+      log.error("Error when enrich domain cyber alarm:", err);
+      return;
+    }
+
+    try {
+      await alarmManager2.checkAndSaveAsync(alarm);
+    } catch (err) {
+      if (err.code === 'ERR_DUP_ALARM') {
+        log.warn("Duplicated alarm exists, skip firing new alarm");
+        return true; // in this case, ip alarm no need to trigger either
+      }
+      log.error("Error when save alarm:", err);
+      return;
+    }
+
+    return true;
+  }
+  
+  async checkIpAlarm(remoteIP, deviceIP, flowObj) {
+    const domain = await hostTool.getName(remoteIP);
+      
+    intelManager.lookup(remoteIP, flowObj.intel, (err, iobj) => {
+      if (err || !iobj) {
+        log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
+        return;
+      }
+
+      if (iobj.severityscore < 4) {
+        log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
+        return;
+      }
+
+      let severity = iobj.severityscore > 50 ? "major" : "minor";
+      let reason = iobj.reason;
+
+      if (!fc.isFeatureOn("cyber_security")) {
+        return;
+      }
+
+      let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+        "p.device.ip": deviceIP,
+        "p.device.port": this.getDevicePort(flowObj),
+        "p.dest.id": remoteIP,
+        "p.dest.ip": remoteIP,
+        "p.dest.name": domain,
+        "p.dest.port": this.getRemotePort(flowObj),
+        "p.security.reason": reason,
+        "p.security.numOfReportSources": iobj.count,
+        "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
+      });
+
+      if (flowObj && flowObj.action && flowObj.action === "block") {
+        alarm["p.action.block"] = true
+      }
+
+      if (flowObj && flowObj.categoryArray) {
+        alarm['p.security.category'] = flowObj.categoryArray;
+      }
+
+      if (iobj.tags) {
+        alarm['p.security.tags'] = iobj.tags;
+      }
+
+      alarm['p.alarm.trigger'] = 'ip';
+
+      log.info("Host:ProcessIntelFlow:Alarm", alarm);
+
+      alarmManager2.enrichDeviceInfo(alarm)
+        .then(alarmManager2.enrichDestInfo)
+        .then((alarm) => {
+          alarmManager2.checkAndSave(alarm, (err) => {
+            if (err) {
+              log.error("Fail to save alarm:", err);
+            }
+          });
+        })
+        .catch((err) => {
+          log.error("Failed to create alarm:", err);
+        });
+    });
+  };
+  
 }

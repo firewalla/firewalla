@@ -79,17 +79,17 @@ function setupBlockingEnv(tag) {
     const dstSet = getDstSet(tag)
     const dstSet6 = getDstSet6(tag)
 
-    const cmdCreateMacSet = `sudo ipset create ${macSet} hash:mac`
-    const cmdCreateDstSet = `sudo ipset create ${dstSet} hash:ip family inet hashsize 128 maxelem 65536`
-    const cmdCreateDstSet6 = `sudo ipset create ${dstSet6} hash:ip family inet6 hashsize 128 maxelem 65536`
-    const cmdCreateOutgoingRule = `sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
-    const cmdCreateIncomingRule = `sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
-    const cmdCreateOutgoingTCPRule = `sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
-    const cmdCreateIncomingTCPRule = `sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
-    const cmdCreateOutgoingRule6 = `sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
-    const cmdCreateIncomingRule6 = `sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
-    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
-    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
+    const cmdCreateMacSet = `sudo ipset create -! ${macSet} hash:mac`
+    const cmdCreateDstSet = `sudo ipset create -! ${dstSet} hash:ip family inet hashsize 128 maxelem 65536`
+    const cmdCreateDstSet6 = `sudo ipset create -! ${dstSet6} hash:ip family inet6 hashsize 128 maxelem 65536`
+    const cmdCreateOutgoingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j DROP`
+    const cmdCreateIncomingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j DROP`
+    const cmdCreateOutgoingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j REJECT`
+    const cmdCreateIncomingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet} src -j REJECT`
+    const cmdCreateOutgoingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j DROP`
+    const cmdCreateIncomingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j DROP`
+    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REJECT`
+    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${dstSet6} src -j REJECT`
 
     await (exec(cmdCreateMacSet))
     await (exec(cmdCreateDstSet))
@@ -102,7 +102,9 @@ function setupBlockingEnv(tag) {
     await (exec(cmdCreateIncomingRule6))
     await (exec(cmdCreateOutgoingTCPRule6))
     await (exec(cmdCreateIncomingTCPRule6))
-  })()
+  })().catch(err => {
+    log.error('Error when setup blocking env', err);
+  })
 }
 
 function existsBlockingEnv(tag) {
@@ -114,7 +116,9 @@ function existsBlockingEnv(tag) {
     } else {
       return false
     }
-  })()
+  })().catch(err => {
+    log.error('Error when check blocking env existence', err);
+  })
 }
 
 function destroyBlockingEnv(tag) {
@@ -124,6 +128,8 @@ function destroyBlockingEnv(tag) {
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
   return async(() => {
+    log.info("destroying block enviornment for", tag)
+    
     const macSet = getMacSet(tag)
     const dstSet = getDstSet(tag)
     const dstSet6 = getDstSet6(tag)
@@ -152,7 +158,10 @@ function destroyBlockingEnv(tag) {
     await (exec(cmdDeleteDstSet))
     await (exec(cmdDeleteDstSet6))
 
-  })()
+    log.info("finish destroying block enviornment for", tag)
+  })().catch(err => {
+    log.error('Error when destroy blocking env', err);
+  })
 }
 
 let ipsetQueue = [];
@@ -260,7 +269,8 @@ function blockImmediate(destination, ipset) {
 
 function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {
-    await (setupBlockingEnv(tag))
+    await(setupBlockingEnv(tag))
+    
     macAddresses.forEach((mac) => {
       await (advancedBlockMAC(mac, getMacSet(tag)))
     })
@@ -285,12 +295,14 @@ function advancedUnblock(tag, macAddresses, destinations) {
 function advancedBlockMAC(macAddress, setName) {
   return async(() => {
     if(macAddress && setName) {
-      const cmd = `sudo ipset add ${setName} ${macAddress}`
+      const cmd = `sudo ipset add -! ${setName} ${macAddress}`
       return exec(cmd)
     } else {
       return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
     }
-  })()
+  })().catch(err => {
+    log.error('Error when advancedBlockMAC', err);
+  })
 }
 
 function advancedUnblockMAC(macAddress, setName) {
@@ -301,7 +313,9 @@ function advancedUnblockMAC(macAddress, setName) {
     } else {
       return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
     }
-  })()
+  })().catch(err => {
+    log.error('Error when advancedUnblockMAC', err);
+  })
 }
 
 function unblock(destination, ipset) {

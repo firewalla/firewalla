@@ -131,27 +131,27 @@ function hashFlow(_flow, clean) {
 //    not to be presented to user or do security lookup.
 
 function addFlag(flow,flag) {
-    if (flow == null || flag == null) {
+    if (!flow || !flag) {
         return flow.f;
     }
-    if (checkFlag(flow,flag)==false) {
-        if (flow.f == null) {
+    if (!checkFlag(flow,flag)) {
+        if (!flow.f) {
             flow.f = flag;
         } else {
-            flow.f = flow.f+flag;
+            flow.f = flow.f + flag;
         }
     }
     return flow.f;
 }
 
 function checkFlag(flow,flag) {
-    if (flow.f == null) {
+    if (!flow.f) {
         return false;
     }
-    if (flag == null) {
+    if (!flag) {
         return true;
     }
-    return (flow.f.indexOf(flag)>=0);
+    return (flow.f.indexOf(flag) >= 0);
 }
 
 /*

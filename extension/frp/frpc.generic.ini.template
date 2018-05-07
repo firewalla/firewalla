@@ -1,0 +1,11 @@
+[common]
+server_addr = FRP_SERVER_ADDR
+server_port = FRP_SERVER_PORT
+privilege_token = FRP_SERVICE_TOKEN
+
+[FRP_SERVICE_NAME]
+type = FRP_SERVICE_PROTOCOL
+local_ip = 127.0.0.1
+local_port = FRP_SERVICE_INTERNAL_PORT
+remote_port = FRP_SERVICE_PORT
+use_encryption = true

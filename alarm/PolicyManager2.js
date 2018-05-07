@@ -84,6 +84,8 @@ class PolicyManager2 {
       scheduler.unenforceCallback = (policy) => {
         return this._unenforce(policy)
       }
+
+      this.enabledTimers = {}
       
     }
     return instance;
@@ -112,12 +114,11 @@ class PolicyManager2 {
       const policy = this.jsonToPolicy(event.policy)
       const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
-
-      log.info("START ENFORCING POLICY", policy.pid, action, {})
       
       switch(action) {
       case "enforce": {
         return async(() => {
+          log.info("START ENFORCING POLICY", policy.pid, action, {})
           await(this.enforce(policy))
         })().catch((err) => {
           log.error("enforce policy failed:" + err)
@@ -130,6 +131,7 @@ class PolicyManager2 {
 
       case "unenforce": {
         return async(() => {
+          log.info("START UNENFORCING POLICY", policy.pid, action, {})
           await(this.unenforce(policy))
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
@@ -145,6 +147,8 @@ class PolicyManager2 {
           if(!oldPolicy) {
             // do nothing
           } else {
+            log.info("START REENFORCING POLICY", policy.pid, action, {})
+
             await(this.unenforce(oldPolicy))
             await(this.enforce(policy))
           }
@@ -156,6 +160,33 @@ class PolicyManager2 {
         })
         break
       }
+
+      case "incrementalUpdate": {
+        return async(() => {
+          const list = await (domainBlock.getAllIPMappings())
+          list.forEach((l) => {
+            const matchDomain = l.match(/ipmapping:domain:(.*)/)
+            if(matchDomain) {
+              const domain = matchDomain[1]
+              await (domainBlock.incrementalUpdateIPMapping(domain, {}))
+              return
+            } 
+            
+            const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
+            if(matchExactDomain) {
+              const domain = matchExactDomain[1]
+              await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
+              return
+            }
+          })
+        })().catch((err) => {
+          log.error("incremental update policy failed:", err, {})
+        }).finally(() => {
+          log.info("COMPLETE incremental update policy", {})
+          done()
+        })
+      }
+
       default:
         log.error("unrecoganized policy enforcement action:" + action)
         done()
@@ -178,7 +209,7 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if(this.queue) {
           const job = this.queue.createJob(event)
-          job.save(function() {})
+          job.timeout(60 * 1000).save(function() {})
         }
       }
     })
@@ -630,6 +661,13 @@ class PolicyManager2 {
     });
   }
 
+  // cleanup before use
+  cleanupPolicyData() {
+    return async(() => {
+      await (domainBlock.removeAllDomainIPMapping())
+    })() 
+  }
+
   enforceAllPolicies() {
     return new Promise((resolve, reject) => {
       this.loadActivePolicys((err, rules) => {
@@ -643,7 +681,7 @@ class PolicyManager2 {
                   action: "enforce",
                   booting: true
                 })
-                job.save(function() {})
+                job.timeout(60000).save(function() {})
               }
             } catch(err) {
               log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
@@ -711,12 +749,14 @@ class PolicyManager2 {
           await (this._enforce(policy))
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid          
-          setTimeout(() => {
+          const policyTimer = setTimeout(() => {
             async(() => {
               log.info(`About to revoke policy ${pid} `)
               // make sure policy is still enabled before disabling it
               const policy = await (this.getPolicy(pid))
-              if(policy.isDisabled()) {
+
+              // do not do anything if policy doesn't exist any more or it's disabled already
+              if(!policy || policy.isDisabled()) {
                 return
               }
 
@@ -728,6 +768,9 @@ class PolicyManager2 {
               }
             })()
           }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
+
+          this.invalidateExpireTimer(policy) // remove old one if exists
+          this.enabledTimers[pid] = policyTimer
         })()
       }
     } else if (policy.cronTime) {
@@ -891,7 +934,8 @@ class PolicyManager2 {
             return categoryBlock.blockCategory(policy.target)
           }
         })()
-      
+        break;
+
       default:
         return Promise.reject("Unsupported policy");
       }
@@ -899,11 +943,21 @@ class PolicyManager2 {
     })()
   }
 
+  invalidateExpireTimer(policy) {
+    const pid = policy.pid
+    if(this.enabledTimers[pid]) {
+      log.info("Invalidate expire timer for policy", pid, {})
+      clearTimeout(this.enabledTimers[pid])
+      delete this.enabledTimers[pid]
+    }    
+  }
+
   unenforce(policy) {
     if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.deregisterPolicy(policy)
     } else {
+      this.invalidateExpireTimer(policy) // invalidate timer if exists
       return this._unenforce(policy) // regular unenforce
     }
   }

@@ -20,71 +20,42 @@ let Sensor = require('./Sensor.js').Sensor;
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let bonjour = require('bonjour')();
-let ip = require('ip');
-
-let async = require('async');
-
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
-let Promise = require('bluebird');
-
 let Mode = require('../net2/Mode.js');
-
-let flowControl = require('../util/FlowControl');
 
 class DNSMASQSensor extends Sensor {
   constructor() {
     super();
 
     this.dhcpMode = false;
-    this.dnsMode = false;
     this.registered = false;
   }
 
   _start() {
-    return new Promise((resolve, reject) => {
-      dnsmasq.install((err) => {
-        if(err) {
-          log.error("Fail to install dnsmasq: " + err);
-          return;
-        }
-
-        // no force update
-        dnsmasq.start(false, (err) => {
-          if(!err) {
-            log.info("dnsmasq service is started successfully");
-            resolve();
-          } else {
-            log.error("Failed to start dnsmasq: " + err);
-            reject(err);
-          }
-        })
+    return dnsmasq.install()
+      .catch(err => {
+        log.error("Fail to install dnsmasq: " + err);
+        throw err;
       })
-    });
+      .then(() => dnsmasq.start(false) /*no force update*/ )
+      .catch(err => log.error("Failed to start dnsmasq: " + err))
+      .then(() => log.info("dnsmasq service is started successfully"));
   }
 
   _stop() {
-    return new Promise((resolve, reject) => {
-      dnsmasq.stop((err) => {
-        if(!err) {
-          log.info("dnsmasq service is stopped successfully");
-          require('../util/delay.js').delay(1000)
-          .then(() => {
-            resolve();
-          })
-        } else {
-          log.error("Failed to stop dnsmasq: " + err);
-          reject(err);
-        }
+    return dnsmasq.stop()
+      .catch(err => {
+        log.error("Failed to stop dnsmasq: " + err);
+        throw err;
       })
-    });
+      .then(() => log.info("dnsmasq service is stopped successfully"))
+      .then(() => require('../util/delay.js').delay(1000));
   }
 
   reload() {
     dnsmasq.needRestart = new Date() / 1000
-    //return flowControl.reload(dnsmasq.reload, dnsmasq);
   }
 
   run() {
@@ -98,12 +69,14 @@ class DNSMASQSensor extends Sensor {
     return Mode.getSetupMode()
       .then((mode) => {
         if(mode === "dhcp") {
-          dnsmasq.setDHCPFlag(true);
+          dnsmasq.setDhcpMode(true);
         }
 
         return this._start()
           .then(() => {
             if(!this.registered) {
+              log.info("Registering dnsmasq events listeners");
+
               sem.on("StartDNS", (event) => {
                 // NO NEED TO RELOAD DNSMASQ if it's gone, it's going to be managed by systemctl
                 // dnsmasq.checkStatus((status) => {

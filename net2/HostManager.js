@@ -41,6 +41,7 @@ var flowManager = new FlowManager('debug');
 var IntelManager = require('./IntelManager.js');
 var intelManager = new IntelManager('debug');
 
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -102,13 +103,13 @@ const hostTool = new HostTool()
 
 
 class Host {
-    constructor(obj,mgr, callback) {
-        this.callbacks = {};
-        this.o = obj;
-        this.mgr = mgr;
-        if (this.o.ipv4) {
-            this.o.ipv4Addr = this.o.ipv4;
-        }
+    constructor(obj, mgr, callback) {
+      this.callbacks = {};
+      this.o = obj;
+      this.mgr = mgr;
+      if (this.o.ipv4) {
+        this.o.ipv4Addr = this.o.ipv4;
+      }
 
       this._mark = false;
       this.parse();
@@ -116,28 +117,30 @@ class Host {
       let c = require('./MessageBus.js');
       this.subscriber = new c('debug');
 
-        if(this.mgr.type === 'server') {
-          this.spoofing = false;
-          sclient.on("message", (channel, message) => {
-            this.processNotifications(channel, message);
-          });
+      if (this.mgr.type === 'server') {
+        this.spoofing = false;
+        sclient.on("message", (channel, message) => {
+          this.processNotifications(channel, message);
+        });
 
-          if (obj != null) {
-            this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-            this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-            this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
-          }
-          this.spoofing = false;
-
-          /*
-           if (this.o.ipv6Addr) {
-           this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-           }
-           */
-          this.predictHostNameUsingUserAgent();
-
-          this.loadPolicy(callback);
+        if (obj != null) {
+          this.subscribe(this.o.ipv4Addr, "Notice:Detected");
+          this.subscribe(this.o.ipv4Addr, "Intel:Detected");
+          this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
         }
+        this.spoofing = false;
+
+        /*
+         if (this.o.ipv6Addr) {
+         this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
+         }
+         */
+        this.predictHostNameUsingUserAgent();
+
+        this.loadPolicy(callback);
+      }
+
+      this.dnsmasq = new DNSMASQ();
     }
 
     update(obj) {
@@ -219,7 +222,9 @@ class Host {
 
             //await(this.saveAsync());
             log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
-        })();
+        })().catch((err) => {
+            log.error("Got error when cleanV6", err, {})            
+        });
     }
 
     predictHostNameUsingUserAgent() {
@@ -498,7 +503,7 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.debug("Host:Spoof:", state, this.spoofing);
+        log.debug("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
 
@@ -517,18 +522,24 @@ class Host {
         if(state === true) {
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
-            log.debug("Started spoofing", this.o.ipv4Addr);
-            this.spoofing = true;
+              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
+                .catch(err => log.error("Unable to set spoofing in redis", err))
+                .then(() => this.dnsmasq.onSpoofChanged());
+              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+              this.spoofing = true;
             }).catch((err) => {
-            log.error("Failed to spoof", this.o.ipv4Addr);
+            log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
           })
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
-              log.debug("Stopped spoofing", this.o.ipv4Addr);
+              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
+                .catch(err => log.error("Unable to set spoofing in redis", err))
+                .then(() => this.dnsmasq.onSpoofChanged());
+              log.info("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = false;
             }).catch((err) => {
-            log.error("Failed to unspoof", this.o.ipv4Addr);
+            log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name);
           })
         }
 
@@ -924,7 +935,7 @@ class Host {
           ipv6: this.ipv6Addr,
           mac: this.o.mac,
           lastActive: this.o.lastActiveTimestamp,
-          firstFound: this.firstFoundTimestamp,
+          firstFound: this.o.firstFoundTimestamp,
           macVendor: this.o.macVendor,
           recentActivity: this.o.recentActivity,
           manualSpoof: this.o.manualSpoof,
@@ -1281,7 +1292,7 @@ class Host {
 }
 
 
-module.exports = class {
+module.exports = class HostManager {
     // type is 'server' or 'client'
     constructor(name, type, loglevel) {
       loglevel = loglevel || 'info';
@@ -1346,7 +1357,8 @@ module.exports = class {
                     return;
                 };
 
-                this.execPolicy();
+                this.safeExecPolicy()
+                
                 /*
                 this.loadPolicy((err,data)=> {
                     log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
@@ -2113,11 +2125,32 @@ module.exports = class {
     })
   }
 
+  safeExecPolicy() {
+      // a very dirty hack, only call system policy change every 5 seconds
+      const now = new Date() / 1000
+      if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
+          // just run execPolicy, defer this one
+          this.pendingExecPolicy = true
+          setTimeout(() => {
+              if(this.pendingExecPolicy) {
+                  this.lastExecPolicyTime = new Date() / 1000
+                  this.execPolicy()
+                  this.pendingExecPolicy = false
+              }
+          }, (this.lastExecPolicyTime + 5 - now) * 1000)
+      } else {
+          this.lastExecPolicyTime = new Date() / 1000
+          this.execPolicy()
+          this.pendingExecPolicy = false
+      }
+  }
+
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
-        if (this.getHostsActive == true) {
+        const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
+        if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
             log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
@@ -2129,7 +2162,7 @@ module.exports = class {
                 callback(null, this.hosts.all);
                 return;
             }
-            log.info("hostmanager:gethosts:mutx:stack:",retrykey, stack )
+            log.debug("hostmanager:gethosts:mutx:stack:",retrykey, stack )
             setTimeout(() => {
                 this.getHosts(callback,retrykey);
             },3000);
@@ -2142,9 +2175,9 @@ module.exports = class {
             let stack = new Error().stack
             log.info("hostmanager:gethosts:mutx:last:", retry,stack )
         }
-      this.getHostsActive = true;
+      this.getHostsActive = Math.floor(new Date() / 1000);
       if(this.type === "server") {
-        this.execPolicy();
+        this.safeExecPolicy()
       }
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
@@ -2281,7 +2314,7 @@ module.exports = class {
                     this.hosts.all.sort(function (a, b) {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
-                    this.getHostsActive = false;
+                    this.getHostsActive = null;
                     if (this.type === "server") {
                        spoofer.validateV6Spoofs(allIPv6Addrs);
                        spoofer.validateV4Spoofs(allIPv4Addrs);
@@ -2551,7 +2584,7 @@ module.exports = class {
                 cb();
             });
         } , (err) => {
-            log.info("HostManager:isIgnoredIPs:",ips,ignored);
+            log.debug("HostManager:isIgnoredIPs:",ips,ignored);
             callback(null,ignored );
         });
     }

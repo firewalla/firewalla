@@ -166,30 +166,13 @@ function run() {
 
   var BroDetector = require("./BroDetect.js");
   let bd = new BroDetector("bro_detector", config, "info");
-  bd.enableRecordHitsTimer()
+  //bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
 
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
-
-  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-  let dnsmasq = new DNSMASQ();
-  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-
-  if (process.env.FWPRODUCTION) {
-    /*
-      ssh.resetRandomPassword((err,password) => {
-      if(err) {
-      log.error("Failed to reset ssh password");
-      } else {
-      log.info("A new random SSH password is used!");
-      sysManager.sshPassword = password;
-      }
-      })
-    */
-  }
 
   // make sure there is at least one usable enternet
   d.discoverInterfaces(function(err, list) {
@@ -228,10 +211,29 @@ function run() {
     d.discoverInterfaces((err, list) => {
       if(!err && list && list.length >= 2) {
         sysManager.update(null) // if new interface is found, update sysManager
+
+        // recreate port direct after secondary interface is created
+        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
       }
     })
   })()
 
+  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+  let dnsmasq = new DNSMASQ();
+  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
+
+  if (process.env.FWPRODUCTION) {
+    /*
+      ssh.resetRandomPassword((err,password) => {
+      if(err) {
+      log.error("Failed to reset ssh password");
+      } else {
+      log.info("A new random SSH password is used!");
+      sysManager.sshPassword = password;
+      }
+      })
+    */
+  }
 
   // Launch PortManager
 
@@ -271,12 +273,13 @@ function run() {
       pm2.registerPolicyEnforcementListener()
 
       setTimeout(() => {
-        pm2.enforceAllPolicies()
-          .then(() => {
-            log.info("All existing policy rules are applied");
-          }).catch((err) => {
-            log.error("Failed to apply some policy rules: ", err, {});
-          });
+        async(() => {
+          await (pm2.cleanupPolicyData())
+          await (pm2.enforceAllPolicies())
+          log.info("========= All existing policy rules are applied =========");
+        })().catch((err) => {
+          log.error("Failed to apply some policy rules: ", err, {});
+        });          
       }, 1000 * 10); // delay for 10 seconds
       require('./UpgradeManager').finishUpgrade();
     });
@@ -284,15 +287,28 @@ function run() {
   },1000*2);
 
   setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
       if (global.gc) {
         global.gc();
-        log.debug("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }
-  },1000*60);
+  },1000*60*5);
 
+  setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    if (memoryUsage>=100) {
+        try {
+          if (global.gc) {
+            global.gc();
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+          }
+        } catch(e) {
+        }
+    }
+  },1000*60);
 
 /*
   Bug: when two firewalla's are on the same network, this will change the upnp
