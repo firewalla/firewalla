@@ -2280,7 +2280,7 @@ class netBot extends ControllerBot {
       (async () => {
         const featureName = "upstream_dns";
         const state = msg.data.value.state;
-        const ips = msg.data.value.ip;
+        const ips = msg.data.value.ips;
         try {
           await policyManager.upstreamDns(ips, state);
           if (state) {
