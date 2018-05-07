@@ -345,6 +345,15 @@ module.exports = class {
     }
   }
 
+  async getUpstreamDns(attributes) {
+    log.info("PolicyManager:UpstreamDns:getUpstreamDns", attributes);
+    let resp = {};
+    if (attributes.inclues("ip")) {
+       resp.ip = dnsmasq.getAllDefaultNameServers()[0]; 
+    }
+    return resp;
+  }
+
   hblock(host, state) {
     log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
     if (state) {
