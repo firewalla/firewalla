@@ -1,0 +1,3 @@
+* To run nmap scripts of "default" category available in Firewalla extension subdir
+
+    $ nmap --datadir=extension/nmap --script default  localhost
