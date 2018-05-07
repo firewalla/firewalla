@@ -2276,10 +2276,18 @@ class netBot extends ControllerBot {
       })
       break
     }
-    case "dns:upstream": {
+    case "controlFeatureUpstreamDns": {
       (async () => {
+        const featureName = "upstream_dns";
+        const state = msg.data.value.state;
+        const ips = msg.data.value.ip;
         try {
-          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
+          await policyManager.upstreamDns(ips, state);
+          if (state) {
+            await (fc.enableDynamicFeature(featureName));
+          } else {
+            await (fc.disableDynamicFeature(featureName));
+          }
           this.simpleTxData(msg, {}, null, callback);
         } catch (err) {
           log.error("Error when set upstream dns", err, {});
