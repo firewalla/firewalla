@@ -349,7 +349,7 @@ module.exports = class {
     log.info("PolicyManager:UpstreamDns:getUpstreamDns", attributes);
     let resp = {};
     if (attributes.inclues("ip")) {
-       resp.ip = dnsmasq.getAllDefaultNameServers()[0]; 
+       resp.ip = dnsmasq.getAllDefaultNameServers()[0];
     }
     return resp;
   }
