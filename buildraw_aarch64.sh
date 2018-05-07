@@ -113,14 +113,23 @@ function install_walla()
         fi
     fi
 
+PLATFORM=$(uname -m)
+
     # Skip bro installation if in docker environment, bro in apt repo will be used in Docker
     if [[ ! -f /.dockerenv ]]; then
-        echo "Installing bro..."
-        if [[ ! -f $basedir/imports/bro49.tar.gz ]]; then
-            cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz
-        fi
-        cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
-        cp $basedir/bin/real/bit* $basedir/bin/
+	if [[ $PLATFORM == "armv7l" ]]; then
+		echo "Installing bro..."
+		if [[ ! -f $basedir/imports/bro49.tar.gz ]]; then
+		    cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/1.6/bro49.tar.gz -O bro49.tar.gz
+		fi
+		cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f  $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
+		cp $basedir/bin/real/bit* $basedir/bin/
+	else if [[ $PLATFORM == "aarch64" ]]; then
+		if [[ ! -f $basedir/imports/bro-2.4.aarch64.tar.gz ]]; then
+		    (cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/v1.95/bro-2.4.aarch64.tar.gz -O bro-2.4.aarch64.tar.gz)
+		fi
+		(cd $basedir/imports && tar -zxf bro-2.4.aarch64.tar.gz && sudo cp -r -f $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro.")
+	fi
     fi
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
