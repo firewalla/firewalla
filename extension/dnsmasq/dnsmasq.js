@@ -380,9 +380,9 @@ module.exports = class DNSMASQ {
     if (!stdout || stdout === '') {
       return [];
     }
-    
-    let set = new Set(stdout.split('\n'));
-    return [...set];
+
+    let list = stdout.split('\n');
+    return list.filter((x, i) => list.indexOf(x) === i);
   }
 
   async delay(t) {
