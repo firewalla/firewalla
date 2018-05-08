@@ -370,6 +370,20 @@ module.exports = class DNSMASQ {
     });
     return list
   }
+  
+  async getCurrentNameServerList() {
+    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
+    log.info("Command to get current name server: ", cmd);
+
+    let {stdout, stderr} = await execAsync(cmd);
+    
+    if (!stdout || stdout === '') {
+      return [];
+    }
+    
+    let set = new Set(stdout.split('\n'));
+    return [...set];
+  }
 
   async delay(t) {
     return new Promise(resolve => setTimeout(resolve, t));
