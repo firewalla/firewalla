@@ -348,7 +348,7 @@ module.exports = class {
   async getUpstreamDns(attributes) {
     log.info("PolicyManager:UpstreamDns:getUpstreamDns", attributes);
     let resp = {};
-    if (attributes.inclues("ip")) {
+    if (attributes.includes("ip")) {
        resp.ip = dnsmasq.getAllDefaultNameServers()[0];
     }
     return resp;
