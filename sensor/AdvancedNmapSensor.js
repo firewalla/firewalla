@@ -118,16 +118,16 @@ class AdvancedNmapSensor extends Sensor {
 
     log.info("Scanning network to detect vulnerability...");
     
-    Object.keys(scriptConfig).forEach((scriptName) => {
-      log.info("Running script", scriptName, {});
+    Object.keys(scriptConfig.script).forEach((scriptParam) => {
+      log.info("Running --script ", scriptParam, {});
       
-      let ports = scriptConfig[scriptName].ports;
+      let ports = scriptConfig.ports;
       if(ports) {
         if(!this.networkRanges)
           return Promise.reject(new Error("Network range is required"));
         
         this.networkRanges.forEach((range) => {
-          this._scan(range, [scriptName], ports)
+          this._scan(range, [scriptParam], ports)
             .then((hosts) => {
               log.info("Analyzing scan result...");
 
@@ -158,8 +158,8 @@ class AdvancedNmapSensor extends Sensor {
     
     let portString = ports.join(",");
     
-    let scriptPaths = scripts.map((scriptName) => 
-      util.format("--script %s/extension/nmap/scripts/%s", Firewalla.getFirewallaHome(), scriptName));
+    let scriptPaths = scripts.map((scriptParam) => 
+      util.format("--datadir %s/extension/nmap --script %s", Firewalla.getFirewallaHome(), scriptParam));
     
     // nmap -Pn -p445 -n --script ~/Downloads/smb-vuln-ms17-010.nse 10.0.1.0/24 -oX - | ./xml2json
     let cmd = util.format("sudo nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s", 

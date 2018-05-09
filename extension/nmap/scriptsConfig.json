@@ -1,7 +1,22 @@
 {
-  "smb-vuln-ms17-010.nse" : {
+    "supported_cateories" : [
+        "auth",
+        "broadcast",
+        "brute",
+        "default",
+        "discovery",
+        "dos",
+        "exploit",
+        "external",
+        "fuzzer",
+        "intrusive",
+        "malware",
+        "safe",
+        "version",
+        "vuln"
+    ],
+    "script" : "default",
     "ports" : [
       445
     ]
-  }
 }
