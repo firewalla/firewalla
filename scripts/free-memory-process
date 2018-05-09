@@ -21,8 +21,14 @@ firemain_threads=$( ps -o nlwp -h $firemain_pid)
 (( firemain_mem2 >= 140000)) && sudo service firemain restart
 (( firemon_mem2 >= 120000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
 (( firemon_mem2 >= 120000)) && sudo service firemon restart
-(( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
-(( fireapi_mem2 >= 100000)) && sudo service fireapi restart
+
+if [[ $(uname -m) == "aarch64" ]]; then
+       (( fireapi_mem2 >= 140000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
+       (( fireapi_mem2 >= 140000)) && sudo service fireapi restart
+else
+       (( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
+       (( fireapi_mem2 >= 100000)) && sudo service fireapi restart
+fi
 
 if [ $NOP -gt 2000 ]
 then
