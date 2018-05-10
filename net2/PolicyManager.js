@@ -347,9 +347,16 @@ module.exports = class {
 
   async getUpstreamDns(attributes) {
     log.info("PolicyManager:UpstreamDns:getUpstreamDns", attributes);
+    let value = await rclient.hgetAsync('sys:features', 'upstream_dns');
+
     let resp = {};
-    if (attributes.includes("ip")) {
-       resp.ip = dnsmasq.getCurrentNameServerList()[0];
+    if (value === "1") { // enabled
+      resp.enabled = true;
+      if (attributes.includes("ip")) {
+        resp.ip = await dnsmasq.getCurrentNameServerList()[0];
+      }
+    } else {
+      resp.enabled = false;
     }
     return resp;
   }
