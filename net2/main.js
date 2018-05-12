@@ -320,7 +320,7 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        log.info("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn", err);
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{

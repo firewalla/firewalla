@@ -1071,7 +1071,7 @@ module.exports = class FlowMonitor {
         "p.device.port": this.getDevicePort(flowObj),
         "p.dest.id": remoteIP,
         "p.dest.ip": remoteIP,
-        "p.dest.name": domain,
+        "p.dest.name": domain || remoteIP,
         "p.dest.port": this.getRemotePort(flowObj),
         "p.security.reason": reason,
         "p.security.numOfReportSources": iobj.count,
