@@ -552,7 +552,7 @@ module.exports = class {
       return;
     }
 
-    log.debug("PolicyManager:Execute:", ip, policy);
+    log.info("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
       if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
@@ -572,32 +572,32 @@ module.exports = class {
         }
       }
 
-      if (p == "acl") {
+      if (p === "acl") {
         continue;
-      } else if (p == "blockout") {
+      } else if (p === "blockout") {
         this.block(null, null, ip, null, null, null, policy[p]);
-      } else if (p == "blockin") {
+      } else if (p === "blockin") {
         this.hblock(host, policy[p]);
         //    this.block(null,ip,null,null,policy[p]);
-      } else if (p == "family") {
+      } else if (p === "family") {
         this.family(ip, policy[p], null);
-      } else if (p == "adblock") {
+      } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
-      } else if (p == "upstreamDns") {
-        this.upstreamDns(policy[p], policy[state], null);
-      } else if (p == "monitor") {
+      } else if (p === "upstreamDns") {
+        this.upstreamDns(policy[p], policy.state, null);
+      } else if (p === "monitor") {
         host.spoof(policy[p]);
-      } else if (p == "vpn") {
+      } else if (p === "vpn") {
         this.vpn(host, policy[p], policy);
-      } else if (p == "shadowsocks") {
+      } else if (p === "shadowsocks") {
         this.shadowsocks(host, policy[p]);
-      } else if (p == "scisurf") {
+      } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
-      } else if (p == "externalAccess") {
+      } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
-      } else if (p == "dnsmasq") {
+      } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
-      } else if (p == "block") {
+      } else if (p === "block") {
         if (host.policyJobs != null) {
           for (let key in host.policyJobs) {
             let job = host.policyJobs[key];
