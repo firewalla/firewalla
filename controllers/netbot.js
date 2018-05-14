@@ -1391,6 +1391,7 @@ class netBot extends ControllerBot {
           let response;
           try {
             response = await policyManager.getUpstreamDns();
+            log.info("upstream dns response", response);
             this.simpleTxData(msg, response, null, callback);
           } catch (err) {
             log.error("Error when get upstream dns configs", err);
