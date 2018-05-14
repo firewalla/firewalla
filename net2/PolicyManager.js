@@ -334,8 +334,10 @@ module.exports = class {
     dnsmasq.controlFilter('adblock', state);
   }
 
-  async upstreamDns(ips, state) {
-    log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
+  async upstreamDns(policy) {
+    log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
+    const ips = policy.ips;
+    const state = policy.state;
     const featureName = "upstream_dns";
     if (state === true) {
       await (fc.enableDynamicFeature(featureName));
@@ -588,10 +590,8 @@ module.exports = class {
         this.adblock(ip, policy[p], null);
       } else if (p === "upstreamDns") {
         (async () => {
-          const state = policy[p].state;
-          const ips = policy[p].ips;
           try {
-            await this.upstreamDns(ips, state);
+            await this.upstreamDns(policy[p]);
           } catch (err) {
             log.error("Error when set upstream dns", err);
           }
