@@ -932,7 +932,7 @@ class netBot extends ControllerBot {
                 cb(err);
               });
             case "upstreamDns":
-              this._setUpstreamDns(msg.target, msg.data.value.upstreamdns, (err, obj) => {
+              this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
               });
               break;
