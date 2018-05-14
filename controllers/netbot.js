@@ -416,7 +416,7 @@ class netBot extends ControllerBot {
   }
 
   _setUpstreamDns(ip, value, callback) {
-    log.error("In _setUpstreamDns with ip:", ip, "value:", value);
+    log.info("In _setUpstreamDns with ip:", ip, "value:", value);
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
         if (err == null) {
@@ -2309,39 +2309,6 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, err, callback)
       })
       break
-    }
-    case "controlFeatureUpstreamDns": {
-      (async () => {
-        const featureName = "upstream_dns";
-        const state = msg.data.value.state;
-        const ips = msg.data.value.ips;
-        try {
-          await policyManager.upstreamDns(ips, state);
-          if (state) {
-            await (fc.enableDynamicFeature(featureName));
-          } else {
-            await (fc.disableDynamicFeature(featureName));
-          }
-          this.simpleTxData(msg, {}, null, callback);
-        } catch (err) {
-          log.error("Error when set upstream dns", err);
-          this.simpleTxData(msg, {}, err, callback);
-        }
-      })();
-      break;
-    }
-    case "getFeatureUpstreamDns": {
-      (async () => {
-        let response;
-        try {
-          response = await policyManager.getUpstreamDns();
-          this.simpleTxData(msg, response, null, callback);
-        } catch (err) {
-          log.error("Error when get upstream dns attributes", err);
-          this.simpleTxData(msg, {}, err, callback);
-        }
-      })();
-      break;
     }
     default:
       // unsupported action
