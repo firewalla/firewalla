@@ -20,7 +20,7 @@ let userID = f.getUserID();
 //let SysManager = require('../../net2/SysManager');
 //let sysManager = new SysManager();
 
-let os  = require('os-utils');
+let os  = require('../../vendor_lib/osutils.js');
 
 let exec = require('child-process-promise').exec;
 
