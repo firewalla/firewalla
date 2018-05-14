@@ -20,6 +20,7 @@ var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const fc = require('../net2/config.js');
 
 var later = require('later');
 var iptable = require('./Iptables.js');
@@ -335,11 +336,13 @@ module.exports = class {
 
   async upstreamDns(ips, state) {
     log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
-
+    const featureName = "upstream_dns";
     if (state === true) {
+      await (fc.enableDynamicFeature(featureName));
       dnsmasq.setDefaultNameServers("00-upstream", ips);
       await dnsmasq.updateResolvConf();
     } else {
+      await (fc.disableDynamicFeature(featureName));
       dnsmasq.unsetDefaultNameServers("00-upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }
@@ -584,7 +587,15 @@ module.exports = class {
       } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
       } else if (p === "upstreamDns") {
-        this.upstreamDns(policy[p], policy.state, null);
+        (async () => {
+          const state = policy[p].state;
+          const ips = policy[p].ips;
+          try {
+            await this.upstreamDns(ips, state);
+          } catch (err) {
+            log.error("Error when set upstream dns", err);
+          }
+        })();
       } else if (p === "monitor") {
         host.spoof(policy[p]);
       } else if (p === "vpn") {
