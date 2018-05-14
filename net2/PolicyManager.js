@@ -557,7 +557,7 @@ module.exports = class {
       return;
     }
 
-    log.info("PolicyManager:Execute:", ip, policy);
+    log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
       if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
