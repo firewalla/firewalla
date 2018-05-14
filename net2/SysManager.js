@@ -642,10 +642,9 @@ module.exports = class {
 
     isLocalIP(ip) {
         if (iptool.isV4Format(ip)) {
-
-            if (this.subnet == null) {
-                this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
-            }
+          
+            this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
+          
             if (this.subnet == null) {
                 log.error("SysManager:Error getting subnet ");
                 return true;
