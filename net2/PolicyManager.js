@@ -357,7 +357,8 @@ module.exports = class {
     let resp = {};
     if (value === "1") { // enabled
       resp.enabled = true;
-      resp.ip = await dnsmasq.getCurrentNameServerList()[0];
+      let ips = await dnsmasq.getCurrentNameServerList();
+      resp.ip = ips[0];
     } else {
       resp.enabled = false;
     }
