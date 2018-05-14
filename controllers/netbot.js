@@ -1335,55 +1335,69 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-      break;
-    case "archivedAlarms": {
-      const offset = msg.data.value && msg.data.value.offset
-      const limit = msg.data.value && msg.data.value.limit
+        break;
+      case "archivedAlarms":
+        const offset = msg.data.value && msg.data.value.offset
+        const limit = msg.data.value && msg.data.value.limit
 
-      async(() => {
-        const archivedAlarms = await (am2.loadArchivedAlarms({
-          offset: offset,
-          limit: limit
-        }))
-        this.simpleTxData(msg,
-                          {alarms: archivedAlarms,
-                           count: archivedAlarms.length},
-                          null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    }
-      break
+        async(() => {
+          const archivedAlarms = await(am2.loadArchivedAlarms({
+            offset: offset,
+            limit: limit
+          }))
+          this.simpleTxData(msg,
+            {
+              alarms: archivedAlarms,
+              count: archivedAlarms.length
+            },
+            null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-    case "frpConfig":
-      let _config = frp.getConfig()
-      if(_config.started) {
-        let getPasswordAsync = Promise.promisify(ssh.getPassword)
-        getPasswordAsync().then((password) => {
-          _config.password = password
+      case "frpConfig":
+        let _config = frp.getConfig()
+        if (_config.started) {
+          let getPasswordAsync = Promise.promisify(ssh.getPassword)
+          getPasswordAsync().then((password) => {
+            _config.password = password
+            this.simpleTxData(msg, _config, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
+        } else {
           this.simpleTxData(msg, _config, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
+        }
+        break;
+      case "last60mins":
+        async(() => {
+          let downloadStats = await(getHitsAsync("download", "1minute", 60))
+          let uploadStats = await(getHitsAsync("upload", "1minute", 60))
+          this.simpleTxData(msg, {
+            upload: uploadStats,
+            download: downloadStats
+          }, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
         })
-      } else {
-        this.simpleTxData(msg, _config, null, callback);
-      }
-      break;
-    case "last60mins":
-      async(() => {
-        let downloadStats = await (getHitsAsync("download", "1minute", 60))
-        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
-        this.simpleTxData(msg, {
-          upload: uploadStats,
-          download: downloadStats
-        }, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
+        break;
+      case "upstreamDns":
+        (async () => {
+          let response;
+          try {
+            response = await policyManager.getUpstreamDns();
+            this.simpleTxData(msg, response, null, callback);
+          } catch (err) {
+            log.error("Error when get upstream dns configs", err);
+            this.simpleTxData(msg, {}, err, callback);
+          }
+        })();
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
