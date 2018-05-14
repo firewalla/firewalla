@@ -346,7 +346,7 @@ module.exports = class DNSMASQ {
   setDefaultNameServers(key, ips) {
     let _ips;
     if (Array.isArray(ips)) {
-      _ips = ips.filter(validator.isIP);
+      _ips = ips.filter(x => validator.isIP(x));
     } else {
       if (!validator.isIP(ips.toString())) {
         return;
@@ -369,6 +369,20 @@ module.exports = class DNSMASQ {
       }
     });
     return list
+  }
+  
+  async getCurrentNameServerList() {
+    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
+    log.info("Command to get current name server: ", cmd);
+
+    let {stdout, stderr} = await execAsync(cmd);
+    
+    if (!stdout || stdout === '') {
+      return [];
+    }
+
+    let list = stdout.split('\n');
+    return list.filter((x, i) => list.indexOf(x) === i);
   }
 
   async delay(t) {
