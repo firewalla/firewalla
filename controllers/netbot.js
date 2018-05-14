@@ -415,6 +415,21 @@ class netBot extends ControllerBot {
     }
   }
 
+  _setUpstreamDns(ip, value, callback) {
+    log.error("In _setUpstreamDns with ip:", ip, "value:", value);
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on upstream_dns: " + value);
+        }
+      });
+    });
+  }
+
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -914,6 +929,10 @@ class netBot extends ControllerBot {
               break;
             case "portforward":
               this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+                cb(err);
+              });
+            case "upstreamDns":
+              this._setUpstreamDns(msg.target, msg.data.value.upstreamdns, (err, obj) => {
                 cb(err);
               });
               break;
@@ -2298,10 +2317,9 @@ class netBot extends ControllerBot {
     }
     case "getFeatureUpstreamDns": {
       (async () => {
-        const attributes = msg.data.value.attributes;
-        let response = {};
+        let response;
         try {
-          response = await policyManager.getUpstreamDns(attributes);
+          response = await policyManager.getUpstreamDns();
           this.simpleTxData(msg, response, null, callback);
         } catch (err) {
           log.error("Error when get upstream dns attributes", err);
