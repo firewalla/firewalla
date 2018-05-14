@@ -182,7 +182,7 @@ function getCPUUsage(callback, free){
         else
             callback( (1 - perc) );
 	  		
-    }, 1000 * 10 );
+    }, 1000 * 10 ); // capture CPU after 10 seconds, and measure the ticking between two sampling points.
 }
 
 function getCPUInfo(callback){ 
