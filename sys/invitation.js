@@ -103,7 +103,7 @@ class FWInvitation {
     log.info("\n\n-------------------------------\n");
     log.info("\n\nBonjour Message QR");
     log.info("\n");
-    qrcode.generate(msg)
+    qrcode.generate(JSON.stringify(msg))
   }
   
   validateLicense(license) {
