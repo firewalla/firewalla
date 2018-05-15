@@ -291,7 +291,12 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      this.loadRecentAlarms((err, existingAlarms) => {
+      let duration = 10 * 60 // 10 minutes
+      if(alarm.type === 'ALARM_LARGE_UPLOAD') {
+        duration = 60 * 60 // for upload activity, only generate one alarm per hour.
+      }
+      
+      this.loadRecentAlarms(duration, (err, existingAlarms) => {
         if(err) {
           reject(err);
           return;
