@@ -113,6 +113,7 @@ Client.prototype.getMappings = function getMappings(options, callback) {
 
         data = data[key];
 
+      try {
         var result = {
           public: {
             host: typeof data.NewRemoteHost === 'string' &&
@@ -131,6 +132,8 @@ Client.prototype.getMappings = function getMappings(options, callback) {
         result.local = result.private.host === address;
 
         results.push(result);
+     } catch(e) {
+     }
 
         callback(null);
       });

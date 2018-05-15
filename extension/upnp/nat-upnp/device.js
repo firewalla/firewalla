@@ -147,7 +147,7 @@ Device.prototype.run = function run(action, args, callback) {
 
       var parser = new xml2js.Parser(xml2js.defaults["0.1"]);
       parser.parseString(body, function(err, body) {
-        if (res.statusCode !== 200) {
+        if (res.statusCode !== 200 || body == null) {
           return callback(Error('Request failed: ' + res.statusCode));
         }
 
