@@ -91,6 +91,7 @@ class CategoryUpdater {
   }
 
   async updateDomain(category, domain) {
+
     if(!this.isActivated(category)) {
       log.info(`category ${category} is not updated`)
       return
@@ -154,7 +155,9 @@ class CategoryUpdater {
     return (async () => {
       await exec(cmd4)
       await exec(cmd6)
-    })()
+    })().catch((err) => {
+      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+    })
   }
   
   async recycleIPSet(category, options) {

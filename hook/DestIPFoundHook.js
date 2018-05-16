@@ -316,6 +316,10 @@ class DestIPFoundHook extends Hook {
       this.appendNewFlow(ip,fd);
     });
 
+    sem.on('DestIP', (event) => {
+      this.processIP(event.ip)
+    })
+
     this.job();
 
     setInterval(() => {
