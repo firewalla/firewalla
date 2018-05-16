@@ -119,7 +119,7 @@ function setupCategoryEnv(category) {
   }
 
   const cmdCreateDstSet = `sudo ipset create -! c_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
-  const cmdCreateDstSet6 = `sudo ipset create -!c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateDstSet6 = `sudo ipset create -! c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
 
   return async(() => {
     await (exec(cmdCreateDstSet))
