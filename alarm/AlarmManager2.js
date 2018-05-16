@@ -293,7 +293,7 @@ module.exports = class {
     return new Promise((resolve, reject) => {
       let duration = 10 * 60 // 10 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = 60 * 60 // for upload activity, only generate one alarm per hour.
+        duration = 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
       }
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
