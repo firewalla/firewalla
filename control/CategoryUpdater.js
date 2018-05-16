@@ -47,7 +47,11 @@ class CategoryUpdater {
   constructor() {
     if (instance == null) {
       instance = this
-      this.activeCategories = {}
+      this.activeCategories = {
+        "games": 1,
+        "social": 1,
+        "porn": 1
+      }
 
       setInterval(() => {
         this.refreshAllCategoryRecords()
@@ -93,6 +97,65 @@ class CategoryUpdater {
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
     await rclient.zaddAsync(key, now, domain) // use current time as score for zset, it will be used to know when it should be expired out
+    await this.updateIPSetByDomain(category, domain, {})
+  }
+  
+  getMapping(category) {
+    return `cuip:${category}`
+  }
+  
+  async updateDomainIPMapping(category, domain) {
+    const domainBlock = require('./DomainBlock.js')()
+    domainBlock.externalMapping = this.getMapping(category)
+    
+    // resolve this domain and add resolved ip addresses to the given mapping pool
+    // e.g. cuip:games
+    // the ip addresses in this pool will dynamically added and cleaned up periodically
+    domainBlock.syncDomainIPMapping(domain, {
+      exactMatch: true
+    })
+  }
+
+  getIPSetName(category) {
+    return `c_category_${category}`
+  }
+  
+  getIPSetNameForIPV6(category) {
+    return `c_category6_${category}`
+  }
+  
+  async updateIPSet(category, options) {
+    const mapping = this.getMapping(category)
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+    
+    let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    return (async () => {
+      await exec(cmd4)
+      await exec(cmd6)
+    })()
+  }
+  
+  getDomainMapping(domain) {
+    return `rdns:${domain}`
+  }
+  
+  async updateIPSetByDomain(category, domain, options) {
+    const mapping = this.getDomainMapping(domain)
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    return (async () => {
+      await exec(cmd4)
+      await exec(cmd6)
+    })()
+  }
+  
+  async recycleIPSet(category, options) {
+    
   }
 
   async deleteCategoryRecord(category) {
@@ -114,6 +177,7 @@ class CategoryUpdater {
   }
 
   isActivated(category) {
+    // always return true for now
     return this.activeCategories[category] !== undefined
   }
 
