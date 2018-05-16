@@ -91,8 +91,11 @@ class CategoryUpdater {
   }
 
   async updateDomain(category, domain) {
-    if(!this.isActivated(category))
+    if(!this.isActivated(category)) {
+      log.info(`category ${category} is not updated`)
       return
+    }
+
 
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
@@ -189,9 +192,9 @@ class CategoryUpdater {
   }
 
   async refreshAllCategoryRecords() {
-    this.getCategories().forEach((category) => {
+    await Promise.all(this.getCategories().map(async (category) => {
       await this.refreshCategoryRecord(category)
-    })
+    }))
   }
 
 }
