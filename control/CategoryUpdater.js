@@ -142,7 +142,7 @@ class CategoryUpdater {
   }
   
   getDomainMapping(domain) {
-    return `rdns:${domain}`
+    return `rdns:domain:${domain}`
   }
   
   async updateIPSetByDomain(category, domain, options) {
