@@ -180,6 +180,12 @@ class DestIPFoundHook extends Hook {
   //   }
   // }
 
+  async updateCategoryDomain(intel) {
+    if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
+      await categoryUpdater.updateDomain(intel.category, intel.host)
+    }
+  }
+
   processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -212,9 +218,7 @@ class DestIPFoundHook extends Hook {
         if(result) {
           const intel = await intelTool.getIntel(ip)
 
-          if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
-            await categoryUpdater.updateDomain(intel.category, intel.host)
-          }
+          await this.updateCategoryDomain(intel)
 
           return;
         }
@@ -242,9 +246,7 @@ class DestIPFoundHook extends Hook {
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
       // update category pool if necessary
-      if(aggrIntelInfo.host && aggrIntelInfo.category && aggrIntelInfo.t > TRUST_THRESHOLD) {
-        await categoryUpdater.updateDomain(aggrIntelInfo.category, aggrIntelInfo.host)
-      }
+      await this.updateCategoryDomain(aggrIntelInfo)
 
       if(!skipRedisUpdate) {
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
