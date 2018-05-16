@@ -127,6 +127,14 @@ class CategoryUpdater {
   getIPSetNameForIPV6(category) {
     return `c_category6_${category}`
   }
+
+  getTempIPSetName(category) {
+    return `c_tmp_category_${category}`
+  }
+
+  getTempIPSetNameForIPV6(category) {
+    return `c_tmp_category6_${category}`
+  }
   
   async updateIPSet(category, options) {
     const mapping = this.getMapping(category)
