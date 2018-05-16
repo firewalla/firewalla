@@ -45,6 +45,9 @@ let ITEMS_PER_FETCH = 100;
 let QUEUE_SIZE_PAUSE = 2000;
 let QUEUE_SIZE_RESUME = 1000;
 
+const TRUST_THRESHOLD = 10 // to be updated
+
+
 let MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
 function delay(t) {
@@ -207,6 +210,12 @@ class DestIPFoundHook extends Hook {
         let result = await intelTool.intelExists(ip);
 
         if(result) {
+          const intel = await intelTool.getIntel(ip)
+
+          if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
+            await categoryUpdater.updateDomain(intel.category, intel.host)
+          }
+
           return;
         }
       }
@@ -233,7 +242,6 @@ class DestIPFoundHook extends Hook {
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
       // update category pool if necessary
-      const TRUST_THRESHOLD = 10 // to be updated
       if(aggrIntelInfo.host && aggrIntelInfo.category && aggrIntelInfo.t > TRUST_THRESHOLD) {
         await categoryUpdater.updateDomain(aggrIntelInfo.category, aggrIntelInfo.host)
       }
