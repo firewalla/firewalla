@@ -39,6 +39,9 @@ let intelTool = new IntelTool();
 
 let flowUtil = require('../net2/FlowUtil.js');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
 let ITEMS_PER_FETCH = 100;
@@ -231,6 +234,12 @@ class DestIPFoundHook extends Hook {
       aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country
 
       // this.workaroundIntelUpdate(aggrIntelInfo);
+
+      // update category pool if necessary
+      const TRUST_THRESHOLD = 10 // to be updated
+      if(aggrIntelInfo.host && aggrIntelInfo.category && aggrIntelInfo.t > TRUST_THRESHOLD) {
+        await (categoryUpdater.updateDomain(aggrIntelInfo.category, aggrIntelInfo.host))
+      }
 
       if(!skipRedisUpdate) {
         await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));

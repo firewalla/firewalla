@@ -38,6 +38,9 @@ const fc = require('../net2/config.js')
 
 const exec = require('child-process-promise').exec
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
