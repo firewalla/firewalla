@@ -28,9 +28,6 @@ const f = require("../net2/Firewalla.js")
 
 let Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let DNSManager = require('../net2/DNSManager.js');
 let dnsManager = new DNSManager('info');
 
@@ -204,10 +201,10 @@ class DestIPFoundHook extends Hook {
     let skipRedisUpdate = options.skipUpdate;
     let forceRedisUpdate = options.forceUpdate;
 
-    return async(() => {
+    return (async() => {
 
       if(!skipRedisUpdate && !forceRedisUpdate) {
-        let result = await (intelTool.intelExists(ip));
+        let result = await intelTool.intelExists(ip);
 
         if(result) {
           return;
@@ -216,8 +213,8 @@ class DestIPFoundHook extends Hook {
 
       log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+", checking intels...");
 
-      let sslInfo = await (intelTool.getSSLCertificate(ip));
-      let dnsInfo = await (intelTool.getDNS(ip));
+      let sslInfo = await intelTool.getSSLCertificate(ip);
+      let dnsInfo = await intelTool.getDNS(ip);
 
       let domains = this.getDomains(sslInfo, dnsInfo);
       let ips = [ip];
@@ -226,7 +223,7 @@ class DestIPFoundHook extends Hook {
 
       // ignore if domain contain firewalla domain
       if(domains.filter(d => this.isFirewalla(d)).length === 0) {
-        cloudIntelInfo = await (intelTool.checkIntelFromCloud(ips, domains, fd));
+        cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
       }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
@@ -238,11 +235,11 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       const TRUST_THRESHOLD = 10 // to be updated
       if(aggrIntelInfo.host && aggrIntelInfo.category && aggrIntelInfo.t > TRUST_THRESHOLD) {
-        await (categoryUpdater.updateDomain(aggrIntelInfo.category, aggrIntelInfo.host))
+        await categoryUpdater.updateDomain(aggrIntelInfo.category, aggrIntelInfo.host)
       }
 
       if(!skipRedisUpdate) {
-        await (intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime));
+        await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
 
       return aggrIntelInfo;
@@ -254,21 +251,21 @@ class DestIPFoundHook extends Hook {
   }
 
   job() {
-    return async(() => {
+    return (async() => {
       log.debug("Checking if any IP Addresses pending for intel analysis...")
 
-      let ips = await (rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH));
+      let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
       if(ips.length > 0) {
 
         let promises = ips.map((ip) => this.processIP(ip));
 
-        await (Promise.all(promises));
+        await Promise.all(promises)
 
         let args = [IP_SET_TO_BE_PROCESSED];
         args.push.apply(args, ips);
 
-        await (rclient.zremAsync(args));
+        await rclient.zremAsync(args)
 
         log.debug(ips.length + "IP Addresses are analyzed with intels");
 
@@ -276,7 +273,7 @@ class DestIPFoundHook extends Hook {
         // log.info("No IP Addresses are pending for intels");
       }
 
-      await (delay(1000)); // sleep for only 1 second
+      await delay(1000); // sleep for only 1 second
 
       return this.job();
     })();
@@ -317,8 +314,8 @@ class DestIPFoundHook extends Hook {
   }
 
   monitorQueue() {
-    return async(() => {
-      let count = await (rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf"));
+    return (async () => {
+      let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
       if(count > QUEUE_SIZE_PAUSE) {
         this.paused = true;
       }
