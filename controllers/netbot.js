@@ -42,6 +42,9 @@ let vpnManager = new VpnManager('info');
 let IntelManager = require('../net2/IntelManager.js');
 let intelManager = new IntelManager('debug');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
@@ -1399,6 +1402,15 @@ class netBot extends ControllerBot {
           }
         })();
         break;
+      case "liveCategoryDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
