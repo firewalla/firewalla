@@ -291,6 +291,7 @@ function blockImmediate(destination, ipset) {
   });
 }
 
+
 function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {
     await(setupBlockingEnv(tag))
