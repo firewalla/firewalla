@@ -176,41 +176,41 @@ module.exports = class {
     return intel;
   }
 
-  lookup(ip, intel, callback) {
-        if (!ip || ip === "8.8.8.8" || sysManager.isLocalIP(ip)) {
-            callback(null, null, null);
-            return;
+    lookup(ip, intel, callback) {
+      if (!ip || ip === "8.8.8.8" || sysManager.isLocalIP(ip)) {
+        callback(null, null, null);
+        return;
+      }
+
+      rclient.hgetall("intel:action:" + ip, (err, data) => {
+        if (data && data.ignore) {
+          log.info("Intel:Lookup:Ignored", ip);
+          callback(null, null, null);
         }
 
-        rclient.hgetall("intel:action:"+ip, (err,data) => {
-            if (data && data.ignore) {
-                log.info("Intel:Lookup:Ignored",ip);
-                callback(null,null,null);
-            }
-
-            this.cachelookup(ip, "cymon", (err, result) => {
-                if (result && result !== "none") {
-                    this._location(ip, (err, lobj)=>{
-                        let obj = JSON.parse(result);
-                        if (!obj || obj.count === 0) {
-                            obj = {}
-                            obj.lobj = lobj;
-                            obj = this._packageIntel(ip, obj, intel);
-                            callback(null, obj); 
-                        } else {
-                            obj.lobj = lobj;
-                            log.info("Intel:Location",ip,obj.lobj);
-                            this._packageCymon(ip, obj);
-                            callback(err, obj);
-                        }
-                    });
-                } else {
-                    this._lookup(ip, intel, (err, obj)=>{
-                        callback(err,obj);
-                    });
-                }
+        this.cachelookup(ip, "cymon", (err, result) => {
+          if (result && result !== "none") {
+            this._location(ip, (err, lobj) => {
+              let obj = JSON.parse(result);
+              if (!obj || obj.count === 0) {
+                obj = {}
+                obj.lobj = lobj;
+                obj = this._packageIntel(ip, obj, intel);
+                callback(null, obj);
+              } else {
+                obj.lobj = lobj;
+                log.info("Intel:Location", ip, obj.lobj);
+                this._packageCymon(ip, obj);
+                callback(err, obj);
+              }
             });
+          } else {
+            this._lookup(ip, intel, (err, obj) => {
+              callback(err, obj);
+            });
+          }
         });
+      });
     }
 
     _packageIntel(ip, obj, intel) {
