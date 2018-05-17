@@ -118,12 +118,16 @@ function setupCategoryEnv(category) {
     return Promise.resolve()
   }
 
-  const cmdCreateDstSet = `sudo ipset create -! c_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
-  const cmdCreateDstSet6 = `sudo ipset create -! c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet = `sudo ipset create -! c_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet6 = `sudo ipset create -! c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet = `sudo ipset create -! c_tmp_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! c_tmp_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
 
   return async(() => {
-    await (exec(cmdCreateDstSet))
-    await (exec(cmdCreateDstSet6))
+    await (exec(cmdCreateCategorySet))
+    await (exec(cmdCreateCategorySet6))
+    await (exec(cmdCreateTempCategorySet))
+    await (exec(cmdCreateTempCategorySet6))
   })()
 }
 

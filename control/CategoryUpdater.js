@@ -56,7 +56,7 @@ class CategoryUpdater {
 
       setInterval(() => {
         this.refreshAllCategoryRecords()
-      }, 5 * 60 * 1000) // update records every 5 minutes
+      }, 60 * 60 * 1000) // update records every hour
     }
     return instance
   }
@@ -170,7 +170,46 @@ class CategoryUpdater {
   }
   
   async recycleIPSet(category, options) {
-    
+    const domains = await this.getDomains(category)
+
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+    const tmpIPSetName = this.getTempIPSetName(category)
+    const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
+
+    await Promise.all(domains.map(async (domain) => {
+      const cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      const cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      return (async () => {
+        await exec(cmd4)
+        await exec(cmd6)
+      })().catch((err) => {
+        log.error(`Failed to update temp ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }))
+
+    // swap temp ipset with ipset
+    const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`
+    const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`
+
+    (async () => {
+      await exec(swapCmd)
+      await exec(swapCmd6)
+    })().catch((err) => {
+      log.error(`Failed to swap ipsets for category ${category}, err: ${err}`)
+    })
+
+    const flushCmd = `sudo ipset flush ${tmpIPSetName}`
+    const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`
+
+    (async () => {
+      await exec(flushCmd)
+      await exec(flushCmd6)
+    })().catch((err) => {
+      log.error(`Failed to flush temp ipsets for category ${category}, err: ${err}`)
+    })
+
+    log.info(`Successfully recycled ipset for category ${category}`)
   }
 
   async deleteCategoryRecord(category) {
@@ -205,7 +244,8 @@ class CategoryUpdater {
 
   async refreshAllCategoryRecords() {
     await Promise.all(this.getCategories().map(async (category) => {
-      await this.refreshCategoryRecord(category)
+      await this.refreshCategoryRecord(category) // refresh domain list for each category
+      await this.recycleIPSet(category) // sync refreshed domain list to ipset
     }))
   }
 
