@@ -50,7 +50,8 @@ class CategoryUpdater {
       this.activeCategories = {
         "games": 1,
         "social": 1,
-        "porn": 1
+        "porn": 1,
+        "shopping": 1
       }
 
       setInterval(() => {
