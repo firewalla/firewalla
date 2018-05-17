@@ -296,6 +296,53 @@ class CategoryUpdater {
     await exec(cmdDeleteIncomingTCPRule6)
   }
 
+  // This function requires the mac ipset has already been created
+  async iptablesBlockCategoryPerDevice(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    const cmdCreateOutgoingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
+    const cmdCreateIncomingRule = `sudo iptables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
+    const cmdCreateOutgoingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`
+    const cmdCreateIncomingTCPRule = `sudo iptables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT || sudo iptables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
+    const cmdCreateOutgoingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
+    const cmdCreateIncomingRule6 = `sudo ip6tables -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP || sudo ip6tables -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
+    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
+    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT || sudo ip6tables -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
+
+    await exec(cmdCreateOutgoingRule)
+    await exec(cmdCreateIncomingRule)
+    await exec(cmdCreateOutgoingTCPRule)
+    await exec(cmdCreateIncomingTCPRule)
+    await exec(cmdCreateOutgoingRule6)
+    await exec(cmdCreateIncomingRule6)
+    await exec(cmdCreateOutgoingTCPRule6)
+    await exec(cmdCreateIncomingTCPRule6)
+  }
+
+  async iptablesUnblockCategoryPerDevice(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    const cmdDeleteOutgoingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
+    const cmdDeleteIncomingRule6 = `sudo ip6tables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
+    const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
+    const cmdDeleteOutgoingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
+    const cmdDeleteIncomingRule = `sudo iptables -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
+    const cmdDeleteOutgoingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`
+    const cmdDeleteIncomingTCPRule = `sudo iptables -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
+
+    await (exec(cmdDeleteOutgoingRule6))
+    await (exec(cmdDeleteIncomingRule6))
+    await (exec(cmdDeleteOutgoingTCPRule6))
+    await (exec(cmdDeleteIncomingTCPRule6))
+    await (exec(cmdDeleteOutgoingRule))
+    await (exec(cmdDeleteIncomingRule))
+    await (exec(cmdDeleteOutgoingTCPRule))
+    await (exec(cmdDeleteIncomingTCPRule))
+  }
+
 }
 
 module.exports = CategoryUpdater

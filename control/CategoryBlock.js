@@ -86,8 +86,8 @@ class CategoryBlock {
       }
 
       // this policy has scope
-      if(options.blockSet) {
-        // TBD
+      if(options.macSet) {
+        await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet)
       } else {
         // global policy
         await categoryUpdater.iptablesBlockCategory(category)
@@ -141,8 +141,9 @@ class CategoryBlock {
       await rclient.delAsync(this.getCategoryDomainKey(category)) // categoryDomain:games
 
       // this policy has scope
-      if(options.blockSet) {
+      if(options.macSet) {
         // TBD
+        await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet)
       } else {
         // global policy
         await categoryUpdater.iptablesUnblockCategory(category)
