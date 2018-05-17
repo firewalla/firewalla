@@ -34,7 +34,7 @@ const exec = require('child-process-promise').exec
 
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 // one hour
+const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -50,7 +50,8 @@ class CategoryUpdater {
       this.activeCategories = {
         "games": 1,
         "social": 1,
-        "porn": 1
+        "porn": 1,
+        "shopping": 1
       }
 
       setInterval(() => {
@@ -80,7 +81,7 @@ class CategoryUpdater {
     for(let i = 0; i < domainAndScores.length; i++) {
       if(i % 2 === 1) {
         const domain = domainAndScores[i-1]
-        const score = domainAndScores[i]
+        const score = Number(domainAndScores[i])
         const expireDate = score + EXPIRE_TIME
 
         results.push({domain: domain, expire: expireDate})
