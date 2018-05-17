@@ -84,6 +84,14 @@ class CategoryBlock {
         await this.batchApplyBlock(category, options).catch((err) => undefined)
 //        await (domainBlock.applyBlock("", options)) // this will create ipset rules
       }
+
+      // this policy has scope
+      if(options.macSet) {
+        await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet)
+      } else {
+        // global policy
+        await categoryUpdater.iptablesBlockCategory(category)
+      }
     })()
   }
 
@@ -131,6 +139,15 @@ class CategoryBlock {
       // }
       await rclient.delAsync(this.getMapping(category)) // ipmapping:category:games
       await rclient.delAsync(this.getCategoryDomainKey(category)) // categoryDomain:games
+
+      // this policy has scope
+      if(options.macSet) {
+        // TBD
+        await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet)
+      } else {
+        // global policy
+        await categoryUpdater.iptablesUnblockCategory(category)
+      }
     })()
   }
 

@@ -928,6 +928,7 @@ class PolicyManager2 {
             await (Block.advancedBlock(policy.pid, scope, []))
             return categoryBlock.blockCategory(policy.target, {
               blockSet: Block.getDstSet(policy.pid),
+              macSet: Block.getMacSet(policy.pid),
               no_dnsmasq_entry: true
             })
           } else {
@@ -1050,12 +1051,13 @@ class PolicyManager2 {
       case "category":
         return async(() => {
           if(scope) {
-            await (Block.advancedUnblock(policy.pid, scope, []))
-            return categoryBlock.unblockCategory(policy.target, {
+            await (categoryBlock.unblockCategory(policy.target, {
               blockSet: Block.getDstSet(policy.pid),
+              macSet: Block.getMacSet(policy.pid),
               ignoreUnapplyBlock: true,
               no_dnsmasq_entry: true
-            })
+            }))
+            return Block.advancedUnblock(policy.pid, scope, [])
           } else {
             return categoryBlock.unblockCategory(policy.target)
           }
