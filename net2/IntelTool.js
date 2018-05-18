@@ -104,6 +104,14 @@ class IntelTool {
     return rclient.delAsync(key);
   }
 
+  updateHashMapping(hashCache, hash) {
+    if(hash.constructor.name === 'Array') {
+      const origin = hash[0]
+      const hashedOrigin = hash[2]
+      hashCache[hashedOrigin] = origin
+    }
+  }
+
   checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
     log.debug("Checking intel for",fd, ipList, domainList, {});
     if (fd == null) {
@@ -121,8 +129,16 @@ class IntelTool {
       _ipList = _ipList.concat(flowUtil.hashHost(ip));
     });
 
+    let hashCache = {}
+
     domainList.forEach((d) => {
-      let hds = flowUtil.hashHost(d);
+      let hds = flowUtil.hashHost(d, {keepOriginal: true});
+      hds.forEach((hash) => {
+        this.updateHashMapping(hashCache, hash)
+      })
+
+      hds = hds.map((x) => x.slice(1, 3)) // remove the origin domains
+
       _hList = _hList.concat(hds);
 
       let ads = flowUtil.hashApp(d);
@@ -159,6 +175,14 @@ class IntelTool {
           reject(err)
         } else {
           log.debug("IntelCheck Result:",ipList, data, {});
+          if(data.constructor.name === 'Array') {
+            data.forEach((result) => {
+              const ip = result.ip
+              if(hashCache[ip]) {
+                result.originIP = hashCache[ip]
+              }
+            })
+          }
           resolve(data);
         }
 
