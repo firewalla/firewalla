@@ -108,7 +108,7 @@ class CategoryUpdater {
     }
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, domain, {})
+    await this.updateIPSetByDomain(category, d, {})
   }
   
   getMapping(category) {
@@ -174,6 +174,8 @@ class CategoryUpdater {
   }
   
   async updateIPSetByDomain(category, domain, options) {
+    log.info(`About to update category ${category} with domain ${domain}, options: ${options}`)
+
     const mapping = this.getDomainMapping(domain)
     let ipsetName = this.getIPSetName(category)
     let ipset6Name = this.getIPSetNameForIPV6(category)
@@ -201,6 +203,8 @@ class CategoryUpdater {
     if(!domain.startsWith("*.")) {
       return
     }
+
+    log.info(`About to update category ${category} with domain pattern ${domain}, options: ${options}`)
 
     const mappings = await this.getDomainMappingsByDomainPattern(domain)
 
