@@ -57,6 +57,10 @@ class CategoryUpdater {
       setInterval(() => {
         this.refreshAllCategoryRecords()
       }, 60 * 60 * 1000) // update records every hour
+
+      setTimeout(() => {
+        this.refreshAllCategoryRecords()
+      }, 60 * 1000) // after one minute
     }
     return instance
   }
@@ -174,7 +178,7 @@ class CategoryUpdater {
   }
   
   async updateIPSetByDomain(category, domain, options) {
-    log.info(`About to update category ${category} with domain ${domain}, options: ${options}`)
+    log.info(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
     const mapping = this.getDomainMapping(domain)
     let ipsetName = this.getIPSetName(category)
@@ -204,7 +208,7 @@ class CategoryUpdater {
       return
     }
 
-    log.info(`About to update category ${category} with domain pattern ${domain}, options: ${options}`)
+    log.info(`About to update category ${category} with domain pattern ${domain}, options: ${JSON.stringify(options)}`)
 
     const mappings = await this.getDomainMappingsByDomainPattern(domain)
 

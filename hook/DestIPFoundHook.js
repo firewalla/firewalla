@@ -87,6 +87,13 @@ class DestIPFoundHook extends Hook {
     return patterns.filter(p => host.match(p)).length > 0;
   }
 
+  // TBD
+  // select the best fit intel from intel results from cloud
+
+  selectIntel(intels) {
+
+  }
+
   aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
     let intel = {
       ip: ip
