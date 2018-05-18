@@ -94,10 +94,10 @@ class CategoryUpdater {
   async updateDomain(category, domain) {
 
     if(!this.isActivated(category)) {
-      log.info(`category ${category} is not updated`)
       return
     }
 
+    log.info(`Found a ${category} domain: ${domain}`)
 
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)

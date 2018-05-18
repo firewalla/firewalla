@@ -150,8 +150,19 @@ class DestIPFoundHook extends Hook {
       if(info.cc) {
         intel.cc = info.cc;
       }
+
+      if(info.originIP) {
+        intel.originIP = info.originIP
+      }
       //      }
     });
+
+    const domains = this.getDomains(sslInfo, dnsInfo);
+
+    if(!domains.includes(info.originIP)) {
+      // it's a pattern
+      intel.isOriginIPAPattern = true
+    }
 
     return intel;
   }
