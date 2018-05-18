@@ -87,6 +87,13 @@ class DestIPFoundHook extends Hook {
     return patterns.filter(p => host.match(p)).length > 0;
   }
 
+  // TBD
+  // select the best fit intel from intel results from cloud
+
+  selectIntel(intels) {
+
+  }
+
   aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
     let intel = {
       ip: ip
@@ -131,7 +138,17 @@ class DestIPFoundHook extends Hook {
         }
       }
 
+      // always try to use the general domain pattern with same category
+      // a.b.c.d => porn
+      // b.c.d => porn
+      // c.d => search engine
+      //
+      // 'b.c.d => porn' should be used
+
       if(info.c) {
+        if(intel.category && info.c === intel.category) { // ignore if they are same category
+          return
+        }
         intel.category = info.c;
       }
 
@@ -150,8 +167,19 @@ class DestIPFoundHook extends Hook {
       if(info.cc) {
         intel.cc = info.cc;
       }
+
+      if(info.originIP) {
+        intel.originIP = info.originIP
+      }
       //      }
     });
+
+    const domains = this.getDomains(sslInfo, dnsInfo);
+
+    if(intel.originIP && !domains.includes(intel.originIP)) {
+      // it's a pattern
+      intel.isOriginIPAPattern = true
+    }
 
     return intel;
   }
@@ -181,8 +209,12 @@ class DestIPFoundHook extends Hook {
   // }
 
   async updateCategoryDomain(intel) {
-    if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
-      await categoryUpdater.updateDomain(intel.category, intel.host)
+    if(intel.category && intel.t > TRUST_THRESHOLD) {
+      if(intel.originIP) {
+        await categoryUpdater.updateDomain(intel.category, intel.originIP, intel.isOriginIPAPattern)
+      } else {
+        await categoryUpdater.updateDomain(intel.category, intel.host)
+      }
     }
   }
 

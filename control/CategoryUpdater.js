@@ -57,6 +57,10 @@ class CategoryUpdater {
       setInterval(() => {
         this.refreshAllCategoryRecords()
       }, 60 * 60 * 1000) // update records every hour
+
+      setTimeout(() => {
+        this.refreshAllCategoryRecords()
+      }, 60 * 1000) // after one minute
     }
     return instance
   }
@@ -91,18 +95,24 @@ class CategoryUpdater {
     return results
   }
 
-  async updateDomain(category, domain) {
+  async updateDomain(category, domain, isPattern) {
 
     if(!this.isActivated(category)) {
-      log.info(`category ${category} is not updated`)
       return
     }
 
+    log.info(`Found a ${category} domain: ${domain} isPattern: ${isPattern}`)
 
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
-    await rclient.zaddAsync(key, now, domain) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, domain, {})
+
+    let d = domain
+    if(isPattern) {
+      d = `*.${domain}`
+    }
+
+    await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
+    await this.updateIPSetByDomain(category, d, {})
   }
   
   getMapping(category) {
@@ -153,11 +163,35 @@ class CategoryUpdater {
   getDomainMapping(domain) {
     return `rdns:domain:${domain}`
   }
+
+  async getDomainMappingsByDomainPattern(domainPattern) {
+    return rclient.keysAsync(`rdns:domain:${domainPattern}`)
+  }
+
+  getSummedDomainMapping(domain) {
+    let d = domain
+    if(d.startsWith("*.")) {
+      d = d.substring(2)
+    }
+
+    return `srdns:pattern:${d}`
+  }
   
   async updateIPSetByDomain(category, domain, options) {
+    log.info(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
+
     const mapping = this.getDomainMapping(domain)
-    const ipsetName = this.getIPSetName(category)
-    const ipset6Name = this.getIPSetNameForIPV6(category)
+    let ipsetName = this.getIPSetName(category)
+    let ipset6Name = this.getIPSetNameForIPV6(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetName(category)
+      ipset6Name = this.getTempIPSetNameForIPV6(category)
+    }
+
+    if(domain.startsWith("*.")) {
+      return this.updateIPSetByDomainPattern(category, domain, options)
+    }
 
     let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
@@ -168,8 +202,46 @@ class CategoryUpdater {
       log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
     })
   }
-  
-  async recycleIPSet(category, options) {
+
+  async updateIPSetByDomainPattern(category, domain, options) {
+    if(!domain.startsWith("*.")) {
+      return
+    }
+
+    log.info(`About to update category ${category} with domain pattern ${domain}, options: ${JSON.stringify(options)}`)
+
+    const mappings = await this.getDomainMappingsByDomainPattern(domain)
+
+    if(mappings.length > 0) {
+      const smappings = this.getSummedDomainMapping(domain)
+      let array = [smappings, mappings.length]
+
+      array.push.apply(array, mappings)
+
+      await rclient.zunionstoreAsync(array)
+
+      await rclient.expireAsync(smappings, 600) // auto expire in 60 seconds
+
+      let ipsetName = this.getIPSetName(category)
+      let ipset6Name = this.getIPSetNameForIPV6(category)
+
+      if(options && options.useTemp) {
+        ipsetName = this.getTempIPSetName(category)
+        ipset6Name = this.getTempIPSetNameForIPV6(category)
+      }
+
+      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      return (async () => {
+        await exec(cmd4)
+        await exec(cmd6)
+      })().catch((err) => {
+        log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
+      })
+    }
+  }
+
+    async recycleIPSet(category, options) {
     const domains = await this.getDomains(category)
 
     const ipsetName = this.getIPSetName(category)
@@ -178,14 +250,7 @@ class CategoryUpdater {
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
 
     await Promise.all(domains.map(async (domain) => {
-      const cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      const cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-      return (async () => {
-        await exec(cmd4)
-        await exec(cmd6)
-      })().catch((err) => {
-        log.error(`Failed to update temp ipset by category ${category} domain ${domain}, err: ${err}`)
-      })
+      await this.updateIPSetByDomain(category, domain, {useTemp: true})
     }))
 
     // swap temp ipset with ipset

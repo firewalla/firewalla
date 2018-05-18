@@ -105,7 +105,7 @@ class IntelTool {
   }
 
   updateHashMapping(hashCache, hash) {
-    if(hash.constructor.name === 'Array') {
+    if(Array.isArray(hash)) {
       const origin = hash[0]
       const hashedOrigin = hash[2]
       hashCache[hashedOrigin] = origin
@@ -174,8 +174,7 @@ class IntelTool {
           log.info("IntelCheck Result FAIL:",ipList, data, {});
           reject(err)
         } else {
-          log.debug("IntelCheck Result:",ipList, data, {});
-          if(data.constructor.name === 'Array') {
+          if(Array.isArray(data)) {
             data.forEach((result) => {
               const ip = result.ip
               if(hashCache[ip]) {
@@ -183,6 +182,7 @@ class IntelTool {
               }
             })
           }
+          log.debug("IntelCheck Result:",ipList, domainList, data, {});
           resolve(data);
         }
 

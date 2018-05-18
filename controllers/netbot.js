@@ -715,7 +715,7 @@ class netBot extends ControllerBot {
                const oldServer = json.oldServer
                const newServer = json.newServer
                
-               if(oldServer && newServer) {
+               if(oldServer && newServer && oldServer !== newServer) {
                  let notifyMsg = {
                    title: "Shadowsocks Failover",
                    body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
