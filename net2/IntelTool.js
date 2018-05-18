@@ -174,7 +174,6 @@ class IntelTool {
           log.info("IntelCheck Result FAIL:",ipList, data, {});
           reject(err)
         } else {
-          log.debug("IntelCheck Result:",ipList, data, {});
           if(Array.isArray(data)) {
             data.forEach((result) => {
               const ip = result.ip
@@ -183,6 +182,7 @@ class IntelTool {
               }
             })
           }
+          log.debug("IntelCheck Result:",ipList, domainList, data, {});
           resolve(data);
         }
 

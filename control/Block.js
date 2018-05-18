@@ -57,6 +57,7 @@ function setupBlockChain() {
     setupCategoryEnv("games")
     setupCategoryEnv("porn")
     setupCategoryEnv("social")
+    setupCategoryEnv("shopping")
   })()
 
   inited = true;
