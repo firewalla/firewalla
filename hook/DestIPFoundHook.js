@@ -131,7 +131,17 @@ class DestIPFoundHook extends Hook {
         }
       }
 
+      // always try to use the general domain pattern with same category
+      // a.b.c.d => porn
+      // b.c.d => porn
+      // c.d => search engine
+      //
+      // 'b.c.d => porn' should be used
+
       if(info.c) {
+        if(intel.category && info.c === intel.category) { // ignore if they are same category
+          return
+        }
         intel.category = info.c;
       }
 
