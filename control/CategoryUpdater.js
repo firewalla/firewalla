@@ -101,8 +101,6 @@ class CategoryUpdater {
       return
     }
 
-    log.info(`Found a ${category} domain: ${domain} isPattern: ${isPattern}`)
-
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
 
@@ -110,6 +108,8 @@ class CategoryUpdater {
     if(isPattern) {
       d = `*.${domain}`
     }
+
+    log.info(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d, {})
