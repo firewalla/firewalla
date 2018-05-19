@@ -101,8 +101,6 @@ class CategoryUpdater {
       return
     }
 
-    log.info(`Found a ${category} domain: ${domain} isPattern: ${isPattern}`)
-
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
 
@@ -111,10 +109,12 @@ class CategoryUpdater {
       d = `*.${domain}`
     }
 
+    log.info(`Found a ${category} domain: ${d}`)
+
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d, {})
   }
-  
+
   getMapping(category) {
     return `cuip:${category}`
   }
@@ -193,14 +193,19 @@ class CategoryUpdater {
       return this.updateIPSetByDomainPattern(category, domain, options)
     }
 
-    let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-    return (async () => {
-      await exec(cmd4)
-      await exec(cmd6)
-    })().catch((err) => {
-      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-    })
+    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
+
+    if(hasAny) {
+      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+      await exec(cmd6).catch((err) => {
+        log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
+
   }
 
   async updateIPSetByDomainPattern(category, domain, options) {
@@ -249,29 +254,34 @@ class CategoryUpdater {
     const tmpIPSetName = this.getTempIPSetName(category)
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
 
-    await Promise.all(domains.map(async (domain) => {
-      await this.updateIPSetByDomain(category, domain, {useTemp: true})
-    }))
+    for (let i = 0; i < domains.length; i++) {
+      const domain = domains[i]
+      await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
+        log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
+      })
+    }
 
     // swap temp ipset with ipset
     const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`
     const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`
 
-    (async () => {
-      await exec(swapCmd)
-      await exec(swapCmd6)
-    })().catch((err) => {
+    await exec(swapCmd).catch((err) => {
       log.error(`Failed to swap ipsets for category ${category}, err: ${err}`)
+    })
+
+    await exec(swapCmd6).catch((err) => {
+      log.error(`Failed to swap ipsets6 for category ${category}, err: ${err}`)
     })
 
     const flushCmd = `sudo ipset flush ${tmpIPSetName}`
     const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`
 
-    (async () => {
-      await exec(flushCmd)
-      await exec(flushCmd6)
-    })().catch((err) => {
+    await exec(flushCmd).catch((err) => {
       log.error(`Failed to flush temp ipsets for category ${category}, err: ${err}`)
+    })
+
+    await exec(flushCmd6).catch((err) => {
+      log.error(`Failed to flush temp ipsets6 for category ${category}, err: ${err}`)
     })
 
     log.info(`Successfully recycled ipset for category ${category}`)
@@ -308,10 +318,20 @@ class CategoryUpdater {
   }
 
   async refreshAllCategoryRecords() {
-    await Promise.all(this.getCategories().map(async (category) => {
-      await this.refreshCategoryRecord(category) // refresh domain list for each category
-      await this.recycleIPSet(category) // sync refreshed domain list to ipset
-    }))
+    const categories = this.getCategories()
+
+    for (let i = 0; i < categories.length ; i++) {
+      const category = categories[i]
+
+      await this.refreshCategoryRecord(category).catch((err) => {
+        log.error(`Failed to refresh category ${category}, err: ${err}`)
+      }) // refresh domain list for each category
+
+      await this.recycleIPSet(category).catch((err) => {
+        log.error(`Failed to recycle ipset for category ${category}, err: ${err}`)
+      }) // sync refreshed domain list to ipset
+    }
+
   }
 
 
