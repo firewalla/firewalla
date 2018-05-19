@@ -114,7 +114,7 @@ class CategoryUpdater {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d, {})
   }
-  
+
   getMapping(category) {
     return `cuip:${category}`
   }
@@ -249,9 +249,10 @@ class CategoryUpdater {
     const tmpIPSetName = this.getTempIPSetName(category)
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
 
-    await Promise.all(domains.map(async (domain) => {
+    for (let i = 0; i < domains.length; i++) {
+      const domain = domains[i]
       await this.updateIPSetByDomain(category, domain, {useTemp: true})
-    }))
+    }
 
     // swap temp ipset with ipset
     const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`
@@ -308,10 +309,15 @@ class CategoryUpdater {
   }
 
   async refreshAllCategoryRecords() {
-    await Promise.all(this.getCategories().map(async (category) => {
+    const categories = this.getCategories()
+
+    for (let i = 0; i < categories.length ; i++) {
+      const category = categories[i]
+
       await this.refreshCategoryRecord(category) // refresh domain list for each category
       await this.recycleIPSet(category) // sync refreshed domain list to ipset
-    }))
+    }
+    
   }
 
 
