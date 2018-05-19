@@ -251,7 +251,9 @@ class CategoryUpdater {
 
     for (let i = 0; i < domains.length; i++) {
       const domain = domains[i]
-      await this.updateIPSetByDomain(category, domain, {useTemp: true})
+      await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
+        log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
+      })
     }
 
     // swap temp ipset with ipset
@@ -314,10 +316,15 @@ class CategoryUpdater {
     for (let i = 0; i < categories.length ; i++) {
       const category = categories[i]
 
-      await this.refreshCategoryRecord(category) // refresh domain list for each category
-      await this.recycleIPSet(category) // sync refreshed domain list to ipset
+      await this.refreshCategoryRecord(category).catch((err) => {
+        log.error(`Failed to refresh category ${category}, err: ${err}`)
+      }) // refresh domain list for each category
+
+      await this.recycleIPSet(category).catch((err) => {
+        log.error(`Failed to recycle ipset for category ${category}, err: ${err}`)
+      }) // sync refreshed domain list to ipset
     }
-    
+
   }
 
 
