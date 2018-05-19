@@ -34,8 +34,8 @@ const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
 
-let IM = require('../net2/IntelManager.js')
-let im = new IM('info');
+let IntelManager = require('../net2/IntelManager.js')
+let intelManager = new IntelManager('info');
 
 var DNSManager = require('../net2/DNSManager.js');
 var dnsManager = new DNSManager('info');
@@ -1200,12 +1200,9 @@ module.exports = class {
       if(!destIP)
         return Promise.reject(new Error("Requiring p.dest.ip"));
 
-      const locationAsync = Promise.promisify(im._location).bind(im)
-
-      return async(() => {
-
+      return (async () => {
         // location
-        const loc = await (locationAsync(destIP))
+        const loc = await intelManager._location(destIP)
         if(loc && loc.loc) {
           const location = loc.loc;
           const ll = location.split(",");
@@ -1217,7 +1214,7 @@ module.exports = class {
         }
 
         // intel
-        const intel = await (intelTool.getIntel(destIP))
+        const intel = await intelTool.getIntel(destIP)
         if(intel && intel.app) {
           alarm["p.dest.app"] = intel.app
         }
@@ -1231,7 +1228,6 @@ module.exports = class {
         }
         
         return alarm
-        
       })()
     }
   }

@@ -38,8 +38,6 @@ var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
-var IntelManager = require('./IntelManager.js');
-var intelManager = new IntelManager('debug');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
