@@ -346,19 +346,22 @@ module.exports = class {
         // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
       };
       
+      let body, result;
       try {
-        let body = await rp(options)
-        this.cacheAdd(ip, "ipinfo", body);
-        let result;
-        try {
-          result = JSON.parse(body);
-        } catch (err) {
-          log.error("Error when parse body:", body, err);
-        }
-        return result;
+        body = await rp(options);
       } catch (err) {
         log.error("Error while requesting", options.uri, err);
+        return;
       }
+
+      this.cacheAdd(ip, "ipinfo", body);
+      
+      try {
+        result = JSON.parse(body);
+      } catch (err) {
+        log.error("Error when parse body:", body, err);
+      }
+      return result;
     }
 
     _lookup(ip, intel, callback) {
