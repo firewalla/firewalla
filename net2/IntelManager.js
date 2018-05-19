@@ -19,6 +19,7 @@ let instance = null;
 const log = require('./logger.js')(__filename);
 
 const request = require('request');
+const rp = require('request-promise');
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
@@ -59,7 +60,13 @@ module.exports = class {
     }
 
     async cacheLookupAsync(dest, origin) {
-        return await rclient.getAsync("cache.intel:" + origin + ":" + dest);
+      let result;
+      try {
+        result = await rclient.getAsync("cache.intel:" + origin + ":" + dest);
+      } catch (err) {
+        // null
+      }
+      return result;
     }
 
     cachelookup(ip, origin, callback) {
@@ -314,52 +321,44 @@ module.exports = class {
   "org": "AS21740 eNom, Incorporated",
   "postal": "98033"
  */
-    _location(ip, callback) {
-      log.info("Looking up location:",ip);
-      this.cachelookup(ip, "ipinfo", (err,data)=>{
-        if (data!=null) {
-            callback(null, JSON.parse(data));
-            return;
+    async _location(ip) {
+      log.info("Looking up location:", ip);
+
+      let cached = await this.cacheLookupAsync(ip, "ipinfo");
+
+      if (cached) {
+        return JSON.parse(cached);
+      }
+      
+      let ipinfo = await this._fromIpinfo(ip);
+      return ipinfo;
+    }
+    
+    async _fromBone(ip) {
+      
+    }
+    
+    async _fromIpinfo(ip) {
+      const options = {
+        uri: "https://ipinfo.io/" + ip,
+        method: 'GET',
+        family: 4
+        // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
+      };
+      
+      try {
+        let body = await rp(options)
+        this.cacheAdd(ip, "ipinfo", body);
+        let result;
+        try {
+          result = JSON.parse(body);
+        } catch (err) {
+          log.error("Error when parse body:", body, err);
         }
-        let weburl = "https://ipinfo.io/" + ip;
-
-        var options = {
-            uri: weburl,
-            method: 'GET',
-            family: 4
-            // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
-        };
-
-        request(options, (err, httpResponse, body) => {
-            if (err != null) {
-                let stack = new Error().stack;
-                log.info("Error while requesting ", err, stack);
-                callback(err, null, null);
-                return;
-            }
-            if (httpResponse == null) {
-                let stack = new Error().stack;
-                log.info("Error while response ", err, stack);
-                callback(500, null, null);
-                return;
-            }
-            if (httpResponse.statusCode < 200 ||
-                httpResponse.statusCode > 299) {
-                log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                callback(httpResponse.statusCode, null, null);
-                return;
-            }
-            if (err === null && body != null) {
-                this.cacheAdd(ip, "ipinfo", body);
-                let obj = JSON.parse(body);
-                if (obj != null) {
-                    callback(null,obj);
-                } else {
-                    callback(null,null);
-                }
-            }
-        });
-      });
+        return result;
+      } catch (err) {
+        log.error("Error while requesting", options.uri, err);
+      }
     }
 
     _lookup(ip, intel, callback) {
