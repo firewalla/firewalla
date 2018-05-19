@@ -193,14 +193,19 @@ class CategoryUpdater {
       return this.updateIPSetByDomainPattern(category, domain, options)
     }
 
-    let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-    return (async () => {
-      await exec(cmd4)
-      await exec(cmd6)
-    })().catch((err) => {
-      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-    })
+    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
+
+    if(hasAny) {
+      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+      await exec(cmd6).catch((err) => {
+        log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
+
   }
 
   async updateIPSetByDomainPattern(category, domain, options) {
@@ -260,21 +265,23 @@ class CategoryUpdater {
     const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`
     const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`
 
-    (async () => {
-      await exec(swapCmd)
-      await exec(swapCmd6)
-    })().catch((err) => {
+    await exec(swapCmd).catch((err) => {
       log.error(`Failed to swap ipsets for category ${category}, err: ${err}`)
+    })
+
+    await exec(swapCmd6).catch((err) => {
+      log.error(`Failed to swap ipsets6 for category ${category}, err: ${err}`)
     })
 
     const flushCmd = `sudo ipset flush ${tmpIPSetName}`
     const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`
 
-    (async () => {
-      await exec(flushCmd)
-      await exec(flushCmd6)
-    })().catch((err) => {
+    await exec(flushCmd).catch((err) => {
       log.error(`Failed to flush temp ipsets for category ${category}, err: ${err}`)
+    })
+
+    await exec(flushCmd6).catch((err) => {
+      log.error(`Failed to flush temp ipsets6 for category ${category}, err: ${err}`)
     })
 
     log.info(`Successfully recycled ipset for category ${category}`)
