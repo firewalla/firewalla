@@ -324,22 +324,30 @@ module.exports = class {
       return JSON.parse(cached);
     }
 
-    return Promise.join(
-      this._ipInfofromBone(ip),
-      this._ipInfofromIpinfo(ip),
+    let ipinfo = await Promise.join(
+      this._ipInfoFromBone(ip),
+      this._ipInfoFromIpinfo(ip),
       (info1, info2) => Object.assign(info1 ? info1 : {}, info2)
     );
+    
+    log.info("Merged ipinfo is:", ipinfo);
+
+    this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));
+    
+    return ipinfo;
   }
 
-  static async _ipInfofromBone(ip) {
+  static async _ipInfoFromBone(ip) {
       let result = await bone.intelFinger(ip);
       if (result) {
+        log.info("ipInfo from bone is:", result.ipinfo);
         return result.ipinfo;
       }
+      log.info("ipInfo from bone is:", null);
       return null;
     }
 
-  async _ipInfofromIpinfo(ip) {
+  async _ipInfoFromIpinfo(ip) {
     const options = {
       uri: "https://ipinfo.io/" + ip,
       method: 'GET',
@@ -355,13 +363,13 @@ module.exports = class {
       return;
     }
 
-    this.cacheAdd(ip, "ipinfo", body);
-
     try {
       result = JSON.parse(body);
     } catch (err) {
       log.error("Error when parse body:", body, err);
     }
+
+    log.info("ipInfo from ipinfo is:", result);
     return result;
   }
 
