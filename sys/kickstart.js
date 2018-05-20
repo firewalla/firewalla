@@ -79,7 +79,7 @@
   
   let FWInvitation = require('./invitation.js');
 
-  const Diag = require('../extension/diag/app.js')
+  const Diag = require('../extension/diag/app.js');
   
   (async() => {
     await sysManager.setConfig(firewallaConfig)
@@ -219,7 +219,8 @@
   }
 
   async function recordAllRegisteredClients(gid) {
-    const groupInfo = eptcloud.groupCache[gid]
+    const groupInfo = eptcloud.groupCache[gid] && eptcloud.groupCache[gid].group
+
     if(!groupInfo) {
       return
     }
@@ -238,6 +239,7 @@
 
     cmd.push.apply(cmd, clientInfos)
 
+    await rclient.delAsync(keyName)
     await rclient.saddAsync(cmd)
   }
 
@@ -319,6 +321,10 @@
           
           let onSuccess = function(payload) {
             return (async() => {
+              await recordAllRegisteredClients(gid).catch((err) => {
+                log.info("Failed to record registered clients, err:", err, {})
+              })
+
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               log.info("EXIT KICKSTART AFTER JOIN");
