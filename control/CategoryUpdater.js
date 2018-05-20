@@ -54,13 +54,16 @@ class CategoryUpdater {
         "shopping": 1
       }
 
-      setInterval(() => {
-        this.refreshAllCategoryRecords()
-      }, 60 * 60 * 1000) // update records every hour
+      // only run refresh category records for fire main process
+      if(process.title === 'FireMain') {
+        setInterval(() => {
+          this.refreshAllCategoryRecords()
+        }, 60 * 60 * 1000) // update records every hour
 
-      setTimeout(() => {
-        this.refreshAllCategoryRecords()
-      }, 60 * 1000) // after one minute
+        setTimeout(() => {
+          this.refreshAllCategoryRecords()
+        }, 60 * 1000) // after one minute
+      }
     }
     return instance
   }
