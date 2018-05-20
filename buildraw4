@@ -35,8 +35,16 @@ function install_dependencies()
     git pull || perr_and_exit "Failed to pull latest firewalla code."
 
     # TODO: check local apt mirror
+     echo "Installing node source repository..."
+    curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh | bash
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+    #[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+    export PATH=$PATH:/sbin
+    nvm install 8.7.0
+
     echo "Installing node source repository..."
-    sudo  curl -sL https://deb.nodesource.com/setup_4.x | sudo -E bash -   || perr_and_exit "Failed to install node source repo"
+    #sudo  curl -sL https://deb.nodesource.com/setup_4.x | sudo -E bash -   || perr_and_exit "Failed to install node source repo"
 
     echo "Executing apt-get update, please be patient..."
     sudo apt-get update   || perr_and_exit "apt-get update failed."
@@ -69,8 +77,8 @@ function install_dependencies()
     sudo mkdir -p /etc/openvpn || perr_and_exit "Failed to create new openvpn configure folder."
     sudo cp -r /usr/share/easy-rsa /etc/openvpn || perr_and_exit "Failed to copy easy_rsa."
 
-    echo "Installing shadowsocks..."
-    sudo -H pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
+    #echo "Installing shadowsocks..."
+    #sudo -H pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
 }
 
 function install_walla()
