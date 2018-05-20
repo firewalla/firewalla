@@ -1931,8 +1931,8 @@ module.exports = class HostManager {
         }).filter((x) => x != null)
 
         if(mm && mm.length > 0) {
-          const names = await (rclient.hgetall("sys:ept:memberNames"))
-          const lastVisits = await (rclient.hgetall("sys:ept:member:lastvisit"))
+          const names = await (rclient.hgetallAsync("sys:ept:memberNames"))
+          const lastVisits = await (rclient.hgetallAsync("sys:ept:member:lastvisit"))
 
           if(names) {
             mm.forEach((m) => {
