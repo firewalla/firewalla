@@ -90,7 +90,7 @@ class App {
 
     const redirect = await rclient.hgetAsync('redirect','porn')
     if(redirect) {
-      res.status(303).location(location).send().end()
+      res.status(303).location(redirect).send().end()
     } else {
       res.status(303).location(`${location}?${params}`).send().end();
     }
