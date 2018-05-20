@@ -195,7 +195,7 @@ module.exports = class {
         return;
       }
 
-      let result = this.cacheLookupAsync(ip, "cymon");
+      let result = await this.cacheLookupAsync(ip, "cymon");
       if (result && result !== "none") {
         let lobj = await this._location(ip);
         let obj = JSON.parse(result);
@@ -211,7 +211,7 @@ module.exports = class {
           return obj;
         }
       } else {
-        return this._lookup(ip, intel);
+        return await this._lookup(ip, intel);
       }
     }
 
