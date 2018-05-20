@@ -373,7 +373,7 @@ module.exports = class {
     return result;
   }
 
-  _lookup(ip, intel) {
+  async _lookup(ip, intel) {
     let url = "https://cymon.io/api/nexus/v1/ip/" + ip + "/events?limit=100";
 
     let options = {
@@ -382,34 +382,34 @@ module.exports = class {
       family: 4
     };
 
-    this._location(ip)
-      .then(lobj => {
-        let obj = {lobj};
-        log.info("Intel:Location", ip, lobj);
-        obj = this._packageIntel(ip, obj, intel);
+    let lobj = await this._location(ip);
+
+    let obj = {lobj};
+    log.info("Intel:Location", ip, lobj);
+    obj = this._packageIntel(ip, obj, intel);
+
+    let body;
+    try {
+      body = await rp(options);
+    } catch (err) {
+      log.info(`Error while requesting ${url}`, err);
+      
+    }
+
+    this.cacheAdd(ip, "cymon", body);
+    
+    let cobj = JSON.parse(body);
+    if (cobj) {
+      if (cobj.count === 0) {
+        log.info("INFO:====== No Intel Information!!", ip, obj);
         return obj;
-      })
-      .then(obj => {
-        rp(options)
-          .catch(err => {
-            log.info(`Error while requesting ${url}`, err);
-          })
-          .then(body => {
-            this.cacheAdd(ip, "cymon", body);
-            let cobj = JSON.parse(body);
-            if (cobj) {
-              if (cobj.count === 0) {
-                log.info("INFO:====== No Intel Information!!", ip, obj);
-                callback(null, obj);
-              } else {
-                cobj.lobj = lobj;
-                this._packageCymon(ip, cobj);
-                callback(err, cobj, cobj.weburl);
-              }
-            } else {
-              callback(null, obj);
-            }
-          });
-      });
+      } else {
+        cobj.lobj = lobj;
+        this._packageCymon(ip, cobj);
+        return cobj;
+      }
+    } else {
+      return obj;
+    }
   }
 }
