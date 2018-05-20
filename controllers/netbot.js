@@ -1185,7 +1185,11 @@ class netBot extends ControllerBot {
       if(appInfo.deviceName && appInfo.eid) {
         const keyName = "sys:ept:memberNames"
         await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+
+        const keyName2 = "sys:ept:member:lastvisit"
+        await (rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000)))
       }
+
     })()
   }
 
@@ -2486,6 +2490,10 @@ class netBot extends ControllerBot {
       log.info("Received jsondata from app", rawmsg.message, {});
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
+
+          if(rawmsg.message.appInfo) {
+            this.processAppInfo(rawmsg.message.appInfo)
+          }
 
           log.info("Process Init load event");
 
