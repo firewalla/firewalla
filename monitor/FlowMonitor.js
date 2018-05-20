@@ -753,7 +753,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost,(err,loc)=>{
+                                    intelManager._location(remoteHost).then(loc =>{
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -774,16 +774,14 @@ module.exports = class FlowMonitor {
                                                 "p.flow": JSON.stringify(flow)
                                               });
 
-                                              async(() => {
-                                                await (alarmManager2.enrichDeviceInfo(alarm))
-                                                await (alarmManager2.enrichDestInfo(alarm))
-                                                await (alarmManager2.checkAndSaveAsync(alarm))
-                                              })().catch((err) => {
-                                                log.error("Failed to enrich and save alarm", err, {})
-                                              })
-
+                                          (async () => {
+                                            await alarmManager2.enrichDeviceInfo(alarm)
+                                            await alarmManager2.enrichDestInfo(alarm)
+                                            await alarmManager2.checkAndSaveAsync(alarm)
+                                          })().catch((err) => {
+                                            log.error("Failed to enrich and save alarm", err)
+                                          })
                                         }
-
                                     });
                                 }
                             });
@@ -811,7 +809,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost,(err,loc)=>{
+                                    intelManager._location(remoteHost).then(loc => {
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -837,12 +835,12 @@ module.exports = class FlowMonitor {
 
                                             // ideally each destination should have a unique ID, now just use hostname as a workaround
                                             // so destionationName, destionationHostname, destionationID are the same for now
-                                            async(() => {
-                                              await (alarmManager2.enrichDeviceInfo(alarm))
-                                              await (alarmManager2.enrichDestInfo(alarm))
-                                              await (alarmManager2.checkAndSaveAsync(alarm))
+                                            (async () => {
+                                              await alarmManager2.enrichDeviceInfo(alarm)
+                                              await alarmManager2.enrichDestInfo(alarm)
+                                              await alarmManager2.checkAndSaveAsync(alarm)
                                             })().catch((err) => {
-                                              log.error("Failed to enrich and save alarm", err, {})
+                                              log.error("Failed to enrich and save alarm", err)
                                             })
                                         }
 
