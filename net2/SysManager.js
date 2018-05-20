@@ -271,6 +271,18 @@ module.exports = class {
     });
   }
 
+  setLanguageAsync(language) {
+    return new Promise((resolve, reject) => {
+      this.setLanguage(language, (err) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
   setTimezone(timezone, callback) {
     callback = callback || function() {}
 

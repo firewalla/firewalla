@@ -1174,7 +1174,20 @@ class netBot extends ControllerBot {
   }
 
 
+  processAppInfo(appInfo) {
+    return async(() => {
+      if(appInfo.language) {
+        if(sysManager.language !== appInfo.language) {
+          await (sysManager.setLanguageAsync(appInfo.language))
+        }
+      }
 
+      if(appInfo.deviceName && appInfo.eid) {
+        const keyName = "sys:ept:memberNames"
+        await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+      }
+    })()
+  }
 
   getHandler(gid, msg, appInfo, callback) {
 
@@ -1182,6 +1195,10 @@ class netBot extends ControllerBot {
     if(typeof appInfo === 'function') {
       callback = appInfo;
       appInfo = undefined;
+    }
+
+    if(appInfo) {
+      this.processAppInfo(appInfo)
     }
 
     // mtype: get
