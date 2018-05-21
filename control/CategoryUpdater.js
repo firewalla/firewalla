@@ -338,6 +338,36 @@ class CategoryUpdater {
   }
 
 
+  async iptablesRedirectCategory(category) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    const cmdRedirectHTTPRule = `sudo iptables -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880 || sudo iptables -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880`
+    const cmdRedirectHTTPSRule = `sudo iptables -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883 || sudo iptables -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880 || sudo ip6tables -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883 || sudo ip6tables -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+
+    await exec(cmdRedirectHTTPRule)
+    await exec(cmdRedirectHTTPSRule)
+    await exec(cmdRedirectHTTPRule6)
+    await exec(cmdRedirectHTTPSRule6)
+  }
+
+  async iptablesUnredirectCategory(category) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    const cmdRedirectHTTPRule = `sudo iptables -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880`
+    const cmdRedirectHTTPSRule = `sudo iptables -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+
+    await exec(cmdRedirectHTTPRule)
+    await exec(cmdRedirectHTTPSRule)
+    await exec(cmdRedirectHTTPRule6)
+    await exec(cmdRedirectHTTPSRule6)
+  }
+  
   async iptablesBlockCategory(category) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
