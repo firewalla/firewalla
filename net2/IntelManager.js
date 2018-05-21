@@ -80,7 +80,7 @@ module.exports = class {
     }
 
     cacheAdd(ip, origin, value) {
-        if (value == null || Object.keys(result).length === 0) {
+        if (value == null || Object.keys(value).length === 0) {
             value = "none";
         }
         
