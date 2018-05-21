@@ -60,10 +60,10 @@ module.exports = class {
       bone.intel(ip, "", action, {});
     }
 
-    async cacheLookupAsync(dest, origin) {
+    async cacheLookupAsync(ip, origin) {
       let result;
       
-      let key = "cache.intel:" + origin + ":" + dest;
+      let key = "cache.intel:" + origin + ":" + ip;
       
       try {
         result = await rclient.getAsync(key);
@@ -75,7 +75,7 @@ module.exports = class {
         result = null;
       }
       
-      log.info("Cache lookup for", dest, ", result:", result);
+      log.info("Cache lookup for", ip, ", result:", result);
       return result;
     }
 
@@ -83,7 +83,7 @@ module.exports = class {
         if (value == null || Object.keys(value).length === 0) {
             value = "none";
         }
-        let key = "cache.intel:" + origin + ":" + dest;
+        let key = "cache.intel:" + origin + ":" + ip;
         log.info("Add into cache.intel, key:", key, ", value:", value);
         rclient.set(key, value, (err, result) => {
           rclient.expireat(key, this.currentTime() + A_WEEK);
@@ -356,7 +356,8 @@ module.exports = class {
     const options = {
       uri: "https://ipinfo.io/" + ip,
       method: 'GET',
-      family: 4
+      family: 4,
+      timeout: 5, // secs
       // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
     };
 
