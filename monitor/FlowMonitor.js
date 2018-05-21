@@ -262,7 +262,7 @@ module.exports = class FlowMonitor {
                       });
 
                       alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarmManager2.enrichDestInfo)
+                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -270,7 +270,7 @@ module.exports = class FlowMonitor {
                           });
                         }).catch((err) => {
                           if(err)
-                            log.error("Failed to create alarm: " + err);
+                            log.error("Failed to create alarm: ", err);
                         });
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
@@ -308,7 +308,7 @@ module.exports = class FlowMonitor {
                     });
 
                     alarmManager2.enrichDeviceInfo(alarm)
-                      .then(alarmManager2.enrichDestInfo)
+                      .then(alarm => alarmManager2.enrichDestInfo(alarm))
                       .then((alarm) => {
                         alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
@@ -316,7 +316,7 @@ module.exports = class FlowMonitor {
                         })
                       }).catch((err) => {
                         if(err)
-                          log.error("Failed to create alarm: " + err);
+                          log.error("Failed to create alarm: ", err);
                       });
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
@@ -430,7 +430,7 @@ module.exports = class FlowMonitor {
 
 
                       alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarmManager2.enrichDestInfo)
+                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -438,7 +438,7 @@ module.exports = class FlowMonitor {
                           });
                         }).catch((err) => {
                           if(err)
-                            log.error("Failed to create alarm: " + err);
+                            log.error("Failed to create alarm: ", err);
                         });
                     }
                 }
