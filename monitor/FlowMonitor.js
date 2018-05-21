@@ -911,6 +911,7 @@ module.exports = class FlowMonitor {
   }
 
   async processIntelFlow(flowObj) {
+    log.info("Process intel flow for", flowObj);  
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
@@ -1044,6 +1045,7 @@ module.exports = class FlowMonitor {
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
+    log.info("Check IP Alarm for traffic from:", deviceIP, ", to:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
 
     let iobj;

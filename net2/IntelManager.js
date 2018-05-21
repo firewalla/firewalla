@@ -67,6 +67,8 @@ module.exports = class {
       } catch (err) {
         // null
       }
+      
+      log.info("Cache lookup for", dest, ", result:", result);
       return result;
     }
 
