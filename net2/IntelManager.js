@@ -68,14 +68,12 @@ module.exports = class {
         // null
       }
       
+      if (Object.keys(result).length === 0) {
+        result = null;
+      }
+      
       log.info("Cache lookup for", dest, ", result:", result);
       return result;
-    }
-
-    cachelookup(ip, origin, callback) {
-        rclient.get("cache.intel:" + origin + ":" + ip, (err, result) => {
-            callback(err, result);
-        });
     }
 
     cacheAdd(ip, origin, value) {
