@@ -77,7 +77,7 @@ module.exports = class {
     }
 
     cacheAdd(ip, origin, value) {
-        if (value == null) {
+        if (value == null || Object.keys(result).length === 0) {
             value = "none";
         }
         rclient.set("cache.intel:" + origin + ":" + ip, value, (err, result) => {
