@@ -84,10 +84,10 @@ module.exports = class {
             value = "none";
         }
         
-        log.info("Object.keys(value).length:", Object.keys(value).length);
-        
         let key = "cache.intel:" + origin + ":" + ip;
+        
         log.info("Add into cache.intel, key:", key, ", value:", value);
+        
         rclient.set(key, value, (err, result) => {
           rclient.expireat(key, this.currentTime() + A_WEEK);
         });
@@ -369,7 +369,7 @@ module.exports = class {
       uri: "https://ipinfo.io/" + ip,
       method: 'GET',
       family: 4,
-      timeout: 5000, // ms
+      timeout: 6000, // ms
       // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
     };
 
