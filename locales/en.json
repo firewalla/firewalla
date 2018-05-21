@@ -12,6 +12,10 @@
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{p.dest.name}}:{{p.dest.port}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing this device. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
   "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked this device from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
+  "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{p.security.primaryReason}} site {{p.dest.name}} is accessing this device's port {{p.device.port}}. (Reported by Firewalla global security intelligence)",
+  "FW_INTEL_ALARM_INTEL_FROM_INSIDE": "This device is accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}}. (Reported by Firewalla global security intelligence)",
+  "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.security.primaryReason}} site {{p.dest.name}} from accessing this device. (Reported by Firewalla global security intelligence)",
+  "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked this device from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}}. (Reported by Firewalla global security intelligence)",
   "ALARM_VULNERABILITY_CVE-2017-0143": "This device is vulnerable to WannaCry ransomware",
   "NOTIF_ALARM_PORN": "Device \"{{p.device.name}}\" visited porn website {{p.dest.name}}",
   "NOTIF_ALARM_VIDEO": "Device \"{{p.device.name}}\" visited video website {{p.dest.name}}",
@@ -26,6 +30,10 @@
   "NOTIF_ALARM_INTEL_FROM_INSIDE": "Device \"{{p.device.name}}\" is accessing {{p.dest.name}}:{{p.dest.port}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources.",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Blocked {{p.dest.name}} from accessing device \"{{p.device.name}}\". (Reported by {{p.security.numOfReportSources}} sources)",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Blocked device \"{{p.device.name}}\" from accessing {{p.dest.name}}. (Reported by {{p.security.numOfReportSources}} sources)",
+  "NOTIF_FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{p.security.primaryReason}} site {{p.dest.name}} is accessing \"{{p.device.name}}\"'s port {{p.device.port}}. (Reported by Firewalla global security intelligence)",
+  "NOTIF_FW_INTEL_ALARM_INTEL_FROM_INSIDE": "Device \"{{p.device.name}}\" is accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}}. (Reported by Firewalla global security intelligence)",
+  "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.security.primaryReason}} site {{p.dest.name}} from accessing device \"{{p.device.name}}\". (Reported by Firewalla global security intelligence)",
+  "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device \"{{p.device.name}}\" from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}}. (Reported by Firewalla global security intelligence)",
   "NOTIF_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware",
   "INFO_ALARM_PORN": "Device {{p.device.name}} visited porn website {{p.dest.name}} {{localizedRelativeTime}}",
   "INFO_ALARM_VIDEO": "Device {{p.device.name}} visited video website {{p.dest.name}} {{localizedRelativeTime}}",
@@ -38,5 +46,9 @@
   "INFO_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} accessed {{p.dest.name}}:{{p.dest.port}} {{localizedRelativeTime}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware",
   "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing device {{p.device.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
-  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)"
+  "INFO_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.dest.name}}. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
+  "INFO_FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{p.security.primaryReason}} site {{p.dest.name}} is accessing device {{p.device.name}} ({{p.device.ip}}:{{p.device.port}}) {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
+  "INFO_FW_INTEL_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} is accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
+  "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.security.primaryReason}} site {{p.dest.name}} from accessing device {{p.device.name}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
+  "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)"
 }
