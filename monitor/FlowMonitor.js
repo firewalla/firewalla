@@ -1010,7 +1010,7 @@ module.exports = class FlowMonitor {
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reasons.join(","),
       "p.security.primaryReason": reasons[0],
-      "p.security.numOfReportSources": "",
+      "p.security.numOfReportSources": "Firewalla global security intel",
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.source": "firewalla_intel"
     });
