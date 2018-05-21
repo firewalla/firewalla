@@ -323,7 +323,6 @@ module.exports = class {
   "org": "AS21740 eNom, Incorporated",
   "postal": "98033"
  */
-<<<<<<< HEAD
   async _location(ip) {
     log.info("Looking up location:", ip);
 
