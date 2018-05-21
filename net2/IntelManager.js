@@ -361,7 +361,7 @@ module.exports = class {
     try {
       body = await rp(options);
     } catch (err) {
-      log.error("Error while requesting", options.uri, err);
+      log.error("Error while requesting", options.uri, err.name, err.cause);
       return;
     }
 
@@ -394,7 +394,7 @@ module.exports = class {
     try {
       body = await rp(options);
     } catch (err) {
-      log.info(`Error while requesting ${url}`, err);
+      log.info(`Error while requesting ${url}`, err.name, err.cause);
       
     }
 
