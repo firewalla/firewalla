@@ -339,15 +339,15 @@ module.exports = class {
     return ipinfo;
   }
 
-  static async _ipInfoFromBone(ip) {
-      let result = await bone.intelFinger(ip);
-      if (result) {
-        log.info("ipInfo from bone is:", result.ipinfo);
-        return result.ipinfo;
-      }
-      log.info("ipInfo from bone is:", null);
-      return null;
+  async _ipInfoFromBone(ip) {
+    let result = await bone.intelFinger(ip);
+    if (result) {
+      log.info("ipInfo from bone is:", result.ipinfo);
+      return result.ipinfo;
     }
+    log.info("ipInfo from bone is:", null);
+    return null;
+  }
 
   async _ipInfoFromIpinfo(ip) {
     const options = {
