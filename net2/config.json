@@ -222,7 +222,8 @@
       "redirect_httpd": true,
       "social_hour": true,
       "api_relay": false,
-      "vpn_relay": false
+      "vpn_relay": false,
+      "upstream_dns": false
     }
 
 }
