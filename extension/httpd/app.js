@@ -60,7 +60,7 @@ class App {
         // as a workaround, redirect all traffic as porn
         // TBD implementation a multi-port FireBlue to handle multiple category traffic
         let redirect = await rclient.hgetAsync('redirect','porn')
-        redirect = redirect || "google.com"
+        redirect = redirect || "http://google.com"
         
         if(redirect) {
           res.status(303).location(redirect).send().end()
