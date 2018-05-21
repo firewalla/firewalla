@@ -68,7 +68,7 @@ module.exports = class {
         // null
       }
       
-      if (Object.keys(result).length === 0) {
+      if (result === "{}" || Object.keys(result).length === 0) {
         result = null;
       }
       
