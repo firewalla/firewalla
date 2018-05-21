@@ -83,7 +83,7 @@ module.exports = class {
         if (value == null || Object.keys(value).length === 0) {
             value = "none";
         }
-        
+        let key = "cache.intel:" + origin + ":" + dest;
         log.info("Add into cache.intel, key:", key, ", value:", value);
         rclient.set(key, value, (err, result) => {
           rclient.expireat(key, this.currentTime() + A_WEEK);
