@@ -971,17 +971,20 @@ module.exports = class FlowMonitor {
       return;
     }
 
+    const reasons = []
     let _category, reason = 'Access a ';
     switch (intel.category) {
       case 'spam':
       case 'phishing':
       case 'piracy':
       case 'suspicious':
+        reasons.push(intel.category)
         reason += intel.category;
         intel.severityscore = 30;
         _category = intel.category;
         break;
       case 'intel':
+        reasons.push(intel.cc)
         reason += intel.cc;
         intel.severityscore = 70;
         _category = intel.cc;
@@ -1005,9 +1008,11 @@ module.exports = class FlowMonitor {
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
       "p.dest.port": this.getRemotePort(flowObj),
-      "p.security.reason": reason,
-      "p.security.numOfReportSources": "Firewalla global security intel",
-      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
+      "p.security.reason": reasons.join(","),
+      "p.security.primaryReason": reasons[0],
+      "p.security.numOfReportSources": "",
+      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
+      "p.source": "firewalla_intel"
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
