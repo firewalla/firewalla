@@ -201,7 +201,7 @@
     "features": {
       "intel:feedback": true,
       "ss_client:statusCheck": true,
-      "familyMode": "v1"
+      "familyMode": "v2"
     },
     
     "userFeatures": {
@@ -219,10 +219,11 @@
       "naughty_monkey": false,
       "device_detection": false,
       "porn_redirect": false,
-      "redirect_httpd": false,
+      "redirect_httpd": true,
       "social_hour": true,
       "api_relay": false,
-      "vpn_relay": false
+      "vpn_relay": false,
+      "upstream_dns": false
     }
 
 }

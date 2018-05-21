@@ -76,8 +76,8 @@ function install_dependencies()
     sudo mkdir -p /etc/openvpn || perr_and_exit "Failed to create new openvpn configure folder."
     sudo cp -r /usr/share/easy-rsa /etc/openvpn || perr_and_exit "Failed to copy easy_rsa."
 
-    echo "Installing shadowsocks..."
-    sudo -H pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
+    #echo "Installing shadowsocks..."
+    #sudo -H pip install shadowsocks || perr_and_exit "Failed to install shadowsocks."
 }
 
 function install_walla()

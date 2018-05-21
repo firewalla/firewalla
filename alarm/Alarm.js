@@ -179,21 +179,59 @@ class IntelAlarm extends Alarm {
   }
 
   getI18NCategory() {
+    this["p.dest.readableName"] = this.getReadableDestination()
+    
     if(this.result === "block" &&
     this.result_method === "auto") {
-      if(this["p.local_is_client"] === "1") {
-        return "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
+      if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
+        if(this["p.local_is_client"] === "1") {
+          return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
+        } else {
+          return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
+        }
       } else {
-        return "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
+        if (this["p.local_is_client"] === "1") {
+          return "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
+        } else {
+          return "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
+        }
       }
     } else {
-      if(this["p.local_is_client"] === "1") {
-        return "ALARM_INTEL_FROM_INSIDE";
+      if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
+        if(this["p.local_is_client"] === "1") {
+          return "FW_INTEL_ALARM_INTEL_FROM_INSIDE";
+        } else {
+          return "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE";
+        }
       } else {
-        return "ALARM_INTEL_FROM_OUTSIDE";
+        if(this["p.local_is_client"] === "1") {
+          return "ALARM_INTEL_FROM_INSIDE";
+        } else {
+          return "ALARM_INTEL_FROM_OUTSIDE";
+        }
       }
     }
-
+  }
+  
+  getReadableDestination() {
+    const name = this["p.dest.name"]
+    const port = this["p.dest.port"]
+    
+    if( name && port) {
+      if(port == 80) {
+        return `http://${name}`
+      } else if(port == 443) {
+        return `https://${name}`
+      } else {
+        return `${name}:${port}`
+      }
+    } else {
+      if(name) {
+        return name
+      } else {
+        return this["p.dest.id"] 
+      }
+    }
   }
 
   keysToCompareForDedup() {

@@ -61,6 +61,9 @@ let features = require('../net2/features');
 
 const cp = require('child_process')
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
 1) "blockin"
@@ -311,9 +314,19 @@ module.exports = class {
       if (state === true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
         dnsmasq.updateResolvConf().then(callback);
+        
+        // auto redirect all porn traffic in v2 mode
+        categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
+          log.error("Failed to redirect porn traffic, err", err, {})
+        })
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf().then(callback);
+
+        // auto redirect all porn traffic in v2 mode
+        categoryUpdater.iptablesUnredirectCategory("porn").catch((err) => {
+          log.error("Failed to unredirect porn traffic, err", err, {})
+        })
       }
     });
 
