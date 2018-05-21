@@ -62,13 +62,16 @@ module.exports = class {
 
     async cacheLookupAsync(dest, origin) {
       let result;
+      
+      let key = "cache.intel:" + origin + ":" + dest;
+      
       try {
-        result = await rclient.getAsync("cache.intel:" + origin + ":" + dest);
+        result = await rclient.getAsync(key);
       } catch (err) {
         // null
       }
       
-      if (result === "{}" || Object.keys(result).length === 0) {
+      if (result && (result === "{}" || Object.keys(result).length === 0)) {
         result = null;
       }
       
@@ -80,8 +83,10 @@ module.exports = class {
         if (value == null || Object.keys(result).length === 0) {
             value = "none";
         }
-        rclient.set("cache.intel:" + origin + ":" + ip, value, (err, result) => {
-          rclient.expireat("cache.intel:" + origin + ":" + ip, this.currentTime() + A_WEEK);
+        
+        log.info("Add into cache.intel, key:", key, ", value:", value);
+        rclient.set(key, value, (err, result) => {
+          rclient.expireat(key, this.currentTime() + A_WEEK);
         });
     }
 
@@ -359,7 +364,7 @@ module.exports = class {
     try {
       body = await rp(options);
     } catch (err) {
-      log.error("Error while requesting", options.uri, , err.code, err.message, err.stack);
+      log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
       return;
     }
 

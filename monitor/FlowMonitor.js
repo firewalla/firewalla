@@ -1097,8 +1097,8 @@ module.exports = class FlowMonitor {
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
     alarmManager2.enrichDeviceInfo(alarm)
-      .then(alarmManager2.enrichDestInfo)
-      .then((alarm) => {
+      .then(alarm => alarmManager2.enrichDestInfo(alarm))
+      .then(alarm => {
         alarmManager2.checkAndSave(alarm, (err) => {
           if (err) {
             log.error("Fail to save alarm:", err);
