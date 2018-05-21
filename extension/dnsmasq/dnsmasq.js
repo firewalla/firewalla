@@ -346,7 +346,7 @@ module.exports = class DNSMASQ {
   setDefaultNameServers(key, ips) {
     let _ips;
     if (Array.isArray(ips)) {
-      _ips = ips.filter(validator.isIP);
+      _ips = ips.filter(x => validator.isIP(x));
     } else {
       if (!validator.isIP(ips.toString())) {
         return;
@@ -369,6 +369,20 @@ module.exports = class DNSMASQ {
       }
     });
     return list
+  }
+  
+  async getCurrentNameServerList() {
+    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
+    log.info("Command to get current name server: ", cmd);
+
+    let {stdout, stderr} = await execAsync(cmd);
+    
+    if (!stdout || stdout === '') {
+      return [];
+    }
+
+    let list = stdout.split('\n');
+    return list.filter((x, i) => list.indexOf(x) === i);
   }
 
   async delay(t) {
@@ -736,7 +750,8 @@ module.exports = class DNSMASQ {
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
-      cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
+      if(cmdAlt) 
+        cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
     }
 
     this.writeStartScript(cmd, cmdAlt);
@@ -993,6 +1008,7 @@ module.exports = class DNSMASQ {
   async statusCheck() {
     log.info("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() ||
+      await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity();
 

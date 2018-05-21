@@ -42,6 +42,9 @@ let vpnManager = new VpnManager('info');
 let IntelManager = require('../net2/IntelManager.js');
 let intelManager = new IntelManager('debug');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
@@ -106,7 +109,7 @@ let appTool = require('../net2/AppTool')();
 
 let spooferManager = require('../net2/SpooferManager.js')
 
-const extMgr = require('../sensor/ExtensionManager')
+const extMgr = require('../sensor/ExtensionManager.js')
 
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
@@ -415,6 +418,21 @@ class netBot extends ControllerBot {
     }
   }
 
+  _setUpstreamDns(ip, value, callback) {
+    log.info("In _setUpstreamDns with ip:", ip, "value:", value);
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on upstream_dns: " + value);
+        }
+      });
+    });
+  }
+
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -677,10 +695,61 @@ class netBot extends ControllerBot {
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
              break;
+         case "SS:DOWN":
+           if (msg) {
+             let notifyMsg = {
+               title: `Shadowsocks server ${msg} is down`,
+               body: ""
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data);
+           }
+           break;
+         case "SS:FAILOVER":
+           if (msg) {
+             let json = null
+             try {
+               json = JSON.parse(msg)
+               const oldServer = json.oldServer
+               const newServer = json.newServer
+               
+               if(oldServer && newServer && oldServer !== newServer) {
+                 let notifyMsg = {
+                   title: "Shadowsocks Failover",
+                   body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
+                 }
+                 let data = {
+                   gid: this.primarygid,
+                 };
+                 this.tx2(this.primarygid, "", notifyMsg, data)
+               }
+               
+             } catch(err) {
+               log.error("Failed to parse SS:FAILOVER payload:", err)
+             }
+           }
+           break;
+         case "SS:START:FAILED":
+           if (msg) {
+             let notifyMsg = {
+               title: "SciSurf service is down!",
+               body: `Failed to start scisurf service with ss server ${msg}.`
+             }
+             let data = {
+               gid: this.primarygid,
+             };
+             this.tx2(this.primarygid, "", notifyMsg, data)
+           }
+           break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Soft");
+    sclient.subscribe("SS:DOWN")
+    sclient.subscribe("SS:FAILOVER")
+    sclient.subscribe("SS:START:FAILED")
 
 
   }
@@ -772,6 +841,15 @@ class netBot extends ControllerBot {
     // invalidate cache
     this.invalidateCache();
 
+    if(extMgr.hasSet(msg.data.item)) {
+      async(() => {
+        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "policy":
@@ -854,6 +932,10 @@ class netBot extends ControllerBot {
               break;
             case "portforward":
               this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+                cb(err);
+              });
+            case "upstreamDns":
+              this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
               });
               break;
@@ -1092,7 +1174,24 @@ class netBot extends ControllerBot {
   }
 
 
+  processAppInfo(appInfo) {
+    return async(() => {
+      if(appInfo.language) {
+        if(sysManager.language !== appInfo.language) {
+          await (sysManager.setLanguageAsync(appInfo.language))
+        }
+      }
 
+      if(appInfo.deviceName && appInfo.eid) {
+        const keyName = "sys:ept:memberNames"
+        await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+
+        const keyName2 = "sys:ept:member:lastvisit"
+        await (rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000)))
+      }
+
+    })()
+  }
 
   getHandler(gid, msg, appInfo, callback) {
 
@@ -1102,9 +1201,22 @@ class netBot extends ControllerBot {
       appInfo = undefined;
     }
 
+    if(appInfo) {
+      this.processAppInfo(appInfo)
+    }
+
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
+    if(extMgr.hasGet(msg.data.item)) {
+      async(() => {
+        const result = await (extMgr.get(msg.data.item, msg))
+        this.simpleTxData(msg, result, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
+      return
+    }
 
     switch (msg.data.item) {
       case "host":
@@ -1130,7 +1242,7 @@ class netBot extends ControllerBot {
         break;
       case "vpn":
       case "vpnreset":
-        let regenerate = true;
+        let regenerate = false
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
@@ -1247,55 +1359,79 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-      break;
-    case "archivedAlarms": {
-      const offset = msg.data.value && msg.data.value.offset
-      const limit = msg.data.value && msg.data.value.limit
+        break;
+      case "archivedAlarms":
+        const offset = msg.data.value && msg.data.value.offset
+        const limit = msg.data.value && msg.data.value.limit
 
-      async(() => {
-        const archivedAlarms = await (am2.loadArchivedAlarms({
-          offset: offset,
-          limit: limit
-        }))
-        this.simpleTxData(msg,
-                          {alarms: archivedAlarms,
-                           count: archivedAlarms.length},
-                          null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    }
-      break
+        async(() => {
+          const archivedAlarms = await(am2.loadArchivedAlarms({
+            offset: offset,
+            limit: limit
+          }))
+          this.simpleTxData(msg,
+            {
+              alarms: archivedAlarms,
+              count: archivedAlarms.length
+            },
+            null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-    case "frpConfig":
-      let _config = frp.getConfig()
-      if(_config.started) {
-        let getPasswordAsync = Promise.promisify(ssh.getPassword)
-        getPasswordAsync().then((password) => {
-          _config.password = password
+      case "frpConfig":
+        let _config = frp.getConfig()
+        if (_config.started) {
+          let getPasswordAsync = Promise.promisify(ssh.getPassword)
+          getPasswordAsync().then((password) => {
+            _config.password = password
+            this.simpleTxData(msg, _config, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
+        } else {
           this.simpleTxData(msg, _config, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
+        }
+        break;
+      case "last60mins":
+        async(() => {
+          let downloadStats = await(getHitsAsync("download", "1minute", 60))
+          let uploadStats = await(getHitsAsync("upload", "1minute", 60))
+          this.simpleTxData(msg, {
+            upload: uploadStats,
+            download: downloadStats
+          }, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
         })
-      } else {
-        this.simpleTxData(msg, _config, null, callback);
-      }
-      break;
-    case "last60mins":
-      async(() => {
-        let downloadStats = await (getHitsAsync("download", "1minute", 60))
-        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
-        this.simpleTxData(msg, {
-          upload: uploadStats,
-          download: downloadStats
-        }, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
+        break;
+      case "upstreamDns":
+        (async () => {
+          let response;
+          try {
+            response = await policyManager.getUpstreamDns();
+            log.info("upstream dns response", response);
+            this.simpleTxData(msg, response, null, callback);
+          } catch (err) {
+            log.error("Error when get upstream dns configs", err);
+            this.simpleTxData(msg, {}, err, callback);
+          }
+        })();
+        break;
+      case "liveCategoryDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2207,18 +2343,6 @@ class netBot extends ControllerBot {
       })
       break
     }
-    case "dns:upstream": {
-      (async () => {
-        try {
-          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
-          this.simpleTxData(msg, {}, null, callback);
-        } catch (err) {
-          log.error("Error when set upstream dns", err, {});
-          this.simpleTxData(msg, {}, err, callback);
-        }
-      })();
-      break;
-    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -2366,6 +2490,10 @@ class netBot extends ControllerBot {
       log.info("Received jsondata from app", rawmsg.message, {});
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
+
+          if(rawmsg.message.appInfo) {
+            this.processAppInfo(rawmsg.message.appInfo)
+          }
 
           log.info("Process Init load event");
 
@@ -2515,5 +2643,16 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
   }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
+
+setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    try {
+      if (global.gc) {
+        global.gc();
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+      }
+    } catch(e) {
+    }
+},1000*60*5);
 
 module.exports = netBot;

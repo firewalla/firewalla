@@ -55,6 +55,51 @@ module.exports = class {
     return this
   }
 
+  createConfigFile(name, config) {
+    const genericTemplate = `${frpDirectory}/frpc.generic.ini.template`
+    const port = config.port || this.getRandomPort(config.portBase, config.portLength)
+
+    return async(() => {
+      let templateData = await (readFile(genericTemplate, 'utf8'))
+
+      if(config.name) {
+        templateData = templateData.replace(/FRP_SERVICE_NAME/g, config.name)
+      }
+
+      if(port) {
+        templateData = templateData.replace(/FRP_SERVICE_PORT/g, port)
+      }
+
+      if(config.token) {
+        templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, config.token)
+      }
+
+      if(config.server) {
+        templateData = templateData.replace(/FRP_SERVER_ADDR/g, config.server)
+      }
+
+      if(config.serverPort) {
+        templateData = templateData.replace(/FRP_SERVER_PORT/g, config.serverPort)
+      }
+
+      if(config.internalPort) {
+        templateData = templateData.replace(/FRP_SERVICE_INTERNAL_PORT/g, config.internalPort)
+      }
+
+      if(config.protocol) {
+        templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
+      }
+
+      const filePath = `${frpDirectory}/frpc.customized.${name}.ini`
+      await(writeFile(filePath, templateData, 'utf8'))
+
+      return {
+        filePath: filePath,
+        port: port
+      }
+    })()
+  }
+
   _prepareConfiguration(userToken) {
     let templateFile = configTemplateFile // default is the support config template file
 
@@ -109,7 +154,13 @@ module.exports = class {
 
   randomizePort() {
     // FIXME: possible port conflict
-    this.port = Math.floor(Math.random() * 1000) + 9000 // random port between 9000 - 10000
+    this.port = this.getRandomPort() // random port between 9000 - 10000
+  }
+
+  getRandomPort(base, length) {
+    base = base || 9000
+    length = length || 1000
+    return  Math.floor(Math.random() * length) + base
   }
 
   start() {
@@ -125,11 +176,12 @@ module.exports = class {
     return delay(500)
   }
 
-  _start() {
+  _start(configFilePath) {
+    configFilePath = configFilePath || "./frpc.ini"
     const cmd = `./frpc.${firewalla.getPlatform()}`;
 
     // TODO: ini file needs to be customized before being used
-    const args = ["-c", "./frpc.ini"];
+    const args = ["-c", configFilePath];
 
     this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8'});
 

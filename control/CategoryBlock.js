@@ -19,9 +19,6 @@ const Promise = require('bluebird');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
@@ -37,6 +34,9 @@ const bone = require('../lib/Bone.js')
 const fc = require('../net2/config.js')
 
 const exec = require('child-process-promise').exec
+
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
@@ -63,10 +63,10 @@ class CategoryBlock {
     const domainBlock = require('./DomainBlock.js')()
     domainBlock.externalMapping = this.getMapping(category)
 
-    return async(() => {
-      const list = await (this.loadCategoryFromBone(category))
+    return (async () => {
+      const list = await this.loadCategoryFromBone(category)
       if(list && list.length > 0) {
-        await (this.saveDomains(category, list)) // used for unblock
+        await this.saveDomains(category, list) // used for unblock
 
         let options2 = JSON.parse(JSON.stringify(options))
         options2.ignoreApplyBlock = true
@@ -78,11 +78,19 @@ class CategoryBlock {
         for (i=0,j=list.length; i<j; i+=chunk) {
           temparray = list.slice(i,i+chunk)          
           let promises = temparray.map((domain) => domainBlock.syncDomainIPMapping(domain, options2).catch((err) => undefined))
-          await (promises) // batch wait, wait until any of them completes
+          await promises // batch wait, wait until any of them completes
         }
 
-        await (this.batchApplyBlock(category, options).catch((err) => undefined))
+        await this.batchApplyBlock(category, options).catch((err) => undefined)
 //        await (domainBlock.applyBlock("", options)) // this will create ipset rules
+      }
+
+      // this policy has scope
+      if(options.macSet) {
+        await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet)
+      } else {
+        // global policy
+        await categoryUpdater.iptablesBlockCategory(category)
       }
     })()
   }
@@ -93,9 +101,9 @@ class CategoryBlock {
     const ipset6Name = ipsetName + "6"
     let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-    return async(() => {
-      await (exec(cmd4))
-      await (exec(cmd6))
+    return (async () => {
+      await exec(cmd4)
+      await exec(cmd6)
     })()
   }
 
@@ -105,9 +113,9 @@ class CategoryBlock {
     const ipset6Name = ipsetName + "6"
     let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-    return async(() => {
-      await (exec(cmd4))
-      await (exec(cmd6))
+    return (async () => {
+      await exec(cmd4)
+      await exec(cmd6)
     })()
   }
 
@@ -117,9 +125,9 @@ class CategoryBlock {
     const domainBlock = require('./DomainBlock.js')()
     domainBlock.externalMapping = this.getMapping(category)
 
-    return async(() => {
+    return (async() => {
       if(!options.ignoreUnapplyBlock) {
-        await (this.batchUnapplyBlock(category, options).catch((err) => undefined))
+        await this.batchUnapplyBlock(category, options).catch((err) => undefined)
         // await (domainBlock.unapplyBlock("", options).catch((err) => undefined)) // this will remove ipset rules
       }
 
@@ -129,22 +137,31 @@ class CategoryBlock {
       //     await (domainBlock.unblockDomain(domain, {ignoreUnapplyBlock: true}).catch((err) => undefined)) // may need to provide options argument in the future
       //   })
       // }
-      await (rclient.delAsync(this.getMapping(category))) // ipmapping:category:games
-      await (rclient.delAsync(this.getCategoryDomainKey(category))) // categoryDomain:games
+      await rclient.delAsync(this.getMapping(category)) // ipmapping:category:games
+      await rclient.delAsync(this.getCategoryDomainKey(category)) // categoryDomain:games
+
+      // this policy has scope
+      if(options.macSet) {
+        // TBD
+        await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet)
+      } else {
+        // global policy
+        await categoryUpdater.iptablesUnblockCategory(category)
+      }
     })()
   }
 
   loadDomains(category) {
-    return async(() => {
+    return (async () => {
       const key = this.getCategoryDomainKey(category)
       return rclient.smembersAsync(key)
     })()
   }
 
   saveDomains(category, list) {
-    return async(() => {
+    return (async () => {
       const key = this.getCategoryDomainKey(category)
-      await (rclient.saddAsync(key, list))
+      await rclient.saddAsync(key, list)
     })()
   }
 
@@ -163,10 +180,10 @@ class CategoryBlock {
   loadCategoryFromBone(category) {
     const hashset = this.getCategoryHashset(category)
 
-    return async(() => {
+    return (async () => {
       if(hashset) {
         log.info(`Loading domains for ${category} from cloud`);
-        const data = await (bone.hashsetAsync(hashset))
+        const data = await bone.hashsetAsync(hashset)
         const list = JSON.parse(data)
         log.info(`${list.length} domains are found`)
         return list.map((l) => l.replace("*.", "")) // convert it to domain style    *.facebook.com => facebook.com

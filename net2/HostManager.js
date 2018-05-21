@@ -220,7 +220,9 @@ class Host {
 
             //await(this.saveAsync());
             log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
-        })();
+        })().catch((err) => {
+            log.error("Got error when cleanV6", err, {})            
+        });
     }
 
     predictHostNameUsingUserAgent() {
@@ -1353,7 +1355,8 @@ module.exports = class HostManager {
                     return;
                 };
 
-                this.execPolicy();
+                this.safeExecPolicy()
+                
                 /*
                 this.loadPolicy((err,data)=> {
                     log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
@@ -1913,6 +1916,40 @@ module.exports = class HostManager {
       })()
     }
 
+  encipherMembersForInit(json) {
+    return async(() => {
+      let members = await (rclient.smembersAsync("sys:ept:members"))
+      if(members && members.length > 0) {
+        const mm = members.map((m) => {
+          try {
+            return JSON.parse(m)
+          } catch(err) {
+            return null
+          }
+        }).filter((x) => x != null)
+
+        if(mm && mm.length > 0) {
+          const names = await (rclient.hgetallAsync("sys:ept:memberNames"))
+          const lastVisits = await (rclient.hgetallAsync("sys:ept:member:lastvisit"))
+
+          if(names) {
+            mm.forEach((m) => {
+              m.dName = m.eid && names[m.eid]
+            })
+          }
+
+          if(lastVisits) {
+            mm.forEach((m) => {
+              m.lastVisit = m.eid && lastVisits[m.eid]
+            })
+          }
+
+          json.eMembers = mm
+        }
+      }
+    })()
+  }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1940,7 +1977,8 @@ module.exports = class HostManager {
             this.newAlarmDataForInit(json),
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
-            this.boneDataForInit(json)
+            this.boneDataForInit(json),
+            this.encipherMembersForInit(json)
           ]
 
           this.basicDataForInit(json, options);
@@ -2120,11 +2158,32 @@ module.exports = class HostManager {
     })
   }
 
+  safeExecPolicy() {
+      // a very dirty hack, only call system policy change every 5 seconds
+      const now = new Date() / 1000
+      if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
+          // just run execPolicy, defer this one
+          this.pendingExecPolicy = true
+          setTimeout(() => {
+              if(this.pendingExecPolicy) {
+                  this.lastExecPolicyTime = new Date() / 1000
+                  this.execPolicy()
+                  this.pendingExecPolicy = false
+              }
+          }, (this.lastExecPolicyTime + 5 - now) * 1000)
+      } else {
+          this.lastExecPolicyTime = new Date() / 1000
+          this.execPolicy()
+          this.pendingExecPolicy = false
+      }
+  }
+
   // super resource-heavy function, be careful when calling this
     getHosts(callback,retry) {
         log.info("hostmanager:gethosts:started",retry);
         // ready mark and sweep
-        if (this.getHostsActive == true) {
+        const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
+        if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
             log.info("hostmanager:gethosts:mutx",retry);
             let stack = new Error().stack
             let retrykey = retry;
@@ -2149,9 +2208,9 @@ module.exports = class HostManager {
             let stack = new Error().stack
             log.info("hostmanager:gethosts:mutx:last:", retry,stack )
         }
-      this.getHostsActive = true;
+      this.getHostsActive = Math.floor(new Date() / 1000);
       if(this.type === "server") {
-        this.execPolicy();
+        this.safeExecPolicy()
       }
         for (let h in this.hostsdb) {
             if (this.hostsdb[h]) {
@@ -2288,7 +2347,7 @@ module.exports = class HostManager {
                     this.hosts.all.sort(function (a, b) {
                         return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
                     })
-                    this.getHostsActive = false;
+                    this.getHostsActive = null;
                     if (this.type === "server") {
                        spoofer.validateV6Spoofs(allIPv6Addrs);
                        spoofer.validateV4Spoofs(allIPv4Addrs);

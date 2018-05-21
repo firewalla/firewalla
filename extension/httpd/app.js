@@ -15,7 +15,7 @@ const enableHttps = true;
 const Promise = require('bluebird');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
-const intel = require('./intel.js')(redis);
+const intel = require('./intel.js')(rclient);
 
 const VIEW_PATH = 'firewalla_view';
 const STATIC_PATH = 'firewalla_static';
@@ -56,6 +56,17 @@ class App {
       log.info("Got a request in *");
 
       if (!req.originalUrl.includes(VIEW_PATH)) {
+        
+        // as a workaround, redirect all traffic as porn
+        // TBD implementation a multi-port FireBlue to handle multiple category traffic
+        let redirect = await rclient.hgetAsync('redirect','porn')
+        redirect = redirect || "http://google.com"
+        
+        if(redirect) {
+          res.status(303).location(redirect).send().end()
+          return
+        }
+        
         let cat = await intel.check(req.hostname);
 
         log.info(`${req.hostname} 's category is ${cat}`);
@@ -87,8 +98,14 @@ class App {
     let count = await rclient.hincrbyAsync('block:stats', 'porn', 1);
     let params = qs.stringify({hostname: req.hostname, url: req.originalUrl, count});
     let location = `/${VIEW_PATH}/block`;
-    
-    res.status(303).location(`${location}?${params}`).send().end();
+
+    const redirect = await rclient.hgetAsync('redirect','porn')
+    if(redirect) {
+      res.status(303).location(redirect).send().end()
+    } else {
+      res.status(303).location(`${location}?${params}`).send().end();
+    }
+
     log.info(`Total porn blocked: ${count}`);
   }
 

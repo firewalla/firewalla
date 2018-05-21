@@ -1,5 +1,5 @@
 {
-  "version": 1.954,
+  "version": 1.955,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -45,6 +45,10 @@
   "policy": {
     "autoBlock": true
   },
+  "apiSensors": {
+    "APIRelaySensor": {},
+    "VPNRelaySensor": {}
+  },
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
@@ -60,6 +64,7 @@
     "HeapSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
+    "APIRelaySensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
@@ -196,7 +201,7 @@
     "features": {
       "intel:feedback": true,
       "ss_client:statusCheck": true,
-      "familyMode": "v1"
+      "familyMode": "v2"
     },
     
     "userFeatures": {
@@ -214,8 +219,11 @@
       "naughty_monkey": false,
       "device_detection": false,
       "porn_redirect": false,
-      "redirect_httpd": false,
-      "social_hour": true
+      "redirect_httpd": true,
+      "social_hour": true,
+      "api_relay": false,
+      "vpn_relay": false,
+      "upstream_dns": false
     }
 
 }

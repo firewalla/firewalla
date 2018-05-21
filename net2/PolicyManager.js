@@ -20,6 +20,7 @@ var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const fc = require('../net2/config.js');
 
 var later = require('later');
 var iptable = require('./Iptables.js');
@@ -59,6 +60,9 @@ let b = require('../control/Block.js');
 let features = require('../net2/features');
 
 const cp = require('child_process')
+
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -310,9 +314,19 @@ module.exports = class {
       if (state === true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
         dnsmasq.updateResolvConf().then(callback);
+        
+        // auto redirect all porn traffic in v2 mode
+        categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
+          log.error("Failed to redirect porn traffic, err", err, {})
+        })
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf().then(callback);
+
+        // auto redirect all porn traffic in v2 mode
+        categoryUpdater.iptablesUnredirectCategory("porn").catch((err) => {
+          log.error("Failed to unredirect porn traffic, err", err, {})
+        })
       }
     });
 
@@ -333,16 +347,35 @@ module.exports = class {
     dnsmasq.controlFilter('adblock', state);
   }
 
-  async upstreamDns(ips, state) {
-    log.info("PolicyManager:UpstreamDns:Dnsmasq", ips, state);
-
+  async upstreamDns(policy) {
+    log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
+    const ips = policy.ips;
+    const state = policy.state;
+    const featureName = "upstream_dns";
     if (state === true) {
+      await (fc.enableDynamicFeature(featureName));
       dnsmasq.setDefaultNameServers("00-upstream", ips);
       await dnsmasq.updateResolvConf();
     } else {
+      await (fc.disableDynamicFeature(featureName));
       dnsmasq.unsetDefaultNameServers("00-upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }
+  }
+
+  async getUpstreamDns() {
+    log.info("PolicyManager:UpstreamDns:getUpstreamDns");
+    let value = await rclient.hgetAsync('sys:features', 'upstream_dns');
+
+    let resp = {};
+    if (value === "1") { // enabled
+      resp.enabled = true;
+      let ips = await dnsmasq.getCurrentNameServerList();
+      resp.ip = ips[0];
+    } else {
+      resp.enabled = false;
+    }
+    return resp;
   }
 
   hblock(host, state) {
@@ -416,27 +449,29 @@ module.exports = class {
       if (config.config) {
         ss_client.setConfig(config.config);
       }
+      
+      (async () => {
+        await ss_client.startAsync()
 
-      ss_client.start((err) => {
-        if (err) {
-          log.error("Failed to enable SciSurf feature: " + err);
-        } else {
-          log.info("SciSurf feature is enabled successfully");
-          log.info("chinadns:", ss_client.getChinaDNS());
-          dnsmasq.setUpstreamDNS(ss_client.getChinaDNS()).then(() => {
-            log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
-          });
-        }
-      });
+        log.info("SciSurf feature is enabled successfully");
+        log.info("chinadns:", ss_client.getChinaDNS());
+        
+        await dnsmasq.setUpstreamDNS(ss_client.getChinaDNS())
+        log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
+      })().catch((err) => {
+        log.error("Failed to start scisurf feature:", err, {})
+      })
+
     } else {
-      ss_client.stop((err) => {
-        if (err) {
-          log.error("Failed to disable SciSurf feature: " + err);
-        } else {
-          log.info("SciSurf feature is disabled successfully");
-        }
+      
+      (async () => {
+        await ss_client.stopAsync()
+        log.info("SciSurf feature is disabled successfully");
         dnsmasq.setUpstreamDNS(null);
-      });
+      })().catch((err) => {
+        log.error("Failed to disable SciSurf feature: " + err);
+      })
+      
     }
   }
 
@@ -556,32 +591,38 @@ module.exports = class {
         }
       }
 
-      if (p == "acl") {
+      if (p === "acl") {
         continue;
-      } else if (p == "blockout") {
+      } else if (p === "blockout") {
         this.block(null, null, ip, null, null, null, policy[p]);
-      } else if (p == "blockin") {
+      } else if (p === "blockin") {
         this.hblock(host, policy[p]);
         //    this.block(null,ip,null,null,policy[p]);
-      } else if (p == "family") {
+      } else if (p === "family") {
         this.family(ip, policy[p], null);
-      } else if (p == "adblock") {
+      } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
-      } else if (p == "upstreamDns") {
-        this.upstreamDns(policy[p], policy[state], null);
-      } else if (p == "monitor") {
+      } else if (p === "upstreamDns") {
+        (async () => {
+          try {
+            await this.upstreamDns(policy[p]);
+          } catch (err) {
+            log.error("Error when set upstream dns", err);
+          }
+        })();
+      } else if (p === "monitor") {
         host.spoof(policy[p]);
-      } else if (p == "vpn") {
+      } else if (p === "vpn") {
         this.vpn(host, policy[p], policy);
-      } else if (p == "shadowsocks") {
+      } else if (p === "shadowsocks") {
         this.shadowsocks(host, policy[p]);
-      } else if (p == "scisurf") {
+      } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
-      } else if (p == "externalAccess") {
+      } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
-      } else if (p == "dnsmasq") {
+      } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
-      } else if (p == "block") {
+      } else if (p === "block") {
         if (host.policyJobs != null) {
           for (let key in host.policyJobs) {
             let job = host.policyJobs[key];

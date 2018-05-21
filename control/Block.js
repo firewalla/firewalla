@@ -53,6 +53,13 @@ function setupBlockChain() {
   // FIXME: ignore if failed or not
   cp.execSync(cmd);
 
+  async(() => {
+    setupCategoryEnv("games")
+    setupCategoryEnv("porn")
+    setupCategoryEnv("social")
+    setupCategoryEnv("shopping")
+  })()
+
   inited = true;
 }
 
@@ -105,6 +112,24 @@ function setupBlockingEnv(tag) {
   })().catch(err => {
     log.error('Error when setup blocking env', err);
   })
+}
+
+function setupCategoryEnv(category) {
+  if(!category) {
+    return Promise.resolve()
+  }
+
+  const cmdCreateCategorySet = `sudo ipset create -! c_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet6 = `sudo ipset create -! c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet = `sudo ipset create -! c_tmp_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! c_tmp_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+
+  return async(() => {
+    await (exec(cmdCreateCategorySet))
+    await (exec(cmdCreateCategorySet6))
+    await (exec(cmdCreateTempCategorySet))
+    await (exec(cmdCreateTempCategorySet6))
+  })()
 }
 
 function existsBlockingEnv(tag) {
@@ -266,6 +291,7 @@ function blockImmediate(destination, ipset) {
     });
   });
 }
+
 
 function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {

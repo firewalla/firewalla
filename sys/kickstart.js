@@ -64,9 +64,6 @@
   
   let Promise = require('bluebird');
   
-  let async = require('asyncawait/async');
-  let await = require('asyncawait/await');
-  
   const bone = require("../lib/Bone.js");
 
   let SysManager = require('../net2/SysManager.js');
@@ -82,11 +79,11 @@
   
   let FWInvitation = require('./invitation.js');
 
-  const Diag = require('../extension/diag/app.js')
+  const Diag = require('../extension/diag/app.js');
   
-  async(() => {
-    await (sysManager.setConfig(firewallaConfig));
-    await (interfaceDiscoverSensor.run());
+  (async() => {
+    await sysManager.setConfig(firewallaConfig)
+    await interfaceDiscoverSensor.run()
     // await (nmapSensor.checkAndRunOnce(true));
     // nmapSensor = null;
   })();
@@ -220,7 +217,32 @@
       }, 15000);
     }
   }
-  
+
+  async function recordAllRegisteredClients(gid) {
+    const groupInfo = eptcloud.groupCache[gid] && eptcloud.groupCache[gid].group
+
+    if(!groupInfo) {
+      return
+    }
+
+    const deviceEID = groupInfo.eid
+
+    const clients = groupInfo.symmetricKeys.filter((client) => client.eid != deviceEID)
+
+    const clientInfos = clients.map((client) => {
+      return JSON.stringify({name: client.displayName, eid: client.eid})
+    })
+
+    const keyName = "sys:ept:members"
+
+    let cmd = [keyName]
+
+    cmd.push.apply(cmd, clientInfos)
+
+    await rclient.delAsync(keyName)
+    await rclient.saddAsync(cmd)
+  }
+
   function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin:", gid);
 
@@ -242,6 +264,10 @@
         let count = group.symmetricKeys.length;
         
         rclient.hset("sys:ept", "group_member_cnt", count);
+
+        recordAllRegisteredClients(gid).catch((err) => {
+          log.info("Failed to record registered clients, err:", err, {})
+        })
         
         // new group without any apps bound;
         led.on();
@@ -250,9 +276,9 @@
           fwInvitation.diag = diag
           
           let onSuccess = function(payload) {
-            return async(() => {
+            return (async() => {
               log.info("some license stuff on device:", payload, {});
-              await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
+              await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               postAppLinked(); // app linked, do any post-link tasks
               callback(null, true);
@@ -294,8 +320,12 @@
           fwInvitation.recordFirstBinding = false // don't record for additional binding
           
           let onSuccess = function(payload) {
-            return async(() => {
-              await (rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1));
+            return (async() => {
+              await recordAllRegisteredClients(gid).catch((err) => {
+                log.info("Failed to record registered clients, err:", err, {})
+              })
+
+              await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               log.info("EXIT KICKSTART AFTER JOIN");
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {

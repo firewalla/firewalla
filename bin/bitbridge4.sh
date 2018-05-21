@@ -8,6 +8,10 @@ if [[ -e $FIREWALLA_BIN/$BINARY.rc ]]; then
   source $FIREWALLA_BIN/$BINARY.rc # taking arguments from here
 fi
 
+if [[ $(uname -m) == "aarch64" ]]; then
+	ln -sfT real.aarch64 real
+fi
+
 if [[ -e $FIREWALLA_BIN/dev ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else

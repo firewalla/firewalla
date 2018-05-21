@@ -166,7 +166,7 @@ function run() {
 
   var BroDetector = require("./BroDetect.js");
   let bd = new BroDetector("bro_detector", config, "info");
-  bd.enableRecordHitsTimer()
+  //bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
@@ -211,6 +211,9 @@ function run() {
     d.discoverInterfaces((err, list) => {
       if(!err && list && list.length >= 2) {
         sysManager.update(null) // if new interface is found, update sysManager
+
+        // recreate port direct after secondary interface is created
+        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
       }
     })
   })()
@@ -284,15 +287,28 @@ function run() {
   },1000*2);
 
   setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
       if (global.gc) {
         global.gc();
-        log.debug("GC executed, RSS is now", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
       }
     } catch(e) {
     }
-  },1000*60);
+  },1000*60*5);
 
+  setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    if (memoryUsage>=100) {
+        try {
+          if (global.gc) {
+            global.gc();
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+          }
+        } catch(e) {
+        }
+    }
+  },1000*60);
 
 /*
   Bug: when two firewalla's are on the same network, this will change the upnp
@@ -304,7 +320,7 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        log.info("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn", err);
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{

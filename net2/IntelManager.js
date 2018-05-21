@@ -323,6 +323,7 @@ module.exports = class {
   "org": "AS21740 eNom, Incorporated",
   "postal": "98033"
  */
+<<<<<<< HEAD
   async _location(ip) {
     log.info("Looking up location:", ip);
 
@@ -412,7 +413,6 @@ module.exports = class {
       body = await rp(options);
     } catch (err) {
       log.info(`Error while requesting ${url}`, err.code, err.message, err.stack);
-      
     }
 
     this.cacheAdd(ip, "cymon", body);
