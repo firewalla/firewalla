@@ -80,9 +80,12 @@ module.exports = class {
     }
 
     cacheAdd(ip, origin, value) {
-        if (value == null || Object.keys(value).length === 0) {
+        if (value == null || value === "{}") {
             value = "none";
         }
+        
+        log.info("Object.keys(value).length:", Object.keys(value).length);
+        
         let key = "cache.intel:" + origin + ":" + ip;
         log.info("Add into cache.intel, key:", key, ", value:", value);
         rclient.set(key, value, (err, result) => {
@@ -324,15 +327,24 @@ module.exports = class {
     log.info("Looking up location:", ip);
 
     let cached = await this.cacheLookupAsync(ip, "ipinfo");
+    
+    if (cached === "none") {
+      return null;
+    }
 
     if (cached) {
-      return JSON.parse(cached);
+      try {
+        return JSON.parse(cached);
+      } catch (err) {
+        log.error("Error when parse cache:", cached, err);
+      }
     }
 
     let ipinfo = await Promise.join(
       this._ipInfoFromBone(ip),
       this._ipInfoFromIpinfo(ip),
       (info1, info2) => Object.assign(info1 ? info1 : {}, info2)
+      
     );
     
     log.info("Merged ipinfo is:", ipinfo);
@@ -357,16 +369,17 @@ module.exports = class {
       uri: "https://ipinfo.io/" + ip,
       method: 'GET',
       family: 4,
-      timeout: 5, // secs
+      timeout: 5000, // ms
       // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
     };
 
-    let body, result;
+    let body;
+    let result = null;
     try {
       body = await rp(options);
     } catch (err) {
       log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
-      return;
+      return null;
     }
 
     try {
