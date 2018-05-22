@@ -1432,6 +1432,24 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "includedDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await (categoryUpdater.getIncludedDomains(category))
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      case "excludedDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await (categoryUpdater.getExcludedDomains(category))
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2342,6 +2360,50 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, err, callback)
       })
       break
+    }
+    case "addIncludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.addIncludedDomain(category,domain))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "removeIncludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.removeIncludedDomain(category,domain))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "addExcludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.addExcludedDomain(category,domain))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "removeExcludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.removeExcludedDomain(category,domain))
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
     }
     default:
       // unsupported action
