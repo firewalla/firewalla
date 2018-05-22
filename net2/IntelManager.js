@@ -92,7 +92,7 @@ module.exports = class {
         .then(result => rclient.expireatAsync(key, this.currentTime() + A_WEEK))
         .catch(err => {
           log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
-      });
+        });
     }
 
     currentTime() {
