@@ -80,14 +80,14 @@ module.exports = class {
     }
 
     async cacheAdd(ip, origin, value) {
-        if (value == null || value === "{}") {
-            value = "none";
-        }
-        
-        let key = "cache.intel:" + origin + ":" + ip;
-        
-        log.info("Add into cache.intel, key:", key, ", value:", value);
-
+      if (value == null || value === "{}") {
+        value = "none";
+      }
+  
+      let key = "cache.intel:" + origin + ":" + ip;
+  
+      log.info("Add into cache.intel, key:", key, ", value:", value);
+  
       return rclient.setAsync(key, value)
         .then(result => rclient.expireatAsync(key, this.currentTime() + A_WEEK))
         .catch(err => {
