@@ -60,7 +60,7 @@ module.exports = class {
       bone.intel(ip, "", action, {});
     }
 
-    async cacheLookupAsync(ip, origin) {
+    async cacheLookup(ip, origin) {
       let result;
       
       let key = "cache.intel:" + origin + ":" + ip;
@@ -79,7 +79,7 @@ module.exports = class {
       return result;
     }
 
-    cacheAdd(ip, origin, value) {
+    async cacheAdd(ip, origin, value) {
         if (value == null || value === "{}") {
             value = "none";
         }
@@ -87,10 +87,12 @@ module.exports = class {
         let key = "cache.intel:" + origin + ":" + ip;
         
         log.info("Add into cache.intel, key:", key, ", value:", value);
-        
-        rclient.set(key, value, (err, result) => {
-          rclient.expireat(key, this.currentTime() + A_WEEK);
-        });
+
+      return rclient.setAsync(key, value)
+        .then(result => rclient.expireatAsync(key, this.currentTime() + A_WEEK))
+        .catch(err => {
+          log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
+      });
     }
 
     currentTime() {
@@ -203,7 +205,7 @@ module.exports = class {
         return;
       }
 
-      let result = await this.cacheLookupAsync(ip, "cymon");
+      let result = await this.cacheLookup(ip, "cymon");
       if (result && result !== "none") {
         let lobj = await this._location(ip);
         let obj = JSON.parse(result);
@@ -326,7 +328,7 @@ module.exports = class {
   async _location(ip) {
     log.info("Looking up location:", ip);
 
-    let cached = await this.cacheLookupAsync(ip, "ipinfo");
+    let cached = await this.cacheLookup(ip, "ipinfo");
     
     if (cached === "none") {
       return null;
