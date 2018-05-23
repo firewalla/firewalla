@@ -36,6 +36,8 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
+const _ = require('underscore')
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -72,11 +74,75 @@ class CategoryUpdater {
     return `dynamicCategoryDomain:${category}`
   }
 
+  getExcludeCategoryKey(category) {
+    return `category:${category}:exclude:domain`
+  }
+
+  getIncludeCategoryKey(category){
+    return `category:${category}:include:domain`
+  }
+
   async getDomains(category) {
     if(!this.isActivated(category))
       return []
 
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
+  }
+
+  async getIncludedDomains(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getIncludeCategoryKey(category))
+  }
+
+  async addIncludedDomain(category, domain) {
+    if(!this.isActivated(category))
+      return
+
+    return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
+  }
+
+  async removeIncludedDomain(category, domain) {
+    if(!this.isActivated(category))
+      return
+
+    return rclient.sremAsync(this.getIncludeCategoryKey(category), domain)
+  }
+
+  async getExcludedDomains(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getExcludeCategoryKey(category))
+  }
+
+  async addExcludedDomain(category, domain) {
+    if(!this.isActivated(category))
+      return
+
+    return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
+  }
+
+  async removeExcludedDomain(category, domain) {
+    if(!this.isActivated(category))
+      return
+
+    return rclient.sremAsync(this.getExcludeCategoryKey(category), domain)
+  }
+
+  async includeDomainExists(category, domain) {
+    if(!this.isActivated(category))
+      return false
+
+    return rclient.sismemberAsync(this.getIncludeCategoryKey(category), domain)
+  }
+
+  async excludeDomainExists(category, domain) {
+    if(!this.isActivated(category))
+      return false
+
+    return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
   }
 
   async getDomainsWithExpireTime(category) {
@@ -110,6 +176,12 @@ class CategoryUpdater {
     let d = domain
     if(isPattern) {
       d = `*.${domain}`
+    }
+
+    const excluded = this.excludeDomainExists(category, d)
+
+    if(excluded) {
+      return;
     }
 
     log.debug(`Found a ${category} domain: ${d}`)
@@ -249,16 +321,22 @@ class CategoryUpdater {
     }
   }
 
-    async recycleIPSet(category, options) {
+  async recycleIPSet(category, options) {
     const domains = await this.getDomains(category)
+    const includedDomains = await this.getIncludedDomains(category)
+    const excludeDomains = await this.getExcludedDomains(category)
+
+    let dd = _.union(domains, includedDomains)
+    dd = _.difference(dd, excludeDomains)
+
 
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
     const tmpIPSetName = this.getTempIPSetName(category)
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
 
-    for (let i = 0; i < domains.length; i++) {
-      const domain = domains[i]
+    for (let i = 0; i < dd.length; i++) {
+      const domain = dd[i]
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
       })
