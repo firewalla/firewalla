@@ -20,9 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let async2 = require('async');
 
 let bone = require('../lib/Bone.js');
@@ -31,7 +28,10 @@ let util = require('util');
 
 let flowUtil = require('../net2/FlowUtil.js');
 
-let firewalla = require('../net2/Firewalla.js');
+const firewalla = require('../net2/Firewalla.js');
+
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 let instance = null;
 
@@ -82,7 +82,7 @@ class IntelTool {
     return rclient.hgetallAsync(key);
   }  
 
-  addIntel(ip, intel, expire) {
+  async addIntel(ip, intel, expire) {
     intel = intel || {}
     expire = expire || 7 * 24 * 3600; // one week by default
 
@@ -92,10 +92,12 @@ class IntelTool {
 
     intel.updateTime = `${new Date() / 1000}`
 
-    return rclient.hmsetAsync(key, intel)
-      .then(() => {
-        return rclient.expireAsync(key, expire);
-      });
+    await rclient.hmsetAsync(key, intel);
+    if(intel.host && intel.ip) {
+      // sync reverse dns info when adding intel
+      await dnsTool.addReverseDns(intel.host, [intel.ip])
+    }
+    return rclient.expireAsync(key, expire);
   }
 
   removeIntel(ip) {
@@ -198,8 +200,8 @@ class IntelTool {
   getSSLCertificate(ip) {
     let certKey = this.getSSLCertKey(ip);
 
-    return async(() => {
-      let sslInfo = await (rclient.hgetallAsync(certKey));
+    return (async() => {
+      let sslInfo = await rclient.hgetallAsync(certKey);
       if(sslInfo) {
         let subject = sslInfo.subject;
         if(subject) {
@@ -247,7 +249,7 @@ class IntelTool {
 
     let key = this.getDNSKey(ip);
 
-    return async(() => {
+    return (async() => {
       // only update if dns key exists
       // let keys = await (rclient.keysAsync(key))
       // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
@@ -256,8 +258,8 @@ class IntelTool {
             delete intel.ip;
         }
         let intelJSON = JSON.stringify(intel);
-        await (rclient.hsetAsync(key, "_intel", intelJSON))
-        await (rclient.expireAsync(key, expireTime))
+        await rclient.hsetAsync(key, "_intel", intelJSON);
+        await rclient.expireAsync(key, expireTime);
 //      }
     })()
   }
