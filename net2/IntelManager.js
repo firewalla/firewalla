@@ -221,7 +221,7 @@ module.exports = class {
           return obj;
         }
       } else {
-        return await this._lookup(ip, intel);
+        return await this._lookupCymon(ip, intel);
       }
     }
 
@@ -394,7 +394,7 @@ module.exports = class {
     return result;
   }
 
-  async _lookup(ip, intel) {
+  async _lookupCymon(ip, intel) {
     let url = "https://cymon.io/api/nexus/v1/ip/" + ip + "/events?limit=100";
 
     let options = {
