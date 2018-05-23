@@ -50,7 +50,7 @@ var b = {
 }
 */
 
-const key = "AIzaSyCJ2-sbtDvlDD5SHulrx1I_U_LZdOtpNxg";
+const key = "";
 
 function hashCheck(hashlist,callback) {
     var reqdata = 
