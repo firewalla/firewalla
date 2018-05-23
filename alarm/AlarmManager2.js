@@ -391,7 +391,6 @@ module.exports = class {
 
             if(alarm.type === "ALARM_INTEL") {
               log.info("AlarmManager:Check:AutoBlock",alarm);
-              let num = parseInt(alarm["p.security.numOfReportSources"]);
               if(fConfig && fConfig.policy &&
                  fConfig.policy.autoBlock &&
                  fc.isFeatureOn("cyber_security.autoBlock") &&
