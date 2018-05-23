@@ -71,6 +71,9 @@ let extend = require('util')._extend;
 
 let fConfig = require('../net2/config.js').getConfig();
 
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -343,6 +346,13 @@ module.exports = class {
     //   return
     // }
 
+    // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
+    const destName = alarm["p.dest.name"]
+    const destIP = alarm["p.dest.ip"]
+    if(destName && destIP && destName !== destIP) {
+      dnsTool.addReverseDns(destName, [destIP])
+    }
+    
     let dedupResult = this.dedup(alarm).then((dup) => {
 
       if(dup) {
