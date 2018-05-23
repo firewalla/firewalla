@@ -379,7 +379,10 @@ module.exports = class {
 
           if(result) {
             // already matched some policy
-            callback(new FWError("alarm is covered by policies", 2))
+
+            const err2 = new Error("alarm is covered by policies");
+            err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
+            callback(new FWError(err2))
             return
           }
 

@@ -920,6 +920,8 @@ module.exports = class FlowMonitor {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
       return;
     }
+    
+    
 
     // TODO: handle alarm dedup or surpression in AlarmManager2
     let success;
@@ -1039,8 +1041,8 @@ module.exports = class FlowMonitor {
     try {
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
-      if (err.code === 'ERR_DUP_ALARM') {
-        log.warn("Duplicated alarm exists, skip firing new alarm");
+      if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+        log.warn("Duplicated alarm exists or blocking policy already there, skip firing new alarm");
         return true; // in this case, ip alarm no need to trigger either
       }
       log.error("Error when save alarm:", err);
