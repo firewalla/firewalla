@@ -656,7 +656,7 @@ module.exports = class {
             }
 
             if ((obj.orig_bytes>obj.orig_ip_bytes || obj.resp_bytes>obj.resp_ip_bytes) && obj.proto == "tcp") {
-                log.error("Conn:Burst:Adjust1",obj);
+                log.debug("Conn:Burst:Adjust1",obj);
                 obj.orig_bytes = obj.orig_ip_bytes;
                 obj.resp_bytes = obj.resp_ip_bytes;
             }
