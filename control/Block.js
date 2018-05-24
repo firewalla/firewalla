@@ -54,10 +54,11 @@ function setupBlockChain() {
   cp.execSync(cmd);
 
   async(() => {
-    setupCategoryEnv("games")
-    setupCategoryEnv("porn")
-    setupCategoryEnv("social")
-    setupCategoryEnv("shopping")
+    setupCategoryEnv("games");
+    setupCategoryEnv("porn");
+    setupCategoryEnv("social");
+    setupCategoryEnv("shopping");
+    setupCategoryEnv("av");
   })()
 
   inited = true;
