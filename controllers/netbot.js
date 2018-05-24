@@ -2366,6 +2366,10 @@ class netBot extends ControllerBot {
         const category = msg.data.value.category
         const domain = msg.data.value.domain
         await (categoryUpdater.addIncludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category
+        })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -2377,6 +2381,10 @@ class netBot extends ControllerBot {
         const category = msg.data.value.category
         const domain = msg.data.value.domain
         await (categoryUpdater.removeIncludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category
+        })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -2388,6 +2396,10 @@ class netBot extends ControllerBot {
         const category = msg.data.value.category
         const domain = msg.data.value.domain
         await (categoryUpdater.addExcludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category
+        })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -2399,6 +2411,10 @@ class netBot extends ControllerBot {
         const category = msg.data.value.category
         const domain = msg.data.value.domain
         await (categoryUpdater.removeExcludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category
+        })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)

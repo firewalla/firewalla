@@ -66,6 +66,12 @@ class CategoryUpdater {
         setTimeout(() => {
           this.refreshAllCategoryRecords()
         }, 60 * 1000) // after one minute
+        
+        sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
+          if(event.category) {
+            this.recycleIPSet(event.category)    
+          }
+        });
       }
     }
     return instance
