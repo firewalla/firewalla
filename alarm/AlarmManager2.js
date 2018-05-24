@@ -655,7 +655,7 @@ module.exports = class {
 
   findSimilarAlarmsByPolicy(policy, curAlarmID) {
     return async(() => {
-      let alarms = await (this.loadActiveAlarmsAsync())
+      let alarms = await (this.loadActiveAlarmsAsync(200)) // load 200 alarms for comparison
       return alarms.filter((alarm) => {
         if(alarm.aid === curAlarmID) {
           return false // ignore current alarm id, since it's already blocked

@@ -1045,7 +1045,7 @@ module.exports = class FlowMonitor {
         log.warn("Duplicated alarm exists or blocking policy already there, skip firing new alarm");
         return true; // in this case, ip alarm no need to trigger either
       }
-      log.error("Error when save alarm:", err);
+      log.error("Error when save alarm:", err.message);
       return;
     }
 

@@ -53,7 +53,8 @@ class CategoryUpdater {
         "games": 1,
         "social": 1,
         "porn": 1,
-        "shopping": 1
+        "shopping": 1,
+        "av": 1
       }
 
       // only run refresh category records for fire main process
@@ -178,7 +179,7 @@ class CategoryUpdater {
       d = `*.${domain}`
     }
 
-    const excluded = this.excludeDomainExists(category, d)
+    const excluded = await this.excludeDomainExists(category, d)
 
     if(excluded) {
       return;
