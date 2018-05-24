@@ -2368,7 +2368,8 @@ class netBot extends ControllerBot {
         await (categoryUpdater.addIncludedDomain(category,domain))
         sem.emitEvent({
           type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category
+          category: category,
+          toProcess: "FireMain"
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
@@ -2383,7 +2384,8 @@ class netBot extends ControllerBot {
         await (categoryUpdater.removeIncludedDomain(category,domain))
         sem.emitEvent({
           type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category
+          category: category,
+          toProcess: "FireMain"
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
@@ -2398,7 +2400,8 @@ class netBot extends ControllerBot {
         await (categoryUpdater.addExcludedDomain(category,domain))
         sem.emitEvent({
           type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category
+          category: category,
+          toProcess: "FireMain"
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
@@ -2413,7 +2416,8 @@ class netBot extends ControllerBot {
         await (categoryUpdater.removeExcludedDomain(category,domain))
         sem.emitEvent({
           type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category
+          category: category,
+          toProcess: "FireMain"
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
