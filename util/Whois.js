@@ -75,6 +75,10 @@ class Whois {
   }
   
   async lookup(target, opts) {
+    if (!opts) {
+      opts = {};
+    }
+
     if (!this._isValid(target)) {
       log.warn("invalid target:", target, {});
       return;
