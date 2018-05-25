@@ -1,6 +1,6 @@
 const log = require("../net2/logger.js")(__filename);
 const rp = require('request-promise');
-const bone = require("../lib/Bone.js");
+//const bone = require("../lib/Bone.js");
 
 class IpInfo {
 
@@ -8,29 +8,25 @@ class IpInfo {
     const options = {
       uri: "http://ipinfo.io/" + ip,
       method: 'GET',
-      family: 4,
-      timeout: 6000, // ms
+      timeout: 2000, // ms
+      json: true,
     };
 
-    let body;
+    let retry = 3;
     let result = null;
-    try {
-      body = await rp(options);
-    } catch (err) {
-      log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
-      return null;
-    }
-
-    try {
-      result = JSON.parse(body);
-    } catch (err) {
-      log.error("Error when parse body:", body, err);
-    }
+    do {
+      try {
+        result = await rp(options);
+      } catch (err) {
+        log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
+      }
+    } while (!result && retry -- > 0);
 
     log.info("ipInfo from ipinfo is:", result);
     return result;
   }
 
+  /*
   async getFromBone(ip) {
     let result = await bone.intelFinger(ip);
     if (result) {
@@ -40,6 +36,7 @@ class IpInfo {
     log.info("ipInfo from bone is:", null);
     return null;
   }
+  */
   
 }
 
