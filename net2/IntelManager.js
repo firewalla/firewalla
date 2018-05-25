@@ -182,7 +182,7 @@ module.exports = class {
       }
     }
 
-    let whois = await Whois.lookup(target);
+    let whois = await Whois.lookup(target, {useOwnParser: true});
 
     if (whois) {
       this.cacheAdd(target, "whois", JSON.stringify(whois));

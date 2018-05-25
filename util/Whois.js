@@ -100,10 +100,10 @@ class Whois {
     try {
       whois = await Promise.race([
         new Promise(resolve => setTimeout(resolve, this.timeout)),
-        whoisClient.lookup(_target, {host: 'whois.iana.org', port: 43})
+        whoisClient.lookup(_target, {host: 'whois.iana.org', port: 43, raw: opts.useOwnParser})
           .then(info => {
             let _info = info;
-            if (!opts.raw) {
+            if (opts.useOwnParser) {
               try {
                 _info = this._parseWhois(info);
               } catch (err) {
