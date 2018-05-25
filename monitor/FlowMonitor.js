@@ -753,7 +753,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost).then(loc =>{
+                                    intelManager.ipinfo(remoteHost).then(loc =>{
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -809,7 +809,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost).then(loc => {
+                                    intelManager.ipinfo(remoteHost).then(loc => {
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -1055,7 +1055,7 @@ module.exports = class FlowMonitor {
 
     let iobj;
     try {
-      iobj = await intelManager.lookup(remoteIP, flowObj.intel);
+      iobj = await intelManager.lookupIp(remoteIP, flowObj.intel);
     } catch (err) {
       log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
       return;
