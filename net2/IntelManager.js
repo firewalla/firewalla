@@ -261,7 +261,7 @@ module.exports = class {
 
   addFlowIntel(ip, intelObj, intel) {
     let weburl = "https://intel.firewalla.com/";
-    log.info("IntelManger:addFlowIntel:", ip, JSON.stringify(intel, null, 2));
+    log.info("IntelManger:addFlowIntel:", ip, intel);
     if (intel == null) {
       return null;
     }
@@ -283,7 +283,7 @@ module.exports = class {
       } catch (e) {
       }
     }
-    log.info("IntelManger:addFlowIntel:Done", ip, JSON.stringify(intel, null, 2), JSON.stringify(intelObj, null, 2));
+    log.info("IntelManger:addFlowIntel:Done", ip);
     return intelObj;
   }
 
