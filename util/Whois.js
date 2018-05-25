@@ -96,18 +96,19 @@ class Whois {
     try {
       whois = await Promise.race([
         new Promise(resolve => setTimeout(resolve, this.timeout)),
-        _whois(_target).then(info => {
-          let _info = info;
-          if (!opts.raw) {
-            try {
-              _info = this._parseWhois(info);
-            } catch (err) {
-              log.error(`Unable to parse whois data: ${info}`, err);
-              return;
+        _whois(_target, {host: 'whois.iana.org', port: 43})
+          .then(info => {
+            let _info = info;
+            if (!opts.raw) {
+              try {
+                _info = this._parseWhois(info);
+              } catch (err) {
+                log.error(`Unable to parse whois data: ${info}`, err);
+                return;
+              }
             }
-          }
-          return _info;
-        })
+            return _info;
+          })
       ]);
     } catch (err) {
       log.error(`Unable to lookup whois information for target: ${_target}, original target is: ${target}`, err);
