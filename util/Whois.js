@@ -3,7 +3,7 @@
 const util = require('util');
 const log = require("../net2/logger.js")(__filename);
 const {isIP, isFQDN} = require('validator');
-const _whois = util.promisify(require('../lib/whois').lookup);
+const whoisClient = require('../lib/whois');
 const camelCase = require("camel-case");
 const psl = require('psl');
 
@@ -96,7 +96,7 @@ class Whois {
     try {
       whois = await Promise.race([
         new Promise(resolve => setTimeout(resolve, this.timeout)),
-        _whois(_target, {host: 'whois.iana.org', port: 43})
+        whoisClient.lookup(_target, {host: 'whois.iana.org', port: 43})
           .then(info => {
             let _info = info;
             if (!opts.raw) {
