@@ -16,6 +16,7 @@ class IpInfo {
     let result = null;
     do {
       try {
+        log.info("Request ipinfo for ip:", ip);
         result = await rp(options);
       } catch (err) {
         log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
