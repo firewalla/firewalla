@@ -4,22 +4,18 @@ const rp = require('request-promise');
 const log = require("../net2/logger.js")(__filename);
 
 class DomainCategory {
-  // callback: function(category) { ... };
   async getCategory(url) {
     return rp.post({
       uri: "http://sitereview.bluecoat.com/resource/lookup",
-      headers: {
-        'User-Agent': "Mozilla/5.0",
-      },
+      headers: {'User-Agent': "Mozilla/5.0"},
       body: {url, captcha: ''},
-      timeout: 10000 //ms
+      json: true,
+      timeout: 10000, //ms
     }).then(body => {
       let category = null;
       try {
-        let _body = JSON.parse(body);
-        log.debug('_body:', _body);
-        if (Array.isArray(_body.categorization) && _body.categorization.length > 1) {
-          category = _body.categorization[0];
+        if (Array.isArray(body.categorization) && body.categorization.length > 0) {
+          category = body.categorization[0].name;
         }
       } catch (err) {
         log.error('unable to obtain category', err);
