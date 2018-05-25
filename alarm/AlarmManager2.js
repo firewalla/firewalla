@@ -776,7 +776,10 @@ module.exports = class {
             i_target = alarm["p.device.mac"];
             break;
           case "ALARM_BRO_NOTICE":
-            if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+            if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
+              i_type = "ip"
+              i_target = alarm["p.dest.ip"]
+            } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
               i_type = "ip"
               i_target = alarm["p.dest.ip"]
             } else {
@@ -932,7 +935,10 @@ module.exports = class {
           i_target = alarm["p.device.ip"];
           break;
         case "ALARM_BRO_NOTICE":
-          if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+          if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
+            i_type = "ip"
+            i_target = alarm["p.dest.ip"]
+          } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
             i_type = "ip"
             i_target = alarm["p.dest.ip"]
           } else {
