@@ -1000,7 +1000,7 @@ module.exports = class DNSMASQ {
         return true
       }
     } catch (err) {
-      log.error("Got error when verifying dns connectivity:", err, {})
+      log.error("Got error when verifying dns connectivity:", err.stdout, {})
       return false
     }
   }
@@ -1027,7 +1027,7 @@ module.exports = class DNSMASQ {
       }, null);
     } else {
       let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
-      log.debug("dnsmasq running status: \n", stdout, {})
+      log.info("dnsmasq running status: \n", stdout, {})
 
       // restart this service, something is wrong
       try {
