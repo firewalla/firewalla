@@ -6,7 +6,7 @@ class IpInfo {
 
   async get(ip) {
     const options = {
-      uri: "https://ipinfo.io/" + ip,
+      uri: "http://ipinfo.io/" + ip,
       method: 'GET',
       family: 4,
       timeout: 6000, // ms
