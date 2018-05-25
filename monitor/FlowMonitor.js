@@ -949,9 +949,15 @@ module.exports = class FlowMonitor {
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
     log.info("Domain for IP ", remoteIP, "is", domain);
-    
-    if (!validator.isFQDN(domain)) {
-      log.info("not a valid domain, skip check alarm");
+
+    let isDomain = false;
+    try {
+      isDomain = !validator.isFQDN(domain);
+    } catch (err) {
+    }
+
+    if (!isDomain) {
+      log.info(`Domain '${domain}' is not a valid domain, skip check alarm:`);
       return;
     }
 
