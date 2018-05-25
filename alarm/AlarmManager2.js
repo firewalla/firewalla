@@ -1146,7 +1146,7 @@ module.exports = class {
   }
 
 
-    enrichDeviceInfo(alarm) {
+    async enrichDeviceInfo(alarm) {
       let deviceIP = alarm["p.device.ip"];
       if(!deviceIP) {
         return Promise.reject(new Error("requiring p.device.ip"));
@@ -1190,7 +1190,7 @@ module.exports = class {
       });
     }
 
-    enrichDestInfo(alarm) {
+    async enrichDestInfo(alarm) {
       if(alarm["p.transfer.outbound.size"]) {
         alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
       }
@@ -1201,37 +1201,36 @@ module.exports = class {
 
       let destIP = alarm["p.dest.ip"];
 
-      if(!destIP)
+      if (!destIP)
         return Promise.reject(new Error("Requiring p.dest.ip"));
 
-      return (async () => {
-        // location
-        const loc = await intelManager._location(destIP)
-        if(loc && loc.loc) {
-          const location = loc.loc;
-          const ll = location.split(",");
-          if(ll.length === 2) {
-            alarm["p.dest.latitude"] = parseFloat(ll[0]);
-            alarm["p.dest.longitude"] = parseFloat(ll[1]);
-          }
-          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-        }
 
-        // intel
-        const intel = await intelTool.getIntel(destIP)
-        if(intel && intel.app) {
-          alarm["p.dest.app"] = intel.app
+      // location
+      const loc = await intelManager.ipinfo(destIP)
+      if (loc && loc.loc) {
+        const location = loc.loc;
+        const ll = location.split(",");
+        if (ll.length === 2) {
+          alarm["p.dest.latitude"] = parseFloat(ll[0]);
+          alarm["p.dest.longitude"] = parseFloat(ll[1]);
         }
+        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+      }
 
-        if(intel && intel.category) {
-          alarm["p.dest.category"] = intel.category
-        }
+      // intel
+      const intel = await intelTool.getIntel(destIP)
+      if (intel && intel.app) {
+        alarm["p.dest.app"] = intel.app
+      }
 
-        if(intel && intel.host) {
-          alarm["p.dest.name"] = intel.host
-        }
-        
-        return alarm
-      })()
+      if (intel && intel.category) {
+        alarm["p.dest.category"] = intel.category
+      }
+
+      if (intel && intel.host) {
+        alarm["p.dest.name"] = intel.host
+      }
+
+      return alarm;
     }
   }
