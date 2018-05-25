@@ -662,7 +662,7 @@ async function verifyDNSConnectivity() {
       return true
     }
   } catch(err) {
-    log.error("Got error when verifying dns connectivity:", err)
+    log.error("Got error when verifying dns connectivity:", err.stdout)
     return false
   }
 
