@@ -952,7 +952,7 @@ module.exports = class FlowMonitor {
 
     let isDomain = false;
     try {
-      isDomain = !validator.isFQDN(domain);
+      isDomain = validator.isFQDN(domain);
     } catch (err) {
     }
 
