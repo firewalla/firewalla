@@ -76,7 +76,7 @@ module.exports = class {
       result = null;
     }
 
-    log.info("Cache lookup for", ip, ", result:", result);
+    log.info("Cache lookup for", ip, ", origin", origin, ", result:", result);
     return result;
   }
 
@@ -166,7 +166,12 @@ module.exports = class {
       intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
       intelObj = this.summarizeIntelObj(ip, intelObj);  
     }
+
+    log.info("Ipinfo:", ipinfo);
     intelObj.lobj = ipinfo;
+
+    log.info("IntelObj:", intelObj);
+
     return intelObj;
   }
 
@@ -187,7 +192,7 @@ module.exports = class {
       }
     }
 
-    let whois = await Whois.lookup(target);
+    let whois = await Whois.lookup(target, {useOwnParser: true});
 
     if (whois) {
       this.cacheAdd(target, "whois", JSON.stringify(whois));
@@ -261,7 +266,7 @@ module.exports = class {
 
   addFlowIntel(ip, intelObj, intel) {
     let weburl = "https://intel.firewalla.com/";
-    log.info("IntelManger:processIntel:", ip, JSON.stringify(intel, null, 2));
+    log.info("IntelManger:addFlowIntel:", ip, intel);
     if (intel == null) {
       return null;
     }
@@ -283,7 +288,7 @@ module.exports = class {
       } catch (e) {
       }
     }
-    log.info("IntelManger:processIntel:Done", ip, JSON.stringify(intel, null, 2), JSON.stringify(intelObj, null, 2));
+    log.info("IntelManger:addFlowIntel:Done", ip);
     return intelObj;
   }
 
@@ -370,19 +375,25 @@ module.exports = class {
       return null;
     }
 
-    if (cached) {
+    let ipinfo;
+    if (cached && cached !== 'null') {
       try {
-        return JSON.parse(cached);
+        ipinfo = JSON.parse(cached);
       } catch (err) {
         log.error("Error when parse cache:", cached, err);
       }
+      if (ipinfo) {
+        return ipinfo;
+      }
     }
 
-    let ipinfo = await IpInfo.get(ip);
-      
-    log.info("Ipinfo is:", ipinfo);
+    ipinfo = await IpInfo.get(ip);
 
-    this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));
+    if (ipinfo) {
+      this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));
+    }
+
+    log.info("Ipinfo is:", ipinfo);
 
     return ipinfo;
   }
