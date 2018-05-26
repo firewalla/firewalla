@@ -1019,7 +1019,8 @@ module.exports = class FlowMonitor {
       "p.security.primaryReason": reasons[0],
       "p.security.numOfReportSources": "Firewalla global security intel",
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
-      "p.source": "firewalla_intel"
+      "p.source": "firewalla_intel",
+      "p.dest.whois": JSON.stringify(intelObj.whois),
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
@@ -1090,7 +1091,8 @@ module.exports = class FlowMonitor {
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reason,
       "p.security.numOfReportSources": iobj.count,
-      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
+      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
+      "p.dest.whois": JSON.stringify(iobj.whois),
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
