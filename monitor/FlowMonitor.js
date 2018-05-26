@@ -262,7 +262,7 @@ module.exports = class FlowMonitor {
                       });
 
                       alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarmManager2.enrichDestInfo)
+                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -270,7 +270,7 @@ module.exports = class FlowMonitor {
                           });
                         }).catch((err) => {
                           if(err)
-                            log.error("Failed to create alarm: " + err);
+                            log.error("Failed to create alarm: ", err);
                         });
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
@@ -308,7 +308,7 @@ module.exports = class FlowMonitor {
                     });
 
                     alarmManager2.enrichDeviceInfo(alarm)
-                      .then(alarmManager2.enrichDestInfo)
+                      .then(alarm => alarmManager2.enrichDestInfo(alarm))
                       .then((alarm) => {
                         alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
@@ -316,7 +316,7 @@ module.exports = class FlowMonitor {
                         })
                       }).catch((err) => {
                         if(err)
-                          log.error("Failed to create alarm: " + err);
+                          log.error("Failed to create alarm: ", err);
                       });
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
@@ -430,7 +430,7 @@ module.exports = class FlowMonitor {
 
 
                       alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarmManager2.enrichDestInfo)
+                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -438,7 +438,7 @@ module.exports = class FlowMonitor {
                           });
                         }).catch((err) => {
                           if(err)
-                            log.error("Failed to create alarm: " + err);
+                            log.error("Failed to create alarm: ", err);
                         });
                     }
                 }
@@ -753,7 +753,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost,(err,loc)=>{
+                                    intelManager.ipinfo(remoteHost).then(loc =>{
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -774,16 +774,14 @@ module.exports = class FlowMonitor {
                                                 "p.flow": JSON.stringify(flow)
                                               });
 
-                                              async(() => {
-                                                await (alarmManager2.enrichDeviceInfo(alarm))
-                                                await (alarmManager2.enrichDestInfo(alarm))
-                                                await (alarmManager2.checkAndSaveAsync(alarm))
-                                              })().catch((err) => {
-                                                log.error("Failed to enrich and save alarm", err, {})
-                                              })
-
+                                          (async () => {
+                                            await alarmManager2.enrichDeviceInfo(alarm)
+                                            await alarmManager2.enrichDestInfo(alarm)
+                                            await alarmManager2.checkAndSaveAsync(alarm)
+                                          })().catch((err) => {
+                                            log.error("Failed to enrich and save alarm", err)
+                                          })
                                         }
-
                                     });
                                 }
                             });
@@ -811,7 +809,7 @@ module.exports = class FlowMonitor {
                                         remoteHost = flow.sh;
                                     }
 
-                                    intelManager._location(remoteHost,(err,loc)=>{
+                                    intelManager.ipinfo(remoteHost).then(loc => {
                                         if (loc) {
                                             copy.lobj = loc;
                                         }
@@ -837,12 +835,12 @@ module.exports = class FlowMonitor {
 
                                             // ideally each destination should have a unique ID, now just use hostname as a workaround
                                             // so destionationName, destionationHostname, destionationID are the same for now
-                                            async(() => {
-                                              await (alarmManager2.enrichDeviceInfo(alarm))
-                                              await (alarmManager2.enrichDestInfo(alarm))
-                                              await (alarmManager2.checkAndSaveAsync(alarm))
+                                            (async () => {
+                                              await alarmManager2.enrichDeviceInfo(alarm)
+                                              await alarmManager2.enrichDestInfo(alarm)
+                                              await alarmManager2.checkAndSaveAsync(alarm)
                                             })().catch((err) => {
-                                              log.error("Failed to enrich and save alarm", err, {})
+                                              log.error("Failed to enrich and save alarm", err)
                                             })
                                         }
 
@@ -913,6 +911,7 @@ module.exports = class FlowMonitor {
   }
 
   async processIntelFlow(flowObj) {
+    log.info("Process intel flow for", flowObj);  
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
@@ -952,55 +951,61 @@ module.exports = class FlowMonitor {
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
     log.info("Domain for IP ", remoteIP, "is", domain);
-    
-    if (!validator.isFQDN(domain)) {
-      log.info("not a valid domain, skip check alarm");
+
+    let isDomain = false;
+    try {
+      isDomain = validator.isFQDN(domain);
+    } catch (err) {
+    }
+
+    if (!isDomain) {
+      log.info(`Domain '${domain}' is not a valid domain, skip check alarm:`);
       return;
     }
 
-    let intel = null;
+    let intelObj = null;
     try {
       log.info("Start to lookup intel for domain:", domain);
-      intel = await intelManager.lookupDomain(domain, remoteIP, flowObj);
-      log.info("Finish lookup intel for domain:", domain, "intel is", intel);
+      intelObj = await intelManager.lookupDomain(domain, remoteIP, flowObj);
+      log.info("Finish lookup intel for domain:", domain, "intel is", intelObj);
     } catch (err) {
       log.error("Error when lookup intel for domain:", domain, deviceIP, remoteIP, err);
       return;
     }
 
-    if (!intel) {
+    if (!intelObj) {
       log.info("No intel for domain:", domain, deviceIP, remoteIP);
       return;
     }
 
     const reasons = []
     let _category, reason = 'Access a ';
-    switch (intel.category) {
+    switch (intelObj.category) {
       case 'spam':
       case 'phishing':
       case 'piracy':
       case 'suspicious':
-        reasons.push(intel.category)
-        reason += intel.category;
-        intel.severityscore = 30;
-        _category = intel.category;
+        reasons.push(intelObj.category)
+        reason += intelObj.category;
+        intelObj.severityscore = 30;
+        _category = intelObj.category;
         break;
       case 'intel':
-        reasons.push(intel.cc)
-        reason += intel.cc;
-        intel.severityscore = 70;
-        _category = intel.cc;
+        reasons.push(intelObj.cc)
+        reason += intelObj.cc;
+        intelObj.severityscore = 70;
+        _category = intelObj.cc;
         break;
       default:
         return;
     }
 
     reason += ' domain or host';
-    let severity = intel.severityscore > 50 ? "major" : "minor";
-    intel.reason = reason;
-    intel.summary = '';
+    let severity = intelObj.severityscore > 50 ? "major" : "minor";
+    intelObj.reason = reason;
+    intelObj.summary = '';
     
-    log.info("Domain", domain, "'s intel is", intel);
+    log.info("Domain", domain, "'s intel is", intelObj);
     
     log.info("Start to generate alarm for domain", domain);
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
@@ -1024,8 +1029,8 @@ module.exports = class FlowMonitor {
     alarm['p.security.category'] = [_category];
     alarm['p.alarm.trigger'] = 'domain';
     
-    if (intel.tags) {
-      alarm['p.security.tags'] = intel.tags;
+    if (intelObj.tags) {
+      alarm['p.security.tags'] = intelObj.tags;
     }
 
     log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
@@ -1053,67 +1058,69 @@ module.exports = class FlowMonitor {
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
+    log.info("Check IP Alarm for traffic from:", deviceIP, ", to:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
-      
-    intelManager.lookup(remoteIP, flowObj.intel, (err, iobj) => {
-      if (err || !iobj) {
-        log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
-        return;
-      }
 
-      if (iobj.severityscore < 4) {
-        log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-        return;
-      }
+    let iobj;
+    try {
+      iobj = await intelManager.lookupIp(remoteIP, flowObj.intel);
+    } catch (err) {
+      log.error("Host:Subscriber:Intel:NOTVERIFIED", deviceIP, remoteIP);
+      return;
+    }
 
-      let severity = iobj.severityscore > 50 ? "major" : "minor";
-      let reason = iobj.reason;
+    if (iobj.severityscore < 4) {
+      log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
+      return;
+    }
 
-      if (!fc.isFeatureOn("cyber_security")) {
-        return;
-      }
+    let severity = iobj.severityscore > 50 ? "major" : "minor";
+    let reason = iobj.reason;
 
-      let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
-        "p.device.ip": deviceIP,
-        "p.device.port": this.getDevicePort(flowObj),
-        "p.dest.id": remoteIP,
-        "p.dest.ip": remoteIP,
-        "p.dest.name": domain || remoteIP,
-        "p.dest.port": this.getRemotePort(flowObj),
-        "p.security.reason": reason,
-        "p.security.numOfReportSources": iobj.count,
-        "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
-      });
+    if (!fc.isFeatureOn("cyber_security")) {
+      return;
+    }
 
-      if (flowObj && flowObj.action && flowObj.action === "block") {
-        alarm["p.action.block"] = true
-      }
-
-      if (flowObj && flowObj.categoryArray) {
-        alarm['p.security.category'] = flowObj.categoryArray;
-      }
-
-      if (iobj.tags) {
-        alarm['p.security.tags'] = iobj.tags;
-      }
-
-      alarm['p.alarm.trigger'] = 'ip';
-
-      log.info("Host:ProcessIntelFlow:Alarm", alarm);
-
-      alarmManager2.enrichDeviceInfo(alarm)
-        .then(alarmManager2.enrichDestInfo)
-        .then((alarm) => {
-          alarmManager2.checkAndSave(alarm, (err) => {
-            if (err) {
-              log.error("Fail to save alarm:", err);
-            }
-          });
-        })
-        .catch((err) => {
-          log.error("Failed to create alarm:", err);
-        });
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+      "p.device.ip": deviceIP,
+      "p.device.port": this.getDevicePort(flowObj),
+      "p.dest.id": remoteIP,
+      "p.dest.ip": remoteIP,
+      "p.dest.name": domain || remoteIP,
+      "p.dest.port": this.getRemotePort(flowObj),
+      "p.security.reason": reason,
+      "p.security.numOfReportSources": iobj.count,
+      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
     });
+
+    if (flowObj && flowObj.action && flowObj.action === "block") {
+      alarm["p.action.block"] = true
+    }
+
+    if (flowObj && flowObj.categoryArray) {
+      alarm['p.security.category'] = flowObj.categoryArray;
+    }
+
+    if (iobj.tags) {
+      alarm['p.security.tags'] = iobj.tags;
+    }
+
+    alarm['p.alarm.trigger'] = 'ip';
+
+    log.info("Host:ProcessIntelFlow:Alarm", alarm);
+
+    alarmManager2.enrichDeviceInfo(alarm)
+      .then(alarm => alarmManager2.enrichDestInfo(alarm))
+      .then(alarm => {
+        alarmManager2.checkAndSave(alarm, (err) => {
+          if (err) {
+            log.error("Fail to save alarm:", err);
+          }
+        });
+      })
+      .catch((err) => {
+        log.error("Failed to create alarm:", err);
+      });
   };
   
 }
