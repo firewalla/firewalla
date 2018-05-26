@@ -71,6 +71,9 @@ let extend = require('util')._extend;
 
 let fConfig = require('../net2/config.js').getConfig();
 
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -343,6 +346,13 @@ module.exports = class {
     //   return
     // }
 
+    // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
+    const destName = alarm["p.dest.name"]
+    const destIP = alarm["p.dest.ip"]
+    if(destName && destIP && destName !== destIP) {
+      dnsTool.addReverseDns(destName, [destIP])
+    }
+    
     let dedupResult = this.dedup(alarm).then((dup) => {
 
       if(dup) {
@@ -379,7 +389,10 @@ module.exports = class {
 
           if(result) {
             // already matched some policy
-            callback(new FWError("alarm is covered by policies", 2))
+
+            const err2 = new Error("alarm is covered by policies");
+            err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
+            callback(new FWError(err2))
             return
           }
 
@@ -641,7 +654,7 @@ module.exports = class {
 
   findSimilarAlarmsByPolicy(policy, curAlarmID) {
     return async(() => {
-      let alarms = await (this.loadActiveAlarmsAsync())
+      let alarms = await (this.loadActiveAlarmsAsync(200)) // load 200 alarms for comparison
       return alarms.filter((alarm) => {
         if(alarm.aid === curAlarmID) {
           return false // ignore current alarm id, since it's already blocked
@@ -762,7 +775,10 @@ module.exports = class {
             i_target = alarm["p.device.mac"];
             break;
           case "ALARM_BRO_NOTICE":
-            if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+            if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
+              i_type = "ip"
+              i_target = alarm["p.dest.ip"]
+            } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
               i_type = "ip"
               i_target = alarm["p.dest.ip"]
             } else {
@@ -918,7 +934,10 @@ module.exports = class {
           i_target = alarm["p.device.ip"];
           break;
         case "ALARM_BRO_NOTICE":
-          if(alarm["p.noticeType"] && alarm["p.noticeType"] == "SSH::Password_Guessing") {
+          if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
+            i_type = "ip"
+            i_target = alarm["p.dest.ip"]
+          } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
             i_type = "ip"
             i_target = alarm["p.dest.ip"]
           } else {

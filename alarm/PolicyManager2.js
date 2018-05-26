@@ -1078,14 +1078,15 @@ class PolicyManager2 {
         return
       }
 
-      policies.forEach((policy) => {
-        if(policy.match(alarm)) {
-          callback(null, true)
-          return
-        }
+      const matchedPolicies = policies.filter((policy) => {
+        return policy.match(alarm)
       })
-
-      callback(null, false)
+      
+      if(matchedPolicies.length > 0) {
+        callback(null, true)
+      } else {
+        callback(null, false)  
+      }
     })
   }
 

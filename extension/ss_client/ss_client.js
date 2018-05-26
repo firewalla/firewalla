@@ -147,7 +147,7 @@ async function startAsync(options) {
     log.info(`Switching ss server from ${oldSelectedConfig.server} to ${selectedConfig.server}.`)
   }
   
-  await stopAsync({supressError: true})
+  await stopAsync({suppressError: true})
   
   try {
     await _prepareSSConfigAsync()
@@ -204,7 +204,7 @@ function start(callback) {
     
     // always stop before start
 
-    stop({supressError: true}, (err) => {
+    stop({suppressError: true}, (err) => {
 
       // ignore stop error
       
@@ -292,7 +292,7 @@ function stop(options, callback) {
                           _stopDNSForwarder,
                           _disableIpset],
                         (err) => {
-                          if(err && ! options.supressError ) {
+                          if(err && ! options.suppressError ) {
                             log.error("Got error when stop: " + err);
                           }
                           started=false;
@@ -622,6 +622,9 @@ function hasMultipleServers() {
 }
 
 async function statusCheck() {
+  
+  return; // TBD need a better status check solution
+  
   let checkResult = await verifyDNSConnectivity()
   
   // retry if failed
@@ -662,7 +665,7 @@ async function verifyDNSConnectivity() {
       return true
     }
   } catch(err) {
-    log.error("Got error when verifying dns connectivity:", err)
+    log.error("Got error when verifying dns connectivity:", err.stdout)
     return false
   }
 

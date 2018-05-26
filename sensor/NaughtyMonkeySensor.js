@@ -39,6 +39,12 @@ class NaughtyMonkeySensor extends Sensor {
 
   job() {
     return async(() => {
+      
+      // Disable auto monkey for production or beta
+      if(f.isProductionOrBeta()) {
+        return;
+      }
+      
       if(fc.isFeatureOn("naughty_monkey")) {
         await (this.delay(this.getRandomTime()))
 

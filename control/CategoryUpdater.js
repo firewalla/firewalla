@@ -53,7 +53,8 @@ class CategoryUpdater {
         "games": 1,
         "social": 1,
         "porn": 1,
-        "shopping": 1
+        "shopping": 1,
+        "av": 1
       }
 
       // only run refresh category records for fire main process
@@ -65,6 +66,12 @@ class CategoryUpdater {
         setTimeout(() => {
           this.refreshAllCategoryRecords()
         }, 60 * 1000) // after one minute
+        
+        sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
+          if(event.category) {
+            this.recycleIPSet(event.category)    
+          }
+        });
       }
     }
     return instance
@@ -178,7 +185,7 @@ class CategoryUpdater {
       d = `*.${domain}`
     }
 
-    const excluded = this.excludeDomainExists(category, d)
+    const excluded = await this.excludeDomainExists(category, d)
 
     if(excluded) {
       return;

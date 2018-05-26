@@ -110,7 +110,7 @@ module.exports = class {
       return;
     }
 
-    log.info("FlowObj:", flowObj);
+    log.debug("FlowObj:", flowObj);
 
     let intelObj = flowObj.intel;
 
@@ -121,7 +121,12 @@ module.exports = class {
       log.info("Intel for domain", domain, " exists in flowObj");
       if (intelObj.cc) {
         try {
-          intelObj.cc = JSON.parse(intelObj.cc)[0];
+          let json = JSON.parse(intelObj.cc)
+          if(Array.isArray(json)) {
+            // HACK, excluding attackpage
+            json = json.filter(x => x !== "attackpage")
+            intel.cc = json[0]
+          }
         } catch (err) {
           log.warn("Error when parsing info.cc:", intelObj.cc, err);
         }
