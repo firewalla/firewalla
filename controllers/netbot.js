@@ -1483,15 +1483,16 @@ class netBot extends ControllerBot {
           }).map((de) => de.domain.substring(2))
 
           // dedup battle.net if battle.net and *.battle.net co-exist
-          sortedFinalDomains.filter((de) => {
-            if(!de.domain.startsWith("*.") && patternDomains.includes(de.domain)) {
+          const outputDomains = sortedFinalDomains.filter((de) => {
+            const domain = de.domain
+            if(!domain.startsWith("*.") && patternDomains.includes(domain)) {
               return false;
             } else {
               return true;
             }
           })
 
-          this.simpleTxData(msg, {domains: finalDomains.sort(compareFuction), includes: includedDomains}, null, callback)
+          this.simpleTxData(msg, {domains: outputDomains, includes: includedDomains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
