@@ -1519,19 +1519,19 @@ class netBot extends ControllerBot {
         (async () => {
           const target = msg.data.value.target;
           let whois = intelManager.whois(target);
-          this.simpleTxData(msg, {target, whois}, null, callback)
+          this.simpleTxData(msg, {target, whois}, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       case "ipinfo":
         (async () => {
           const ip = msg.data.value.ip;
           let ipinfo = intelManager.ipinfo(ip);
-          this.simpleTxData(msg, {ip, ipinfo}, null, callback)
+          this.simpleTxData(msg, {ip, ipinfo}, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
