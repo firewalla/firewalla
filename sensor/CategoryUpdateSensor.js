@@ -109,9 +109,9 @@ class CategoryUpdateSensor extends Sensor {
       log.info(`Loading domains for ${category} from cloud`);
       const data = await bone.hashsetAsync(hashset)
       const list = JSON.parse(data)
-      const ip4List = list["ip4"];
-      const ip6List = list["ip6"];
-      const domain = list.domain;
+      const ip4List = list["ip4"] || [];
+      const ip6List = list["ip6"] || [];
+      const domain = list.domain || [];
       log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${domain.length} domains`)
       return list
     } else {
