@@ -59,6 +59,7 @@ function setupBlockChain() {
     setupCategoryEnv("social");
     setupCategoryEnv("shopping");
     setupCategoryEnv("av");
+    setupCategoryEnv("default_c");
   })()
 
   inited = true;

@@ -54,7 +54,8 @@ class CategoryUpdater {
         "social": 1,
         "porn": 1,
         "shopping": 1,
-        "av": 1
+        "av": 1,
+        "default_c": 1
       }
 
       // only run refresh category records for fire main process
@@ -93,6 +94,14 @@ class CategoryUpdater {
     return `category:${category}:default:domain`
   }
 
+  getIPv4CategoryKey(category) {
+    return `category:${category}:ip4:domain`
+  }
+
+  getIPv6CategoryKey(category) {
+    return `category:${category}:ip6:domain`
+  }
+
   async getDomains(category) {
     if(!this.isActivated(category))
       return []
@@ -111,6 +120,10 @@ class CategoryUpdater {
     if(!this.isActivated(category))
       return []
 
+    if(domains.length === 0) {
+      return []
+    }
+
     let commands = [this.getDefaultCategoryKey(category)]
 
     commands.push.apply(commands, domains)
@@ -123,6 +136,42 @@ class CategoryUpdater {
 
     return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
+
+  async getIPv4Addresses(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getIPv4CategoryKey(category))
+  }
+
+  async getIPv4AddressesCount(category) {
+    if(!this.isActivated(category))
+      return 0
+
+    return rclient.scardAsync(this.getIPv4CategoryKey(category))
+  }
+
+  async addIPv4Addresses(category, addresses) {
+    if(!this.isActivated(category))
+      return []
+
+    if(addresses.length === 0) {
+      return []
+    }
+
+    let commands = [this.getIPv4CategoryKey(category)]
+
+    commands.push.apply(commands, addresses)
+    return rclient.saddAsync(commands)
+  }
+
+  async flushIPv4Addresses(category) {
+    if(!this.isActivated(category))
+      return [];
+
+    return rclient.delAsync(this.getIPv4CategoryKey(category));
+  }
+
 
   async getIncludedDomains(category) {
     if(!this.isActivated(category))
@@ -286,7 +335,26 @@ class CategoryUpdater {
 
     return `srdns:pattern:${d}`
   }
-  
+
+  async updateIPv4Set(category, options) {
+    const key = this.getIPv4CategoryKey(category)
+
+    let ipsetName = this.getIPSetName(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetName(category)
+    }
+
+    const hasAny = await rclient.scardAsync(key)
+
+    if(hasAny > 0) {
+      let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} with ipv4 addresses, err: ${err}`)
+      })
+    }
+  }
+
   async updateIPSetByDomain(category, domain, options) {
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
@@ -361,6 +429,12 @@ class CategoryUpdater {
     const includedDomains = await this.getIncludedDomains(category);
     const defaultDomains = await this.getDefaultDomains(category);
     const excludeDomains = await this.getExcludedDomains(category);
+
+    const ipv4AddressCount = await this.getIPv4AddressesCount(category);
+
+    if(ipv4AddressCount > 0) {
+      await this.updateIPv4Set(category, {useTemp: true})
+    }
 
     let dd = _.union(domains, includedDomains)
     dd = _.union(dd, defaultDomains)
