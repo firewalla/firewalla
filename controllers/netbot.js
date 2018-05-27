@@ -1515,6 +1515,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "whois":
+        (async () => {
+          const target = msg.data.value.target;
+          let whois = intelManager.whois(target);
+          this.simpleTxData(msg, {target, whois}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
