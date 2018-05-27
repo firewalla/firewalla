@@ -1441,7 +1441,30 @@ class netBot extends ControllerBot {
           const finalDomains = domains.filter((de) => {
             return !excludedDomains.includes(de.domain);
           })
-          this.simpleTxData(msg, {domains: finalDomains, includes: includedDomains}, null, callback)
+
+          let compareFuction = (x, y) => {
+            if(!x || !y) {
+              return 0;
+            }
+
+            let a = x.domain
+            let b = y.domain
+
+            if(!a || !b) {
+              return 0;
+            }
+
+            if(a.startsWith("*.")) {
+              a = a.substring(2)
+            }
+            if(b.startsWith("*.")) {
+              b = b.substring(2)
+            }
+
+            return a.toLowerCase() < b.toLowerCase()
+          };
+
+          this.simpleTxData(msg, {domains: finalDomains.sort(compareFuction), includes: includedDomains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
