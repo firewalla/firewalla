@@ -1461,7 +1461,7 @@ class netBot extends ControllerBot {
               b = b.substring(2)
             }
 
-            return a.toLowerCase() < b.toLowerCase()
+            return a.toLowerCase() > b.toLowerCase()
           };
 
           this.simpleTxData(msg, {domains: finalDomains.sort(compareFuction), includes: includedDomains}, null, callback)
