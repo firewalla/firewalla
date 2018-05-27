@@ -89,11 +89,39 @@ class CategoryUpdater {
     return `category:${category}:include:domain`
   }
 
+  getDefaultCategoryKey(category){
+    return `category:${category}:default:domain`
+  }
+
   async getDomains(category) {
     if(!this.isActivated(category))
       return []
 
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
+  }
+
+  async getDefaultDomains(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getDefaultCategoryKey(category))
+  }
+
+  async addDefaultDomains(category, domains) {
+    if(!this.isActivated(category))
+      return []
+
+    let commands = [this.getDefaultCategoryKey(category)]
+
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
+  async flushDefaultDomains(category) {
+    if(!this.isActivated(category))
+      return [];
+
+    return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
 
   async getIncludedDomains(category) {

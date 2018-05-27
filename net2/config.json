@@ -65,6 +65,7 @@
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
+    "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
