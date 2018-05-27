@@ -29,7 +29,10 @@ const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
   // "video": "app.video",
-  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+  "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
+}
+
+const securityHashMapping = {
   "default_consumer": "blockset:default:consumer"
 }
 
@@ -45,12 +48,26 @@ class CategoryUpdateSensor extends Sensor {
       const category = categories[i];
       await this.updateCategory(category);
     }
+
+    const securityCategories = Object.keys(securityHashMapping)
+    for (let i = 0; i < securityCategories.length; i++) {
+      const category = securityCategories[i]
+      await this.updateSecurityCategory(category)
+    }
   }
 
   async updateCategory(category) {
     const domains = await this.loadCategoryFromBone(category);
     await categoryUpdater.flushDefaultDomains(category);
     return categoryUpdater.addDefaultDomains(category,domains);
+  }
+
+  async updateSecurityCategory(category) {
+    const info = await this.loadSecurityInfoFromBone(category);
+    if(info.domain) {
+      await categoryUpdater.flushDefaultDomains(category);
+      return categoryUpdater.addDefaultDomains(category,info.domain);
+    }
   }
 
   run() {
@@ -69,6 +86,23 @@ class CategoryUpdateSensor extends Sensor {
       const data = await bone.hashsetAsync(hashset)
       const list = JSON.parse(data)
       log.info(`category ${category} has ${list.length} domains`)
+      return list
+    } else {
+      return []
+    }
+  }
+
+  async loadSecurityInfoFromBone(category) {
+    const hashset = securityHashMapping[category]
+
+    if(hashset) {
+      log.info(`Loading domains for ${category} from cloud`);
+      const data = await bone.hashsetAsync(hashset)
+      const list = JSON.parse(data)
+      const ip4List = list["ip4"];
+      const ip6List = list["ip6"];
+      const domain = list.domain;
+      log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${domain.length} domains`)
       return list
     } else {
       return []

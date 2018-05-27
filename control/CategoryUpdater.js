@@ -112,6 +112,10 @@ class CategoryUpdater {
     if(!this.isActivated(category))
       return []
 
+    if(domains.length === 0) {
+      return []
+    }
+
     let commands = [this.getDefaultCategoryKey(category)]
 
     commands.push.apply(commands, domains)
