@@ -29,7 +29,8 @@ const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
   // "video": "app.video",
-  "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
+  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+  "default_consumer": "blockset:default:consumer"
 }
 
 class CategoryUpdateSensor extends Sensor {
