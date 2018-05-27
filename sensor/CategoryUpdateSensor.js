@@ -33,7 +33,7 @@ const categoryHashsetMapping = {
 }
 
 const securityHashMapping = {
-  "default_consumer": "blockset:default:consumer"
+  "default_c": "blockset:default:consumer"
 }
 
 class CategoryUpdateSensor extends Sensor {
