@@ -219,7 +219,7 @@ class CategoryUpdater {
       return;
     }
 
-    log.debug(`Found a ${category} domain: ${d}`)
+    log.info(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d, {})
