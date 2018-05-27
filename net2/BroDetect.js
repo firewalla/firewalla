@@ -334,6 +334,7 @@ module.exports = class {
     processIntelData(data) {
         try {
             let obj = JSON.parse(data);
+            log.info("Intel:New",data,obj);
             if (obj['id.orig_h'] == null) {
                 log.error("Intel:Drop", obj);
                 return;
