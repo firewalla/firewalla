@@ -64,9 +64,19 @@ class CategoryUpdateSensor extends Sensor {
 
   async updateSecurityCategory(category) {
     const info = await this.loadSecurityInfoFromBone(category);
-    if(info.domain) {
+
+    const domains = info.domain
+    const ipv4Addresses = info["ip4"]
+    const ipv6Addresses = info["ip6"]
+
+    if(domains) {
       await categoryUpdater.flushDefaultDomains(category);
-      return categoryUpdater.addDefaultDomains(category,info.domain);
+      await categoryUpdater.addDefaultDomains(category,domains);
+    }
+
+    if(ipv4Addresses) {
+      await categoryUpdater.flushIPv4Addresses(category)
+      await categoryUpdater.addIPv4Addresses(category, ipv4Addresses)
     }
   }
 

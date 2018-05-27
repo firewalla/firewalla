@@ -94,6 +94,14 @@ class CategoryUpdater {
     return `category:${category}:default:domain`
   }
 
+  getIPv4CategoryKey(category) {
+    return `category:${category}:ip4:domain`
+  }
+
+  getIPv6CategoryKey(category) {
+    return `category:${category}:ip6:domain`
+  }
+
   async getDomains(category) {
     if(!this.isActivated(category))
       return []
@@ -128,6 +136,35 @@ class CategoryUpdater {
 
     return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
+
+  async getIPv4Addresses(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getIPv4CategoryKey(category))
+  }
+
+  async addIPv4Addresses(category, addresses) {
+    if(!this.isActivated(category))
+      return []
+
+    if(addresses.length === 0) {
+      return []
+    }
+
+    let commands = [this.getIPv4CategoryKey(category)]
+
+    commands.push.apply(commands, addresses)
+    return rclient.saddAsync(commands)
+  }
+
+  async flushIPv4Addresses(category) {
+    if(!this.isActivated(category))
+      return [];
+
+    return rclient.delAsync(this.getIPv4CategoryKey(category));
+  }
+
 
   async getIncludedDomains(category) {
     if(!this.isActivated(category))
