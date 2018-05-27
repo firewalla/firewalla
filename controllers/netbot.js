@@ -1436,15 +1436,17 @@ class netBot extends ControllerBot {
         (async () => {
           const category = msg.data.value.category
           const domains = await categoryUpdater.getDomainsWithExpireTime(category)
-          const excludedDomains = await (categoryUpdater.getExcludedDomains(category))
-          const defaultDomains = await (categoryUpdater.getDefaultCategoryKey(category))
-          const includedDomains = await (categoryUpdater.getIncludedDomains(category))
+          const excludedDomains = await categoryUpdater.getExcludedDomains(category)
+          const defaultDomains = await categoryUpdater.getDefaultDomains(category)
+          const includedDomains = await categoryUpdater.getIncludedDomains(category)
 
           const finalDomains = domains.filter((de) => {
             return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
           })
 
-          finalDomains.push.apply(finalDomains, defaultDomains)
+          finalDomains.push.apply(finalDomains, defaultDomains.map((d) => {
+            return {domain: d, expire: 0};
+          }))
 
           let compareFuction = (x, y) => {
             if(!x || !y) {
