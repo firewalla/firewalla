@@ -1437,10 +1437,11 @@ class netBot extends ControllerBot {
           const category = msg.data.value.category
           const domains = await categoryUpdater.getDomainsWithExpireTime(category)
           const excludedDomains = await (categoryUpdater.getExcludedDomains(category))
+          const includedDomains = await (categoryUpdater.getIncludedDomains(category))
           const finalDomains = domains.filter((de) => {
             return !excludedDomains.includes(de.domain);
           })
-          this.simpleTxData(msg, {domains: finalDomains}, null, callback)
+          this.simpleTxData(msg, {domains: finalDomains, includes: includedDomains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
