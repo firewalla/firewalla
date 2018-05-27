@@ -65,7 +65,7 @@ class CategoryUpdater {
 
         setTimeout(() => {
           this.refreshAllCategoryRecords()
-        }, 60 * 1000) // after one minute
+        }, 2 * 60 * 1000) // after two minutes
         
         sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
           if(event.category) {
@@ -358,10 +358,12 @@ class CategoryUpdater {
 
   async recycleIPSet(category, options) {
     const domains = await this.getDomains(category)
-    const includedDomains = await this.getIncludedDomains(category)
-    const excludeDomains = await this.getExcludedDomains(category)
+    const includedDomains = await this.getIncludedDomains(category);
+    const defaultDomains = await this.getDefaultDomains(category);
+    const excludeDomains = await this.getExcludedDomains(category);
 
     let dd = _.union(domains, includedDomains)
+    dd = _.union(dd, defaultDomains)
     dd = _.difference(dd, excludeDomains)
 
 
