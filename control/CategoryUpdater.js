@@ -348,7 +348,7 @@ class CategoryUpdater {
     const hasAny = await rclient.scardAsync(key)
 
     if(hasAny > 0) {
-      let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4).catch((err) => {
         log.error(`Failed to update ipset by category ${category} with ipv4 addresses, err: ${err}`)
       })
