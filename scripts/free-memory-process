@@ -11,11 +11,13 @@ bitbridge6_mem2=$(pidof bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print
 bro_mem2=$(pidof bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
-NOF=`lsof | wc -l`
+firemain_NOF=`lsof -p $firemain_pid | wc -l`
+firemon_NOF=`lsof -p $firemon_pid | wc -l`
+NOF=`cat  cat /proc/sys/fs/file-nr`
 firemon_threads=$( ps -o nlwp -h $firemon_pid)
 firemain_threads=$( ps -o nlwp -h $firemain_pid)
 
-/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: FireApi Critical Memory Restart2 mon:$firemon_mem2, api:$fireapi_mem2, main:$firemain_mem2,bro:$bro_mem2,redis:$redis_mem2,b7:$bitbridge7_mem2,b6:$bitbridge6_mem2,proc:$NOP, thread:$NOT main_thread:$firemain_threads mon_threads:$firemon_threads file:$NOF"
+/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: FireApi Critical Memory Restart2 mon:$firemon_mem2, api:$fireapi_mem2, main:$firemain_mem2,bro:$bro_mem2,redis:$redis_mem2,b7:$bitbridge7_mem2,b6:$bitbridge6_mem2,proc:$NOP, thread:$NOT main_thread:$firemain_threads mon_threads:$firemon_threads mainfile:$firemain_NOF monfile:$firemon_NOF sys:$NOF"
 #free -m | logger
 
 (( firemain_mem2 >= 140000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
@@ -41,10 +43,5 @@ if [ $NOT -gt 10000 ]
 then
    /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: THREADS > 10000 REBOOT $NOT"
    /home/pi/firewalla/scripts/fire-rebootf
-fi
-
-if [ $NOF -gt 40000 ]
-then
-   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FILE > 40000 NOREBOOT $NOF"
 fi
 
