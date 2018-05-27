@@ -34,8 +34,8 @@ const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
 
-let IM = require('../net2/IntelManager.js')
-let im = new IM('info');
+let IntelManager = require('../net2/IntelManager.js')
+let intelManager = new IntelManager('info');
 
 var DNSManager = require('../net2/DNSManager.js');
 var dnsManager = new DNSManager('info');
@@ -404,7 +404,6 @@ module.exports = class {
 
             if(alarm.type === "ALARM_INTEL") {
               log.info("AlarmManager:Check:AutoBlock",alarm);
-              let num = parseInt(alarm["p.security.numOfReportSources"]);
               if(fConfig && fConfig.policy &&
                  fConfig.policy.autoBlock &&
                  fc.isFeatureOn("cyber_security.autoBlock") &&
@@ -1166,7 +1165,7 @@ module.exports = class {
   }
 
 
-    enrichDeviceInfo(alarm) {
+    async enrichDeviceInfo(alarm) {
       let deviceIP = alarm["p.device.ip"];
       if(!deviceIP) {
         return Promise.reject(new Error("requiring p.device.ip"));
@@ -1210,7 +1209,7 @@ module.exports = class {
       });
     }
 
-    enrichDestInfo(alarm) {
+    async enrichDestInfo(alarm) {
       if(alarm["p.transfer.outbound.size"]) {
         alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
       }
@@ -1221,41 +1220,36 @@ module.exports = class {
 
       let destIP = alarm["p.dest.ip"];
 
-      if(!destIP)
+      if (!destIP)
         return Promise.reject(new Error("Requiring p.dest.ip"));
 
-      const locationAsync = Promise.promisify(im._location).bind(im)
 
-      return async(() => {
-
-        // location
-        const loc = await (locationAsync(destIP))
-        if(loc && loc.loc) {
-          const location = loc.loc;
-          const ll = location.split(",");
-          if(ll.length === 2) {
-            alarm["p.dest.latitude"] = parseFloat(ll[0]);
-            alarm["p.dest.longitude"] = parseFloat(ll[1]);
-          }
-          alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+      // location
+      const loc = await intelManager.ipinfo(destIP)
+      if (loc && loc.loc) {
+        const location = loc.loc;
+        const ll = location.split(",");
+        if (ll.length === 2) {
+          alarm["p.dest.latitude"] = parseFloat(ll[0]);
+          alarm["p.dest.longitude"] = parseFloat(ll[1]);
         }
+        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+      }
 
-        // intel
-        const intel = await (intelTool.getIntel(destIP))
-        if(intel && intel.app) {
-          alarm["p.dest.app"] = intel.app
-        }
+      // intel
+      const intel = await intelTool.getIntel(destIP)
+      if (intel && intel.app) {
+        alarm["p.dest.app"] = intel.app
+      }
 
-        if(intel && intel.category) {
-          alarm["p.dest.category"] = intel.category
-        }
+      if (intel && intel.category) {
+        alarm["p.dest.category"] = intel.category
+      }
 
-        if(intel && intel.host) {
-          alarm["p.dest.name"] = intel.host
-        }
-        
-        return alarm
-        
-      })()
+      if (intel && intel.host) {
+        alarm["p.dest.name"] = intel.host
+      }
+
+      return alarm;
     }
   }

@@ -14,9 +14,6 @@
  */
 'use strict';
 let log = require('./logger.js')(__filename);
-var ip = require('ip');
-var os = require('os');
-var network = require('network');
 var stats = require('stats-lite');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -31,9 +28,6 @@ var firewalla = require("../net2/Firewalla.js");
 const _async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 var QUERY_MAX_FLOW = 10000;
 
