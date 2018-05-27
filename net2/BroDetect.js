@@ -703,7 +703,7 @@ module.exports = class {
                     return;
                 }
             } catch (e) {
-                log.error("Conn:Data:Error checking ulticast", e);
+                log.debug("Conn:Data:Error checking ulticast", e);
                 return;
             }
 
@@ -726,7 +726,7 @@ module.exports = class {
                 flowdir = "out";
                 lhost = dst;
             } else {
-                log.error("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
+                log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
                 return;
             }
 

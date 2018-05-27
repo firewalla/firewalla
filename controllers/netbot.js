@@ -1432,6 +1432,19 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "liveCategoryDomainsWithoutExcluded":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          const excludedDomains = await (categoryUpdater.getExcludedDomains(category))
+          const finalDomains = domains.filter((de) => {
+            return !excludedDomains.includes(de.domain);
+          })
+          this.simpleTxData(msg, {domains: finalDomains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
       case "includedDomains":
         (async () => {
           const category = msg.data.value.category
