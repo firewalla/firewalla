@@ -144,6 +144,13 @@ class CategoryUpdater {
     return rclient.smembersAsync(this.getIPv4CategoryKey(category))
   }
 
+  async getIPv4AddressesCount(category) {
+    if(!this.isActivated(category))
+      return 0
+
+    return rclient.scardAsync(this.getIPv4CategoryKey(category))
+  }
+
   async addIPv4Addresses(category, addresses) {
     if(!this.isActivated(category))
       return []
@@ -328,7 +335,26 @@ class CategoryUpdater {
 
     return `srdns:pattern:${d}`
   }
-  
+
+  async updateIPv4Set(category, options) {
+    const key = this.getIPv4CategoryKey(category)
+
+    let ipsetName = this.getIPSetName(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetName(category)
+    }
+
+    const hasAny = await rclient.scardAsync(key)
+
+    if(hasAny > 0) {
+      let cmd4 = `redis-cli smembers ${mapping} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} with ipv4 addresses, err: ${err}`)
+      })
+    }
+  }
+
   async updateIPSetByDomain(category, domain, options) {
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
@@ -403,6 +429,12 @@ class CategoryUpdater {
     const includedDomains = await this.getIncludedDomains(category);
     const defaultDomains = await this.getDefaultDomains(category);
     const excludeDomains = await this.getExcludedDomains(category);
+
+    const ipv4AddressCount = await this.getIPv4AddressesCount(category);
+
+    if(ipv4AddressCount > 0) {
+      await this.updateIPv4Set(category, {useTemp: true})
+    }
 
     let dd = _.union(domains, includedDomains)
     dd = _.union(dd, defaultDomains)
