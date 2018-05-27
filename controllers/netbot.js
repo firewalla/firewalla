@@ -1467,8 +1467,29 @@ class netBot extends ControllerBot {
               b = b.substring(2)
             }
 
-            return a.toLowerCase() > b.toLowerCase()
+            if (a.toLowerCase() > b.toLowerCase()) {
+              return 1
+            } else if (a.toLowerCase() < b.toLowerCase()) {
+              return -1
+            } else {
+              return 0
+            }
           };
+
+          let sortedFinalDomains = finalDomains.sort(compareFuction)
+
+          const patternDomains = sortedFinalDomains.filter((de) => {
+            return de.domain.startsWith("*.")
+          }).map((de) => de.domain.substring(2))
+
+          // dedup battle.net if battle.net and *.battle.net co-exist
+          sortedFinalDomains.filter((de) => {
+            if(!de.domain.startsWith("*.") && patternDomains.includes(de.domain)) {
+              return false;
+            } else {
+              return true;
+            }
+          })
 
           this.simpleTxData(msg, {domains: finalDomains.sort(compareFuction), includes: includedDomains}, null, callback)
         })().catch((err) => {
