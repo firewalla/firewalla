@@ -1432,6 +1432,71 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "liveCategoryDomainsWithoutExcluded":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          const excludedDomains = await categoryUpdater.getExcludedDomains(category)
+          const defaultDomains = await categoryUpdater.getDefaultDomains(category)
+          const includedDomains = await categoryUpdater.getIncludedDomains(category)
+
+          const finalDomains = domains.filter((de) => {
+            return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
+          })
+
+          finalDomains.push.apply(finalDomains, defaultDomains.map((d) => {
+            return {domain: d, expire: 0};
+          }))
+
+          let compareFuction = (x, y) => {
+            if(!x || !y) {
+              return 0;
+            }
+
+            let a = x.domain
+            let b = y.domain
+
+            if(!a || !b) {
+              return 0;
+            }
+
+            if(a.startsWith("*.")) {
+              a = a.substring(2)
+            }
+            if(b.startsWith("*.")) {
+              b = b.substring(2)
+            }
+
+            if (a.toLowerCase() > b.toLowerCase()) {
+              return 1
+            } else if (a.toLowerCase() < b.toLowerCase()) {
+              return -1
+            } else {
+              return 0
+            }
+          };
+
+          let sortedFinalDomains = finalDomains.sort(compareFuction)
+
+          const patternDomains = sortedFinalDomains.filter((de) => {
+            return de.domain.startsWith("*.")
+          }).map((de) => de.domain.substring(2))
+
+          // dedup battle.net if battle.net and *.battle.net co-exist
+          const outputDomains = sortedFinalDomains.filter((de) => {
+            const domain = de.domain
+            if(!domain.startsWith("*.") && patternDomains.includes(domain)) {
+              return false;
+            } else {
+              return true;
+            }
+          })
+
+          this.simpleTxData(msg, {domains: outputDomains, includes: includedDomains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
       case "includedDomains":
         (async () => {
           const category = msg.data.value.category

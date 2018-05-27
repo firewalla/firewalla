@@ -237,20 +237,20 @@ module.exports = class {
     return rclient.hdelAsync("sys:config", "branch.changed")
   }
 
-    systemRebootedDueToIssue(reset) {
-       try {
-           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
-               log.info("SysManager:RebootDueToIssue");
-               if (reset == true) {
-                   require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
-               }
-               return true;
-           }
-       } catch(e) {
-           return false;
-       }
-       return false;
-    }
+  systemRebootedDueToIssue(reset) {
+     try {
+         if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
+             log.info("SysManager:RebootDueToIssue");
+             if (reset == true) {
+                 require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+             }
+             return true;
+         }
+     } catch(e) {
+         return false;
+     }
+     return false;
+  }
 
   setLanguage(language, callback) {
     callback = callback || function() {}

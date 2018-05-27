@@ -65,7 +65,7 @@ class CategoryUpdater {
 
         setTimeout(() => {
           this.refreshAllCategoryRecords()
-        }, 60 * 1000) // after one minute
+        }, 2 * 60 * 1000) // after two minutes
         
         sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
           if(event.category) {
@@ -89,11 +89,39 @@ class CategoryUpdater {
     return `category:${category}:include:domain`
   }
 
+  getDefaultCategoryKey(category){
+    return `category:${category}:default:domain`
+  }
+
   async getDomains(category) {
     if(!this.isActivated(category))
       return []
 
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
+  }
+
+  async getDefaultDomains(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getDefaultCategoryKey(category))
+  }
+
+  async addDefaultDomains(category, domains) {
+    if(!this.isActivated(category))
+      return []
+
+    let commands = [this.getDefaultCategoryKey(category)]
+
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
+  async flushDefaultDomains(category) {
+    if(!this.isActivated(category))
+      return [];
+
+    return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
 
   async getIncludedDomains(category) {
@@ -191,7 +219,7 @@ class CategoryUpdater {
       return;
     }
 
-    log.debug(`Found a ${category} domain: ${d}`)
+    log.info(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d, {})
@@ -330,10 +358,12 @@ class CategoryUpdater {
 
   async recycleIPSet(category, options) {
     const domains = await this.getDomains(category)
-    const includedDomains = await this.getIncludedDomains(category)
-    const excludeDomains = await this.getExcludedDomains(category)
+    const includedDomains = await this.getIncludedDomains(category);
+    const defaultDomains = await this.getDefaultDomains(category);
+    const excludeDomains = await this.getExcludedDomains(category);
 
     let dd = _.union(domains, includedDomains)
+    dd = _.union(dd, defaultDomains)
     dd = _.difference(dd, excludeDomains)
 
 

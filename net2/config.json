@@ -1,5 +1,5 @@
 {
-  "version": 1.955,
+  "version": 1.956,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -65,6 +65,7 @@
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
+    "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
