@@ -173,6 +173,42 @@ class CategoryUpdater {
   }
 
 
+  async getIPv6Addresses(category) {
+    if(!this.isActivated(category))
+      return []
+
+    return rclient.smembersAsync(this.getIPv6CategoryKey(category))
+  }
+
+  async getIPv6AddressesCount(category) {
+    if(!this.isActivated(category))
+      return 0
+
+    return rclient.scardAsync(this.getIPv6CategoryKey(category))
+  }
+
+  async addIPv6Addresses(category, addresses) {
+    if(!this.isActivated(category))
+      return []
+
+    if(addresses.length === 0) {
+      return []
+    }
+
+    let commands = [this.getIPv6CategoryKey(category)]
+
+    commands.push.apply(commands, addresses)
+    return rclient.saddAsync(commands)
+  }
+
+  async flushIPv6Addresses(category) {
+    if(!this.isActivated(category))
+      return [];
+
+    return rclient.delAsync(this.getIPv6CategoryKey(category));
+  }
+
+
   async getIncludedDomains(category) {
     if(!this.isActivated(category))
       return []
@@ -250,6 +286,10 @@ class CategoryUpdater {
 
   async updateDomain(category, domain, isPattern) {
 
+    if(!category || !domain) {
+      return;
+    }
+    
     if(!this.isActivated(category)) {
       return
     }
@@ -355,6 +395,25 @@ class CategoryUpdater {
     }
   }
 
+  async updateIPv6Set(category, options) {
+    const key = this.getIPv6CategoryKey(category)
+
+    let ipsetName = this.getIPSetNameForIPV6(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetNameForIPV6(category)
+    }
+
+    const hasAny = await rclient.scardAsync(key)
+
+    if(hasAny > 0) {
+      let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} with ipv6 addresses, err: ${err}`)
+      })
+    }
+  }
+
   async updateIPSetByDomain(category, domain, options) {
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
@@ -431,9 +490,14 @@ class CategoryUpdater {
     const excludeDomains = await this.getExcludedDomains(category);
 
     const ipv4AddressCount = await this.getIPv4AddressesCount(category);
+    const ipv6AddressCount = await this.getIPv6AddressesCount(category);
 
     if(ipv4AddressCount > 0) {
       await this.updateIPv4Set(category, {useTemp: true})
+    }
+
+    if(ipv6AddressCount > 0) {
+      await this.updateIPv6Set(category, {useTemp: true})
     }
 
     let dd = _.union(domains, includedDomains)

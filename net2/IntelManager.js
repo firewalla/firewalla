@@ -125,7 +125,7 @@ module.exports = class {
           if(Array.isArray(json)) {
             // HACK, excluding attackpage
             json = json.filter(x => x !== "attackpage")
-            intel.cc = json[0]
+            intelObj.cc = json[0]
           }
         } catch (err) {
           log.warn("Error when parsing info.cc:", intelObj.cc, err);

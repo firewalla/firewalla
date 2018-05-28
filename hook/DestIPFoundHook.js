@@ -210,7 +210,7 @@ class DestIPFoundHook extends Hook {
 
   async updateCategoryDomain(intel) {
     if(intel.category && intel.t > TRUST_THRESHOLD) {
-      if(intel.originIP) {
+      if(intel.originIP && intel.host) {
         await categoryUpdater.updateDomain(intel.category, intel.originIP, intel.isOriginIPAPattern)
       } else {
         await categoryUpdater.updateDomain(intel.category, intel.host)
@@ -296,28 +296,32 @@ class DestIPFoundHook extends Hook {
     return (async() => {
       log.debug("Checking if any IP Addresses pending for intel analysis...")
 
-      let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+      try {
+        let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-      if(ips.length > 0) {
+        if(ips.length > 0) {
 
-        let promises = ips.map((ip) => this.processIP(ip));
+          let promises = ips.map((ip) => this.processIP(ip));
 
-        await Promise.all(promises)
+          await Promise.all(promises)
 
-        let args = [IP_SET_TO_BE_PROCESSED];
-        args.push.apply(args, ips);
+          let args = [IP_SET_TO_BE_PROCESSED];
+          args.push.apply(args, ips);
 
-        await rclient.zremAsync(args)
+          await rclient.zremAsync(args)
 
-        log.debug(ips.length + "IP Addresses are analyzed with intels");
+          log.debug(ips.length + "IP Addresses are analyzed with intels");
 
-      } else {
-        // log.info("No IP Addresses are pending for intels");
+        } else {
+          // log.info("No IP Addresses are pending for intels");
+        }
+      } catch(err) {
+        log.error("Got error when handling new dest IP addresses, err:", err)
       }
 
       await delay(1000); // sleep for only 1 second
 
-      return this.job();
+      return this.job(); // continuously running
     })();
   }
 
