@@ -319,7 +319,7 @@ class DestIPFoundHook extends Hook {
         log.error("Got error when handling new dest IP addresses, err:", err)
       }
 
-      await delay(1000); // sleep for only 1 second
+      await delay(100); // sleep for only 100 mill-seconds
 
       return this.job(); // continuously running
     })();
