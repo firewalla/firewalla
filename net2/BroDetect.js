@@ -937,7 +937,7 @@ module.exports = class {
 
 
 
-                      setTimeout(() => {
+                      // setTimeout(() => {
                         sem.emitEvent({
                           type: 'DestIPFound',
                           ip: remoteIPAddress,
@@ -946,7 +946,7 @@ module.exports = class {
                           rb: tmpspec.rb,
                           suppressEventLogging: true
                         });
-                      }, 15 * 1000); // send out in 15 seconds
+                      // }, 15 * 1000); // send out in 15 seconds
 
 
                         if (this.config.bro.conn.expires) {

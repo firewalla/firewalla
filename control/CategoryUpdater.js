@@ -65,6 +65,7 @@ class CategoryUpdater {
         }, 60 * 60 * 1000) // update records every hour
 
         setTimeout(() => {
+          log.info("============= UPDATING CATEGORY IPSET =============")
           this.refreshAllCategoryRecords()
         }, 2 * 60 * 1000) // after two minutes
         
@@ -364,7 +365,9 @@ class CategoryUpdater {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    return rclient.keysAsync(`rdns:domain:${domainPattern}`)
+    const keys = await rclient.keysAsync(`rdns:domain:${domainPattern}`)
+    keys.push(this.getDomainMapping(domainPattern.substring(2)))
+    return keys
   }
 
   getSummedDomainMapping(domain) {
@@ -461,6 +464,11 @@ class CategoryUpdater {
       array.push.apply(array, mappings)
 
       await rclient.zunionstoreAsync(array)
+
+      const exists = await rclient.typeAsync(smappings);
+      if(exists === "none") {
+        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
+      }
 
       await rclient.expireAsync(smappings, 600) // auto expire in 60 seconds
 
