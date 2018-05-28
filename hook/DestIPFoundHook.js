@@ -210,7 +210,7 @@ class DestIPFoundHook extends Hook {
 
   async updateCategoryDomain(intel) {
     if(intel.category && intel.t > TRUST_THRESHOLD) {
-      if(intel.originIP) {
+      if(intel.originIP && intel.host) {
         await categoryUpdater.updateDomain(intel.category, intel.originIP, intel.isOriginIPAPattern)
       } else {
         await categoryUpdater.updateDomain(intel.category, intel.host)
