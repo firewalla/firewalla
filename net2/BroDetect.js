@@ -388,6 +388,8 @@ module.exports = class {
               })()
 
                 for (let i in obj['answers']) {
+                  const entry = obj['answers'][i];
+
                     let key = "dns:ip:" + obj['answers'][i];
                     let value = {
                         'host': obj['query'],
@@ -407,6 +409,15 @@ module.exports = class {
                         rclient.hmset(key, value, (err, rvalue) => {
                              //   rclient.hincrby(key, "count", 1, (err, value) => {
                              if (err == null) {
+
+                                 if(iptool.isV4Format(entry) || iptool.isV6Format(entry)) {
+                                   sem.emitEvent({
+                                     type: 'DestIPFound',
+                                     ip: entry,
+                                     suppressEventLogging: true
+                                   });
+                                 }
+
                                  if (this.config.bro.dns.expires) {
                                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                                  }
@@ -937,7 +948,7 @@ module.exports = class {
 
 
 
-                      // setTimeout(() => {
+                      setTimeout(() => {
                         sem.emitEvent({
                           type: 'DestIPFound',
                           ip: remoteIPAddress,
@@ -946,7 +957,7 @@ module.exports = class {
                           rb: tmpspec.rb,
                           suppressEventLogging: true
                         });
-                      // }, 15 * 1000); // send out in 15 seconds
+                      }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
 
                         if (this.config.bro.conn.expires) {
