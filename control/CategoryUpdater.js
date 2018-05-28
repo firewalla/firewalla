@@ -286,6 +286,10 @@ class CategoryUpdater {
 
   async updateDomain(category, domain, isPattern) {
 
+    if(!category || !domain) {
+      return;
+    }
+    
     if(!this.isActivated(category)) {
       return
     }
