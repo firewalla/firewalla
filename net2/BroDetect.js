@@ -375,7 +375,7 @@ module.exports = class {
                 if (this.lastDNS!=null) {
                     if (this.lastDNS['query'] == obj['query']) {
                         if (JSON.stringify(this.lastDNS['answers']) == JSON.stringify(obj["answers"])) {
-                            log.info("processDnsData:DNS:Duplicated:", obj['query'],JSON.stringify(obj['answers']));
+                            log.debug("processDnsData:DNS:Duplicated:", obj['query'],JSON.stringify(obj['answers']));
                             return;
                         }
                     }
