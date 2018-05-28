@@ -13,7 +13,7 @@ NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
 firemain_NOF=`lsof -p $firemain_pid | wc -l`
 firemon_NOF=`lsof -p $firemon_pid | wc -l`
-NOF=`cat  cat /proc/sys/fs/file-nr`
+NOF=`cat /proc/sys/fs/file-nr`
 firemon_threads=$( ps -o nlwp -h $firemon_pid)
 firemain_threads=$( ps -o nlwp -h $firemain_pid)
 
