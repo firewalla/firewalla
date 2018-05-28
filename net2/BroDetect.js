@@ -375,9 +375,9 @@ module.exports = class {
                 // NOTE write up a look up flow here
 
                 // record reverse dns as well for future reverse lookup
-                async(() => {
-                  await (dnsTool.addReverseDns(obj['query'], obj['answers']))
-                })()
+              (async () => {
+                await dnsTool.addReverseDns(obj['query'], obj['answers'])
+              })()
 
                 for (let i in obj['answers']) {
                     let key = "dns:ip:" + obj['answers'][i];

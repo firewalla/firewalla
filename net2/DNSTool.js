@@ -99,14 +99,16 @@ class DNSTool {
 
     return async(() => {
       let updated = false
-      
-      addresses.forEach((addr) => {
+
+      for (let i = 0; i < addresses.length; i++) {  
+        const addr = addresses[i];
+
         if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
           await (rclient.zaddAsync(key, new Date() / 1000, addr))
           updated = true
         }
-      })
-
+      }
+      
       if(updated) {
         await (rclient.expireAsync(key, expire))
       }
