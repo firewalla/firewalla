@@ -1,8 +1,16 @@
 #!/bin/bash
 
+
 if [ -f /etc/openvpn/easy-rsa/keys/ca.key ]; then
    if [ -f /etc/openvpn/easy-rsa/keys/ta.key ]; then
-       exit 0;
+      if [ -f /etc/openvpn/server.conf ]; then
+          minimumsize=1000
+          actualsize=$(wc -c <"/etc/openvpn/server.conf")
+          if [ $actualsize -ge $minimumsize ]; then
+              logger "FIREWALLA: OpenVPN Setup Install Already Done"
+              exit 0
+          fi
+      fi
    fi
 fi
 
