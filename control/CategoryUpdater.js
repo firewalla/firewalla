@@ -65,8 +65,13 @@ class CategoryUpdater {
         }, 60 * 60 * 1000) // update records every hour
 
         setTimeout(() => {
-          log.info("============= UPDATING CATEGORY IPSET =============")
-          this.refreshAllCategoryRecords()
+
+          (async () => {
+            log.info("============= UPDATING CATEGORY IPSET =============")
+            await this.refreshAllCategoryRecords()
+            log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
+          })()
+
         }, 2 * 60 * 1000) // after two minutes
         
         sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
