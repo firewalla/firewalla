@@ -66,6 +66,12 @@ class CategoryBlock {
     } else {
       // global policy
       await categoryUpdater.iptablesBlockCategory(category)
+
+      if(category === 'default_c') {
+        await categoryUpdater.iptablesRedirectCategory(category).catch((err) => {
+          log.error("Failed to redirect default_c traffic, err", err)
+        })
+      }
     }
   }
 
@@ -79,6 +85,12 @@ class CategoryBlock {
     } else {
       // global policy
       await categoryUpdater.iptablesUnblockCategory(category)
+
+      if(category === 'default_c') {
+        await categoryUpdater.iptablesUnredirectCategory(category).catch((err) => {
+          log.error("Failed to unredirect default_c traffic, err", err)
+        })
+      }
     }
     
   }
