@@ -224,8 +224,7 @@
       "social_hour": true,
       "api_relay": false,
       "vpn_relay": false,
-      "upstream_dns": false,
-      "malware_protection": true
+      "upstream_dns": false
     }
 
 }
