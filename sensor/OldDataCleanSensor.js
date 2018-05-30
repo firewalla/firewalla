@@ -270,6 +270,15 @@ class OldDataCleanSensor extends Sensor {
     })()
   }
 
+  async cleanBlueRecords() {
+    const keyPattern = "history:domain:*"
+    const keys = await rclient.keysAsync(keyPattern);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      await rclient.zremrangebyscoreAsync(key, '-inf', Math.floor(new Date() / 1000 - 3600 * 24)) // keep one day
+    }
+  }
+
   oneTimeJob() {
     return async(() => {
       await (this.cleanDuplicatedPolicy())
@@ -295,6 +304,7 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+      await (this.cleanBlueRecords())
       log.info("scheduledJob is executed successfully");
     })();
   }

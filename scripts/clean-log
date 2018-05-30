@@ -6,8 +6,10 @@ cp /home/pi/.forever/ui.log /home/pi/.forever/ui_last.log
 cp /home/pi/.forever/monitor.log /home/pi/.forever/monitor_last.log
 cp /home/pi/.forever/api.log /home/pi/.forever/api_last.log
 cp /home/pi/.forever/dns.log /home/pi/.forever/dns_last.log
+cp /home/pi/.forever/blue.log /home/pi/.forever/blue_last.log
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log
+cat /dev/null > /home/pi/.forever/blue.log
 cat /dev/null > /home/pi/.forever/ui.log
 cat /dev/null > /home/pi/.forever/monitor.log
 cat /dev/null > /home/pi/.forever/api.log
