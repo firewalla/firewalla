@@ -45,15 +45,15 @@ class App {
     let ip = req.ip;
 
     if(hostname && ip) {
-      if (ip.substr(0, 7) == "::ffff:") {
+      if (ip.substr(0, 7) === "::ffff:") {
         ip = ip.substr(7)
       }
 
-      if(this.lastRequest[ip] === hostname) {
-        return
-      }
-
-      this.lastRequest[ip] = hostname;
+      // if(this.lastRequest[ip] === hostname) {
+      //   return
+      // }
+      //
+      // this.lastRequest[ip] = hostname;
 
       if(iptool.isV4Format(ip)) {
         const mac = await rclient.hgetAsync(`host:ip4:${ip}`, "mac");
@@ -159,13 +159,13 @@ class App {
   start() {
     this.redirectApp.listen(redirectHttpPort, () => log.info(`Httpd listening on port ${redirectHttpPort}!`));
     this.blackHoleApp.listen(blackHoleHttpPort, () => log.info(`Httpd listening on port ${blackHoleHttpPort}!`));
-    this.blockApp.listen(blockHttpPort, () => log.info(`Httpd listening on port ${blockHttpPort}!`));
+    // this.blockApp.listen(blockHttpPort, () => log.info(`Httpd listening on port ${blockHttpPort}!`));
 
     if (enableHttps) {
       const httpsOptions = this.genHttpsOptions();
       https.createServer(httpsOptions, this.redirectApp).listen(redirectHttpsPort, () => log.info(`Httpd listening on port ${redirectHttpsPort}!`));
       https.createServer(httpsOptions, this.blackHoleApp).listen(blackHoleHttpsPort, () => log.info(`Httpd listening on port ${blackHoleHttpsPort}!`));
-      https.createServer(httpsOptions, this.blockApp).listen(blockHttpsPort, () => log.info(`Httpd listening on port ${blockHttpsPort}!`));
+      // https.createServer(httpsOptions, this.blockApp).listen(blockHttpsPort, () => log.info(`Httpd listening on port ${blockHttpsPort}!`));
     }
   }
 
