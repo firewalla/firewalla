@@ -24,6 +24,8 @@ const Block = require('./Block.js');
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const domainBlock = require('../control/DomainBlock.js')();
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const bone = require('../lib/Bone.js')
@@ -37,6 +39,13 @@ let instance = null
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
 const _ = require('underscore')
+
+const redirectHttpPort = 8880;
+const redirectHttpsPort = 8883;
+const blackHoleHttpPort = 8881;
+const blackHoleHttpsPort = 8884;
+const blockHttpPort = 8882;
+const blockHttpsPort = 8885;
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -65,8 +74,13 @@ class CategoryUpdater {
         }, 60 * 60 * 1000) // update records every hour
 
         setTimeout(() => {
-          log.info("============= UPDATING CATEGORY IPSET =============")
-          this.refreshAllCategoryRecords()
+
+          (async () => {
+            log.info("============= UPDATING CATEGORY IPSET =============")
+            await this.refreshAllCategoryRecords()
+            log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
+          })()
+
         }, 2 * 60 * 1000) // after two minutes
         
         sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
@@ -520,6 +534,18 @@ class CategoryUpdater {
 
     for (let i = 0; i < dd.length; i++) {
       const domain = dd[i]
+
+      let domainSuffix = domain
+      if(domainSuffix.startsWith("*.")) {
+        domainSuffix = domainSuffix.substring(2);
+      }
+      
+      const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+      if(!existing) { // a new domain
+        log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+        await domainBlock.resolveDomain(domainSuffix)
+      }
+      
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
       })
@@ -598,15 +624,30 @@ class CategoryUpdater {
 
   }
 
+  getHttpPort(category) {
+    if(category === 'default_c') {
+      return blackHoleHttpPort;
+    } else {
+      return redirectHttpPort;
+    }
+  }
+
+  getHttpsPort(category) {
+    if(category === 'default_c') {
+      return blackHoleHttpsPort;
+    } else {
+      return redirectHttpsPort;
+    }
+  }
 
   async iptablesRedirectCategory(category) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880 || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880`
-    const cmdRedirectHTTPSRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883 || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880 || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883 || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+    const cmdRedirectHTTPRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)
@@ -618,10 +659,10 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports 8880`
-    const cmdRedirectHTTPSRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports 8883`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports 8880`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports 8883`
+    const cmdRedirectHTTPRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)

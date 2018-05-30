@@ -68,15 +68,20 @@ class CategoryUpdateSensor extends Sensor {
     const domains = info.domain
     const ipv4Addresses = info["ip4"]
     const ipv6Addresses = info["ip6"]
-
-    if(domains) {
-      await categoryUpdater.flushDefaultDomains(category);
-      await categoryUpdater.addDefaultDomains(category,domains);
-    }
-
+    
+    // if(domains) {
+    //   await categoryUpdater.flushDefaultDomains(category);
+    //   await categoryUpdater.addDefaultDomains(category,domains);
+    // }
+    
     if(ipv4Addresses) {
       await categoryUpdater.flushIPv4Addresses(category)
       await categoryUpdater.addIPv4Addresses(category, ipv4Addresses)
+    }
+    
+    if(ipv6Addresses) {
+      await categoryUpdater.flushIPv6Addresses(category)
+      await categoryUpdater.addIPv6Addresses(category, ipv6Addresses)
     }
   }
 

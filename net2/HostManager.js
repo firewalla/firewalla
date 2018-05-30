@@ -2483,7 +2483,10 @@ module.exports = class HostManager {
         let key = "policy:system";
         let d = {};
         for (let k in this.policy) {
-            d[k] = JSON.stringify(this.policy[k]);
+          const policyValue = this.policy[k];
+          if(policyValue !== undefined) {
+            d[k] = JSON.stringify(policyValue)
+          }
         }
         rclient.hmset(key, d, (err, data) => {
             if (err != null) {
@@ -2507,7 +2510,11 @@ module.exports = class HostManager {
                 if (data) {
                     this.policy = {};
                     for (let k in data) {
+                      try {
                         this.policy[k] = JSON.parse(data[k]);
+                      } catch (err) {
+                        log.error(`Failed to parse policy ${k} with value ${data[k]}`, err)
+                      }                       
                     }
                     if (callback)
                         callback(null, data);
