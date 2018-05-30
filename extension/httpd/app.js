@@ -23,6 +23,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const intel = require('./intel.js')(rclient);
 
+const iptool = require('ip')
+
 const VIEW_PATH = 'firewalla_view';
 const STATIC_PATH = 'firewalla_static';
 
@@ -30,38 +32,50 @@ process.title = "FireBlue";
 
 class App {
   constructor() {
-
-    // redirect to a remote site
-    this.redirectApp = express();
-
-    // silently return 404
-    this.blackHoleApp = express();
-
-    // render a block page
-    this.blockApp = express();
-
-    this.blockApp.engine('mustache', require('mustache-express')());
-    this.blockApp.set('view engine', 'mustache');
-
-    this.blockApp.set('views', path.join(__dirname, VIEW_PATH));
-    //this.redirectApp.disable('view cache'); //for debug only
-
+    this.lastRequest = {}
     this.routes();
   }
 
-  recordActivity(req, queue) {
+  async recordActivity(req, queue) {
     if(!req || !queue) {
       return;
     }
 
     const hostname = req.hostname;
-    const ip = req.ip;
+    let ip = req.ip;
+
     if(hostname && ip) {
-      rclient.zaddAsync(`${queue}:${ip}`, Math.floor(new Date() / 1000), hostname);
+      if (ip.substr(0, 7) == "::ffff:") {
+        ip = ip.substr(7)
+      }
+
+      if(this.lastRequest[ip] === hostname) {
+        return
+      }
+
+      this.lastRequest[ip] = hostname;
+
+      if(iptool.isV4Format(ip)) {
+        const mac = await rclient.hgetAsync(`host:ip4:${ip}`, "mac");
+        if(mac) {
+          rclient.zaddAsync(`${queue}:${mac}`, Math.floor(new Date() / 1000), hostname);
+        }
+      } else if (iptool.isV6Format(ip)) {
+        const mac = await rclient.hgetAsync(`host:ip6:${ip}`, "mac");
+        if(mac) {
+          rclient.zaddAsync(`${queue}:${mac}`, Math.floor(new Date() / 1000), hostname);
+        }
+      } else {
+        // do nothing
+      }
+
     }
   }
 
   routesForRedirect() {
+    // redirect to a remote site
+    this.redirectApp = express();
+
     this.redirectApp.use('*', async (req, res) => {
       let redirect = await rclient.hgetAsync('redirect','porn')
       redirect = redirect || "http://google.com"
@@ -75,6 +89,9 @@ class App {
   }
 
   routesForBlackHole() {
+    // silently return 200
+    this.blackHoleApp = express();
+
     this.blackHoleApp.use('*', async (req, res) => {
 
       this.recordActivity(req, "blue:history:domain:blackhole");
@@ -85,6 +102,15 @@ class App {
   }
 
   routesForBlock() {
+    // render a block page
+    this.blockApp = express();
+
+    this.blockApp.engine('mustache', require('mustache-express')());
+    this.blockApp.set('view engine', 'mustache');
+
+    this.blockApp.set('views', path.join(__dirname, VIEW_PATH));
+    //this.redirectApp.disable('view cache'); //for debug only
+
     this.router = express.Router();
     this.router.all('/block', async (req, res) => {
       const hostname = req.hostname;
@@ -127,7 +153,7 @@ class App {
   routes() {
     this.routesForRedirect();
     this.routesForBlackHole();
-    this.routesForBlock();
+//    this.routesForBlock();
   }
 
   start() {
