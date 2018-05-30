@@ -271,7 +271,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanBlueRecords() {
-    const keyPattern = "history:domain:*"
+    const keyPattern = "blue:history:domain:*"
     const keys = await rclient.keysAsync(keyPattern);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];

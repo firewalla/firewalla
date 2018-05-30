@@ -50,13 +50,14 @@ class App {
   }
 
   recordActivity(req, queue) {
-    if(!req) {
+    if(!req || !queue) {
       return;
     }
 
     const hostname = req.hostname;
-    if(hostname) {
-      rclient.zaddAsync(queue, Math.floor(new Date() / 1000), hostname);
+    const ip = req.ip;
+    if(hostname && ip) {
+      rclient.zaddAsync(`${queue}:${ip}`, Math.floor(new Date() / 1000), hostname);
     }
   }
 
@@ -65,7 +66,7 @@ class App {
       let redirect = await rclient.hgetAsync('redirect','porn')
       redirect = redirect || "http://google.com"
 
-      this.recordActivity(req, "history:domain:redirect");
+      this.recordActivity(req, "blue:history:domain:redirect");
 
       if(redirect) {
         res.status(303).location(redirect).send().end()
@@ -76,7 +77,7 @@ class App {
   routesForBlackHole() {
     this.blackHoleApp.use('*', async (req, res) => {
 
-      this.recordActivity(req, "history:domain:blackhole");
+      this.recordActivity(req, "blue:history:domain:blackhole");
 
       res.status(200).send().end()
 
