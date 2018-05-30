@@ -40,10 +40,12 @@ const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
 const _ = require('underscore')
 
-const pornRedirectHttpPort = 8880;
-const pornRedirectHttpsPort = 8883;
-const defaultCRedirectHttpPort = 8881;
-const defaultCRedirectHttpsPort = 8884;
+const redirectHttpPort = 8880;
+const redirectHttpsPort = 8883;
+const blackHoleHttpPort = 8881;
+const blackHoleHttpsPort = 8884;
+const blockHttpPort = 8882;
+const blockHttpsPort = 8885;
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -624,17 +626,17 @@ class CategoryUpdater {
 
   getHttpPort(category) {
     if(category === 'default_c') {
-      return defaultCRedirectHttpPort;
+      return blackHoleHttpPort;
     } else {
-      return pornRedirectHttpPort;
+      return redirectHttpPort;
     }
   }
 
   getHttpsPort(category) {
     if(category === 'default_c') {
-      return defaultCRedirectHttpsPort;
+      return blackHoleHttpsPort;
     } else {
-      return pornRedirectHttpsPort;
+      return redirectHttpsPort;
     }
   }
 
