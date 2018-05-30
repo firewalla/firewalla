@@ -540,8 +540,8 @@ class CategoryUpdater {
       
       const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
       if(!existing) { // a new domain
-        log.info(`Found a new domain with new rdns: ${domain}`)
-        await domainBlock.resolveDomain(domain)
+        log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+        await domainBlock.resolveDomain(domainSuffix)
       }
       
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
