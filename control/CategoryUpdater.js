@@ -24,8 +24,7 @@ const Block = require('./Block.js');
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
-const DomainBlock = require('../control/DomainBlock.js');
-const domainBlock = new DomainBlock();
+const domainBlock = require('../control/DomainBlock.js')();
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -533,7 +532,13 @@ class CategoryUpdater {
 
     for (let i = 0; i < dd.length; i++) {
       const domain = dd[i]
-      const existing = await dnsTool.reverseDNSKeyExists(domain)
+
+      let domainSuffix = domain
+      if(domainSuffix.startsWith("*.")) {
+        domainSuffix = domainSuffix.substring(2);
+      }
+      
+      const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
       if(!existing) { // a new domain
         log.info(`Found a new domain with new rdns: ${domain}`)
         await domainBlock.resolveDomain(domain)
