@@ -24,6 +24,9 @@ const Block = require('./Block.js');
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const DomainBlock = require('../control/DomainBlock.js');
+const domainBlock = new DomainBlock();
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const bone = require('../lib/Bone.js')
@@ -530,6 +533,12 @@ class CategoryUpdater {
 
     for (let i = 0; i < dd.length; i++) {
       const domain = dd[i]
+      const existing = await dnsTool.reverseDNSKeyExists(domain)
+      if(!existing) { // a new domain
+        log.info(`Found a new domain with new rdns: ${domain}`)
+        await domainBlock.resolveDomain(domain)
+      }
+      
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
       })

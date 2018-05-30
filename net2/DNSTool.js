@@ -20,9 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const f = require('../net2/Firewalla.js')
 
 const iptool = require('ip')
@@ -55,6 +52,10 @@ class DNSTool {
     return `rdns:domain:${dns}`
   }
 
+  async reverseDNSKeyExists(domain) {
+    const type = await rclient.typeAsync(this.getReverseDNSKey(domain))
+    return type !== 'none';
+  }
 
   dnsExists(ip) {
     let key = this.getDnsKey(ip);
@@ -117,7 +118,7 @@ class DNSTool {
 
   getAddressesByDNS(dns) {
     let key = this.getReverseDNSKey(dns)
-    return async(() => {
+    return (async () => {
       return rclient.zrangeAsync(key, "0", "-1")
     })()
   }
@@ -125,12 +126,12 @@ class DNSTool {
   getAddressesByDNSPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
     
-    return async(() => {
-      let keys = await (rclient.keysAsync(pattern))
+    return (async () => {
+      let keys = await rclient.keysAsync(pattern)
       let list = []
       if(keys) {
         keys.forEach((key) => {
-          let l = await(rclient.zrangeAsync(key, "0", "-1"))
+          let l = await rclient.zrangeAsync(key, "0", "-1")
           list.push.apply(list, l)
         })
       }
