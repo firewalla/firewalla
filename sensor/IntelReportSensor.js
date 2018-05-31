@@ -52,7 +52,7 @@ class IntelReportSensor extends Sensor {
       const hostname = hostTool.getHostname(host);
       log.info(`Auto blocked ${domains.length} suspicious websites from accessing ${hostname}`);
 
-      const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, hostMac, {
+      const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, "0.0.0.0", {
         "p.num_of_domains": domains.length,
         "p.first10domains": JSON.stringify(domains.slice(0, 10)),
         "p.firstDomain": domains[0],
@@ -103,7 +103,7 @@ class IntelReportSensor extends Sensor {
 
   async blackHoleHistory2() {
     const dateKey = Math.floor(new Date() / 1000 / 3600 / 24) * 3600 * 24;
-    const key = `${blackholePrefix}:${dateKey}`;
+    const key = `${blackholePrefix}${dateKey}`;
 
     const domainMap = await rclient.hgetallAsync(key);
 
@@ -139,7 +139,7 @@ class IntelReportSensor extends Sensor {
     }).slice(0,10)
 
     await this.generateBlackHoleAlarm2(total, domainCount, top10).catch((err) => {
-      log.error(`Failed to generate alarm on host ${hostMac}, err: ${err}`);
+      log.error(`Failed to generate daily report alarm, err: ${err}`);
     });
   }
   
