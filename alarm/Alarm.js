@@ -174,7 +174,8 @@ class BroNoticeAlarm extends Alarm {
 
 class IntelReportAlarm extends Alarm {
   constructor(timestamp, device, info) {
-    super("ALARM_INTEL_REPORT", timestamp, device, info)
+    super("ALARM_INTEL_REPORT", timestamp, device, info);
+    this.notifType = "report";
   }
   
   getI18NCategory() {
