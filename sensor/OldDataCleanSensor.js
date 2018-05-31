@@ -275,7 +275,7 @@ class OldDataCleanSensor extends Sensor {
     const keys = await rclient.keysAsync(keyPattern);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      await rclient.zremrangebyscoreAsync(key, '-inf', Math.floor(new Date() / 1000 - 3600 * 24)) // keep one day
+      await rclient.zremrangebyscoreAsync(key, '-inf', Math.floor(new Date() / 1000 - 3600 * 48)) // keep two days
     }
   }
 
