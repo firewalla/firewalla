@@ -64,7 +64,7 @@ class Alarm {
     if(this.timestamp)
       //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
       this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
-
+    
     return i18n.__(this.getInfoCategory(), this);
   }
 
@@ -172,6 +172,26 @@ class BroNoticeAlarm extends Alarm {
   }
 }
 
+class IntelReportAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_INTEL_REPORT", timestamp, device, info);
+    this.notifType = "report";
+  }
+  
+  getI18NCategory() {
+    return "ALARM_INTEL_REPORT";
+
+    if(Number(this["p.attempts"]) === 1) {
+      return "ALARM_INTEL_REPORT";
+    } else {
+      return "ALARM_INTEL_REPORT_N";
+    }
+  }
+
+  requiredKeys() {
+    return [];
+  }
+}
 class IntelAlarm extends Alarm {
   constructor(timestamp, device, severity, info) {
     super("ALARM_INTEL", timestamp, device, info);
@@ -363,7 +383,8 @@ let classMapping = {
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
-  ALARM_VULNERABILITY: VulnerabilityAlarm.prototype
+  ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
+  ALARM_INTEL_REPORT: IntelReportAlarm.prototype
 }
 
 module.exports = {
@@ -377,5 +398,6 @@ module.exports = {
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
+  IntelReportAlarm: IntelReportAlarm,
   mapping: classMapping
 }

@@ -72,6 +72,24 @@ class App {
     }
   }
 
+  async recordActivity2(req, queue) {
+    if(!req || !queue) {
+      return;
+    }
+
+    const hostname = req.hostname;
+
+    if(hostname) {
+
+      const dateKey = Math.floor(new Date() / 1000 / 3600 / 24) * 3600 * 24;
+      const key = `${queue}:${dateKey}`;
+
+      await rclient.hincrbyAsync(key, hostname, 1);
+      await rclient.expireAsync(key, 3600 * 24 * 7); // one week
+
+    }
+  }
+
   routesForRedirect() {
     // redirect to a remote site
     this.redirectApp = express();
@@ -80,7 +98,7 @@ class App {
       let redirect = await rclient.hgetAsync('redirect','porn')
       redirect = redirect || "http://google.com"
 
-      this.recordActivity(req, "blue:history:domain:redirect");
+      this.recordActivity2(req, "blue:history:domain:redirect");
 
       if(redirect) {
         res.status(303).location(redirect).send().end()
@@ -94,7 +112,7 @@ class App {
 
     this.blackHoleApp.use('*', async (req, res) => {
 
-      this.recordActivity(req, "blue:history:domain:blackhole");
+      this.recordActivity2(req, "blue:history:domain:blackhole");
 
       res.status(200).send().end()
 

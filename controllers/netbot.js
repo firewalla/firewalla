@@ -588,6 +588,8 @@ class netBot extends ControllerBot {
             case "activity":
               notifMsg.title = i18n.__("ACTIVITY_ALERT");
               break;
+            case "report":
+              notifMsg.title = i18n.__("SECURITY_REPORT");
             default:
               break;
           }

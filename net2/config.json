@@ -62,6 +62,7 @@
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
+    "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
