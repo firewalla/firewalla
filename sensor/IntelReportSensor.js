@@ -64,6 +64,23 @@ class IntelReportSensor extends Sensor {
       await alarmManager2.checkAndSaveAsync(alarm);
     }
   }
+
+  async generateBlackHoleAlarm2(total, domainCount, top10) {
+    if(domainCount === 0) {
+      return;
+    }
+
+    log.info(`Auto blocked ${domainCount} suspicious websites from attacking your network, ${total} attempts`);
+
+    const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, hostMac, {
+      "p.attempts": total,
+      "p.domainCount": domainCount,
+      "p.top10": JSON.stringify(top10),
+      "p.firstDomain": top10[0].domain
+    })
+
+    await alarmManager2.checkAndSaveAsync(alarm);
+  }
   
   async blackHoleHistory() {
     const keyPattern = `${blackholePrefix}*`;
@@ -82,6 +99,48 @@ class IntelReportSensor extends Sensor {
         log.error(`Failed to generate alarm on host ${hostMac}, err: ${err}`);
       });
     }
+  }
+
+  async blackHoleHistory2() {
+    const dateKey = Math.floor(new Date() / 1000 / 3600 / 24) * 3600 * 24;
+    const key = `${blackholePrefix}:${dateKey}`;
+
+    const domainMap = await rclient.hgetallAsync(key);
+
+    if(!domainMap) {
+      return;
+    }
+
+    let total = 0;
+
+    const domains = Object.keys(domainMap);
+    const domainCount = domains.length;
+
+    log.info(`Found attacks from ${domains.length} domains`);
+
+    for (let i = 0; i < domains.length; i++) {
+      const domain = domains[i];
+      total += domainMap[domain];
+    }
+
+    const top10 = domains.map((domain) => {
+      return {
+        domain: domain,
+        count: domainMap[domain]
+      };
+    }).sort((x, y) => {
+      if(x.count > y.count) {
+        return 1;
+      } else if(x.count < y.count) {
+        return -1;
+      } else {
+        return 0;
+      }
+    }).slice(0,10)
+
+    await this.generateBlackHoleAlarm2(total, domainCount, top10).catch((err) => {
+      log.error(`Failed to generate alarm on host ${hostMac}, err: ${err}`);
+    });
   }
   
   job() {
