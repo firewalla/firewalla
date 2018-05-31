@@ -10,7 +10,7 @@
   "ALARM_NEW_DEVICE": "Found a new device connected to your network, device name: {{p.device.name}}",
   "ALARM_BRO_NOTICE": "{{p.message}}",
   "ALARM_INTEL_REPORT": "In last 24 hours, auto prevented {{p.firstDomain}} from attacking {{p.device.name}}",
-  "ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{p.firstDomain}} and {{num_of_domains - 1}} more sites from attacking {{p.device.name}}",
+  "ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{p.firstDomain}} and {{p.num_of_domains}} more sites from attacking {{p.device.name}}",
   "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} is accessing this device's port {{p.device.port}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{p.dest.name}}:{{p.dest.port}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing this device. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",

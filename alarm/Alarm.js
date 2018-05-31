@@ -179,7 +179,7 @@ class IntelReportAlarm extends Alarm {
   }
   
   getI18NCategory() {
-    if(this["p.num_of_domains"] === 1) {
+    if(Number(this["p.num_of_domains"]) === 1) {
       return "ALARM_INTEL_REPORT";
     } else {
       return "ALARM_INTEL_REPORT_N";
