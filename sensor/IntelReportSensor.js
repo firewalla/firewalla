@@ -56,6 +56,8 @@ class IntelReportSensor extends Sensor {
         "p.num_of_domains": domains.length,
         "p.first10domains": JSON.stringify(domains.slice(0, 10)),
         "p.firstDomain": domains[0],
+        "p.device.ip": host.ipv4Addr,
+        "p.device.mac": hostMac
       })
 
       await alarmManager2.enrichDeviceInfo(alarm);
@@ -66,12 +68,14 @@ class IntelReportSensor extends Sensor {
   async blackHoleHistory() {
     const keyPattern = `${blackholePrefix}*`;
     const hostKeys = await rclient.keysAsync(keyPattern);
+    
+    log.info(`Found ${hostKeys.length} hosts had attack`);
 
     for (let i = 0; i < hostKeys.length; i++) {
       const hostKey = hostKeys[i];
       const hostMac = hostKey.replace(blackholePrefix, "");
 
-      const beginDate = Math.floor(new Date() / 1000);
+      const beginDate = Math.floor(new Date() / 1000) - 24 * 3600;
       const domains = await rclient.zrangebyscoreAsync(hostKey, beginDate, '+inf')
       
       await this.generateBlackHoleAlarm(hostMac, domains).catch((err) => {
