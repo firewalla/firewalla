@@ -52,7 +52,7 @@ class IntelReportSensor extends Sensor {
       const hostname = hostTool.getHostname(host);
       log.info(`Auto blocked ${domains.length} suspicious websites from accessing ${hostname}`);
 
-      const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, "0.0.0.0", {
+      const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, hostMac, {
         "p.num_of_domains": domains.length,
         "p.first10domains": JSON.stringify(domains.slice(0, 10)),
         "p.firstDomain": domains[0],
@@ -72,7 +72,7 @@ class IntelReportSensor extends Sensor {
 
     log.info(`Auto blocked ${domainCount} suspicious websites from attacking your network, ${total} attempts`);
 
-    const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, hostMac, {
+    const alarm = new Alarm.IntelReportAlarm(new Date() / 1000, "0.0.0.0", {
       "p.attempts": total,
       "p.domainCount": domainCount,
       "p.top10": JSON.stringify(top10),
