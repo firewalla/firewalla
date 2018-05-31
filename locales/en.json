@@ -8,6 +8,8 @@
   "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "This device uploaded {{p.transfer.outbound.humansize}} data to {{p.dest.name}}",
   "ALARM_NEW_DEVICE": "Found a new device connected to your network, device name: {{p.device.name}}",
   "ALARM_BRO_NOTICE": "{{p.message}}",
+  "ALARM_INTEL_REPORT": "In last 24 hours, auto prevented {{p.firstDomain}} from attacking {{p.device.name}}",
+  "ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{p.firstDomain}} and {{num_of_domains}} sites from attacking {{p.device.name}}",
   "ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} is accessing this device's port {{p.device.port}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{p.dest.name}}:{{p.dest.port}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.dest.name}} from accessing this device. ({{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources)",
@@ -35,6 +37,8 @@
   "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.security.primaryReason}} site {{p.dest.name}} from accessing device \"{{p.device.name}}\". (Reported by Firewalla global security intelligence)",
   "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device \"{{p.device.name}}\" from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}}. (Reported by Firewalla global security intelligence)",
   "NOTIF_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{p.device.name}} is vulnerable to WannaCry ransomware",
+  "NOTIF_ALARM_INTEL_REPORT": "In last 24 hours, auto prevented {{p.firstDomain}} from attacking {{p.device.name}}",
+  "NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{p.firstDomain}} and {{num_of_domains}} sites from attacking {{p.device.name}}",
   "INFO_ALARM_PORN": "Device {{p.device.name}} visited porn website {{p.dest.name}} {{localizedRelativeTime}}",
   "INFO_ALARM_VIDEO": "Device {{p.device.name}} visited video website {{p.dest.name}} {{localizedRelativeTime}}",
   "INFO_ALARM_GAME": "Device {{p.device.name}} visited game website {{p.dest.name}} {{localizedRelativeTime}}",
@@ -50,5 +54,7 @@
   "INFO_FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{p.security.primaryReason}} site {{p.dest.name}} is accessing device {{p.device.name}} ({{p.device.ip}}:{{p.device.port}}) {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
   "INFO_FW_INTEL_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} is accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{p.security.primaryReason}} site {{p.dest.name}} from accessing device {{p.device.name}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
-  "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)"
+  "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{p.device.name}} from accessing {{p.security.primaryReason}} site {{{p.dest.readableName}}} {{localizedRelativeTime}}. (Reported by Firewalla global security intelligence)",
+  "INFO_NOTIF_ALARM_INTEL_REPORT": "In last 24 hours, auto prevented {{p.firstDomain}} from attacking {{p.device.name}}",
+  "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{p.firstDomain}} and {{num_of_domains}} sites from attacking {{p.device.name}}"
 }
