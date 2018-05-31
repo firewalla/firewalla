@@ -372,12 +372,19 @@ module.exports = class {
                 return;
             }
             if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
-                // NOTE write up a look up flow here
-
+                if (this.lastDNS!=null) {
+                    if (this.lastDNS['query'] == obj['query']) {
+                        if (JSON.stringify(this.lastDNS['answers']) == JSON.stringify(obj["answers"])) {
+                            log.debug("processDnsData:DNS:Duplicated:", obj['query'],JSON.stringify(obj['answers']));
+                            return;
+                        }
+                    }
+                }
+                this.lastDNS = obj;
                 // record reverse dns as well for future reverse lookup
-                async(() => {
-                  await (dnsTool.addReverseDns(obj['query'], obj['answers']))
-                })()
+              (async () => {
+                await dnsTool.addReverseDns(obj['query'], obj['answers'])
+              })()
 
                 for (let i in obj['answers']) {
                     let key = "dns:ip:" + obj['answers'][i];
