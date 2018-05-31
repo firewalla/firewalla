@@ -149,7 +149,7 @@ class IntelReportSensor extends Sensor {
   
   run() {
     sem.on("BLACK_HOLE_ALARM", (event) => {
-      this.blackHoleHistory();
+      this.blackHoleHistory2();
     })
   }
 }
