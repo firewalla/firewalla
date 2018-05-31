@@ -306,7 +306,9 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
       // await (this.cleanBlueRecords())
       log.info("scheduledJob is executed successfully");
-    })();
+    })().catch((err) => {
+      log.error("Failed to run scheduled job, err:", err);
+    });
   }
 
   listen() {
