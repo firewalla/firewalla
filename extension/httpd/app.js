@@ -85,6 +85,7 @@ class App {
       const key = `${queue}:${dateKey}`;
 
       await rclient.hincrbyAsync(key, hostname, 1);
+      await rclient.expireAsync(key, 3600 * 24 * 7); // one week
 
     }
   }
