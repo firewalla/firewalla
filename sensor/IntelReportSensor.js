@@ -120,7 +120,7 @@ class IntelReportSensor extends Sensor {
 
     for (let i = 0; i < domains.length; i++) {
       const domain = domains[i];
-      total += domainMap[domain];
+      total += Number(domainMap[domain]);
     }
 
     const top10 = domains.map((domain) => {
