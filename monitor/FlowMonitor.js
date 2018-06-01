@@ -223,7 +223,7 @@ module.exports = class FlowMonitor {
             let flow = flows[i];
             log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
             if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
-              log.info("########## flowIntel",JSON.stringify(flow),{});
+              log.debug("########## flowIntel",JSON.stringify(flow),{});
               let c = flow.intel.category;
               let cs = flow.intel.cs;
 

@@ -1288,11 +1288,6 @@ module.exports = class {
 
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
-        
-        const rank = await alexa.getRank(intel.host).catch(() => null);
-        if(rank) {
-          alarm["e.dest.domain.alexaRank"] = rank;  
-        }
       }
       
       // whois - ip
