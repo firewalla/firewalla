@@ -233,7 +233,7 @@ module.exports = class FlowMonitor {
                    return;
                }
 
-                log.info("######## flowIntel Processing",JSON.stringify(flow));
+                log.debug("######## flowIntel Processing",JSON.stringify(flow));
                 if (this.isFlowIntelInClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
@@ -431,6 +431,7 @@ module.exports = class FlowMonitor {
 
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {

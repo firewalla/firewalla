@@ -30,6 +30,8 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const il = require('../intel/IntelLoader.js');
+
 const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
@@ -73,8 +75,6 @@ let fConfig = require('../net2/config.js').getConfig();
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
-
-const alexa = require('../extension/alexarank/alexarank.js');
 
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
@@ -1354,5 +1354,9 @@ module.exports = class {
       
       return alarm;
     }
+
+  async extendedEnrichAlarm(alarm) {
+    await il.enrichAlarm(alarm)
+  }
     
   }
