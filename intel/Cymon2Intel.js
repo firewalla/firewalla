@@ -28,7 +28,7 @@ class Cymon2Intel extends Intel {
 
     if(ip) {
       const result = await this.loadFromCymon(ip);
-      if(result["total"] && Number(result["total"]) !== 0) {
+      if(result["total"]) {
         alarm["p.security.numOfReportSources2"] = result["total"];
       }
     }
