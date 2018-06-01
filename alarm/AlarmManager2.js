@@ -1290,61 +1290,8 @@ module.exports = class {
         alarm["p.dest.name"] = intel.host
       }
       
-      // whois - ip
-      if(destIP) {
-        const whoisInfo = await intelManager.whois(destIP).catch((err) => {
-          return {}
-        });
-        
-        if(whoisInfo) {
-          if(whoisInfo.netRange) {
-            alarm["e.dest.ip.range"] = whoisInfo.netRange;
-          }
-          
-          if(whoisInfo.cidr) {
-            alarm["e.dest.ip.cidr"] = whoisInfo.cidr;
-          }
-          
-          if(whoisInfo.orgName) {
-            alarm["e.dest.ip.org"] = whoisInfo.orgName;
-          }
-          
-          if(whoisInfo.country) {
-            alarm["e.dest.ip.country"] = whoisInfo.country;
-          }
-          
-          if(whoisInfo.city) {
-            alarm["e.dest.ip.city"] = whoisInfo.city;
-          }
-        }
-      }
-      
       // whois - domain
-      const name = alarm["p.dest.name"];
       
-      if(name) {
-        const whoisInfo = await intelManager.whois(name).catch((err) => {
-          return {}
-        });
-        
-        if(whoisInfo) {
-          if(whoisInfo.domainName) {
-            alarm["e.dest.domain"] = whoisInfo.domainName;
-          }
-
-          if(whoisInfo.creationDate) {
-            alarm["e.dest.domain.createdDate"] = whoisInfo.creationDate;
-          }
-
-          if(whoisInfo.updatedDate) {
-            alarm["e.dest.domain.lastUpdatedDate"] = whoisInfo.updatedDate;
-          }
-
-          if(whoisInfo.registrar) {
-            alarm["e.dest.domain.register"] = whoisInfo.registrar;
-          }
-        }
-      }
       
       
       return alarm;

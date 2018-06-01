@@ -50,7 +50,10 @@
     "VPNRelaySensor": {}
   },
   "intels": [
-    "AlexaIntel"
+    "IPLocationIntel",
+    "AlexaIntel",
+    "WhoisIPIntel",
+    "WhoisDomainIntel"
   ],
   "sensors": {
     "DHCPSensor": {},
