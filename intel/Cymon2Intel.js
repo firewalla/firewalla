@@ -49,7 +49,7 @@ class Cymon2Intel extends Intel {
     const uri = `https://api.cymon.io/v2/ioc/search/ip/${ip}`
     
     const body = await rp({
-      uri: uri
+      uri: uri,
       method: 'GET',
       family: 4,
       json: true,
@@ -76,4 +76,4 @@ class Cymon2Intel extends Intel {
 
 }
 
-module.exports = Cymon2Intel
+module.exports = Cymon2Intel;

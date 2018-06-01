@@ -548,7 +548,7 @@ module.exports = class FlowManager {
     // tx here means to outside
     // rx means inside
     getFlowCharacteristics(_flows, direction, minlength, sdv) {
-        log.info("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
+        log.debug("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
         if (minlength == null) {
             minlength = 500000;
         }
