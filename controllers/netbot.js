@@ -604,7 +604,7 @@ class netBot extends ControllerBot {
           async(() => {
             let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
             if(flag) {
-              notifMsg.body = `[${this.getDeviceName()}] ${notifMsg.body}`
+              notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
