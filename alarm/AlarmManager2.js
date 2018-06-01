@@ -1352,6 +1352,7 @@ module.exports = class {
 
   async extendedEnrichAlarm(alarm) {
     await il.enrichAlarm(alarm)
+    return alarm
   }
     
   }

@@ -26,11 +26,13 @@ class AlexaIntel extends Intel {
     const destName = alarm["p.dest.name"];
     
     if(destName) {
-      const rank = await alexa.getRank(intel.host).catch(() => null);
+      const rank = await alexa.getRank(destName).catch(() => null);
       if(rank) {
         alarm["e.dest.domain.alexaRank"] = rank;
       }
     }
+    
+    return alarm;
   }
   
 }

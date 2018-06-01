@@ -52,6 +52,7 @@ async function enrichAlarm(alarm) {
     });
   }
   
+  return alarm;
 }
 
 function getIntel(name) {
