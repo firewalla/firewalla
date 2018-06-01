@@ -53,7 +53,8 @@
     "IPLocationIntel",
     "AlexaIntel",
     "WhoisIPIntel",
-    "WhoisDomainIntel"
+    "WhoisDomainIntel",
+    "Cymon2Intel"
   ],
   "sensors": {
     "DHCPSensor": {},
