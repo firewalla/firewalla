@@ -1520,7 +1520,7 @@ class netBot extends ControllerBot {
       case "whois":
         (async () => {
           const target = msg.data.value.target;
-          let whois = intelManager.whois(target);
+          let whois = await intelManager.whois(target);
           this.simpleTxData(msg, {target, whois}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
