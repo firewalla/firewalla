@@ -568,7 +568,7 @@ module.exports = class FlowMonitor {
     detect(listip, period,host,callback) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
-        log.info("Detect",listip);
+        //log.info("Detect",listip);
         flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
@@ -852,7 +852,9 @@ module.exports = class FlowMonitor {
                     }
                 });
             } else if (service === "detect") {
-                log.info("Running Detect:",listip.join(","));
+                  if(listip.length > 0) {
+                    log.info("Running Detect:",listip[0]);
+                  }
                 this.detect(listip, period, host, (err) => {
                     cb();
                 });
