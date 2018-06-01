@@ -59,19 +59,7 @@ class Cymon2Intel extends Intel {
       return null;
     });
     
-    if(body) {
-      try {
-        const json = JSON.parse(body);
-        
-        return json;
-        
-      } catch(err) {
-        log.error("Failed to parse json output:", body, "err:", err);
-      }
-      
-    }
-    
-    return null;
+    return body;
   }
 
 }
