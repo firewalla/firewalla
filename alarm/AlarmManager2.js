@@ -674,7 +674,8 @@ module.exports = class {
   async getAlarmDetail(aid) {
     const prefix = "_alarmDetail";
     const key = `${prefix}:${aid}`
-    return await rclient.hgetallAsync(key);
+    const detail = await rclient.hgetallAsync(key);
+    return detail;
   }
   
   // parseDomain(alarm) {
