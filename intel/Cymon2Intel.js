@@ -66,7 +66,7 @@ class Cymon2Intel extends Intel {
         return json;
         
       } catch(err) {
-        log.error("Failed to parse json output:", json, "err:", err);
+        log.error("Failed to parse json output:", body, "err:", err);
       }
       
     }
