@@ -30,7 +30,11 @@ async function getRank(domain) {
     return new Promise((resolve, reject) => {
       alexa(domain, (err, result) => {
         if (!err) {
-          resolve(result);
+          if(result && result.rank) {
+            resolve(result.rank);
+          } else {
+            resolve(null);  
+          }
         } else {
           log.error(`Failed to get alexa info for domain ${domain}, err: ${err}`);
           reject(err);
