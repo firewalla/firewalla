@@ -581,17 +581,8 @@ class netBot extends ControllerBot {
             data.alarmID = msg.alarmID;
           }
 
-          switch(msg.alarmNotifType) {
-            case "security":
-              notifMsg.title = i18n.__("SECURITY_ALERT");
-              break;
-            case "activity":
-              notifMsg.title = i18n.__("ACTIVITY_ALERT");
-              break;
-            case "report":
-              notifMsg.title = i18n.__("SECURITY_REPORT");
-            default:
-              break;
+          if(msg.alarmNotifType) {
+            notifMsg.title = i18n.__(msg.alarmNotifType);
           }
 
           if (msg.autoblock) {

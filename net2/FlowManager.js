@@ -1116,7 +1116,7 @@ module.exports = class FlowManager {
                 let totalOutBytes = 0;
                 if (err == null) {
                     if (result!=null && result.length>0) 
-                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
+                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                     for (let i in result) {
                         let o = JSON.parse(result[i]);
                         
@@ -1201,7 +1201,7 @@ module.exports = class FlowManager {
                     sorted.forEach(flowTool.trimFlow);                   
                   
                     if (result.length>0) 
-                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
+                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
                     cb();
                 } else {

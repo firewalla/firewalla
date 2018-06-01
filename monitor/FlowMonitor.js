@@ -852,7 +852,7 @@ module.exports = class FlowMonitor {
                     }
                 });
             } else if (service === "detect") {
-                log.info("Running Detect:",listip,{});
+                log.info("Running Detect:",listip.join(","));
                 this.detect(listip, period, host, (err) => {
                     cb();
                 });
