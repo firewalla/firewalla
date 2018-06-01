@@ -162,13 +162,13 @@ module.exports = class {
     if (!intelObj) {
       intelObj = {};
     } else {
-      intelObj.whois = whois;
       intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
       intelObj = this.summarizeIntelObj(ip, intelObj);  
     }
 
     log.info("Ipinfo:", ipinfo);
     intelObj.lobj = ipinfo;
+    intelObj.whois = whois;
 
     log.info("IntelObj:", intelObj);
 
