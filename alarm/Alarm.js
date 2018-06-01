@@ -29,7 +29,7 @@ class Alarm {
 //    this.payloads = payloads;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
-    this.notifType = "security"; // default security
+    this.notifType = `NOTIF_TITLE_${this.type}`; // default security
     if(info)
       extend(this, info);
 
@@ -175,7 +175,6 @@ class BroNoticeAlarm extends Alarm {
 class IntelReportAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_INTEL_REPORT", timestamp, device, info);
-    this.notifType = "report";
   }
   
   getI18NCategory() {
@@ -354,7 +353,6 @@ class VideoAlarm extends OutboundAlarm {
   constructor(timestamp, device, videoID, info) {
     super("ALARM_VIDEO", timestamp, device, videoID, info);
     this["p.showMap"] = false;
-    this.notifType = "activity";
   }
 }
 
@@ -362,8 +360,6 @@ class GameAlarm extends OutboundAlarm {
   constructor(timestamp, device, gameID, info) {
     super("ALARM_GAME", timestamp, device, gameID, info);
     this["p.showMap"] = false;
-    this.notifType = "activity";
-
   }
 }
 
@@ -371,7 +367,6 @@ class PornAlarm extends OutboundAlarm {
   constructor(timestamp, device, pornID, info) {
     super("ALARM_PORN", timestamp, device, pornID, info);
     this["p.showMap"] = false;
-    this.notifType = "activity";
   }
 }
 

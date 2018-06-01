@@ -49,6 +49,12 @@
     "APIRelaySensor": {},
     "VPNRelaySensor": {}
   },
+  "intels": [
+    "IPLocationIntel",
+    "AlexaIntel",
+    "WhoisIPIntel",
+    "WhoisDomainIntel"
+  ],
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},

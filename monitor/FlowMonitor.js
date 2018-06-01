@@ -223,7 +223,7 @@ module.exports = class FlowMonitor {
             let flow = flows[i];
             log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
             if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
-              log.info("########## flowIntel",JSON.stringify(flow),{});
+              log.debug("########## flowIntel",JSON.stringify(flow),{});
               let c = flow.intel.category;
               let cs = flow.intel.cs;
 
@@ -233,7 +233,7 @@ module.exports = class FlowMonitor {
                    return;
                }
 
-                log.info("######## flowIntel Processing",JSON.stringify(flow));
+                log.debug("######## flowIntel Processing",JSON.stringify(flow));
                 if (this.isFlowIntelInClass(flow['intel'],"av")) {
                     if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
                         let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
@@ -431,6 +431,7 @@ module.exports = class FlowMonitor {
 
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -567,7 +568,7 @@ module.exports = class FlowMonitor {
     detect(listip, period,host,callback) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
-        log.info("Detect",listip);
+        //log.info("Detect",listip);
         flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
             this.flowIntel(result);
             this.summarizeNeighbors(host,result,'in');
@@ -851,7 +852,9 @@ module.exports = class FlowMonitor {
                     }
                 });
             } else if (service === "detect") {
-                log.info("Running Detect:",listip,{});
+                  if(listip.length > 0) {
+                    log.info("Running Detect:",listip[0]);
+                  }
                 this.detect(listip, period, host, (err) => {
                     cb();
                 });

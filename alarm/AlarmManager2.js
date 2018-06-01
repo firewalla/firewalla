@@ -30,15 +30,17 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const il = require('../intel/IntelLoader.js');
+
 const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
 
-let IntelManager = require('../net2/IntelManager.js')
-let intelManager = new IntelManager('info');
+const IntelManager = require('../net2/IntelManager.js')
+const intelManager = new IntelManager('info');
 
-var DNSManager = require('../net2/DNSManager.js');
-var dnsManager = new DNSManager('info');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
@@ -73,8 +75,6 @@ let fConfig = require('../net2/config.js').getConfig();
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
-
-const alexa = require('../extension/alexarank/alexarank.js');
 
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
@@ -1288,14 +1288,18 @@ module.exports = class {
 
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
-        
-        const rank = await alexa.getRank(intel.host).catch(() => null);
-        if(rank) {
-          alarm["e.dest.domain.alexaRank"] = rank;  
-        }
-        
       }
+      
+      // whois - domain
+      
+      
       
       return alarm;
     }
+
+  async extendedEnrichAlarm(alarm) {
+    await il.enrichAlarm(alarm)
+    return alarm
+  }
+    
   }
