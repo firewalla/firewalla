@@ -1362,6 +1362,18 @@ class netBot extends ControllerBot {
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
+      case "alarmDetail": {
+        const alarmID = msg.data.value.alarmID;
+        (async () => {
+          if(alarmID) {
+            const detail = am2.getAlarmDetail(alarmID) || {}; // return empty {} if no extended alarm detail;
+            this.simpleTxData(msg, detail, null, callback);  
+          } else {
+            this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
+          }
+        })().catch((err) => this.simpleTxData(msg, null, err, callback));
+        break;
+      }
       case "archivedAlarms":
         const offset = msg.data.value && msg.data.value.offset
         const limit = msg.data.value && msg.data.value.limit

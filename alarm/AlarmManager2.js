@@ -74,6 +74,8 @@ let fConfig = require('../net2/config.js').getConfig();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const alexa = require('../extension/alexarank/alexarank.js');
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -241,7 +243,24 @@ module.exports = class {
 
       }).catch((err) => Promise.reject(err));
   }
+  
+  // exclude extended info from basic info, these two info will be stored separately 
+  
+  parseRawAlarm(alarm) {
+    const alarmCopy = JSON.parse(JSON.stringify(alarm));
+    const keys = Object.keys(alarmCopy);
+    const extendedInfo = {};    
 
+    keys.forEach((key) => {
+      if(key.startsWith("e.")) {
+        extendedInfo[key] = alarmCopy[key];
+        delete alarmCopy[key];
+      }
+    });
+    
+    return {basic: alarmCopy, extended: extendedInfo};
+  }
+  
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
 
@@ -255,8 +274,12 @@ module.exports = class {
       alarm.aid = id + ""; // covnert to string to make it consistent
 
       let alarmKey = alarmPrefix + id;
+      
+      const flatted = flat.flatten(alarm);
+      
+      const {basic, extended} = this.parseRawAlarm(flatted);
 
-      rclient.hmset(alarmKey, flat.flatten(alarm), (err) => {
+      rclient.hmset(alarmKey, basic, (err) => {
         if(err) {
           log.error("Failed to set alarm: " + err);
           callback(err);
@@ -270,9 +293,19 @@ module.exports = class {
           if(!err) {
             audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
 
+            // add extended info, extended info are optional
+            (async () => {
+              const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
+              
+              rclient.hmsetAsync(extendedAlarmKey, extended);
+              
+            })().catch((err) => {
+              log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
+            })
+            
             setTimeout(() => {
               this.notifAlarm(alarm.aid);
-            }, 3000);
+            }, 1000);
           }
 
           callback(err, alarm.aid);
@@ -637,7 +670,13 @@ module.exports = class {
       })
     })
   }
-
+  
+  async getAlarmDetail(aid) {
+    const prefix = "_alarmDetail";
+    const key = `${prefix}:${aid}`
+    return await rclient.hgetallAsync(key);
+  }
+  
   // parseDomain(alarm) {
   //   if(!alarm["p.dest.name"] ||
   //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -1248,8 +1287,14 @@ module.exports = class {
 
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
+        
+        const rank = await alexa.getRank(intel.host);
+        if(rank) {
+          alarm["e.dest.domain.alexaRank"] = rank;  
+        }
+        
       }
-
+      
       return alarm;
     }
   }
