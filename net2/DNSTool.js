@@ -20,9 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const f = require('../net2/Firewalla.js')
 
 const iptool = require('ip')
@@ -30,6 +27,8 @@ const iptool = require('ip')
 const util = require('util');
 
 const firewalla = require('../net2/Firewalla.js');
+
+const RED_HOLE_IP="198.51.100.101";
 
 let instance = null;
 
@@ -55,6 +54,10 @@ class DNSTool {
     return `rdns:domain:${dns}`
   }
 
+  async reverseDNSKeyExists(domain) {
+    const type = await rclient.typeAsync(this.getReverseDNSKey(domain))
+    return type !== 'none';
+  }
 
   dnsExists(ip) {
     let key = this.getDnsKey(ip);
@@ -86,8 +89,8 @@ class DNSTool {
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
-  
-  addReverseDns(dns, addresses, expire) {
+
+  async addReverseDns(dns, addresses, expire) {
     expire = expire || 24 * 3600; // one day by default
     addresses = addresses || []
 
@@ -97,45 +100,46 @@ class DNSTool {
 
     let key = this.getReverseDNSKey(dns)
 
-    return async(() => {
-      let updated = false
+    const existing = await this.reverseDNSKeyExists(dns)
+    
+    let updated = false
 
-      for (let i = 0; i < addresses.length; i++) {  
-        const addr = addresses[i];
+    for (let i = 0; i < addresses.length; i++) {  
+      const addr = addresses[i];
 
-        if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
-          await (rclient.zaddAsync(key, new Date() / 1000, addr))
-          updated = true
-        }
+      if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+        await rclient.zaddAsync(key, new Date() / 1000, addr)
+        updated = true
       }
-      
-      if(updated) {
-        await (rclient.expireAsync(key, expire))
-      }
-    })()
+    }
+    
+    if(updated === false && existing === false) {
+      await rclient.zaddAsync(key, new Date() / 1000, RED_HOLE_IP); // red hole is a placeholder ip for non-existing domain 
+    }
+
+    await rclient.expireAsync(key, expire)
   }
 
-  getAddressesByDNS(dns) {
+  async getAddressesByDNS(dns) {
     let key = this.getReverseDNSKey(dns)
-    return async(() => {
-      return rclient.zrangeAsync(key, "0", "-1")
-    })()
+    return rclient.zrangeAsync(key, "0", "-1")
   }
 
-  getAddressesByDNSPattern(dnsPattern) {
+  async getAddressesByDNSPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
     
-    return async(() => {
-      let keys = await (rclient.keysAsync(pattern))
-      let list = []
-      if(keys) {
-        keys.forEach((key) => {
-          let l = await(rclient.zrangeAsync(key, "0", "-1"))
-          list.push.apply(list, l)
-        })
+    let keys = await rclient.keysAsync(pattern)
+    
+    let list = []
+    if(keys) {
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        let l = await rclient.zrangeAsync(key, "0", "-1")
+        list.push.apply(list, l)
       }
-      return list
-    })()
+    }
+    
+    return list
   }
 
   removeDns(ip) {

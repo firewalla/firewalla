@@ -209,8 +209,8 @@ class DestIPFoundHook extends Hook {
   // }
 
   async updateCategoryDomain(intel) {
-    if(intel.category && intel.t > TRUST_THRESHOLD) {
-      if(intel.originIP && intel.host) {
+    if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
+      if(intel.originIP) {
         await categoryUpdater.updateDomain(intel.category, intel.originIP, intel.isOriginIPAPattern)
       } else {
         await categoryUpdater.updateDomain(intel.category, intel.host)
@@ -319,7 +319,7 @@ class DestIPFoundHook extends Hook {
         log.error("Got error when handling new dest IP addresses, err:", err)
       }
 
-      await delay(1000); // sleep for only 1 second
+      await delay(100); // sleep for only 100 mill-seconds
 
       return this.job(); // continuously running
     })();
