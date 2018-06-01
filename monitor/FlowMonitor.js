@@ -1042,6 +1042,7 @@ module.exports = class FlowMonitor {
     try {
       alarm = await alarmManager2.enrichDeviceInfo(alarm);
       alarm = await alarmManager2.enrichDestInfo(alarm);
+      alarm = await alarmManager2.extendedEnrichAlarm(alarm);
     } catch (err) {
       log.error("Error when enrich domain cyber alarm:", err);
       return;
@@ -1116,6 +1117,7 @@ module.exports = class FlowMonitor {
 
     alarmManager2.enrichDeviceInfo(alarm)
       .then(alarm => alarmManager2.enrichDestInfo(alarm))
+      .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))
       .then(alarm => {
         alarmManager2.checkAndSave(alarm, (err) => {
           if (err) {

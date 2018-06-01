@@ -278,7 +278,7 @@ module.exports = class DNSManager {
     let enrichDeviceCount = 0;
     let start = Math.ceil(Date.now() / 1000);
     let tid = Math.ceil(start+Math.random()*100);
-    log.info("QUERY: Resoving list[",tid,"] ", list.length);
+    log.debug("QUERY: Resoving list[",tid,"] ", list.length);
     _async.eachLimit(list, DNSQUERYBATCHSIZE, (o, cb) => {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
@@ -351,7 +351,7 @@ module.exports = class DNSManager {
         cb()
       })
     }, (err) => {
-      log.info("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
+      log.debug("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
       if(err) {
         log.error("Failed to call dnsmanager.query:", err, {})
       }
