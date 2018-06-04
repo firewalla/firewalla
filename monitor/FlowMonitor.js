@@ -1023,7 +1023,7 @@ module.exports = class FlowMonitor {
       "p.security.numOfReportSources": "Firewalla global security intel",
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.source": "firewalla_intel",
-      "p.dest.whois": JSON.stringify(intelObj.whois),
+      "r.dest.whois": JSON.stringify(intelObj.whois),
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
