@@ -1877,7 +1877,12 @@ class netBot extends ControllerBot {
    */
 
   cmdHandler(gid, msg, callback) {
-    log.info("API: CmdHandler ",gid,msg,{});
+
+    if(msg && msg.data && msg.data.item === 'ping') {
+      
+      } else {
+        log.info("API: CmdHandler ",gid,msg,{});
+      }
     if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
@@ -2659,7 +2664,13 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      log.info("Received jsondata from app", rawmsg.message, {});
+      if(rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
+      rawmsg.message.obj.data.item === 'ping') {
+
+      } else {
+        log.info("Received jsondata from app", rawmsg.message, {});
+      }
+      
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
 
