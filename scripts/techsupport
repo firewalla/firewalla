@@ -20,7 +20,7 @@
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 : ${FIREWALLA_TMP:='/home/pi/tmp'}
 
-mkdir $FIREWALLA_TMP
+mkdir -p $FIREWALLA_TMP
 cd $FIREWALLA_TMP
 rm -r -f techsupport
 mkdir techsupport

@@ -263,6 +263,7 @@ module.exports = class FlowMonitor {
 
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -309,6 +310,7 @@ module.exports = class FlowMonitor {
 
                     alarmManager2.enrichDeviceInfo(alarm)
                       .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                      .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
                       .then((alarm) => {
                         alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
@@ -778,6 +780,7 @@ module.exports = class FlowMonitor {
                                           (async () => {
                                             await alarmManager2.enrichDeviceInfo(alarm)
                                             await alarmManager2.enrichDestInfo(alarm)
+                                            await alarmManager2.extendedEnrichAlarm(alarm);
                                             await alarmManager2.checkAndSaveAsync(alarm)
                                           })().catch((err) => {
                                             log.error("Failed to enrich and save alarm", err)
@@ -839,6 +842,7 @@ module.exports = class FlowMonitor {
                                             (async () => {
                                               await alarmManager2.enrichDeviceInfo(alarm)
                                               await alarmManager2.enrichDestInfo(alarm)
+                                              await alarmManager2.extendedEnrichAlarm(alarm);
                                               await alarmManager2.checkAndSaveAsync(alarm)
                                             })().catch((err) => {
                                               log.error("Failed to enrich and save alarm", err)
@@ -1023,7 +1027,7 @@ module.exports = class FlowMonitor {
       "p.security.numOfReportSources": "Firewalla global security intel",
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.source": "firewalla_intel",
-      "p.dest.whois": JSON.stringify(intelObj.whois),
+      "r.dest.whois": JSON.stringify(intelObj.whois),
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
