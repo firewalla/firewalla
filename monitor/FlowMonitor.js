@@ -263,6 +263,7 @@ module.exports = class FlowMonitor {
 
                       alarmManager2.enrichDeviceInfo(alarm)
                         .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
                         .then((alarm) => {
                           alarmManager2.checkAndSave(alarm, (err) => {
                             if(!err) {
@@ -309,6 +310,7 @@ module.exports = class FlowMonitor {
 
                     alarmManager2.enrichDeviceInfo(alarm)
                       .then(alarm => alarmManager2.enrichDestInfo(alarm))
+                      .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
                       .then((alarm) => {
                         alarmManager2.checkAndSave(alarm, (err) => {
                           if(!err) {
@@ -778,6 +780,7 @@ module.exports = class FlowMonitor {
                                           (async () => {
                                             await alarmManager2.enrichDeviceInfo(alarm)
                                             await alarmManager2.enrichDestInfo(alarm)
+                                            await alarmManager2.extendedEnrichAlarm(alarm);
                                             await alarmManager2.checkAndSaveAsync(alarm)
                                           })().catch((err) => {
                                             log.error("Failed to enrich and save alarm", err)
@@ -839,6 +842,7 @@ module.exports = class FlowMonitor {
                                             (async () => {
                                               await alarmManager2.enrichDeviceInfo(alarm)
                                               await alarmManager2.enrichDestInfo(alarm)
+                                              await alarmManager2.extendedEnrichAlarm(alarm);
                                               await alarmManager2.checkAndSaveAsync(alarm)
                                             })().catch((err) => {
                                               log.error("Failed to enrich and save alarm", err)
