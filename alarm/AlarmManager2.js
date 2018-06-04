@@ -252,7 +252,7 @@ module.exports = class {
     const extendedInfo = {};    
 
     keys.forEach((key) => {
-      if(key.startsWith("e.")) {
+      if(key.startsWith("e.") || key.startsWith("r.")) {
         extendedInfo[key] = alarmCopy[key];
         delete alarmCopy[key];
       }
@@ -298,6 +298,8 @@ module.exports = class {
               const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
               
               rclient.hmsetAsync(extendedAlarmKey, extended);
+              rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
+
               
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
@@ -675,7 +677,15 @@ module.exports = class {
     const prefix = "_alarmDetail";
     const key = `${prefix}:${aid}`
     const detail = await rclient.hgetallAsync(key);
-    return detail;
+    if(detail) {
+      for(let key in detail) {
+        if(key.startsWith("r.")) {
+          delete detail[key];
+        }
+      }
+    }
+
+    return detail;    
   }
   
   // parseDomain(alarm) {

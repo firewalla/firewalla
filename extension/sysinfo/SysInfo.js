@@ -4,7 +4,7 @@
 
 'use strict';
 
-let log = require("../../net2/logger.js")(__filename, "info");
+const log = require("../../net2/logger.js")(__filename, "info");
 
 let fs = require('fs');
 let util = require('util');
@@ -16,6 +16,8 @@ let logFolder = f.getLogFolder();
 let config = require("../../net2/config.js").getConfig();
 
 let userID = f.getUserID();
+
+const df = require('node-df');
 
 //let SysManager = require('../../net2/SysManager');
 //let sysManager = new SysManager();
@@ -53,6 +55,8 @@ let releaseBranch = null;
 
 let threadInfo = {};
 
+let diskInfo = null;
+
 let intelQueueSize = 0;
 
 function update() {
@@ -66,7 +70,8 @@ function update() {
   getConns();
   getRedisMemoryUsage();
   getThreadInfo();
-  getIntelQueueSize()
+  getIntelQueueSize();
+  getDiskInfo();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -93,6 +98,21 @@ function getThreadInfo() {
     threadInfo.apiCount = apiCount.stdout.replace("\n", "");
     threadInfo.monitorCount = monitorCount.stdout.replace("\n", "");
   })();
+}
+
+function getDiskInfo() {
+  df((err, response) => {
+    if(err) {
+      log.error("Failed to get disk info, err:", err);
+      return;
+    }
+
+    const disks = response.filter((entry) => {
+      return entry.filesystem.startsWith("/dev/mmc");
+    })
+
+    diskInfo = disks;
+  });
 }
 
 function getIntelQueueSize() {
@@ -216,7 +236,8 @@ function getSysInfo() {
     releaseType: f.getReleaseType(),
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
-    nodeVersion: process.version
+    nodeVersion: process.version,
+    diskInfo: diskInfo
   }
 
   return sysinfo;
