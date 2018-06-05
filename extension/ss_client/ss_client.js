@@ -557,23 +557,35 @@ function _enableChinaDNS(callback) {
     localDNSServers = ["114.114.114.114"];
   }
 
-  let dnsConfig = util.format("%s,%s:%d",
+  const localDNS = localDNSServers[0];
+
+  fs.appendFile(chnrouteFile, localDNS, (err) => {
+    if(err) {
+      log.error("Failed to append local dns info to chnroute file, err:", err);
+      callback(err);
+      return;
+    }
+
+    let dnsConfig = util.format("%s,%s:%d",
                               localDNSServers[0],
                               "127.0.0.1",
                               localDNSForwarderPort
                              )
   
-  let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
+    let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
 
-  log.info("Running cmd:", chinaDNSBinary, args);
+    log.info("Running cmd:", chinaDNSBinary, args);
 
-  let chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
+    let chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
 
-  chinadns.on('close', (code) => {
-    log.info("chinadns exited with code", code);
+    chinadns.on('close', (code) => {
+      log.info("chinadns exited with code", code);
+    });
+    
+    callback(null);
+
   });
   
-  callback(null);
 }
 
 const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
