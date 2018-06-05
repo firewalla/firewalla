@@ -157,18 +157,16 @@ module.exports = class {
       return;
     }
 
-    let [intelObj, ipinfo, whois] = await Promise.all([this.cymon(ip), this.ipinfo(ip), this.whois(ip)]);
+    let [intelObj, ipinfo] = await Promise.all([this.cymon(ip), this.ipinfo(ip)]);
     
     if (!intelObj) {
       intelObj = {};
-    } else {
-      intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
-      intelObj = this.summarizeIntelObj(ip, intelObj);  
     }
 
-    log.info("Ipinfo:", ipinfo);
+    log.info("Ipinfo:", ipinfo)
+    intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
+    intelObj = this.summarizeIntelObj(ip, intelObj);  ;
     intelObj.lobj = ipinfo;
-    intelObj.whois = whois;
 
     log.info("IntelObj:", intelObj);
 
