@@ -381,7 +381,7 @@ class FlowTool {
     results.forEach((x) => {
       const ts = x.ts;
       const hourTS = Math.floor(Number(ts) / 3600) * 3600;
-      if(aggrResults[hourTS]) {
+      if(!aggrResults[hourTS]) {
         aggrResults[hourTS] = {
           ts: hourTS,
           ob: x.ob,
@@ -396,7 +396,15 @@ class FlowTool {
         }
       }
     })
-    return aggrResults;
+    return Object.values(aggrResults).sort((x,y) => {
+      if(x.ts > y.ts) {
+        return 1;
+      } else if(x.ts === y.ts) {
+        return 0;
+      } else {
+        return -1;
+      }
+    });
   }
 
   async _getTransferTrend(ip, destinationIP, options) {
