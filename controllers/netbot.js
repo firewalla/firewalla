@@ -2837,7 +2837,10 @@ process.on('uncaughtException', (err) => {
     stack: err.stack
   }, null);
   setTimeout(() => {
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+    try {
+        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+    } catch(e) {
+    }
     process.exit(1);
   }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });

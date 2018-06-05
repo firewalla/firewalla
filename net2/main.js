@@ -93,7 +93,10 @@ process.on('uncaughtException',(err)=>{
   }
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    try {
+      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    } catch(e) {
+    }
     process.exit(1);
   },1000*5);
 });
