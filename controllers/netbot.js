@@ -1372,7 +1372,7 @@ class netBot extends ControllerBot {
         const destIP = msg.data.value.destIP;
         (async () => {
           if(destIP && deviceMac) {
-            const transfers = await flowTool.getTransferTrend(destIP, deviceMac);
+            const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
             this.simpleTxData(msg, transfers, null, callback); 
           } else {
             this.simpleTxData(msg, {}, new Error("Missing device MAC or destination IP"), callback);

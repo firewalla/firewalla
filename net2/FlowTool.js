@@ -382,9 +382,9 @@ class FlowTool {
     const begin = options.begin || end - 3600 * 24; // 24 hours
     const direction = options.direction || 'in';
     
-    const key = util.format("flow:conn:%s:%s", direction, deviceIP);
+    const key = util.format("flow:conn:%s:%s", direction, ip);
 
-    const results = await rclient.zrevrangebyscoreAsync([key, begin, end]);
+    const results = await rclient.zrangebyscoreAsync([key, begin, end]);
 
     if(results === null || results.length === 0) {
       return [];
@@ -400,7 +400,14 @@ class FlowTool {
       }      
     })
     .filter((x) => x !== null)
-    .filter((x) => x.sh === destinationIP || x.dh === destinationIP)    
+    .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
+    .map((x) => {
+      return {
+        ts: x.ts,
+        ob: x.ob,
+        rb: x.rb
+      }
+    })
 
     return list;
   }
