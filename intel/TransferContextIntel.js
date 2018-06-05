@@ -1,5 +1,3 @@
-import { device } from '../lib/Bone.js';
-
 /*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
