@@ -25,8 +25,9 @@ class Cymon2Intel extends Intel {
 
   async enrichAlarm(alarm) {
     const ip = alarm["p.dest.ip"];
+    const type = alarm["type"];
 
-    if(ip) {
+    if(ip && type === 'ALARM_INTEL') { // only enrich intel alarms
       const result = await this.loadFromCymon(ip);
       if(result["total"] !== undefined) {
         alarm["p.security.numOfReportSources2"] = result["total"];

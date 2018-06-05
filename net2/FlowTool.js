@@ -376,6 +376,29 @@ class FlowTool {
     })();
   }
 
+  _aggregateTransferByHour(results) {
+    const aggrResults = {};
+    results.forEach((x) => {
+      const ts = x.ts;
+      const hourTS = Math.floor(Number(ts) / 3600) * 3600;
+      if(aggrResults[hourTS]) {
+        aggrResults[hourTS] = {
+          ts: hourTS,
+          ob: x.ob,
+          rb: x.rb
+        }
+      } else {
+        const old = aggrResults[hourTS];
+        aggrResults[hourTS] = {
+          ts: hourTS,
+          ob: x.ob + old.ob,
+          rb: x.rb + old.rb
+        }
+      }
+    })
+    return aggrResults;
+  }
+
   async _getTransferTrend(ip, destinationIP, options) {
     options = options || {};
     const end = options.end || Math.floor(new Date() / 1000);
@@ -430,7 +453,7 @@ class FlowTool {
       transfers.push.apply(transfers, t_out);
     }
 
-    return transfers;
+    return this._aggregateTransferByHour(transfers);
   }
 
   getRecentConnections(ip, direction, options) {
