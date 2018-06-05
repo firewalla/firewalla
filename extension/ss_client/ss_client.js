@@ -594,15 +594,20 @@ const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
 function _disableChinaDNS(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("pkill chinadns");
+  const revertCommand = `git checkout HEAD -- ${chnrouteFile}`;
 
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to disable chinadns");
-    } else {
+  p.exec(revertCommand, (err, stdout, stderr) => {
+    // ignore err
+    let cmd = util.format("pkill chinadns");
+
+    p.exec(cmd, (err, stdout, stderr) => {
+      if(err) {
+        log.error("Failed to disable chinadns");
+      } else {
       log.info("chinadns is stopped successfully");
-    }
-    callback(null);
+      }
+      callback(null);
+    });
   });
 }
 
