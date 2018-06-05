@@ -367,13 +367,28 @@ module.exports = class {
 
   checkAndSave(alarm, callback) {
     callback = callback || function() {}
-    
+
     let verifyResult = this.validateAlarm(alarm);
     if(!verifyResult) {
       callback(new Error("invalid alarm, failed to pass verification"));
       return;
     }
 
+    (async () => {
+      alarm = await bone.alarmDecison(alarm);
+
+      if(alarm["p.cloud.decison"] && alarm["p.cloud.decison"] === 'drop') {
+        log.info(`Alarm is dropped by cloud: ${alarm}`);
+        callback(null);
+      } else {
+        this._checkAndSave(alarm, callback);
+      }
+    })()
+  }
+
+  _checkAndSave(alarm, callback) {
+    callback = callback || function() {}
+    
     // disable this check for now, since we use new way to check feature enable/disable
     // let enabled = this.isAlarmTypeEnabled(alarm)
     // if(!enabled) {

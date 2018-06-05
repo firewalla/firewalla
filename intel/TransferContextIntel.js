@@ -34,7 +34,6 @@ class TransferContextIntel extends Intel {
       if(transfers) {
         alarm["e.transfer"] = JSON.stringify(transfers);
       }
-
     }
     
     return alarm;
