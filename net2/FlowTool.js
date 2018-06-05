@@ -376,6 +376,56 @@ class FlowTool {
     })();
   }
 
+  async _getTransferTrend(ip, destinationIP, options) {
+    options = options || {};
+    const end = options.end || Math.floor(new Date() / 1000);
+    const begin = options.begin || end - 3600 * 24; // 24 hours
+    const direction = options.direction || 'in';
+    
+    const key = util.format("flow:conn:%s:%s", direction, deviceIP);
+
+    const results = await rclient.zrevrangebyscoreAsync([key, begin, end]);
+
+    if(results === null || results.length === 0) {
+      return [];
+    }
+
+    const list = results
+    .map((jsonString) => {
+      try {
+        return JSON.parse(jsonString);        
+      } catch(err) {
+        log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
+        return null;
+      }      
+    })
+    .filter((x) => x !== null)
+    .filter((x) => x.sh === destinationIP || x.dh === destinationIP)    
+
+    return list;
+  }
+
+  async getTransferTrend(deviceMAC, destinationIP, options) {
+    options = options || {};
+    
+    const results = await hostTool.getIPsByMac(deviceMAC);
+
+    const transfers = [];
+
+    for (let index = 0; index < results.length; index++) {
+      const ip = results[index];
+      const t_in = await this._getTransferTrend(ip, destinationIP, options);
+      transfers.push.apply(transfers, t_in);
+
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.direction = 'out';
+      const t_out = await this._getTransferTrend(ip, destinationIP, optionsCopy);
+      transfers.push.apply(transfers, t_out);
+    }
+
+    return transfers;
+  }
+
   getRecentConnections(ip, direction, options) {
     options = options || {};
 

@@ -1367,6 +1367,21 @@ class netBot extends ControllerBot {
         })().catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       }
+      case "transferTrend": {
+        const deviceMac = msg.data.value.deviceMac;
+        const destIP = msg.data.value.destIP;
+        (async () => {
+          if(destIP && deviceMac) {
+            const transfers = await flowTool.getTransferTrend(destIP, deviceMac);
+            this.simpleTxData(msg, transfers, null, callback); 
+          } else {
+            this.simpleTxData(msg, {}, new Error("Missing device MAC or destination IP"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      }
       case "archivedAlarms":
         const offset = msg.data.value && msg.data.value.offset
         const limit = msg.data.value && msg.data.value.limit
@@ -1879,7 +1894,7 @@ class netBot extends ControllerBot {
   cmdHandler(gid, msg, callback) {
 
     if(msg && msg.data && msg.data.item === 'ping') {
-      
+
       } else {
         log.info("API: CmdHandler ",gid,msg,{});
       }
