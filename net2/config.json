@@ -50,6 +50,7 @@
     "VPNRelaySensor": {}
   },
   "intels": [
+    "DedupAlarm",
     "DeviceInfoIntel",
     "DestInfoIntel",
     "IPLocationIntel",
