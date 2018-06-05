@@ -30,8 +30,6 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const il = require('../intel/IntelLoader.js');
-
 const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
@@ -369,6 +367,9 @@ module.exports = class {
     callback = callback || function() {}    
 
     (async () => {
+
+      const il = require('../intel/IntelLoader.js');
+
       alarm = await il.enrichAlarm(alarm);
 
       let verifyResult = this.validateAlarm(alarm);
@@ -1322,11 +1323,5 @@ module.exports = class {
       
       
       return alarm;
-    }
-
-  async extendedEnrichAlarm(alarm) {
-    await il.enrichAlarm(alarm)
-    return alarm
-  }
-    
+    }    
 }
