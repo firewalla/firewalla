@@ -47,7 +47,7 @@ async function enrichAlarm(alarm) {
 
   for (let i = 0; i < intels.length; i++) {
     const intel = intels[i];
-    const alarm = await intel.enrichAlarm(alarm).catch((err) => {
+    alarm = await intel.enrichAlarm(alarm).catch((err) => {
       log.error(`Failed to enrich alarm with intel ${intel.getName()}, err: ${err}`);
       return alarm;
     });
