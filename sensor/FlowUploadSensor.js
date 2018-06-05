@@ -295,7 +295,7 @@ class FlowUploadSensor extends Sensor {
             aggs[key].agg.push(agg)
         }
         let result = Object.keys(aggs).map(k => aggs[k])
-        log.info("size before agg:" + flows.length + ", after agg:" + result.length)
+        log.debug("size before agg:" + flows.length + ", after agg:" + result.length)
         return result
     }
 
