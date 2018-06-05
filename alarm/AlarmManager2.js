@@ -375,10 +375,10 @@ module.exports = class {
     }
 
     (async () => {
-      alarm = await bone.alarmDecison(alarm);
+      alarm = await bone.arbitration(alarm);
 
-      if(alarm["p.cloud.decison"] && alarm["p.cloud.decison"] === 'drop') {
-        log.info(`Alarm is dropped by cloud: ${alarm}`);
+      if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
+        log.info(`Alarm is ignored by cloud: ${alarm}`);
         callback(null);
       } else {
         this._checkAndSave(alarm, callback);

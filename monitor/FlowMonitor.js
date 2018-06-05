@@ -1067,7 +1067,7 @@ module.exports = class FlowMonitor {
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
-    log.info("Check IP Alarm for traffic from:", deviceIP, ", to:", remoteIP);
+    log.info("Check IP Alarm for traffic from: ", deviceIP, ", to:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
 
     let iobj;
