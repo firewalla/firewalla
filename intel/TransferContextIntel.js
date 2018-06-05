@@ -32,7 +32,7 @@ class TransferContextIntel extends Intel {
       const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
 
       if(transfers) {
-        alarm["e.transfer"] = transfers;
+        alarm["e.transfer"] = JSON.stringify(transfers);
       }
 
     }
