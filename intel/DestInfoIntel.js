@@ -18,12 +18,12 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-const AM2 = require('../alarm/AlarmManager2.js');
-const am2 = new AM2();
-
 class DestInfoIntel extends Intel {
 
   async enrichAlarm(alarm) {
+    const AM2 = require('../alarm/AlarmManager2.js');
+    const am2 = new AM2();
+
     return am2.enrichDestInfo(alarm);
   }
 
