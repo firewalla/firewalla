@@ -376,21 +376,21 @@ class FlowTool {
     })();
   }
 
-  _aggregateTransferByHour(results) {
+  _aggregateTransferBy10Min(results) {
     const aggrResults = {};
     results.forEach((x) => {
       const ts = x.ts;
-      const hourTS = Math.floor(Number(ts) / 3600) * 3600;
-      if(!aggrResults[hourTS]) {
-        aggrResults[hourTS] = {
-          ts: hourTS,
+      const tenminTS = Math.floor(Number(ts) / 600) * 600;
+      if(!aggrResults[tenminTS]) {
+        aggrResults[tenminTS] = {
+          ts: tenminTS,
           ob: x.ob,
           rb: x.rb
         }
       } else {
-        const old = aggrResults[hourTS];
-        aggrResults[hourTS] = {
-          ts: hourTS,
+        const old = aggrResults[tenminTS];
+        aggrResults[tenminTS] = {
+          ts: tenminTS,
           ob: x.ob + old.ob,
           rb: x.rb + old.rb
         }
@@ -410,7 +410,7 @@ class FlowTool {
   async _getTransferTrend(ip, destinationIP, options) {
     options = options || {};
     const end = options.end || Math.floor(new Date() / 1000);
-    const begin = options.begin || end - 3600 * 24; // 24 hours
+    const begin = options.begin || end - 3600 * 6; // 6 hours
     const direction = options.direction || 'in';
     
     const key = util.format("flow:conn:%s:%s", direction, ip);
@@ -461,7 +461,7 @@ class FlowTool {
       transfers.push.apply(transfers, t_out);
     }
 
-    return this._aggregateTransferByHour(transfers);
+    return this._aggregateTransferBy10Min(transfers);
   }
 
   getRecentConnections(ip, direction, options) {
