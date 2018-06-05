@@ -50,6 +50,8 @@
     "VPNRelaySensor": {}
   },
   "intels": [
+    "DeviceInfoIntel",
+    "DestInfoIntel",
     "IPLocationIntel",
     "AlexaIntel",
     "WhoisIPIntel",

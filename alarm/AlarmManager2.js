@@ -366,15 +366,17 @@ module.exports = class {
   }
 
   checkAndSave(alarm, callback) {
-    callback = callback || function() {}
-
-    let verifyResult = this.validateAlarm(alarm);
-    if(!verifyResult) {
-      callback(new Error("invalid alarm, failed to pass verification"));
-      return;
-    }
+    callback = callback || function() {}    
 
     (async () => {
+      alarm = await il.enrichAlarm(alarm);
+
+      let verifyResult = this.validateAlarm(alarm);
+      if(!verifyResult) {
+        callback(new Error("invalid alarm, failed to pass verification"));
+        return;
+      }
+
       alarm = await bone.arbitration(alarm);
 
       if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
@@ -383,7 +385,7 @@ module.exports = class {
       } else {
         this._checkAndSave(alarm, callback);
       }
-    })()
+    })();
   }
 
   _checkAndSave(alarm, callback) {
@@ -1327,4 +1329,4 @@ module.exports = class {
     return alarm
   }
     
-  }
+}
