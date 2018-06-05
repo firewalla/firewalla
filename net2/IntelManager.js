@@ -159,13 +159,14 @@ module.exports = class {
 
     let [intelObj, ipinfo] = await Promise.all([this.cymon(ip), this.ipinfo(ip)]);
     
-    if (!intelObj) {
+    if (!intelObj) { // no info from cymon
       intelObj = {};
+      intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
+    } else {
+      intelObj = this.summarizeIntelObj(ip, intelObj);  ;
     }
 
     log.info("Ipinfo:", ipinfo)
-    intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
-    intelObj = this.summarizeIntelObj(ip, intelObj);  ;
     intelObj.lobj = ipinfo;
 
     log.info("IntelObj:", intelObj);
