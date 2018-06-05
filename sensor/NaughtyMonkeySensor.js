@@ -27,30 +27,27 @@ const Promise = require('bluebird');
 
 const Sensor = require('./Sensor.js').Sensor
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager('cli', 'server');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const monkeyPrefix = "monkey";
+
 class NaughtyMonkeySensor extends Sensor {
 
-  job() {
-    return async(() => {
-      
-      // Disable auto monkey for production or beta
-      if(f.isProductionOrBeta()) {
-        return;
-      }
-      
-      if(fc.isFeatureOn("naughty_monkey")) {
-        await (this.delay(this.getRandomTime()))
-
-        this.release()
-      }
-    })()
+  async job() {
+    // Disable auto monkey for production or beta
+    if(f.isProductionOrBeta()) {
+      return;
+    }
+    
+    if(fc.isFeatureOn("naughty_monkey")) {
+      await this.delay(this.getRandomTime())
+      await this.release()
+    }
   }
   
   randomFindDevice() {
@@ -81,12 +78,12 @@ class NaughtyMonkeySensor extends Sensor {
 
   }
 
-  release() {
+  async release() {
     // do stuff   
-    this.malware()
+    await this.malware()
   }
 
-  malware() {
+  async malware() {
     const host = this.randomFindDevice()
     const remote = this.randomFindTarget()
 
@@ -97,11 +94,14 @@ class NaughtyMonkeySensor extends Sensor {
 
       const cmd = `node malware_simulator.js --src ${remote}  --dst ${ip} --duration 1000 --length 100000`
       log.info("Release a monkey:", cmd)
-      return exec(cmd, {
+      await exec(cmd, {
         cwd: f.getFirewallaHome() + "/testLegacy/"
       }).catch((err) => {
         log.error("Failed to release monkey", cmd, err, {})
       })
+      const key = `${monkeyPrefix}:${remote}`; 
+      await rclient.setAsync(key, 1);
+      await rclient.expireAsync(key, 60); // only live for 60 seconds
     } else {
       log.warn("can't find a host to release a monkey")
     }

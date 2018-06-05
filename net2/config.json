@@ -55,7 +55,8 @@
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "Cymon2Intel",
-    "TransferContextIntel"
+    "TransferContextIntel",
+    "MonkeyIntel"
   ],
   "sensors": {
     "DHCPSensor": {},
