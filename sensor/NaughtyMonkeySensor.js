@@ -162,7 +162,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async video() {
-    const remoteIP = "192.168.99.10";
+    const remoteIP = "180.153.105.174";
 
     await this.prepareVideoEnvironment(remoteIP);
 
@@ -173,7 +173,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async game() {
-    const remoteIP = "192.168.99.11";
+    const remoteIP = "24.105.29.30";
 
     await this.prepareGameEnvironment(remoteIP);
 
@@ -184,7 +184,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async porn() {
-    const remoteIP = "192.168.99.12";
+    const remoteIP = "146.112.61.106";
     await this.preparePornEnvironment(remoteIP);
     const ip = await this.randomFindDevice();
     await this.monkey(ip, remoteIP, "porn");
