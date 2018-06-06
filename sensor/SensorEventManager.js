@@ -45,7 +45,7 @@ class SensorEventManager extends EventEmitter {
           log.error("Failed to parse channel message:", err, {});
         }
       } else {
-        log.info("Ignore channel", channel, {});
+        log.debug("Ignore channel", channel, {});
       }
     });
 

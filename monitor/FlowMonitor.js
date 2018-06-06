@@ -603,8 +603,8 @@ module.exports = class FlowMonitor {
           let stddev_limit = default_stddev_limit;
 
           if(fc.isFeatureOn("insane_mode")) {
-            inbound_min_length = 10;
-            outbound_min_length = 10;
+            inbound_min_length = 1000;
+            outbound_min_length = 1000;
             stddev_limit = 1;
           }
 
