@@ -45,7 +45,10 @@ let instance = null;
 let HostManager = require("../net2/HostManager.js");
 let hostManager = new HostManager("cli", 'client', 'info');
 
-let stddev_limit = 8;
+let default_stddev_limit = 8;
+let default_inbound_min_length = 1000000;
+let deafult_outbound_min_length = 500000;
+
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('debug');
 
@@ -594,15 +597,26 @@ module.exports = class FlowMonitor {
         let end = Date.now() / 1000;
         let start = end - this.monitorTime; // in seconds
         flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, result,activities) => {
-            let inSpec = flowManager.getFlowCharacteristics(result, "in", 1000000, stddev_limit);
-            if (activities !=null) {
-                host.activities = activities;
-                host.save("activities",null);
-            }
-            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
-                let outSpec = flowManager.getFlowCharacteristics(resultout, "out", 500000, stddev_limit);
-                callback(null, inSpec, outSpec);
-            });
+
+          let inbound_min_length = default_inbound_min_length;
+          let outbound_min_length = deafult_outbound_min_length;
+          let stddev_limit = default_stddev_limit;
+
+          if(fc.isFeatureOn("insane_mode")) {
+            inbound_min_length = 10;
+            outbound_min_length = 10;
+            stddev_limit = 1;
+          }
+
+          let inSpec = flowManager.getFlowCharacteristics(result, "in", inbound_min_length, stddev_limit);
+          if (activities !=null) {
+              host.activities = activities;
+              host.save("activities",null);
+          }
+          flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
+              let outSpec = flowManager.getFlowCharacteristics(resultout, "out", outbound_min_length, stddev_limit);
+              callback(null, inSpec, outSpec);
+          });
         });
     }
 
