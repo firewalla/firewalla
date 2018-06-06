@@ -598,7 +598,7 @@ class netBot extends ControllerBot {
               notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
             }
             if(msg["testing"] && msg["testing"] == 1) {
-              notifMsg.title = `[Monkey Test] - ${notifMsg.title}`;
+              notifMsg.title = `[Monkey] ${notifMsg.title}`;
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()

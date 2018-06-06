@@ -46,7 +46,7 @@ class NaughtyMonkeySensor extends Sensor {
     
     if(fc.isFeatureOn("naughty_monkey")) {
       await this.delay(this.getRandomTime())
-      await this.release()
+      await this.release({monkeyType: "malware"})
     }
   }
   
@@ -116,7 +116,7 @@ class NaughtyMonkeySensor extends Sensor {
     await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
   }
 
-  async release() {
+  async release(event) {
     switch(event.monkeyType) {
       case "video":
         await this.video();
@@ -144,7 +144,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async recordMonkey(ip) {
-    const key = `${monkeyPrefix}:${remote}`; 
+    const key = `${monkeyPrefix}:${ip}`; 
     await rclient.setAsync(key, 1);
     await rclient.expireAsync(key, 300); // only live for 60 seconds
   }
@@ -168,7 +168,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     const ip = await this.randomFindDevice()
 
-    await this.monkey(remoteIP, ip, "video");
+    await this.monkey(ip, remoteIP, "video");
     await this.recordMonkey(remoteIP);
   }
 
@@ -179,7 +179,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     const ip = await this.randomFindDevice()
 
-    await this.monkey(remoteIP, ip, "video");            
+    await this.monkey(ip, remoteIP, "game");            
     await this.recordMonkey(remoteIP);
   }
 
@@ -187,7 +187,7 @@ class NaughtyMonkeySensor extends Sensor {
     const remoteIP = "192.168.99.12";
     await this.preparePornEnvironment(remoteIP);
     const ip = await this.randomFindDevice();
-    await this.monkey(remoteIP, ip, "video");
+    await this.monkey(ip, remoteIP, "porn");
     await this.recordMonkey(remoteIP);
   }
 
@@ -206,7 +206,7 @@ class NaughtyMonkeySensor extends Sensor {
     const length = options.length || 10000000;
 
     const cmd = `node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
-    log.info(`Release a ${tag} monkey for ${src} and ${dst}`);
+    log.info(`Release a ${tag} monkey for ${src} and ${dst}: ${cmd}`);
     await exec(cmd, {
       cwd: f.getFirewallaHome() + "/testLegacy/"
     }).catch((err) => {
