@@ -2466,7 +2466,8 @@ class netBot extends ControllerBot {
         sem.emitEvent({
           type: "ReleaseMonkey",
           message: "Release a monkey to test system",
-          toProcess: 'FireMain'
+          toProcess: 'FireMain',
+          monkeyType: msg.data.value.monkeyType
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
