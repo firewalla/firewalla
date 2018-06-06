@@ -76,7 +76,7 @@ module.exports = class {
       result = null;
     }
 
-    log.info("Cache lookup for", ip, ", origin", origin, ", result:", result);
+    log.debug("Cache lookup for", ip, ", origin", origin, ", result:", result);
     return result;
   }
 
@@ -166,10 +166,10 @@ module.exports = class {
       intelObj = this.summarizeIntelObj(ip, intelObj);  ;
     }
 
-    log.info("Ipinfo:", ipinfo)
+    log.debug("Ipinfo:", ipinfo)
     intelObj.lobj = ipinfo;
 
-    log.info("IntelObj:", intelObj);
+    log.debug("IntelObj:", intelObj);
 
     return intelObj;
   }
@@ -265,7 +265,7 @@ module.exports = class {
 
   addFlowIntel(ip, intelObj, intel) {
     let weburl = "https://intel.firewalla.com/";
-    log.info("IntelManger:addFlowIntel:", ip, intel);
+    log.debug("IntelManger:addFlowIntel:", ip, intel);
     if (intel == null) {
       return null;
     }
@@ -287,7 +287,7 @@ module.exports = class {
       } catch (e) {
       }
     }
-    log.info("IntelManger:addFlowIntel:Done", ip);
+    log.debug("IntelManger:addFlowIntel:Done", ip);
     return intelObj;
   }
 

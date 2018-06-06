@@ -227,7 +227,8 @@ module.exports = class {
           alarmID: alarm.aid,
           aid: alarm.aid,
           alarmNotifType:alarm.notifType,
-          alarmType: alarm.type
+          alarmType: alarm.type,
+          testing: alarm["p.monkey"]
         };
 
         if(alarm.result_method === "auto") {
@@ -364,7 +365,7 @@ module.exports = class {
   }
 
   checkAndSave(alarm, callback) {
-    callback = callback || function() {}    
+    callback = callback || function() {};
 
     (async () => {
 
@@ -382,7 +383,7 @@ module.exports = class {
 
       if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
         log.info(`Alarm is ignored by cloud: ${alarm}`);
-        callback(null);
+        callback(null, 0);
       } else {
         this._checkAndSave(alarm, callback);
       }

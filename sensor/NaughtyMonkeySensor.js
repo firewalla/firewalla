@@ -101,7 +101,7 @@ class NaughtyMonkeySensor extends Sensor {
       })
       const key = `${monkeyPrefix}:${remote}`; 
       await rclient.setAsync(key, 1);
-      await rclient.expireAsync(key, 60); // only live for 60 seconds
+      await rclient.expireAsync(key, 300); // only live for 60 seconds
     } else {
       log.warn("can't find a host to release a monkey")
     }
