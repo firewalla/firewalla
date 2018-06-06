@@ -374,6 +374,14 @@ module.exports = class FlowMonitor {
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
 
                   // Process intel to generate Alarm about it
+                  
+                  intelobj.severityscore = (flow.intel.s) || 20;                  
+                  if(flow.intel.t) {
+                    intelobj.count = Math.abs(flow.intel.t / 10);
+                  } else {
+                    intelobj.count = 4;
+                  }                  
+
                   this.processIntelFlow(intelobj);
                   }
                 } else if (this.checkIntelClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
@@ -905,16 +913,16 @@ module.exports = class FlowMonitor {
   
           if (err != null || iobj == null) {
             log.error("Host:Subscriber:Intel:NOTVERIFIED",deviceIP, remoteIP);
-            return;
+            iobj = {};            
           }
   
           if (iobj.severityscore < 4) {
             log.error("Host:Subscriber:Intel:NOTSCORED", iobj);
-            return;
+            iobj.severityscore = flowObj.severityscore;
           }
   
           let severity = iobj.severityscore > 50 ? "major" : "minor";
-          let reason = iobj.reason;
+          let reason = iobj.reason || (flowObj.categoryArray && flowObj.categoryArray[0]);
   
           if(fc.isFeatureOn("cyber_security")) {
             let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
@@ -925,7 +933,7 @@ module.exports = class FlowMonitor {
               "p.dest.name": remoteHostname,
               "p.dest.port": this.getRemotePort(flowObj),
               "p.security.reason": reason,
-              "p.security.numOfReportSources": iobj.count,
+              "p.security.numOfReportSources": iobj.count || flowObj.count,
               "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0)
             });
       
