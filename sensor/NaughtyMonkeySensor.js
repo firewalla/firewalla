@@ -51,14 +51,16 @@ class NaughtyMonkeySensor extends Sensor {
   }
   
   randomFindDevice() {
-    const hosts = hostManager.hosts.all
+    let hosts = await rclient.keysAsync("host:ip4:*");
+    hosts = hosts.map((h) => h.replace("host:ip4:",""));
+
     const hostCount = hosts.length
     if(hostCount > 0) {
       let randomHostIndex = Math.floor(Math.random() * hostCount)
       if(randomHostIndex == hostCount) {
         randomHostIndex = hostCount - 1
       }
-      return hosts[randomHostIndex] && hosts[randomHostIndex].o
+      return hosts[randomHostIndex];
     } else {
       return null
     }
@@ -78,33 +80,139 @@ class NaughtyMonkeySensor extends Sensor {
 
   }
 
+  async prepareVideoEnvironment(ip) {
+    const dnsInfo = {
+      host: "v.qq.com",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+  }
+
+  async prepareGameEnvironment(ip) {
+    const dnsInfo = {
+      host: "battle.net",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+  }
+
+  async preparePornEnvironment(ip) {
+    const dnsInfo = {
+      host: "pornhub.com",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+  }
+
   async release() {
-    // do stuff   
-    await this.malware()
+    switch(event.monkeyType) {
+      case "video":
+        await this.video();
+        break;
+      case "game":
+        await this.game();
+        break;
+      case "porn":
+        await this.porn();
+        break;
+      case "ssh_scan":
+        await this.ssh_scan();
+        break;
+      case "port_scan":
+        await this.port_scan();
+        break;
+      case "abnormal_upload":
+        await this.abnormal_upload();
+        break;
+      case "malware":
+      default:
+        await this.malware();
+        break;
+    }
+  }
+
+  async recordMonkey(ip) {
+    const key = `${monkeyPrefix}:${remote}`; 
+    await rclient.setAsync(key, 1);
+    await rclient.expireAsync(key, 300); // only live for 60 seconds
+  }
+
+  async abnormal_upload() {
+    // do not know how to trigger...
+  }
+
+  async ssh_scan() {
+
+  }
+
+  async port_scan() {
+
+  }
+
+  async video() {
+    const remoteIP = "192.168.99.10";
+
+    await this.prepareVideoEnvironment(remoteIP);
+
+    const ip = this.randomFindDevice()
+
+    await this.monkey(remoteIP, ip, "video");
+    await this.recordMonkey(remoteIP);
+  }
+
+  async game() {
+    const remoteIP = "192.168.99.11";
+
+    await this.prepareGameEnvironment(remoteIP);
+
+    const ip = this.randomFindDevice()
+
+    await this.monkey(remoteIP, ip, "video");            
+    await this.recordMonkey(remoteIP);
+  }
+
+  async porn() {
+    const remoteIP = "192.168.99.12";
+    await this.preparePornEnvironment(remoteIP);
+    const ip = this.randomFindDevice();
+    await this.monkey(remoteIP, ip, "video");
+    await this.recordMonkey(remoteIP);
   }
 
   async malware() {
-    const host = this.randomFindDevice()
+    const ip = this.randomFindDevice()
     const remote = this.randomFindTarget()
 
-    // node malware_simulator.js --src 176.10.107.180  --dst 192.168.2.166 --duration 1000 --length 100000
+    await this.monkey(remote, ip, "malware");
+    await this.recordMonkey(remote);
+  }
 
-    if(host && host.ipv4Addr) {
-      const ip = host.ipv4Addr
+  async monkey(src, dst, tag, options) {
+    options = options || {};
 
-      const cmd = `node malware_simulator.js --src ${remote}  --dst ${ip} --duration 1000 --length 100000`
-      log.info("Release a monkey:", cmd)
-      await exec(cmd, {
-        cwd: f.getFirewallaHome() + "/testLegacy/"
-      }).catch((err) => {
-        log.error("Failed to release monkey", cmd, err, {})
-      })
-      const key = `${monkeyPrefix}:${remote}`; 
-      await rclient.setAsync(key, 1);
-      await rclient.expireAsync(key, 300); // only live for 60 seconds
-    } else {
-      log.warn("can't find a host to release a monkey")
-    }
+    const duration = options.duration || 10000;
+    const length = options.length || 10000000;
+
+    const cmd = `node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
+    log.info(`Release a ${tag} monkey for ${src} and ${dst}`);
+    await exec(cmd, {
+      cwd: f.getFirewallaHome() + "/testLegacy/"
+    }).catch((err) => {
+      log.error("Failed to release monkey", cmd, err, {})
+    })
+
   }
 
   run() {
@@ -115,8 +223,8 @@ class NaughtyMonkeySensor extends Sensor {
     this.job()
 
     sem.on('ReleaseMonkey', (event) => {
-      if(fc.isFeatureOn("naughty_monkey")) {
-        this.release()
+      if(fc.isFeatureOn("naughty_monkey")) {        
+        this.release(event)
       }
     })
 
