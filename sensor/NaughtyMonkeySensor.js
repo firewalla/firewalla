@@ -179,7 +179,12 @@ class NaughtyMonkeySensor extends Sensor {
 
     const ip = await this.randomFindDevice()
 
+    await this.monkey(ip, remoteIP, "game");      
     await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+
     await this.recordMonkey(remoteIP);
   }
 
