@@ -174,6 +174,8 @@ class NaughtyMonkeySensor extends Sensor {
     }
 
     const file = "/blog/current/notice.log";
+    const cmd = `sudo bash -c 'echo \'${JSON.stringify(payload)}\' > ${file}`
+    await exec(cmd);
 
     await fs.appendFileAsync(file, JSON.stringify(payload));
   }
