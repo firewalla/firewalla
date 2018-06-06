@@ -47,9 +47,14 @@ async function enrichAlarm(alarm) {
 
   for (let i = 0; i < intels.length; i++) {
     const intel = intels[i];
-    await intel.enrichAlarm(alarm).catch((err) => {
+    alarm = await intel.enrichAlarm(alarm).catch((err) => {
       log.error(`Failed to enrich alarm with intel ${intel.getName()}, err: ${err}`);
+      return alarm;
     });
+
+    if(alarm && alarm["p.local.decision"] == "ignore") {
+      break;
+    }
   }
   
   return alarm;

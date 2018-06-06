@@ -18,31 +18,15 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-const IntelManager = require('../net2/IntelManager.js')
-const intelManager = new IntelManager('info');
-
-class IPLocationIntel extends Intel {
+class DestInfoIntel extends Intel {
 
   async enrichAlarm(alarm) {
-    const destIP = alarm["p.dest.ip"];
+    const AM2 = require('../alarm/AlarmManager2.js');
+    const am2 = new AM2();
 
-    if(destIP) {
-      // location
-      const loc = await intelManager.ipinfo(destIP)
-      if (loc && loc.loc) {
-        const location = loc.loc;
-        const ll = location.split(",");
-        if (ll.length === 2) {
-          alarm["p.dest.latitude"] = parseFloat(ll[0]);
-          alarm["p.dest.longitude"] = parseFloat(ll[1]);
-        }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-      }
-    }
-    
-    return alarm;
+    return am2.enrichDestInfo(alarm);
   }
 
 }
 
-module.exports = IPLocationIntel
+module.exports = DestInfoIntel

@@ -18,31 +18,25 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-const IntelManager = require('../net2/IntelManager.js')
-const intelManager = new IntelManager('info');
-
-class IPLocationIntel extends Intel {
+class DedupAlarm extends Intel {
 
   async enrichAlarm(alarm) {
-    const destIP = alarm["p.dest.ip"];
 
-    if(destIP) {
-      // location
-      const loc = await intelManager.ipinfo(destIP)
-      if (loc && loc.loc) {
-        const location = loc.loc;
-        const ll = location.split(",");
-        if (ll.length === 2) {
-          alarm["p.dest.latitude"] = parseFloat(ll[0]);
-          alarm["p.dest.longitude"] = parseFloat(ll[1]);
-        }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-      }
+    const AM2 = require('../alarm/AlarmManager2.js');
+    const am2 = new AM2();
+
+    const result = await am2.dedup(alarm).catch((err) => {
+      log.error("Failed to dedup, err:", err);
+      return true;
+    });
+
+    if(result) { // should ignore
+      alarm["p.local.decision"] = "ignore";
     }
-    
+
     return alarm;
   }
 
 }
 
-module.exports = IPLocationIntel
+module.exports = DedupAlarm;

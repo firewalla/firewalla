@@ -1580,12 +1580,6 @@ module.exports = class {
                       alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
                     }
 
-                    if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
-                        await am2.enrichDestInfo(alarm);
-                        await am2.extendedEnrichAlarm(alarm);
-                    }
-
-                    await am2.enrichDeviceInfo(alarm)
                     await am2.checkAndSaveAsync(alarm)
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})

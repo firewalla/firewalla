@@ -18,31 +18,26 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-const IntelManager = require('../net2/IntelManager.js')
-const intelManager = new IntelManager('info');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
-class IPLocationIntel extends Intel {
+const monkeyPrefix = "monkey";
+
+class MonkeyIntel extends Intel {
 
   async enrichAlarm(alarm) {
     const destIP = alarm["p.dest.ip"];
 
     if(destIP) {
-      // location
-      const loc = await intelManager.ipinfo(destIP)
-      if (loc && loc.loc) {
-        const location = loc.loc;
-        const ll = location.split(",");
-        if (ll.length === 2) {
-          alarm["p.dest.latitude"] = parseFloat(ll[0]);
-          alarm["p.dest.longitude"] = parseFloat(ll[1]);
-        }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+      const key = `${monkeyPrefix}:${destIP}`
+      const type = await rclient.typeAsync(key);
+      if(type !== 'none') {
+        alarm["p.monkey"] = 1;
       }
     }
-    
+
     return alarm;
   }
 
 }
 
-module.exports = IPLocationIntel
+module.exports = MonkeyIntel

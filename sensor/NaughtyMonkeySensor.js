@@ -27,41 +27,40 @@ const Promise = require('bluebird');
 
 const Sensor = require('./Sensor.js').Sensor
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager('cli', 'server');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const monkeyPrefix = "monkey";
+
 class NaughtyMonkeySensor extends Sensor {
 
-  job() {
-    return async(() => {
-      
-      // Disable auto monkey for production or beta
-      if(f.isProductionOrBeta()) {
-        return;
-      }
-      
-      if(fc.isFeatureOn("naughty_monkey")) {
-        await (this.delay(this.getRandomTime()))
-
-        this.release()
-      }
-    })()
+  async job() {
+    // Disable auto monkey for production or beta
+    if(f.isProductionOrBeta()) {
+      return;
+    }
+    
+    if(fc.isFeatureOn("naughty_monkey")) {
+      await this.delay(this.getRandomTime())
+      await this.release({monkeyType: "malware"})
+    }
   }
   
-  randomFindDevice() {
-    const hosts = hostManager.hosts.all
+  async randomFindDevice() {
+    let hosts = await rclient.keysAsync("host:ip4:*");
+    hosts = hosts.map((h) => h.replace("host:ip4:",""));
+
     const hostCount = hosts.length
     if(hostCount > 0) {
       let randomHostIndex = Math.floor(Math.random() * hostCount)
       if(randomHostIndex == hostCount) {
         randomHostIndex = hostCount - 1
       }
-      return hosts[randomHostIndex] && hosts[randomHostIndex].o
+      return hosts[randomHostIndex];
     } else {
       return null
     }
@@ -81,30 +80,144 @@ class NaughtyMonkeySensor extends Sensor {
 
   }
 
-  release() {
-    // do stuff   
-    this.malware()
+  async prepareVideoEnvironment(ip) {
+    const dnsInfo = {
+      host: "v.qq.com",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
   }
 
-  malware() {
-    const host = this.randomFindDevice()
+  async prepareGameEnvironment(ip) {
+    const dnsInfo = {
+      host: "battle.net",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+  }
+
+  async preparePornEnvironment(ip) {
+    const dnsInfo = {
+      host: "pornhub.com",
+      lastActive: "1528268891",
+      count: 44,
+      ssl: 1,
+      established: true
+    }
+
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+  }
+
+  async release(event) {
+    switch(event.monkeyType) {
+      case "video":
+        await this.video();
+        break;
+      case "game":
+        await this.game();
+        break;
+      case "porn":
+        await this.porn();
+        break;
+      case "ssh_scan":
+        await this.ssh_scan();
+        break;
+      case "port_scan":
+        await this.port_scan();
+        break;
+      case "abnormal_upload":
+        await this.abnormal_upload();
+        break;
+      case "malware":
+      default:
+        await this.malware();
+        break;
+    }
+  }
+
+  async recordMonkey(ip) {
+    const key = `${monkeyPrefix}:${ip}`; 
+    await rclient.setAsync(key, 1);
+    await rclient.expireAsync(key, 300); // only live for 60 seconds
+  }
+
+  async abnormal_upload() {
+    // do not know how to trigger...
+  }
+
+  async ssh_scan() {
+
+  }
+
+  async port_scan() {
+
+  }
+
+  async video() {
+    const remoteIP = "180.153.105.174";
+
+    await this.prepareVideoEnvironment(remoteIP);
+
+    const ip = await this.randomFindDevice()
+
+    await this.monkey(ip, remoteIP, "video");
+    await this.recordMonkey(remoteIP);
+  }
+
+  async game() {
+    const remoteIP = "24.105.29.30";
+
+    await this.prepareGameEnvironment(remoteIP);
+
+    const ip = await this.randomFindDevice()
+
+    await this.monkey(ip, remoteIP, "game");      
+    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");            
+
+    await this.recordMonkey(remoteIP);
+  }
+
+  async porn() {
+    const remoteIP = "146.112.61.106";
+    await this.preparePornEnvironment(remoteIP);
+    const ip = await this.randomFindDevice();
+    await this.monkey(ip, remoteIP, "porn");
+    await this.recordMonkey(remoteIP);
+  }
+
+  async malware() {
+    const ip = await this.randomFindDevice()
     const remote = this.randomFindTarget()
 
-    // node malware_simulator.js --src 176.10.107.180  --dst 192.168.2.166 --duration 1000 --length 100000
+    await this.monkey(remote, ip, "malware");
+    await this.recordMonkey(remote);
+  }
 
-    if(host && host.ipv4Addr) {
-      const ip = host.ipv4Addr
+  async monkey(src, dst, tag, options) {
+    options = options || {};
 
-      const cmd = `node malware_simulator.js --src ${remote}  --dst ${ip} --duration 1000 --length 100000`
-      log.info("Release a monkey:", cmd)
-      return exec(cmd, {
-        cwd: f.getFirewallaHome() + "/testLegacy/"
-      }).catch((err) => {
-        log.error("Failed to release monkey", cmd, err, {})
-      })
-    } else {
-      log.warn("can't find a host to release a monkey")
-    }
+    const duration = options.duration || 10000;
+    const length = options.length || 10000000;
+
+    const cmd = `node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
+    log.info(`Release a ${tag} monkey for ${src} and ${dst}: ${cmd}`);
+    await exec(cmd, {
+      cwd: f.getFirewallaHome() + "/testLegacy/"
+    }).catch((err) => {
+      log.error("Failed to release monkey", cmd, err, {})
+    })
+
   }
 
   run() {
@@ -115,8 +228,8 @@ class NaughtyMonkeySensor extends Sensor {
     this.job()
 
     sem.on('ReleaseMonkey', (event) => {
-      if(fc.isFeatureOn("naughty_monkey")) {
-        this.release()
+      if(fc.isFeatureOn("naughty_monkey")) {        
+        this.release(event)
       }
     })
 
