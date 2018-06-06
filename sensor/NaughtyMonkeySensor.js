@@ -50,7 +50,7 @@ class NaughtyMonkeySensor extends Sensor {
     }
   }
   
-  randomFindDevice() {
+  async randomFindDevice() {
     let hosts = await rclient.keysAsync("host:ip4:*");
     hosts = hosts.map((h) => h.replace("host:ip4:",""));
 
@@ -166,7 +166,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     await this.prepareVideoEnvironment(remoteIP);
 
-    const ip = this.randomFindDevice()
+    const ip = await this.randomFindDevice()
 
     await this.monkey(remoteIP, ip, "video");
     await this.recordMonkey(remoteIP);
@@ -177,7 +177,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     await this.prepareGameEnvironment(remoteIP);
 
-    const ip = this.randomFindDevice()
+    const ip = await this.randomFindDevice()
 
     await this.monkey(remoteIP, ip, "video");            
     await this.recordMonkey(remoteIP);
@@ -186,13 +186,13 @@ class NaughtyMonkeySensor extends Sensor {
   async porn() {
     const remoteIP = "192.168.99.12";
     await this.preparePornEnvironment(remoteIP);
-    const ip = this.randomFindDevice();
+    const ip = await this.randomFindDevice();
     await this.monkey(remoteIP, ip, "video");
     await this.recordMonkey(remoteIP);
   }
 
   async malware() {
-    const ip = this.randomFindDevice()
+    const ip = await this.randomFindDevice()
     const remote = this.randomFindTarget()
 
     await this.monkey(remote, ip, "malware");

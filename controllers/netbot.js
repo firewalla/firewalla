@@ -2467,7 +2467,7 @@ class netBot extends ControllerBot {
           type: "ReleaseMonkey",
           message: "Release a monkey to test system",
           toProcess: 'FireMain',
-          monkeyType: msg.data.value.monkeyType
+          monkeyType: msg.data.value && msg.data.value.monkeyType
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
