@@ -1573,8 +1573,13 @@ module.exports = class {
                       })
 
                       if(addresses.length > 0) {
-                        alarm["p.device.ip"] = addresses[0]
-                        alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
+                        const ip = addresses[0];
+                        alarm["p.device.ip"] = ip;
+                        alarm["p.device.name"] = ip;
+                        const mac = await hostTool.getMacByIP(ip);
+                        if(mac) {
+                          alarm["p.device.mac"] = mac;
+                        }
                       }
 
                       alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
