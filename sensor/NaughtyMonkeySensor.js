@@ -24,6 +24,7 @@ const fs = require('fs')
 const exec = require('child-process-promise').exec
 
 const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
 const Sensor = require('./Sensor.js').Sensor
 
@@ -40,24 +41,26 @@ class NaughtyMonkeySensor extends Sensor {
 
   async job() {
     // Disable auto monkey for production or beta
-    if(f.isProductionOrBeta()) {
+    if (f.isProductionOrBeta()) {
       return;
     }
-    
-    if(fc.isFeatureOn("naughty_monkey")) {
+
+    if (fc.isFeatureOn("naughty_monkey")) {
       await this.delay(this.getRandomTime())
-      await this.release({monkeyType: "malware"})
+      await this.release({
+        monkeyType: "malware"
+      })
     }
   }
-  
+
   async randomFindDevice() {
     let hosts = await rclient.keysAsync("host:ip4:*");
-    hosts = hosts.map((h) => h.replace("host:ip4:",""));
+    hosts = hosts.map((h) => h.replace("host:ip4:", ""));
 
     const hostCount = hosts.length
-    if(hostCount > 0) {
+    if (hostCount > 0) {
       let randomHostIndex = Math.floor(Math.random() * hostCount)
-      if(randomHostIndex == hostCount) {
+      if (randomHostIndex == hostCount) {
         randomHostIndex = hostCount - 1
       }
       return hosts[randomHostIndex];
@@ -74,7 +77,8 @@ class NaughtyMonkeySensor extends Sensor {
       "204.8.156.142",
       "37.48.120.196",
       "37.187.7.74",
-      "162.247.72.199"]
+      "162.247.72.199"
+    ]
 
     return list[Math.floor(Math.random() * list.length)]
 
@@ -89,7 +93,7 @@ class NaughtyMonkeySensor extends Sensor {
       established: true
     }
 
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
   }
 
   async prepareGameEnvironment(ip) {
@@ -101,7 +105,7 @@ class NaughtyMonkeySensor extends Sensor {
       established: true
     }
 
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
   }
 
   async preparePornEnvironment(ip) {
@@ -113,11 +117,11 @@ class NaughtyMonkeySensor extends Sensor {
       established: true
     }
 
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);    
+    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
   }
 
   async release(event) {
-    switch(event.monkeyType) {
+    switch (event.monkeyType) {
       case "video":
         await this.video();
         break;
@@ -144,7 +148,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async recordMonkey(ip) {
-    const key = `${monkeyPrefix}:${ip}`; 
+    const key = `${monkeyPrefix}:${ip}`;
     await rclient.setAsync(key, 1);
     await rclient.expireAsync(key, 300); // only live for 60 seconds
   }
@@ -154,7 +158,24 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async ssh_scan() {
+    const ip = await this.randomFindDevice();
+    const remoteIP = "116.62.163.43";
 
+    const payload = {
+      "ts": new Date() / 1000,
+      "note": "SSH::Password_Guessing",
+      "msg": `${remoteIP} appears to be guessing SSH passwords (seen in 30 connections).`,
+      "sub": `Sampled servers:  ${ip}, ${ip}, ${ip}`,
+      "src": remoteIP,
+      "peer_descr": "bro",
+      "actions": ["Notice::ACTION_LOG"],
+      "suppress_for": 1800.0,
+      "dropped": false
+    }
+
+    const file = "/blog/current/notice.log";
+
+    await fs.appendFileAsync(file, JSON.stringify(payload));
   }
 
   async port_scan() {
@@ -166,7 +187,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     await this.prepareVideoEnvironment(remoteIP);
 
-    const ip = await this.randomFindDevice()
+    const ip = await this.randomFindDevice();
 
     await this.monkey(ip, remoteIP, "video");
     await this.recordMonkey(remoteIP);
@@ -179,11 +200,11 @@ class NaughtyMonkeySensor extends Sensor {
 
     const ip = await this.randomFindDevice()
 
-    await this.monkey(ip, remoteIP, "game");      
-    await this.monkey(ip, remoteIP, "game");            
-    await this.monkey(ip, remoteIP, "game");            
-    await this.monkey(ip, remoteIP, "game");            
-    await this.monkey(ip, remoteIP, "game");            
+    await this.monkey(ip, remoteIP, "game");
+    await this.monkey(ip, remoteIP, "game");
+    await this.monkey(ip, remoteIP, "game");
+    await this.monkey(ip, remoteIP, "game");
+    await this.monkey(ip, remoteIP, "game");
 
     await this.recordMonkey(remoteIP);
   }
@@ -228,7 +249,7 @@ class NaughtyMonkeySensor extends Sensor {
     this.job()
 
     sem.on('ReleaseMonkey', (event) => {
-      if(fc.isFeatureOn("naughty_monkey")) {        
+      if (fc.isFeatureOn("naughty_monkey")) {
         this.release(event)
       }
     })
@@ -245,4 +266,3 @@ class NaughtyMonkeySensor extends Sensor {
 }
 
 module.exports = NaughtyMonkeySensor
-
