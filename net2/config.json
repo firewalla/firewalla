@@ -233,7 +233,7 @@
       "naughty_monkey": false,
       "device_detection": false,
       "porn_redirect": false,
-      "redirect_httpd": true,
+      "redirect_httpd": false,
       "social_hour": true,
       "api_relay": false,
       "vpn_relay": false,
