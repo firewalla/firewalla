@@ -199,7 +199,7 @@ class FlowAggregationSensor extends Sensor {
     return async(() => {
       let macs = hostManager.getActiveMACs();
       macs.forEach((mac) => {
-        log.info("FlowAggrSensor on mac", mac, {})
+        log.debug("FlowAggrSensor on mac", mac, {})
         await (this.aggr(mac, ts));
         await (this.aggr(mac, ts + this.config.interval));
         await (this.aggrActivity(mac, ts));

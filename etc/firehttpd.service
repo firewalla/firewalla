@@ -6,7 +6,7 @@ After=network.target
 User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/
-ExecStart=/bin/sh /home/pi/firewalla/extension/httpd/httpd.sh
+ExecStart=/bin/bash -c '/home/pi/firewalla/extension/httpd/httpd.sh >> /home/pi/.forever/blue.log 2>&1'
 
 [Install]
 WantedBy=multi-user.target

@@ -38,8 +38,6 @@ var DNSManager = require('./DNSManager.js');
 var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
-var IntelManager = require('./IntelManager.js');
-var intelManager = new IntelManager('debug');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
@@ -1918,6 +1916,40 @@ module.exports = class HostManager {
       })()
     }
 
+  encipherMembersForInit(json) {
+    return async(() => {
+      let members = await (rclient.smembersAsync("sys:ept:members"))
+      if(members && members.length > 0) {
+        const mm = members.map((m) => {
+          try {
+            return JSON.parse(m)
+          } catch(err) {
+            return null
+          }
+        }).filter((x) => x != null)
+
+        if(mm && mm.length > 0) {
+          const names = await (rclient.hgetallAsync("sys:ept:memberNames"))
+          const lastVisits = await (rclient.hgetallAsync("sys:ept:member:lastvisit"))
+
+          if(names) {
+            mm.forEach((m) => {
+              m.dName = m.eid && names[m.eid]
+            })
+          }
+
+          if(lastVisits) {
+            mm.forEach((m) => {
+              m.lastVisit = m.eid && lastVisits[m.eid]
+            })
+          }
+
+          json.eMembers = mm
+        }
+      }
+    })()
+  }
+
     toJson(includeHosts, options, callback) {
 
       if(typeof options === 'function') {
@@ -1945,7 +1977,8 @@ module.exports = class HostManager {
             this.newAlarmDataForInit(json),
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
-            this.boneDataForInit(json)
+            this.boneDataForInit(json),
+            this.encipherMembersForInit(json)
           ]
 
           this.basicDataForInit(json, options);
@@ -2450,7 +2483,10 @@ module.exports = class HostManager {
         let key = "policy:system";
         let d = {};
         for (let k in this.policy) {
-            d[k] = JSON.stringify(this.policy[k]);
+          const policyValue = this.policy[k];
+          if(policyValue !== undefined) {
+            d[k] = JSON.stringify(policyValue)
+          }
         }
         rclient.hmset(key, d, (err, data) => {
             if (err != null) {
@@ -2474,7 +2510,11 @@ module.exports = class HostManager {
                 if (data) {
                     this.policy = {};
                     for (let k in data) {
+                      try {
                         this.policy[k] = JSON.parse(data[k]);
+                      } catch (err) {
+                        log.error(`Failed to parse policy ${k} with value ${data[k]}`, err)
+                      }                       
                     }
                     if (callback)
                         callback(null, data);

@@ -59,7 +59,10 @@ process.on('uncaughtException',(err)=>{
     }
     bone.log("error",{version:config.version,type:'FIREWALLA.MON.exception',msg:err.message,stack:err.stack},null);
     setTimeout(()=>{
-        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+        try {
+            require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+        } catch(e) {
+        }
         process.exit(1);
     },1000*2);
 });
@@ -111,7 +114,7 @@ function run() {
   // heapSensor = new HeapSensor();
   // heapSensor.run();
   
-  const tick = 60 * 15; // waking up every 5 min
+  const tick = 60 * 15; // waking up every 15 min
   const monitorWindow = 60 * 60 * 4; // eight hours window
   
   const FlowMonitor = require('./FlowMonitor.js');

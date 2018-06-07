@@ -42,6 +42,9 @@ let vpnManager = new VpnManager('info');
 let IntelManager = require('../net2/IntelManager.js');
 let intelManager = new IntelManager('debug');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 let DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
@@ -415,6 +418,21 @@ class netBot extends ControllerBot {
     }
   }
 
+  _setUpstreamDns(ip, value, callback) {
+    log.info("In _setUpstreamDns with ip:", ip, "value:", value);
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+            callback(err, "Unable to apply config on upstream_dns: " + value);
+        }
+      });
+    });
+  }
+
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -563,15 +581,8 @@ class netBot extends ControllerBot {
             data.alarmID = msg.alarmID;
           }
 
-          switch(msg.alarmNotifType) {
-            case "security":
-              notifMsg.title = i18n.__("SECURITY_ALERT");
-              break;
-            case "activity":
-              notifMsg.title = i18n.__("ACTIVITY_ALERT");
-              break;
-            default:
-              break;
+          if(msg.alarmNotifType) {
+            notifMsg.title = i18n.__(msg.alarmNotifType);
           }
 
           if (msg.autoblock) {
@@ -584,7 +595,10 @@ class netBot extends ControllerBot {
           async(() => {
             let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
             if(flag) {
-              notifMsg.body = `[${this.getDeviceName()}] ${notifMsg.body}`
+              notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
+            }
+            if(msg["testing"] && msg["testing"] == 1) {
+              notifMsg.title = `[Monkey] ${notifMsg.title}`;
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
@@ -697,7 +711,7 @@ class netBot extends ControllerBot {
                const oldServer = json.oldServer
                const newServer = json.newServer
                
-               if(oldServer && newServer) {
+               if(oldServer && newServer && oldServer !== newServer) {
                  let notifyMsg = {
                    title: "Shadowsocks Failover",
                    body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
@@ -914,6 +928,10 @@ class netBot extends ControllerBot {
               break;
             case "portforward":
               this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+                cb(err);
+              });
+            case "upstreamDns":
+              this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
               });
               break;
@@ -1152,7 +1170,24 @@ class netBot extends ControllerBot {
   }
 
 
+  processAppInfo(appInfo) {
+    return async(() => {
+      if(appInfo.language) {
+        if(sysManager.language !== appInfo.language) {
+          await (sysManager.setLanguageAsync(appInfo.language))
+        }
+      }
 
+      if(appInfo.deviceName && appInfo.eid) {
+        const keyName = "sys:ept:memberNames"
+        await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+
+        const keyName2 = "sys:ept:member:lastvisit"
+        await (rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000)))
+      }
+
+    })()
+  }
 
   getHandler(gid, msg, appInfo, callback) {
 
@@ -1160,6 +1195,10 @@ class netBot extends ControllerBot {
     if(typeof appInfo === 'function') {
       callback = appInfo;
       appInfo = undefined;
+    }
+
+    if(appInfo) {
+      this.processAppInfo(appInfo)
     }
 
     // mtype: get
@@ -1316,55 +1355,209 @@ class netBot extends ControllerBot {
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
-      break;
-    case "archivedAlarms": {
-      const offset = msg.data.value && msg.data.value.offset
-      const limit = msg.data.value && msg.data.value.limit
+        break;
+      case "alarmDetail": {
+        const alarmID = msg.data.value.alarmID;
+        (async () => {
+          if(alarmID) {
+            let detail = await am2.getAlarmDetail(alarmID); 
+            detail = detail || {}; // return empty {} if no extended alarm detail;
+            
+            this.simpleTxData(msg, detail, null, callback);  
+          } else {
+            this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
+          }
+        })().catch((err) => this.simpleTxData(msg, null, err, callback));
+        break;
+      }
+      case "transferTrend": {
+        const deviceMac = msg.data.value.deviceMac;
+        const destIP = msg.data.value.destIP;
+        (async () => {
+          if(destIP && deviceMac) {
+            const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
+            this.simpleTxData(msg, transfers, null, callback); 
+          } else {
+            this.simpleTxData(msg, {}, new Error("Missing device MAC or destination IP"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      }
+      case "archivedAlarms":
+        const offset = msg.data.value && msg.data.value.offset
+        const limit = msg.data.value && msg.data.value.limit
 
-      async(() => {
-        const archivedAlarms = await (am2.loadArchivedAlarms({
-          offset: offset,
-          limit: limit
-        }))
-        this.simpleTxData(msg,
-                          {alarms: archivedAlarms,
-                           count: archivedAlarms.length},
-                          null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    }
-      break
+        async(() => {
+          const archivedAlarms = await(am2.loadArchivedAlarms({
+            offset: offset,
+            limit: limit
+          }))
+          this.simpleTxData(msg,
+            {
+              alarms: archivedAlarms,
+              count: archivedAlarms.length
+            },
+            null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
         });
         break;
-    case "frpConfig":
-      let _config = frp.getConfig()
-      if(_config.started) {
-        let getPasswordAsync = Promise.promisify(ssh.getPassword)
-        getPasswordAsync().then((password) => {
-          _config.password = password
+      case "frpConfig":
+        let _config = frp.getConfig()
+        if (_config.started) {
+          let getPasswordAsync = Promise.promisify(ssh.getPassword)
+          getPasswordAsync().then((password) => {
+            _config.password = password
+            this.simpleTxData(msg, _config, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
+        } else {
           this.simpleTxData(msg, _config, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
+        }
+        break;
+      case "last60mins":
+        async(() => {
+          let downloadStats = await(getHitsAsync("download", "1minute", 60))
+          let uploadStats = await(getHitsAsync("upload", "1minute", 60))
+          this.simpleTxData(msg, {
+            upload: uploadStats,
+            download: downloadStats
+          }, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
         })
-      } else {
-        this.simpleTxData(msg, _config, null, callback);
-      }
-      break;
-    case "last60mins":
-      async(() => {
-        let downloadStats = await (getHitsAsync("download", "1minute", 60))
-        let uploadStats = await (getHitsAsync("upload", "1minute", 60))
-        this.simpleTxData(msg, {
-          upload: uploadStats,
-          download: downloadStats
-        }, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
+        break;
+      case "upstreamDns":
+        (async () => {
+          let response;
+          try {
+            response = await policyManager.getUpstreamDns();
+            log.info("upstream dns response", response);
+            this.simpleTxData(msg, response, null, callback);
+          } catch (err) {
+            log.error("Error when get upstream dns configs", err);
+            this.simpleTxData(msg, {}, err, callback);
+          }
+        })();
+        break;
+      case "liveCategoryDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      case "liveCategoryDomainsWithoutExcluded":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+          const excludedDomains = await categoryUpdater.getExcludedDomains(category)
+          const defaultDomains = await categoryUpdater.getDefaultDomains(category)
+          const includedDomains = await categoryUpdater.getIncludedDomains(category)
+
+          const finalDomains = domains.filter((de) => {
+            return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
+          })
+
+          finalDomains.push.apply(finalDomains, defaultDomains.map((d) => {
+            return {domain: d, expire: 0};
+          }))
+
+          let compareFuction = (x, y) => {
+            if(!x || !y) {
+              return 0;
+            }
+
+            let a = x.domain
+            let b = y.domain
+
+            if(!a || !b) {
+              return 0;
+            }
+
+            if(a.startsWith("*.")) {
+              a = a.substring(2)
+            }
+            if(b.startsWith("*.")) {
+              b = b.substring(2)
+            }
+
+            if (a.toLowerCase() > b.toLowerCase()) {
+              return 1
+            } else if (a.toLowerCase() < b.toLowerCase()) {
+              return -1
+            } else {
+              return 0
+            }
+          };
+
+          let sortedFinalDomains = finalDomains.sort(compareFuction)
+
+          const patternDomains = sortedFinalDomains.filter((de) => {
+            return de.domain.startsWith("*.")
+          }).map((de) => de.domain.substring(2))
+
+          // dedup battle.net if battle.net and *.battle.net co-exist
+          const outputDomains = sortedFinalDomains.filter((de) => {
+            const domain = de.domain
+            if(!domain.startsWith("*.") && patternDomains.includes(domain)) {
+              return false;
+            } else {
+              return true;
+            }
+          })
+
+          this.simpleTxData(msg, {domains: outputDomains, includes: includedDomains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      case "includedDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await (categoryUpdater.getIncludedDomains(category))
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      case "excludedDomains":
+        (async () => {
+          const category = msg.data.value.category
+          const domains = await (categoryUpdater.getExcludedDomains(category))
+          this.simpleTxData(msg, {domains: domains}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      case "whois":
+        (async () => {
+          const target = msg.data.value.target;
+          let whois = await intelManager.whois(target);
+          this.simpleTxData(msg, {target, whois}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "ipinfo":
+        (async () => {
+          const ip = msg.data.value.ip;
+          let ipinfo = intelManager.ipinfo(ip);
+          this.simpleTxData(msg, {ip, ipinfo}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -1702,7 +1895,12 @@ class netBot extends ControllerBot {
    */
 
   cmdHandler(gid, msg, callback) {
-    log.info("API: CmdHandler ",gid,msg,{});
+
+    if(msg && msg.data && msg.data.item === 'ping') {
+
+      } else {
+        log.info("API: CmdHandler ",gid,msg,{});
+      }
     if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.resetDevice()
@@ -2268,7 +2466,8 @@ class netBot extends ControllerBot {
         sem.emitEvent({
           type: "ReleaseMonkey",
           message: "Release a monkey to test system",
-          toProcess: 'FireMain'
+          toProcess: 'FireMain',
+          monkeyType: msg.data.value && msg.data.value.monkeyType
         })
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
@@ -2276,16 +2475,68 @@ class netBot extends ControllerBot {
       })
       break
     }
-    case "dns:upstream": {
+    case "addIncludeDomain": {
       (async () => {
-        try {
-          await policyManager.upstreamDns(msg.data.value.ips, msg.data.value.state);
-          this.simpleTxData(msg, {}, null, callback);
-        } catch (err) {
-          log.error("Error when set upstream dns", err, {});
-          this.simpleTxData(msg, {}, err, callback);
-        }
-      })();
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.addIncludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "removeIncludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.removeIncludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "addExcludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.addExcludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+    case "removeExcludeDomain": {
+      (async () => {
+        const category = msg.data.value.category
+        const domain = msg.data.value.domain
+        await (categoryUpdater.removeExcludedDomain(category,domain))
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
       break;
     }
     default:
@@ -2432,9 +2683,19 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      log.info("Received jsondata from app", rawmsg.message, {});
+      if(rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
+      rawmsg.message.obj.data.item === 'ping') {
+
+      } else {
+        log.info("Received jsondata from app", rawmsg.message, {});
+      }
+      
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
+
+          if(rawmsg.message.appInfo) {
+            this.processAppInfo(rawmsg.message.appInfo)
+          }
 
           log.info("Process Init load event");
 
@@ -2580,7 +2841,10 @@ process.on('uncaughtException', (err) => {
     stack: err.stack
   }, null);
   setTimeout(() => {
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+    try {
+        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+    } catch(e) {
+    }
     process.exit(1);
   }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });

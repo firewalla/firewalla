@@ -93,7 +93,10 @@ process.on('uncaughtException',(err)=>{
   }
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    try {
+      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    } catch(e) {
+    }
     process.exit(1);
   },1000*5);
 });
@@ -320,7 +323,7 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        log.info("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn", err);
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{

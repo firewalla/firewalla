@@ -14,9 +14,6 @@
  */
 'use strict';
 let log = require('./logger.js')(__filename);
-var ip = require('ip');
-var os = require('os');
-var network = require('network');
 var stats = require('stats-lite');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -31,9 +28,6 @@ var firewalla = require("../net2/Firewalla.js");
 const _async = require('async');
 var flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 var QUERY_MAX_FLOW = 10000;
 
@@ -554,7 +548,7 @@ module.exports = class FlowManager {
     // tx here means to outside
     // rx means inside
     getFlowCharacteristics(_flows, direction, minlength, sdv) {
-        log.info("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
+        log.debug("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
         if (minlength == null) {
             minlength = 500000;
         }
@@ -1122,7 +1116,7 @@ module.exports = class FlowManager {
                 let totalOutBytes = 0;
                 if (err == null) {
                     if (result!=null && result.length>0) 
-                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
+                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
                     for (let i in result) {
                         let o = JSON.parse(result[i]);
                         
@@ -1207,7 +1201,7 @@ module.exports = class FlowManager {
                     sorted.forEach(flowTool.trimFlow);                   
                   
                     if (result.length>0) 
-                        log.info("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
+                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
                     conndb = {};
                     cb();
                 } else {

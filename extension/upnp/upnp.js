@@ -34,7 +34,7 @@ let util = require('util');
 let f = require('../../net2/Firewalla.js');
 
 let natpmp = require('./nat-pmp');
-let natupnp = require('nat-upnp');
+let natupnp = require('./nat-upnp');
 
 let upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often

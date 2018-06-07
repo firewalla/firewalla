@@ -95,6 +95,16 @@ class FWInvitation {
     log.info("\n");
     qrcode.generate(license)
   }
+
+  displayBonjourMessage(msg) {
+    if(!msg)
+      return
+
+    log.info("\n\n-------------------------------\n");
+    log.info("\n\nBonjour Message QR");
+    log.info("\n");
+    qrcode.generate(JSON.stringify(msg))
+  }
   
   validateLicense(license) {
 
@@ -232,6 +242,7 @@ class FWInvitation {
 
         log.info("TXT:", txtfield, {});
         this.service = intercomm.publish(null, FW_ENDPOINT_NAME + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
+        this.displayBonjourMessage(txtfield)
     });
 
     if (intercomm.bcapable() != false) {

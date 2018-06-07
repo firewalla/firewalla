@@ -147,7 +147,7 @@ async function startAsync(options) {
     log.info(`Switching ss server from ${oldSelectedConfig.server} to ${selectedConfig.server}.`)
   }
   
-  await stopAsync({supressError: true})
+  await stopAsync({suppressError: true})
   
   try {
     await _prepareSSConfigAsync()
@@ -204,7 +204,7 @@ function start(callback) {
     
     // always stop before start
 
-    stop({supressError: true}, (err) => {
+    stop({suppressError: true}, (err) => {
 
       // ignore stop error
       
@@ -292,7 +292,7 @@ function stop(options, callback) {
                           _stopDNSForwarder,
                           _disableIpset],
                         (err) => {
-                          if(err && ! options.supressError ) {
+                          if(err && ! options.suppressError ) {
                             log.error("Got error when stop: " + err);
                           }
                           started=false;
@@ -557,23 +557,35 @@ function _enableChinaDNS(callback) {
     localDNSServers = ["114.114.114.114"];
   }
 
-  let dnsConfig = util.format("%s,%s:%d",
+  const localDNS = localDNSServers[0];
+
+  fs.appendFile(chnrouteFile, localDNS, (err) => {
+    if(err) {
+      log.error("Failed to append local dns info to chnroute file, err:", err);
+      callback(err);
+      return;
+    }
+
+    let dnsConfig = util.format("%s,%s:%d",
                               localDNSServers[0],
                               "127.0.0.1",
                               localDNSForwarderPort
                              )
   
-  let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
+    let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
 
-  log.info("Running cmd:", chinaDNSBinary, args);
+    log.info("Running cmd:", chinaDNSBinary, args);
 
-  let chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
+    let chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
 
-  chinadns.on('close', (code) => {
-    log.info("chinadns exited with code", code);
+    chinadns.on('close', (code) => {
+      log.info("chinadns exited with code", code);
+    });
+    
+    callback(null);
+
   });
   
-  callback(null);
 }
 
 const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
@@ -582,15 +594,20 @@ const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
 function _disableChinaDNS(callback) {
   callback = callback || function() {}
 
-  let cmd = util.format("pkill chinadns");
+  const revertCommand = `git checkout HEAD -- ${chnrouteFile}`;
 
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to disable chinadns");
-    } else {
+  p.exec(revertCommand, (err, stdout, stderr) => {
+    // ignore err
+    let cmd = util.format("pkill chinadns");
+
+    p.exec(cmd, (err, stdout, stderr) => {
+      if(err) {
+        log.error("Failed to disable chinadns");
+      } else {
       log.info("chinadns is stopped successfully");
-    }
-    callback(null);
+      }
+      callback(null);
+    });
   });
 }
 
@@ -622,6 +639,9 @@ function hasMultipleServers() {
 }
 
 async function statusCheck() {
+  
+  return; // TBD need a better status check solution
+  
   let checkResult = await verifyDNSConnectivity()
   
   // retry if failed
@@ -662,7 +682,7 @@ async function verifyDNSConnectivity() {
       return true
     }
   } catch(err) {
-    log.error("Got error when verifying dns connectivity:", err)
+    log.error("Got error when verifying dns connectivity:", err.stdout)
     return false
   }
 

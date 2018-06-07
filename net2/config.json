@@ -1,5 +1,5 @@
 {
-  "version": 1.955,
+  "version": 1.956,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -46,8 +46,21 @@
     "autoBlock": true
   },
   "apiSensors": {
-    "APIRelaySensor": {}
+    "APIRelaySensor": {},
+    "VPNRelaySensor": {}
   },
+  "intels": [
+    "DedupAlarm",
+    "DeviceInfoIntel",
+    "DestInfoIntel",
+    "IPLocationIntel",
+    "AlexaIntel",
+    "WhoisIPIntel",
+    "WhoisDomainIntel",
+    "Cymon2Intel",
+    "TransferContextIntel",
+    "MonkeyIntel"
+  ],
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
@@ -61,9 +74,11 @@
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
+    "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
+    "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
@@ -200,7 +215,7 @@
     "features": {
       "intel:feedback": true,
       "ss_client:statusCheck": true,
-      "familyMode": "v1"
+      "familyMode": "v2"
     },
     
     "userFeatures": {
@@ -218,9 +233,12 @@
       "naughty_monkey": false,
       "device_detection": false,
       "porn_redirect": false,
-      "redirect_httpd": false,
+      "redirect_httpd": true,
       "social_hour": true,
-      "api_relay": false
+      "api_relay": false,
+      "vpn_relay": false,
+      "upstream_dns": false,
+      "insane_mode": false
     }
 
 }

@@ -290,7 +290,7 @@ class DeviceHook extends Hook {
         log.info("New host entry is created for this old device");
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
         }        
 
         await (hostTool.updateMACKey(enrichedHost)) // mac

@@ -334,6 +334,7 @@ module.exports = class {
     processIntelData(data) {
         try {
             let obj = JSON.parse(data);
+            log.info("Intel:New",data,obj);
             if (obj['id.orig_h'] == null) {
                 log.error("Intel:Drop", obj);
                 return;
@@ -372,14 +373,23 @@ module.exports = class {
                 return;
             }
             if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
-                // NOTE write up a look up flow here
-
+                if (this.lastDNS!=null) {
+                    if (this.lastDNS['query'] == obj['query']) {
+                        if (JSON.stringify(this.lastDNS['answers']) == JSON.stringify(obj["answers"])) {
+                            log.debug("processDnsData:DNS:Duplicated:", obj['query'],JSON.stringify(obj['answers']));
+                            return;
+                        }
+                    }
+                }
+                this.lastDNS = obj;
                 // record reverse dns as well for future reverse lookup
-                async(() => {
-                  await (dnsTool.addReverseDns(obj['query'], obj['answers']))
-                })()
+              (async () => {
+                await dnsTool.addReverseDns(obj['query'], obj['answers'])
+              })()
 
                 for (let i in obj['answers']) {
+                  const entry = obj['answers'][i];
+
                     let key = "dns:ip:" + obj['answers'][i];
                     let value = {
                         'host': obj['query'],
@@ -399,6 +409,15 @@ module.exports = class {
                         rclient.hmset(key, value, (err, rvalue) => {
                              //   rclient.hincrby(key, "count", 1, (err, value) => {
                              if (err == null) {
+
+                                 if(iptool.isV4Format(entry) || iptool.isV6Format(entry)) {
+                                   sem.emitEvent({
+                                     type: 'DestIPFound',
+                                     ip: entry,
+                                     suppressEventLogging: true
+                                   });
+                                 }
+
                                  if (this.config.bro.dns.expires) {
                                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                                  }
@@ -600,6 +619,8 @@ module.exports = class {
                     return;
                 }
             }
+
+            //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
             if (obj.resp_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop",obj);
@@ -616,6 +637,8 @@ module.exports = class {
                     return;
                 }
             }
+
+
             if (obj.orig_bytes >100000000) {
                 if (obj.duration<1) {
                     log.error("Conn:Burst:Drop:Orig",obj);
@@ -649,6 +672,12 @@ module.exports = class {
                 } else {
                     log.debug("Conn:Adjusted:MissedBytes",obj.conn_state,obj);
                 }
+            }
+
+            if ((obj.orig_bytes>obj.orig_ip_bytes || obj.resp_bytes>obj.resp_ip_bytes) && obj.proto == "tcp") {
+                log.debug("Conn:Burst:Adjust1",obj);
+                obj.orig_bytes = obj.orig_ip_bytes;
+                obj.resp_bytes = obj.resp_ip_bytes;
             }
 
             /*
@@ -693,7 +722,7 @@ module.exports = class {
                     return;
                 }
             } catch (e) {
-                log.error("Conn:Data:Error checking ulticast", e);
+                log.debug("Conn:Data:Error checking ulticast", e);
                 return;
             }
 
@@ -716,7 +745,7 @@ module.exports = class {
                 flowdir = "out";
                 lhost = dst;
             } else {
-                log.error("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
+                log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
                 return;
             }
 
@@ -763,6 +792,9 @@ module.exports = class {
             // Warning for long running tcp flows, the conn structure logs the ts as the
             // first packet.  when this happens, if the flow started a while back, it
             // will get summarize here
+            //if (host == "192.168.2.164" || dst == "192.168.2.164") {
+            //    log.error("Conn:192.168.2.164:",JSON.stringify(obj),null);
+            // }
 
             let now = Math.ceil(Date.now() / 1000);
             let flowspecKey = host + ":" + dst + ":" + flowdir;
@@ -925,7 +957,7 @@ module.exports = class {
                           rb: tmpspec.rb,
                           suppressEventLogging: true
                         });
-                      }, 15 * 1000); // send out in 15 seconds
+                      }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
 
                         if (this.config.bro.conn.expires) {
@@ -1509,9 +1541,9 @@ module.exports = class {
                      obj: obj
                 };
 
-                async(() => {
-                    const srcName = await (hostTool.getName(obj.src))
-                    const dstName = await (hostTool.getName(obj.dst))
+                (async () => {
+                    const srcName = await hostTool.getName(obj.src)
+                    const dstName = await hostTool.getName(obj.dst)
                     if(srcName) {
                         actionobj.shname = srcName
                     }
@@ -1541,19 +1573,19 @@ module.exports = class {
                       })
 
                       if(addresses.length > 0) {
-                        alarm["p.device.ip"] = addresses[0]
-                        alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
+                        const ip = addresses[0];
+                        alarm["p.device.ip"] = ip;
+                        alarm["p.device.name"] = ip;
+                        const mac = await hostTool.getMacByIP(ip);
+                        if(mac) {
+                          alarm["p.device.mac"] = mac;
+                        }
                       }
 
                       alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
                     }
 
-                    if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
-                        await (am2.enrichDestInfo(alarm))
-                    }
-
-                    await (am2.enrichDeviceInfo(alarm))
-                    await (am2.checkAndSaveAsync(alarm))
+                    await am2.checkAndSaveAsync(alarm)
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})
                 })

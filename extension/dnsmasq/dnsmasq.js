@@ -346,7 +346,7 @@ module.exports = class DNSMASQ {
   setDefaultNameServers(key, ips) {
     let _ips;
     if (Array.isArray(ips)) {
-      _ips = ips.filter(validator.isIP);
+      _ips = ips.filter(x => validator.isIP(x));
     } else {
       if (!validator.isIP(ips.toString())) {
         return;
@@ -369,6 +369,20 @@ module.exports = class DNSMASQ {
       }
     });
     return list
+  }
+  
+  async getCurrentNameServerList() {
+    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
+    log.info("Command to get current name server: ", cmd);
+
+    let {stdout, stderr} = await execAsync(cmd);
+    
+    if (!stdout || stdout === '') {
+      return [];
+    }
+
+    let list = stdout.split('\n');
+    return list.filter((x, i) => list.indexOf(x) === i);
   }
 
   async delay(t) {
@@ -971,7 +985,7 @@ module.exports = class DNSMASQ {
 
   async verifyDNSConnectivity() {
     let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
-    log.info("Verifying DNS connectivity...")
+    log.debug("Verifying DNS connectivity...")
 
     try {
       let {stdout, stderr} = await execAsync(cmd);
@@ -982,17 +996,17 @@ module.exports = class DNSMASQ {
         log.error("Got error output when verifying dns connectivity:", result.stderr, {})
         return false
       } else {
-        log.info("DNS connectivity looks good")
+        log.debug("DNS connectivity looks good")
         return true
       }
     } catch (err) {
-      log.error("Got error when verifying dns connectivity:", err, {})
+      log.error("Got error when verifying dns connectivity:", err.stdout, {})
       return false
     }
   }
 
   async statusCheck() {
-    log.info("Keep-alive checking dnsmasq status")
+    log.debug("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity() ||
       await this.verifyDNSConnectivity() ||
@@ -1013,7 +1027,7 @@ module.exports = class DNSMASQ {
       }, null);
     } else {
       let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
-      log.debug("dnsmasq running status: \n", stdout, {})
+      log.info("dnsmasq running status: \n", stdout, {})
 
       // restart this service, something is wrong
       try {

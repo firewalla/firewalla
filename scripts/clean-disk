@@ -3,6 +3,7 @@ cd /home/pi/firewalla
 rm /home/pi/.forever/*last.log
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log
+cat /dev/null > /home/pi/.forever/blue.log
 cat /dev/null > /home/pi/.forever/ui.log
 cat /dev/null > /home/pi/.forever/monitor.log
 cat /dev/null > /home/pi/.forever/api.log
