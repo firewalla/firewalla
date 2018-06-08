@@ -602,7 +602,7 @@ function _disableChinaDNS(callback) {
 
     p.exec(cmd, (err, stdout, stderr) => {
       if(err) {
-        log.error("Failed to disable chinadns");
+        // log.error("Failed to disable chinadns");
       } else {
       log.info("chinadns is stopped successfully");
       }

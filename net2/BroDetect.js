@@ -38,6 +38,8 @@ const hostManager = new HostManager('cli', 'server');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
+const Accounting = require('../control/Accounting.js');
+const accounting = new Accounting();
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -565,6 +567,31 @@ module.exports = class {
     return true
   }
   
+  isUDPtrafficAccountable(obj) {
+    const host = obj["id.orig_h"];
+    const dst = obj["id.resp_h"];
+
+    let deviceIP = null;
+
+    if(sysManager.isLocalIP(host)) {
+        deviceIP = host;
+    } else {
+        deviceIP = dst;
+    }
+    
+    let device = null;
+
+    if(iptool.isV4Format(deviceIP)) {
+        device = hostManager.hostsdb[`host:ip4:${deviceIP}`];
+    } else {
+        device = hostManager.hostsdb[`host:ip6:${deviceIP}`];
+    }
+
+    let mac = device && device.o && device.o.mac;
+    
+    return !accounting.isBlockedDevice(mac);
+  }
+
     // Only log ipv4 packets for now
     processConnData(data) {
         try {
@@ -585,6 +612,10 @@ module.exports = class {
 
           if(!this.isConnFlowValid(obj)) {
             return;
+          }
+
+          if(obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
+            return; // ignore udp traffic if they are not valid
           }
 
             // drop layer 3
