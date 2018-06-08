@@ -27,6 +27,9 @@ let inited = false;
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
+const Accounting = require('./Accounting.js');
+const accounting = new Accounting();
+
 const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
 
 const exec = require('child-process-promise').exec
@@ -417,6 +420,8 @@ function blockMac(macAddress, ipset) {
   
   log.info("Control:Block:",cmd);
 
+  accounting.addBlockedDevice(macAddress);
+
   return exec(cmd)
 }
 
@@ -427,6 +432,8 @@ function unblockMac(macAddress, ipset) {
   
   log.info("Control:Block:",cmd);
 
+  accounting.removeBlockedDevice(macAddress);
+  
   return exec(cmd)
 }
 
