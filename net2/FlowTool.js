@@ -151,7 +151,7 @@ class FlowTool {
       log.error("Host:Flows:Sorting:Parsing", flow);
       return false;
     }
-    if ( !o.rb || !o.ob ) {
+    if ( !('rb' in o) || !('ob' in o) ) {
       return false
     }
     if (o.rb === 0 && o.ob === 0) {
