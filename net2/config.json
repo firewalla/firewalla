@@ -144,11 +144,11 @@
         "count": 10000
       },
       "sumflow": {
-        "expires": 86400,
+        "expires": 10485760,
         "count": 5000
       },
       "aggrflow": {
-        "expires": 86400,
+        "expires": 10485760,
         "count": 1000
       }
     }
