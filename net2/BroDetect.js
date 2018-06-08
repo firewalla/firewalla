@@ -579,13 +579,15 @@ module.exports = class {
         deviceIP = dst;
     }
     
-    let mac = null;
+    let device = null;
 
     if(iptool.isV4Format(deviceIP)) {
-        mac = hostManager.hostsdb[`host:ip4:${deviceIP}`] && hostManager.hostsdb[`host:ip4:${deviceIP}`].mac;
+        device = hostManager.hostsdb[`host:ip4:${deviceIP}`];
     } else {
-        mac = hostManager.hostsdb[`host:ip6:${deviceIP}`] && hostManager.hostsdb[`host:ip6:${deviceIP}`].mac;
+        device = hostManager.hostsdb[`host:ip6:${deviceIP}`];
     }
+
+    let mac = device && device.o && device.o.mac;
     
     return !accounting.isBlockedDevice(mac);
   }
