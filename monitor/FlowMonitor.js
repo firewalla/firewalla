@@ -45,7 +45,10 @@ let instance = null;
 let HostManager = require("../net2/HostManager.js");
 let hostManager = new HostManager("cli", 'client', 'info');
 
-let stddev_limit = 8;
+let default_stddev_limit = 8;
+let default_inbound_min_length = 1000000;
+let deafult_outbound_min_length = 500000;
+
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('debug');
 
@@ -261,18 +264,14 @@ module.exports = class FlowMonitor {
                         "p.dest.ip": actionobj.dst
                       });
 
-                      alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
-                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
-                        .then((alarm) => {
-                          alarmManager2.checkAndSave(alarm, (err) => {
-                            if(!err) {
-                            }
-                          });
-                        }).catch((err) => {
-                          if(err)
-                            log.error("Failed to create alarm: ", err);
-                        });
+                      alarmManager2.checkAndSaveAsync(alarm)
+                      .then(() => {
+                        log.info(`Alarm ${alarm.aid} is created successfully`);
+                      }).catch((err) => {
+                        if(err) {
+                          log.error("Failed to create alarm: ", err);
+                        }
+                      });
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
@@ -308,19 +307,15 @@ module.exports = class FlowMonitor {
                       "p.dest.ip": actionobj.dst
                     });
 
-                    alarmManager2.enrichDeviceInfo(alarm)
-                      .then(alarm => alarmManager2.enrichDestInfo(alarm))
-                      .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))                        
-                      .then((alarm) => {
-                        alarmManager2.checkAndSave(alarm, (err) => {
-                          if(!err) {
-                          }
-                        })
-                      }).catch((err) => {
-                        if(err)
-                          log.error("Failed to create alarm: ", err);
-                      });
-                    }
+                    alarmManager2.checkAndSaveAsync(alarm)
+                    .then(() => {
+                      log.info(`Alarm ${alarm.aid} is created successfully`);
+                    }).catch((err) => {
+                      if(err) {
+                        log.error("Failed to create alarm: ", err);
+                      }
+                    });
+                  }
                 } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
                     // Intel object
                     //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
@@ -431,19 +426,15 @@ module.exports = class FlowMonitor {
                       });
 
 
-                      alarmManager2.enrichDeviceInfo(alarm)
-                        .then(alarm => alarmManager2.enrichDestInfo(alarm))
-                        .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))
-                        .then((alarm) => {
-                          alarmManager2.checkAndSave(alarm, (err) => {
-                            if(!err) {
-                            }
-                          });
-                        }).catch((err) => {
-                          if(err)
-                            log.error("Failed to create alarm: ", err);
-                        });
-                    }
+                    alarmManager2.checkAndSaveAsync(alarm)
+                    .then(() => {
+                      log.info(`Alarm ${alarm.aid} is created successfully`);
+                    }).catch((err) => {
+                      if(err) {
+                        log.error("Failed to create alarm: ", err);
+                      }
+                    }); 
+                  }
                 }
               });
             }
@@ -606,15 +597,26 @@ module.exports = class FlowMonitor {
         let end = Date.now() / 1000;
         let start = end - this.monitorTime; // in seconds
         flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, result,activities) => {
-            let inSpec = flowManager.getFlowCharacteristics(result, "in", 1000000, stddev_limit);
-            if (activities !=null) {
-                host.activities = activities;
-                host.save("activities",null);
-            }
-            flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
-                let outSpec = flowManager.getFlowCharacteristics(resultout, "out", 500000, stddev_limit);
-                callback(null, inSpec, outSpec);
-            });
+
+          let inbound_min_length = default_inbound_min_length;
+          let outbound_min_length = deafult_outbound_min_length;
+          let stddev_limit = default_stddev_limit;
+
+          if(fc.isFeatureOn("insane_mode")) {
+            inbound_min_length = 1000;
+            outbound_min_length = 1000;
+            stddev_limit = 1;
+          }
+
+          let inSpec = flowManager.getFlowCharacteristics(result, "in", inbound_min_length, stddev_limit);
+          if (activities !=null) {
+              host.activities = activities;
+              host.save("activities",null);
+          }
+          flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
+              let outSpec = flowManager.getFlowCharacteristics(resultout, "out", outbound_min_length, stddev_limit);
+              callback(null, inSpec, outSpec);
+          });
         });
     }
 
@@ -778,9 +780,6 @@ module.exports = class FlowMonitor {
                                               });
 
                                           (async () => {
-                                            await alarmManager2.enrichDeviceInfo(alarm)
-                                            await alarmManager2.enrichDestInfo(alarm)
-                                            await alarmManager2.extendedEnrichAlarm(alarm);
                                             await alarmManager2.checkAndSaveAsync(alarm)
                                           })().catch((err) => {
                                             log.error("Failed to enrich and save alarm", err)
@@ -840,9 +839,6 @@ module.exports = class FlowMonitor {
                                             // ideally each destination should have a unique ID, now just use hostname as a workaround
                                             // so destionationName, destionationHostname, destionationID are the same for now
                                             (async () => {
-                                              await alarmManager2.enrichDeviceInfo(alarm)
-                                              await alarmManager2.enrichDestInfo(alarm)
-                                              await alarmManager2.extendedEnrichAlarm(alarm);
                                               await alarmManager2.checkAndSaveAsync(alarm)
                                             })().catch((err) => {
                                               log.error("Failed to enrich and save alarm", err)
@@ -1044,15 +1040,6 @@ module.exports = class FlowMonitor {
     log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
 
     try {
-      alarm = await alarmManager2.enrichDeviceInfo(alarm);
-      alarm = await alarmManager2.enrichDestInfo(alarm);
-      alarm = await alarmManager2.extendedEnrichAlarm(alarm);
-    } catch (err) {
-      log.error("Error when enrich domain cyber alarm:", err);
-      return;
-    }
-
-    try {
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
       if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
@@ -1067,7 +1054,7 @@ module.exports = class FlowMonitor {
   }
   
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
-    log.info("Check IP Alarm for traffic from:", deviceIP, ", to:", remoteIP);
+    log.info("Check IP Alarm for traffic from: ", deviceIP, ", to:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
 
     let iobj;
@@ -1119,19 +1106,14 @@ module.exports = class FlowMonitor {
 
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
-    alarmManager2.enrichDeviceInfo(alarm)
-      .then(alarm => alarmManager2.enrichDestInfo(alarm))
-      .then(alarm => alarmManager2.extendedEnrichAlarm(alarm))
-      .then(alarm => {
-        alarmManager2.checkAndSave(alarm, (err) => {
-          if (err) {
-            log.error("Fail to save alarm:", err);
-          }
-        });
-      })
-      .catch((err) => {
-        log.error("Failed to create alarm:", err);
-      });
+    alarmManager2.checkAndSaveAsync(alarm)
+    .then(() => {
+      log.info(`Alarm ${alarm.aid} is created successfully`);
+    }).catch((err) => {
+      if(err) {
+        log.error("Failed to create alarm: ", err);
+      }
+    });
   };
   
 }

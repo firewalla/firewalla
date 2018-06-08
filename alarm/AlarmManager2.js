@@ -30,8 +30,6 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const il = require('../intel/IntelLoader.js');
-
 const fc = require('../net2/config.js')
 
 const Promise = require('bluebird');
@@ -229,7 +227,8 @@ module.exports = class {
           alarmID: alarm.aid,
           aid: alarm.aid,
           alarmNotifType:alarm.notifType,
-          alarmType: alarm.type
+          alarmType: alarm.type,
+          testing: alarm["p.monkey"]
         };
 
         if(alarm.result_method === "auto") {
@@ -366,14 +365,37 @@ module.exports = class {
   }
 
   checkAndSave(alarm, callback) {
+    callback = callback || function() {};
+
+    (async () => {
+
+      const il = require('../intel/IntelLoader.js');
+
+      alarm = await il.enrichAlarm(alarm);
+
+      let verifyResult = this.validateAlarm(alarm);
+      if(!verifyResult) {
+        callback(new Error("invalid alarm, failed to pass verification"));
+        return;
+      }
+
+      alarm = await bone.arbitration(alarm);
+
+      if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
+        log.info(`Alarm is ignored by cloud: ${alarm}`);
+        callback(null, 0);
+      } else {
+        if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
+          log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
+        }
+        this._checkAndSave(alarm, callback);
+      }
+    })();
+  }
+
+  _checkAndSave(alarm, callback) {
     callback = callback || function() {}
     
-    let verifyResult = this.validateAlarm(alarm);
-    if(!verifyResult) {
-      callback(new Error("invalid alarm, failed to pass verification"));
-      return;
-    }
-
     // disable this check for now, since we use new way to check feature enable/disable
     // let enabled = this.isAlarmTypeEnabled(alarm)
     // if(!enabled) {
@@ -1305,11 +1327,5 @@ module.exports = class {
       
       
       return alarm;
-    }
-
-  async extendedEnrichAlarm(alarm) {
-    await il.enrichAlarm(alarm)
-    return alarm
-  }
-    
-  }
+    }    
+}

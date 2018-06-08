@@ -1573,19 +1573,18 @@ module.exports = class {
                       })
 
                       if(addresses.length > 0) {
-                        alarm["p.device.ip"] = addresses[0]
-                        alarm["p.device.name"] = addresses[0] // workaround, app side should use mac address to convert
+                        const ip = addresses[0];
+                        alarm["p.device.ip"] = ip;
+                        alarm["p.device.name"] = ip;
+                        const mac = await hostTool.getMacByIP(ip);
+                        if(mac) {
+                          alarm["p.device.mac"] = mac;
+                        }
                       }
 
                       alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
                     }
 
-                    if(alarm["p.dest.ip"] && alarm["p.dest.ip"] != "0.0.0.0") {
-                        await am2.enrichDestInfo(alarm);
-                        await am2.extendedEnrichAlarm(alarm);
-                    }
-
-                    await am2.enrichDeviceInfo(alarm)
                     await am2.checkAndSaveAsync(alarm)
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})

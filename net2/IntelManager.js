@@ -76,7 +76,7 @@ module.exports = class {
       result = null;
     }
 
-    log.info("Cache lookup for", ip, ", origin", origin, ", result:", result);
+    log.debug("Cache lookup for", ip, ", origin", origin, ", result:", result);
     return result;
   }
 
@@ -157,20 +157,19 @@ module.exports = class {
       return;
     }
 
-    let [intelObj, ipinfo, whois] = await Promise.all([this.cymon(ip), this.ipinfo(ip), this.whois(ip)]);
+    let [intelObj, ipinfo] = await Promise.all([this.cymon(ip), this.ipinfo(ip)]);
     
-    if (!intelObj) {
+    if (!intelObj || intelObj.count === 0) { // no info from cymon
       intelObj = {};
-    } else {
       intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
-      intelObj = this.summarizeIntelObj(ip, intelObj);  
+    } else {
+      intelObj = this.summarizeIntelObj(ip, intelObj);  ;
     }
 
-    log.info("Ipinfo:", ipinfo);
+    log.debug("Ipinfo:", ipinfo)
     intelObj.lobj = ipinfo;
-    intelObj.whois = whois;
 
-    log.info("IntelObj:", intelObj);
+    log.debug("IntelObj:", intelObj);
 
     return intelObj;
   }
@@ -266,7 +265,7 @@ module.exports = class {
 
   addFlowIntel(ip, intelObj, intel) {
     let weburl = "https://intel.firewalla.com/";
-    log.info("IntelManger:addFlowIntel:", ip, intel);
+    log.debug("IntelManger:addFlowIntel:", ip, intel);
     if (intel == null) {
       return null;
     }
@@ -288,7 +287,7 @@ module.exports = class {
       } catch (e) {
       }
     }
-    log.info("IntelManger:addFlowIntel:Done", ip);
+    log.debug("IntelManger:addFlowIntel:Done", ip);
     return intelObj;
   }
 

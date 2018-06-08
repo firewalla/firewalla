@@ -18,25 +18,21 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-const IntelManager = require('../net2/IntelManager.js')
-const intelManager = new IntelManager('info');
+let FlowTool = require('../net2/FlowTool');
+let flowTool = new FlowTool();
 
-class IPLocationIntel extends Intel {
+class TransferContextIntel extends Intel {
 
   async enrichAlarm(alarm) {
     const destIP = alarm["p.dest.ip"];
+    const deviceMac = alarm["p.device.mac"];
 
-    if(destIP) {
-      // location
-      const loc = await intelManager.ipinfo(destIP)
-      if (loc && loc.loc) {
-        const location = loc.loc;
-        const ll = location.split(",");
-        if (ll.length === 2) {
-          alarm["p.dest.latitude"] = parseFloat(ll[0]);
-          alarm["p.dest.longitude"] = parseFloat(ll[1]);
-        }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+    if(destIP && deviceMac) {
+
+      const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
+
+      if(transfers) {
+        alarm["e.transfer"] = JSON.stringify(transfers);
       }
     }
     
@@ -45,4 +41,4 @@ class IPLocationIntel extends Intel {
 
 }
 
-module.exports = IPLocationIntel
+module.exports = TransferContextIntel
