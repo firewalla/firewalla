@@ -379,7 +379,19 @@ module.exports = class {
         return;
       }
 
-      alarm = await bone.arbitration(alarm);
+      const result = await bone.arbitration(alarm);
+
+      if(!result) {
+        callback(new Error("invalid alarm, failed to pass cloud verification"));
+        return;
+      }
+
+      alarm = this.jsonToAlarm(result);
+
+      if(!alarm) {
+        callback(new Error("invalid alarm json from cloud"));
+        return;
+      }
 
       if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
         log.info(`Alarm is ignored by cloud: ${alarm}`);
