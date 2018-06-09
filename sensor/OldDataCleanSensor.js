@@ -69,7 +69,7 @@ class OldDataCleanSensor extends Sensor {
   cleanToCount(key, leftOverCount) {
     return rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
       .then((count) => {
-        if(count > 0) {
+        if(count > 10) {
           log.info(util.format("%d entries in %s are cleaned by count", count, key));
         }
       });
@@ -92,7 +92,10 @@ class OldDataCleanSensor extends Sensor {
       }
 
       keys.forEach((key) => {
-        await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
+        const expireDate = this.getExpiredDate(type);
+        if(expireDate > 0) {
+          await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
+        }
         await (this.cleanToCount(key, this.getCount(type)));
       })
 

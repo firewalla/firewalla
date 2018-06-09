@@ -227,7 +227,7 @@
     "features": {
       "intel:feedback": true,
       "ss_client:statusCheck": true,
-      "familyMode": "v2"
+      "familyMode": "v1"
     },
     
     "userFeatures": {
@@ -251,6 +251,10 @@
       "vpn_relay": false,
       "upstream_dns": false,
       "insane_mode": false
-    }
+    },
+
+    "hiddenFeatures": [
+      "naughty_monkey"
+    ]     
 
 }
