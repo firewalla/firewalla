@@ -147,9 +147,11 @@ function getFeatures() {
   const hiddenFeatures = getConfig().hiddenFeatures;
 
   if(hiddenFeatures && Array.isArray(hiddenFeatures)) {
-    merged = merged.filter((x) => {
-      return !hiddenFeatures.includes(x); // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
-    })
+    hiddenFeatures.forEach((f) => {
+      if(f in merged) {
+        delete merged[f];  // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
+      }
+    });
   }
 
   return merged
