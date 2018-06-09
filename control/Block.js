@@ -221,7 +221,7 @@ function ipsetEnqueue(ipsetCmd) {
       ipsetEnqueue(null);
     });
     for (let i in _ipsetQueue) {
-      log.info("Control:Block:Processing", _ipsetQueue[i]);
+      log.debug("Control:Block:Processing", _ipsetQueue[i]);
       child.stdin.write(_ipsetQueue[i]+"\n");
     }
     child.stdin.end();

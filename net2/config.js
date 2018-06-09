@@ -10,8 +10,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
 const dynamicConfigKey = "sys:features"
 
@@ -74,6 +74,10 @@ function isFeatureOn_Dynamic(featureName) {
 }
 
 function isFeatureHidden(featureName) {
+  if(!f.isProductionOrBeta()) {
+    return false; // for dev mode, never hide features
+  }
+  
   const config = getConfig();
   if(config.hiddenFeatures && 
     Array.isArray(config.hiddenFeatures) && 
@@ -161,13 +165,15 @@ function getFeatures() {
 
   const hiddenFeatures = getConfig().hiddenFeatures;
 
-  if(hiddenFeatures && Array.isArray(hiddenFeatures)) {
-    hiddenFeatures.forEach((f) => {
-      if(f in merged) {
-        delete merged[f];  // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
-      }
-    });
-  }
+  if(f.isProductionOrBeta()) { // only apply hidden features for prod or beta
+    if(hiddenFeatures && Array.isArray(hiddenFeatures)) {
+      hiddenFeatures.forEach((f) => {
+        if(f in merged) {
+          delete merged[f];  // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
+        }
+      });
+    }
+  }  
 
   return merged
 }
