@@ -299,6 +299,9 @@ class OldDataCleanSensor extends Sensor {
       await (this.regularClean("software", "software:*"));
       await (this.regularClean("monitor", "monitor:flow:*"));
       await (this.regularClean("alarm", "alarm:ip4:*"));
+      await (this.regularClean("sumflow", "sumflow:*"));
+      await (this.regularClean("aggrflow", "aggrflow:*"));
+      await (this.regularClean("syssumflow", "syssumflow:*"));
       await (this.cleanHourlyStats());
       await (this.cleanUserAgents());
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));

@@ -142,6 +142,18 @@
       "userAgent": {
         "expires": 604800,
         "count": 10000
+      },
+      "sumflow": {
+        "expires": -1,
+        "count": 500
+      },
+      "aggrflow": {
+        "expires": -1,
+        "count": 200
+      },
+      "syssumflow": {
+        "expires": -1,
+        "count": 200
       }
     }
 },
