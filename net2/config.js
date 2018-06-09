@@ -73,7 +73,22 @@ function isFeatureOn_Dynamic(featureName) {
   }
 }
 
+function isFeatureHidden(featureName) {
+  const config = getConfig();
+  if(config.hiddenFeatures && 
+    Array.isArray(config.hiddenFeatures) && 
+    config.hiddenFeatures.includes(featureName)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 function isFeatureOn(featureName) {
+  if(isFeatureHidden(featureName)) {
+    return false;
+  }
+
   const dynamicFlag = isFeatureOn_Dynamic(featureName)
   if(dynamicFlag !== undefined) {
     return dynamicFlag
