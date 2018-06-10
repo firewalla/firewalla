@@ -77,8 +77,13 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
 
 
 function getFileTransport() {
+  let loglevel = 'info';
+  if (production) {
+    loglevel = 'error';
+  }   
+
   return new(winston.transports.File)({
-    level: 'info',
+    level: loglevel,
     name: 'log-file',
     filename: process.title + ".log",
     json: false,
@@ -101,9 +106,10 @@ function getFileTransport() {
 }
 
 function getConsoleTransport() {
-  const loglevel = 'info'
-  if (production)
-    loglevel = 'error'
+  let loglevel = 'info';
+  if (production) {
+    loglevel = 'error';
+  }    
 
   return new(winston.transports.Console)({
     loglevel: loglevel,

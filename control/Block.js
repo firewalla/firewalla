@@ -259,7 +259,7 @@ function block(destination, ipset) {
     return Promise.resolve()
   }
 
-  log.info("Control:Block:Enqueue", cmd);
+  log.debug("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return Promise.resolve()
 }
