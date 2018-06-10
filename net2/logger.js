@@ -79,7 +79,7 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
 function getFileTransport() {
   let loglevel = 'info';
   if (production) {
-    loglevel = 'error';
+    loglevel = 'warn';
   }   
 
   return new(winston.transports.File)({
@@ -108,7 +108,7 @@ function getFileTransport() {
 function getConsoleTransport() {
   let loglevel = 'info';
   if (production) {
-    loglevel = 'error';
+    loglevel = 'warn';
   }    
 
   return new(winston.transports.Console)({

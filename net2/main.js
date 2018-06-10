@@ -298,6 +298,7 @@ function run() {
       }
     } catch(e) {
     }
+    log.warn("<== Heart-Beat Message for FireMain Memory Cleanup ==>");
   },1000*60*5);
 
   setInterval(()=>{
