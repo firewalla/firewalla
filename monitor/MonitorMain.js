@@ -129,6 +129,7 @@ function run() {
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
+    log.warn("<== Heart-Beat Message for DLP job ==>");
     setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("DLP Timeout", status);
@@ -154,6 +155,7 @@ function run() {
   setInterval(() => {
     const type = 'detect';
     const _status = status[type];
+    log.warn("<== Heart-Beat Message for detect job ==>");
     setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("Last Detection Timeout", status);
