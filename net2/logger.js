@@ -150,49 +150,58 @@ module.exports = function (component) {
   // wrapping the winston function to allow for multiple arguments
   var wrap = {};
   wrap.component = component;
-  wrap.effectiveLogLevel = logger.level;
+  wrap.effectiveLogLevel = null;
+  wrap.globalLogLevel = logger.level;
+
+  let getLogLevel = function() {
+    if(wrap.effectiveLogLevel) {
+      return wrap.effectiveLogLevel;
+    } else {
+      return wrap.globalLogLevel;
+    }
+  }
 
   wrap.info = function () {
-    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['info']) {
+    if (logger.levels[getLogLevel()] < logger.levels['info']) {
       return // do nothing
     }
     logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.error = function () {
-    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['error']) {
+    if (logger.levels[getLogLevel()] < logger.levels['error']) {
       return // do nothing
     }
     logger.log.apply(logger, ["error", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.warn = function () {
-    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['warn']) {
+    if (logger.levels[getLogLevel()] < logger.levels['warn']) {
       return // do nothing
     }
     logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.debug = function () {
-    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['debug']) {
+    if (logger.levels[getLogLevel()] < logger.levels['debug']) {
       return // do nothing
     }
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
   };
 
-  wrap.setConsoleLogLevel = (level) => {
+  wrap.setGlobalLogLevel = (level) => {
     if(logger && logger.transports && logger.transports.console) {
       logger.transports.console.level = level;
     }    
-  };
 
-  wrap.setFileLogLevel = (level) => {
     if(logger && logger.transports && logger.transports.console) {
       logger.transports.file.level = level;
-    }    
+    }   
+
+    wrap.globalLogLevel = level;
   };
 
   loggerManager.registerLogger(component, wrap);
-  
+
   return wrap;
 };

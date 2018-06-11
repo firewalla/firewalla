@@ -36,6 +36,18 @@ class LoggerManager {
       logger.effectiveLogLevel = level;
     }
   }
+
+  setGlobalLogLevel(level) {
+    if(!level) {
+      return;
+    }
+    
+    const loggers = Object.values(this.loggers);
+    if(loggers.length > 0) {
+      const logger = loggers[0];
+      logger.setGlobalLogLevel(level);
+    }
+  }
 }
 
 module.exports = new LoggerManager();

@@ -214,9 +214,10 @@ function run() {
     });
   });
 
-  sem.on("ChangeLogLevel", (event) => {
-    if(event.name && event.level) {
-      require('./LoggerManager.js').setLogLevel(event.name, event.level);
-    }
-  });
 }
+
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    require('./LoggerManager.js').setLogLevel(event.name, event.level);
+  }
+});

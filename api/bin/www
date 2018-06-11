@@ -203,10 +203,16 @@ if((f.isProductionOrBeta())
     },1000*2);
   });
 
-  sem.on("ChangeLogLevel", (event) => {
-    if(event.name && event.level) {
-      require('./LoggerManager.js').setLogLevel(event.name, event.level);
-    }
-  });
+  
 }
 
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    if(event.name === "*") {
+      require('./LoggerManager.js').setGlobalLogLevel(event.level);
+    } else {
+      require('./LoggerManager.js').setLogLevel(event.name, event.level);
+    }
+    
+  }
+});
