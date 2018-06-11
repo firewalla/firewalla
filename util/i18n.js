@@ -23,7 +23,8 @@ function m(msgTemplate, info) {
 
 module.exports = {
   "__": m,
-  setLocale: i18n.setLocale,
+  // setLocale: i18n.setLocale,
+  setLocale: () => {}, // disable set locale feature for now
   getLocale: i18n.getLocale
 };
 
