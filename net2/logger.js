@@ -194,8 +194,8 @@ module.exports = function (component) {
       logger.transports.console.level = level;
     }    
 
-    if(logger && logger.transports && logger.transports.file) {
-      logger.transports.file.level = level;
+    if(logger && logger.transports && logger.transports['log-file']) {
+      logger.transports['log-file'].level = level;
     }   
 
     wrap.globalLogLevel = level;
