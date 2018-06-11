@@ -46,6 +46,10 @@ class OldDataCleanSensor extends Sensor {
 
   getExpiredDate(type) {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
+    if(expireInterval < 0) {
+      return null;
+    }
+
     let minInterval = 30 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
 
@@ -54,25 +58,24 @@ class OldDataCleanSensor extends Sensor {
 
   getCount(type) {
     let count = (this.config[type] && this.config[type].count) || 10000;
+    if(count < 0) {
+      return null;
+    }
     return count;
   }
 
-  cleanByExpireDate(key, expireDate) {
-    return rclient.zremrangebyscoreAsync(key, "-inf", expireDate)
-      .then((count) => {
-        if(count > 0) {
-          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
-        }
-      });
+  async cleanByExpireDate(key, expireDate) {
+    const count = await rclient.zremrangebyscoreAsync(key, "-inf", expireDate);
+    if(count > 10) {
+      log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
+    }
   }
 
-  cleanToCount(key, leftOverCount) {
-    return rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
-      .then((count) => {
-        if(count > 10) {
-          log.info(util.format("%d entries in %s are cleaned by count", count, key));
-        }
-      });
+  async cleanToCount(key, leftOverCount) {
+    const count = await rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
+    if(count > 10) {
+      log.info(util.format("%d entries in %s are cleaned by count", count, key));
+    }
   }
 
   getKeys(keyPattern) {
@@ -80,9 +83,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   // clean by expired time and count
-  regularClean(type, keyPattern, ignorePatterns) {
-
-    return async(() => {
+  async regularClean(type, keyPattern, ignorePatterns) {
       let keys = await (this.getKeys(keyPattern));
 
       if(ignorePatterns) {
@@ -91,16 +92,15 @@ class OldDataCleanSensor extends Sensor {
         });
       }
 
-      keys.forEach((key) => {
+      for (let index = 0; index < keys.length; index++) {
+        const key = keys[index];
         const expireDate = this.getExpiredDate(type);
-        if(expireDate > 0) {
-          await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
+        if(expireDate !== null) {
+          await this.cleanByExpireDate(key, expireDate);
         }
-        await (this.cleanToCount(key, this.getCount(type)));
-      })
-
-    })();
-
+        const count = this.getCount(type);
+        await this.cleanToCount(key, count);
+      }
   }
 
   cleanAlarm() {

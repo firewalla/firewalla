@@ -35,6 +35,8 @@ const FILTER_FILE = {
 const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
 const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
+const pclient = require('../../util/redis_manager.js').getPublishClient();
+
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 
@@ -984,7 +986,7 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
+    let cmd = `dig -4 +short +time=5 -p 8853 @localhost github.com`;
     log.debug("Verifying DNS connectivity...")
 
     try {
@@ -993,7 +995,7 @@ module.exports = class DNSMASQ {
         log.error("Got empty dns result when verifying dns connectivity:", {})
         return false
       } else if (stderr !== "") {
-        log.error("Got error output when verifying dns connectivity:", result.stderr, {})
+        log.error("Got error output when verifying dns connectivity:", cmd, result.stderr, {})
         return false
       } else {
         log.debug("DNS connectivity looks good")
@@ -1018,7 +1020,12 @@ module.exports = class DNSMASQ {
     }
     
     this.failCount ++
-    if (this.failCount > 5) {
+    log.warn(`DNS status check has failed ${this.failCount} times`);
+
+    if (this.failCount > 8) {
+      if(!f.isProductionOrBeta()) {
+        pclient.publishAsync("DNS:DOWN", this.failCount);
+      }
       await this.stop(); // make sure iptables rules are also stopped..
       bone.log("error", {
         version: sysManager.version(),

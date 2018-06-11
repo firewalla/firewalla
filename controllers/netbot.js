@@ -739,6 +739,18 @@ class netBot extends ControllerBot {
              this.tx2(this.primarygid, "", notifyMsg, data)
            }
            break;
+          case "DNS:Down":
+          if (msg) {
+            const notifyMsg = {
+              title: "DNS status check failed!",
+              body: `DNS status check has failed ${msg} consecutive times.`
+            }
+            const data = {
+              gid: this.primarygid,
+            };
+            this.tx2(this.primarygid, "", notifyMsg, data)
+          }
+          break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
