@@ -18,6 +18,8 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 let log = require("../net2/logger.js")(__filename, "info");
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 log.info("================================================================================");
@@ -210,5 +212,17 @@ function run() {
       setStatus(_status, {running: false, runBy: ''});
       gc();
     });
+  });
+
+  sem.on("ChangeConsoleLogLevel", (event) => {
+    if(event.level) {
+      log.setConsoleLogLevel(event.level);
+    }
+  });
+
+  sem.on("ChangeFileLogLevel", (event) => {
+    if(event.level) {
+      log.setFileLogLevel(event.level);
+    }
   });
 }

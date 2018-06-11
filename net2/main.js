@@ -380,4 +380,16 @@ function run() {
       disableFireBlue()
     }
   })
+
+  sem.on("ChangeConsoleLogLevel", (event) => {
+    if(event.level) {
+      log.setConsoleLogLevel(event.level);
+    }
+  });
+
+  sem.on("ChangeFileLogLevel", (event) => {
+    if(event.level) {
+      log.setFileLogLevel(event.level);
+    }
+  });
 }

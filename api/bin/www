@@ -11,7 +11,9 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-let bone = require("../../lib/Bone.js");
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+const bone = require("../../lib/Bone.js");
 
 let f = require("../../net2/Firewalla.js");
 
@@ -199,6 +201,18 @@ if((f.isProductionOrBeta())
     setTimeout(()=>{
       process.exit(1);
     },1000*2);
+  });
+
+  sem.on("ChangeConsoleLogLevel", (event) => {
+    if(event.level) {
+      log.setConsoleLogLevel(event.level);
+    }
+  });
+
+  sem.on("ChangeFileLogLevel", (event) => {
+    if(event.level) {
+      log.setFileLogLevel(event.level);
+    }
   });
 }
 

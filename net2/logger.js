@@ -16,6 +16,8 @@
 var winston = require('winston');
 const config = winston.config;
 
+const loggerManager = require('./LoggerManager.js');
+
 let path = require('path');
 
 const moment = require('moment')
@@ -24,52 +26,14 @@ String.prototype.capitalizeFirstLetter = function () {
   return this.charAt(0).toUpperCase() + this.slice(1);
 }
 
-var devDebug = {
-  'BroDetect': 'info',
-  'HostManager': 'info',
-  'VpnManager': 'info',
-  'AlarmManager': 'info',
-  'Discovery': 'info',
-  'Device Manager': 'info',
-  'DNSManager': 'info',
-  'FlowManager': 'info',
-  'intel': 'info',
-  'MessageBus': 'info',
-  'SysManager': 'info',
-  'PolicyManager': 'info',
-  'main': 'info',
-  'FlowMonitor': 'info'
-};
-
-var productionDebug = {
-  'BroDetect': 'error',
-  'HostManager': 'error',
-  'VpnManager': 'error',
-  'AlarmManager': 'error',
-  'Discovery': 'error',
-  'Device Manager': 'error',
-  'DNSManager': 'error',
-  'FlowManager': 'error',
-  'intel': 'error',
-  'MessageBus': 'error',
-  'SysManager': 'error',
-  'PolicyManager': 'error',
-  'main': 'error',
-  'FlowMonitor': 'error'
-};
-
-var debugMapper = devDebug;
 var production = false;
-var debugMap = {};
 
 if (process.env.FWPRODUCTION) {
-  debugMapper = productionDebug;
   console.log("FWDEBUG SET TO PRODUCTION");
   production = true;
 }
 
 if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-  debugMapper = productionDebug;
   console.log("FWDEBUG SET TO PRODUCTION");
   production = true;
 }
@@ -213,5 +177,18 @@ module.exports = function (component) {
     }
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
   };
+
+  wrap.setConsoleLogLevel = (level) => {
+    if(logger && logger.transports && logger.transports.console) {
+      logger.transports.console.level = level;
+    }    
+  };
+
+  wrap.setFileLogLevel = (level) => {
+    if(logger && logger.transports && logger.transports.console) {
+      logger.transports.file.level = level;
+    }    
+  };
+
   return wrap;
 };
