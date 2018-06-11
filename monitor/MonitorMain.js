@@ -214,15 +214,9 @@ function run() {
     });
   });
 
-  sem.on("ChangeConsoleLogLevel", (event) => {
-    if(event.level) {
-      log.setConsoleLogLevel(event.level);
-    }
-  });
-
-  sem.on("ChangeFileLogLevel", (event) => {
-    if(event.level) {
-      log.setFileLogLevel(event.level);
+  sem.on("ChangeLogLevel", (event) => {
+    if(event.name && event.level) {
+      require('./LoggerManager.js').setLogLevel(event.name, event.level);
     }
   });
 }

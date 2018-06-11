@@ -149,30 +149,32 @@ module.exports = function (component) {
 
   // wrapping the winston function to allow for multiple arguments
   var wrap = {};
-  wrap.component = component
+  wrap.component = component;
+  wrap.effectiveLogLevel = logger.level;
+
   wrap.info = function () {
-    if (loglevelInt < logger.levels['info']) {
+    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['info']) {
       return // do nothing
     }
     logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.error = function () {
-    if (loglevelInt < logger.levels['error']) {
+    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['error']) {
       return // do nothing
     }
     logger.log.apply(logger, ["error", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.warn = function () {
-    if (loglevelInt < logger.levels['warn']) {
+    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['warn']) {
       return // do nothing
     }
     logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.debug = function () {
-    if (loglevelInt < logger.levels['debug']) {
+    if (logger.levels[wrap.effectiveLogLevel] < logger.levels['debug']) {
       return // do nothing
     }
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
@@ -190,5 +192,7 @@ module.exports = function (component) {
     }    
   };
 
+  loggerManager.registerLogger(component, wrap);
+  
   return wrap;
 };
