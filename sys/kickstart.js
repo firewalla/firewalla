@@ -359,16 +359,16 @@
     require('child_process').exec("sudo systemctl start brofish");
     require('child_process').exec("sudo systemctl enable brofish"); // even auto-start for future reboots
     
-    // start fire api
-    if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-      require('child_process').exec("sudo systemctl start fireapi");
-    } else {
-      if (fs.existsSync("/.dockerenv")) {
-        require('child_process').exec("cd api; forever start -a --uid api bin/www");
-      } else {
-        require('child_process').exec("sudo systemctl start fireapi");
-      }
-    }
+    // // start fire api
+    // if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
+    //   require('child_process').exec("sudo systemctl start fireapi");
+    // } else {
+    //   if (fs.existsSync("/.dockerenv")) {
+    //     require('child_process').exec("cd api; forever start -a --uid api bin/www");
+    //   } else {
+    //     require('child_process').exec("sudo systemctl start fireapi");
+    //   }
+    // }
   }
   
   function login() {
