@@ -640,7 +640,7 @@ class netBot extends ControllerBot {
         } else {
           if (sysManager.systemRebootedByUser(true)) {
             if (nm.canNotify() == true) {
-              this.tx(this.primarygid, "200", "Firewalla reboot completes.");
+              this.tx(this.primarygid, "200", "Firewalla reboot completed.");
             }
           } else if (sysManager.systemRebootedDueToIssue(true) == false) {
             if (nm.canNotify() == true) {
