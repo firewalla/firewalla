@@ -193,6 +193,10 @@ module.exports = class FlowMonitor {
 
       if (classes.includes(intel.category)) {
         return true;
+      } else {
+          if(classes.includes("intel")) { // for security alarm, category must equal to 'intel'
+              return false;
+          }
       }
 
       if (classes.includes(intel.c)) {
