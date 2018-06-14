@@ -18,6 +18,8 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 let log = require("../net2/logger.js")(__filename, "info");
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 log.info("================================================================================");
@@ -211,4 +213,11 @@ function run() {
       gc();
     });
   });
+
 }
+
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    require('../net2/LoggerManager.js').setLogLevel(event.name, event.level);
+  }
+});
