@@ -774,7 +774,7 @@ class netBot extends ControllerBot {
     sclient.subscribe("SS:DOWN")
     sclient.subscribe("SS:FAILOVER")
     sclient.subscribe("SS:START:FAILED")
-
+    sclient.subscribe("APP:NOTIFY");
 
   }
 
