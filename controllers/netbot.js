@@ -756,17 +756,26 @@ class netBot extends ControllerBot {
           }
           break;
           case "APP:NOTIFY":
-          if (msg && msg.title && msg.body) {
-            const notifyMsg = {
-              title: title,
-              body: body
+          try {
+            const jsonMessage = JSON.parse(msg);
+
+            if (jsonMessage && jsonMessage.title && jsonMessage.body) {
+              const title = jsonMessage.title;
+              const body = jsonMessage.body;
+
+              const notifyMsg = {
+                title: title,
+                body: body
+              }
+              const data = {
+                gid: this.primarygid,
+              };
+              this.tx2(this.primarygid, "", notifyMsg, data)
             }
-            const data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data)
-          }
-          break;
+          } catch(err) {
+            log.error("Failed to parse app notify message:", msg, err);
+          }       
+          break;   
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
