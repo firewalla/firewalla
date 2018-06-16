@@ -755,6 +755,18 @@ class netBot extends ControllerBot {
             this.tx2(this.primarygid, "", notifyMsg, data)
           }
           break;
+          case "APP:NOTIFY":
+          if (msg && msg.title && msg.body) {
+            const notifyMsg = {
+              title: title,
+              body: body
+            }
+            const data = {
+              gid: this.primarygid,
+            };
+            this.tx2(this.primarygid, "", notifyMsg, data)
+          }
+          break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
