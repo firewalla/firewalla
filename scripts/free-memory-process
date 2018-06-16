@@ -26,7 +26,7 @@ if (( firemain_mem2 >= 140000)); then
   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
   sudo service firemain restart
   if [[ $branch == "master" && "x${devNotify}" == "x1" ]]; then
-    redis-cli publish 'APP:NOTIFY' '{"title": "FireMain Restarted", "body": "FireMain restarted due to used memory is over 140MB"'
+    redis-cli publish 'APP:NOTIFY' '{"title": "FireMain Restarted", "body": "FireMain restarted due to used memory is over 140MB"}'
   fi
 fi
 
@@ -34,7 +34,7 @@ if (( firemon_mem2 >= 120000)); then
   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
   sudo service firemon restart
   if [[ $branch == "master" && "x${devNotify}" == "x1" ]]; then
-    redis-cli publish 'APP:NOTIFY' '{"title": "FireMon Restarted", "body": "FireMon restarted due to used memory is over 120MB"'
+    redis-cli publish 'APP:NOTIFY' '{"title": "FireMon Restarted", "body": "FireMon restarted due to used memory is over 120MB"}'
   fi
 fi
 
