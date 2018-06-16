@@ -760,7 +760,7 @@ class netBot extends ControllerBot {
             const jsonMessage = JSON.parse(msg);
 
             if (jsonMessage && jsonMessage.title && jsonMessage.body) {
-              const title = jsonMessage.title;
+              const title = `[${this.getDeviceName()}] ${jsonMessage.title}`;
               const body = jsonMessage.body;
 
               const notifyMsg = {
