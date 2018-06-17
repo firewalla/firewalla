@@ -430,14 +430,7 @@ module.exports = class FlowMonitor {
                       });
 
 
-                    alarmManager2.checkAndSaveAsync(alarm)
-                    .then(() => {
-                      log.info(`Alarm ${alarm.aid} is created successfully`);
-                    }).catch((err) => {
-                      if(err) {
-                        log.error("Failed to create alarm: ", err);
-                      }
-                    }); 
+                    alarmManager2.enqueueAlarm(alarm);
                   }
                 }
               });

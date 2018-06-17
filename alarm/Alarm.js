@@ -316,7 +316,7 @@ class OutboundAlarm extends Alarm {
     }
 
     const macKey = "p.device.mac";
-    const destDomainKey = "p.dest.domain";
+    const destDomainKey = "e.dest.domain";
     const destNameKey = "p.dest.id";
     
     // Mac
