@@ -116,8 +116,8 @@ module.exports = class {
     })
 
     this.queue.process((job, done) => {
-      const event = job.data
-      const alarm = this.jsonToPolicy(event.alarm)
+      const event = job.data;
+      const alarm = this.jsonToAlarm(event.alarm);
       const action = event.action;
       
       switch(action) {
