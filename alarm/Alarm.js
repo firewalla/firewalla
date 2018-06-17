@@ -307,6 +307,43 @@ class OutboundAlarm extends Alarm {
   keysToCompareForDedup() {
     return ["p.device.mac", "p.dest.id"];
   }
+
+  isDup(alarm) {
+    let alarm2 = this;
+    
+    if(alarm.type !== alarm2.type) {
+      return false;
+    }
+
+    const macKey = "p.device.mac";
+    const destDomainKey = "p.dest.domain";
+    const destNameKey = "p.dest.id";
+    
+    // Mac
+    if(!alarm[macKey] || 
+    !alarm2[macKey] || 
+    alarm[macKey] !== alarm2[macKey]) {
+      return false;
+    }
+
+    // now these two alarms have same device MAC
+
+    // Destination
+    if(destDomainKey in alarm && 
+      destDomainKey in alarm2 &&
+      alarm[destDomainKey] === alarm2[destDomainKey]) {
+      return true;
+    }
+
+
+    if(!alarm[destNameKey] || 
+    !alarm2[destNameKey] || 
+    alarm[destNameKey] !== alarm2[destNameKey]) {
+      return false;
+    }
+
+    return true;
+  }
 }
 
 
