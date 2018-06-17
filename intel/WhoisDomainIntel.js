@@ -33,8 +33,9 @@ class WhoisDomainIntel extends Intel {
 
       if(whoisInfo) {
         if(whoisInfo.domainName) {
-          alarm["e.dest.domain"] = whoisInfo.domainName.toLowerCase();
-          alarm["p.dest.domain"] = whoisInfo.domainName.toLowerCase();
+          const domainName = whoisInfo.domainName + "";
+          alarm["e.dest.domain"] = domainName.toLowerCase();
+          alarm["p.dest.domain"] = domainName.toLowerCase();
         }
 
         if(whoisInfo.creationDate) {
