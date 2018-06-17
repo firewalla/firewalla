@@ -268,14 +268,7 @@ module.exports = class FlowMonitor {
                         "p.dest.ip": actionobj.dst
                       });
 
-                      alarmManager2.checkAndSaveAsync(alarm)
-                      .then(() => {
-                        log.info(`Alarm ${alarm.aid} is created successfully`);
-                      }).catch((err) => {
-                        if(err) {
-                          log.error("Failed to create alarm: ", err);
-                        }
-                      });
+                      alarmManager2.enqueueAlarm(alarm);
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
@@ -311,14 +304,7 @@ module.exports = class FlowMonitor {
                       "p.dest.ip": actionobj.dst
                     });
 
-                    alarmManager2.checkAndSaveAsync(alarm)
-                    .then(() => {
-                      log.info(`Alarm ${alarm.aid} is created successfully`);
-                    }).catch((err) => {
-                      if(err) {
-                        log.error("Failed to create alarm: ", err);
-                      }
-                    });
+                    alarmManager2.enqueueAlarm(alarm);
                   }
                 } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
                     // Intel object
