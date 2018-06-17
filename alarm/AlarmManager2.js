@@ -123,15 +123,17 @@ module.exports = class {
       switch(action) {
       case "create": {
         (async () => {
-          log.info("Try to create alarm:", event.alarm);
-          await this.checkAndSaveAsync(alarm);
-          log.info(`Alarm ${alarm.aid} is created successfully`);
-        })().catch((err) => {
-          log.error("failed to create alarm:" + err);
-        }).finally(() => {
+          try {
+            log.info("Try to create alarm:", event.alarm);
+            await this.checkAndSaveAsync(alarm);
+            log.info(`Alarm ${alarm.aid} is created successfully`);
+          } catch(err) {
+            log.error("failed to create alarm:" + err);
+          }
+
           log.info("complete alarm creation process", alarm.aid, {});
-          done();
-        })
+          done();          
+        })();
 
         break
       }
