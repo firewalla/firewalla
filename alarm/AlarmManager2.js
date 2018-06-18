@@ -32,6 +32,8 @@ const await = require('asyncawait/await');
 
 const fc = require('../net2/config.js')
 
+const f = require('../net2/Firewalla.js');
+
 const Promise = require('bluebird');
 
 const IntelManager = require('../net2/IntelManager.js')
@@ -92,7 +94,10 @@ module.exports = class {
     if (instance == null) {
       instance = this;
       this.publisher = new c('info');
-      this.setupAlarmQueue();
+
+      if(f.isMonitor()) {
+        this.setupAlarmQueue();
+      }
     }
     return instance;
   }
@@ -380,7 +385,7 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = 10 * 60 // 10 minutes
+      let duration = 15 * 60 // 15 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
         duration = 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
       }
@@ -483,6 +488,8 @@ module.exports = class {
     if(destName && destIP && destName !== destIP) {
       dnsTool.addReverseDns(destName, [destIP])
     }
+    
+    log.info("Checking if similar alarms are generated recently");
     
     let dedupResult = this.dedup(alarm).then((dup) => {
 
