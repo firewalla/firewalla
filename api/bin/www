@@ -11,7 +11,9 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-let bone = require("../../lib/Bone.js");
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const bone = require("../../lib/Bone.js");
 
 let f = require("../../net2/Firewalla.js");
 
@@ -93,6 +95,10 @@ function run() {
   server.listen(port);
   server.on('error', onError);
   server.on('listening', onListening);
+
+  let sl = require('../../sensor/APISensorLoader.js');
+  sl.initSensors();
+  sl.run();
 }
 
 run();
@@ -196,5 +202,17 @@ if((f.isProductionOrBeta())
       process.exit(1);
     },1000*2);
   });
+
+  
 }
 
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    if(event.name === "*") {
+      require('../../net2/LoggerManager.js').setGlobalLogLevel(event.level);
+    } else {
+      require('../../net2/LoggerManager.js').setLogLevel(event.name, event.level);
+    }
+    
+  }
+});

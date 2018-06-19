@@ -4,6 +4,7 @@ let log = require('../net2/logger.js')(__filename, 'info');
 let jsonfile = require('jsonfile');
 let util = require('util');
 let Alarm = require('./Alarm.js')
+let ip = require('ip')
 
 var extend = require('util')._extend
 
@@ -80,6 +81,15 @@ module.exports = class {
           return false
         }
       } else {
+        let cidrParts = val.split("/", 2);
+        if (cidrParts.length == 2) {
+          let addr = cidrParts[0];
+          let mask = cidrParts[1];
+          if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
+            // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
+            return ip.cidrSubnet(val).contains(val2);
+          }
+        }
         if(val2 !== val) return false;        
       }
 

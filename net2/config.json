@@ -1,5 +1,5 @@
 {
-  "version": 1.955,
+  "version": 1.956,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -45,6 +45,22 @@
   "policy": {
     "autoBlock": true
   },
+  "apiSensors": {
+    "APIRelaySensor": {},
+    "VPNRelaySensor": {}
+  },
+  "intels": [
+    "DedupAlarm",
+    "DeviceInfoIntel",
+    "DestInfoIntel",
+    "IPLocationIntel",
+    "AlexaIntel",
+    "WhoisIPIntel",
+    "WhoisDomainIntel",
+    "Cymon2Intel",
+    "TransferContextIntel",
+    "MonkeyIntel"
+  ],
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {},
@@ -58,8 +74,11 @@
     "NaughtyMonkeySensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
+    "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
+    "APIRelaySensor": {},
+    "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
@@ -123,6 +142,18 @@
       "userAgent": {
         "expires": 604800,
         "count": 10000
+      },
+      "sumflow": {
+        "expires": -1,
+        "count": 500
+      },
+      "aggrflow": {
+        "expires": -1,
+        "count": 200
+      },
+      "syssumflow": {
+        "expires": -1,
+        "count": 200
       }
     }
 },
@@ -215,7 +246,15 @@
       "device_detection": false,
       "porn_redirect": false,
       "redirect_httpd": false,
-      "social_hour": true
-    }
+      "social_hour": true,
+      "api_relay": false,
+      "vpn_relay": false,
+      "upstream_dns": false,
+      "insane_mode": false
+    },
+
+    "hiddenFeatures": [
+      "naughty_monkey"
+    ]     
 
 }

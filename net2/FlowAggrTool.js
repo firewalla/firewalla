@@ -269,7 +269,7 @@ class FlowAggrTool {
       let num = tickKeys.length;
 
       if(num <= 0) {
-        log.warn("Nothing to sum for key", sumFlowKey, {});
+        log.debug("Nothing to sum for key", sumFlowKey, {});
 
         // add a placeholder in redis to avoid duplicated queries
         await (rclient.zaddAsync(sumFlowKey, 0, '_'));

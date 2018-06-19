@@ -93,7 +93,10 @@ process.on('uncaughtException',(err)=>{
   }
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
-    require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    try {
+      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    } catch(e) {
+    }
     process.exit(1);
   },1000*5);
 });
@@ -174,23 +177,6 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
-  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-  let dnsmasq = new DNSMASQ();
-  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-
-  if (process.env.FWPRODUCTION) {
-    /*
-      ssh.resetRandomPassword((err,password) => {
-      if(err) {
-      log.error("Failed to reset ssh password");
-      } else {
-      log.info("A new random SSH password is used!");
-      sysManager.sshPassword = password;
-      }
-      })
-    */
-  }
-
   // make sure there is at least one usable enternet
   d.discoverInterfaces(function(err, list) {
     var failure = 1;
@@ -235,6 +221,22 @@ function run() {
     })
   })()
 
+  let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+  let dnsmasq = new DNSMASQ();
+  dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
+
+  if (process.env.FWPRODUCTION) {
+    /*
+      ssh.resetRandomPassword((err,password) => {
+      if(err) {
+      log.error("Failed to reset ssh password");
+      } else {
+      log.info("A new random SSH password is used!");
+      sysManager.sshPassword = password;
+      }
+      })
+    */
+  }
 
   // Launch PortManager
 
@@ -296,6 +298,7 @@ function run() {
       }
     } catch(e) {
     }
+    log.warn("<== Heart-Beat Message for FireMain Memory Cleanup ==>");
   },1000*60*5);
 
   setInterval(()=>{
@@ -321,7 +324,7 @@ function run() {
     var vpnManager = new VpnManager('info');
     vpnManager.install((err)=>{
       if (err!=null) {
-        log.info("VpnManager:Unable to start vpn");
+        log.info("VpnManager:Unable to start vpn", err);
         hostManager.setPolicy("vpnAvaliable",false);
       } else {
         vpnManager.start((err)=>{
@@ -377,4 +380,11 @@ function run() {
       disableFireBlue()
     }
   })
+
 }
+
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    require('./LoggerManager.js').setLogLevel(event.name, event.level);
+  }
+});

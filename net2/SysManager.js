@@ -37,6 +37,8 @@ const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
 
+const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
+
 var bone = require("../lib/Bone.js");
 var systemDebug = false;
 
@@ -237,20 +239,35 @@ module.exports = class {
     return rclient.hdelAsync("sys:config", "branch.changed")
   }
 
-    systemRebootedDueToIssue(reset) {
-       try {
-           if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
-               log.info("SysManager:RebootDueToIssue");
-               if (reset == true) {
-                   require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
-               }
-               return true;
-           }
-       } catch(e) {
-           return false;
-       }
-       return false;
+  systemRebootedDueToIssue(reset) {
+     try {
+         if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
+             log.info("SysManager:RebootDueToIssue");
+             if (reset == true) {
+                 require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+             }
+             return true;
+         }
+     } catch(e) {
+         return false;
+     }
+     return false;
+  }
+
+  systemRebootedByUser(reset) {
+    try {
+      if (require('fs').existsSync("/home/pi/.firewalla/managed_real_reboot")) {
+        log.info("SysManager:RebootByUser");
+        if (reset == true) {
+          require('fs').unlinkSync("/home/pi/.firewalla/managed_real_reboot");
+        }
+        return true;
+      }
+    } catch (e) {
+      return false;
     }
+    return false;
+  }
 
   setLanguage(language, callback) {
     callback = callback || function() {}
@@ -269,6 +286,18 @@ module.exports = class {
       pclient.publish("System:LanguageChange", language);
       callback(err);
     });
+  }
+
+  setLanguageAsync(language) {
+    return new Promise((resolve, reject) => {
+      this.setLanguage(language, (err) => {
+        if(err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
   }
 
   setTimezone(timezone, callback) {
@@ -536,12 +565,25 @@ module.exports = class {
 -rw-rw-r-- 1 pi pi 19 Sep 30 06:55 REPO_TAG
 */
 
+
+
     getSysInfo(callback) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
         serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
       } else {
-        serial = require('fs').readFileSync("/sys/block/mmcblk0/device/serial",'utf8');
+          for (let index = 0; index < serialFiles.length; index++) {
+              const serialFile = serialFiles[index];
+             try {
+                serial = require('fs').readFileSync(serialFile,'utf8');
+                break;
+            } catch(err) { 
+            }
+        }
+
+        if(serial === null) {
+            serial = "unknown";
+        }
       }
 
       let repoBranch = ""
@@ -642,10 +684,9 @@ module.exports = class {
 
     isLocalIP(ip) {
         if (iptool.isV4Format(ip)) {
-
-            if (this.subnet == null) {
-                this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
-            }
+          
+            this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
+          
             if (this.subnet == null) {
                 log.error("SysManager:Error getting subnet ");
                 return true;

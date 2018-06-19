@@ -61,6 +61,7 @@ done
 
 if [[ $ping_ok -ne 1 ]]; then
     /home/pi/firewalla/scripts/firelog -t cloud -m "FireAPI ping FAILED, restart FireAPI now $FIREAPI_GID"
+    touch /home/pi/.firewalla/managed_reboot
     sudo systemctl restart fireapi
 fi
 

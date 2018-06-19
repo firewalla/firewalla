@@ -27,6 +27,9 @@ let inited = false;
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
+const Accounting = require('./Accounting.js');
+const accounting = new Accounting();
+
 const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
 
 const exec = require('child-process-promise').exec
@@ -52,6 +55,15 @@ function setupBlockChain() {
 
   // FIXME: ignore if failed or not
   cp.execSync(cmd);
+
+  async(() => {
+    setupCategoryEnv("games");
+    setupCategoryEnv("porn");
+    setupCategoryEnv("social");
+    setupCategoryEnv("shopping");
+    setupCategoryEnv("av");
+    setupCategoryEnv("default_c");
+  })()
 
   inited = true;
 }
@@ -105,6 +117,24 @@ function setupBlockingEnv(tag) {
   })().catch(err => {
     log.error('Error when setup blocking env', err);
   })
+}
+
+function setupCategoryEnv(category) {
+  if(!category) {
+    return Promise.resolve()
+  }
+
+  const cmdCreateCategorySet = `sudo ipset create -! c_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet6 = `sudo ipset create -! c_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet = `sudo ipset create -! c_tmp_category_${category} hash:ip family inet hashsize 128 maxelem 65536`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! c_tmp_category6_${category} hash:ip family inet6 hashsize 128 maxelem 65536`
+
+  return async(() => {
+    await (exec(cmdCreateCategorySet))
+    await (exec(cmdCreateCategorySet6))
+    await (exec(cmdCreateTempCategorySet))
+    await (exec(cmdCreateTempCategorySet6))
+  })()
 }
 
 function existsBlockingEnv(tag) {
@@ -191,7 +221,7 @@ function ipsetEnqueue(ipsetCmd) {
       ipsetEnqueue(null);
     });
     for (let i in _ipsetQueue) {
-      log.info("Control:Block:Processing", _ipsetQueue[i]);
+      log.debug("Control:Block:Processing", _ipsetQueue[i]);
       child.stdin.write(_ipsetQueue[i]+"\n");
     }
     child.stdin.end();
@@ -229,7 +259,7 @@ function block(destination, ipset) {
     return Promise.resolve()
   }
 
-  log.info("Control:Block:Enqueue", cmd);
+  log.debug("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return Promise.resolve()
 }
@@ -266,6 +296,7 @@ function blockImmediate(destination, ipset) {
     });
   });
 }
+
 
 function advancedBlock(tag, macAddresses, destinations) {
   return async(() => {
@@ -389,6 +420,8 @@ function blockMac(macAddress, ipset) {
   
   log.info("Control:Block:",cmd);
 
+  accounting.addBlockedDevice(macAddress);
+
   return exec(cmd)
 }
 
@@ -399,6 +432,8 @@ function unblockMac(macAddress, ipset) {
   
   log.info("Control:Block:",cmd);
 
+  accounting.removeBlockedDevice(macAddress);
+  
   return exec(cmd)
 }
 
