@@ -964,6 +964,11 @@ module.exports = class FlowMonitor {
       return;
     }
 
+    if(intelObj.severityscore && Number(intelObj.severityscore) === 0) {
+      log.info("Intel ignored, severity score is zero", intelObj);
+      return;
+    }
+
     const reasons = []
     let _category, reason = 'Access a ';
     switch (intelObj.category) {
@@ -1006,6 +1011,7 @@ module.exports = class FlowMonitor {
       "p.security.numOfReportSources": "Firewalla global security intel",
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.source": "firewalla_intel",
+      "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
     });
 
@@ -1071,6 +1077,7 @@ module.exports = class FlowMonitor {
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.dest.whois": JSON.stringify(iobj.whois),
+      "p.severity.score": iobj.severityscore
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
