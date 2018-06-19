@@ -293,7 +293,7 @@ class DestIPFoundHook extends Hook {
   }
 
   job() {
-    return (async() => {
+    (async() => {
       log.debug("Checking if any IP Addresses pending for intel analysis...")
 
       try {
@@ -319,9 +319,9 @@ class DestIPFoundHook extends Hook {
         log.error("Got error when handling new dest IP addresses, err:", err)
       }
 
-      await delay(100); // sleep for only 100 mill-seconds
-
-      return this.job(); // continuously running
+      setTimeout(() => {
+        this.job(); // sleep for only 100 mill-seconds
+      }, 500);
     })();
   }
 

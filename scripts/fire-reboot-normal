@@ -1,6 +1,7 @@
 #!/bin/bash -
 logger "FIREWALLA REBOOT NORMAL"
 /home/pi/firewalla/scripts/fire-stop
+touch /home/pi/.firewalla/managed_real_reboot
 sync
 sync
 sync

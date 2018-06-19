@@ -638,7 +638,11 @@ class netBot extends ControllerBot {
           }
 
         } else {
-          if (sysManager.systemRebootedDueToIssue(true) == false) {
+          if (sysManager.systemRebootedByUser(true)) {
+            if (nm.canNotify() == true) {
+              this.tx(this.primarygid, "200", "Firewalla reboot completed.");
+            }
+          } else if (sysManager.systemRebootedDueToIssue(true) == false) {
             if (nm.canNotify() == true) {
               this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
             }
@@ -751,6 +755,27 @@ class netBot extends ControllerBot {
             this.tx2(this.primarygid, "", notifyMsg, data)
           }
           break;
+          case "APP:NOTIFY":
+          try {
+            const jsonMessage = JSON.parse(msg);
+
+            if (jsonMessage && jsonMessage.title && jsonMessage.body) {
+              const title = `[${this.getDeviceName()}] ${jsonMessage.title}`;
+              const body = jsonMessage.body;
+
+              const notifyMsg = {
+                title: title,
+                body: body
+              }
+              const data = {
+                gid: this.primarygid,
+              };
+              this.tx2(this.primarygid, "", notifyMsg, data)
+            }
+          } catch(err) {
+            log.error("Failed to parse app notify message:", msg, err);
+          }       
+          break;   
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
@@ -758,7 +783,7 @@ class netBot extends ControllerBot {
     sclient.subscribe("SS:DOWN")
     sclient.subscribe("SS:FAILOVER")
     sclient.subscribe("SS:START:FAILED")
-
+    sclient.subscribe("APP:NOTIFY");
 
   }
 

@@ -32,6 +32,8 @@ const await = require('asyncawait/await');
 
 const fc = require('../net2/config.js')
 
+const f = require('../net2/Firewalla.js');
+
 const Promise = require('bluebird');
 
 const IntelManager = require('../net2/IntelManager.js')
@@ -74,6 +76,8 @@ let fConfig = require('../net2/config.js').getConfig();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const Queue = require('bee-queue')
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -90,8 +94,61 @@ module.exports = class {
     if (instance == null) {
       instance = this;
       this.publisher = new c('info');
+
+      if(f.isMonitor()) {
+        this.setupAlarmQueue();
+      }
     }
     return instance;
+  }
+
+  setupAlarmQueue() {
+    this.queue = new Queue('alarm')
+
+    this.queue.removeOnFailure = true
+    this.queue.removeOnSuccess = true
+
+    this.queue.on('error', (err) => {
+      log.error("Queue got err:", err)
+    })
+
+    this.queue.on('failed', (job, err) => {
+      log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+    });
+
+    this.queue.destroy(() => {
+      log.info("alarm queue is cleaned up")
+    })
+
+    this.queue.process((job, done) => {
+      const event = job.data;
+      const alarm = this.jsonToAlarm(event.alarm);
+      const action = event.action;
+      
+      switch(action) {
+      case "create": {
+        (async () => {
+          try {
+            log.info("Try to create alarm:", event.alarm);
+            await this.checkAndSaveAsync(alarm);
+            log.info(`Alarm ${alarm.aid} is created successfully`);
+          } catch(err) {
+            log.error("failed to create alarm:" + err);
+          }
+
+          log.info("complete alarm creation process", alarm.aid, {});
+          done();          
+        })();
+
+        break
+      }
+
+      default:
+        log.error("unrecoganized policy enforcement action:" + action)
+        done()
+        break
+      }
+    })
   }
 
   createAlarmIDKey(callback) {
@@ -328,7 +385,7 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = 10 * 60 // 10 minutes
+      let duration = 15 * 60 // 15 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
         duration = 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
       }
@@ -350,6 +407,16 @@ module.exports = class {
         }
       });
     });
+  }
+
+  enqueueAlarm(alarm) {
+    if(this.queue) {
+      const job = this.queue.createJob({
+        alarm: alarm,
+        action: "create"
+      })
+      job.timeout(60000).save(function() {})
+    }
   }
 
   checkAndSaveAsync(alarm) {
@@ -421,6 +488,8 @@ module.exports = class {
     if(destName && destIP && destName !== destIP) {
       dnsTool.addReverseDns(destName, [destIP])
     }
+    
+    log.info("Checking if similar alarms are generated recently");
     
     let dedupResult = this.dedup(alarm).then((dup) => {
 

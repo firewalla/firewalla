@@ -276,7 +276,11 @@ function isReservedBlockingIP(ip) {
 }
 
 function isMain() {
-  return process.title === "FireMain"
+  return process.title === "FireMain";
+}
+
+function isMonitor() {
+  return process.title === "FireMon";
 }
 
 module.exports = {
@@ -315,5 +319,6 @@ module.exports = {
   isReservedBlockingIP: isReservedBlockingIP,
 
   isMain:isMain,
+  isMonitor:isMonitor,
   getLastCommitDate:getLastCommitDate
 }

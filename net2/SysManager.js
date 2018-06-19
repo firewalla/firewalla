@@ -254,6 +254,21 @@ module.exports = class {
      return false;
   }
 
+  systemRebootedByUser(reset) {
+    try {
+      if (require('fs').existsSync("/home/pi/.firewalla/managed_real_reboot")) {
+        log.info("SysManager:RebootByUser");
+        if (reset == true) {
+          require('fs').unlinkSync("/home/pi/.firewalla/managed_real_reboot");
+        }
+        return true;
+      }
+    } catch (e) {
+      return false;
+    }
+    return false;
+  }
+
   setLanguage(language, callback) {
     callback = callback || function() {}
 

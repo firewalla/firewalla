@@ -193,6 +193,10 @@ module.exports = class FlowMonitor {
 
       if (classes.includes(intel.category)) {
         return true;
+      } else {
+          if(classes.includes("intel")) { // for security alarm, category must equal to 'intel'
+              return false;
+          }
       }
 
       if (classes.includes(intel.c)) {
@@ -264,14 +268,7 @@ module.exports = class FlowMonitor {
                         "p.dest.ip": actionobj.dst
                       });
 
-                      alarmManager2.checkAndSaveAsync(alarm)
-                      .then(() => {
-                        log.info(`Alarm ${alarm.aid} is created successfully`);
-                      }).catch((err) => {
-                        if(err) {
-                          log.error("Failed to create alarm: ", err);
-                        }
-                      });
+                      alarmManager2.enqueueAlarm(alarm);
                     }
                 } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
                   if ((flow.du && Number(flow.du)>20) &&
@@ -307,14 +304,7 @@ module.exports = class FlowMonitor {
                       "p.dest.ip": actionobj.dst
                     });
 
-                    alarmManager2.checkAndSaveAsync(alarm)
-                    .then(() => {
-                      log.info(`Alarm ${alarm.aid} is created successfully`);
-                    }).catch((err) => {
-                      if(err) {
-                        log.error("Failed to create alarm: ", err);
-                      }
-                    });
+                    alarmManager2.enqueueAlarm(alarm);
                   }
                 } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
                     // Intel object
@@ -426,14 +416,7 @@ module.exports = class FlowMonitor {
                       });
 
 
-                    alarmManager2.checkAndSaveAsync(alarm)
-                    .then(() => {
-                      log.info(`Alarm ${alarm.aid} is created successfully`);
-                    }).catch((err) => {
-                      if(err) {
-                        log.error("Failed to create alarm: ", err);
-                      }
-                    }); 
+                    alarmManager2.enqueueAlarm(alarm);
                   }
                 }
               });
