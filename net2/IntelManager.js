@@ -133,6 +133,11 @@ module.exports = class {
       }
     }
 
+    if(intelObj.category === 'intel' && intelObj.s && Number(intelObj.s) === 0) {
+      log.info("Intel ignored, severity score is zero", intelObj);
+      return;
+    }
+
     if (!intelObj.lobj) {
       intelObj.lobj = await this.ipinfo(ip);
     }
