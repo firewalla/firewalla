@@ -168,6 +168,10 @@ module.exports = function (component) {
     logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
   };
 
+  wrap.forceInfo = function() {
+    logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
+  }
+
   wrap.error = function () {
     if (logger.levels[getLogLevel()] < logger.levels['error']) {
       return // do nothing
