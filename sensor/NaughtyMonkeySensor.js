@@ -241,6 +241,7 @@ class NaughtyMonkeySensor extends Sensor {
     const heartbleedJSON = require("../extension/monkey/heartbleed.json");
     heartbleedJSON["id.resp_h"] = ip;
     heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
 
     const remote = heartbleedJSON["id.orig_h"];
 
