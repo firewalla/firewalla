@@ -45,7 +45,11 @@ class WhoisIPIntel extends Intel {
         }
 
         if(whoisInfo.country) {
-          alarm["e.dest.ip.country"] = whoisInfo.country;
+          if(Array.isArray(whoisInfo.country)) {
+            alarm["e.dest.ip.country"] = whoisInfo.country[0];
+          } else {
+            alarm["e.dest.ip.country"] = whoisInfo.country;
+          }          
         }
 
         if(whoisInfo.city) {

@@ -672,6 +672,11 @@ module.exports = class DNSMASQ {
     log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
   }
 
+  computeHash(content) {
+    const crypto = require('crypto');
+    return crypto.createHash('md5').update(content).digest("hex");
+  }
+
   async writeHostsFile() {
     this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
@@ -724,6 +729,25 @@ module.exports = class DNSMASQ {
 
     let _hosts = hostsList.join("\n") + "\n";
     let _altHosts = altHostsList.join("\n") + "\n";
+
+    let shouldUpdate = false;
+    const _hostsHash = this.computeHash(_hosts);
+    const _altHostsHash = this.computeHash(_altHosts);
+
+    if(this.lastHostsHash !== _hostsHash) {
+      shouldUpdate = true;
+      this.lastHostsHash = _hostsHash;
+    }
+
+    if(this.lastAltHostsHash !== _altHostsHash) {
+      shouldUpdate = true;
+      this.lastAltHostsHash = _altHostsHash;
+    }
+
+    if(shouldUpdate === false) {
+      log.info("No need to update hosts file, skipped");
+      return;
+    }
 
     log.debug("HostsFile:", util.inspect(hostsList));
     log.debug("HostsAltFile:", util.inspect(altHostsList));
