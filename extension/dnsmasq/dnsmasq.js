@@ -650,7 +650,11 @@ module.exports = class DNSMASQ {
     }
     if(this.shouldStart && this.needWriteHostsFile) {
       this.needWriteHostsFile = null;
-      this.writeHostsFile().then(() => this.reloadDnsmasq());
+      this.writeHostsFile().then((reload) => {
+        if(reload) {
+          this.reloadDnsmasq();
+        }        
+      });
     }
   }
 
@@ -746,7 +750,7 @@ module.exports = class DNSMASQ {
 
     if(shouldUpdate === false) {
       log.info("No need to update hosts file, skipped");
-      return;
+      return false;
     }
 
     log.debug("HostsFile:", util.inspect(hostsList));
@@ -755,6 +759,8 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(hostsFile, _hosts);
     fs.writeFileSync(altHostsFile, _altHosts);
     log.info("Hosts file has been updated:", this.counter.writeHostsFile)
+
+    return true;
   }
 
   async rawStart() {
