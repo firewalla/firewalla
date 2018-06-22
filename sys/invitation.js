@@ -112,7 +112,7 @@ class FWInvitation {
 
   checkInvitation(rid) {
     return async(() => {
-      log.info(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
+      log.forceInfo(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
       try {
         this.leftCheckCount--;
         let rinfo = await (this.cloud.eptinviteGroupByRidAsync(this.gid, rid));
