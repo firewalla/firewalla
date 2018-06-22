@@ -184,7 +184,7 @@ class NaughtyMonkeySensor extends Sensor {
     await fs.writeFileAsync(tmpfile, JSON.stringify(payload));
 
     const file = "/blog/current/notice.log";    
-    const cmd = `sudo cat ${tmpfile} >> ${file}`;
+    const cmd = `sudo bash -c 'cat ${tmpfile} >> ${file}'`;
     await exec(cmd);
   }
 
