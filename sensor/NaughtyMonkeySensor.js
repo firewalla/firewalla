@@ -176,16 +176,15 @@ class NaughtyMonkeySensor extends Sensor {
       "dropped": false
     }
 
-    const file = "/blog/current/notice.log";
-    const cmd = `sudo bash -c 'echo \'${JSON.stringify(payload)}\' > ${file}`
-    await exec(cmd);
-
-    await fs.appendFileAsync(file, JSON.stringify(payload));
+    await this.appendNotice(payload);
   }
 
-  async appendNotice(content) {
-    const file = "/blog/current/notice.log";
-    const cmd = `sudo bash -c 'echo \'${content}\' > ${file}`
+  async appendNotice(payload) {
+    const tmpfile = "/tmp/monkey";
+    await fs.writeFileAsync(file, JSON.stringify(payload));
+
+    const file = "/blog/current/notice.log";    
+    const cmd = `sudo cat ${tmpfile} >> ${file}`;
     await exec(cmd);
   }
 
@@ -245,7 +244,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     const remote = heartbleedJSON["id.orig_h"];
 
-    await this.appendNotice(JSON.stringify(heartbleedJSON));
+    await this.appendNotice(heartbleedJSON);
     await this.recordMonkey(remote);
   }
 
