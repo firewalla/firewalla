@@ -170,6 +170,15 @@ class BroNoticeAlarm extends Alarm {
   requiredKeys() {
     return [];
   }
+
+  getI18NCategory() {
+    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
+    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
+      return `${this.type}.${this["p.noticeType"]}`;
+    }
+    
+    return this.type;
+  }
 }
 
 class IntelReportAlarm extends Alarm {

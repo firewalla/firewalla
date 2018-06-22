@@ -38,6 +38,7 @@
   "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "Device {{p.device.name}} uploaded {{p.transfer.outbound.humansize}} data to {{p.dest.name}}",
   "NOTIF_ALARM_NEW_DEVICE": "New device found in your network: {{p.device.name}} ({{p.device.ip}})",
   "NOTIF_ALARM_BRO_NOTICE": "{{p.message}}",
+  "NOTIF_ALARM_BRO_NOTICE_Heartbleed::SSL_Heartbeat_Attack": "An TLS heartbleed attack was detected from {{p.dest.name}} to {{p.device.name}}.",
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{p.dest.name}} is accessing device {{p.device.name}}'s port {{p.device.port}}. {{p.dest.name}} is marked as suspicous by {{p.security.numOfReportSources}} sources.",
   "NOTIF_ALARM_INTEL_FROM_INSIDE": "Device {{p.device.name}} is accessing {{p.dest.readableName}}, which is marked as suspicous by {{p.security.numOfReportSources}} sources.",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Blocked {{p.dest.name}} from accessing device {{p.device.name}}. (Reported by {{p.security.numOfReportSources}} sources)",
