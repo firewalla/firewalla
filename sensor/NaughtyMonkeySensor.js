@@ -140,6 +140,9 @@ class NaughtyMonkeySensor extends Sensor {
       case "abnormal_upload":
         await this.abnormal_upload();
         break;
+      case "heartbleed":
+        await this.heartbleed();
+        break;
       case "malware":
       default:
         await this.malware();
@@ -178,6 +181,12 @@ class NaughtyMonkeySensor extends Sensor {
     await exec(cmd);
 
     await fs.appendFileAsync(file, JSON.stringify(payload));
+  }
+
+  async appendNotice(content) {
+    const file = "/blog/current/notice.log";
+    const cmd = `sudo bash -c 'echo \'${content}\' > ${file}`
+    await exec(cmd);
   }
 
   async port_scan() {
@@ -224,6 +233,19 @@ class NaughtyMonkeySensor extends Sensor {
     const remote = this.randomFindTarget()
 
     await this.monkey(remote, ip, "malware");
+    await this.recordMonkey(remote);
+  }
+
+  async heartbleed() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = require("../extension/monkey/heartbleed.json");
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+
+    const remote = heartbleedJSON["id.orig_h"];
+
+    await this.appendNotice(JSON.stringify(heartbleedJSON));
     await this.recordMonkey(remote);
   }
 
