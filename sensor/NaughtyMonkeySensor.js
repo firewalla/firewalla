@@ -255,7 +255,7 @@ class NaughtyMonkeySensor extends Sensor {
   async heartbleedOutbound() {
     const ip = await this.randomFindDevice();
 
-    const heartbleedJSON = require("../extension/monkey/heartbleed.json");
+    const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/heartbleed.json")));
     heartbleedJSON["id.resp_h"] = ip;
     heartbleedJSON["dst"] = ip;
     heartbleedJSON["ts"] = new Date() / 1000;
