@@ -32,6 +32,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const broNotice = require('../extension/bro/BroNotice.js');
+
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager('cli', 'server');
 
@@ -1593,28 +1595,7 @@ module.exports = class {
                       "p.dest.ip": dh
                     });
 
-                    if(noticeType == 'SSH::Password_Guessing') {
-                      const subMessage = obj.sub
-                      // sub message:
-                      //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
-                      
-                      let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
-                      addresses = addresses.filter((v, i, array) => {
-                        return array.indexOf(v) === i
-                      })
-
-                      if(addresses.length > 0) {
-                        const ip = addresses[0];
-                        alarm["p.device.ip"] = ip;
-                        alarm["p.device.name"] = ip;
-                        const mac = await hostTool.getMacByIP(ip);
-                        if(mac) {
-                          alarm["p.device.mac"] = mac;
-                        }
-                      }
-
-                      alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
-                    }
+                    await broNotice.processNotice(alarm, obj);
 
                     await am2.checkAndSaveAsync(alarm)
                 })().catch((err) => {

@@ -170,6 +170,30 @@ class BroNoticeAlarm extends Alarm {
   requiredKeys() {
     return [];
   }
+
+  getI18NCategory() {
+    let category = this.type;
+
+    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
+    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
+      category = `${category}_${this["p.noticeType"]}`;
+    }
+
+    if("p.local_is_client" in this) {
+      if(this["p.local_is_client"] === "1") {
+        category = `${category}_OUTBOUND`;
+      } else {
+        category = `${category}_INBOUND`;
+      }
+    }
+
+    if(this.result === "block" &&
+    this.result_method === "auto") {
+      category = `${category}_AUTOBLOCK`;
+    }
+    
+    return category;
+  }
 }
 
 class IntelReportAlarm extends Alarm {

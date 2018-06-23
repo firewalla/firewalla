@@ -490,7 +490,7 @@ module.exports = class {
     }
     
     log.info("Checking if similar alarms are generated recently");
-    
+
     let dedupResult = this.dedup(alarm).then((dup) => {
 
       if(dup) {
@@ -540,28 +540,26 @@ module.exports = class {
               return;
             }
 
-            if(alarm.type === "ALARM_INTEL") {
-              log.info("AlarmManager:Check:AutoBlock",alarm);
-              if(fConfig && fConfig.policy &&
-                 fConfig.policy.autoBlock &&
-                 fc.isFeatureOn("cyber_security.autoBlock") &&
-                 (alarm["p.action.block"] && alarm["p.action.block"]==true)) {
+            log.info("AlarmManager:Check:AutoBlock",alarm.aid);
+            if(fConfig && fConfig.policy &&
+                fConfig.policy.autoBlock &&
+                fc.isFeatureOn("cyber_security.autoBlock") &&
+                this.shouldAutoBlock(alarm)) {
 
-                // auto block if num is greater than the threshold
-                this.blockFromAlarm(alarm.aid, {
-                  method: "auto", 
-                  info: {
-                    category: alarm["p.dest.category"] || ""
-                  }
-                }, callback)
-
-                if (alarm['p.dest.ip']) {
-                  alarm["if.target"] = alarm['p.dest.ip'];
-                  alarm["if.type"] = "ip";
-                  bone.submitIntelFeedback("autoblock", alarm, "alarm");
+              // auto block if num is greater than the threshold
+              this.blockFromAlarm(alarm.aid, {
+                method: "auto", 
+                info: {
+                  category: alarm["p.dest.category"] || ""
                 }
-                return;
+              }, callback)
+
+              if (alarm['p.dest.ip']) {
+                alarm["if.target"] = alarm['p.dest.ip'];
+                alarm["if.type"] = "ip";
+                bone.submitIntelFeedback("autoblock", alarm, "alarm");
               }
+              return;
             }
 
             callback(null, alarmID);
@@ -572,6 +570,17 @@ module.exports = class {
 
       });
     });
+  }
+
+  shouldAutoBlock(alarm) {
+    if(alarm["p.cloud.decision"] === "block") {
+      return true;
+    } else if((alarm["p.action.block"] === "true") ||
+      (alarm["p.action.block"] === true)) {
+      return true
+    }
+
+    return false;
   }
 
   jsonToAlarm(json) {
@@ -928,17 +937,17 @@ module.exports = class {
             i_target = alarm["p.device.mac"];
             break;
           case "ALARM_BRO_NOTICE":
-            if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
-              i_type = "ip"
-              i_target = alarm["p.dest.ip"]
-            } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
-              i_type = "ip"
-              i_target = alarm["p.dest.ip"]
+            const {type, target} = require('../extension/bro/BroNotice.js').getBlockTarget(alarm);
+
+            if(type && target) {
+              i_type = type;
+              i_target = target;
             } else {
               log.error("Unsupported alarm type for blocking: ", alarm, {})
               callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
               return
             }
+
             break;
           default:
             i_type = "ip";
@@ -1401,6 +1410,8 @@ module.exports = class {
 
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
+      } else {
+        alarm["p.dest.name"] = alarm["p.dest.ip"];
       }
       
       // whois - domain
