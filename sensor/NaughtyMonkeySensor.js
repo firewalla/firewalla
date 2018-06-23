@@ -143,6 +143,9 @@ class NaughtyMonkeySensor extends Sensor {
       case "heartbleed":
         await this.heartbleed();
         break;
+      case "heartbleedOutbound":
+        await this.heartbleedOutbound();
+        break;
       case "malware":
       default:
         await this.malware();
@@ -244,6 +247,33 @@ class NaughtyMonkeySensor extends Sensor {
     heartbleedJSON["ts"] = new Date() / 1000;
 
     const remote = heartbleedJSON["id.orig_h"];
+
+    await this.appendNotice(heartbleedJSON);
+    await this.recordMonkey(remote);
+  }
+
+  async heartbleedOutbound() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = require("../extension/monkey/heartbleed.json");
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
+
+    const remote = heartbleedJSON["id.orig_h"];
+
+    // swap from and to
+    const x = this.heartbleed["id.resp_h"];
+    this.heartbleed["id.resp_h"] = this.heartbleed["id.orig_h"];
+    this.heartbleed["id.orig_h"] = x;   
+    
+    const y = this.heartbleed["id.resp_p"];
+    this.heartbleed["id.resp_p"] = this.heartbleed["id.orig_p"];
+    this.heartbleed["id.orig_p"] = y; 
+
+    const z = this.heartbleed["src"];
+    this.heartbleed["src"] = this.heartbleed["dst"];
+    this.heartbleed["dst"] = z;
 
     await this.appendNotice(heartbleedJSON);
     await this.recordMonkey(remote);
