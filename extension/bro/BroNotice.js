@@ -26,7 +26,7 @@ class BroNotice {
     }
   }
 
-  async processSSHScan(alarm) {
+  async processSSHScan(alarm, broObj) {
     const subMessage = obj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
@@ -49,9 +49,9 @@ class BroNotice {
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
-  async processHeartbleed(alarm) {
-    const from = alarm["src"];
-    const to = alarm["dst"];
+  async processHeartbleed(alarm, broObj) {
+    const from = broObj["src"];
+    const to = broObj["dst"];
 
     let localIP = null;
     // initiated from myself
@@ -66,7 +66,7 @@ class BroNotice {
     }
   }
 
-  async processNotice(alarm) {
+  async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
     if(!noticeType) {
@@ -75,11 +75,11 @@ class BroNotice {
 
     switch(noticeType) {
       case "SSH::Password_Guessing":
-      await this.processSSHScan(alarm);
+      await this.processSSHScan(alarm, broObj);
       break;
 
       case "Heartbleed::SSL_Heartbeat_Attack":
-      await this.processHeartbleed(alarm);
+      await this.processHeartbleed(alarm, broObj);
       break;
       
       default:

@@ -1595,7 +1595,7 @@ module.exports = class {
                       "p.dest.ip": dh
                     });
 
-                    await broNotice.processNotice(alarm);
+                    await broNotice.processNotice(alarm, obj);
 
                     await am2.checkAndSaveAsync(alarm)
                 })().catch((err) => {
