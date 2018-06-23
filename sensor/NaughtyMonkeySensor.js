@@ -263,17 +263,17 @@ class NaughtyMonkeySensor extends Sensor {
     const remote = heartbleedJSON["id.orig_h"];
 
     // swap from and to
-    const x = this.heartbleed["id.resp_h"];
-    this.heartbleed["id.resp_h"] = this.heartbleed["id.orig_h"];
-    this.heartbleed["id.orig_h"] = x;   
+    const x = heartbleedJSON["id.resp_h"];
+    heartbleedJSON["id.resp_h"] = heartbleedJSON["id.orig_h"];
+    heartbleedJSON["id.orig_h"] = x;   
     
-    const y = this.heartbleed["id.resp_p"];
-    this.heartbleed["id.resp_p"] = this.heartbleed["id.orig_p"];
-    this.heartbleed["id.orig_p"] = y; 
+    const y = heartbleedJSON["id.resp_p"];
+    heartbleedJSON["id.resp_p"] = heartbleedJSON["id.orig_p"];
+    heartbleedJSON["id.orig_p"] = y; 
 
-    const z = this.heartbleed["src"];
-    this.heartbleed["src"] = this.heartbleed["dst"];
-    this.heartbleed["dst"] = z;
+    const z = heartbleedJSON["src"];
+    heartbleedJSON["src"] = heartbleedJSON["dst"];
+    heartbleedJSON["dst"] = z;
 
     await this.appendNotice(heartbleedJSON);
     await this.recordMonkey(remote);

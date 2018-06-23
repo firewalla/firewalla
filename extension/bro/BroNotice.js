@@ -19,6 +19,8 @@ let instance = null;
 const SysManager = require('../../net2/SysManager.js')
 const sysManager = new SysManager();
 
+const log = require('../../net2/logger.js')(__filename);
+
 class BroNotice {
   constructor() {
     if(instance === null) {
@@ -61,12 +63,10 @@ class BroNotice {
     // initiated from myself
     if(sysManager.isLocalIP(from)) {
       alarm["p.local_is_client"] = "1";
-      localIP = from;
     } else {
       // initiated from outside
       alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
-      localIP = to;
     }
   }
 
