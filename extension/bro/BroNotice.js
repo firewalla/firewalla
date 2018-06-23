@@ -60,11 +60,11 @@ class BroNotice {
     let localIP = null;
     // initiated from myself
     if(sysManager.isLocalIP(from)) {
-      alarm["local_is_client"] = 1;
+      alarm["p.local_is_client"] = "1";
       localIP = from;
     } else {
       // initiated from outside
-      alarm["local_is_client"] = 0;
+      alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
       localIP = to;
     }
@@ -89,7 +89,7 @@ class BroNotice {
       case "Scan::Port_Scan":
       await this.processPortScan(alarm, broObj);
       break;
-      
+
       default:
       // do nothing
       break;
