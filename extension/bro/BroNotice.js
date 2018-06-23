@@ -49,6 +49,10 @@ class BroNotice {
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
+  async processPortScan(alar, broObj) {
+
+  }
+
   async processHeartbleed(alarm, broObj) {
     const from = broObj["src"];
     const to = broObj["dst"];
@@ -81,12 +85,23 @@ class BroNotice {
       case "Heartbleed::SSL_Heartbeat_Attack":
       await this.processHeartbleed(alarm, broObj);
       break;
+
+      case "Scan::Port_Scan":
+      await this.processPortScan(alarm, broObj);
+      break;
       
       default:
       // do nothing
       break;
     }
   }
+
+  getBlockTarget(alarm) {
+    return {
+      type: "ip",
+      target: alarm["p.dest.ip"]
+    }
+  }  
 };
 
 module.exports = new BroNotice();

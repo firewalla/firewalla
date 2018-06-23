@@ -937,17 +937,17 @@ module.exports = class {
             i_target = alarm["p.device.mac"];
             break;
           case "ALARM_BRO_NOTICE":
-            if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
-              i_type = "ip"
-              i_target = alarm["p.dest.ip"]
-            } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
-              i_type = "ip"
-              i_target = alarm["p.dest.ip"]
+            const {type, target} = require('../extension/bro/BroNotice.js').getBlockTarget(alarm);
+
+            if(type && target) {
+              i_type = type;
+              i_target = target;
             } else {
               log.error("Unsupported alarm type for blocking: ", alarm, {})
               callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
               return
             }
+
             break;
           default:
             i_type = "ip";
