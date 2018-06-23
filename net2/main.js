@@ -72,7 +72,7 @@ function run0() {
     if(!bone.cloudready()) {
       log.info("Connecting to Firewalla Cloud...");
     } else if(!bone.isAppConnected()) {
-      log.info("Waiting for first app to connect...");
+      log.forceInfo("Waiting for first app to connect...");
     } else if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
     }
