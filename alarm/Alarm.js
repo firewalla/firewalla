@@ -174,7 +174,7 @@ class BroNoticeAlarm extends Alarm {
   getI18NCategory() {
     const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
     if(supportedNoticeTypes.includes(this["p.noticeType"])) {
-      return `${this.type}.${this["p.noticeType"]}`;
+      return `${this.type}_${this["p.noticeType"]}`;
     }
     
     return this.type;
