@@ -30,6 +30,20 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const fs = require('fs');
+
+function updateTouchFile() {
+  const mainTouchFile = "/dev/shm/monitor.touch";
+
+  fs.open(mainTouchFile, (err, fd) => {
+    if(!err) {
+      fs.close(fd, (err2) => {
+
+      })
+    }
+  })
+}
+
 let bone = require("../lib/Bone.js");
 
 let firewalla = require("./Firewalla.js");
@@ -41,7 +55,6 @@ let mode = require('./Mode.js')
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
-var fs = require('fs');
 var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 let BoneSensor = require('../sensor/BoneSensor');
@@ -298,7 +311,9 @@ function run() {
       }
     } catch(e) {
     }
-    log.forceInfo("<== Heart-Beat Message for FireMain Memory Cleanup ==>");
+    
+    updateTouchFile();
+
   },1000*60*5);
 
   setInterval(()=>{
