@@ -38,13 +38,16 @@ if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
   production = true;
 }
 
-
+var globalLogLevel = 'info';
+if(production) {
+  globalLogLevel = 'warn';
+}
 
 function getFileTransport() {
   let loglevel = 'info';
-  if (production) {
-    loglevel = 'warn';
-  }   
+  // if (production) {
+  //   loglevel = 'warn';
+  // }   
 
   return new(winston.transports.File)({
     level: loglevel,
@@ -71,9 +74,9 @@ function getFileTransport() {
 
 function getConsoleTransport() {
   let loglevel = 'info';
-  if (production) {
-    loglevel = 'warn';
-  }    
+  // if (production) {
+  //   loglevel = 'warn';
+  // }    
 
   return new(winston.transports.Console)({
     loglevel: loglevel,
@@ -151,7 +154,7 @@ module.exports = function (component) {
   var wrap = {};
   wrap.component = component;
   wrap.effectiveLogLevel = null;
-  wrap.globalLogLevel = logger.level;
+  wrap.globalLogLevel = globalLogLevel;
 
   let getLogLevel = function() {
     if(wrap.effectiveLogLevel) {
