@@ -272,6 +272,10 @@ module.exports = class {
   setLanguage(language, callback) {
     callback = callback || function() {}
 
+    // FIXME: disable set language feature temporarliy
+    callback(null);
+    return;
+
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
     if(theLanguage !== this.language) {

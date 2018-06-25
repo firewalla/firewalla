@@ -10,8 +10,10 @@ SLEEP_TIMEOUT=10
 # there should be updated logs in log file
 MMIN="-10"
 
+FILE=/dev/shm/monitor.touch
+
 firemon_ping() {
-	RESULT=$(find /home/pi/logs/ -name "FireMon*" -mmin ${MMIN})
+	RESULT=$(find $FILE -mmin ${MMIN})
   if [[ "x$RESULT" == "x" ]]; then
 		return 1
 	else
