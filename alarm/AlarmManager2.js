@@ -1383,7 +1383,7 @@ module.exports = class {
       let destIP = alarm["p.dest.ip"];
 
       if (!destIP) {
-        return;
+        return alarm;
       }
         
       // location
