@@ -33,7 +33,7 @@ const await = require('asyncawait/await');
 const fs = require('fs');
 
 function updateTouchFile() {
-  const mainTouchFile = "/dev/shm/monitor.touch";
+  const mainTouchFile = "/dev/shm/main.touch";
 
   fs.open(mainTouchFile, (err, fd) => {
     if(!err) {
