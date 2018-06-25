@@ -35,7 +35,7 @@ const fs = require('fs');
 function updateTouchFile() {
   const mainTouchFile = "/dev/shm/main.touch";
 
-  fs.open(mainTouchFile, (err, fd) => {
+  fs.open(mainTouchFile, 'w', (err, fd) => {
     if(!err) {
       fs.close(fd, (err2) => {
 

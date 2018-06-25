@@ -112,7 +112,7 @@ function setStatus(type, opts) {
 function updateTouchFile() {
   const monitorTouchFile = "/dev/shm/monitor.touch";
 
-  fs.open(monitorTouchFile, (err, fd) => {
+  fs.open(monitorTouchFile, 'w', (err, fd) => {
     if(!err) {
       fs.close(fd, (err2) => {
 
