@@ -302,6 +302,8 @@ function run() {
 
   },1000*2);
 
+  updateTouchFile();
+  
   setInterval(()=>{
     let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
