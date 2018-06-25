@@ -80,7 +80,7 @@ function run0() {
     setTimeout(()=>{
       sysManager.update(null);
       run0();
-    },1000);
+    },3000);
   }
 }
 
