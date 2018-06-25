@@ -46,10 +46,11 @@ function run0() {
       sysManager.isConfigInitialized()) {
     run();
   } else {
+    log.forceInfo("Waiting for first app to connect...");
     setTimeout(()=>{
       sysManager.update(null);
       run0();
-    },1000);
+    },3000);
   }
 }
 
