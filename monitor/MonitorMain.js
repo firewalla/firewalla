@@ -22,6 +22,9 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 var bone = require("../lib/Bone.js");
 var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
+
+const fs = require('fs');
+
 log.info("================================================================================");
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
@@ -106,6 +109,18 @@ function setStatus(type, opts) {
   Object.assign(type, opts);
 }
 
+function updateTouchFile() {
+  const monitorTouchFile = "/dev/shm/monitor.touch";
+
+  fs.open(monitorTouchFile, 'w', (err, fd) => {
+    if(!err) {
+      fs.close(fd, (err2) => {
+
+      })
+    }
+  })
+}
+
 function run() {
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
@@ -132,7 +147,9 @@ function run() {
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
-    log.forceInfo("<== Heart-Beat Message for DLP job ==>");
+    
+    updateTouchFile();
+
     setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("DLP Timeout", status);
@@ -158,7 +175,9 @@ function run() {
   setInterval(() => {
     const type = 'detect';
     const _status = status[type];
-    log.forceInfo("<== Heart-Beat Message for detect job ==>");
+
+    updateTouchFile();
+
     setTimeout(() => {
       if (_status.running && _status.runBy !== 'signal') {
         log.error("Last Detection Timeout", status);
