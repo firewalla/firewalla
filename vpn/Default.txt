@@ -9,5 +9,7 @@ persist-tun
 mute-replay-warnings
 key-direction 1
 cipher AES-128-CBC
+compress lzo
+remote-cert-tls server
 verb 1
 mute 20
