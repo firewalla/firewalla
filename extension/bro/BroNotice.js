@@ -19,6 +19,9 @@ let instance = null;
 const SysManager = require('../../net2/SysManager.js')
 const sysManager = new SysManager();
 
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+
 const log = require('../../net2/logger.js')(__filename);
 
 class BroNotice {
