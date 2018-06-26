@@ -19,6 +19,9 @@ let instance = null;
 const SysManager = require('../../net2/SysManager.js')
 const sysManager = new SysManager();
 
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
+
 const log = require('../../net2/logger.js')(__filename);
 
 class BroNotice {
@@ -29,7 +32,7 @@ class BroNotice {
   }
 
   async processSSHScan(alarm, broObj) {
-    const subMessage = obj.sub
+    const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
     
@@ -51,7 +54,7 @@ class BroNotice {
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
-  async processPortScan(alar, broObj) {
+  async processPortScan(alarm, broObj) {
 
   }
 

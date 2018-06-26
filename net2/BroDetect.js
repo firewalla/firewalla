@@ -1563,27 +1563,7 @@ module.exports = class {
                     dh = "0.0.0.0";
                 }
 
-                let actionobj = {
-                     title: obj.msg,
-                     actions: ["ignore"],
-                     src: obj.src,
-                     dst: obj.dst,
-                     note: obj.note,
-                     target: lh,
-                     msg: obj.msg,
-                     obj: obj
-                };
-
                 (async () => {
-                    const srcName = await hostTool.getName(obj.src)
-                    const dstName = await hostTool.getName(obj.dst)
-                    if(srcName) {
-                        actionobj.shname = srcName
-                    }
-                    if(dstName) {
-                        actionobj.dhname = dstName
-                    }
-
                     let localIP = lh;
                     let message = obj.msg;
                     let noticeType = obj.note;
