@@ -29,7 +29,7 @@ class BroNotice {
   }
 
   async processSSHScan(alarm, broObj) {
-    const subMessage = obj.sub
+    const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
     
@@ -51,7 +51,7 @@ class BroNotice {
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
-  async processPortScan(alar, broObj) {
+  async processPortScan(alarm, broObj) {
 
   }
 
