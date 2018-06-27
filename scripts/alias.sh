@@ -29,6 +29,7 @@ alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard F
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
+alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias rc='redis-cli'
 alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
 alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
