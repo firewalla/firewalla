@@ -6,6 +6,8 @@ resolv-retry infinite
 nobind
 persist-key
 persist-tun
+compress lzo
+remote-cert-tls server
 mute-replay-warnings
 key-direction 1
 cipher AES-128-CBC
