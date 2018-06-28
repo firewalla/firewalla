@@ -258,7 +258,7 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats
+    categoryStats: getCategoryStats()
   }
 
   return sysinfo;
