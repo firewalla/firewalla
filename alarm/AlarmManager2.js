@@ -1127,6 +1127,7 @@ module.exports = class {
             case "category":
               i_type = "category";
               i_target = userFeedback.target;
+              break;
             default:
               break
             }
