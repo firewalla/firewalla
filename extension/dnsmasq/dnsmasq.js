@@ -498,7 +498,7 @@ module.exports = class DNSMASQ {
     }
 
     if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
-      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet);
+      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
     }
   }
 
