@@ -661,7 +661,7 @@ module.exports = class DNSMASQ {
   onSpoofChanged() {
     if (this.dhcpMode) {
       this.needWriteHostsFile = true;
-      log.info("Spoof status changed, set need write hosts file to be true");
+      log.debug("Spoof status changed, set need write hosts file to be true");
     }
   }
 
