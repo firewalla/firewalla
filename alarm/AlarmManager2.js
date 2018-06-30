@@ -1115,6 +1115,9 @@ module.exports = class {
               i_type = "ip"
               i_target = userFeedback.target
               break
+            case "category":
+              i_type = "category";
+              i_target = userFeedback.target;
             default:
               break
             }
@@ -1155,9 +1158,18 @@ module.exports = class {
           e["target_name"] = `*.${i_target}`
           e["target_ip"] = alarm["p.dest.ip"];
           break;
+        case "category":
+          e["p.dest.category"] = i_target;
+          e["target_name"] = i_target;
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
         default:
           // not supported
           break;
+        }
+
+        if(userFeedback && userFeedback.device) {
+          e["p.device.mac"] = userFeedback.device; // limit exception to a single device
         }
 
         log.info("Exception object:", e, {});
