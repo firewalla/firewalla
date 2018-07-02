@@ -650,18 +650,14 @@ module.exports = class DNSMASQ {
     }
     if(this.shouldStart && this.needWriteHostsFile) {
       this.needWriteHostsFile = null;
-      this.writeHostsFile().then((reload) => {
-        if(reload) {
-          this.reloadDnsmasq();
-        }        
-      });
+      this.writeHostsFile().then(() => this.reloadDnsmasq());
     }
   }
 
   onSpoofChanged() {
     if (this.dhcpMode) {
       this.needWriteHostsFile = true;
-      log.debug("Spoof status changed, set need write hosts file to be true");
+      log.info("Spoof status changed, set need write hosts file to be true");
     }
   }
 
@@ -674,11 +670,6 @@ module.exports = class DNSMASQ {
       log.error("Unable to reload firemasq service", err, {});
     }
     log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
-  }
-
-  computeHash(content) {
-    const crypto = require('crypto');
-    return crypto.createHash('md5').update(content).digest("hex");
   }
 
   async writeHostsFile() {
@@ -734,33 +725,12 @@ module.exports = class DNSMASQ {
     let _hosts = hostsList.join("\n") + "\n";
     let _altHosts = altHostsList.join("\n") + "\n";
 
-    let shouldUpdate = false;
-    const _hostsHash = this.computeHash(_hosts);
-    const _altHostsHash = this.computeHash(_altHosts);
-
-    if(this.lastHostsHash !== _hostsHash) {
-      shouldUpdate = true;
-      this.lastHostsHash = _hostsHash;
-    }
-
-    if(this.lastAltHostsHash !== _altHostsHash) {
-      shouldUpdate = true;
-      this.lastAltHostsHash = _altHostsHash;
-    }
-
-    if(shouldUpdate === false) {
-      log.info("No need to update hosts file, skipped");
-      return false;
-    }
-
     log.debug("HostsFile:", util.inspect(hostsList));
     log.debug("HostsAltFile:", util.inspect(altHostsList));
 
     fs.writeFileSync(hostsFile, _hosts);
     fs.writeFileSync(altHostsFile, _altHosts);
     log.info("Hosts file has been updated:", this.counter.writeHostsFile)
-
-    return true;
   }
 
   async rawStart() {
