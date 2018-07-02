@@ -988,7 +988,11 @@ module.exports = class {
           category: (intelFeedback && intelFeedback.category) || ""
         });
 
-        if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+        if(intelFeedback) {
+          if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+            p.domainExactMatch = "1"
+          }
+        } else {
           p.domainExactMatch = "1"
         }
 
