@@ -1382,10 +1382,10 @@ module.exports = class {
 
       let destIP = alarm["p.dest.ip"];
 
-      if (!destIP)
-        return Promise.reject(new Error("Requiring p.dest.ip"));
-
-
+      if (!destIP) {
+        return alarm;
+      }
+        
       // location
       const loc = await intelManager.ipinfo(destIP)
       if (loc && loc.loc) {
