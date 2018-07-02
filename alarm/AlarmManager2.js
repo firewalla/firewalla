@@ -989,13 +989,15 @@ module.exports = class {
         });
 
         if(intelFeedback) {
-          if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
-            p.domainExactMatch = "1"
+          if("type" in intelFeedback) {
+            if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+              p.domainExactMatch = "1";
+            }
+          } else {
+            p.domainExactMatch = "1"; // by default enable domain exact match
           }
-        } else {
-          p.domainExactMatch = "1"
-        }
-
+        } 
+        
         // add additional info
         switch(i_type) {
         case "mac":
