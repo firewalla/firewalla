@@ -989,14 +989,12 @@ module.exports = class {
         });
 
         if(intelFeedback) {
-          if("type" in intelFeedback) {
-            if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
-              p.domainExactMatch = "1";
-            }
-          } else {
-            p.domainExactMatch = "1"; // by default enable domain exact match
+          if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+            p.domainExactMatch = "1";
           }
-        } 
+        } else {
+          p.domainExactMatch = "1"; // by default enable domain exact match
+        }
         
         // add additional info
         switch(i_type) {
