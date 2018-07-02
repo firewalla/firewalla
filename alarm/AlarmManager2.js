@@ -950,8 +950,15 @@ module.exports = class {
 
             break;
           default:
+
+          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+            i_type = "ip";
+            i_target = alarm["p.dest.ip"];
+          } else {
             i_type = "dns";
-            i_target = alarm["p.dest.name"] || alarm["p.dest.ip"];
+            i_target = alarm["p.dest.name"];
+          }
+
 
             if(intelFeedback) {
 
@@ -993,7 +1000,9 @@ module.exports = class {
             p.domainExactMatch = "1";
           }
         } else {
-          p.domainExactMatch = "1"; // by default enable domain exact match
+          if(i_type === 'dns') {
+            p.domainExactMatch = "1"; // by default enable domain exact match
+          }
         }
         
         // add additional info
@@ -1115,8 +1124,14 @@ module.exports = class {
 
           break;
         default:
-          i_type = "dns";
-          i_target = alarm["p.dest.name"] || alarm["p.dest.ip"];
+
+          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+            i_type = "ip";
+            i_target = alarm["p.dest.ip"];
+          } else {
+            i_type = "dns";
+            i_target = alarm["p.dest.name"];
+          }        
 
           if(userFeedback) {
             switch(userFeedback.type) {
