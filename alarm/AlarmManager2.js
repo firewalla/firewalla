@@ -941,10 +941,11 @@ module.exports = class {
             }
             break;
           default:
-            i_type = "ip";
-            i_target = alarm["p.dest.ip"];
+            i_type = "dns";
+            i_target = alarm["p.dest.name"] || alarm["p.dest.ip"];
 
             if(intelFeedback) {
+
               switch(intelFeedback.type) {
                 case "dns":
                 case "domain":
@@ -978,10 +979,14 @@ module.exports = class {
           category: (intelFeedback && intelFeedback.category) || ""
         });
 
-        if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
-          p.domainExactMatch = "1"
+        if(intelFeedback) {
+          if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+            p.domainExactMatch = "1";
+          }
+        } else {
+          p.domainExactMatch = "1"; // by default enable domain exact match
         }
-
+        
         // add additional info
         switch(i_type) {
         case "mac":
@@ -1027,11 +1032,11 @@ module.exports = class {
                 await (this.archiveAlarm(alarm.aid))
               }
 
-              // old way
-              if(!info.matchAll) {
-                callback(null, policy)
-                return
-              }
+              // // old way
+              // if(!info.matchAll) {
+              //   callback(null, policy)
+              //   return
+              // }
 
               log.info("Trying to find if any other active alarms are covered by this new policy")
               let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
@@ -1101,8 +1106,8 @@ module.exports = class {
 
           break;
         default:
-          i_type = "ip";
-          i_target = alarm["p.dest.ip"];
+          i_type = "dns";
+          i_target = alarm["p.dest.name"] || alarm["p.dest.ip"];
 
           if(userFeedback) {
             switch(userFeedback.type) {
@@ -1197,11 +1202,6 @@ module.exports = class {
               
               this.archiveAlarm(alarm.aid)
                 .then(() => {
-                  // old way
-                  if(!info.matchAll) {
-                    callback(null, exception)
-                    return
-                  }
 
                   async(() => {              
                     log.info("Trying to find if any other active alarms are covered by this new exception")
