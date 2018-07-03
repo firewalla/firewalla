@@ -40,6 +40,10 @@ router.post('/message/:gid',
 
   (req, res, next) => {
 
+    if(req.connection.remoteAddress !== "127.0.0.1") { // this api can only be used for local access
+      res.status(404).send("");
+    }
+
     let gid = req.params.gid;
 
     async(() => {
