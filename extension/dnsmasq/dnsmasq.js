@@ -492,9 +492,14 @@ module.exports = class DNSMASQ {
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
 
-    subnets.forEach(async subnet => {
+    for (let index = 0; index < subnets.length; index++) {
+      const subnet = subnets[index];
       await iptables.dnsChangeAsync(subnet, dns, true);
-    })
+    }
+
+    if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
+      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
+    }
   }
 
   async _add_ip6tables_rules() {
