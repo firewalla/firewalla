@@ -770,7 +770,7 @@ module.exports = class DNSMASQ {
 
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
-    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
     let cmdAlt = null;
 
     if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
