@@ -1027,6 +1027,10 @@ module.exports = class {
           p.method = info.method;
         }
 
+        if(intelFeedback && intelFeedback.device) {
+          p.scope = [intelFeedback.device];
+        }
+
         log.info("Policy object:", p, {});
 
         // FIXME: make it transactional
