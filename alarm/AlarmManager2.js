@@ -972,6 +972,10 @@ module.exports = class {
                   i_type = "ip"
                   i_target = intelFeedback.target
                   break
+                case "category":
+                  i_type = "category";
+                  i_target = intelFeedback.target;
+                  break;
                 default:
                   break
               }
@@ -1017,6 +1021,10 @@ module.exports = class {
           break;
         case "dns":
           p.target_name = alarm["p.dest.name"] || alarm["p.dest.ip"];
+          p.target_ip = alarm["p.dest.ip"];
+          break;
+        case "category":
+          p.target_name = alarm["p.dest.category"];
           p.target_ip = alarm["p.dest.ip"];
           break;
         default:
