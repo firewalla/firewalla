@@ -281,6 +281,8 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanupAlarmExtendedKeys() {
+    log.info("Cleaning up alarm extended keys");
+    
     const basicAlarms = await am2.listBasicAlarms();
     const extendedAlarms = await am2.listExtendedAlarms();
     
