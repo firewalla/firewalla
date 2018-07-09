@@ -78,6 +78,8 @@ const dnsTool = new DNSTool()
 
 const Queue = require('bee-queue')
 
+const alarmDetailPrefix = "_alarmDetail";
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -351,7 +353,7 @@ module.exports = class {
 
             // add extended info, extended info are optional
             (async () => {
-              const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
+              const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
               
               // if there is any extended info
               if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
@@ -729,6 +731,26 @@ module.exports = class {
              .execAsync())      
     })()
   }
+
+  async listExtendedAlarms() {
+    const list = await rclient.keys(`${alarmDetailPrefix}:*`);
+
+    return list.map((l) => {
+      return l.replace(`${alarmDetailPrefix}:`, "");
+    })
+  }
+
+  async listBasicAlarms() {
+    const list = await rclient.keys(`_alarm:*`);
+
+    return list.map((l) => {
+      return l.replace("_alarm:", "");
+    })
+  }
+
+  async deleteExtendedAlarm(alarmID) {
+    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+  }
   
   numberOfAlarms(callback) {
     callback = callback || function() {}
@@ -788,8 +810,7 @@ module.exports = class {
   }
   
   async getAlarmDetail(aid) {
-    const prefix = "_alarmDetail";
-    const key = `${prefix}:${aid}`
+    const key = `${alarmDetailPrefix}:${aid}`
     const detail = await rclient.hgetallAsync(key);
     if(detail) {
       for(let key in detail) {
