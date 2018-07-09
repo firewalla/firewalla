@@ -97,15 +97,13 @@ module.exports = class {
       instance = this;
       this.publisher = new c('info');
 
-      if(f.isMonitor()) {
-        this.setupAlarmQueue();
-      }
+      this.setupAlarmQueue();
     }
     return instance;
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
+    this.queue = new Queue(`alarm-${f.getProcessName()})
 
     this.queue.removeOnFailure = true
     this.queue.removeOnSuccess = true
