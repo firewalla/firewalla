@@ -42,8 +42,8 @@ let await = require('asyncawait/await');
 
 let fConfig = require('../net2/config.js').getConfig();
 
-Array.prototype.arrayDiff = function(a) {
-  return this.filter(function(i) {return a.indexOf(i) < 0;});
+function arrayDiff(a, b) {
+  return a.filter(function(i) {return b.indexOf(i) < 0;});
 };
 
 class OldDataCleanSensor extends Sensor {
@@ -284,7 +284,7 @@ class OldDataCleanSensor extends Sensor {
     const basicAlarms = await am2.listBasicAlarms();
     const extendedAlarms = await am2.listExtendedAlarms();
     
-    const diff = extendedAlarms.arrayDiff(basicAlarms);
+    const diff = arrayDiff(extendedAlarms, basicAlarms);
 
     for (let index = 0; index < diff.length; index++) {
       const alarmID = diff[index];
