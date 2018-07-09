@@ -733,7 +733,7 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.keys(`${alarmDetailPrefix}:*`);
+    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
 
     return list.map((l) => {
       return l.replace(`${alarmDetailPrefix}:`, "");
@@ -741,7 +741,7 @@ module.exports = class {
   }
 
   async listBasicAlarms() {
-    const list = await rclient.keys(`_alarm:*`);
+    const list = await rclient.keysAsync(`_alarm:*`);
 
     return list.map((l) => {
       return l.replace("_alarm:", "");
