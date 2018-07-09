@@ -1577,7 +1577,8 @@ module.exports = class {
 
                     await broNotice.processNotice(alarm, obj);
 
-                    await am2.checkAndSaveAsync(alarm)
+                    am2.enqueueAlarm(alarm);
+                    
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})
                 })

@@ -594,7 +594,7 @@ class netBot extends ControllerBot {
           // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
           async(() => {
             let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
-            if(flag) {
+            if(flag == "1") {
               notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
             }
             if(msg["testing"] && msg["testing"] == 1) {

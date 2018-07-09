@@ -78,6 +78,8 @@ const dnsTool = new DNSTool()
 
 const Queue = require('bee-queue')
 
+const alarmDetailPrefix = "_alarmDetail";
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -95,15 +97,13 @@ module.exports = class {
       instance = this;
       this.publisher = new c('info');
 
-      if(f.isMonitor()) {
-        this.setupAlarmQueue();
-      }
+      this.setupAlarmQueue();
     }
     return instance;
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
+    this.queue = new Queue(`alarm-${f.getProcessName()}`)
 
     this.queue.removeOnFailure = true
     this.queue.removeOnSuccess = true
@@ -351,11 +351,13 @@ module.exports = class {
 
             // add extended info, extended info are optional
             (async () => {
-              const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
+              const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
               
-              rclient.hmsetAsync(extendedAlarmKey, extended);
-              rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
-
+              // if there is any extended info
+              if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
+                await rclient.hmsetAsync(extendedAlarmKey, extended);
+                await rclient.expireatAsync(extendedAlarmKey, parseInt((+new Date) / 1000) + expiring);
+              }
               
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
@@ -727,6 +729,26 @@ module.exports = class {
              .execAsync())      
     })()
   }
+
+  async listExtendedAlarms() {
+    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
+
+    return list.map((l) => {
+      return l.replace(`${alarmDetailPrefix}:`, "");
+    })
+  }
+
+  async listBasicAlarms() {
+    const list = await rclient.keysAsync(`_alarm:*`);
+
+    return list.map((l) => {
+      return l.replace("_alarm:", "");
+    })
+  }
+
+  async deleteExtendedAlarm(alarmID) {
+    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+  }
   
   numberOfAlarms(callback) {
     callback = callback || function() {}
@@ -786,8 +808,7 @@ module.exports = class {
   }
   
   async getAlarmDetail(aid) {
-    const prefix = "_alarmDetail";
-    const key = `${prefix}:${aid}`
+    const key = `${alarmDetailPrefix}:${aid}`
     const detail = await rclient.hgetallAsync(key);
     if(detail) {
       for(let key in detail) {
