@@ -499,12 +499,7 @@ class DeviceHook extends Hook {
                                            "p.device.vendor": host.macVendor
                                          });
 
-    am2.checkAndSave(alarm, (err) => {
-      if(err) {
-        log.error("Failed to save new alarm: " + err);
-      }
-      callback(err);
-    });
+    am2.enqueueAlarm(alarm);    
   }
 
   getVendorInfoAsync(mac) {
