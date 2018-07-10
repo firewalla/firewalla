@@ -8,14 +8,22 @@ const forge = require('node-forge');
 const qs = require('querystring');
 const path = require('path');
 
-const port = 8880;
-const httpsPort = 8883;
 const enableHttps = true;
+
+const redirectHttpPort = 8880;
+const redirectHttpsPort = 8883;
+const blackHoleHttpPort = 8881;
+const blackHoleHttpsPort = 8884;
+const blockHttpPort = 8882;
+const blockHttpsPort = 8885;
+
 
 const Promise = require('bluebird');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
-const intel = require('./intel.js')(redis);
+const intel = require('./intel.js')(rclient);
+
+const iptool = require('ip')
 
 const VIEW_PATH = 'firewalla_view';
 const STATIC_PATH = 'firewalla_static';
@@ -24,18 +32,103 @@ process.title = "FireBlue";
 
 class App {
   constructor() {
-    this.app = express();
-
-    this.app.engine('mustache', require('mustache-express')());
-    this.app.set('view engine', 'mustache');
-
-    this.app.set('views', path.join(__dirname, VIEW_PATH));
-    //this.app.disable('view cache'); //for debug only
-
+    this.lastRequest = {}
     this.routes();
   }
 
-  routes() {
+  async recordActivity(req, queue) {
+    if(!req || !queue) {
+      return;
+    }
+
+    const hostname = req.hostname;
+    let ip = req.ip;
+
+    if(hostname && ip) {
+      if (ip.substr(0, 7) === "::ffff:") {
+        ip = ip.substr(7)
+      }
+
+      // if(this.lastRequest[ip] === hostname) {
+      //   return
+      // }
+      //
+      // this.lastRequest[ip] = hostname;
+
+      if(iptool.isV4Format(ip)) {
+        const mac = await rclient.hgetAsync(`host:ip4:${ip}`, "mac");
+        if(mac) {
+          rclient.zaddAsync(`${queue}:${mac}`, Math.floor(new Date() / 1000), hostname);
+        }
+      } else if (iptool.isV6Format(ip)) {
+        const mac = await rclient.hgetAsync(`host:ip6:${ip}`, "mac");
+        if(mac) {
+          rclient.zaddAsync(`${queue}:${mac}`, Math.floor(new Date() / 1000), hostname);
+        }
+      } else {
+        // do nothing
+      }
+
+    }
+  }
+
+  async recordActivity2(req, queue) {
+    if(!req || !queue) {
+      return;
+    }
+
+    const hostname = req.hostname;
+
+    if(hostname) {
+
+      const dateKey = Math.floor(new Date() / 1000 / 3600 / 24) * 3600 * 24;
+      const key = `${queue}:${dateKey}`;
+
+      await rclient.hincrbyAsync(key, hostname, 1);
+      await rclient.expireAsync(key, 3600 * 24 * 7); // one week
+
+    }
+  }
+
+  routesForRedirect() {
+    // redirect to a remote site
+    this.redirectApp = express();
+
+    this.redirectApp.use('*', async (req, res) => {
+      let redirect = await rclient.hgetAsync('redirect','porn')
+      redirect = redirect || "http://google.com"
+
+      this.recordActivity2(req, "blue:history:domain:redirect");
+
+      if(redirect) {
+        res.status(303).location(redirect).send().end()
+      }
+    });
+  }
+
+  routesForBlackHole() {
+    // silently return 200
+    this.blackHoleApp = express();
+
+    this.blackHoleApp.use('*', async (req, res) => {
+
+      this.recordActivity2(req, "blue:history:domain:blackhole");
+
+      res.status(200).send().end()
+
+    });
+  }
+
+  routesForBlock() {
+    // render a block page
+    this.blockApp = express();
+
+    this.blockApp.engine('mustache', require('mustache-express')());
+    this.blockApp.set('view engine', 'mustache');
+
+    this.blockApp.set('views', path.join(__dirname, VIEW_PATH));
+    //this.redirectApp.disable('view cache'); //for debug only
+
     this.router = express.Router();
     this.router.all('/block', async (req, res) => {
       const hostname = req.hostname;
@@ -49,13 +142,14 @@ class App {
       res.render('block', {hostname, url, ip, method, count});
     })
 
-    this.app.use('/' + VIEW_PATH, this.router);
-    this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
+    this.blockApp.use('/' + VIEW_PATH, this.router);
+    this.blockApp.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
 
-    this.app.use('*', async (req, res) => {
+    this.redirectApp.use('*', async (req, res) => {
       log.info("Got a request in *");
 
       if (!req.originalUrl.includes(VIEW_PATH)) {
+
         let cat = await intel.check(req.hostname);
 
         log.info(`${req.hostname} 's category is ${cat}`);
@@ -74,18 +168,37 @@ class App {
     });
   }
 
+  routes() {
+    this.routesForRedirect();
+    this.routesForBlackHole();
+//    this.routesForBlock();
+  }
+
   start() {
-    this.app.listen(port, () => log.info(`Httpd listening on port ${port}!`));
+    this.redirectApp.listen(redirectHttpPort, () => log.info(`Httpd listening on port ${redirectHttpPort}!`));
+    this.blackHoleApp.listen(blackHoleHttpPort, () => log.info(`Httpd listening on port ${blackHoleHttpPort}!`));
+    // this.blockApp.listen(blockHttpPort, () => log.info(`Httpd listening on port ${blockHttpPort}!`));
 
     if (enableHttps) {
       const httpsOptions = this.genHttpsOptions();
-      https.createServer(httpsOptions, this.app).listen(httpsPort, () => log.info(`Httpd listening on port ${httpsPort}!`));
+      https.createServer(httpsOptions, this.redirectApp).listen(redirectHttpsPort, () => log.info(`Httpd listening on port ${redirectHttpsPort}!`));
+      https.createServer(httpsOptions, this.blackHoleApp).listen(blackHoleHttpsPort, () => log.info(`Httpd listening on port ${blackHoleHttpsPort}!`));
+      // https.createServer(httpsOptions, this.blockApp).listen(blockHttpsPort, () => log.info(`Httpd listening on port ${blockHttpsPort}!`));
     }
   }
 
   async isPorn(req, res) {
     let count = await rclient.hincrbyAsync('block:stats', 'porn', 1);
-    res.status(303).location(`/${VIEW_PATH}/block?${qs.stringify({hostname: req.hostname, url: req.originalUrl, count})}`).send().end();
+    let params = qs.stringify({hostname: req.hostname, url: req.originalUrl, count});
+    let location = `/${VIEW_PATH}/block`;
+
+    const redirect = await rclient.hgetAsync('redirect','porn')
+    if(redirect) {
+      res.status(303).location(redirect).send().end()
+    } else {
+      res.status(303).location(`${location}?${params}`).send().end();
+    }
+
     log.info(`Total porn blocked: ${count}`);
   }
 

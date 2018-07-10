@@ -89,6 +89,7 @@ describe('Exception', () => {
         "type": "ALARM_GAME",
         "timestamp": "1500913117.175",
         "p.dest.id": "battle.net",
+        "p.dest.ip": "114.113.217.103/24",
         "target_name": "battle.net",
         "target_ip": "114.113.217.103",
       });
@@ -115,6 +116,7 @@ describe('Exception', () => {
       e1.match(a1).should.be.true
       done();
     })
+
   });
 
 });

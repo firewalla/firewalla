@@ -4,6 +4,7 @@ sudo systemctl stop firemon
 sudo systemctl stop fireui
 sudo systemctl stop fireapi
 sudo systemctl stop firekick
+sudo systemctl stop firehttpd
 sync
 redis-cli flushall
 sudo rm -r -f /tmp/*

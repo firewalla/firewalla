@@ -8,7 +8,7 @@ fi
 modprobe zram num_devices=4
 
 totalmem=$(free -m | awk '/Mem:/{print $2}')
-mem=$(( ($totalmem / 4 / 2)* 1024 * 1024))
+mem=$(( ($totalmem / 4 / 2 )* 1024 * 1024 ))
 
 for i in `seq 0 3`; do
   echo $mem > /sys/block/zram${i}/disksize

@@ -14,163 +14,352 @@
  */
 'use strict';
 
-var instance = null;
+let instance = null;
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var request = require('request');
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const rp = require('request-promise');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
+const IntelTool = require('./IntelTool');
+const intelTool = new IntelTool();
 
+const Whois = require('../util/Whois');
+const IpInfo = require('../util/IpInfo');
+
+const A_WEEK = 3600 * 24 * 7;
+
+/* malware, botnet, spam, phishing, malicious activity, blacklist, dnsbl */
+const IGNORED_TAGS = ['dnsbl', 'spam'];
 
 module.exports = class {
-    constructor(loglevel) {
-        if (instance == null) {
-            instance = this;
-        }
-        return instance;
+  constructor(loglevel) {
+    if (instance == null) {
+      instance = this;
+    }
+    return instance;
+  }
+
+  action(action, ip, callback) {
+    if (action === "ignore") {
+      rclient.hmset("intel:action:" + ip, {'ignore': true}, (err) => {
+        callback(err, null);
+      });
+    } else if (action === "unignore") {
+      rclient.hmset("intel:action:" + ip, {'ignore': false}, (err) => {
+        callback(err, null);
+      });
+    } else if (action === "block") {
+    } else if (action === "unblock") {
+    } else if (action === "support") {
     }
 
-    action(action, ip, callback) {
-        if (action == "ignore") {
-            rclient.hmset("intel:action:"+ip, {'ignore':true}, (err)=> {
-                callback(err,null);
-            });
-        } else if (action == "unignore") {
-            rclient.hmset("intel:action:"+ip, {'ignore':false}, (err)=> {
-                callback(err,null);
-            });
-        } else if (action == "block") {
-        } else if (action == "unblock") {
-        } else if (action == "support") {
-        }
+    bone.intel(ip, "", action, {});
+  }
 
-      bone.intel(ip, "", action, {});
+  async cacheLookup(ip, origin) {
+    let result;
+
+    let key = "cache.intel:" + origin + ":" + ip;
+
+    try {
+      result = await rclient.getAsync(key);
+    } catch (err) {
+      // null
     }
 
-    cachelookup(ip, origin, callback) {
-        rclient.get("cache.intel:" + origin + ":" + ip, (err, result) => {
-            callback(err, result);
-        });
+    if (result && (result === "{}" || Object.keys(result).length === 0)) {
+      result = null;
     }
 
-    cacheAdd(ip, origin, value) {
-        if (value == null) {
-            value = "none";
-        }
-        rclient.set("cache.intel:" + origin + ":" + ip, value, (err, result) => {
-            rclient.expireat("cache.intel:" + origin + ":" + ip, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 7);
-        });
+    log.debug("Cache lookup for", ip, ", origin", origin, ", result:", result);
+    return result;
+  }
+
+  async cacheAdd(ip, origin, value) {
+    if (value == null || value === "{}") {
+      value = "none";
     }
 
-    lookup(ip, callback) {
-        if (ip == null || ip == "8.8.8.8" || sysManager.isLocalIP(ip) == true) {
-            callback(null, null, null);
-            return;
-        }
+    let key = "cache.intel:" + origin + ":" + ip;
 
-        rclient.hgetall("intel:action:"+ip, (err,data) => {
-            if (data) {
-                if (data.ignore == true) {
-                    log.info("Intel:Lookup:Ignored",ip);
-                    callback(null,null,null);
-                }
-            }
-            this.cachelookup(ip, "cymon", (err, result) => {
-                if (result != null && result != "none") {
-                    let weburl = "https://cymon.io/" + ip;
-                    let obj = JSON.parse(result);
-                    if (obj == null || obj.count == 0) {
-                        callback(null, null, null);
-                        return;
-                    }
-                    this._location(ip,(err,lobj)=>{ 
-                        obj.lobj = lobj;
-                        log.info("Intel:Location",ip,obj.lobj);
-                        this._packageCymon(ip, obj);
-                        callback(err, obj, weburl);
-                    });
-                } else {
-                    //            callback(null,null,null);
-                    this._lookup(ip, callback);
-                }
-            });
-        });
+    log.debug("Add into cache.intel, key:", key, ", value:", value);
+
+    return rclient.setAsync(key, value)
+      .then(result => rclient.expireatAsync(key, this.currentTime() + A_WEEK))
+      .catch(err => {
+        log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
+      });
+  }
+
+  currentTime() {
+    return Math.round(Date.now() / 1000);
+  }
+
+  async lookupDomain(domain, ip, flowObj) {
+    if (!domain || domain === "firewalla.com") {
+      return;
     }
 
-    _packageCymon(ip, obj) {
-        let weburl = "https://cymon.io/" + ip;
-        log.info("INFO:------ Intel Information", obj.count);
-        let summary = obj.count + " reported this IP.\n";
-        let max = 4;
-        let severity = 0;
-        /*
-        for (let i in obj.results) {
-           if (max<=0) { break ;}
-           summary +="- " +obj.results[i].title+"\n";
-           max--;
-        }
-        */
-        let tags = {};
-        for (let i in obj.results) {
-            let r = obj.results[i];
-            if (r.tag) {
-                if (tags[r.tag] == null) {
-                    tags[r.tag] = {
-                        tag: r.tag,
-                        count: 1
-                    };
-                } else {
-                    tags[r.tag].count += 1;
-                }
-            }
-        }
-
-        let tagsarray = [];
-        for (let i in tags) {
-            tagsarray.push(tags[i]);
-            if (i.includes("malicious")) {
-                severity += tags[i].count * 3;
-            } else if (i.includes("malware")) {
-                severity += tags[i].count * 3;
-            } else if (i == "blacklist") {
-                severity += tags[i].count * 3;
-            } else {
-                severity += 1;
-            }
-        }
-
-        obj.severityscore = severity;
-
-        tagsarray.sort(function (a, b) {
-            return Number(b.count) - Number(a.count);
-        })
-
-        obj.summary = summary;
-        obj.weburl = weburl;
-        obj.tags = tagsarray;
-
-        if (obj.tags != null && obj.tags.length > 0) {
-            let reason = "Possible: ";
-            let first = true;
-            for (let i in obj.tags) {
-                if (first) {
-                    reason += obj.tags[i].tag;
-                    first = false;
-                } else {
-                    reason += " or " + obj.tags[i].tag;
-                }
-            }
-            obj.reason = reason;
-        }
+    if (await this.isIgnored(domain)) {
+      log.info("Ignored domain:", domain, "skip...");
+      return;
     }
 
-    /* curl ipinfo.io/98.124.243.43/
-{
+    log.debug("FlowObj:", flowObj);
+
+    let intelObj = flowObj.intel;
+
+    if (!intelObj.category) {
+      log.info("No intel for domain", domain, "look up from cloud...");
+      intelObj = await this._lookupDomainInBone(domain, ip);
+    } else {
+      log.info("Intel for domain", domain, " exists in flowObj");
+      if (intelObj.cc) {
+        try {
+          let json = JSON.parse(intelObj.cc)
+          if(Array.isArray(json)) {
+            // HACK, excluding attackpage
+            json = json.filter(x => x !== "attackpage")
+            intelObj.cc = json[0]
+          }
+        } catch (err) {
+          log.warn("Error when parsing info.cc:", intelObj.cc, err);
+        }
+      }
+    }
+
+    if(intelObj.category === 'intel' && intelObj.s && Number(intelObj.s) === 0) {
+      log.info("Intel ignored, severity score is zero", intelObj);
+      return;
+    }
+
+    if (!intelObj.lobj) {
+      intelObj.lobj = await this.ipinfo(ip);
+    }
+
+    if (!intelObj.whois) {
+      intelObj.whois = await this.whois(domain);
+    }
+
+    log.info(`Intel for domain ${domain} is`, intelObj);
+
+    return intelObj;
+  }
+
+  async lookupIp(ip, flowIntel) {
+    if (!ip || ip === "8.8.8.8" || sysManager.isLocalIP(ip)) {
+      return;
+    }
+
+    let data = await rclient.hgetallAsync("intel:action:" + ip);
+    if (data && data.ignore) {
+      log.info("Intel:Lookup:Ignored", ip);
+      return;
+    }
+
+    let [intelObj, ipinfo] = await Promise.all([this.cymon(ip), this.ipinfo(ip)]);
+    
+    if (!intelObj || intelObj.count === 0) { // no info from cymon
+      intelObj = {};
+      intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
+    } else {
+      intelObj = this.summarizeIntelObj(ip, intelObj);  ;
+    }
+
+    log.debug("Ipinfo:", ipinfo)
+    intelObj.lobj = ipinfo;
+
+    log.debug("IntelObj:", intelObj);
+
+    return intelObj;
+  }
+
+  async whois(target) {
+    log.info("Looking whois:", target);
+
+    let cached = await this.cacheLookup(target, "whois");
+
+    if (cached === "none") {
+      return null;
+    }
+
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (err) {
+        log.error("Error when parse cache:", cached, err);
+      }
+    }
+
+    let whois = await Whois.lookup(target, {useOwnParser: true});
+
+    if (whois) {
+      this.cacheAdd(target, "whois", JSON.stringify(whois));
+    }
+
+    return whois;
+  }
+
+  async isIgnored(target) {
+    let data = await rclient.hgetallAsync("intel:action:" + target);
+    log.info("Ignore check for domain:", target, " is", data);
+    return data && data.ignore;
+  }
+
+  async _lookupDomainInBone(domain, ip) {
+    let cloudIntel;
+    try {
+      cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
+    } catch (err) {
+      log.info("Error when check intel from cloud", err);
+    }
+    log.info("Cloud intel for ", domain, "is: ", cloudIntel);
+
+    return this.processCloudIntel(cloudIntel[0]);
+  }
+
+  processCloudIntel(cloudIntel) {
+    if (!cloudIntel) {
+      return;
+    }
+
+    let intel = {};
+    // check if the host matches the result from cloud
+    // FIXME: ignore IP check because intel result from cloud does
+    // NOT have "ip" all the time.
+    if (cloudIntel.apps) {
+      intel.apps = JSON.stringify(cloudIntel.apps);
+      let keys = Object.keys(cloudIntel.apps);
+      if (keys && keys[0]) {
+        intel.app = keys[0];
+      }
+    }
+
+    if (cloudIntel.c) {
+      intel.category = cloudIntel.c;
+    }
+
+    if (cloudIntel.action && cloudIntel.action.block) {
+      intel.action = "block"
+    }
+
+    if (cloudIntel.s) {
+      intel.s = cloudIntel.s;
+    }
+
+    if (cloudIntel.t) {
+      intel.t = cloudIntel.t;
+    }
+
+    if (cloudIntel.cc) {
+      try {
+        cloudIntel.cc = JSON.parse(cloudIntel.cc);
+        intel.cc = cloudIntel.cc[0];
+      } catch (err) {
+        intel.cc = cloudIntel.cc;
+        log.warn("Error when parsing info.cc:", cloudIntel.cc, err);
+      }
+    }
+    return intel;
+  }
+
+  addFlowIntel(ip, intelObj, intel) {
+    let weburl = "https://intel.firewalla.com/";
+    log.debug("IntelManger:addFlowIntel:", ip, intel);
+    if (intel == null) {
+      return null;
+    }
+    if (intel.t) {
+      intelObj.count = Math.abs(intel.t / 10);
+    } else {
+      intelObj.count = 4;
+    }
+    if (intel.s) {
+      intelObj.severityscore = intel.s;
+    } else {
+      intelObj.severityscore = 20;
+    }
+    intelObj.summary = "";
+    intelObj.weburl = weburl;
+    if (intel.cc) {
+      try {
+        intelObj.tags = JSON.parse(intel.cc);
+      } catch (e) {
+      }
+    }
+    log.debug("IntelManger:addFlowIntel:Done", ip);
+    return intelObj;
+  }
+
+  summarizeIntelObj(ip, intelObj) {
+    let weburl = "https://cymon.io/" + ip;
+    log.info("INFO:------ Intel Information", intelObj.count);
+
+    let results = intelObj.results.filter(x => !IGNORED_TAGS.includes(x.tag));
+    intelObj.count = results.length;
+    let summary = intelObj.count + " reported this IP.\n";
+
+    let tags = {};
+    for (let r of intelObj.results) {
+      if (r.tag) {
+        if (tags[r.tag] == null) {
+          tags[r.tag] = {
+            tag: r.tag,
+            count: 1
+          };
+        } else {
+          tags[r.tag].count += 1;
+        }
+      }
+    }
+
+    let tagArray = [], tagCount = 0, severity = 0;
+    for (let i in tags) {
+      let tag = tags[i];
+      tagArray.push(tag);
+      if (i.includes("malicious")) {
+        severity += tag.count * 3;
+      } else if (i.includes("malware")) {
+        severity += tag.count * 3;
+      } else if (i == "blacklist") {
+        severity += tag.count * 3;
+      } else {
+        severity += 1;
+      }
+      tagCount += tag.count;
+    }
+
+    tagArray.sort((a, b) => b.count - a.count);
+
+    intelObj.severityscore = severity;
+    intelObj.summary = summary;
+    intelObj.weburl = weburl;
+    intelObj.tags = tagArray;
+
+    if (intelObj.tags && intelObj.tags.length > 0) {
+      const reasonize = (tag) => `${tag.tag} - ${Math.round(tag.count / tagCount * 100)}%`;
+      let reason = "Possibility: ";
+      let first = true;
+      for (let tag of intelObj.tags) {
+        if (first) {
+          reason += reasonize(tag);
+          first = false;
+        } else {
+          reason += ", " + reasonize(tag);
+        }
+      }
+      intelObj.reason = reason;
+    }
+    return intelObj;
+  }
+
+  /* curl ipinfo.io/98.124.243.43/
+  {
   "ip": "98.124.243.43",
   "hostname": "No Hostname",
   "city": "Kirkland",
@@ -179,105 +368,71 @@ module.exports = class {
   "loc": "47.6727,-122.1873",
   "org": "AS21740 eNom, Incorporated",
   "postal": "98033"
- */
-    _location(ip,callback) {
-      log.info("Looking up location:",ip);
-      this.cachelookup(ip, "ipinfo", (err,data)=>{
-        if (data!=null) {
-            callback(null, JSON.parse(data));
-            return;
-        }
-        let weburl = "https://ipinfo.io/" + ip;
+  }
+  */
+  async ipinfo(ip) {
+    log.info("Looking up location:", ip);
 
-        var options = {
-            uri: weburl,
-            method: 'GET',
-            family: 4
-            // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
-        };
+    let cached = await this.cacheLookup(ip, "ipinfo");
 
-        request(options, (err, httpResponse, body) => {
-            if (err != null) {
-                let stack = new Error().stack;
-                log.info("Error while requesting ", err, stack);
-                callback(err, null, null);
-                return;
-            }
-            if (httpResponse == null) {
-                let stack = new Error().stack;
-                log.info("Error while response ", err, stack);
-                callback(500, null, null);
-                return;
-            }
-            if (httpResponse.statusCode < 200 ||
-                httpResponse.statusCode > 299) {
-                log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                callback(httpResponse.statusCode, null, null);
-                return;
-            }
-            if (err === null && body != null) {
-                this.cacheAdd(ip, "ipinfo", body);
-                let obj = JSON.parse(body);
-                if (obj != null) {
-                    callback(null,obj);
-                } else {
-                    callback(null,null);
-                }
-            }
-        });
+    if (cached === "none") {
+      return null;
+    }
+
+    let ipinfo;
+    if (cached && cached !== 'null') {
+      try {
+        ipinfo = JSON.parse(cached);
+      } catch (err) {
+        log.error("Error when parse cache:", cached, err);
+      }
+      if (ipinfo) {
+        return ipinfo;
+      }
+    }
+
+    ipinfo = await IpInfo.get(ip);
+
+    if (ipinfo) {
+      this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));
+    }
+
+    log.info("Ipinfo is:", ipinfo);
+
+    return ipinfo;
+  }
+  
+  async cymon(ip) {
+    log.info("Looking up cymon:", ip);
+
+    let cached = await this.cacheLookup(ip, "cymon");
+
+    if (cached === "none") {
+      return null;
+    }
+
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (err) {
+        log.error("Error when parse cache:", cached, err);
+      }
+    }
+    
+    let body;
+    try {
+      body = await rp({
+        uri: "https://cymon.io/api/nexus/v1/ip/" + ip + "/events?limit=100",
+        method: 'GET',
+        family: 4,
+        json: true,
+        timeout: 10000 //ms
       });
+    } catch (err) {
+      log.info(`Error while requesting ${url}`, err.code, err.message, err.stack);
     }
-
-    _lookup(ip, callback) {
-        let weburl = "https://cymon.io/" + ip;
-        let url = "https://cymon.io" + "/api/nexus/v1/ip/" + ip + "/events?limit=100";
-
-        var options = {
-            uri: url,
-            method: 'GET',
-            family: 4
-            // Authorization: 'Token dc30fcd03eddbd95b90bacaea5e5a44b1b60d2f5',
-        };
-
-        request(options, (err, httpResponse, body) => {
-            if (err != null) {
-                let stack = new Error().stack;
-                log.info("Error while requesting ", err, stack);
-                callback(err, null, null);
-                return;
-            }
-            if (httpResponse == null) {
-                let stack = new Error().stack;
-                log.info("Error while response ", err, stack);
-                callback(500, null, null);
-                return;
-            }
-            if (httpResponse.statusCode < 200 ||
-                httpResponse.statusCode > 299) {
-                log.error("**** Error while response HTTP ", httpResponse.statusCode);
-                callback(httpResponse.statusCode, null, null);
-                return;
-            }
-            if (err === null && body != null) {
-                this.cacheAdd(ip, "cymon", body);
-                let obj = JSON.parse(body);
-                if (obj != null) {
-                    if (obj.count == 0) {
-                        log.info("INFO:====== No Intel Information!!", ip);
-                        callback(null, null, null);
-                    } else {
-                        this._location(ip,(err,lobj)=>{ 
-                            obj.lobj = lobj;
-                            log.info("Intel:Location",ip,obj.lobj);
-                            this._packageCymon(ip, obj);
-                            callback(err, obj, obj.weburl);
-                        });
-                    }
-                } else {
-                    callback(null, null, null);
-                }
-            }
-        });
-
-    }
+    this.cacheAdd(ip, "cymon", JSON.stringify(body));
+    return body;
+  }
+  
 }

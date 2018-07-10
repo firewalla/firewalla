@@ -151,7 +151,7 @@ class FlowTool {
       log.error("Host:Flows:Sorting:Parsing", flow);
       return false;
     }
-    if ( !o.rb || !o.ob ) {
+    if ( !('rb' in o) || !('ob' in o) ) {
       return false
     }
     if (o.rb === 0 && o.ob === 0) {
@@ -374,6 +374,94 @@ class FlowTool {
 
       return allFlows;
     })();
+  }
+
+  _aggregateTransferBy10Min(results) {
+    const aggrResults = {};
+    results.forEach((x) => {
+      const ts = x.ts;
+      const tenminTS = Math.floor(Number(ts) / 600) * 600;
+      if(!aggrResults[tenminTS]) {
+        aggrResults[tenminTS] = {
+          ts: tenminTS,
+          ob: x.ob,
+          rb: x.rb
+        }
+      } else {
+        const old = aggrResults[tenminTS];
+        aggrResults[tenminTS] = {
+          ts: tenminTS,
+          ob: x.ob + old.ob,
+          rb: x.rb + old.rb
+        }
+      }
+    })
+    return Object.values(aggrResults).sort((x,y) => {
+      if(x.ts > y.ts) {
+        return 1;
+      } else if(x.ts === y.ts) {
+        return 0;
+      } else {
+        return -1;
+      }
+    });
+  }
+
+  async _getTransferTrend(ip, destinationIP, options) {
+    options = options || {};
+    const end = options.end || Math.floor(new Date() / 1000);
+    const begin = options.begin || end - 3600 * 6; // 6 hours
+    const direction = options.direction || 'in';
+    
+    const key = util.format("flow:conn:%s:%s", direction, ip);
+
+    const results = await rclient.zrangebyscoreAsync([key, begin, end]);
+
+    if(results === null || results.length === 0) {
+      return [];
+    }
+
+    const list = results
+    .map((jsonString) => {
+      try {
+        return JSON.parse(jsonString);        
+      } catch(err) {
+        log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
+        return null;
+      }      
+    })
+    .filter((x) => x !== null)
+    .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
+    .map((x) => {
+      return {
+        ts: x.ts,
+        ob: x.ob,
+        rb: x.rb
+      }
+    })
+
+    return list;
+  }
+
+  async getTransferTrend(deviceMAC, destinationIP, options) {
+    options = options || {};
+    
+    const results = await hostTool.getIPsByMac(deviceMAC);
+
+    const transfers = [];
+
+    for (let index = 0; index < results.length; index++) {
+      const ip = results[index];
+      const t_in = await this._getTransferTrend(ip, destinationIP, options);
+      transfers.push.apply(transfers, t_in);
+
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.direction = 'out';
+      const t_out = await this._getTransferTrend(ip, destinationIP, optionsCopy);
+      transfers.push.apply(transfers, t_out);
+    }
+
+    return this._aggregateTransferBy10Min(transfers);
   }
 
   getRecentConnections(ip, direction, options) {

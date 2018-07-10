@@ -30,6 +30,9 @@ sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
 
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+
 sudo $FIREWALLA_HOME/scripts/check_reset.sh
 
 # Enable zram to increase memory

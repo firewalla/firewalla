@@ -56,6 +56,7 @@ class HeapSensor extends Sensor {
     });
     
     sclient.subscribe("heapdump");
+    sclient.subscribe("gc");
   }
   
   onComplete(err, file) {

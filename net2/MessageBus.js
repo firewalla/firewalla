@@ -73,7 +73,8 @@ module.exports = class {
               }
               log.debug("Notified ", notified);
             } catch(err) {
-              log.error("Error to process message:", message, "err:", err, {})
+//              log.error("Error to process message:", message, "err:", err, {})
+              // ignore any non-JSON messages
             }
             
           });

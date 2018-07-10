@@ -46,6 +46,10 @@ class OldDataCleanSensor extends Sensor {
 
   getExpiredDate(type) {
     let expireInterval = (this.config[type] && this.config[type].expires) || 0;
+    if(expireInterval < 0) {
+      return null;
+    }
+
     let minInterval = 30 * 60;
     expireInterval = Math.max(expireInterval, minInterval);
 
@@ -54,25 +58,24 @@ class OldDataCleanSensor extends Sensor {
 
   getCount(type) {
     let count = (this.config[type] && this.config[type].count) || 10000;
+    if(count < 0) {
+      return null;
+    }
     return count;
   }
 
-  cleanByExpireDate(key, expireDate) {
-    return rclient.zremrangebyscoreAsync(key, "-inf", expireDate)
-      .then((count) => {
-        if(count > 0) {
-          log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
-        }
-      });
+  async cleanByExpireDate(key, expireDate) {
+    const count = await rclient.zremrangebyscoreAsync(key, "-inf", expireDate);
+    if(count > 10) {
+      log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
+    }
   }
 
-  cleanToCount(key, leftOverCount) {
-    return rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
-      .then((count) => {
-        if(count > 0) {
-          log.info(util.format("%d entries in %s are cleaned by count", count, key));
-        }
-      });
+  async cleanToCount(key, leftOverCount) {
+    const count = await rclient.zremrangebyrankAsync(key, 0, -1 * leftOverCount)
+    if(count > 10) {
+      log.info(util.format("%d entries in %s are cleaned by count", count, key));
+    }
   }
 
   getKeys(keyPattern) {
@@ -80,9 +83,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   // clean by expired time and count
-  regularClean(type, keyPattern, ignorePatterns) {
-
-    return async(() => {
+  async regularClean(type, keyPattern, ignorePatterns) {
       let keys = await (this.getKeys(keyPattern));
 
       if(ignorePatterns) {
@@ -91,13 +92,15 @@ class OldDataCleanSensor extends Sensor {
         });
       }
 
-      keys.forEach((key) => {
-        await (this.cleanByExpireDate(key, this.getExpiredDate(type)));
-        await (this.cleanToCount(key, this.getCount(type)));
-      })
-
-    })();
-
+      for (let index = 0; index < keys.length; index++) {
+        const key = keys[index];
+        const expireDate = this.getExpiredDate(type);
+        if(expireDate !== null) {
+          await this.cleanByExpireDate(key, expireDate);
+        }
+        const count = this.getCount(type);
+        await this.cleanToCount(key, count);
+      }
   }
 
   cleanAlarm() {
@@ -270,6 +273,15 @@ class OldDataCleanSensor extends Sensor {
     })()
   }
 
+  // async cleanBlueRecords() {
+  //   const keyPattern = "blue:history:domain:*"
+  //   const keys = await rclient.keysAsync(keyPattern);
+  //   for (let i = 0; i < keys.length; i++) {
+  //     const key = keys[i];
+  //     await rclient.zremrangebyscoreAsync(key, '-inf', Math.floor(new Date() / 1000 - 3600 * 48)) // keep two days
+  //   }
+  // }
+
   oneTimeJob() {
     return async(() => {
       await (this.cleanDuplicatedPolicy())
@@ -290,13 +302,19 @@ class OldDataCleanSensor extends Sensor {
       await (this.regularClean("software", "software:*"));
       await (this.regularClean("monitor", "monitor:flow:*"));
       await (this.regularClean("alarm", "alarm:ip4:*"));
+      await (this.regularClean("sumflow", "sumflow:*"));
+      await (this.regularClean("aggrflow", "aggrflow:*"));
+      await (this.regularClean("syssumflow", "syssumflow:*"));
       await (this.cleanHourlyStats());
       await (this.cleanUserAgents());
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+      // await (this.cleanBlueRecords())
       log.info("scheduledJob is executed successfully");
-    })();
+    })().catch((err) => {
+      log.error("Failed to run scheduled job, err:", err);
+    });
   }
 
   listen() {

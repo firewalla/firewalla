@@ -16,14 +16,17 @@ case $service in
     FireMain)
         service_subdir=net2
         service_run=main.js
+        dport=9227
         ;;
     FireApi)
         service_subdir=api
         service_run=bin/www
+        dport=9228
         ;;
     FireMon)
         service_subdir=monitor
         service_run=MonitorMain.js
+        dport=9229
         ;;
     FireKick)
         service_subdir=sys
@@ -51,4 +54,5 @@ $FIREWALLA_HOME/bin/node \
     $service_run $extra_opts
 )
 
+#    --inspect=0.0.0.0:$dport\
 exit $rc

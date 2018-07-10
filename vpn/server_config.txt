@@ -36,5 +36,5 @@ log /var/log/openvpn.log
 verb 1
 # This configuration file was originally written by Lauren Orsini at ReadWrite.
 # The following two lines added to disable logs
-log /dev/null
-status /dev/null
+#log /dev/null
+#status /dev/null

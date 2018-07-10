@@ -6,6 +6,8 @@ SHELL=/bin/bash
 0 0 1-31/2 * * /home/pi/firewalla/scripts/clean-log >/dev/null 2>&1
 * * * * * for x in $(seq 0 10 50); do ( sleep $x; /home/pi/scripts/fire-ping.sh  &>/dev/null) & done
 */2 * * * * ( /home/pi/firewalla/scripts/fireapi-ping.sh  >/dev/null 2>&1 )
+*/10 * * * * ( /home/pi/firewalla/scripts/firemain-ping.sh  >/dev/null 2>&1 )
+*/5 * * * * ( /home/pi/firewalla/scripts/firemon-ping.sh  >/dev/null 2>&1 )
 0 2 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; /home/pi/firewalla/scripts/fireupgrade_check.sh >/tmp/fireupgrade.log 2>&1 )
 */5 * * * * logger "Firewalla checkpoint every 5 mins" &>/dev/null
 */30 * * * * /home/pi/firewalla/scripts/free-memory &>/dev/null
