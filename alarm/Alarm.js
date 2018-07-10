@@ -278,7 +278,7 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 }
 

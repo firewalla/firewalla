@@ -328,6 +328,7 @@ module.exports = class FlowMonitor {
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
                           "id.resp_p": flow.dp,
+                          sp_array: flow.sp_array,
                           "seen.indicator_type": "Intel::DOMAIN",
                         };
                         if (flow.intel && flow.intel.action ) {
@@ -357,6 +358,7 @@ module.exports = class FlowMonitor {
                             "id.resp_h": flow.sh,
                             "id.orig_p": flow.dp,
                             "id.resp_p": flow.sp,
+                            sp_array: flow.sp_array,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
 
@@ -1013,6 +1015,7 @@ module.exports = class FlowMonitor {
       "p.source": "firewalla_intel",
       "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
+      "e.src.ports": flowObj.sp_array
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
