@@ -33,6 +33,9 @@
      "ipnet2":"192.168.168",
      "ipmask2":"255.255.255.0"
   },
+  "vpnInterface": {
+    "subnet": "10.8.0.0/24"
+  },
   "dhcp": {
     "leaseTime": "24h"
   },

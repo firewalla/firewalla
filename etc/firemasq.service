@@ -7,7 +7,7 @@ User=root
 Type=simple
 Restart=always
 WorkingDirectory=/home/pi/firewalla/
-ExecStart=/home/pi/firewalla/extension/dnsmasq/dnsmasq.sh
+ExecStart=/bin/bash /home/pi/firewalla/extension/dnsmasq/dnsmasq.sh
 ExecReload=/usr/bin/pkill -HUP dnsmasq
 
 [Install]
