@@ -502,6 +502,41 @@ let legoEptCloud = class {
         });
     }
 
+    deleteGroup(gid, callback) {
+        if (gid === undefined) {
+            callback("parameter error", null);
+            return;
+        }
+        let options = {
+            uri: this.endpoint + '/group/' + gid,
+            family: 4,
+            method: 'DELETE',
+            auth: {
+                bearer: this.token
+            }
+        }
+
+        log.debug("group delete ", options);
+
+        let self = this;
+
+        request(options, (err, httpResponse, body) => {
+            if (err != null) {
+                let stack = new Error().stack;
+                log.error("Error while requesting ", err, stack);
+                callback(err, null);
+                return;
+            }
+            if (httpResponse.statusCode < 200 || httpResponse.statusCode > 299) {
+                this.eptHandleError(httpResponse.statusCode, (code, p) => {
+                    callback(httpResponse.statusCode, null);
+                })
+            } else {
+                log.info("Response of delete group: " + body);
+                callback(err, null);
+            }
+        })
+    }
 
     groupFind(gid, callback) {
 
