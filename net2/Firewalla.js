@@ -283,6 +283,10 @@ function isMonitor() {
   return process.title === "FireMon";
 }
 
+function getProcessName() {
+  return process.title;
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -320,5 +324,7 @@ module.exports = {
 
   isMain:isMain,
   isMonitor:isMonitor,
-  getLastCommitDate:getLastCommitDate
+  getLastCommitDate:getLastCommitDate,
+
+  getProcessName:getProcessName
 }

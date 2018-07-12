@@ -97,15 +97,13 @@ module.exports = class {
       instance = this;
       this.publisher = new c('info');
 
-      if(f.isMonitor()) {
-        this.setupAlarmQueue();
-      }
+      this.setupAlarmQueue();
     }
     return instance;
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
+    this.queue = new Queue(`alarm-${f.getProcessName()}`)
 
     this.queue.removeOnFailure = true
     this.queue.removeOnSuccess = true
@@ -733,7 +731,7 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.keys(`${alarmDetailPrefix}:*`);
+    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
 
     return list.map((l) => {
       return l.replace(`${alarmDetailPrefix}:`, "");
@@ -741,7 +739,7 @@ module.exports = class {
   }
 
   async listBasicAlarms() {
-    const list = await rclient.keys(`_alarm:*`);
+    const list = await rclient.keysAsync(`_alarm:*`);
 
     return list.map((l) => {
       return l.replace("_alarm:", "");
