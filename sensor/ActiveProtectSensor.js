@@ -27,7 +27,7 @@ const extensionManager = require('./ExtensionManager.js')
 
 const fc = require('../net2/config.js')
 
-const PolicyManager2 = require('./PolicyManager2.js');
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
 const alreadyAppliedFlag = "default_c_init_done";
