@@ -53,6 +53,7 @@ class ActiveProtectSensor extends Sensor {
     
     if(flag === "1") {
       // already init, quit now
+      log.info("Already Inited, skip");
       return;
     }
     
