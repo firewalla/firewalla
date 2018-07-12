@@ -134,6 +134,16 @@ class NewDeviceAlarm extends Alarm {
   }
 }
 
+class DeviceBackOnlineAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.device.ip"];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -437,6 +447,7 @@ let classMapping = {
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -451,6 +462,7 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
+  DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
