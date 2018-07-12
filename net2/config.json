@@ -75,6 +75,7 @@
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
+    "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
