@@ -165,7 +165,9 @@
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
-    "DeviceHook": {},
+    "DeviceHook": {
+      "hostExpirationSecs": 3600
+    },
     "DestIPFoundHook": {}
   },
     "bro": {
@@ -240,6 +242,7 @@
       "game": true,
       "large_upload": true,
       "new_device": true,
+      "device_back_online": false,
       "cyber_security": true,
       "cyber_security.autoBlock": true,
       "vulnerability": false,

@@ -100,6 +100,7 @@ class DeviceHook extends Hook {
             type: "RegularDeviceInfoUpdate",
             message: "Refresh device status @ DeviceHook",
             suppressEventLogging: true,
+            suppressAlarm: event.suppressAlarm,
             host: host
           });
           return
@@ -111,6 +112,7 @@ class DeviceHook extends Hook {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
             message: "An old device used a new IP @ DeviceHook",
+            suppressAlarm: event.suppressAlarm,
             host: host
           })
           return
@@ -122,6 +124,7 @@ class DeviceHook extends Hook {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
             message: "An old device used IP used to be other device @ DeviceHook",
+            suppressAlarm: event.suppressAlarm,
             host: host,
             oldMac: data.mac
           })
@@ -273,15 +276,17 @@ class DeviceHook extends Hook {
 
       async(() => {
         let macData = await(hostTool.getMACEntry(host.mac))
+        let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
-          firstFoundTimestamp = new Date() / 1000;
+          firstFoundTimestamp = currentTimestamp;
         
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
-          lastActiveTimestamp: new Date() / 1000
+          lastActiveTimestamp: currentTimestamp
         });
 
         await (hostTool.updateHost(enrichedHost)) //v4
@@ -291,7 +296,15 @@ class DeviceHook extends Hook {
 
         if(enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
-        }        
+        }
+        
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            await (this.createAlarm(enrichedHost, 'device_back_online'));
+          }
+        }
 
         await (hostTool.updateMACKey(enrichedHost)) // mac
         
@@ -313,15 +326,17 @@ class DeviceHook extends Hook {
 
       async(() => {
         let macData = await (hostTool.getMACEntry(host.mac))
+        let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
-          firstFoundTimestamp = new Date() / 1000;
+          firstFoundTimestamp = currentTimestamp;
         
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
-          lastActiveTimestamp: new Date() / 1000
+          lastActiveTimestamp: currentTimestamp
         });
 
         await (hostTool.updateHost(enrichedHost))
@@ -329,6 +344,14 @@ class DeviceHook extends Hook {
 
         if(enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
+        }
+
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            await (this.createAlarm(enrichedHost, 'device_back_online'));
+          }
         }
 
         await (hostTool.updateMACKey(enrichedHost))
@@ -349,13 +372,17 @@ class DeviceHook extends Hook {
 
       log.debug(util.format("Regular Device Update for %s (%s - %s)", host.bname, host.ipv4Addr, host.mac));
 
+      let currentTimestamp = new Date() / 1000;
       let enrichedHost = extend({}, host, {
-        lastActiveTimestamp: new Date() / 1000
+        lastActiveTimestamp: currentTimestamp
       });
 
       async(() => {
         // For ipv6, need to load existing ip6 address from redis, and merge together
         // One device may have multiple ipv6 addresses
+        let macData = await (hostTool.getMACEntry(host.mac))
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
+
         if(enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
         }
@@ -366,6 +393,14 @@ class DeviceHook extends Hook {
         await (hostTool.updateIPv6Host(enrichedHost)) // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
+
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            await (this.createAlarm(enrichedHost, 'device_back_online'));
+          }
+        }
         
         await (hostTool.updateMACKey(enrichedHost)) // host:mac:.....
 
@@ -445,7 +480,7 @@ class DeviceHook extends Hook {
 
   createAlarmAsync(host) {
     return new Promise((resolve, reject) => {
-      this.createAlarm(host, (err) => {
+      this.createAlarm(host, 'new_device', (err) => {
         if(err) {
           reject(err);
         } else {
@@ -463,11 +498,12 @@ class DeviceHook extends Hook {
     return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
   }
   
-  createAlarm(host, callback) {
+  createAlarm(host, type, callback) {
+    type = type || "new_device";
     callback = callback || function() {}
 
     // check if new device alarm is enabled or not
-    if(!fc.isFeatureOn("new_device")) {
+    if(!fc.isFeatureOn(type)) {
       callback(null)
       return
     }
@@ -478,17 +514,32 @@ class DeviceHook extends Hook {
 
     let name = this.getPreferredName(host)
 
-    let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-                                         name,
-                                         {
-                                           "p.device.id": name,
-                                           "p.device.name": name,
-                                           "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
-                                           "p.device.mac": host.mac,
-                                           "p.device.vendor": host.macVendor
-                                         });
-
-    am2.enqueueAlarm(alarm);    
+    if (type === "new_device") {
+      let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
+    if (type === "device_back_online") {
+      let alarm = new Alarm.DeviceBackOnlineAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
   }
 
   getVendorInfoAsync(mac) {

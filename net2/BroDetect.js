@@ -929,17 +929,20 @@ module.exports = class {
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
+                        sp: [obj['id.orig_p']],
                         ob: Number(flowspec.ob),
                         rb: Number(flowspec.rb),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
+                    port_flow.sp.push(obj['id.orig_p']);
                     port_flow.ob += Number(obj.orig_bytes);
                     port_flow.rb += Number(obj.resp_bytes);
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
+                    sp: [obj['id.orig_p']],
                     ob: Number(obj.orig_bytes),
                     rb: Number(obj.resp_bytes),
                     ct: 1
