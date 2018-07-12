@@ -315,6 +315,9 @@ class PolicyManager2 {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
         }
+        if(policyCopy.activatedTime == "") {
+          await (rclient.hdelAsync(policyKey, "activatedTime"))
+        }
       })()
     } else {
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
@@ -775,7 +778,7 @@ class PolicyManager2 {
                 await (this.deletePolicy(pid))
               }
             })()
-          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
+          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds, will be set to 1 if it is a negative number
 
           this.invalidateExpireTimer(policy) // remove old one if exists
           this.enabledTimers[pid] = policyTimer
@@ -820,13 +823,29 @@ class PolicyManager2 {
   _refreshActivatedTime(policy) {
     return async(() => {
       const now = new Date() / 1000
+      let activatedTime = now;
+      // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
+      if (policy.activatedTime) {
+        activatedTime = policy.activatedTime;
+      }
       await (this.updatePolicyAsync({
         pid: policy.pid,
-        activatedTime: now
+        activatedTime: activatedTime
       }))
-      policy.activatedTime = now
+      policy.activatedTime = activatedTime
       return policy
     })()
+  }
+
+  _removeActivatedTime(policy) {
+    return async(() => {
+      await (this.updatePolicyAsync({
+        pid: policy.pid,
+        activatedTime: ""
+      }))
+      delete policy.activatedTime;
+      return policy;
+    })
   }
 
   _enforce(policy) {
@@ -973,6 +992,8 @@ class PolicyManager2 {
 
   _unenforce(policy) {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
+
+    await (this._removeActivatedTime(policy))
 
     if(policy.scope) {
       return this._advancedUnenforce(policy)
