@@ -140,7 +140,7 @@ class DeviceBackOnlineAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.ip"];
+    return ["p.device.mac"];
   }
 }
 
