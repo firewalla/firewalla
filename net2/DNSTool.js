@@ -93,7 +93,7 @@ class DNSTool {
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return f.isReservedBlockingIP(addr) != true
+      return firewalla.isReservedBlockingIP(addr) != true
     })
 
     let key = this.getReverseDNSKey(dns)
