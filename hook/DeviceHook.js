@@ -210,15 +210,15 @@ class DeviceHook extends Hook {
         lastActiveTimestamp: new Date() / 1000
       });
 
-      async(() => {
+      (async() => {
 
         // v4
         if(enrichedHost.ipv4Addr)
-          await (hostTool.updateHost(enrichedHost));
+          await hostTool.updateHost(enrichedHost);
 
         // v6
         if(enrichedHost.ipv6Addr)
-          await (hostTool.updateIPv6Host(enrichedHost));
+          await hostTool.updateIPv6Host(enrichedHost);
 
         log.info("Host entry is created for this new device:", host, {});
 
@@ -230,7 +230,7 @@ class DeviceHook extends Hook {
         let vendor = null;
 
         try {
-          vendor = await (this.getVendorInfoAsync(mac));
+          vendor = await this.getVendorInfoAsync(mac);
         } catch(err) {
           // do nothing
           log.error("Failed to get vendor info from cloud", err, {});
@@ -243,7 +243,7 @@ class DeviceHook extends Hook {
         enrichedHost.macVendor = v;
 
         if(!enrichedHost.bname && host.ipv4Addr) {
-          let sambaName = await (samba.getSambaName(host.ipv4Addr));
+          let sambaName = await samba.getSambaName(host.ipv4Addr);
           if(sambaName)
             enrichedHost.bname = sambaName;
         }
@@ -256,10 +256,10 @@ class DeviceHook extends Hook {
 
         enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
 
-        await (hostTool.updateMACKey(enrichedHost));
+        await hostTool.updateMACKey(enrichedHost);
 
         if(!event.suppressAlarm) {
-          await (this.createAlarm(enrichedHost));
+          await this.createAlarm(enrichedHost);
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
         }
@@ -275,8 +275,8 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      async(() => {
-        let macData = await(hostTool.getMACEntry(host.mac))
+      (async() => {
+        let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
@@ -290,13 +290,13 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await (hostTool.updateHost(enrichedHost)) //v4
-        await (hostTool.updateIPv6Host(enrichedHost)) //v6
+        await hostTool.updateHost(enrichedHost); //v4
+        await hostTool.updateIPv6Host(enrichedHost); //v6
 
         log.info("New host entry is created for this old device");
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
         }
         
         if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
@@ -304,8 +304,9 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              if (await (this.isPresenceEnabled(host.mac))) {
-                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              const enabled = this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_back_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -315,7 +316,7 @@ class DeviceHook extends Hook {
           }
         }
 
-        await (hostTool.updateMACKey(enrichedHost)) // mac
+        await hostTool.updateMACKey(enrichedHost); // mac
         
 
         log.info("MAC entry is updated with new IP");
@@ -332,8 +333,8 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      async(() => {
-        let macData = await (hostTool.getMACEntry(host.mac))
+      (async() => {
+        let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
@@ -347,11 +348,11 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await (hostTool.updateHost(enrichedHost))
-        await (hostTool.updateIPv6Host(enrichedHost)) //v6
+        await hostTool.updateHost(enrichedHost);
+        await hostTool.updateIPv6Host(enrichedHost); //v6
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
         }
 
         if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
@@ -359,8 +360,9 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              if (await (this.isPresenceEnabled(host.mac))) {
-                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              const enabled = this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_back_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -370,7 +372,7 @@ class DeviceHook extends Hook {
           }
         }
 
-        await (hostTool.updateMACKey(enrichedHost))
+        await hostTool.updateMACKey(enrichedHost);
         
         log.info("MAC entry is updated with new IP");
 
@@ -392,20 +394,20 @@ class DeviceHook extends Hook {
         lastActiveTimestamp: currentTimestamp
       });
 
-      async(() => {
+      (async () => {
         // For ipv6, need to load existing ip6 address from redis, and merge together
         // One device may have multiple ipv6 addresses
-        let macData = await (hostTool.getMACEntry(host.mac))
+        let macData = await hostTool.getMACEntry(host.mac);
         let lastActiveTimestamp = macData.lastActiveTimestamp;
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
         }
 
         // FIXME: shoud not keep minimal info for host key, not all
-        await (hostTool.updateHost(enrichedHost))   // host:ip4:.......
+        await hostTool.updateHost(enrichedHost);   // host:ip4:.......
 
-        await (hostTool.updateIPv6Host(enrichedHost)) // host:ip6:.........
+        await hostTool.updateIPv6Host(enrichedHost); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
 
@@ -414,8 +416,9 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              if (await (this.isPresenceEnabled(host.mac))) {
-                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              const enabled = await this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_back_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -425,7 +428,7 @@ class DeviceHook extends Hook {
           }
         }
         
-        await (hostTool.updateMACKey(enrichedHost)) // host:mac:.....
+        await hostTool.updateMACKey(enrichedHost); // host:mac:.....
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
         // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
@@ -526,7 +529,7 @@ class DeviceHook extends Hook {
 
     if (data && data['devicePresence'] === "true") {
       // device presence is enabled globally, check device settings further    
-      let policy = await (hostTool.loadDevicePolicyByMAC(mac));
+      const policy = await hostTool.loadDevicePolicyByMAC(mac);
       if (policy && policy['devicePresence'] === "true") {
         return true;
       }
