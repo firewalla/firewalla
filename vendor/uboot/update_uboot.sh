@@ -15,6 +15,10 @@ write_uboot_platform () {
 UBOOT_FILE_DIRECTORY=$FIREWALLA_HOME/vendor/uboot
 UBOOT_FILE=${UBOOT_FILE_DIRECTORY}/u-boot-sunxi-with-spl.bin
 
+if [[ $(id -u) != 0 ]]; then
+  echo "ERROR: require root privilege"
+  exit 2
+fi
 if ! grep -q 'BOARD_NAME="NanoPi Neo"' /etc/armbian-release; then
   echo "ERROR: only support naoopi neo chip"
   exit 1
