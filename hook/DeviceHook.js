@@ -52,7 +52,6 @@ const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 class DeviceHook extends Hook {
   constructor() {
     super();
-    this.hostManager = new HostManager("cli", 'client', 'info');
   }
 
   processDeviceUpdate(event) {
@@ -322,7 +321,8 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
         
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        this.hostManager.getHost(host.ipv4Addr);                                     
+        let hostManager = new HostManager("cli", 'client', 'info')
+        hostManager.getHost(host.ipv4Addr);                                     
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err, {})
       })
@@ -377,7 +377,8 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        this.hostManager.getHost(host.ipv4Addr);                  
+        let hostManager = new HostManager("cli", 'client', 'info')
+        hostManager.getHost(host.ipv4Addr);                  
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenDOverOtherDeivceIP event:", err, {})
       })
@@ -525,7 +526,8 @@ class DeviceHook extends Hook {
   }
 
   async isPresenceEnabled(mac) {
-    const data = await this.hostManager.loadPolicyAsync();
+    let hostManager = new HostManager("cli", 'client', 'info')
+    const data = await hostManager.loadPolicyAsync();
 
     if (data && data['devicePresence'] === "true") {
       // device presence is enabled globally, check device settings further    
