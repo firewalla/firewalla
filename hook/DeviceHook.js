@@ -52,6 +52,7 @@ const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 class DeviceHook extends Hook {
   constructor() {
     super();
+    this.hostManager = new HostManager("cli", 'client', 'info');
   }
 
   processDeviceUpdate(event) {
@@ -302,7 +303,15 @@ class DeviceHook extends Hook {
           // Become active again after a while, create a DeviceBackOnlineAlarm
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
-            await (this.createAlarm(enrichedHost, 'device_back_online'));
+            try {
+              if (await (this.isPresenceEnabled(host.mac))) {
+                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
           }
         }
 
@@ -311,9 +320,8 @@ class DeviceHook extends Hook {
 
         log.info("MAC entry is updated with new IP");
         
-        let hostManager= new HostManager("cli",'server','debug');
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        hostManager.getHost(host.ipv4Addr);                                     
+        this.hostManager.getHost(host.ipv4Addr);                                     
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err, {})
       })
@@ -350,7 +358,15 @@ class DeviceHook extends Hook {
           // Become active again after a while, create a DeviceBackOnlineAlarm
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
-            await (this.createAlarm(enrichedHost, 'device_back_online'));
+            try {
+              if (await (this.isPresenceEnabled(host.mac))) {
+                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
           }
         }
 
@@ -358,9 +374,8 @@ class DeviceHook extends Hook {
         
         log.info("MAC entry is updated with new IP");
 
-        let hostManager= new HostManager("cli",'server','debug');
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        hostManager.getHost(host.ipv4Addr);                  
+        this.hostManager.getHost(host.ipv4Addr);                  
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenDOverOtherDeivceIP event:", err, {})
       })
@@ -398,7 +413,15 @@ class DeviceHook extends Hook {
           // Become active again after a while, create a DeviceBackOnlineAlarm
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
-            await (this.createAlarm(enrichedHost, 'device_back_online'));
+            try {
+              if (await (this.isPresenceEnabled(host.mac))) {
+                await (this.createAlarm(enrichedHost, 'device_back_online'));
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
           }
         }
         
@@ -496,6 +519,19 @@ class DeviceHook extends Hook {
 
   getPreferredName(host) {
     return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
+  }
+
+  async isPresenceEnabled(mac) {
+    const data = await this.hostManager.loadPolicyAsync();
+
+    if (data && data['devicePresence'] === "true") {
+      // device presence is enabled globally, check device settings further    
+      let policy = await (hostTool.loadDevicePolicyByMAC(mac));
+      if (policy && policy['devicePresence'] === "true") {
+        return true;
+      }
+    }
+    return false; // by default return false, a conservative fallback
   }
   
   createAlarm(host, type, callback) {
