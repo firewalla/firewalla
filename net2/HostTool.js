@@ -474,6 +474,11 @@ class HostTool {
     })()
   }
 
+  loadDevicePolicyByMAC(mac) {
+    let key = "policy:mac:" + mac;
+    return rclient.hgetallAsync(key);
+  }
+
   isMacAddress(mac) {
     const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
     return macAddressPattern.test(mac)

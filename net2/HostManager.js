@@ -2498,6 +2498,18 @@ module.exports = class HostManager {
 
     }
 
+    loadPolicyAsync() {
+        return new Promise((resolve, reject) => {
+            this.loadPolicy((err, data) => {
+                if(err) {
+                    reject(err) 
+                } else {
+                    resolve(data)
+                }
+            });
+        });
+    }
+
     loadPolicy(callback) {
         let key = "policy:system"
         rclient.hgetall(key, (err, data) => {

@@ -135,6 +135,50 @@ class netBot extends ControllerBot {
     this.hostManager.unignoreIP(ip, callback);
   }
 
+  _devicePresence(ip, value, callback) {
+    log.info("_devicePresence", ip, value);
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy('devicePresence', value, (err, data) => {
+          if (err == null) {
+            if (callback != null) {
+              callback(null, "Success");
+            }
+          } else {
+            if (callback != null) {
+              callback(err, "Unable to change presence config to ip " + ip);
+            }
+          }
+        });
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy('devicePresence', value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success:" + ip);
+                } else {
+                  if (callback != null)
+                    callback(err, "Unable to change presence config to ip " + ip)
+
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to change presence config to ip " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "Host not found");
+        }
+      });
+    }
+  }
+
   _block(ip, blocktype, value, callback) {
     log.info("_block", ip, blocktype, value);
     if (ip === "0.0.0.0") {
@@ -890,6 +934,11 @@ class netBot extends ControllerBot {
           switch (o) {
             case "monitor":
               this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "devicePresence":
+              this._devicePresence(msg.target, msg.data.value.devicePresence, (err, obj) => {
                 cb(err);
               });
               break;
