@@ -1,5 +1,5 @@
 {
-  "version": 1.956,
+  "version": 1.957,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -72,6 +72,7 @@
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
+    "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
