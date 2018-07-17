@@ -146,6 +146,8 @@ module.exports = class {
       intelObj.whois = await this.whois(domain);
     }
 
+    intelObj.from = "firewalla";
+
     log.info(`Intel for domain ${domain} is`, intelObj);
 
     return intelObj;
@@ -286,6 +288,7 @@ module.exports = class {
     }
     intelObj.summary = "";
     intelObj.weburl = weburl;
+    intelObj.from = "firewalla";
     if (intel.cc) {
       try {
         intelObj.tags = JSON.parse(intel.cc);
@@ -340,6 +343,7 @@ module.exports = class {
     intelObj.summary = summary;
     intelObj.weburl = weburl;
     intelObj.tags = tagArray;
+    intelObj.from = "cymon";
 
     if (intelObj.tags && intelObj.tags.length > 0) {
       const reasonize = (tag) => `${tag.tag} - ${Math.round(tag.count / tagCount * 100)}%`;
