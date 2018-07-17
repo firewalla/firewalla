@@ -146,7 +146,7 @@ class DeviceBackOnlineAlarm extends Alarm {
 
 class SpoofingDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
-    super("SPOOFING_DEVICE_ALARM", timestamp, device, info);
+    super("ALARM_SPOOFING_DEVICE", timestamp, device, info);
   }
 
   keysToCompareForDedup() {
@@ -458,6 +458,7 @@ let classMapping = {
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
+  ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
