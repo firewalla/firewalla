@@ -21,8 +21,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const bonjour = require('bonjour')()
 
 const EncipherTool = require('../net2/EncipherTool.js')
