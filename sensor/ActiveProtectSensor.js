@@ -59,7 +59,7 @@ class ActiveProtectSensor extends Sensor {
     
     const policies = await pm2.loadActivePolicysAsync(1000);
 
-    const alreadySet = false;
+    let alreadySet = false;
 
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
