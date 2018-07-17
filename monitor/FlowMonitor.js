@@ -1015,7 +1015,8 @@ module.exports = class FlowMonitor {
       "p.source": "firewalla_intel",
       "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
-      "e.src.ports": flowObj.sp_array
+      "e.src.ports": flowObj.sp_array,
+      "p.from": intelObj.from
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
@@ -1080,7 +1081,8 @@ module.exports = class FlowMonitor {
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
       "p.dest.whois": JSON.stringify(iobj.whois),
-      "p.severity.score": iobj.severityscore
+      "p.severity.score": iobj.severityscore,
+      "p.from": intelObj.from
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
