@@ -165,7 +165,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async ssh_scan() {
     const ip = await this.randomFindDevice();
-    const remoteIP = "116.62.163.43";
+    const remoteIP = "116.62.163.55";
 
     const payload = {
       "ts": new Date() / 1000,
