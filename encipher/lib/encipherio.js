@@ -425,7 +425,7 @@ let legoEptCloud = class {
                     if (bodyJson != null) {
                         callback(err, bodyJson);
                     } else {
-                        callback(err, null);
+                        callback(new Error("Malformed JSON"), null);
                     }
                 } else {
                     callback(err, null);
