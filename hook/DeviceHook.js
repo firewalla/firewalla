@@ -41,6 +41,9 @@ const samba = new Samba();
 
 const HostManager = require('../net2/HostManager.js');
 
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
+
 const l2 = require('../util/Layer2.js');
 
 
@@ -212,8 +215,15 @@ class DeviceHook extends Hook {
       (async() => {
 
         // v4
-        if(enrichedHost.ipv4Addr)
+        if(enrichedHost.ipv4Addr) {
+          let previousEntry = await(hostTool.getIPv4Entry(enrichedHost.ipv4Addr))
+          if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
+            // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
+            log.info("Suspected spoofing device detected: " + enrichedHost.mac);
+            await this.createAlarm(enrichedHost, 'spoofing_device');
+          }
           await hostTool.updateHost(enrichedHost);
+        }
 
         // v6
         if(enrichedHost.ipv6Addr)
@@ -305,7 +315,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_back_online');
+                await this.createAlarm(enrichedHost, 'device_presence');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -348,6 +358,12 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
+        if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
+          // ip address of gateway is taken over, handle it separately
+          log.info("Suspected spoofing device detected: " + enrichedHost.mac);
+          await this.createAlarm(enrichedHost, 'spoofing_device');
+        }
+
         await hostTool.updateHost(enrichedHost);
         await hostTool.updateIPv6Host(enrichedHost); //v6
 
@@ -362,7 +378,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_back_online');
+                await this.createAlarm(enrichedHost, 'device_presence');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -419,7 +435,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_back_online');
+                await this.createAlarm(enrichedHost, 'device_presence');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -568,8 +584,21 @@ class DeviceHook extends Hook {
     
       am2.enqueueAlarm(alarm);
     }
-    if (type === "device_back_online") {
+    if (type === "device_presence") {
       let alarm = new Alarm.DeviceBackOnlineAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
+    if (type === "spoofing_device") {
+      let alarm = new Alarm.SpoofingDeviceAlarm(new Date() / 1000,
                                            name,
                                            {
                                              "p.device.id": name,
