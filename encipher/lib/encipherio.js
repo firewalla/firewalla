@@ -421,7 +421,12 @@ let legoEptCloud = class {
                 });
             } else {
                 if (body !== null && body !== undefined) {
-                    callback(err, JSON.parse(body));
+                    let bodyJson = this._parseJsonSafe(body);
+                    if (bodyJson != null) {
+                        callback(err, bodyJson);
+                    } else {
+                        callback(new Error("Malformed JSON"), null);
+                    }
                 } else {
                     callback(err, null);
                 }
@@ -454,7 +459,11 @@ let legoEptCloud = class {
                 callback(httpResponse.statusCode, null);
             } else {
                 if (body !== null && body !== undefined) {
-                    let groups = JSON.parse(body);
+                    let groups = self._parseJsonSafe(body);
+                    if (groups == null) {
+                        callback(new Error("Malformed JSON"), null);
+                        return;
+                    }
                     for (let i = 0; i < groups['groups'].length; i++) {
                         let group = groups['groups'][i];
                         group.gid = group._id;
@@ -497,7 +506,12 @@ let legoEptCloud = class {
                     callback(httpResponse.statusCode, null);
                 });
             } else {
-                callback(err, JSON.parse(body)); ///{value:xxx}
+                let bodyJson = this._parseJsonSafe(body);
+                if (bodyJson != null) {
+                    callback(err, bodyJson); ///{value:xxx}
+                } else {
+                    callback(new Error("Malformed JSON"), null);
+                }
             }
         });
     }
@@ -576,7 +590,7 @@ let legoEptCloud = class {
                 }
                 let b = null;
                 try {
-                    b = JSON.parse(body);
+                    b = JSON.parse(body); // already surrounded by try/catch, no need to use _parseJsonSafe here
                     self.groupCache[gid] = self.parseGroup(b);
                     callback(err, b);
                 } catch (e) {
@@ -884,8 +898,12 @@ let legoEptCloud = class {
           }
 
           let decryptedMsg = this.decrypt(msg, key);
-          let msgJson = JSON.parse(decryptedMsg);
-          callback(null, msgJson);
+          let msgJson = this._parseJsonSafe(decryptedMsg);
+          if (msgJson != null) {
+            callback(null, msgJson);
+          } else {
+            callback(new Error("Malformed JSON"), null);
+          }
         });
     }
 
@@ -924,14 +942,22 @@ let legoEptCloud = class {
                     return;
                 }
 
-                let data = JSON.parse(body).data;
+                let bodyJson = this._parseJsonSafe(body);
+                if (bodyJson == null) {
+                    callback(new Error("Malformed JSON"), null);
+                    return;
+                }
+                let data = bodyJson.data;
                 let messages = [];
                 for (let m in data) {
                     let obj = data[m];
                     if (self.eid === obj.fromUid) {
                         continue;
                     }
-                    let message = JSON.parse(self.decrypt(obj.message, key));
+                    let message = this._parseJsonSafe(self.decrypt(obj.message, key));
+                    if (message == null) {
+                        continue;
+                    }
                     messages.push({
                         'id': obj.id, // id
                         'timestamp': obj.timestamp,
@@ -1352,7 +1378,12 @@ let legoEptCloud = class {
                     callback(httpResponse.statusCode, null);
                 });
             } else {
-                callback(err, JSON.parse(body));
+                let bodyJson = this._parseJsonSafe(body);
+                if (bodyJson != null) {
+                    callback(err, bodyJson);
+                } else {
+                    callback(new Error("Malformed JSON"), null);
+                }
             }
         });
     }
@@ -1409,6 +1440,16 @@ let legoEptCloud = class {
                 }
             });
         });
+    }
+
+    _parseJsonSafe(jsonData) {
+        try {
+            let json = JSON.parse(jsonData);
+            return json;
+        } catch (err) {
+            log.warn("Failed to parse json: " + jsonData);
+            return null;
+        }
     }
 
 };
