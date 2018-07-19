@@ -878,11 +878,27 @@ module.exports = class FlowMonitor {
     }
   }
 
+  getDevicePorts(obj) {
+    if(sysManager.isLocalIP(obj['id.orig_h'])) {
+      return obj['sp_array'];
+    } else {
+      return [obj['id.resp_p']];
+    }
+  }
+
   getRemotePort(obj) {
     if(!sysManager.isLocalIP(obj['id.orig_h'])) {
       return obj['id.orig_p'];
     } else {
       return obj['id.resp_p'];
+    }
+  }
+
+  getRemotePorts(obj) {
+    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
+      return obj['sp_array'];
+    } else {
+      return [obj['id.resp_p']];
     }
   }
 
@@ -1015,7 +1031,8 @@ module.exports = class FlowMonitor {
       "p.source": "firewalla_intel",
       "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
-      "e.src.ports": flowObj.sp_array,
+      "e.device.ports": this.getDevicePorts(flowObj),
+      "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from
     });
 
@@ -1083,7 +1100,8 @@ module.exports = class FlowMonitor {
       "p.dest.whois": JSON.stringify(iobj.whois),
       "p.severity.score": iobj.severityscore,
       "p.from": iobj.from,
-      "e.src.ports": flowObj.sp_array
+      "e.device.ports": this.getDevicePorts(flowObj),
+      "e.dest.ports": this.getRemotePorts(flowObj)
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
