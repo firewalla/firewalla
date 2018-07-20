@@ -21,9 +21,9 @@ if [ $(dpkg-query -W -f='${Status}' watchdog 2>/dev/null | grep -c "ok installed
 then
     if [[ $PLATFORM == "armv7l" ]]; then
         sudo dpkg -i ${FIREWALLA_HOME}/vendor/watchdog_5.14-3ubuntu0.16.04.1_armhf.deb
-        sudo cp ${FIREWALLA_HOME}/etc/watchdog.conf /etc/watchdog.conf
     elif [[ $PLATFORM == "x86_64" ]]; then
         sudo apt-get install watchdog
-        sudo cp ${FIREWALLA_HOME}/etc/watchdog.conf /etc/watchdog.conf
     fi
 fi
+
+cmp --silent ${FIREWALLA_HOME}/etc/watchdog.conf /etc/watchdog.conf || sudo cp ${FIREWALLA_HOME}/etc/watchdog.conf /etc/watchdog.conf
