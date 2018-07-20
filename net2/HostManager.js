@@ -518,7 +518,13 @@ class Host {
           return;
         }
         if(state === true) {
-          spoofer.newSpoof(this.o.ipv4Addr)
+          hostTool.getMacByIP(gateway).then((gatewayMac) => {
+            if (gatewayMac && gatewayMac === this.o.mac) {
+              // ignore devices that has same mac address as gateway
+              log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
+              return;
+            }
+            spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
@@ -526,7 +532,8 @@ class Host {
               log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
-            log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+            })
           })
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
