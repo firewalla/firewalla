@@ -1097,7 +1097,7 @@ module.exports = class FlowMonitor {
       "p.security.reason": reason,
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
-      "p.dest.whois": JSON.stringify(iobj.whois),
+//      "p.dest.whois": JSON.stringify(iobj.whois),
       "p.severity.score": iobj.severityscore,
       "p.from": iobj.from,
       "e.device.ports": this.getDevicePorts(flowObj),

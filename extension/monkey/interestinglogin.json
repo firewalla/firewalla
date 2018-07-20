@@ -1,0 +1,19 @@
+{
+	"ts": 1532110455.937655,
+	"uid": "C3BMN34YWdSLI6jff8",
+	"id.orig_h": "167.114.210.108",
+	"id.orig_p": 57186,
+	"id.resp_h": "10.0.1.182",
+	"id.resp_p": 22,
+	"proto": "tcp",
+	"note": "SSH::Interesting_Hostname_Login",
+	"msg": "Possible SSH login involving a remote client with an interesting hostname.",
+	"sub": "ns516312.ip-167-114-210.net",
+	"src": "167.114.210.108",
+	"dst": "10.0.1.182",
+	"p": 22,
+	"peer_descr": "bro",
+	"actions": ["Notice::ACTION_LOG"],
+	"suppress_for": 3600.0,
+	"dropped": false
+}
