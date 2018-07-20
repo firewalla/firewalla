@@ -73,7 +73,7 @@ class BroNotice {
     }
   }
 
-  async processSSHInterestingLogin(alar, broObj) {
+  async processSSHInterestingLogin(alarm, broObj) {
     const sub = broObj["sub"];
 
     if(sub) {
