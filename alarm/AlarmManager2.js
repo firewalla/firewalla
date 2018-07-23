@@ -1442,6 +1442,8 @@ module.exports = class {
 
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
+      } else {
+        alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
       }
       
       // whois - domain
