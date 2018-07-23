@@ -73,12 +73,23 @@ class BroNotice {
     }
   }
 
+  async processSSHInterestingLogin(alarm, broObj) {
+    const sub = broObj["sub"];
+
+    if(sub) {
+      alarm["p.dest.name"] = sub;
+    }
+
+  }
+
   async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
-    if(!noticeType) {
+    if(!noticeType || !broObj) {
       return;
     }
+
+    alarm["e.bro.raw"] = JSON.stringify(broObj);
 
     switch(noticeType) {
       case "SSH::Password_Guessing":
@@ -93,10 +104,15 @@ class BroNotice {
       await this.processPortScan(alarm, broObj);
       break;
 
+      case "SSH::Interesting_Hostname_Login":
+      await this.processSSHInterestingLogin(alarm, broObj);
+      break;
+
       default:
       // do nothing
       break;
     }
+
   }
 
   getBlockTarget(alarm) {
