@@ -136,7 +136,7 @@ class PolicyManager2 {
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action, {})
           done()
         })
         break
@@ -837,15 +837,14 @@ class PolicyManager2 {
     })()
   }
 
-  _removeActivatedTime(policy) {
-    return async(() => {
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        activatedTime: ""
-      }))
-      delete policy.activatedTime;
-      return policy;
-    })
+  async _removeActivatedTime(policy) {
+    await (this.updatePolicyAsync({
+      pid: policy.pid,
+      activatedTime: ""
+    }))
+
+    delete policy.activatedTime;
+    return policy;
   }
 
   _enforce(policy) {
@@ -990,10 +989,10 @@ class PolicyManager2 {
     }
   }
 
-  _unenforce(policy) {
+  async _unenforce(policy) {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
 
-    await (this._removeActivatedTime(policy))
+    await this._removeActivatedTime(policy)
 
     if(policy.scope) {
       return this._advancedUnenforce(policy)
