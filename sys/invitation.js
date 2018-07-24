@@ -30,6 +30,8 @@ let Promise = require('bluebird');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const exec = require('child-process-promise').exec;
+
 let networkTool = require('../net2/NetworkTool')();
 
 let license = require('../util/license.js');
@@ -249,6 +251,23 @@ class FWInvitation {
       intercomm.bpublish(gid, obj.r, config.serviceType);
     }
 
+    const cmd = "awk '{print $1}' /proc/uptime";
+    (async () => {
+      try {
+        const result = await exec(cmd);
+        const stdout = result.stdout;
+        const stderr = result.stderr;
+        if (stderr) {
+          log.warn("Unexpected result of uptime: " + stderr);
+        }
+        if (stdout) {
+          const seconds = stdout.replace(/\n$/, '');
+          log.forceInfo("Time elapsed since system boot: " + seconds);
+        }
+      } catch (err) {
+        log.warn("Failed to get system uptime.", err);
+      }
+    })();
     let timer = setInterval(() => {
       async(() => {
         let rid = obj.r;
