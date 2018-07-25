@@ -58,40 +58,122 @@ check_git() {
     return $_rc
 }
 
-rc=0
+check_each_system_service() {
+    local SERVICE_NAME=$1
+    local EXPECTED_STATUS=$2
+    local ACTUAL_STATUS=$(systemctl show -p SubState $SERVICE_NAME | sed 's/SubState=//')
+    printf "%20s %10s %10s\n" $SERVICE_NAME $EXPECTED_STATUS $ACTUAL_STATUS
 
-echo Start testing at $(date)
+}
 
-check_cloud || rc=1
+check_systemctl_services() {
+    echo "----------------------- System Services ----------------------------"
+    printf "%20s %10s %10s\n" "Service Name" "Expect" "Actual"
 
-check_process redis-server || rc=1
-check_process FireMain || rc=1
-check_process FireApi || rc=1
-check_process FireMon || rc=1
-check_process FireKick || rc=1
+    check_each_system_service fireapi "running"
+    check_each_system_service firemain "running"
+    check_each_system_service firemon "running"
+    check_each_system_service firekick "dead"
+    check_each_system_service redis-server "running"
+    check_each_system_service openvpn@server "running"
+    check_each_system_service watchdog "running"
+    check_each_system_service brofish "running"
+    check_each_system_service firewalla "dead"
+    check_each_system_service fireupgrade "dead"
+}
 
-check_partition overlayroot || rc=1
-check_partition /data || rc=1
-check_partition /log || rc=1
-check_zram || rc=1
+check_rejection() {
+    echo "----------------------- Node Rejections ----------------------------"
 
-check_git /home/pi/firewalla https://github.com/firewalla/firewalla.git
-check_git /home/pi/.node_modules https://github.com/firewalla/fnm.node8.armv7l.git
+    find /home/pi/logs/ -type f -mtime -2 -exec grep "Possibly Unhandled Rejection" -A 10 {} \;
 
-#check_file /encipher.config/license || rc=1
-check_file ~/.forever/main.log || rc=1
-check_file ~/.forever/api.log || rc=1
-check_file ~/.forever/kickui.log || rc=1
-check_file ~/.forever/monitor.log || rc=1
-check_file /encipher.config/netbot.config || rc=1
-check_file /sys/block/mmcblk0/device/serial || rc=1
-check_file /sbin/iptables || rc=1
-check_file /usr/bin/redis-server || rc=1
+}
 
-if [[ $rc -eq 0 ]]; then
-    echo Santiy test PASSED
-else
-    echo Santiy test FAILED
-fi
+check_exception() {
+    echo "----------------------- Node Exceptions ----------------------------"
 
-exit $rc
+    find /home/pi/logs/ -type f -mtime -2 -exec egrep -H -i '##### CRASH #####' -A 20 {} \;
+}
+
+check_reboot() {
+    echo "----------------------- Reboot Record ------------------------------"
+
+    sudo grep REBOOT /var/log/syslog
+}
+
+check_each_system_config() {
+    printf "%15s %10s\n" "$1" "$2"
+}
+
+check_system_config() {
+    echo "----------------------- System Config ------------------------------"
+    check_each_system_config Mode $(redis-cli get mode)
+    check_each_system_config "Adblock" $(redis-cli hget policy:system adblock)
+    check_each_system_config "Family" $(redis-cli hget policy:system family)
+    check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
+    check_each_system_config "vpnAvailable" $(redis-cli hget policy:system vpnAvaliable)
+    check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
+}
+
+check_policies() {
+    echo "----------------------- Blocking Rules ------------------------------"
+    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" )
+    printf "%5s %15s %10s %25s %10s\n" "Rule" "Target" "Type" "Device" "Expire"
+    for RULE in $RULES; do
+        local RULE_ID=${RULE/policy:/""}
+        local TARGET=$(redis-cli hget $RULE target)
+        local TYPE=$(redis-cli hget $RULE type)
+        local SCOPE=$(redis-cli hget $RULE scope)
+        if [[ ! -n $SCOPE ]]; then
+            SCOPE="All Devices"
+        fi
+        local EXPIRE=$(redis-cli hget $RULE expire)
+        if [[ ! -n $EXPIRE ]]; then
+            EXPIRE="Infinite"
+        fi
+        printf "%5s %15s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
+    done
+}
+
+check_hosts() {
+    echo "----------------------- Devices ------------------------------"
+    local DEVICES=$(redis-cli keys 'host:mac:*')
+    printf "%35s %25s %25s %10s %10s\n" "Host" "IP" "MAC" "Monitored" "Online"
+    NOW=$(date +%s)
+    for DEVICE in $DEVICES; do
+        local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
+        local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
+        local DEVICE_MAC=${DEVICE/host:mac:/""}
+        local DEVICE_MONITORING=$(redis-cli hget $DEVICE spoofing)
+        if [[ ! -n $DEVICE_MONITORING ]]; then
+            DEVICE_MONITORING="false"
+        fi
+        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
+        DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
+        if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
+            local DEVICE_ONLINE="yes"
+        else
+            local DEVICE_ONLINE="no"
+        fi
+        printf "%35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
+    done
+}
+
+check_iptables() {
+    echo "---------------------- IPtables and IPset ===================="
+    printf "%25s %10s\n" "IPSET" "NUM"
+    local IPSETS=$(sudo iptables -L -n | egrep -o "\<c_[^ ]*\>" | sort | uniq)
+    for IPSET in $IPSETS; do
+        local NUM=$(sudo ipset list $IPSET -terse | tail -n 1 | sed 's=Number of entries: ==')
+        printf "%25s %10s\n" $IPSET $NUM
+    done
+}
+
+check_systemctl_services
+check_rejection
+check_exception
+check_reboot
+check_system_config
+check_policies
+check_hosts
+check_iptables
