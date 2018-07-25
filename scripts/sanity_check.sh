@@ -114,9 +114,6 @@ check_reboot() {
 
 check_each_system_config() {
     printf "%15s %10s\n" "$1" "$2"
-
-    echo ""
-    echo ""
 }
 
 check_system_config() {
