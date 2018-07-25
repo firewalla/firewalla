@@ -113,7 +113,11 @@ check_reboot() {
 }
 
 check_each_system_config() {
-    printf "%15s %10s\n" "$1" "$2"
+    local VALUE=$2
+    if [[ $VALUE == "" ]]; then
+        VALUE="false"
+    fi
+    printf "%15s %10s\n" "$1" "$VALUE"
 }
 
 check_system_config() {
