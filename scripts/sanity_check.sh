@@ -58,6 +58,12 @@ check_git() {
     return $_rc
 }
 
+check_systemctl_services() {
+    echo "========== List all related system services =========="
+    systemctl status fireapi firemain firekick firemon redis-server openvpn.service openvpn@server.service watchdog brofish
+    systemctl --type=service --all list-units | egrep '(fire|brofish|redis|watchdog.service|openvpn)'
+}
+
 rc=0
 
 echo Start testing at $(date)
