@@ -80,6 +80,9 @@ check_systemctl_services() {
     check_each_system_service brofish "running"
     check_each_system_service firewalla "dead"
     check_each_system_service fireupgrade "dead"
+
+    echo ""
+    echo ""
 }
 
 check_rejection() {
@@ -87,22 +90,33 @@ check_rejection() {
 
     find /home/pi/logs/ -type f -mtime -2 -exec grep "Possibly Unhandled Rejection" -A 10 {} \;
 
+    echo ""
+    echo ""
 }
 
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
     find /home/pi/logs/ -type f -mtime -2 -exec egrep -H -i '##### CRASH #####' -A 20 {} \;
+
+    echo ""
+    echo ""
 }
 
 check_reboot() {
     echo "----------------------- Reboot Record ------------------------------"
 
     sudo grep REBOOT /var/log/syslog
+
+    echo ""
+    echo ""
 }
 
 check_each_system_config() {
     printf "%15s %10s\n" "$1" "$2"
+
+    echo ""
+    echo ""
 }
 
 check_system_config() {
@@ -113,6 +127,9 @@ check_system_config() {
     check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
     check_each_system_config "vpnAvailable" $(redis-cli hget policy:system vpnAvaliable)
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
+
+    echo ""
+    echo ""
 }
 
 check_policies() {
@@ -133,6 +150,9 @@ check_policies() {
         fi
         printf "%5s %15s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
     done
+
+    echo ""
+    echo ""
 }
 
 check_hosts() {
@@ -157,6 +177,9 @@ check_hosts() {
         fi
         printf "%35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
     done
+
+    echo ""
+    echo ""
 }
 
 check_iptables() {
@@ -167,6 +190,9 @@ check_iptables() {
         local NUM=$(sudo ipset list $IPSET -terse | tail -n 1 | sed 's=Number of entries: ==')
         printf "%25s %10s\n" $IPSET $NUM
     done
+
+    echo ""
+    echo ""
 }
 
 check_systemctl_services
