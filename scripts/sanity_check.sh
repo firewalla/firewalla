@@ -184,7 +184,7 @@ check_hosts() {
 }
 
 check_iptables() {
-    echo "---------------------- IPtables and IPset ===================="
+    echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -L -n | egrep -o "\<c_[^ ]*\>" | sort | uniq)
     for IPSET in $IPSETS; do
