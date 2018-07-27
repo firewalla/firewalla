@@ -2648,6 +2648,16 @@ class netBot extends ControllerBot {
       })
       break;
     }
+
+    case "host:delete": {
+      (async() => {
+        const hostMac = msg.data.value.mac;
+        
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
