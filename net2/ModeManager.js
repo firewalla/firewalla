@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require("./logger.js")(__filename);
+const log = require("./logger.js")(__filename);
 let fConfig = require('./config.js').getConfig();
 
 let secondaryInterface = require("./SecondaryInterface.js");
@@ -41,7 +41,7 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 
 
 
-const AUTO_REVERT_INTERVAL = 240 * 1000 // 4 minutes
+const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
 let timer = null
 
@@ -51,7 +51,7 @@ function _revert2None() {
     let bootingComplete = await (firewalla.isBootingComplete())
     let firstBindDone = await (firewalla.isFirstBindDone())
     if(!bootingComplete && firstBindDone) {
-      log.info("Revert back to none mode for safety")
+      log.warn("Revert back to none mode for safety")
       return switchToNone()
     }
   })()
