@@ -2650,9 +2650,18 @@ class netBot extends ControllerBot {
     }
 
     case "host:delete": {
-      (async() => {
+      (async () => {
         const hostMac = msg.data.value.mac;
-        
+        const macExists = await hostTool.macExists(hostMac);
+        if (macExists) {
+          let ips = await hostTool.getIPsByMac(hostMac);
+          ips.forEach(async (ip) => {
+            await hostTool.deleteHost(ip);
+          });
+          await hostTool.deleteMac(hostMac);
+          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+          this.simpleTxData(msg, {}, null, callback);
+        }
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
       })
