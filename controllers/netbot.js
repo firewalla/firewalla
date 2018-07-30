@@ -2648,6 +2648,40 @@ class netBot extends ControllerBot {
       })
       break;
     }
+
+    case "host:delete": {
+      (async () => {
+        const hostMac = msg.data.value.mac;
+        const macExists = await hostTool.macExists(hostMac);
+        if (macExists) {
+          let ips = await hostTool.getIPsByMac(hostMac);
+          ips.forEach(async (ip) => {
+            const latestMac = await hostTool.getMacByIP(ip);
+            if (latestMac && latestMac === hostMac) {
+              // double check to ensure ip address is not taken over by other device
+              await hostTool.deleteHost(ip);
+            }
+          });
+          await hostTool.deleteMac(hostMac);
+          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+          this.simpleTxData(msg, {}, null, callback);
+        } else {
+          let resp = {
+            type: 'jsonmsg',
+            mtype: 'cmd',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+            data: {"error": "device not found"}
+          };
+          this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);

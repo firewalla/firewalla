@@ -159,8 +159,12 @@ class HostTool {
     })
   }
 
-  deleteHost(ipv4) {
-    return rclient.delAsync(this.getHostKey(ipv4));
+  deleteHost(ip) {
+    if (iptool.isV4Format(ip)) {
+      return rclient.delAsync(this.getHostKey(ip));
+    } else {
+      return rclient.delAsync(this.getIPv6HostKey(ip));
+    }    
   }
 
   getMacKey(mac) {
