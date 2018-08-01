@@ -55,6 +55,7 @@ module.exports = class {
     this.serviceTag = "SSH"
     this.configComplete = false;
 
+    // if frp service is started during execution of async block, inconsistency may occur?
     (async () => {
       if (await this._isUp()) {
         // need to refresh config
