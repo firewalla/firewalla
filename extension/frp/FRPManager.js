@@ -46,7 +46,7 @@ module.exports = class {
 
   getSupportFRP() {
     if(!this.frpSession.support) {
-      this.frpSession.support = new FRP()
+      this.frpSession.support = new FRP("support")
     }
 
     return this.frpSession.support
@@ -54,7 +54,7 @@ module.exports = class {
 
   getVPNRelayFRP() {
     if(!this.frpSession.vpnRelay) {
-      let vpnRelay = new FRP()
+      let vpnRelay = new FRP("vpnRelay")
       vpnRelay.templateFilename = "vpnRelay.ini.template"
       this.frpSession.vpnRelay = vpnRelay
     }
