@@ -29,6 +29,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const URL = require("url");
 const bone = require("../lib/Bone");
+const dhcp = require("../extension/dhcp/dhcp.js");
 
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
@@ -1987,6 +1988,27 @@ class netBot extends ControllerBot {
       } else {
         log.info("API: CmdHandler ",gid,msg,{});
       }
+    if(msg.data.item === "dhcpCheck") {
+      (async() => {
+        let mode = require('../net2/Mode.js');
+        await mode.reloadSetupMode();
+        let dhcpModeOn = await mode.isDHCPModeOn();
+        if (dhcpModeOn) {
+          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const response = {
+            DHCPMode: true,
+            DHCPDiscover: dhcpFound
+          };
+          this.simpleTxData(msg, response, null, callback);
+        } else {
+          this.simpleTxData(msg, {DHCPMode: false}, null, callback);
+        }        
+      })().catch((err) => {
+        log.error("Failed to do DHCP discover", err);
+        this.simpleTxData(msg, null, err, callback);
+      });
+      return;
+    }
     if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
@@ -2623,6 +2645,40 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
+      })
+      break;
+    }
+
+    case "host:delete": {
+      (async () => {
+        const hostMac = msg.data.value.mac;
+        const macExists = await hostTool.macExists(hostMac);
+        if (macExists) {
+          let ips = await hostTool.getIPsByMac(hostMac);
+          ips.forEach(async (ip) => {
+            const latestMac = await hostTool.getMacByIP(ip);
+            if (latestMac && latestMac === hostMac) {
+              // double check to ensure ip address is not taken over by other device
+              await hostTool.deleteHost(ip);
+            }
+          });
+          await hostTool.deleteMac(hostMac);
+          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+          this.simpleTxData(msg, {}, null, callback);
+        } else {
+          let resp = {
+            type: 'jsonmsg',
+            mtype: 'cmd',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+            data: {"error": "device not found"}
+          };
+          this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
       })
       break;
     }
