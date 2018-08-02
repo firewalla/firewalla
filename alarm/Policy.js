@@ -124,6 +124,7 @@ module.exports = class {
       } else {
         return false;
       }
+      break
     case "devicePort":
       return false // no alarm supports on devicePort yet
       break
