@@ -418,3 +418,5 @@ DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n 
 ${FIREWALLA_HOME}/scripts/post_run.sh &>/dev/null </dev/null
 
 logger "MAIN-STARTED EXITED $(date)"
+
+logger "UPTIME: $(awk '{print $1}' /proc/uptime)"
