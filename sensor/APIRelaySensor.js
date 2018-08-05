@@ -85,6 +85,7 @@ class APIRelaySensor extends Sensor {
       config.name =  "api-" + await (encipherTool.getGID())
       config.protocol = "tcp"
       
+      log.info("Starting api relay service...");
 
       const valid = this.validateConfig(config)
       if(valid) {

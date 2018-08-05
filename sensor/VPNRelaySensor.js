@@ -85,6 +85,7 @@ class VPNRelaySensor extends Sensor {
       config.name =  "vpn-" + await (encipherTool.getGID())
       config.protocol = "udp"
 
+      log.info("Starting api relay service...");
 
       const valid = this.validateConfig(config)
       if(valid) {

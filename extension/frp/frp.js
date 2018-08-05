@@ -80,6 +80,12 @@ module.exports = class {
     if (this.name === "support") {
       return this._prepareConfiguration(config);
     }
+
+    if(!config) {
+      log.warn("Missing config information");
+      return;
+    }
+
     const genericTemplate = `${frpDirectory}/frpc.generic.ini.template`
     const port = config.port || this._getRandomPort(config.portBase, config.portLength)
     this.port = port;
@@ -153,6 +159,8 @@ module.exports = class {
       log.info(`Service ${serviceName} is already up`);
       return true;
     }
+
+    log.info(`Service ${serviceName} is offline`);
     return false;
   }
 
