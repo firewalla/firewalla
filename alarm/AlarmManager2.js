@@ -387,9 +387,9 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = 15 * 60 // 15 minutes
+      let duration = fc.getTimingConfig("alarm.cooldown") || 15 * 60 // 15 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
+        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
       }
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
