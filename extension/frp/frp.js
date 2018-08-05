@@ -82,7 +82,7 @@ module.exports = class {
     }
 
     if(!config) {
-      log.warn("Missing config information");
+      log.warn(`Missing config information for frp ${this.name}`);
       return;
     }
 
