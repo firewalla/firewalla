@@ -2083,7 +2083,7 @@ class netBot extends ControllerBot {
         break;
       case "resetSSHPassword":
         ssh.resetRandomPassword((err, password) => {
-          sysManager.sshPassword = password;
+          sysManager.setSSHPassword(password);
           this.simpleTxData(msg, null, err, callback);
         });
         break;
@@ -2312,7 +2312,7 @@ class netBot extends ControllerBot {
         await (frp.start())
         let config = frp.getConfig();
         let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.sshPassword = newPassword // in-memory update
+        sysManager.setSSHPassword(newPassword); // in-memory update
         config.password = newPassword
         this.simpleTxData(msg, config, null, callback)
       })().catch((err) => {
@@ -2323,7 +2323,7 @@ class netBot extends ControllerBot {
       async(() => {
         await (frp.stop())
         let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.sshPassword = newPassword // in-memory update
+        sysManager.setSSHPassword(newPassword); // in-memory update
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
