@@ -75,7 +75,7 @@ for i in `seq 1 10`; do
       rc=0
       break
     fi
-    /usr/bin/logger "FIREWALLA.UPGRADE NO Network $i"
+    /usr/bin/logger "ERROR: FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
 
@@ -98,6 +98,7 @@ function sync_time() {
     time_website=$1
     time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
     if [[ "x$time" == "x" ]]; then
+        logger "ERROR: Failed to load date info from website: $time_website"
         return 1
     else
         sudo date -s "$time"
