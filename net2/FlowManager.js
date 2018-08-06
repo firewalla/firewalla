@@ -167,7 +167,9 @@ module.exports = class FlowManager {
     let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
 
     return rclient.hsetAsync(downloadKey, hourOfDay, downloadValue)
+      .then(rclient.expireAsync(downloadKey, 3600 * 24))
       .then(rclient.hsetAsync(uploadKey, hourOfDay, uploadValue))
+      .then(rclient.expireAsync(uploadKey, 3600 * 24))
       .catch((err) => {
         log.error("Got error when recording last 24 hours stats: " + err);
         throw err;
@@ -321,7 +323,7 @@ module.exports = class FlowManager {
           log.error("Failed to record stats on download bytes: " + err);
           callback(err);
           return;
-        }    
+        }
 
         rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
           if(err) {
