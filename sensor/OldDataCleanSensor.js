@@ -134,26 +134,33 @@ class OldDataCleanSensor extends Sensor {
     
   }
 
-  cleanHourlyStats() {
+  async cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
-      rclient.keys("stats:hour*",(err,keys)=> {
-        let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
-        for (let j in keys) {
-          rclient.zscan(keys[j],0,(err,data)=>{
-            if (data && data.length==2) {
-              let array = data[1];
-              for (let i=0;i<array.length;i++) {
-                if (array[i]<expireDate) {
-                  rclient.zrem(keys[j],array[i]);
-                }
-                i += Number(1);
-              }
+    let keys = await rclient.keysAsync("stats:hour*");
+    let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
+    for (let j in keys) {
+      rclient.zscan(keys[j],0,(err,data)=>{
+        if (data && data.length==2) {
+          let array = data[1];
+          for (let i=0;i<array.length;i++) {
+            if (array[i]<expireDate) {
+              rclient.zrem(keys[j],array[i]);
             }
-          });
+            i += Number(1);
+          }
         }
       });
-
-    return Promise.resolve();
+    }
+    // expire legacy stats:last24 keys if its expiration is not set
+    keys = await rclient.keysAsync("stats:last24:*");
+    for (let j in keys) {
+      const key = keys[j];
+      const ttl = await rclient.ttlAsync(key);
+      if (ttl === -1) {
+        // legacy last 24 hour stats record, need to expire it.
+        await rclient.expireAsync(key, 3600 * 24);
+      }
+    }
   }
 
   cleanUserAgents() {
