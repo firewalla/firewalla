@@ -28,7 +28,7 @@ class UAIntel extends Intel {
     let dstPort = alarm["p.dest.port"];
     if (src && dst) {
       try {
-        let uaInfo = await (intelTool.getUserAgent(src, dst, dstPort));
+        let uaInfo = await intelTool.getUserAgent(src, dst, dstPort);
         log.info("Get user agent info of " + src + "->" + dst + ":" + dstPort + ": " + uaInfo);
         if (uaInfo) {
           alarm["e.userAgent"] = uaInfo;
