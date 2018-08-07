@@ -1139,6 +1139,7 @@ module.exports = class {
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
+            let dstPort = obj["id.resp_p"];
             let flowdir = "in";
 
             /*
@@ -1189,6 +1190,14 @@ module.exports = class {
                                 log.error("HTTP:Save:Error", err, o);
                             } else {
                                 log.debug("HTTP:Save:Agent", host, o);
+                            }
+                        });
+                        let ukey = "user_agent:" + host + ":" + dst + ":" + dstPort;
+                        rclient.set(ukey, obj.user_agent, (err, response) => {
+                            if (err != null) {
+                                log.error("USER_AGENT:Save:Error", err, obj.user_agent);
+                            } else {
+                                rclient.expire(ukey, 3600); // a much shorter expiration since this is used to enrich alarm data
                             }
                         });
                         dnsManager.resolveLocalHost(host, (err, data) => {

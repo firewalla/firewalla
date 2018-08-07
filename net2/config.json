@@ -63,6 +63,7 @@
     "WhoisDomainIntel",
     "Cymon2Intel",
     "SSLIntel",
+    "UAIntel",
     "TransferContextIntel",
     "MonkeyIntel"
   ],
