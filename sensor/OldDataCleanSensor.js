@@ -154,10 +154,11 @@ class OldDataCleanSensor extends Sensor {
     // expire legacy stats:last24 keys if its expiration is not set
     keys = await rclient.keysAsync("stats:last24:*");
     for (let j in keys) {
-      const ttl = rclient.ttlAsync(j);
+      const key = keys[j];
+      const ttl = await rclient.ttlAsync(key);
       if (ttl === -1) {
         // legacy last 24 hour stats record, need to expire it.
-        await rclient.expireAsync(j, 3600 * 24);
+        await rclient.expireAsync(key, 3600 * 24);
       }
     }
   }
