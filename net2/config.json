@@ -21,6 +21,10 @@
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
   "newSpoof": true,
+  "timing": {
+    "alarm.cooldown": 900,
+    "alarm.large_upload.cooldown": 14400
+  },
   "secondaryInterface": {
     "intf":"eth0:0",
     "ipOnly": "192.168.218.1",

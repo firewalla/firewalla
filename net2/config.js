@@ -224,8 +224,14 @@ function onFeature(feature, callback) {
   callbacks[feature].push(callback)
 }
 
+function getTimingConfig(key) {
+  const config = getConfig();
+  return config && config.timing && config.timing[key];
+}
+
 module.exports = {
   getConfig: getConfig,
+  getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures: getFeatures,
   getDynamicConfigs: getDynamicConfigs,
