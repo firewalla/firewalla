@@ -81,6 +81,12 @@
 
   const Diag = require('../extension/diag/app.js');
   
+  function delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
+  
   (async() => {
     await sysManager.setConfig(firewallaConfig)
     await interfaceDiscoverSensor.run()
@@ -324,9 +330,9 @@
           
           let onSuccess = function(payload) {
             return (async() => {
-              await recordAllRegisteredClients(gid).catch((err) => {
-                log.info("Failed to record registered clients, err:", err, {})
-              })
+              await updateGroupInfo(gid).catch((err) => {
+                log.info("Failed to update group info, err:", err, {})
+              });
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
@@ -352,6 +358,30 @@
     });
   }
   
+  async function updateGroupInfo(gid) {
+    await delay(3000);
+
+    return new Promise((resolve, reject) => {
+      eptcloud.groupFind(gid, (err, group)=> {
+        if (err) {
+          log.info("Error looking up group", err, err.stack, {});
+          reject(err);
+          return;
+        }
+        
+        if (group == null) {
+          reject(err);
+          return;
+        }
+
+        recordAllRegisteredClients();
+
+        resolve();
+        
+      }); 
+    });
+  }
+
   function launchService2(gid,callback) {
     fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
     
