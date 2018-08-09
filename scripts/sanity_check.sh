@@ -149,7 +149,7 @@ check_policies() {
         if [[ ! -n $EXPIRE ]]; then
             EXPIRE="Infinite"
         fi
-        printf "%5s %15s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
+        printf "%5s %30s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
     done
 
     echo ""
