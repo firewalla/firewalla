@@ -211,7 +211,7 @@
             log.info("Failed to reset ssh password");
           } else {
             log.info("A new random SSH password is used!");
-            sysManager.sshPassword = password;
+            sysManager.setSSHPassword(password);
           }
         });
       }, 15000);

@@ -75,7 +75,7 @@ for i in `seq 1 10`; do
       rc=0
       break
     fi
-    /usr/bin/logger "FIREWALLA.UPGRADE NO Network $i"
+    /usr/bin/logger "ERROR: FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
 
