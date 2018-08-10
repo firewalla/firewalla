@@ -1197,7 +1197,7 @@ module.exports = class {
                             if (err != null) {
                                 log.error("USER_AGENT:Save:Error", err, obj.user_agent);
                             } else {
-                                rclient.expire(ukey, 3600); // a much shorter expiration since this is used to enrich alarm data
+                                rclient.expire(ukey, this.config.bro.activityUserAgent.expires); // a much shorter expiration since this is used to enrich alarm data
                             }
                         });
                         dnsManager.resolveLocalHost(host, (err, data) => {

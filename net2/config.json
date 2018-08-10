@@ -230,6 +230,9 @@
       },
       "userAgent": {
          "expires": 604800
+      },
+      "activityUserAgent": {
+        "expires": 14400
       }
     },
 
