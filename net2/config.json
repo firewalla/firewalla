@@ -67,6 +67,7 @@
     "WhoisDomainIntel",
     "Cymon2Intel",
     "SSLIntel",
+    "UAIntel",
     "TransferContextIntel",
     "MonkeyIntel"
   ],
@@ -233,6 +234,9 @@
       },
       "userAgent": {
          "expires": 604800
+      },
+      "activityUserAgent": {
+        "expires": 14400
       }
     },
 

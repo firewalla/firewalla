@@ -265,7 +265,8 @@ module.exports = class FlowMonitor {
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
                         "p.dest.name": actionobj.dhname,
-                        "p.dest.ip": actionobj.dst
+                        "p.dest.ip": actionobj.dst,
+                        "p.dest.port": flow.dp
                       });
 
                       alarmManager2.enqueueAlarm(alarm);
@@ -301,7 +302,8 @@ module.exports = class FlowMonitor {
                       "p.device.name" : actionobj.shname,
                       "p.device.ip": flow.sh,
                       "p.dest.name": actionobj.dhname,
-                      "p.dest.ip": actionobj.dst
+                      "p.dest.ip": actionobj.dst,
+                      "p.dest.port": flow.dp
                     });
 
                     alarmManager2.enqueueAlarm(alarm);
@@ -414,7 +416,8 @@ module.exports = class FlowMonitor {
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
                         "p.dest.name": actionobj.dhname,
-                        "p.dest.ip": actionobj.dst
+                        "p.dest.ip": actionobj.dst,
+                        "p.dest.port": flow.dp
                       });
 
 
