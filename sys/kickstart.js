@@ -72,6 +72,8 @@
   
   let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
   let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
+
+  const EptCloudExtension = require('../extension/ept/eptcloud.js');
   
   // let NmapSensor = require('../sensor/NmapSensor');
   // let nmapSensor = new NmapSensor();
@@ -80,6 +82,12 @@
   let FWInvitation = require('./invitation.js');
 
   const Diag = require('../extension/diag/app.js');
+  
+  function delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
   
   (async() => {
     await sysManager.setConfig(firewallaConfig)
@@ -268,9 +276,10 @@
         
         rclient.hset("sys:ept", "group_member_cnt", count);
 
-        recordAllRegisteredClients(gid).catch((err) => {
+        const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+        eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
           log.info("Failed to record registered clients, err:", err, {})
-        })
+        });
         
         // new group without any apps bound;
         led.on();
@@ -324,9 +333,11 @@
           
           let onSuccess = function(payload) {
             return (async() => {
-              await recordAllRegisteredClients(gid).catch((err) => {
-                log.info("Failed to record registered clients, err:", err, {})
-              })
+              
+              const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+              await eptCloudExtension.job().catch((err) => {
+                log.info("Failed to update group info, err:", err, {})
+              });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
@@ -351,7 +362,8 @@
       }
     });
   }
-  
+
+
   function launchService2(gid,callback) {
     fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
     

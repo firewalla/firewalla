@@ -31,6 +31,9 @@ const URL = require("url");
 const bone = require("../lib/Bone");
 const dhcp = require("../extension/dhcp/dhcp.js");
 
+const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
+
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
@@ -487,6 +490,9 @@ class netBot extends ControllerBot {
     let self = this;
     this.compress = true;
     this.scanning = false;
+
+    this.eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+    this.eptCloudExtension.run(); // auto update group info from cloud
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
