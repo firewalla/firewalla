@@ -21,8 +21,6 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 class EptCloudExtension {
   constructor(eptcloud, gid) {
-    super();
-    instance = this;
     this.eptcloud = eptcloud;
     this.gid = gid;
   }
@@ -74,15 +72,18 @@ class EptCloudExtension {
           return;
         }
 
-        this.recordAllRegisteredClients();
-
-        resolve();
-        
+        this.recordAllRegisteredClients(gid).then(() => {
+          resolve();
+        }).catch((err) => {
+          reject(err);
+        });
       }); 
     });
   }
 
   run() {
+    this.job();
+      
     setInterval(() => {
       this.job();
     }, 1000 * 60 * 30); // every thirty minutes
