@@ -248,7 +248,7 @@
       "game": true,
       "large_upload": true,
       "new_device": true,
-      "device_presence": false,
+      "device_presence": true,
       "spoofing_device": false,
       "cyber_security": true,
       "cyber_security.autoBlock": true,
