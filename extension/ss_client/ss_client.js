@@ -154,7 +154,7 @@ async function startAsync(options) {
     log.info(`Switching ss server from ${oldSelectedConfig.server} to ${selectedConfig.server}.`)
   }
   
-  await stopAsync({suppressError: true})
+  await stop({suppressError: true})
   
   try {
     await _prepareSSConfigAsync()
@@ -189,7 +189,7 @@ async function startAsync(options) {
       await pclient.publishAsync("SS:START:FAILED", config.server)
     }
 
-    await stopAsync()
+    await stop()
   }
 }
 
