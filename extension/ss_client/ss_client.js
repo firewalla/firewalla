@@ -51,12 +51,15 @@ let extensionFolder = fHome + "/extension/ss_client";
 // Files
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
 let chinaDNSBinary = extensionFolder + "/chinadns";
+let ssClientBinary = `${extensionFolder}/fw_ss_client`;
+
 const dnsForwarderName = "dns_forwarder"
 const dnsForwarderBinary = `${extensionFolder}/${dnsForwarderName}`
 
 if(f.isDocker()) {
   redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
   chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
+  ssClientBinary = `${extensionFolder}/bin.x86_64/fw_ss_client`;
 }
 
 let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
@@ -69,11 +72,15 @@ let ssConfigKey = "scisurf.config";
 let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
 var ssConfig = null;
 
+const localSSClientPort = 8822;
+const localSSClientAddress = "0.0.0.0";
+
 let localRedirectionPort = 8820;
 let localRedirectionAddress = "0.0.0.0";
 let chinaDNSPort = 8854;
 let chinaDNSAddress = "127.0.0.1";
 let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid";
+const ssClientPidPath = `${f.getRuntimeInfoFolder()}/ss_client.pid`;
 
 const localDNSForwarderPort = 8857
 const remoteDNS = "8.8.8.8"
@@ -157,6 +164,7 @@ async function startAsync(options) {
     await _startRedirectionAsync()
     await _enableChinaDNSAsync()
     await _enableIptablesRuleAsync()
+    await _startSSClient()
 
     if(!statusCheckTimer) {
       statusCheckTimer = setInterval(() => {
@@ -185,98 +193,8 @@ async function startAsync(options) {
   }
 }
 
-function start(callback) {
-  callback = callback || function() {}
-
-  loadConfig((err, config) => {
-    if(err) {
-      log.error("Failed to load config");
-      callback(err);
-      return;
-    }
-
-    if(!config) {
-      callback(new Error("ss not configured"));
-      return;
-    }
-
-    saveConfigToFile();
-    
-    // always stop before start
-
-    stop({suppressError: true}, (err) => {
-
-      // ignore stop error
-      
-      _install((err) => {
-        if(err) {
-          log.error("Fail to install ipset");
-          callback(err);
-          stop(); // stop everything if anything wrong.
-          return;
-        }
-        
-        _enableIpset((err) => {
-          if(err) {
-            _disableIpset();
-            callback(err);
-            stop(); // stop everything if anything wrong.
-            return;
-          }
-
-          _startDNSForwarder((err) => {
-            if(err) {
-              callback(err);
-              stop(); // stop everything if anything wrong.
-              return;
-            }
-
-            _startRedirection((err) => {
-              if(err) {
-                callback(err);
-                stop(); // stop everything if anything wrong.
-                return;
-              }
-              
-              _enableChinaDNS((err) => {
-                if(err) {
-                  callback(err);
-                  stop(); // stop everything if anything wrong.
-                  return;
-                }
-                
-                _enableIptablesRule((err) => {
-                  if(err) {
-                    stop(); // stop everything if anything wrong.
-                  } else {
-                    if(!statusCheckTimer) {
-                      statusCheckTimer = setInterval(() => {
-                        statusCheck()
-                      }, 1000 * 60) // check status every minute
-                      log.info("Status check timer installed")
-                    }
-                    started = true;
-                  }
-                  callback(err);
-                });
-              });
-            });
-          });  
-        });
-      });      
-    });
-  });
-}
-
-function stop(options, callback) {
+async function stop(options) {
   options = options || {}
-  
-  if(typeof options === 'function') {
-    callback = options
-    options = {}
-  }
-  
-  callback = callback || function() {}
 
   log.info("Stopping everything on ss_client");
 
@@ -285,22 +203,16 @@ function stop(options, callback) {
     statusCheckTimer = null
     log.info("status check timer is stopped")
   }
-  
-  _async.applyEachSeries([ _disableIptablesRule,
-                          _disableChinaDNS,
-                          _stopRedirection,
-                          _stopDNSForwarder,
-                          _disableIpset],
-                        (err) => {
-                          if(err && ! options.suppressError ) {
-                            log.error("Got error when stop: " + err);
-                          }
-                          started=false;
-                          callback(null); // never report error on stop
-                        });
-}
 
-const stopAsync = Promise.promisify(stop)
+  await _disableIptablesRuleAsync().catch(() => {});
+  await _disableChinaDNSAsync().catch(() => {});
+  await _stopSSClient().catch(() => {});
+  await _stopRedirectionAsync().catch(() => {});
+  await _stopDNSForwarderAsync().catch(() => {});
+  await _disableIpsetAsync().catch(() => {});
+
+  started = false;
+}
 
 function _install(callback) {
   callback = callback || function() {}
@@ -449,6 +361,25 @@ function _startRedirection(callback) {
 
 const _startRedirectionAsync = Promise.promisify(_startRedirection)
 
+/*
+ * /home/pi/firewalla/extension/ss_client/fw_ss_client
+ *   -c /home/pi/.firewalla/config/ss_client.config.json
+ *   -l 8822
+ *   -f /home/pi/.firewalla/run/ss_client.pid
+  *  -b 0.0.0.0
+ */
+async function _startSSClient() {
+  const cmd = `${ssClientBinary} -c ${ssConfigPath} -l ${localSSClientPort} -b ${localSSClientAddress} -f ${ssClientPidPath}`;
+  log.info("Starting ss client...");
+  return exec(cmd);
+}
+
+async function _stopSSClient() {
+  log.info("Stopping ss client...");
+  return exec("pkill fw_ss_client").catch((err) => {
+    // do nothing
+  });
+}
 
 function _stopRedirection(callback) {
   callback = callback || function() {}
@@ -689,10 +620,8 @@ async function verifyDNSConnectivity() {
 }
 
 module.exports = {
-  start:start,
   startAsync: startAsync,
   stop:stop,
-  stopAsync: stopAsync,
   saveConfig:saveConfig,
   isStarted:isStarted,
   configExists:configExists,

@@ -465,7 +465,7 @@ module.exports = class {
     } else {
       
       (async () => {
-        await ss_client.stopAsync()
+        await ss_client.stop()
         log.info("SciSurf feature is disabled successfully");
         dnsmasq.setUpstreamDNS(null);
       })().catch((err) => {
