@@ -388,7 +388,7 @@ function _stopRedirection(callback) {
   log.info("Running cmd:", cmd);
   p.exec(cmd, (err, stdout, stderr) => {
     if(err) {      
-      log.error("Failed to stop redirection: " + stderr);
+      //log.error("Failed to stop redirection: " + stderr);
     } else {
       log.info("redirection is stopped successfully");
     }

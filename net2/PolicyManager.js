@@ -442,7 +442,7 @@ module.exports = class {
   scisurf(host, config) {
     if (config.state == true) {
 
-      if (!ss_client.configExists() || !config.config) {
+      if (!ss_client.configExists() && !config.config) {
         log.error("init config is required from app side for first start");
       }
 
