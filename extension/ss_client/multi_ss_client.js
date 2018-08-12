@@ -116,7 +116,8 @@ class MultiSSClient {
         redirPort: basePort + i * 10 + 1,
         localPort: basePort + i * 10 + 2,
         chinaDNSPort: basePort + i * 10 + 3,
-        dnsForwarderPort: basePort + i * 10 + 4
+        dnsForwarderPort: basePort + i * 10 + 4,
+        gfw: this.isGFWEnabled()
       };
       const s = new SSClient(ss, options);
       await s.start();

@@ -132,7 +132,6 @@ class SSClient {
       await this.stop();
       await this._createConfigFile();
       await this._install();
-      options.gfw && await this._enableCHNIpset();
       await this._startDNSForwarder();
       await this._startRedirection();
       await this._startSSClient();
