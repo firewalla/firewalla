@@ -1147,13 +1147,12 @@ class netBot extends ControllerBot {
         break;
       case "scisurfconfig":
         let v = msg.data.value;
-
-        // TODO validate input ??
+        
         if (v.from && v.from === "firewalla") {
-          let scisurf = require('../extension/ss_client/ss_client.js');
-          scisurf.saveConfig(v, (err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          });
+          const mssc = require('../extension/ss_client/mss_client.js');
+          mssc.saveConfig(v)
+            .then(() => this.simpleTxData(msg, {}, null, callback))
+            .catch((err) => this.simpleTxData(msg, null, err, callback));
         } else {
           this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
         }
@@ -1427,10 +1426,10 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let ssc = require('../extension/ss_client/ss_client.js');
-        ssc.loadConfig((err, result) => {
-          this.simpleTxData(msg, result || {}, err, callback);
-        });
+        let mssc = require('../extension/ss_client/mss_client.js');
+        mssc.loadConfig
+          .then((result) => this.simpleTxData(msg, result || {}, null, callback))
+          .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       case "language":
         this.simpleTxData(msg, {language: sysManager.language}, null, callback);
@@ -2095,20 +2094,16 @@ class netBot extends ControllerBot {
         break;
 
       case "resetSciSurfConfig":
-        let ssc = require('../extension/ss_client/ss_client.js');
-        ssc.stop((err) => {
-          // stop should always succeed
-          if (err) {
-            // stop again if failed
-            ssc.stop((err) => {
-            });
+        const mssc = require('../extension/ss_client/mss_client.js');
+        (async () => {
+          try {
+            await mssc.stop();
+            await mssc.clearConfig();  
+          } finally {
+            this.simpleTxData(msg, null, err, callback);  
           }
-          ssc.clearConfig((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        });
+        })();
         break;
-
       case "ping":
         let uptime = process.uptime();
         let now = new Date();

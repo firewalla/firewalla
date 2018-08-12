@@ -183,7 +183,7 @@ sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 
 sclient.on("message", (channel, message) => {
-  log.info(`got message from ${channel}: ${message}`)
+  log.debug(`got message from ${channel}: ${message}`)
   const theFeature = message
   switch(channel) {
   case "config:feature:dynamic:enable":

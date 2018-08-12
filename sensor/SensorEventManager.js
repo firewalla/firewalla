@@ -72,7 +72,7 @@ class SensorEventManager extends EventEmitter {
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
     let count = this.listenerCount(event.type);
     if(count === 0) {
-      log.error("No subscription on event type:", event.type, {});
+      log.warn("No subscription on event type:", event.type, {});
     } else if (count > 1) {
       // most of time, only one subscribe on each event type
       log.warn("Subscribers on event type:", event.type, "is more than ONE", {});
