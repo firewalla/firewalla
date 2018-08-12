@@ -56,7 +56,7 @@ class MultiSSClient {
   async loadConfig() {
     const configString = await rclient.getAsync(ssConfigKey);
     try {
-      JSON.parse(configString);
+      const config = JSON.parse(configString);
       this.config = config;
       return config;
     } catch(err) {
