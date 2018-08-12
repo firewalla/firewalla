@@ -211,8 +211,17 @@ class SSClient {
     });
 
     await this.bypassSSServer();
-    
-    await dnsmasq.setUpstreamDNS(this.getChinaDNS())
+
+    let port = null;
+
+    if(this.options.gfw) {
+      port = this.getChinaDNS();
+    } else {
+      port = this.getDNSForwardPort();
+    }
+
+    await dnsmasq.setUpstreamDNS(port);
+
     log.info("dnsmasq upstream dns is set to", this.getChinaDNS());
   }
   

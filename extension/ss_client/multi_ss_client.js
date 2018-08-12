@@ -215,15 +215,14 @@ class MultiSSClient {
     if (localDNSServers == null || localDNSServers.length == 0) {
       // only use 114 dns server if local dns server is not available (NOT LIKELY)
       localDNSServers = [defaultDNS];
+    }
 
-      const localDNS = localDNSServers[0];
+    const localDNS = localDNSServers[0];
 
-      try {
-        await fs.appendFileAsync(chnrouteFile, localDNS);
-      } catch (err) {
-        log.error("Failed to append local dns info to chnroute file, err:", err);
-        return;
-      }
+    try {
+      await fs.appendFileAsync(chnrouteFile, localDNS);
+    } catch (err) {
+      log.error("Failed to append local dns info to chnroute file, err:", err);
     }
   }
   
