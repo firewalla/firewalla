@@ -131,7 +131,6 @@ class SSClient {
     try {
       await this.stop();
       await this._createConfigFile();
-      await this._install();
       await this._startDNSForwarder();
       await this._startRedirection();
       await this._startSSClient();
@@ -211,11 +210,6 @@ class SSClient {
   // START
   async _createConfigFile() {
     return jsonfileWrite(this.getConfigPath(), this.config);
-  }
-
-  async _install() {
-    const cmd = "bash -c 'sudo which ipset &>/dev/null || sudo apt-get install -y ipset'";
-    return exec(cmd);
   }
 
   async _startDNSForwarder() {

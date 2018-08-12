@@ -34,6 +34,8 @@ const defaultDNS = "114.114.114.114";
 
 const SSClient = require('./ss_client.js');
 
+const haproxyPort = 7388;
+
 let instance = null;
 
 class MultiSSClient {
@@ -103,61 +105,94 @@ class MultiSSClient {
     return true;
   }
 
-  async start() {
-    const sss = await this._getSSConfigs();
-    this.isGFWEnabled() && await this._enableCHNIpset();
-    this.isGFWEnabled() && await this._prepareCHNRouteFile();
+  async install() {
+    const cmd = "bash -c 'sudo which ipset &>/dev/null || sudo apt-get install -y ipset'";
+    await exec(cmd);
+    const cmd2 = "bash -c 'sudo which haproxy &>/dev/null || sudo apt-get install -y haproxy'";
+    await exec(cmd2);
+    const cmd3 = "sudo systemctl stop haproxy";
+    await exec(cmd3);
+  }
 
-    const basePort = 7500;
+  async prepareHAProxyConfigFile() {
+    let templateData = await fs.readFileAsync(this.getHAProxyConfigTemplateFile(), 'utf8');
+    templateData = templateData.replace(/HAPROXY_LOCAL_PORT/g, haproxyPort);
 
-    for (let i = 0; i < sss.length; i++) {
-      const ss = sss[i];
-      const options = {
-        redirPort: basePort + i * 10 + 1,
-        localPort: basePort + i * 10 + 2,
-        chinaDNSPort: basePort + i * 10 + 3,
-        dnsForwarderPort: basePort + i * 10 + 4,
-        gfw: this.isGFWEnabled()
-      };
-      const s = new SSClient(ss, options);
-      await s.start();
-      this.managedSS.push(s);
-    }
-    
-    const selectedSS = this.selectedSS();
+    const servers = await this._getSSConfigs();
+    const proxy_content = servers.map((s) => {
+      return `        server  ${s.server}    ${s.server}:${s.server_port}`;
+    }).join("\n");
 
-    if(selectedSS) {
-      try {
-        await selectedSS.goOnline();
-      } catch(err) {
-        log.error("Failed to go online:", err);
-        await selectedSS.goOffline().catch((err) => {
-          log.error("Failed to go offline after online failed:", err);
-        });
-      }
+    templateData = templateData.replace(/HAPROXY_SERVERS/g, proxy_content);
+    await fs.writeFileAsync(this.getHAProxyConfigFile(), templateData, 'utf8');
+  }
+
+  getHAProxyConfigFile() {
+    return __dirname + "/haproxy.cfg";
+  }
+
+  getHAProxyConfigTemplateFile() {
+    return __dirname + "/haproxy.cfg.template"
+  }
+
+  async _startHAProxy() {
+    await this._stopHAProxy(); // stop before start
+    await this.prepareHAProxyConfigFile();
+    const cmd = `haproxy -D -f ${this.getHAProxyConfigFile()}`;
+    return exec(cmd);
+  }
+
+  async _stopHAProxy() {
+    const cmd = "pkill haproxy";
+    return exec(cmd).catch((err) => {});
+  }
+
+  async getHASSConfig() {
+    const ssConfigs = await this._getSSConfigs();
+    if(ssConfigs.length > 0) {
+      const config = ssConfigs[0];
+      const configCopy = JSON.parse(JSON.stringify(config));
+      configCopy.server = "127.0.0.1";
+      configCopy.server_port = haproxyPort;
+      return configCopy;
+    } else {
+      return null;
     }
   }
-  
-  selectedSS() {
-    return this.managedSS[0];
+
+  async start() {
+    try {
+      await this.install();
+
+      const sss = await this._getSSConfigs();
+      this.isGFWEnabled() && await this._enableCHNIpset();
+      this.isGFWEnabled() && await this._prepareCHNRouteFile();
+
+      await this._startHAProxy();
+
+      const config = await this.getHASSConfig();
+
+      this.ssClient = new SSClient(config, {
+        gfw: this.isGFWEnabled()
+      });
+
+      await this.ssClient.start();
+      await this.ssClient.goOnline();
+    } catch(err) {
+      log.error("Failed to start mss, revert it back, err:", err);
+      await this.stop().catch((err) => {});
+    }
   }
 
   async stop() {
+    if(this.ssClient) {
+      await this.ssClient.goOffline();
+      await this.ssClient.stop();
+    }
+
+    await this._stopHAProxy();
     await this._disableCHNIpset();
     await this._revertCHNRouteFile();
-
-    const selectedSS = this.selectedSS();
-
-    if(selectedSS) {
-      await selectedSS.goOffline();
-    }
-
-    for (let i = 0; i < this.managedSS.length; i++) {
-      const s = this.managedSS[i];
-      await s.stop();
-    }
-    
-    this.managedSS = [];
   }
   
   async _enableCHNIpset() {
