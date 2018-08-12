@@ -26,7 +26,8 @@ const fs = require('fs');
 const Promise = require('bluebird')
 Promise.promisifyAll(fs);
 
-const chnrouteFile = extensionFolder + "/chnroute";
+
+const chnrouteFile = __dirname + "/chnroute";
 const chnrouteRestoreForIpset = __dirname + "/chnroute.ipset.save";
 const defaultDNS = "114.114.114.114";
 

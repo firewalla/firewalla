@@ -22,7 +22,7 @@ const util = require('util');
 const jsonfile = require('jsonfile');
 const p = require('child_process');
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const DNSMASQ = require('../dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const exec = require('child-process-promise').exec
