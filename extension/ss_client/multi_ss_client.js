@@ -21,6 +21,7 @@ const ssConfigKey = "scisurf.config";
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
+const exec = require('child-process-promise').exec
 
 const fs = require('fs');
 const Promise = require('bluebird')
@@ -76,7 +77,7 @@ class MultiSSClient {
   }
   
   async _getSSConfigs() {
-    const config = this.loadConfig();
+    const config = await this.loadConfig();
     if(config.servers) {
       return config.servers;
     }
@@ -92,10 +93,14 @@ class MultiSSClient {
     // TODO
   }
   
+  isGFWEnabled() {
+    return true;
+  }
+  
   async start() {
-    const sss = this._getSSConfigs();
-    this.config.gfw && await this._enableCHNIpset();
-    this.config.gfw && await this._prepareCHNRouteFile();
+    const sss = await this._getSSConfigs();
+    this.isGFWEnabled() && await this._enableCHNIpset();
+    this.isGFWEnabled() && await this._prepareCHNRouteFile();
     for (let i = 0; i < sss.length; i++) {
       const ss = sss[i];
       const s = new SSClient("" + i, ss, {});

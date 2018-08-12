@@ -164,8 +164,7 @@ class SSClient {
     await this._stopSSClient().catch(() => {});
     await this._stopRedirection().catch(() => {});
     await this._stopDNSForwarder().catch(() => {});
-    await this._disableIpset().catch(() => {});
-
+    
     this.started = false;
   }
   
@@ -318,7 +317,7 @@ class SSClient {
   async _disableChinaDNS() {
     const cmd = `pkill -f 'chinadns.*p ${this.getChinaDNSPort()} .*${this.getDNSForwardPort()}'`;
     
-    return exec(cmd).exec((err) => {
+    return exec(cmd).catch((err) => {
       log.error("Got error when disable china dns:", err);
     });
   }
