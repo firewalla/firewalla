@@ -20,11 +20,10 @@ let log = require("../../net2/logger.js")(__filename, "info");
 
 let started = false;
 
-let fs = require('fs');
-let util = require('util');
-let jsonfile = require('jsonfile');
+const fs = require('fs');
+const util = require('util');
+const jsonfile = require('jsonfile');
 const p = require('child_process');
-const _async = require('async');
 
 const exec = require('child-process-promise').exec
 
@@ -35,18 +34,14 @@ const Promise = require('bluebird')
 
 const jsonfileWrite = Promise.promisify(jsonfile.writeFile)
 
-let f = require('../../net2/Firewalla.js');
+const f = require('../../net2/Firewalla.js');
 const fc = require('../../net2/config.js')
-let fHome = f.getFirewallaHome();
+const fHome = f.getFirewallaHome();
 
 let SysManager = require('../../net2/SysManager');
 let sysManager = new SysManager();
 
-let userID = f.getUserID();
-
-var extend = require('util')._extend;
-
-let extensionFolder = fHome + "/extension/ss_client";
+const extensionFolder = fHome + "/extension/ss_client";
 
 // Files
 let redirectionBinary = extensionFolder + "/fw_ss_redir";
@@ -619,11 +614,50 @@ async function verifyDNSConnectivity() {
 
 }
 
+class SSClient {
+  constructor() {
+
+  }
+
+  async start() {
+
+  }
+
+  async stop() {
+
+  }
+  //
+  // await _prepareSSConfigAsync()
+  // await _installAsync()
+  // await _enableIpsetAsync()
+  // await _startDNSForwarderAsync()
+  // await _startRedirectionAsync()
+  // await _enableChinaDNSAsync()
+  // await _enableIptablesRuleAsync()
+  // await _startSSClient()
+  //
+
+  async createSSConfig() {
+
+  }
+
+  async _startChinaDNS() {
+
+  }
+
+  async _stopChinaDNS() {
+
+  }
+
+  async _start
+}
+
+module.exports = SSClient;
+
 module.exports = {
   startAsync: startAsync,
   stop:stop,
   saveConfig:saveConfig,
-  isStarted:isStarted,
   configExists:configExists,
   getChinaDNS:getChinaDNS,
   loadConfig:loadConfig,
