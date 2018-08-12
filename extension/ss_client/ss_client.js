@@ -148,6 +148,7 @@ class SSClient {
       this.started = true;
       
     } catch(err) {
+      log.error("Failed to start SS, err:", err);
       // when any err occurs, revoke ss_client
       await this.stop();
     }

@@ -117,7 +117,14 @@ class MultiSSClient {
     const selectedSS = this.selectedSS();
 
     if(selectedSS) {
-      await selectedSS.goOnline();
+      try {
+        await selectedSS.goOnline();
+      } catch(err) {
+        log.error("Failed to go online:", err);
+        await selectedSS.goOffline().catch((err) => {
+          log.error("Failed to go offline after online failed:", err);
+        });
+      }
     }
   }
   
