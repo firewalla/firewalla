@@ -77,20 +77,20 @@ const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
 
 class SSClient {
-  constructor(name, config, options) {
-    if(!name || !config) {
+  constructor(config, options) {
+    if(!config) {
       throw new Error("Invalid name or config when new SSClient");
     }
 
     options = options || {}
     
-    this.name = name;
+    this.name = `${config.server}:${config.server_port}`;
     this.config = config;
     this.options = options;
     this.started = false;
     this.statusCheckTimer = null;
 
-    log.info(`Creating ss client ${this.name}, config: ${this.config}`);
+    log.info(`Creating ss client ${this.name}, config: ${require('util').inspect(this.config, {depth: null})}`);
   }
   
   // file paths
@@ -141,7 +141,7 @@ class SSClient {
 
       if(!this.statusCheckTimer) {
         this.statusCheckTimer = setInterval(() => {
-          statusCheck()
+//          statusCheck()
         }, 1000 * 60) // check status every minute
         log.info("Status check timer installed")
       }
@@ -211,7 +211,7 @@ class SSClient {
 
   // START
   async _createConfigFile() {
-    return jsonfileWrite(this.getConfigPath(), config);
+    return jsonfileWrite(this.getConfigPath(), this.config);
   }
 
   async _install() {

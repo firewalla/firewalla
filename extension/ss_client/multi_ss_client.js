@@ -109,7 +109,7 @@ class MultiSSClient {
     this.isGFWEnabled() && await this._prepareCHNRouteFile();
     for (let i = 0; i < sss.length; i++) {
       const ss = sss[i];
-      const s = new SSClient("" + i, ss, {});
+      const s = new SSClient(ss, {});
       await s.start();
       this.managedSS.push(s);
     }
