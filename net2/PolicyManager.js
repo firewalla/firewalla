@@ -40,7 +40,7 @@ let dnsmasq = new DNSMASQ();
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let ss_client = require('../extension/ss_client/ss_client.js');
+let mss_client = require('../extension/ss_client/multi_ss_client.js');
 
 var firewalla = require('../net2/Firewalla.js');
 
@@ -442,22 +442,14 @@ module.exports = class {
   scisurf(host, config) {
     if (config.state == true) {
 
-      if (!ss_client.configExists() && !config.config) {
-        log.error("init config is required from app side for first start");
-      }
-
-      if (config.config) {
-        ss_client.setConfig(config.config);
+      if(!mss_client.readyToStart()) {
+        log.error("MSS client is not ready to start yet");
+        return;
       }
       
       (async () => {
-        await ss_client.startAsync()
-
+        await mss_client.start()
         log.info("SciSurf feature is enabled successfully");
-        log.info("chinadns:", ss_client.getChinaDNS());
-        
-        await dnsmasq.setUpstreamDNS(ss_client.getChinaDNS())
-        log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err, {})
       })
@@ -465,13 +457,12 @@ module.exports = class {
     } else {
       
       (async () => {
-        await ss_client.stop()
+        await mss_client.stop()
         log.info("SciSurf feature is disabled successfully");
         dnsmasq.setUpstreamDNS(null);
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);
       })
-      
     }
   }
 

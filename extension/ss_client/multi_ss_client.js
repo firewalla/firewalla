@@ -19,19 +19,35 @@ const log = require("../../net2/logger.js")(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const ssConfigKey = "scisurf.config";
 
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
+
+const fs = require('fs');
+const Promise = require('bluebird')
+Promise.promisifyAll(fs);
+
+const chnrouteFile = extensionFolder + "/chnroute";
+const chnrouteRestoreForIpset = __dirname + "/chnroute.ipset.save";
+const defaultDNS = "114.114.114.114";
+
+const SSClient = require('./ss_client.js');
+
 let instance = null;
 
 class MultiSSClient {
   constructor() {
     if(instance == null) {
       instance = this;
+      this.managedSS = [];
     }
     return instance;
   }
 
   // config may contain one or more ss server configurations
   async saveConfig(config) {
-    await rclient.setAsync(ssConfigKey, JSON.stringify(config));
+    const configCopy = JSON.parse(JSON.stringify(config));
+    configCopy.version = "v2";
+    await rclient.setAsync(ssConfigKey, JSON.stringify(configCopy));
     this.config = config;
   }
 
@@ -40,18 +56,109 @@ class MultiSSClient {
     this.config = config;
     return config;
   }
+  
+  async readyToStart() {
+    const config = await this.loadConfig();
+    if(config) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+  
+  async clearConfig() {
+    return rclient.delAsync(ssConfigKey);
+  }
 
   async loadConfigFromMem() {
     return this.config;
   }
+  
+  async _getSSConfigs() {
+    const config = this.loadConfig();
+    if(config.servers) {
+      return config.servers;
+    }
+    
+    return [config];
+  }
 
+  async getPrimarySS() {
+    return this.managedSS[0]; // FIXME
+  }
+  
+  async switch() {
+    // TODO
+  }
+  
   async start() {
-
+    const sss = this._getSSConfigs();
+    this.config.gfw && await this._enableCHNIpset();
+    this.config.gfw && await this._prepareCHNRouteFile();
+    for (let i = 0; i < sss.length; i++) {
+      const ss = sss[i];
+      const s = new SSClient("" + i, ss, {});
+      await s.start();
+      this.managedSS.push(s);
+    }
+    
+    await this.selectedSS().goOnline();
+  }
+  
+  async selectedSS() {
+    return this.managedSS[0];
   }
 
   async stop() {
-
+    await this._disableCHNIpset();
+    await this._revertCHNRouteFile();
+    
+    await this.selectedSS().goOffline();
+    
+    for (let i = 0; i < this.managedSS.length; i++) {
+      const s = this.managedSS[i];
+      await s.stop();
+    }
+    
+    this.managedSS = [];
   }
+  
+  async _enableCHNIpset() {
+    const cmd = `sudo ipset -! restore -file ${chnrouteRestoreForIpset}`;
+    log.info("Running cmd:", cmd);
+    return exec(cmd);
+  }
+  
+  async _disableCHNIpset() {
+    const cmd = "sudo ipset destroy chnroute";
+    log.info("Running cmd:", cmd);
+    return exec(cmd).catch((err) => {
+      log.error("Failed to destroy chnroute:", err);
+    });
+  }
+  
+  async _prepareCHNRouteFile() {
+    let localDNSServers = sysManager.myDNS();
+    if (localDNSServers == null || localDNSServers.length == 0) {
+      // only use 114 dns server if local dns server is not available (NOT LIKELY)
+      localDNSServers = [defaultDNS];
+
+      const localDNS = localDNSServers[0];
+
+      try {
+        await fs.appendFileAsync(chnrouteFile, localDNS);
+      } catch (err) {
+        log.error("Failed to append local dns info to chnroute file, err:", err);
+        return;
+      }
+    }
+  }
+  
+  async _revertCHNRouteFile() {
+    const revertCommand = `git checkout HEAD -- ${chnrouteFile}`;
+    await exec(revertCommand).catch((err) => {});
+  }
+  
 }
 
 module.exports = new MultiSSClient();
