@@ -108,7 +108,11 @@ class MultiSSClient {
       this.managedSS.push(s);
     }
     
-    await this.selectedSS().goOnline();
+    const selectedSS = this.selectedSS();
+
+    if(selectedSS) {
+      await selectedSS.goOnline();
+    }
   }
   
   async selectedSS() {
@@ -118,9 +122,13 @@ class MultiSSClient {
   async stop() {
     await this._disableCHNIpset();
     await this._revertCHNRouteFile();
-    
-    await this.selectedSS().goOffline();
-    
+
+    const selectedSS = this.selectedSS();
+
+    if(selectedSS) {
+      await selectedSS.goOffline();
+    }
+
     for (let i = 0; i < this.managedSS.length; i++) {
       const s = this.managedSS[i];
       await s.stop();
