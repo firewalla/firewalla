@@ -170,6 +170,30 @@ class SSClient {
     
     this.started = false;
   }
+
+  async bypassSSServer() {
+    const chainName = `FW_SHADOWSOCKS${this.name}`;
+
+    if(this.ssServers) {
+      for (let i = 0; i < this.ssServers.length; i++) {
+        const ssServer = this.ssServers[i];
+        const cmd = `sudo iptables -w -t nat -I ${chainName} -d ${ssServer} -j RETURN`;
+        await exec(cmd).catch((err) => {});
+      }
+    }
+  }
+
+  async unbypassSSServer() {
+    const chainName = `FW_SHADOWSOCKS${this.name}`;
+
+    if(this.ssServers) {
+      for (let i = 0; i < this.ssServers.length; i++) {
+        const ssServer = this.ssServers[i];
+        const cmd = `sudo iptables -w -t nat -D ${chainName} -d ${ssServer} -j RETURN`;
+        await exec(cmd).catch((err) => {});
+      }
+    }
+  }
   
   async goOnline() {
     const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
@@ -185,6 +209,8 @@ class SSClient {
     await exec(cmd).catch((err) => {
       log.error(`Got error when ${this.name} go online:`, err)
     });
+
+    await this.bypassSSServer();
     
     await dnsmasq.setUpstreamDNS(this.getChinaDNS())
     log.info("dnsmasq upstream dns is set to", this.getChinaDNS());
@@ -192,6 +218,8 @@ class SSClient {
   
   async goOffline() {
     await dnsmasq.setUpstreamDNS(null)
+
+    await this.unbypassSSServer();
 
     const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
       this.name,

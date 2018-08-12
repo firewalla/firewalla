@@ -175,6 +175,7 @@ class MultiSSClient {
       this.ssClient = new SSClient(config, {
         gfw: this.isGFWEnabled()
       });
+      this.ssClient.ssServers = sss.map((s) => s.server);
 
       await this.ssClient.start();
       await this.ssClient.goOnline();
