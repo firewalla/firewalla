@@ -102,14 +102,23 @@ class MultiSSClient {
   isGFWEnabled() {
     return true;
   }
-  
+
   async start() {
     const sss = await this._getSSConfigs();
     this.isGFWEnabled() && await this._enableCHNIpset();
     this.isGFWEnabled() && await this._prepareCHNRouteFile();
+
+    const basePort = 7500;
+
     for (let i = 0; i < sss.length; i++) {
       const ss = sss[i];
-      const s = new SSClient(ss, {});
+      const options = {
+        redirPort: basePort + i * 10 + 1,
+        localPort: basePort + i * 10 + 2,
+        chinaDNSPort: basePort + i * 10 + 3,
+        dnsForwarderPort: basePort + i * 10 + 4
+      };
+      const s = new SSClient(ss, options);
       await s.start();
       this.managedSS.push(s);
     }

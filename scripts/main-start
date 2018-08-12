@@ -223,7 +223,7 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
 #nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
-sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
+sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
 

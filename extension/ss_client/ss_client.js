@@ -90,7 +90,7 @@ class SSClient {
     this.started = false;
     this.statusCheckTimer = null;
 
-    log.info(`Creating ss client ${this.name}, config: ${require('util').inspect(this.config, {depth: null})}`);
+    log.info(`Creating ss client ${this.name}, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
   }
   
   // file paths
