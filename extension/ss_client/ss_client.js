@@ -81,7 +81,7 @@ class SSClient {
     if(!name || !config) {
       throw new Error("Invalid name or config when new SSClient");
     }
-    
+
     options = options || {}
     
     this.name = name;
@@ -89,6 +89,8 @@ class SSClient {
     this.options = options;
     this.started = false;
     this.statusCheckTimer = null;
+
+    log.info(`Creating ss client ${this.name}, config: ${this.config}`);
   }
   
   // file paths
@@ -122,6 +124,8 @@ class SSClient {
   }
   
   async start() {
+    log.info("Starting SS...");
+
     const options = this.options;
     
     try {
@@ -310,7 +314,7 @@ class SSClient {
     
     log.info("Running cmd:", cmd);
     return exec(cmd).catch((err) => {
-      log.error("Got error when disable ss iptables rule set:", err);
+//      log.error("Got error when disable ss iptables rule set:", err);
     });
   }
 
@@ -318,7 +322,7 @@ class SSClient {
     const cmd = `pkill -f 'chinadns.*p ${this.getChinaDNSPort()} .*${this.getDNSForwardPort()}'`;
     
     return exec(cmd).catch((err) => {
-      log.error("Got error when disable china dns:", err);
+//      log.error("Got error when disable china dns:", err);
     });
   }
   
@@ -326,7 +330,7 @@ class SSClient {
     const cmd = `pkill -f 'fw_ss_client.*${this.getClientPidPath()}'`;
     log.info("Stopping ss client...", cmd);
     return exec(cmd).catch((err) => {
-      log.info("Failed to stop ss client", err);
+//      log.info("Failed to stop ss client", err);
     });
   }
 
@@ -335,7 +339,7 @@ class SSClient {
     log.info("Running cmd:", cmd);
     
     return exec(cmd).catch((err) => {
-      log.error("Failed to stop redir:", err);
+//      log.error("Failed to stop redir:", err);
     });
   }
   
@@ -344,7 +348,7 @@ class SSClient {
     log.info("Running cmd:", cmd);
 
     return exec(cmd).catch((err) => {
-      log.error("Failed to stop redir:", err);
+//      log.error("Failed to stop redir:", err);
     });
   }
   

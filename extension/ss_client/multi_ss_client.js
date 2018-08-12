@@ -54,9 +54,15 @@ class MultiSSClient {
   }
 
   async loadConfig() {
-    const config = await rclient.getAsync(ssConfigKey);
-    this.config = config;
-    return config;
+    const configString = await rclient.getAsync(ssConfigKey);
+    try {
+      JSON.parse(configString);
+      this.config = config;
+      return config;
+    } catch(err) {
+      log.error("Failed to parse mss config:", err);
+      return null;
+    }
   }
   
   async readyToStart() {
@@ -115,7 +121,7 @@ class MultiSSClient {
     }
   }
   
-  async selectedSS() {
+  selectedSS() {
     return this.managedSS[0];
   }
 
