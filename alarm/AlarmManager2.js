@@ -353,9 +353,11 @@ module.exports = class {
             (async () => {
               const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
               
-              rclient.hmsetAsync(extendedAlarmKey, extended);
-              rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
-
+              // if there is any extended info
+              if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
+                await rclient.hmsetAsync(extendedAlarmKey, extended);
+                await rclient.expireatAsync(extendedAlarmKey, parseInt((+new Date) / 1000) + expiring);
+              }
               
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
