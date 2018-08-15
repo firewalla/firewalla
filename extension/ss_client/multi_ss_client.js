@@ -166,6 +166,7 @@ class MultiSSClient {
 
       const sss = await this._getSSConfigs();
       this.isGFWEnabled() && await this._enableCHNIpset();
+      this.isGFWEnabled() && await this._revertCHNRouteFile();
       this.isGFWEnabled() && await this._prepareCHNRouteFile();
 
       await this._startHAProxy();
