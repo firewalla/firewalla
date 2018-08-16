@@ -501,14 +501,14 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.debug("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+        log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
 
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
-        if (this.o.ipv4Addr == gateway || this.o.mac == null || this.o.ipv4Addr == sysManager.myIp()) {
+        if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
           return;
         }
         if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
@@ -526,10 +526,10 @@ class Host {
             }
             spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
-              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
+              rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
-              log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
               log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
@@ -538,7 +538,7 @@ class Host {
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
-              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
+              rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
               log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
