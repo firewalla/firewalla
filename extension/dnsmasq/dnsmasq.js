@@ -719,6 +719,7 @@ module.exports = class DNSMASQ {
       hosts = hosts.concat(_hosts);
     }
 
+    hosts = hosts.filter((x) => x.mac != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = hosts.map(h => (h.spoofing === 'false') ?

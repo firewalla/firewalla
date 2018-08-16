@@ -1439,7 +1439,7 @@ module.exports = class HostManager {
       json.timezone = sysManager.timezone;
     }
 
-    json.features = {
+    json.features = { // do not change these settings, it will impact how app works
       archiveAlarm: true,
       alarmMoreItems: true,
       ignoreAlarm: true,
