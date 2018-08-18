@@ -177,7 +177,7 @@ check_hosts() {
         else
             local DEVICE_ONLINE="no"
         fi
-        printf "%35s %35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
+        printf "%35s %35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
     done
 
     echo ""
