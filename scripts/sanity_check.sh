@@ -159,10 +159,11 @@ check_policies() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %25s %25s %10s %10s\n" "Host" "IP" "MAC" "Monitored" "Online"
+    printf "%35s %35s %25s %25s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "Online"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
+        local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
         local DEVICE_MONITORING=$(redis-cli hget $DEVICE spoofing)
@@ -176,7 +177,7 @@ check_hosts() {
         else
             local DEVICE_ONLINE="no"
         fi
-        printf "%35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
+        printf "%35s %35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
     done
 
     echo ""
