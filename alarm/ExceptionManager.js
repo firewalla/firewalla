@@ -341,6 +341,10 @@ module.exports = class {
       return Promise.reject(new Error("Invalid Exception"));
     }
 
+    if(!json.timestamp) {
+      json.timestamp = new Date() / 1000;
+    }
+
     const e = this.jsonToException(json);
     if(e) {
       return this.checkAndSaveAsync(e);
