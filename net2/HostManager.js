@@ -615,7 +615,7 @@ class Host {
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
     subscribe(ip, e) {
-        this.subscriber.subscribe("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
+        this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
             log.debug("Host:Subscriber", channel, type, ip2, obj);
             if (type === "Notice:Detected") {
                 if (this.callbacks[e]) {
