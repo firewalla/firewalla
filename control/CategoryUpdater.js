@@ -644,10 +644,10 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule = `sudo iptables -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule = `sudo iptables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule = `sudo iptables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)
@@ -659,10 +659,10 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule = `sudo iptables -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule = `sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule = `sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule6 = `sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
+    const cmdRedirectHTTPSRule6 = `sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)

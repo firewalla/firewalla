@@ -501,14 +501,14 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.debug("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+        log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
 
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
-        if (this.o.ipv4Addr == gateway || this.o.mac == null || this.o.ipv4Addr == sysManager.myIp()) {
+        if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
           return;
         }
         if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
@@ -529,7 +529,7 @@ class Host {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
-              log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
               log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
@@ -615,18 +615,18 @@ class Host {
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
     subscribe(ip, e) {
-        this.subscriber.subscribe("DiscoveryEvent", e, ip, (channel, type, ip, obj) => {
-            log.debug("Host:Subscriber", channel, type, ip, obj);
-            if (type == "Notice:Detected") {
+        this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
+            log.debug("Host:Subscriber", channel, type, ip2, obj);
+            if (type === "Notice:Detected") {
                 if (this.callbacks[e]) {
-                    this.callbacks[e](channel, ip, type, obj);
+                    this.callbacks[e](channel, ip2, type, obj);
                 }
-            } else if (type == "Intel:Detected") {
+            } else if (type === "Intel:Detected") {
                 // no need to handle intel here.                
-            } else if (type == "HostPolicy:Changed" && this.type == "server") {
+            } else if (type === "HostPolicy:Changed" && this.type === "server") {
                 this.applyPolicy((err)=>{
                 });
-                log.info("HostPolicy:Changed", channel, ip, type, obj);
+                log.info("HostPolicy:Changed", channel, ip, ip2, type, obj);
             }
         });
     }
@@ -1446,7 +1446,7 @@ module.exports = class HostManager {
       json.timezone = sysManager.timezone;
     }
 
-    json.features = {
+    json.features = { // do not change these settings, it will impact how app works
       archiveAlarm: true,
       alarmMoreItems: true,
       ignoreAlarm: true,
