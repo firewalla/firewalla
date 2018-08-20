@@ -615,18 +615,18 @@ class Host {
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
     subscribe(ip, e) {
-        this.subscriber.subscribe("DiscoveryEvent", e, ip, (channel, type, ip, obj) => {
-            log.debug("Host:Subscriber", channel, type, ip, obj);
-            if (type == "Notice:Detected") {
+        this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
+            log.debug("Host:Subscriber", channel, type, ip2, obj);
+            if (type === "Notice:Detected") {
                 if (this.callbacks[e]) {
-                    this.callbacks[e](channel, ip, type, obj);
+                    this.callbacks[e](channel, ip2, type, obj);
                 }
-            } else if (type == "Intel:Detected") {
+            } else if (type === "Intel:Detected") {
                 // no need to handle intel here.                
-            } else if (type == "HostPolicy:Changed" && this.type == "server") {
+            } else if (type === "HostPolicy:Changed" && this.type === "server") {
                 this.applyPolicy((err)=>{
                 });
-                log.info("HostPolicy:Changed", channel, ip, type, obj);
+                log.info("HostPolicy:Changed", channel, ip, ip2, type, obj);
             }
         });
     }
@@ -1446,7 +1446,7 @@ module.exports = class HostManager {
       json.timezone = sysManager.timezone;
     }
 
-    json.features = {
+    json.features = { // do not change these settings, it will impact how app works
       archiveAlarm: true,
       alarmMoreItems: true,
       ignoreAlarm: true,

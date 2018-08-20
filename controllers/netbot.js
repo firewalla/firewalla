@@ -1149,7 +1149,7 @@ class netBot extends ControllerBot {
         let v = msg.data.value;
         
         if (v.from && v.from === "firewalla") {
-          const mssc = require('../extension/ss_client/mss_client.js');
+          const mssc = require('../extension/ss_client/multi_ss_client.js');
           mssc.saveConfig(v)
             .then(() => this.simpleTxData(msg, {}, null, callback))
             .catch((err) => this.simpleTxData(msg, null, err, callback));
@@ -1426,7 +1426,7 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let mssc = require('../extension/ss_client/mss_client.js');
+        let mssc = require('../extension/ss_client/multi_ss_client.js');
         mssc.loadConfig
           .then((result) => this.simpleTxData(msg, result || {}, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
@@ -2094,7 +2094,7 @@ class netBot extends ControllerBot {
         break;
 
       case "resetSciSurfConfig":
-        const mssc = require('../extension/ss_client/mss_client.js');
+        const mssc = require('../extension/ss_client/multi_ss_client.js');
         (async () => {
           try {
             await mssc.stop();
@@ -2298,6 +2298,15 @@ class netBot extends ControllerBot {
         }
       })();
       break;
+      case "exception:create":
+        em.createException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
     case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
