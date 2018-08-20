@@ -31,8 +31,8 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
 done
 
 #FIXME: ignore if failed or not
-sudo iptables -N FW_BLOCK &>/dev/null
-sudo iptables -F FW_BLOCK
+sudo iptables -w -N FW_BLOCK &>/dev/null
+sudo iptables -w -F FW_BLOCK
 
 # return everything
 sudo iptables -w -C FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null || sudo iptables -w -A FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
@@ -73,8 +73,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush blocked_ip_port_set6
 
 
-  sudo ip6tables -N FW_BLOCK &>/dev/null
-  sudo ip6tables -F FW_BLOCK
+  sudo ip6tables -w -N FW_BLOCK &>/dev/null
+  sudo ip6tables -w -F FW_BLOCK
 
   # return everything
   sudo ip6tables -w -C FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -w -A FW_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN

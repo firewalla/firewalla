@@ -138,7 +138,7 @@ function setupCategoryEnv(category) {
 }
 
 function existsBlockingEnv(tag) {
-  const cmd = `sudo iptables -L FW_BLOCK | grep ${getMacSet(tag)} | wc -l`
+  const cmd = `sudo iptables -w -L FW_BLOCK | grep ${getMacSet(tag)} | wc -l`
   return async(() => {
     let output = await (exec(cmd))
     if(output.stdout == 4) {

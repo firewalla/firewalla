@@ -5,5 +5,5 @@
 #fi
 CHAIN_NAME=FW_SHADOWSOCKS${FW_NAME}
 
-sudo iptables -t nat -F $CHAIN_NAME &>/dev/null
-sudo iptables -t nat -X $CHAIN_NAME &>/dev/null
+sudo iptables -w -t nat -F $CHAIN_NAME &>/dev/null
+sudo iptables -w -t nat -X $CHAIN_NAME &>/dev/null
