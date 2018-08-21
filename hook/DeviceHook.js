@@ -260,6 +260,17 @@ class DeviceHook extends Hook {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
         }
 
+        const hostManager = new HostManager("cli", 'server', 'info');
+        hostManager.getHost(host.ipv4Addr, (err, host) => {
+          // directly start spoofing
+          if (err) {
+            log.error("Failed to get host after it is detected.");
+          }
+          if (host) {
+            host.spoof(true);
+          }
+        });
+
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err, {});
       });
