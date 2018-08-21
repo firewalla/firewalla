@@ -291,16 +291,27 @@ class PolicyManager2 {
     return this.jsonToPolicy(json)
   }
 
+  normalizePoilcy(policy) {
+    // convert array to string so that redis can store it as value
+    if(policy.scope && policy.scope.constructor.name === 'Array') {
+      policy.scope = JSON.stringify(policy.scope)
+    }    
+  }
+
   updatePolicyAsync(policy) {
     const pid = policy.pid
     if(pid) {
       const policyKey = policyPrefix + pid;
       return async(() => {
-        await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
-        if(policy.expire == "") {
+        const policyCopy = JSON.parse(JSON.stringify(policy))
+
+        this.normalizePoilcy(policyCopy);
+
+        await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
+        if(policyCopy.expire == "") {
           await (rclient.hdelAsync(policyKey, "expire"))
         }
-        if(policy.cronTime == "") {
+        if(policyCopy.cronTime == "") {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
         }
@@ -338,10 +349,7 @@ class PolicyManager2 {
 
       const policyCopy = JSON.parse(JSON.stringify(policy))
 
-      // convert array to string so that redis can store it as value
-      if(policyCopy.scope && policyCopy.scope.constructor.name === 'Array') {
-        policyCopy.scope = JSON.stringify(policyCopy.scope)
-      }
+      this.normalizePoilcy(policyCopy);
     
       rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
         if(err) {

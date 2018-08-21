@@ -213,6 +213,5 @@ sem.on("ChangeLogLevel", (event) => {
     } else {
       require('../../net2/LoggerManager.js').setLogLevel(event.name, event.level);
     }
-    
   }
 });

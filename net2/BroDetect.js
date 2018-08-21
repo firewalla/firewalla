@@ -1616,7 +1616,8 @@ module.exports = class {
                       alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
                     }
 
-                    await am2.checkAndSaveAsync(alarm)
+                    am2.enqueueAlarm(alarm);
+                    
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})
                 })

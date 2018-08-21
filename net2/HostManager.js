@@ -1439,7 +1439,7 @@ module.exports = class HostManager {
       json.timezone = sysManager.timezone;
     }
 
-    json.features = {
+    json.features = { // do not change these settings, it will impact how app works
       archiveAlarm: true,
       alarmMoreItems: true,
       ignoreAlarm: true,
@@ -1643,6 +1643,13 @@ module.exports = class HostManager {
         resolve(json);
       });
     });
+  }
+
+  async archivedAlarmNumberForInit(json) {
+    log.debug("Reading total number of archived alarms");
+    const count = await alarmManager2.numberOfArchivedAlarms();
+    json.archivedAlarmCount = count;
+    return json;
   }
 
   natDataForInit(json) {
@@ -1975,6 +1982,7 @@ module.exports = class HostManager {
             this.policyRulesForInit(json),
             this.exceptionRulesForInit(json),
             this.newAlarmDataForInit(json),
+            this.archivedAlarmNumberForInit(json),
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
             this.boneDataForInit(json),

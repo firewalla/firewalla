@@ -735,6 +735,11 @@ module.exports = class {
     });
   }
 
+  async numberOfArchivedAlarms() {
+    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+    return count;
+  }
+
   // top 50 only by default
   loadActiveAlarms(number, callback) {
 
@@ -1115,18 +1120,8 @@ module.exports = class {
           i_target = alarm["p.device.ip"];
           break;
         case "ALARM_BRO_NOTICE":
-          if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else {
-            log.error("Unsupported alarm type for allowing: ", alarm, {})
-            callback(new Error("Unsupported alarm type for allowing: " + alarm.type))
-            return
-          }
-
+          i_type = "ip";
+          i_target = alarm["p.dest.ip"];
           break;
         default:
 
