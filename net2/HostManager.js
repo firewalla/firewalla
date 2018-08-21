@@ -1652,6 +1652,13 @@ module.exports = class HostManager {
     });
   }
 
+  async archivedAlarmNumberForInit(json) {
+    log.debug("Reading total number of archived alarms");
+    const count = await alarmManager2.numberOfArchivedAlarms();
+    json.archivedAlarmCount = count;
+    return json;
+  }
+
   natDataForInit(json) {
     log.debug("Reading nat data");
 
@@ -1982,6 +1989,7 @@ module.exports = class HostManager {
             this.policyRulesForInit(json),
             this.exceptionRulesForInit(json),
             this.newAlarmDataForInit(json),
+            this.archivedAlarmNumberForInit(json),
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
             this.boneDataForInit(json),
