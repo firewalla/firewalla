@@ -103,7 +103,7 @@ module.exports = class {
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
+    this.queue = new Queue(`alarm-${f.getProcessName()}`)
 
     this.queue.removeOnFailure = true
     this.queue.removeOnSuccess = true
