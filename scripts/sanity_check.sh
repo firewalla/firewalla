@@ -156,6 +156,24 @@ check_policies() {
     echo ""
 }
 
+is_router() {
+    GW=$(/sbin/ip route show dev eth0 | awk '/default via/ {print $3}')
+    if [[ $GW == $1 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_firewalla() {
+    IP=$(/sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1 | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | awk -F/ '{print $1}')
+    if [[ $IP == $1 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
@@ -185,7 +203,15 @@ check_hosts() {
         else
             local DEVICE_ONLINE="no"
         fi
-        printf "%35s %35s %25s %25s %10s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE"
+
+        local COLOR=""
+        local UNCOLOR="\e[0m"
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]]; then
+          if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
+            COLOR="\e[91m"
+          fi
+        fi
+        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE"
     done
 
     echo ""
