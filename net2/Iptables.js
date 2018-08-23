@@ -168,7 +168,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -t nat ${action} PREROUTING -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
