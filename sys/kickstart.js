@@ -287,7 +287,7 @@
               callback(null, true);
               
               log.info("EXIT KICKSTART AFTER JOIN");
-              
+              led.off();
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -331,6 +331,7 @@
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               log.info("EXIT KICKSTART AFTER JOIN");
+              led.off();
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
