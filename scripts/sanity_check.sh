@@ -159,7 +159,7 @@ check_policies() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "Online"
+    printf "%35s %35s %25s %25s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
@@ -170,6 +170,14 @@ check_hosts() {
         if [[ ! -n $DEVICE_MONITORING ]]; then
             DEVICE_MONITORING="false"
         fi
+        local DEVICE_B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts $DEVICE_IP)
+        local DEVICE_B7_MONITORING=""
+        if [[ $DEVICE_B7_MONITORING_FLAG == "1" ]]; then
+            DEVICE_B7_MONITORING="true"
+        else
+            DEVICE_B7_MONITORING="false"
+        fi
+
         local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
         if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
@@ -177,7 +185,7 @@ check_hosts() {
         else
             local DEVICE_ONLINE="no"
         fi
-        printf "%35s %35s %25s %25s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_ONLINE"
+        printf "%35s %35s %25s %25s %10s %10s %10s\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE"
     done
 
     echo ""
