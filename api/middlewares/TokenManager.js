@@ -37,7 +37,7 @@ class TokenManager {
     return this.token === token;
   }
 
-  revoke() {
+  revokeToken() {
     this.token = null;
   }
 

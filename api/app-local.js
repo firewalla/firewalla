@@ -82,6 +82,7 @@ if(!firewalla.isProductionOrBeta()) {
   enableSubPath('mac');
   enableSubPath('intel');
   enableSubPath('sensor');
+  enableSubPath('proapi');
 
   let subpath_docs = express();
   subpath_v1.use("/docs", subpath_docs);

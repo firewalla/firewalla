@@ -114,6 +114,9 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
+const proServer = require('../api/bin/pro');
+const tokenManager = require('../api/middlewares/TokenManager').getInstance();
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1595,6 +1598,13 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "proToken":
+      (async () => {
+        this.simpleTxData(msg, {token: tokenManager.getToken()}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2574,6 +2584,22 @@ class netBot extends ControllerBot {
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
       })
+      break;
+    }
+    case "startProServer": {
+      proServer.startProServer();
+      break;
+    }
+    case "stopProServer": {
+      proServer.stopProServer();
+      break;
+    }
+    case "generateProToken": {
+      tokenManager.generateToken();
+      break;
+    }
+    case "revokeProToken": {
+      tokenManager.revokeToken();
       break;
     }
     default:

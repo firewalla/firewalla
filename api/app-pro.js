@@ -38,6 +38,8 @@ var subpath_v1 = express();
 app.use('/v1', subpath_v1);
 subpath_v1.use(passport.initialize());
 subpath_v1.use(passport.session());
+subpath_v1.use(bodyParser.json());
+subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use(require('./middlewares/auth'));
 
 function enableSubPath(path, lib) {
