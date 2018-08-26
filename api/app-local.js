@@ -49,53 +49,42 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 var subpath_v1 = express();
-app.use('/v1', subpath_v1);
-let auth = require('./middlewares/auth');
-subpath_v1.use(auth);
+app.use("/v1", subpath_v1);
+subpath_v1.use(passport.initialize());
+subpath_v1.use(passport.session());
+subpath_v1.use(bodyParser.json());
+subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 function enableSubPath(path, lib) {
   lib = lib || path;
-  let r = require(`./routes/pro/${lib}.js`);
+  let r = require(`./routes/${lib}.js`);
   subpath_v1.use("/" + path, r);
 }
 
-var subpath_debug = express();
-app.use("/debug", subpath_debug);
-subpath_debug.use(passport.initialize());
-subpath_debug.use(passport.session());
-subpath_debug.use(bodyParser.json());
-subpath_debug.use(bodyParser.urlencoded({ extended: false }));
-
-function enableDebugPath(path, lib) {
-  lib = lib || path;
-  let r = require(`./routes/${lib}.js`);
-  subpath_debug.use("/" + path, r);
-}
-
 // encipher api is enabled even for production enviornment
-enableDebugPath('encipher');
+enableSubPath('encipher');
 
 if(!firewalla.isProductionOrBeta()) {
   // apis for development purpose only, do NOT enable them in production
-  subpath_debug.use('/message', message);
-  subpath_debug.use('/ss', shadowsocks);
-  subpath_debug.use('/dns', dnsmasq);
-  subpath_debug.use('/alarm', alarm);
-  subpath_debug.use('/flow', flow);
-  subpath_debug.use('/host', host);
-  subpath_debug.use('/mode', mode);
-  subpath_debug.use('/test', test);
+  subpath_v1.use('/message', message);
+  subpath_v1.use('/ss', shadowsocks);
+  subpath_v1.use('/dns', dnsmasq);
+  subpath_v1.use('/alarm', alarm);
+  subpath_v1.use('/flow', flow);
+  subpath_v1.use('/host', host);
+  subpath_v1.use('/mode', mode);
+  subpath_v1.use('/test', test);
 
-  enableDebugPath('policy');
-  enableDebugPath('exception');
-  enableDebugPath('scisurf');
-  enableDebugPath('system');
-  enableDebugPath('mac');
-  enableDebugPath('intel');
-  enableDebugPath('sensor');
+  enableSubPath('policy');
+  enableSubPath('exception');
+  enableSubPath('scisurf');
+  enableSubPath('system');
+  enableSubPath('mac');
+  enableSubPath('intel');
+  enableSubPath('sensor');
 
   let subpath_docs = express();
-  subpath_debug.use("/docs", subpath_docs);
+  subpath_v1.use("/docs", subpath_docs);
   subpath_docs.use("/", express.static('dist'));
 
   swagger.setAppHandler(subpath_docs);

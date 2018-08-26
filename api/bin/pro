@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+'use strict'
+
+let http = require('http');
+let ip = require("ip");
+
+let app = require('../app-pro');
+let port = normalizePort(process.env.PRO_PORT || '8835');
+app.set('port', port);
+let proServer = http.createServer(app);
+
+function startProServer() {
+    proServer.listen(port, ip.address());
+}
+
+function stopProServer() {
+    proServer.close();
+}

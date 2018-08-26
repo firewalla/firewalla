@@ -15,8 +15,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const bone = require("../../lib/Bone.js");
 
-const ip = require("ip");
-
 let f = require("../../net2/Firewalla.js");
 
 // api/main/monitor all depends on sysManager configuration
@@ -111,16 +109,18 @@ function runLocalAPI() {
   app2.set('port', portForLocalAPI);
 
   /**
+   * Create HTTP server.
+   */
+
+  serverForLocalAPI = http.createServer(app2);
+
+  /**
    * Listen on provided port, on all network interfaces.
    */
 
   if(f.isProductionOrBeta()) {
-    localServer = http.createServer(app2);
-    localServer.listen(portForLocalAPI, 'localhost')
-    lanServer = http.createServer(app2);
-    lanServer.listen(portForLocalAPI, ip.address())
+    serverForLocalAPI.listen(portForLocalAPI, 'localhost')
   } else {
-    serverForLocalAPI = http.createServer(app2);
     serverForLocalAPI.listen(portForLocalAPI)
   }
 
