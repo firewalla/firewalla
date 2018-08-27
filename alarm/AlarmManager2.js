@@ -915,7 +915,7 @@ module.exports = class {
         return
       }
 
-      log.info(`Alarm to block: ${alarm.aid}`)
+      log.info(`Alarm to allow: ${alarm.aid}`)
 
       alarm.result_exception = exception.eid;
       alarm.result = "allow";
