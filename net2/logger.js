@@ -154,13 +154,12 @@ module.exports = function (component) {
   var wrap = {};
   wrap.component = component;
   wrap.effectiveLogLevel = null;
-  wrap.globalLogLevel = globalLogLevel;
 
   let getLogLevel = function() {
     if(wrap.effectiveLogLevel) {
       return wrap.effectiveLogLevel;
     } else {
-      return wrap.globalLogLevel;
+      return globalLogLevel;
     }
   }
 
@@ -205,7 +204,7 @@ module.exports = function (component) {
       logger.transports['log-file'].level = level;
     }   
 
-    wrap.globalLogLevel = level;
+    globalLogLevel = level;
   };
 
   loggerManager.registerLogger(component, wrap);

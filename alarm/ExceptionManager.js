@@ -209,6 +209,17 @@ module.exports = class {
     })
   }
 
+  async checkAndSaveAsync(exception) {
+    const exceptions = await this.getSameExceptions(exception);
+
+    if (exceptions && exceptions.length > 0) {
+      log.info(`exception ${exception} already exists in system: ${exceptions}`)
+      return Promise.reject(new Error("exception already exists"))
+    } else {
+      return this.saveExceptionAsync(exception);
+    }
+  }
+
   saveExceptionAsync(exception) {
     return new Promise((resolve, reject) => {
       this.saveException(exception, (err, ee) => {
@@ -323,6 +334,19 @@ module.exports = class {
         });
 
       });
+  }
+
+  async createException(json) {
+    if(!json) {
+      return Promise.reject(new Error("Invalid Exception"));
+    }
+
+    const e = this.jsonToException(json);
+    if(e) {
+      return this.checkAndSaveAsync(e);
+    } else {
+      return Promise.reject(new Error("Invalid Exception"));
+    }
   }
 
   isFirewallaCloud(alarm) {

@@ -168,6 +168,14 @@ class DestIPFoundHook extends Hook {
         intel.cc = info.cc;
       }
 
+      if(info.cs) {
+        intel.cs = info.cs;
+      }
+
+      if(info.v) {
+        intel.v = info.v;
+      }
+
       if(info.originIP) {
         intel.originIP = info.originIP
       }
