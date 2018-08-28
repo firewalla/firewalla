@@ -255,7 +255,7 @@
   }
 
   function inviteFirstAdmin(gid, callback) {
-    log.info("Initializing first admin:", gid);
+    log.forceInfo("Initializing first admin:", gid);
 
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
@@ -278,7 +278,7 @@
 
         const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
         eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
-          log.info("Failed to record registered clients, err:", err, {})
+          log.error("Failed to record registered clients, err:", err, {})
         });
         
         // new group without any apps bound;
@@ -295,7 +295,7 @@
               postAppLinked(); // app linked, do any post-link tasks
               callback(null, true);
               
-              log.info("EXIT KICKSTART AFTER JOIN");
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
               led.off();
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
@@ -308,7 +308,7 @@
             callback("404", false);
             
             led.off();
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
@@ -317,7 +317,7 @@
           fwInvitation.broadcast(onSuccess, onTimeout);
           
         } else {
-          log.info(`Found existing group ${gid} with ${count} members`);
+          log.forceInfo(`Found existing group ${gid} with ${count} members`);
           
           postAppLinked(); // already linked
           
@@ -336,12 +336,12 @@
               
               const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
               await eptCloudExtension.job().catch((err) => {
-                log.info("Failed to update group info, err:", err, {})
+                log.error("Failed to update group info, err:", err, {})
               });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
-              log.info("EXIT KICKSTART AFTER JOIN");
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
               led.off();
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
@@ -349,7 +349,7 @@
           }
           
           let onTimeout = function() {
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             led.off();
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
