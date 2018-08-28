@@ -45,8 +45,9 @@ subpath_v1.use(require('./middlewares/auth'));
 
 const router = express.Router();
 fs.readdirSync('./routes/pro').forEach(file => {
-  require('./routes/pro' + file)(router);
+  require('./routes/pro/' + file)(router);
 })
+subpath_v1.use(router);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

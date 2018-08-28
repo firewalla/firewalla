@@ -6,6 +6,8 @@ module.exports = function(req, res, next) {
   if (req.headers && tm.validateToken(req.headers['authorization'])) {
     next();
   } else {
-    res.status(401).send('');
+    let err = new Error('Unauthorized');
+    err.status = 401;
+    next(err);
   }
 };

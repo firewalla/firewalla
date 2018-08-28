@@ -1,7 +1,7 @@
 'use strict'
 
-const endpoint = __filename;
+const endpoint = '/' + require("path").basename(__filename, '.js');
 
-export default function(router) {
+module.exports = function(router) {
     router.get(endpoint, (req, res) => res.send('policies'));
 }
