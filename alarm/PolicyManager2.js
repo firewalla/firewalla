@@ -92,10 +92,10 @@ class PolicyManager2 {
   }
 
   setupPolicyQueue() {
-    this.queue = new Queue('policy')
-
-    this.queue.removeOnFailure = true
-    this.queue.removeOnSuccess = true
+    this.queue = new Queue('policy', {
+      removeOnFailure: true,
+      removeOnSuccess: true
+    });
 
     this.queue.on('error', (err) => {
       log.error("Queue got err:", err)
