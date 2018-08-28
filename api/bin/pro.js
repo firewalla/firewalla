@@ -4,30 +4,45 @@
 
 let http = require('http');
 let ip = require("ip");
+let os = require('os');
+let ifaces = os.networkInterfaces();
 let log = require('../../net2/logger')(__filename, "info");
 
 let app = require('../app-pro');
 let port = process.env.PRO_PORT || '8832';
 app.set('port', port);
-let proServer = http.createServer(app);
 let started = false;
-let iface = process.env.NETWORK_INTERFACE || 'eth0'
+let servers = [];
 
-function startProServer(onlisten) {
+function startProServer(onlisten, onerror) {
     if (!started) {
-        proServer.listen(port, ip.address(iface), () => {
-            started = true;
-            log.info('Pro API listening on ', ip.address(iface), port);
-            onlisten(true)
-        });
+        Promise.all(Object.keys(ifaces).map(
+            (iface) => {
+                return new Promise(function(resolve, reject) {
+                    let server = http.createServer(app);
+                    servers.push(server);
+                    server.listen(port, ip.address(iface), resolve);
+                })
+            }
+        ))
+        .then(() => {started = true; onlisten(true);})
+        .catch(onerror);
     } else {
         onlisten(false);
     }
 }
 
-function stopProServer(onstop) {
+function stopProServer(onstop, onerror) {
     if (started) {
-        proServer.close(() => {started = false; onstop(true);});
+        Promise.all(servers.map(
+            (server) => {
+                return new Promise(function(resolve, reject) {
+                    server.close(resolve);
+                })
+            }
+        ))
+        .then(() => {started = false; onstop(true);})
+        .catch(onerror);
     } else {
         onstop(false);
     }
