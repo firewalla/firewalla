@@ -11,6 +11,7 @@ var bodyParser = require('body-parser');
 var argv = require('minimist')(process.argv.slice(2));
 var swagger = require("swagger-node-express");
 const passport = require('passport');
+const fs = require('fs');
 
 let log = require('../net2/logger.js')(__filename, 'info')
 
@@ -42,11 +43,10 @@ subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use(require('./middlewares/auth'));
 
-function enableSubPath(path, lib) {
-  lib = lib || path;
-  let r = require(`./routes/pro/${lib}.js`);
-  subpath_v1.use("/" + path, r);
-}
+const router = express.Router();
+fs.readdirSync('./routes/pro').forEach(file => {
+  require('./routes/pro' + file)(router);
+})
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
