@@ -764,6 +764,11 @@ module.exports = class {
     });
   }
 
+  async numberOfArchivedAlarms() {
+    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+    return count;
+  }
+
   // top 50 only by default
   loadActiveAlarms(number, callback) {
 
