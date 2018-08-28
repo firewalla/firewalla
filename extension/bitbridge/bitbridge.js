@@ -138,10 +138,7 @@ class BitBridge {
         log.info("IPV6 not supported in current network environment, lacking ipv6 router")
       }                 
     }
-    // add cronjob for bitbridge7
-    const job = "*/5 * * * * ( /home/pi/firewalla/scripts/bitbridge-ping.sh > /dev/null 2>&1 )";
-    const cmd = `(crontab -l | grep -v 'bitbridge-ping.sh'; echo \"${job}\") | crontab -`;
-    require('child_process').execSync(cmd);
+
     this.started = true
   }
 
@@ -160,10 +157,8 @@ class BitBridge {
       // ignore error
     }
 
-    this.started = false
-    // remove cronjob for bitbridge7
-    const cmd = `crontab -l | grep -v 'bitbridge-ping.sh' | crontab -`
-    require('child_process').execSync(cmd);    
+    this.started = false    
+    
     return delay(1000) // delay for 1 second before return to ensure bitbridge is stopped
   }
 
