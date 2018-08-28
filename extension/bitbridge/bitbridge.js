@@ -157,7 +157,7 @@ class BitBridge {
       // ignore error
     }
 
-    this.started = false
+    this.started = false    
     
     return delay(1000) // delay for 1 second before return to ensure bitbridge is stopped
   }

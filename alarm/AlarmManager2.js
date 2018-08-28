@@ -101,10 +101,11 @@ module.exports = class {
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue(`alarm-${f.getProcessName()}`)
 
-    this.queue.removeOnFailure = true
-    this.queue.removeOnSuccess = true
+    this.queue = new Queue(`alarm-${f.getProcessName()}`, {
+      removeOnFailure: true,
+      removeOnSuccess: true
+    })
 
     this.queue.on('error', (err) => {
       log.error("Queue got err:", err)
