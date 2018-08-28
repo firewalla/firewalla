@@ -15,9 +15,29 @@ bitbridge7_ping () {
     fi
 }
 
-if bitbridge7_ping; then
-    exit 0
-else
-    # binary is bitbridge7, however service name is bitbridge4...
-    sudo systemctl restart bitbridge4
+is_spoof_mode () {
+    MODE=$(redis-cli get mode)
+    if [[ $MODE == "spoof" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_bitbridge7_active () {
+    RESULT=$(systemctl is-active bitbridge4)
+    if [[ $RESULT == "active" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+if is_spoof_mode && is_bitbridge7_active; then
+    if bitbridge7_ping; then
+        exit 0
+    else
+        # binary is bitbridge7, however service name is bitbridge4...
+        sudo systemctl restart bitbridge4
+    fi
 fi
