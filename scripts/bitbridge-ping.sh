@@ -6,9 +6,9 @@
 # -----------------------------------------
 
 bitbridge7_ping () {
-    RESULT=$(sudo netstat -anlp | grep bitbridge7 | grep 6379 | grep ESTABLISHED || pgrep bitbridge7)
+    RESULT=$(sudo netstat -anlp | grep bitbridge7 | grep 6379 | grep ESTABLISHED && pgrep bitbridge7)
     ret=$?
-    if [[ $? != 0 ]]; then
+    if [[ $ret != 0 ]]; then
         return 1
     else
         return 0
