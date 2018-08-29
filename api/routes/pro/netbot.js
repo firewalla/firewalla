@@ -3,8 +3,7 @@
 const endpoint = '/' + require("path").basename(__filename, '.js');
 
 module.exports = function(router, netbotHandler) {
-    router.get(endpoint, (req, res) => {
-        let body = {};
-        netbotHandler(req._gid, body, res);
+    router.post(endpoint, (req, res) => {
+      netbotHandler(req._id, req.body, res);
     });
 }

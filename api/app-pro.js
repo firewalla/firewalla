@@ -44,8 +44,16 @@ subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use(require('./middlewares/auth'));
 
 const router = express.Router();
+const cloudWrapper = require('./routes/fastencipher2').cloudWrapper
+
+function netbotHandler(gid, msg, res) {
+  let controller = await(cloudWrapper.getNetBotController(gid));
+  let response = await(controller.msgHandlerAsync(gid, msg));
+  res.json(response);
+}
+
 fs.readdirSync('./routes/pro').forEach(file => {
-  require('./routes/pro/' + file)(router);
+  require('./routes/pro/' + file)(router, netbotHandler);
 })
 subpath_v1.use(router);
 

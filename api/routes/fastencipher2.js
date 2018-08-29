@@ -65,4 +65,7 @@ log.info("==============================")
 log.info("FireAPI started successfully")
 log.info("==============================")
 
-module.exports = router;
+module.exports = {
+  router:router,
+  cloudWrapper:cloudWrapper
+};
