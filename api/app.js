@@ -23,7 +23,7 @@ passport.use(new Strategy(
     });
   }));
 
-var encipher = require('./routes/fastencipher2');
+var encipher = require('./routes/fastencipher2').router;
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');

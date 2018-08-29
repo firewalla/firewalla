@@ -8,10 +8,11 @@ var path = require('path');
 var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
-var argv = require('minimist')(process.argv.slice(2));
 var swagger = require("swagger-node-express");
 const passport = require('passport');
 const fs = require('fs');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
 let log = require('../net2/logger.js')(__filename, 'info')
 
@@ -19,7 +20,7 @@ let log = require('../net2/logger.js')(__filename, 'info')
 let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 
-var app = express();
+let app = express();
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -35,7 +36,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-var subpath_v1 = express();
+let subpath_v1 = express();
 app.use('/v1', subpath_v1);
 subpath_v1.use(passport.initialize());
 subpath_v1.use(passport.session());
@@ -44,9 +45,10 @@ subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use(require('./middlewares/auth'));
 
 const router = express.Router();
+router.use(bodyParser.json());
 const cloudWrapper = require('./routes/fastencipher2').cloudWrapper
 
-function netbotHandler(gid, msg, res) {
+async function netbotHandler(gid, msg, res) {
   let controller = await(cloudWrapper.getNetBotController(gid));
   let response = await(controller.msgHandlerAsync(gid, msg));
   res.json(response);
@@ -59,7 +61,7 @@ subpath_v1.use(router);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
-  var err = new Error('Not Found');
+  let err = new Error('Not Found');
   err.status = 404;
   next(err);
 });
