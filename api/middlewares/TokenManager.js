@@ -25,17 +25,17 @@ class TokenManager {
   }
 
   generateToken(gid) {
-    this.token[gid] = uuid.v4();
-    return this.token[gid];
+    this.tokens[gid] = uuid.v4();
+    return this.tokens[gid];
   }
 
   getToken(gid) {
-    return this.token[gid];
+    return this.tokens[gid];
   }
 
   validateToken(token) {
-    for (gid in this.tokens) {
-      if (this.token[gid] == token) {
+    for (let gid in this.tokens) {
+      if (this.tokens[gid] == token) {
         return gid;
       }
     }
@@ -43,7 +43,7 @@ class TokenManager {
   }
 
   revokeToken(gid) {
-    this.token[gid] = null;
+    this.tokens[gid] = null;
   }
 }
 

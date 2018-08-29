@@ -43,15 +43,15 @@ router.delete("/server", (req, res, next) => {
 });
 
 router.get("/token/:gid", (req, res, next) => {
-    res.status(200).send(tokenManager.getToken(gid));
+    res.status(200).send(tokenManager.getToken(req.params.gid));
 });
 
 router.post("/token/:gid", (req, res, next) => {
-    res.status(200).send(tokenManager.generateToken(gid));
+    res.status(200).send(tokenManager.generateToken(req.params.gid));
 });
 
 router.post("/revoke/:gid", (req, res, next) => {
-    tokenManager.revokeToken(gid);
+    tokenManager.revokeToken(req.params.gid);
     res.status(204).send('');
 });
 

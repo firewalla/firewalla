@@ -3,7 +3,7 @@
 let tm = require('./TokenManager').getInstance();
 
 module.exports = function(req, res, next) {
-  gid = tm.validateToken(req.headers['authorization'])
+  let gid = tm.validateToken(req.headers['authorization'])
   if (req.headers && gid) {
     req._gid = gid;
     next();
