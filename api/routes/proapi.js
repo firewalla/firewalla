@@ -42,16 +42,16 @@ router.delete("/server", (req, res, next) => {
     })
 });
 
-router.get("/token", (req, res, next) => {
-    res.status(200).send(tokenManager.getToken());
+router.get("/token/:gid", (req, res, next) => {
+    res.status(200).send(tokenManager.getToken(gid));
 });
 
-router.post("/token", (req, res, next) => {
-    res.status(200).send(tokenManager.generateToken());
+router.post("/token/:gid", (req, res, next) => {
+    res.status(200).send(tokenManager.generateToken(gid));
 });
 
-router.post("/revoke", (req, res, next) => {
-    tokenManager.revokeToken();
+router.post("/revoke/:gid", (req, res, next) => {
+    tokenManager.revokeToken(gid);
     res.status(204).send('');
 });
 

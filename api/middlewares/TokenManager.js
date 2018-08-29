@@ -21,26 +21,30 @@ let instance = null;
 
 class TokenManager {
   constructor() {
-    this.token = null;
+    this.tokens = {};
   }
 
-  generateToken() {
-    this.token = uuid.v4();
-    return this.token;
+  generateToken(gid) {
+    this.token[gid] = uuid.v4();
+    return this.token[gid];
   }
 
-  getToken() {
-    return this.token;
+  getToken(gid) {
+    return this.token[gid];
   }
 
   validateToken(token) {
-    return this.token === token;
+    for (gid in this.tokens) {
+      if (this.token[gid] == token) {
+        return gid;
+      }
+    }
+    return null;
   }
 
-  revokeToken() {
-    this.token = null;
+  revokeToken(gid) {
+    this.token[gid] = null;
   }
-
 }
 
 function getInstance() {

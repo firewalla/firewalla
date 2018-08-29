@@ -1600,7 +1600,7 @@ class netBot extends ControllerBot {
         break;
       case "proToken":
       (async () => {
-        this.simpleTxData(msg, {token: tokenManager.getToken()}, null, callback);
+        this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
       });
@@ -2595,11 +2595,11 @@ class netBot extends ControllerBot {
       break;
     }
     case "generateProToken": {
-      tokenManager.generateToken();
+      tokenManager.generateToken(gid);
       break;
     }
     case "revokeProToken": {
-      tokenManager.revokeToken();
+      tokenManager.revokeToken(gid);
       break;
     }
     default:
