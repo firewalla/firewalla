@@ -348,10 +348,6 @@ module.exports = class {
   }
 
   async upstreamDns(policy) {
-    if(host !== "0.0.0.0") {
-      log.error("upstreamDns doesn't support per device policy", host);
-      return; // doesn't support per-device policy
-    }
 
     log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
     const ips = policy.ips;
@@ -414,7 +410,7 @@ module.exports = class {
   }
 
   vpn(host, config, policies) {
-    if(host !== "0.0.0.0") {
+    if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -450,7 +446,7 @@ module.exports = class {
   }
 
   scisurf(host, config) {
-    if(host !== "0.0.0.0") {
+    if(host.constructor.name !== 'HostManager') {
       log.error("scisurf doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -482,7 +478,7 @@ module.exports = class {
   }
 
   shadowsocks(host, config, callback) {
-    if(host !== "0.0.0.0") {
+    if(host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -516,7 +512,7 @@ module.exports = class {
   }
 
   dnsmasq(host, config, callback) {
-    if(host !== "0.0.0.0") {
+    if(host.constructor.name !== 'HostManager') {
       log.error("dnsmasq doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -563,7 +559,7 @@ module.exports = class {
   }
 
   externalAccess(host, config, callback) {
-    if(host !== "0.0.0.0") {
+    if(host.constructor.name !== 'HostManager') {
       log.error("externalAccess doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
