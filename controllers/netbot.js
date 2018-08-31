@@ -1427,7 +1427,8 @@ class netBot extends ControllerBot {
         break;
       case "scisurfconfig":
         let mssc = require('../extension/ss_client/multi_ss_client.js');
-        mssc.loadConfig
+
+        mssc.loadConfig()
           .then((result) => this.simpleTxData(msg, result || {}, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
