@@ -310,6 +310,11 @@ class netBot extends ControllerBot {
   }
 
   _vpn(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("vpn", value, (err, data) => {
         if (err == null) {
@@ -324,6 +329,11 @@ class netBot extends ControllerBot {
   }
 
   _shadowsocks(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
         if (err == null) {
@@ -338,6 +348,11 @@ class netBot extends ControllerBot {
   }
 
   _scisurf(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("scisurf", value, (err, data) => {
         if (err == null) {
@@ -352,6 +367,11 @@ class netBot extends ControllerBot {
   }
 
   _vulScan(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("vulScan", value, (err, data) => {
         if (err == null) {
@@ -366,6 +386,11 @@ class netBot extends ControllerBot {
   }
 
   _dnsmasq(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
         if (err == null) {
@@ -380,6 +405,11 @@ class netBot extends ControllerBot {
   }
 
   _externalAccess(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("externalAccess", value, (err, data) => {
         if (err == null) {
