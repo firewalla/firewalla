@@ -716,10 +716,44 @@ class CategoryUpdater {
     await exec(cmdDeleteIncomingTCPRule6)
   }
 
+  async iptablesBlockCategoryPerDeviceNew(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
+    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
+
+    const cmdCreateOutgoingTCPRule = `sudo iptables -w -t nat -I PREROUTING -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`
+
+
+
+    // const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
+    // const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
+//    const cmdCreateIncomingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
+    // const cmdCreateOutgoingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
+    // const cmdCreateIncomingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
+    // const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
+    // const cmdCreateIncomingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
+
+    // await exec(cmdCreateOutgoingRule)
+    // await exec(cmdCreateIncomingRule)
+    await exec(cmdCreateOutgoingTCPRule)
+//    await exec(cmdCreateIncomingTCPRule)
+    // await exec(cmdCreateOutgoingRule6)
+    // await exec(cmdCreateIncomingRule6)
+    // await exec(cmdCreateOutgoingTCPRule6)
+    // await exec(cmdCreateIncomingTCPRule6)
+  }
+
   // This function requires the mac ipset has already been created
   async iptablesBlockCategoryPerDevice(category, macSet) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
+
+      // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
+    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
+
+
 
     const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
     const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
@@ -738,6 +772,33 @@ class CategoryUpdater {
     await exec(cmdCreateIncomingRule6)
     await exec(cmdCreateOutgoingTCPRule6)
     await exec(cmdCreateIncomingTCPRule6)
+  }
+
+  async iptablesUnblockCategoryPerDeviceNew(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
+    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
+
+    const cmdDeleteOutgoingTCPRule = `sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`
+
+    // const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
+    // const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
+//    const cmdCreateIncomingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
+    // const cmdCreateOutgoingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
+    // const cmdCreateIncomingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
+    // const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
+    // const cmdCreateIncomingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
+
+    // await exec(cmdCreateOutgoingRule)
+    // await exec(cmdCreateIncomingRule)
+    await exec(cmdDeleteOutgoingTCPRule)
+//    await exec(cmdCreateIncomingTCPRule)
+    // await exec(cmdCreateOutgoingRule6)
+    // await exec(cmdCreateIncomingRule6)
+    // await exec(cmdCreateOutgoingTCPRule6)
+    // await exec(cmdCreateIncomingTCPRule6)
   }
 
   async iptablesUnblockCategoryPerDevice(category, macSet) {
