@@ -7,7 +7,7 @@ setTimeout(() => {
             console.log("VpnManager:Unable to start vpn");
         } else {
             vpnManager.start((err) => {
-                vpnManager.getOvpnFile("fishbowVPN", null, false, (err, ovpnfile, password) => {
+                vpnManager.getOvpnFile("fishbowVPN", null, null, null, false, (err, ovpnfile, password) => {
                     console.log(err, ovpnfile, password);
                 });
             });

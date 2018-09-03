@@ -2,21 +2,36 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-# ovpngen <clientname> <keypassword> <local ip> <publicip> <dns>
+# ovpngen <clientname> <keypassword> <local ip> <publicip> <dns> <server network> <local port>
+
+NAME=$1
+echo "Please enter a Name for the Client:"
+echo $NAME
 
 LOCALIP=$3
 DNS=$5
 : ${DNS:="8.8.8.8"}
 
+SERVERNETWORK=$6
+: ${SERVERNETWORK:="10.8.0.0"}
+
+LOCALPORT=$7
+: ${LOCALPORT:="1194"}
 
 # Write config file for server using the template .txt file
-sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/server.conf
+sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/$NAME.conf
 
 # Set DNS
-sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
+sed -i "s=MYDNS=$DNS=" /etc/openvpn/$NAME.conf
+
+# Set server network
+sed -i "s=SERVERNETWORK=$SERVERNETWORK" /etc/openvpn/$NAME.conf
+
+# Set local port
+sed-i "s=LOCALPORT=$LOCALPORT" /etc/openvpn/$NAME.conf
 
 if [ $ENCRYPT = 2048 ]; then
- sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
+ sed -i 's:dh1024:dh2048:' /etc/openvpn/$NAME.conf
 fi
 
 
@@ -31,10 +46,6 @@ OKEY=".key"
 KEY=".3des.key" 
 CA="ca.crt" 
 TA="ta.key" 
-
-NAME=$1
-echo "Please enter a Name for the Client:"
-echo $NAME
  
 #Build the client key and then encrypt the key
 sudo chmod 777 -R /etc/openvpn

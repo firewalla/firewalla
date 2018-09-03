@@ -1366,7 +1366,7 @@ class netBot extends ControllerBot {
         }
 
         this.hostManager.loadPolicy(() => {
-          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+          vpnManager.getOvpnFile("fishboneVPN1", null, null, null, regenerate, (err, ovpnfile, password) => {
             let datamodel = {
               type: 'jsonmsg',
               mtype: 'reply',

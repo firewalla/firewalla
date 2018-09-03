@@ -1,18 +1,19 @@
 #local LOCALIP
 dev tun
 proto udp
-port 1194
+port LOCALPORT
 ca /etc/openvpn/easy-rsa/keys/ca.crt
 cert /etc/openvpn/easy-rsa/keys/server.crt
 key /etc/openvpn/easy-rsa/keys/server.key
 dh /etc/openvpn/easy-rsa/keys/dh1024.pem
-server 10.8.0.0 255.255.255.0
+client-to-client
+server SERVERNETWORK 255.255.255.0
 # server and remote endpoints
-ifconfig 10.8.0.1 10.8.0.2
+#ifconfig 10.8.0.1 10.8.0.2
 # Add route to Client routing table for the OpenVPN Server
-push "route 10.8.0.1 255.255.255.255"
-# Add route to Client routing table for the OPenVPN Subnet
-push "route 10.8.0.0 255.255.255.0"
+#push "route 10.8.0.1 255.255.255.255"
+# Add route to Client routing table for the OpenVPN Subnet
+#push "route SERVERNETWORK 255.255.255.0"
 # your local subnet
 push "route LOCALIP 255.255.255.0"
 # Set your primary domain name server address to Google DNS 8.8.8.8
@@ -21,7 +22,6 @@ push "dhcp-option DNS MYDNS"
 # 128.0.0.0/1 rather than 0.0.0.0/0. This has the benefit of
 # overriding but not wiping out the original default gateway.
 push "redirect-gateway def1"
-client-to-client
 duplicate-cn
 keepalive 10 120
 tls-auth /etc/openvpn/easy-rsa/keys/ta.key 0
