@@ -929,17 +929,20 @@ module.exports = class {
                 let port_flow = flowspec.pf[portflowkey];
                 if (port_flow == null) {
                     port_flow = {
+                        sp: [obj['id.orig_p']],
                         ob: Number(flowspec.ob),
                         rb: Number(flowspec.rb),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
                 } else {
+                    port_flow.sp.push(obj['id.orig_p']);
                     port_flow.ob += Number(obj.orig_bytes);
                     port_flow.rb += Number(obj.resp_bytes);
                     port_flow.ct += 1;
                 }
                 tmpspec.pf[portflowkey] = {
+                    sp: [obj['id.orig_p']],
                     ob: Number(obj.orig_bytes),
                     rb: Number(obj.resp_bytes),
                     ct: 1
@@ -1136,6 +1139,7 @@ module.exports = class {
 
             let host = obj["id.orig_h"];
             let dst = obj["id.resp_h"];
+            let dstPort = obj["id.resp_p"];
             let flowdir = "in";
 
             /*
@@ -1186,6 +1190,14 @@ module.exports = class {
                                 log.error("HTTP:Save:Error", err, o);
                             } else {
                                 log.debug("HTTP:Save:Agent", host, o);
+                            }
+                        });
+                        let ukey = "user_agent:" + host + ":" + dst + ":" + dstPort;
+                        rclient.set(ukey, obj.user_agent, (err, response) => {
+                            if (err != null) {
+                                log.error("USER_AGENT:Save:Error", err, obj.user_agent);
+                            } else {
+                                rclient.expire(ukey, this.config.bro.activityUserAgent.expires); // a much shorter expiration since this is used to enrich alarm data
                             }
                         });
                         dnsManager.resolveLocalHost(host, (err, data) => {
@@ -1577,7 +1589,8 @@ module.exports = class {
 
                     await broNotice.processNotice(alarm, obj);
 
-                    await am2.checkAndSaveAsync(alarm)
+                    am2.enqueueAlarm(alarm);
+                    
                 })().catch((err) => {
                     log.error("Failed to generate alarm:", err, {})
                 })

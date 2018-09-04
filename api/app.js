@@ -52,6 +52,7 @@ subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 subpath_v1.use('/encipher', encipher);
+subpath_v1.use('/encipher_raw', require('./routes/encipher.js'));
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

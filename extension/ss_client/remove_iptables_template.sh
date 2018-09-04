@@ -3,9 +3,7 @@
 #if [[ -z $FW_SS_SERVER || -z $FW_SS_LOCAL_PORT ]]; then
 #  exit 1;
 #fi
+CHAIN_NAME=FW_SHADOWSOCKS${FW_NAME}
 
-sudo iptables -t nat -D PREROUTING -p tcp -j FW_SHADOWSOCKS
-sudo iptables -t nat -D OUTPUT -p tcp -j FW_SHADOWSOCKS
-
-sudo iptables -t nat -F FW_SHADOWSOCKS
-sudo iptables -t nat -X FW_SHADOWSOCKS
+sudo iptables -w -t nat -F $CHAIN_NAME &>/dev/null
+sudo iptables -w -t nat -X $CHAIN_NAME &>/dev/null

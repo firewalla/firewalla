@@ -78,6 +78,8 @@ const dnsTool = new DNSTool()
 
 const Queue = require('bee-queue')
 
+const alarmDetailPrefix = "_alarmDetail";
+
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -95,18 +97,17 @@ module.exports = class {
       instance = this;
       this.publisher = new c('info');
 
-      if(f.isMonitor()) {
-        this.setupAlarmQueue();
-      }
+      this.setupAlarmQueue();
     }
     return instance;
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
 
-    this.queue.removeOnFailure = true
-    this.queue.removeOnSuccess = true
+    this.queue = new Queue(`alarm-${f.getProcessName()}`, {
+      removeOnFailure: true,
+      removeOnSuccess: true
+    })
 
     this.queue.on('error', (err) => {
       log.error("Queue got err:", err)
@@ -351,11 +352,13 @@ module.exports = class {
 
             // add extended info, extended info are optional
             (async () => {
-              const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
+              const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
               
-              rclient.hmsetAsync(extendedAlarmKey, extended);
-              rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
-
+              // if there is any extended info
+              if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
+                await rclient.hmsetAsync(extendedAlarmKey, extended);
+                await rclient.expireatAsync(extendedAlarmKey, parseInt((+new Date) / 1000) + expiring);
+              }
               
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
@@ -385,9 +388,9 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = 15 * 60 // 15 minutes
+      let duration = fc.getTimingConfig("alarm.cooldown") || 15 * 60 // 15 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
+        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
       }
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
@@ -727,6 +730,26 @@ module.exports = class {
              .execAsync())      
     })()
   }
+
+  async listExtendedAlarms() {
+    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
+
+    return list.map((l) => {
+      return l.replace(`${alarmDetailPrefix}:`, "");
+    })
+  }
+
+  async listBasicAlarms() {
+    const list = await rclient.keysAsync(`_alarm:*`);
+
+    return list.map((l) => {
+      return l.replace("_alarm:", "");
+    })
+  }
+
+  async deleteExtendedAlarm(alarmID) {
+    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+  }
   
   numberOfAlarms(callback) {
     callback = callback || function() {}
@@ -740,6 +763,11 @@ module.exports = class {
       // TODO: support more than 20 in the future
       callback(null, result > 20 ? 20 : result);
     });
+  }
+
+  async numberOfArchivedAlarms() {
+    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+    return count;
   }
 
   // top 50 only by default
@@ -786,8 +814,7 @@ module.exports = class {
   }
   
   async getAlarmDetail(aid) {
-    const prefix = "_alarmDetail";
-    const key = `${prefix}:${aid}`
+    const key = `${alarmDetailPrefix}:${aid}`
     const detail = await rclient.hgetallAsync(key);
     if(detail) {
       for(let key in detail) {
@@ -889,7 +916,7 @@ module.exports = class {
         return
       }
 
-      log.info(`Alarm to block: ${alarm.aid}`)
+      log.info(`Alarm to allow: ${alarm.aid}`)
 
       alarm.result_exception = exception.eid;
       alarm.result = "allow";
@@ -950,10 +977,18 @@ module.exports = class {
 
             break;
           default:
+
+          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
             i_type = "ip";
             i_target = alarm["p.dest.ip"];
+          } else {
+            i_type = "dns";
+            i_target = alarm["p.dest.name"];
+          }
+
 
             if(intelFeedback) {
+
               switch(intelFeedback.type) {
                 case "dns":
                 case "domain":
@@ -964,6 +999,10 @@ module.exports = class {
                   i_type = "ip"
                   i_target = intelFeedback.target
                   break
+                case "category":
+                  i_type = "category";
+                  i_target = intelFeedback.target;
+                  break;
                 default:
                   break
               }
@@ -987,10 +1026,16 @@ module.exports = class {
           category: (intelFeedback && intelFeedback.category) || ""
         });
 
-        if(intelFeedback && intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
-          p.domainExactMatch = "1"
+        if(intelFeedback) {
+          if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+            p.domainExactMatch = "1";
+          }
+        } else {
+          if(i_type === 'dns') {
+            p.domainExactMatch = "1"; // by default enable domain exact match
+          }
         }
-
+        
         // add additional info
         switch(i_type) {
         case "mac":
@@ -1005,12 +1050,20 @@ module.exports = class {
           p.target_name = alarm["p.dest.name"] || alarm["p.dest.ip"];
           p.target_ip = alarm["p.dest.ip"];
           break;
+        case "category":
+          p.target_name = alarm["p.dest.category"];
+          p.target_ip = alarm["p.dest.ip"];
+          break;
         default:
           break;
         }
 
         if(info.method) {
           p.method = info.method;
+        }
+
+        if(intelFeedback && intelFeedback.device) {
+          p.scope = [intelFeedback.device];
         }
 
         log.info("Policy object:", p, {});
@@ -1036,11 +1089,11 @@ module.exports = class {
                 await (this.archiveAlarm(alarm.aid))
               }
 
-              // old way
-              if(!info.matchAll) {
-                callback(null, policy)
-                return
-              }
+              // // old way
+              // if(!info.matchAll) {
+              //   callback(null, policy)
+              //   return
+              // }
 
               log.info("Trying to find if any other active alarms are covered by this new policy")
               let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
@@ -1096,22 +1149,18 @@ module.exports = class {
           i_target = alarm["p.device.ip"];
           break;
         case "ALARM_BRO_NOTICE":
-          if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else {
-            log.error("Unsupported alarm type for allowing: ", alarm, {})
-            callback(new Error("Unsupported alarm type for allowing: " + alarm.type))
-            return
-          }
-
-          break;
-        default:
           i_type = "ip";
           i_target = alarm["p.dest.ip"];
+          break;
+        default:
+
+          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+            i_type = "ip";
+            i_target = alarm["p.dest.ip"];
+          } else {
+            i_type = "dns";
+            i_target = alarm["p.dest.name"];
+          }        
 
           if(userFeedback) {
             switch(userFeedback.type) {
@@ -1124,6 +1173,10 @@ module.exports = class {
               i_type = "ip"
               i_target = userFeedback.target
               break
+            case "category":
+              i_type = "category";
+              i_target = userFeedback.target;
+              break;
             default:
               break
             }
@@ -1164,9 +1217,18 @@ module.exports = class {
           e["target_name"] = `*.${i_target}`
           e["target_ip"] = alarm["p.dest.ip"];
           break;
+        case "category":
+          e["p.dest.category"] = i_target;
+          e["target_name"] = i_target;
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
         default:
           // not supported
           break;
+        }
+
+        if(userFeedback && userFeedback.device) {
+          e["p.device.mac"] = userFeedback.device; // limit exception to a single device
         }
 
         log.info("Exception object:", e, {});
@@ -1194,11 +1256,6 @@ module.exports = class {
               
               this.archiveAlarm(alarm.aid)
                 .then(() => {
-                  // old way
-                  if(!info.matchAll) {
-                    callback(null, exception)
-                    return
-                  }
 
                   async(() => {              
                     log.info("Trying to find if any other active alarms are covered by this new exception")
@@ -1411,7 +1468,7 @@ module.exports = class {
       if (intel && intel.host) {
         alarm["p.dest.name"] = intel.host
       } else {
-        alarm["p.dest.name"] = alarm["p.dest.ip"];
+        alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
       }
       
       // whois - domain

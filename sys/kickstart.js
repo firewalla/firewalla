@@ -72,6 +72,8 @@
   
   let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
   let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
+
+  const EptCloudExtension = require('../extension/ept/eptcloud.js');
   
   // let NmapSensor = require('../sensor/NmapSensor');
   // let nmapSensor = new NmapSensor();
@@ -80,6 +82,12 @@
   let FWInvitation = require('./invitation.js');
 
   const Diag = require('../extension/diag/app.js');
+  
+  function delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
   
   (async() => {
     await sysManager.setConfig(firewallaConfig)
@@ -211,7 +219,7 @@
             log.info("Failed to reset ssh password");
           } else {
             log.info("A new random SSH password is used!");
-            sysManager.sshPassword = password;
+            sysManager.setSSHPassword(password);
           }
         });
       }, 15000);
@@ -247,7 +255,7 @@
   }
 
   function inviteFirstAdmin(gid, callback) {
-    log.info("Initializing first admin:", gid);
+    log.forceInfo("Initializing first admin:", gid);
 
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
@@ -268,9 +276,10 @@
         
         rclient.hset("sys:ept", "group_member_cnt", count);
 
-        recordAllRegisteredClients(gid).catch((err) => {
-          log.info("Failed to record registered clients, err:", err, {})
-        })
+        const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+        eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
+          log.error("Failed to record registered clients, err:", err, {})
+        });
         
         // new group without any apps bound;
         led.on();
@@ -286,8 +295,8 @@
               postAppLinked(); // app linked, do any post-link tasks
               callback(null, true);
               
-              log.info("EXIT KICKSTART AFTER JOIN");
-              
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
+              led.off();
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -299,7 +308,7 @@
             callback("404", false);
             
             led.off();
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
@@ -308,7 +317,7 @@
           fwInvitation.broadcast(onSuccess, onTimeout);
           
         } else {
-          log.info(`Found existing group ${gid} with ${count} members`);
+          log.forceInfo(`Found existing group ${gid} with ${count} members`);
           
           postAppLinked(); // already linked
           
@@ -324,20 +333,23 @@
           
           let onSuccess = function(payload) {
             return (async() => {
-              await recordAllRegisteredClients(gid).catch((err) => {
-                log.info("Failed to record registered clients, err:", err, {})
-              })
+              
+              const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+              await eptCloudExtension.job().catch((err) => {
+                log.error("Failed to update group info, err:", err, {})
+              });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
-              log.info("EXIT KICKSTART AFTER JOIN");
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
+              led.off();
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
           }
           
           let onTimeout = function() {
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             led.off();
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
@@ -351,7 +363,8 @@
       }
     });
   }
-  
+
+
   function launchService2(gid,callback) {
     fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
     

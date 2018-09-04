@@ -89,6 +89,14 @@ class HostTool {
     return hostEntry.ipv4;
   }
 
+  updateDHCPInfo(mac, type, info) {
+    let key = "dhcp:" + mac + ":" + type;
+    return rclient.hmsetAsync(key, info)
+      .then(() => {
+        return rclient.expireAsync(key, 86400);
+      });
+  }
+
   updateBackupName(mac, name) {
     log.info("Updating backup name", name, "for mac:", mac, {});
     let key = "host:mac:" + mac;
@@ -159,8 +167,12 @@ class HostTool {
     })
   }
 
-  deleteHost(ipv4) {
-    return rclient.delAsync(this.getHostKey(ipv4));
+  deleteHost(ip) {
+    if (iptool.isV4Format(ip)) {
+      return rclient.delAsync(this.getHostKey(ip));
+    } else {
+      return rclient.delAsync(this.getIPv6HostKey(ip));
+    }    
   }
 
   getMacKey(mac) {
@@ -472,6 +484,11 @@ class HostTool {
         return []
       }
     })()
+  }
+
+  loadDevicePolicyByMAC(mac) {
+    let key = "policy:mac:" + mac;
+    return rclient.hgetallAsync(key);
   }
 
   isMacAddress(mac) {

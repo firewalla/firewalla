@@ -146,6 +146,9 @@ class NaughtyMonkeySensor extends Sensor {
       case "heartbleedOutbound":
         await this.heartbleedOutbound();
         break;
+      case "ssh_interesting_login":
+        await this.interestingLogin();
+        break;
       case "malware":
       default:
         await this.malware();
@@ -165,7 +168,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async ssh_scan() {
     const ip = await this.randomFindDevice();
-    const remoteIP = "116.62.163.43";
+    const remoteIP = "116.62.163.55";
 
     const payload = {
       "ts": new Date() / 1000,
@@ -274,6 +277,20 @@ class NaughtyMonkeySensor extends Sensor {
     const z = heartbleedJSON["src"];
     heartbleedJSON["src"] = heartbleedJSON["dst"];
     heartbleedJSON["dst"] = z;
+
+    await this.appendNotice(heartbleedJSON);
+    await this.recordMonkey(remote);
+  }
+
+  async interestingLogin() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/interestinglogin.json")));
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
+
+    const remote = heartbleedJSON["id.orig_h"];
 
     await this.appendNotice(heartbleedJSON);
     await this.recordMonkey(remote);

@@ -134,6 +134,36 @@ class NewDeviceAlarm extends Alarm {
   }
 }
 
+class DeviceBackOnlineAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac"];
+  }
+}
+
+class SpoofingDeviceAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SPOOFING_DEVICE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.device.name", "p.device.ip"]
+  }
+}
+
+class VPNClientConnectionAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.dest.ip", "p.dest.port"];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -278,7 +308,7 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 }
 
@@ -437,6 +467,9 @@ let classMapping = {
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
+  ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
+  ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -451,6 +484,9 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
+  DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
+  SpoofingDeviceAlarm: SpoofingDeviceAlarm,
+  VPNClientConnectionAlarm: VPNClientConnectionAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,

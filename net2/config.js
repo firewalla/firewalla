@@ -183,7 +183,7 @@ sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 
 sclient.on("message", (channel, message) => {
-  log.info(`got message from ${channel}: ${message}`)
+  log.debug(`got message from ${channel}: ${message}`)
   const theFeature = message
   switch(channel) {
   case "config:feature:dynamic:enable":
@@ -224,8 +224,14 @@ function onFeature(feature, callback) {
   callbacks[feature].push(callback)
 }
 
+function getTimingConfig(key) {
+  const config = getConfig();
+  return config && config.timing && config.timing[key];
+}
+
 module.exports = {
   getConfig: getConfig,
+  getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures: getFeatures,
   getDynamicConfigs: getDynamicConfigs,

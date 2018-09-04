@@ -13,8 +13,8 @@ MMIN="-10"
 FILE=/dev/shm/main.touch
 
 firemain_ping() {
-	RESULT=$(find $FILE -mmin ${MMIN})
-  if [[ "x$RESULT" == "x" ]]; then
+	RESULT=$(find $FILE -mmin ${MMIN} 2>/dev/null)
+  if [[ -e $FILE && "x$RESULT" == "x" ]]; then
 		return 1
 	else
 		return 0

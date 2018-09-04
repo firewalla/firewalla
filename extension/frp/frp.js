@@ -22,8 +22,8 @@ const firewalla = require('../../net2/Firewalla.js');
 
 const fHome = firewalla.getFirewallaHome()
 const frpDirectory = __dirname
-const configTemplateFile = `${frpDirectory}/frpc.ini.template`
-const configFile = `${frpDirectory}/frpc.ini`
+const configTemplateFile = `${frpDirectory}/frpc.ini.template`  // default template
+const serviceTemplateFile = `${frpDirectory}/frpc.service.template`;
 
 const Promise = require('bluebird');
 
@@ -35,10 +35,12 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
+const spawnSync = require('child_process').spawnSync
 
 const fs = require('fs')
 const readFile = Promise.promisify(fs.readFile)
 const writeFile = Promise.promisify(fs.writeFile)
+const unlink = Promise.promisify(fs.unlink)
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -47,92 +49,165 @@ function delay(t) {
 }
 
 module.exports = class {
-  constructor() {
-    this.cp = null
+  constructor(name) {
+    this.name = name || "support";
     this.started = false
-    this.randomizePort()
     this.serviceTag = "SSH"
+    this.configComplete = false;
+
+    // if frp service is started during execution of async block, inconsistency may occur?
+    (async () => {
+      if (await this._isUp()) {
+        // need to refresh config
+        await this._loadConfigFile();
+        this.started = true;
+        this.configComplete = true;
+      }
+    })();
     return this
   }
 
-  createConfigFile(name, config) {
-    const genericTemplate = `${frpDirectory}/frpc.generic.ini.template`
-    const port = config.port || this.getRandomPort(config.portBase, config.portLength)
-
-    return async(() => {
-      let templateData = await (readFile(genericTemplate, 'utf8'))
-
-      if(config.name) {
-        templateData = templateData.replace(/FRP_SERVICE_NAME/g, config.name)
-      }
-
-      if(port) {
-        templateData = templateData.replace(/FRP_SERVICE_PORT/g, port)
-      }
-
-      if(config.token) {
-        templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, config.token)
-      }
-
-      if(config.server) {
-        templateData = templateData.replace(/FRP_SERVER_ADDR/g, config.server)
-      }
-
-      if(config.serverPort) {
-        templateData = templateData.replace(/FRP_SERVER_PORT/g, config.serverPort)
-      }
-
-      if(config.internalPort) {
-        templateData = templateData.replace(/FRP_SERVICE_INTERNAL_PORT/g, config.internalPort)
-      }
-
-      if(config.protocol) {
-        templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
-      }
-
-      const filePath = `${frpDirectory}/frpc.customized.${name}.ini`
-      await(writeFile(filePath, templateData, 'utf8'))
-
-      return {
-        filePath: filePath,
-        port: port
-      }
-    })()
+  async _loadConfigFile() {
+    const configPath = this._getConfigPath();
+    const configData = await readFile(configPath, 'utf8');
+    let lines = configData.split('\n');
+    lines = lines.filter(l => l.includes("remote_port"));
+    const remotePort = lines[0].substring(14);  // length of "remote_port = "
+    this.port = remotePort;
   }
 
-  _prepareConfiguration(userToken) {
+  async createConfigFile(config) {
+    if (this.name === "support") {
+      return this._prepareConfiguration(config);
+    }
+
+    if(!config) {
+      log.warn(`Missing config information for frp ${this.name}`);
+      return;
+    }
+
+    const genericTemplate = `${frpDirectory}/frpc.generic.ini.template`
+    const port = config.port || this._getRandomPort(config.portBase, config.portLength)
+    this.port = port;
+
+    let templateData = await readFile(genericTemplate, 'utf8');
+
+    if(config.name) {
+      templateData = templateData.replace(/FRP_SERVICE_NAME/g, config.name)
+    }
+
+    if(port) {
+      templateData = templateData.replace(/FRP_SERVICE_PORT/g, port)
+    }
+
+    if(config.token) {
+      templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, config.token)
+    }
+
+    if(config.server) {
+      templateData = templateData.replace(/FRP_SERVER_ADDR/g, config.server)
+    }
+
+    if(config.serverPort) {
+      templateData = templateData.replace(/FRP_SERVER_PORT/g, config.serverPort)
+    }
+
+    if(config.internalPort) {
+      templateData = templateData.replace(/FRP_SERVICE_INTERNAL_PORT/g, config.internalPort)
+    }
+
+    if(config.protocol) {
+      templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
+    }
+
+    const filePath = this._getConfigPath();
+    await writeFile(filePath, templateData, 'utf8');
+
+    this.configComplete = true;
+    return {
+      filePath: filePath,
+      port: port
+    };
+  }
+
+  _getConfigPath() {
+    return `${frpDirectory}/frpc.${this.name}.ini`;
+  }
+
+  _getPidPath() {
+    if (this.name !== "support") {
+      return `${frpDirectory}/frpc.customized.${this.name}.pid`;
+    } else {
+      // use default pid file
+      return pidFile;
+    }
+  }
+
+  _getServiceName() {
+    return `frpc.${this.name}`;
+  }
+
+  _getServiceFilePath() {
+    return `${frpDirectory}/frpc.${this.name}.service`;
+  }
+
+  async _isUp() {
+    const serviceName = this._getServiceName();
+    const o = spawnSync('systemctl', ['is-active', '--quiet', serviceName]);
+    const exitCode = o.status;
+    if (exitCode === 0) {
+      log.info(`Service ${serviceName} is already up`);
+      return true;
+    }
+
+    log.info(`Service ${serviceName} is offline`);
+    return false;
+  }
+
+  async _prepareConfiguration(config) {
     let templateFile = configTemplateFile // default is the support config template file
+    const userToken = null;
+    if (config) {
+      userToken = config.userToken;
+    }
 
     if(this.templateFilename) {
       templateFile = `${frpDirectory}/${this.templateFilename}`
     }
 
-    return async(() => {
-      let templateData = await (readFile(templateFile, 'utf8'))
-      templateData = templateData.replace(/FRP_SERVICE_NAME/g, `${this.serviceTag}${this.port}`)
-      templateData = templateData.replace(/FRP_SERVICE_PORT/g, this.port)
+    this.port = this._getRandomPort();
 
-      let token = await (rclient.hgetAsync("sys:config", "frpToken"))
-      if(userToken) {
-        token = userToken
-      }
-      if(this.token) {
-        token = this.token
-      }
-      if(token) {
-        templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, token)
-      }
+    let templateData = await readFile(templateFile, 'utf8')
+    templateData = templateData.replace(/FRP_SERVICE_NAME/g, `${this.serviceTag}${this.port}`)
+    templateData = templateData.replace(/FRP_SERVICE_PORT/g, this.port)
 
-      if(this.server) {
-        templateData = templateData.replace(/FRP_SERVER/g, this.server)
-      }
-      
-      await(writeFile(configFile, templateData, 'utf8'))
-    })()
+    let token = await rclient.hgetAsync("sys:config", "frpToken")
+    if(userToken) {
+      token = userToken
+    }
+    if(this.token) {
+      token = this.token
+    }
+    if(token) {
+      templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, token)
+    }
+
+    if(this.server) {
+      templateData = templateData.replace(/FRP_SERVER/g, this.server)
+    }
+
+    const configFilePath = this._getConfigPath();
+    await writeFile(configFilePath, templateData, 'utf8')
+
+    this.configComplete = true;
+    return {
+      filePath: configFilePath,
+      port: 22
+    };
   }
 
   configFile() {
-    return configFile
+    return this._getConfigPath();
   }
 
   server() {
@@ -144,6 +219,7 @@ module.exports = class {
   }
 
   getConfig() {
+    
     return {
       started: this.started,
       port: this.port,
@@ -152,12 +228,7 @@ module.exports = class {
     }
   }
 
-  randomizePort() {
-    // FIXME: possible port conflict
-    this.port = this.getRandomPort() // random port between 9000 - 10000
-  }
-
-  getRandomPort(base, length) {
+  _getRandomPort(base, length) {
     base = base || 9000
     length = length || 1000
     return  Math.floor(Math.random() * length) + base
@@ -165,50 +236,73 @@ module.exports = class {
 
   start() {
     return async(() => {
-      this.randomizePort();
-      await(this._prepareConfiguration())
-      return this._start();
+      const isUp = await(this._isUp());
+      if (!isUp) {
+        await(this.createConfigFile());
+        return this._start();
+      } else {
+        await(this._loadConfigFile());
+        this.started = true;
+        this.configComplete = true;
+      }
     })()
   }
 
   stop() {
-    this._stop()
+    (async () => {
+      if (await this._isUp()) {
+        this._stop();
+      }
+    })();
     return delay(500)
   }
 
-  _start(configFilePath) {
-    configFilePath = configFilePath || "./frpc.ini"
-    const cmd = `./frpc.${firewalla.getPlatform()}`;
-
+  _start() {
+    const serviceName = this._getServiceName();
+    const serviceFilePath = this._getServiceFilePath();
+    const configFilePath = this._getConfigPath();
+    const frpCmd = `${frpDirectory}/frpc.${firewalla.getPlatform()}`;
+    /*
     // TODO: ini file needs to be customized before being used
     const args = ["-c", configFilePath];
 
-    this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8'});
+    this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8', detached: true});
+    this.cp.unref();
+    const childPid = this.cp.pid;
+    log.info("frp process id: " + childPid);
+    */
 
     return new Promise((resolve, reject) => {
+      // generate service spec file 
+      let templateData = await(readFile(serviceTemplateFile, 'utf8'));
+      templateData = templateData.replace(/FRPC_COMMAND/g, frpCmd);
+      templateData = templateData.replace(/FRPC_CONF/g, configFilePath);
+      await(writeFile(serviceFilePath, templateData, 'utf8'));
+
+      spawnSync('sudo', ['cp', serviceFilePath, '/etc/systemd/system/']);
+      const cp = spawn('sudo', ['systemctl', 'start', serviceName]);
       let hasTimeout = true;
 
-      this.cp.stdout.on('data', (data) => {
-        log.info(data.toString())
-        if(data.toString().match(/start proxy success/)) {
-          this.started = true
-          hasTimeout = false;
-          log.info("frp is started successfully")
-          resolve();
-        }
-      })
-
-      this.cp.stderr.on('data', (data) => {
+      cp.stderr.on('data', (data) => {
         log.error(data.toString())
       })
-
-      this.cp.on('exit', (code, signal) => {
-        log.info("frp exited with code:", code, signal, {})
+      
+      cp.on('exit', (code, signal) => {
+        if (code === 0) {
+          log.info("Service " + serviceName + " started successfully");
+          this.started = true;
+          hasTimeout = false;
+          resolve();
+        } else {
+          log.error("Failed to start " + serviceName, code, signal, {});
+        }
       })
-
+      
+      /*
       process.on('exit', () => {
         this._stop();
       });
+      */
 
       // wait for 15 seconds
       delay(15000).then(() => {
@@ -221,11 +315,11 @@ module.exports = class {
   }
 
   _stop() {
-    if(this.cp) {
-      log.info("Terminating frpc")
-      this.cp.kill();
-      this.cp = null;
-      this.started = false
-    }
+    const serviceName = this._getServiceName();
+    log.info("Try to stop FRP service:" + serviceName);
+    spawnSync('sudo', ['systemctl', 'stop', serviceName]);
+    this.started = false;
   }
 }
+
+

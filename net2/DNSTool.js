@@ -20,8 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 
-const f = require('../net2/Firewalla.js')
-
 const iptool = require('ip')
 
 const util = require('util');
@@ -95,7 +93,7 @@ class DNSTool {
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return f.isReservedBlockingIP(addr) != true
+      return firewalla.isReservedBlockingIP(addr) != true
     })
 
     let key = this.getReverseDNSKey(dns)

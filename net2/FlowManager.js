@@ -167,7 +167,9 @@ module.exports = class FlowManager {
     let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
 
     return rclient.hsetAsync(downloadKey, hourOfDay, downloadValue)
+      .then(rclient.expireAsync(downloadKey, 3600 * 24))
       .then(rclient.hsetAsync(uploadKey, hourOfDay, uploadValue))
+      .then(rclient.expireAsync(uploadKey, 3600 * 24))
       .catch((err) => {
         log.error("Got error when recording last 24 hours stats: " + err);
         throw err;
@@ -321,7 +323,7 @@ module.exports = class FlowManager {
           log.error("Failed to record stats on download bytes: " + err);
           callback(err);
           return;
-        }    
+        }
 
         rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
           if(err) {
@@ -1149,43 +1151,96 @@ module.exports = class FlowManager {
                             conndb = {};
                         }
                         let key = "";
-                        if (o.sh == ip) {
-                            key = o.dh + ":" + o.fd;
-                        } else {
-                            key = o.sh + ":" + o.fd;
-                        }
-                        //     let key = o.sh+":"+o.dh+":"+o.fd;
-                        let flow = conndb[key];
-                        if (flow == null) {
-                            conndb[key] = o;
-                        } else {
-                            flow.rb += o.rb;
-                            flow.ct += o.ct;
-                            flow.ob += o.ob;
-                            flow.du += o.du;
-                            if (flow.ts < o.ts) {
-                                flow.ts = o.ts;
+                        if (o.pf) {
+                            for (let k in o.pf) {
+                                // aggregate by dst host and dst port and direction
+                                if (o.sh == ip) {
+                                    key = o.dh + ":" + o.fd + ":" + k;
+                                } else {
+                                    key = o.sh + ":" + o.fd + ":" + k;
+                                }
+                                let flow = conndb[key];
+                                if (flow == null) {
+                                    conndb[key] = o;
+                                    flow = conndb[key];
+                                    let dp = k.split("\.", 2).slice(-1)[0];
+                                    // double check to ensure that k is <proto>.<port_number>
+                                    if (/^\d+$/.test(dp)) {
+                                        // flow.dp already exists in temp flow spec, 
+                                        // however overriding dp here should do no harm
+                                        // in case of stashed flow spec, dp can be parsed from port flow
+                                        // therefore in most cases, dp should be included in summarized flow
+                                        flow.dp = dp;
+                                    }
+                                    flow.rb = o.pf[k].rb;
+                                    flow.ct = o.pf[k].ct;
+                                    flow.ob = o.pf[k].ob;
+                                    flow.du = o.du;
+                                    if (o.pf[k].sp) {
+                                        flow.sp_array = o.pf[k].sp;
+                                    }
+                                } else {
+                                    // use rb, ob and ct in port flow since key contains dst port
+                                    flow.rb += o.pf[k].rb;
+                                    flow.ct += o.pf[k].ct;
+                                    flow.ob += o.pf[k].ob;
+                                    flow.du += o.du;
+                                    if (flow.ts < o.ts) {
+                                        flow.ts = o.ts;
+                                    }
+                                    if (o.pf[k].sp) {
+                                        if (flow.sp_array) {
+                                            flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
+                                        } else {
+                                            flow.sp_array = o.pf[k].sp;
+                                        }
+                                    }
+                                    // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+                                    if (o.flows) {
+                                        if (flow.flows) {
+                                            flow.flows = flow.flows.concat(o.flows);
+                                        } else {
+                                            flow.flows = o.flows;
+                                        }
+                                    }
+                                }
+                                // NOTE: flow.pf will be removed in flowTool.trimFlow...
+                                if (flow.pf[k] != null) {
+                                    flow.pf[k].rb += o.pf[k].rb;
+                                    flow.pf[k].ob += o.pf[k].ob;
+                                    flow.pf[k].ct += o.pf[k].ct;
+                                } else {
+                                    flow.pf[k] = o.pf[k]
+                                }
                             }
-                            if (o.pf) {
-                                for (let k in o.pf) {
-                                    if (flow.pf[k] != null) {
-                                        flow.pf[k].rb += o.pf[k].rb;
-                                        flow.pf[k].ob += o.pf[k].ob;
-                                        flow.pf[k].ct += o.pf[k].ct;
+                        } else {
+                            if (o.sh == ip) {
+                                key = o.dh + ":" + o.fd;
+                            } else {
+                                key = o.sh + ":" + o.fd;
+                            }
+                            //     let key = o.sh+":"+o.dh+":"+o.fd;
+                            let flow = conndb[key];
+                            if (flow == null) {
+                                conndb[key] = o;
+                            } else {
+                                flow.rb += o.rb;
+                                flow.ct += o.ct;
+                                flow.ob += o.ob;
+                                flow.du += o.du;
+                                if (flow.ts < o.ts) {
+                                    flow.ts = o.ts;
+                                }
+                                // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+                                if (o.flows) {
+                                    if (flow.flows) {
+                                        flow.flows = flow.flows.concat(o.flows);
                                     } else {
-                                        flow.pf[k] = o.pf[k]
+                                        flow.flows = o.flows;
                                     }
                                 }
                             }
-                            if (o.flows) {
-                                if (flow.flows) {
-                                    flow.flows = flow.flows.concat(o.flows);
-                                } else {
-                                    flow.flows = o.flows;
-                                }
-                            }
                         }
-
                     }
 
                     if (saveStats) {

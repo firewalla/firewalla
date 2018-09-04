@@ -192,6 +192,20 @@ class IntelTool {
     });
   }
 
+  getUserAgentKey(src, dst, dstPort) {
+    dstPort = dstPort || 80;
+    return util.format("user_agent:%s:%s:%s", src, dst, dstPort);
+  }
+
+  async getUserAgent(src, dst, dstPort) {
+    let key = this.getUserAgentKey(src, dst, dstPort);
+    const userAgent = await rclient.getAsync(key);
+    if (userAgent) {
+      return userAgent;
+    } else {
+      return undefined;
+    }
+  }
 
   getSSLCertKey(ip) {
     return util.format("host:ext.x509:%s", ip);

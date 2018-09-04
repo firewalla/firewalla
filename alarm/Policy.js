@@ -118,6 +118,13 @@ module.exports = class {
         return false
       }
       break
+    case "category":
+      if (alarm['p.dest.category']) {
+        return alarm['p.dest.category'] === this.target;
+      } else {
+        return false;
+      }
+      break
     case "devicePort":
       return false // no alarm supports on devicePort yet
       break
