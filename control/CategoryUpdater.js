@@ -526,10 +526,10 @@ class CategoryUpdater {
       await this.updateIPv6Set(category, {useTemp: true})
     }
 
-    let dd = _.union(domains, includedDomains)
-    dd = _.union(dd, defaultDomains)
+//    let dd = _.union(domains, includedDomains)
+    let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
-
+    dd = _.union(dd, includedDomains)
 
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
