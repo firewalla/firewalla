@@ -348,6 +348,7 @@ module.exports = class {
   }
 
   async upstreamDns(policy) {
+
     log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
     const ips = policy.ips;
     const state = policy.state;
@@ -409,6 +410,11 @@ module.exports = class {
   }
 
   vpn(host, config, policies) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("vpn doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     let vpnManager = new VpnManager('info');
     if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
       vpnManager.stop();
@@ -440,6 +446,11 @@ module.exports = class {
   }
 
   scisurf(host, config) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("scisurf doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
 
       if(!mss_client.readyToStart()) {
@@ -467,6 +478,11 @@ module.exports = class {
   }
 
   shadowsocks(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("shadowsocks doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
     let ss = new shadowsocks('info');
 
@@ -496,6 +512,11 @@ module.exports = class {
   }
 
   dnsmasq(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("dnsmasq doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
       sem.emitEvent({
         type: "StartDNS"
@@ -538,6 +559,11 @@ module.exports = class {
   }
 
   externalAccess(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("externalAccess doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
       externalAccessFlag = true;
       this.addAPIPortMapping();

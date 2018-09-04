@@ -317,10 +317,14 @@ class CategoryUpdater {
       d = `*.${domain}`
     }
 
-    const excluded = await this.excludeDomainExists(category, d)
+    const included = await this.includeDomainExists(category, d);
 
-    if(excluded) {
-      return;
+    if(!included) {
+      const excluded = await this.excludeDomainExists(category, d);
+
+      if(excluded) {
+        return;
+      }
     }
 
     log.debug(`Found a ${category} domain: ${d}`)
@@ -522,10 +526,10 @@ class CategoryUpdater {
       await this.updateIPv6Set(category, {useTemp: true})
     }
 
-    let dd = _.union(domains, includedDomains)
-    dd = _.union(dd, defaultDomains)
+//    let dd = _.union(domains, includedDomains)
+    let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
-
+    dd = _.union(dd, includedDomains)
 
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
@@ -716,10 +720,60 @@ class CategoryUpdater {
     await exec(cmdDeleteIncomingTCPRule6)
   }
 
+  wrapIptables(rule) {        
+    let command = " -I ";
+    let checkRule = null;
+
+    if(rule.indexOf(command) > -1) {
+      checkRule = rule.replace(command, " -C ");
+    }      
+
+    command = " -A ";
+    if(rule.indexOf(command) > -1) {
+      checkRule = rule.replace(command, " -C ");
+    }
+
+    command = " -D ";
+    if(rule.indexOf(command) > -1) {
+      checkRule = rule.replace(command, " -C ");
+      return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
+    }
+
+    if(checkRule) {
+      return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+    } else {
+      return rule;  
+    }    
+  }
+
+  async iptablesBlockCategoryPerDeviceNew(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
+    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
+
+    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+
+    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+
+    await exec(cmdCreateOutgoingTCPRule);
+    await exec(cmdCreateOutgoingUDPRule);
+    await exec(cmdCreateOutgoingTCPRule6);
+    await exec(cmdCreateOutgoingUDPRule6);
+  }
+
   // This function requires the mac ipset has already been created
   async iptablesBlockCategoryPerDevice(category, macSet) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
+
+      // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
+    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
+
+
 
     const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
     const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
@@ -738,6 +792,22 @@ class CategoryUpdater {
     await exec(cmdCreateIncomingRule6)
     await exec(cmdCreateOutgoingTCPRule6)
     await exec(cmdCreateIncomingTCPRule6)
+  }
+
+  async iptablesUnblockCategoryPerDeviceNew(category, macSet) {
+    const ipsetName = this.getIPSetName(category)
+    const ipset6Name = this.getIPSetNameForIPV6(category)
+
+    const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+
+    const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+
+    await exec(cmdDeleteOutgoingTCPRule);
+    await exec(cmdDeleteOutgoingUDPRule);
+    await exec(cmdDeleteOutgoingTCPRule6);
+    await exec(cmdDeleteOutgoingUDPRule6);    
   }
 
   async iptablesUnblockCategoryPerDevice(category, macSet) {
