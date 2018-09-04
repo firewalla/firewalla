@@ -84,9 +84,21 @@ class NewDeviceHook extends Hook {
 
       let mac = event.mac;
       let name = event.name; // name should be fetched via DHCPDUMP
+      let from = event.from;
 
       let HostTool = require('../net2/HostTool')
       let hostTool = new HostTool();
+
+      if (from === "dhcp") {
+        let mtype = event.mtype;
+        // mtype should be either DHCPDISCOVER or DHCPREQUEST
+        let dhcpInfo = {
+          mac: mac,
+          name: name,
+          timestamp: new Date() / 1000
+        };
+        hostTool.updateDHCPInfo(mac, mtype, dhcpInfo);
+      }
 
       hostTool.macExists(mac)
         .then((result) => {

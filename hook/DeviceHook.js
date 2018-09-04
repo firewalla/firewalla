@@ -41,6 +41,9 @@ const samba = new Samba();
 
 const HostManager = require('../net2/HostManager.js');
 
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
+
 const l2 = require('../util/Layer2.js');
 
 
@@ -100,6 +103,7 @@ class DeviceHook extends Hook {
             type: "RegularDeviceInfoUpdate",
             message: "Refresh device status @ DeviceHook",
             suppressEventLogging: true,
+            suppressAlarm: event.suppressAlarm,
             host: host
           });
           return
@@ -111,6 +115,7 @@ class DeviceHook extends Hook {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
             message: "An old device used a new IP @ DeviceHook",
+            suppressAlarm: event.suppressAlarm,
             host: host
           })
           return
@@ -122,6 +127,7 @@ class DeviceHook extends Hook {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
             message: "An old device used IP used to be other device @ DeviceHook",
+            suppressAlarm: event.suppressAlarm,
             host: host,
             oldMac: data.mac
           })
@@ -206,15 +212,22 @@ class DeviceHook extends Hook {
         lastActiveTimestamp: new Date() / 1000
       });
 
-      async(() => {
+      (async() => {
 
         // v4
-        if(enrichedHost.ipv4Addr)
-          await (hostTool.updateHost(enrichedHost));
+        if(enrichedHost.ipv4Addr) {
+          let previousEntry = await(hostTool.getIPv4Entry(enrichedHost.ipv4Addr))
+          if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
+            // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
+            log.info("Suspected spoofing device detected: " + enrichedHost.mac);
+            await this.createAlarm(enrichedHost, 'spoofing_device');
+          }
+          await hostTool.updateHost(enrichedHost);
+        }
 
         // v6
         if(enrichedHost.ipv6Addr)
-          await (hostTool.updateIPv6Host(enrichedHost));
+          await hostTool.updateIPv6Host(enrichedHost);
 
         log.info("Host entry is created for this new device:", host, {});
 
@@ -226,7 +239,7 @@ class DeviceHook extends Hook {
         let vendor = null;
 
         try {
-          vendor = await (this.getVendorInfoAsync(mac));
+          vendor = await this.getVendorInfoAsync(mac);
         } catch(err) {
           // do nothing
           log.error("Failed to get vendor info from cloud", err, {});
@@ -239,7 +252,7 @@ class DeviceHook extends Hook {
         enrichedHost.macVendor = v;
 
         if(!enrichedHost.bname && host.ipv4Addr) {
-          let sambaName = await (samba.getSambaName(host.ipv4Addr));
+          let sambaName = await samba.getSambaName(host.ipv4Addr);
           if(sambaName)
             enrichedHost.bname = sambaName;
         }
@@ -252,14 +265,23 @@ class DeviceHook extends Hook {
 
         enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
 
-        await (hostTool.updateMACKey(enrichedHost));
+        await hostTool.updateMACKey(enrichedHost);
 
         if(!event.suppressAlarm) {
-          await (this.createAlarm(enrichedHost));
+          await this.createAlarm(enrichedHost);
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
         }
-
+        const hostManager = new HostManager("cli", 'server', 'info');
+        hostManager.getHost(host.ipv4Addr, (err, host) => {
+          // directly start spoofing
+          if (err) {
+            log.error("Failed to get host after it is detected.");
+          }
+          if (host) {
+            host.spoof(true);
+          }
+        });
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err, {});
       });
@@ -271,35 +293,54 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      async(() => {
-        let macData = await(hostTool.getMACEntry(host.mac))
+      (async() => {
+        let macData = await hostTool.getMACEntry(host.mac);
+        let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
-          firstFoundTimestamp = new Date() / 1000;
+          firstFoundTimestamp = currentTimestamp;
         
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
-          lastActiveTimestamp: new Date() / 1000
+          lastActiveTimestamp: currentTimestamp
         });
 
-        await (hostTool.updateHost(enrichedHost)) //v4
-        await (hostTool.updateIPv6Host(enrichedHost)) //v6
+        await hostTool.updateHost(enrichedHost); //v4
+        await hostTool.updateIPv6Host(enrichedHost); //v6
 
         log.info("New host entry is created for this old device");
 
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
-        }        
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
+        }
+        
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            try {
+              const enabled = await this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_presence');
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
+          }
+        }
 
-        await (hostTool.updateMACKey(enrichedHost)) // mac
+        await hostTool.updateMACKey(enrichedHost); // mac
         
 
         log.info("MAC entry is updated with new IP");
         
-        let hostManager= new HostManager("cli",'server','debug');
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
+        let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);                                     
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err, {})
@@ -311,32 +352,57 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      async(() => {
-        let macData = await (hostTool.getMACEntry(host.mac))
+      (async() => {
+        let macData = await hostTool.getMACEntry(host.mac);
+        let currentTimestamp = new Date() / 1000;
         
         let firstFoundTimestamp = macData.firstFoundTimestamp;
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
-          firstFoundTimestamp = new Date() / 1000;
+          firstFoundTimestamp = currentTimestamp;
         
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
-          lastActiveTimestamp: new Date() / 1000
+          lastActiveTimestamp: currentTimestamp
         });
 
-        await (hostTool.updateHost(enrichedHost))
-        await (hostTool.updateIPv6Host(enrichedHost)) //v6
-
-        if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac))
+        if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
+          // ip address of gateway is taken over, handle it separately
+          log.info("Suspected spoofing device detected: " + enrichedHost.mac);
+          await this.createAlarm(enrichedHost, 'spoofing_device');
         }
 
-        await (hostTool.updateMACKey(enrichedHost))
+        await hostTool.updateHost(enrichedHost);
+        await hostTool.updateIPv6Host(enrichedHost); //v6
+
+        if(enrichedHost.ipv6Addr) {
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
+        }
+
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            try {
+              const enabled = await this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_presence');
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
+          }
+        }
+
+        await hostTool.updateMACKey(enrichedHost);
         
         log.info("MAC entry is updated with new IP");
 
-        let hostManager= new HostManager("cli",'server','debug');
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
+        let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);                  
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenDOverOtherDeivceIP event:", err, {})
@@ -349,25 +415,46 @@ class DeviceHook extends Hook {
 
       log.debug(util.format("Regular Device Update for %s (%s - %s)", host.bname, host.ipv4Addr, host.mac));
 
+      let currentTimestamp = new Date() / 1000;
       let enrichedHost = extend({}, host, {
-        lastActiveTimestamp: new Date() / 1000
+        lastActiveTimestamp: currentTimestamp
       });
 
-      async(() => {
+      (async () => {
         // For ipv6, need to load existing ip6 address from redis, and merge together
         // One device may have multiple ipv6 addresses
+        let macData = await hostTool.getMACEntry(host.mac);
+        let lastActiveTimestamp = macData.lastActiveTimestamp;
+
         if(enrichedHost.ipv6Addr) {
-          enrichedHost.ipv6Addr = await (this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac))
+          enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
         }
 
         // FIXME: shoud not keep minimal info for host key, not all
-        await (hostTool.updateHost(enrichedHost))   // host:ip4:.......
+        await hostTool.updateHost(enrichedHost);   // host:ip4:.......
 
-        await (hostTool.updateIPv6Host(enrichedHost)) // host:ip6:.........
+        await hostTool.updateIPv6Host(enrichedHost); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
+
+        if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
+          // Become active again after a while, create a DeviceBackOnlineAlarm
+          log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
+          if (!event.suppressAlarm) {
+            try {
+              const enabled = await this.isPresenceEnabled(host.mac);
+              if (enabled) {
+                await this.createAlarm(enrichedHost, 'device_presence');
+              } else {
+                log.info("Device presence is disabled for " + host.mac);
+              }
+            } catch (err) {
+              log.error("Failed to load device presence settings", err);
+            }
+          }
+        }
         
-        await (hostTool.updateMACKey(enrichedHost)) // host:mac:.....
+        await hostTool.updateMACKey(enrichedHost); // host:mac:.....
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
         // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
@@ -445,7 +532,7 @@ class DeviceHook extends Hook {
 
   createAlarmAsync(host) {
     return new Promise((resolve, reject) => {
-      this.createAlarm(host, (err) => {
+      this.createAlarm(host, 'new_device', (err) => {
         if(err) {
           reject(err);
         } else {
@@ -462,12 +549,27 @@ class DeviceHook extends Hook {
   getPreferredName(host) {
     return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
   }
+
+  async isPresenceEnabled(mac) {
+    let hostManager = new HostManager("cli", 'server', 'info')
+    const data = await hostManager.loadPolicyAsync();
+
+    if (data && data['devicePresence'] === "true") {
+      // device presence is enabled globally, check device settings further    
+      const policy = await hostTool.loadDevicePolicyByMAC(mac);
+      if (policy && policy['devicePresence'] === "true") {
+        return true;
+      }
+    }
+    return false; // by default return false, a conservative fallback
+  }
   
-  createAlarm(host, callback) {
+  createAlarm(host, type, callback) {
+    type = type || "new_device";
     callback = callback || function() {}
 
     // check if new device alarm is enabled or not
-    if(!fc.isFeatureOn("new_device")) {
+    if(!fc.isFeatureOn(type)) {
       callback(null)
       return
     }
@@ -478,22 +580,45 @@ class DeviceHook extends Hook {
 
     let name = this.getPreferredName(host)
 
-    let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-                                         name,
-                                         {
-                                           "p.device.id": name,
-                                           "p.device.name": name,
-                                           "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
-                                           "p.device.mac": host.mac,
-                                           "p.device.vendor": host.macVendor
-                                         });
-
-    am2.checkAndSave(alarm, (err) => {
-      if(err) {
-        log.error("Failed to save new alarm: " + err);
-      }
-      callback(err);
-    });
+    if (type === "new_device") {
+      let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
+    if (type === "device_presence") {
+      let alarm = new Alarm.DeviceBackOnlineAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
+    if (type === "spoofing_device") {
+      let alarm = new Alarm.SpoofingDeviceAlarm(new Date() / 1000,
+                                           name,
+                                           {
+                                             "p.device.id": name,
+                                             "p.device.name": name,
+                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+                                             "p.device.mac": host.mac,
+                                             "p.device.vendor": host.macVendor
+                                           });
+    
+      am2.enqueueAlarm(alarm);
+    }
   }
 
   getVendorInfoAsync(mac) {

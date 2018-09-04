@@ -92,10 +92,10 @@ class PolicyManager2 {
   }
 
   setupPolicyQueue() {
-    this.queue = new Queue('policy')
-
-    this.queue.removeOnFailure = true
-    this.queue.removeOnSuccess = true
+    this.queue = new Queue('policy', {
+      removeOnFailure: true,
+      removeOnSuccess: true
+    });
 
     this.queue.on('error', (err) => {
       log.error("Queue got err:", err)
@@ -136,7 +136,7 @@ class PolicyManager2 {
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action, {})
           done()
         })
         break
@@ -291,18 +291,32 @@ class PolicyManager2 {
     return this.jsonToPolicy(json)
   }
 
+  normalizePoilcy(policy) {
+    // convert array to string so that redis can store it as value
+    if(policy.scope && policy.scope.constructor.name === 'Array') {
+      policy.scope = JSON.stringify(policy.scope)
+    }    
+  }
+
   updatePolicyAsync(policy) {
     const pid = policy.pid
     if(pid) {
       const policyKey = policyPrefix + pid;
       return async(() => {
-        await (rclient.hmsetAsync(policyKey, flat.flatten(policy)))
-        if(policy.expire == "") {
+        const policyCopy = JSON.parse(JSON.stringify(policy))
+
+        this.normalizePoilcy(policyCopy);
+
+        await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
+        if(policyCopy.expire === "") {
           await (rclient.hdelAsync(policyKey, "expire"))
         }
-        if(policy.cronTime == "") {
+        if(policyCopy.cronTime === "") {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
+        }
+        if(policyCopy.activatedTime === "") {
+          await (rclient.hdelAsync(policyKey, "activatedTime"))
         }
       })()
     } else {
@@ -338,10 +352,7 @@ class PolicyManager2 {
 
       const policyCopy = JSON.parse(JSON.stringify(policy))
 
-      // convert array to string so that redis can store it as value
-      if(policyCopy.scope && policyCopy.scope.constructor.name === 'Array') {
-        policyCopy.scope = JSON.stringify(policyCopy.scope)
-      }
+      this.normalizePoilcy(policyCopy);
     
       rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
         if(err) {
@@ -767,7 +778,7 @@ class PolicyManager2 {
                 await (this.deletePolicy(pid))
               }
             })()
-          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds
+          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds, will be set to 1 if it is a negative number
 
           this.invalidateExpireTimer(policy) // remove old one if exists
           this.enabledTimers[pid] = policyTimer
@@ -812,13 +823,28 @@ class PolicyManager2 {
   _refreshActivatedTime(policy) {
     return async(() => {
       const now = new Date() / 1000
+      let activatedTime = now;
+      // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
+      if (policy.activatedTime) {
+        activatedTime = policy.activatedTime;
+      }
       await (this.updatePolicyAsync({
         pid: policy.pid,
-        activatedTime: now
+        activatedTime: activatedTime
       }))
-      policy.activatedTime = now
+      policy.activatedTime = activatedTime
       return policy
     })()
+  }
+
+  async _removeActivatedTime(policy) {
+    await (this.updatePolicyAsync({
+      pid: policy.pid,
+      activatedTime: ""
+    }))
+
+    delete policy.activatedTime;
+    return policy;
   }
 
   _enforce(policy) {
@@ -963,8 +989,10 @@ class PolicyManager2 {
     }
   }
 
-  _unenforce(policy) {
+  async _unenforce(policy) {
     log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
+
+    await this._removeActivatedTime(policy)
 
     if(policy.scope) {
       return this._advancedUnenforce(policy)

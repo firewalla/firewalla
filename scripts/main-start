@@ -223,7 +223,7 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
 #nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
-sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
+sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
 
@@ -413,6 +413,10 @@ DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n 
 #update_nmap_data_file
 
 # run post_run in background
+# Be careful that this script will be not executed when upgrading in a remote support connection
+# because restarting fireapi above will kill the connection, and the upgrade script will fail to reach the code here.
 ${FIREWALLA_HOME}/scripts/post_run.sh &>/dev/null </dev/null
 
 logger "MAIN-STARTED EXITED $(date)"
+
+logger "UPTIME: $(awk '{print $1}' /proc/uptime)"

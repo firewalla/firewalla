@@ -11,7 +11,7 @@ FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
 fireapi_ping() {
     FIREAPI_GID=$(redis-cli hget sys:ept gid)
     FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
-    FIREAPI_URL="http://127.0.0.1:8834/v1/encipher/message/$FIREAPI_GID"
+    FIREAPI_URL="http://127.0.0.1:8833/v1/encipher_raw/message/$FIREAPI_GID"
     FIREAPI_REQ=$'{
         "message": {
             "from": "Unamed",

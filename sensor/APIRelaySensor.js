@@ -31,7 +31,7 @@ const extensionManager = require('./ExtensionManager.js')
 const fc = require('../net2/config.js')
 
 const FRP = require('../extension/frp/frp.js')
-const frp = new FRP()
+const frp = new FRP("apiRelay")
 
 const featureName = "api_relay"
 
@@ -85,14 +85,15 @@ class APIRelaySensor extends Sensor {
       config.name =  "api-" + await (encipherTool.getGID())
       config.protocol = "tcp"
       
+      log.info("Starting api relay service...");
 
       const valid = this.validateConfig(config)
       if(valid) {
-        const output = await (frp.createConfigFile("apiRelay", config))
+        const output = await (frp.createConfigFile(config))
         if(output) {
           const filePath = output.filePath
           const port = output.port
-          await (frp._start(filePath))
+          await (frp.start())
           if(!config.port && port) {
             await (rclient.hsetAsync(configKey, "port", port))
           }
@@ -107,7 +108,7 @@ class APIRelaySensor extends Sensor {
 
   turnOff() {
     return async(() => {
-      frp._stop()
+      frp.stop()
     })()
   }
 
