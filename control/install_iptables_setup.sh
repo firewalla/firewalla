@@ -59,6 +59,14 @@ sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set blocked_mac_set src -j RE
 sudo iptables -w -C FORWARD -p all -j FW_BLOCK &>/dev/null || sudo iptables -w -A FORWARD -p all -j FW_BLOCK
 
 
+  # Special block chain for NAT table
+sudo iptables -w -t nat -N FW_NAT_BLOCK &>/dev/null
+sudo iptables -w -t nat -F FW_NAT_BLOCK
+
+sudo iptables -w -t nat -C FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo iptables -w -t nat -A FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+
+sudo iptables -w -t nat -C PREROUTING -p tcp -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -I PREROUTING -p tcp -j FW_NAT_BLOCK
+
 if [[ -e /.dockerenv ]]; then
   sudo iptables -w -C OUTPUT -p all -j FW_BLOCK &>/dev/null || sudo iptables -w -A OUTPUT -p all -j FW_BLOCK
 fi
@@ -99,6 +107,15 @@ if [[ -e /sbin/ip6tables ]]; then
 
   # forward to fw_block
   sudo ip6tables -w -C FORWARD -p all -j FW_BLOCK &>/dev/null ||   sudo ip6tables -w -A FORWARD -p all -j FW_BLOCK
+
+
+    # Special block chain for NAT table
+  sudo ip6tables -w -t nat -N FW_NAT_BLOCK &>/dev/null
+  sudo ip6tables -w -t nat -F FW_NAT_BLOCK
+
+  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+
+  sudo ip6tables -w -t nat -C PREROUTING -p tcp -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -p tcp -j FW_NAT_BLOCK
 fi
 
 # redirect blue hole ip 80/443 port to localhost
