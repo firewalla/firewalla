@@ -317,10 +317,14 @@ class CategoryUpdater {
       d = `*.${domain}`
     }
 
-    const excluded = await this.excludeDomainExists(category, d)
+    const included = await this.includeDomainExists(category, d);
 
-    if(excluded) {
-      return;
+    if(!included) {
+      const excluded = await this.excludeDomainExists(category, d);
+
+      if(excluded) {
+        return;
+      }
     }
 
     log.debug(`Found a ${category} domain: ${d}`)
