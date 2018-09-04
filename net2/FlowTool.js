@@ -518,17 +518,22 @@ class FlowTool {
           } else {
             // intel not exists in redis, create a new one
             return async(() => {
-              intel = await (destIPFoundHook.processIP(f.ip));
-              if(intel) {
-                f.country = intel.country;
-                f.host = intel.host;
-                if(intel.category) {
-                  f.category = intel.category
-                }
-                if(intel.app) {
-                  f.app = intel.app
-                }
+              try {
+                intel = await (destIPFoundHook.processIP(f.ip));
+                if(intel) {
+                  f.country = intel.country;
+                  f.host = intel.host;
+                  if(intel.category) {
+                    f.category = intel.category
+                  }
+                  if(intel.app) {
+                    f.app = intel.app
+                  }
+                }             
+              } catch(err) {
+                log.error(`Failed to post-enrich intel ${f.ip}:`, err);
               }              
+              
               return f;
             })();
           }
