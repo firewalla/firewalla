@@ -48,10 +48,20 @@ const router = express.Router();
 router.use(bodyParser.json());
 const cloudWrapper = require('./routes/fastencipher2').cloudWrapper
 
-async function netbotHandler(gid, msg, res) {
+async function netbotHandler(gid, mtype, data) {
   let controller = await(cloudWrapper.getNetBotController(gid));
-  let response = await(controller.msgHandlerAsync(gid, msg));
-  res.json(response);
+  let msg = {
+    mtype: 'msg',
+    message: {
+      obj: {
+        mtype: mtype,
+        data: data,
+        type: 'jsonmsg'
+      },
+      type: 'jsondata'
+    }
+  }
+  return await(controller.msgHandlerAsync(gid, msg));
 }
 
 fs.readdirSync('./routes/pro').forEach(file => {
