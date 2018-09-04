@@ -65,7 +65,9 @@ async function netbotHandler(gid, mtype, data) {
 }
 
 fs.readdirSync('./routes/pro').forEach(file => {
-  require('./routes/pro/' + file)(router, netbotHandler);
+  if (file.endsWith('.js')) {
+    require('./routes/pro/' + file)(router, netbotHandler);
+  }
 })
 subpath_v1.use(router);
 

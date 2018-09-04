@@ -4,6 +4,6 @@ const endpoint = '/' + require("path").basename(__filename, '.js');
 
 module.exports = function(router, netbotHandler) {
     router.get(endpoint, (req, res) => {
-      netbotHandler(req._gid, 'get', {item: 'alarms'}).then(resp => res.json(resp.data.alarms));
+      netbotHandler(req._gid, 'get', {item: 'alarms'}).then(res.json);
     });
 }
