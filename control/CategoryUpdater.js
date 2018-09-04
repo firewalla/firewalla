@@ -732,6 +732,7 @@ class CategoryUpdater {
     command = " -D ";
     if(rule.indexOf(command) > -1) {
       checkRule = rule.replace(command, " -C ");
+      return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
     }
 
     if(checkRule) {

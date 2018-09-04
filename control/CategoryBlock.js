@@ -82,7 +82,7 @@ class CategoryBlock {
     // this policy has scope
     if(options.macSet) {
       // TBD
-      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
+//      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
       await categoryUpdater.iptablesUnblockCategoryPerDeviceNew(category, options.macSet);
     } else {
       // global policy
