@@ -795,15 +795,15 @@ class CategoryUpdater {
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
     const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-    const cmdDeleteOutgoingRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
 
     const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-    const cmdDeleteOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
 
     await exec(cmdDeleteOutgoingTCPRule);
-    await exec(cmdDeleteOutgoingRule);
+    await exec(cmdDeleteOutgoingUDPRule);
     await exec(cmdDeleteOutgoingTCPRule6);
-    await exec(cmdDeleteOutgoingRule6);    
+    await exec(cmdDeleteOutgoingUDPRule6);    
   }
 
   async iptablesUnblockCategoryPerDevice(category, macSet) {
