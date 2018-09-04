@@ -1017,7 +1017,7 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    let cmd = `dig -4 +short +time=5 -p 8853 @localhost github.com`;
+    let cmd = `dig -4 +short +time=5 -p 8853 @localhost firewalla.encipher.io`;
     log.debug("Verifying DNS connectivity...")
 
     try {
