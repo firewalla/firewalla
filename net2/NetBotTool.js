@@ -332,6 +332,7 @@ class NetBotTool {
             }
             return f;
           } else {
+            return f;
             // intel not exists in redis, create a new one
             return async(() => {
               try {
@@ -424,6 +425,8 @@ class NetBotTool {
               }
               return f;
             } else {
+              return f;
+
               // intel not exists in redis, create a new one
               return async(() => {
                 try {
