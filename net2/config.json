@@ -82,6 +82,9 @@
     "APISensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
+    "OvpnConnSensor": {
+      "logPath": "/var/log/openvpn.log"
+    },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
@@ -255,6 +258,7 @@
       "new_device": true,
       "device_presence": true,
       "spoofing_device": false,
+      "vpn_client_connection": true,
       "cyber_security": true,
       "cyber_security.autoBlock": true,
       "vulnerability": false,
