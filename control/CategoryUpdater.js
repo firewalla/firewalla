@@ -745,11 +745,11 @@ class CategoryUpdater {
     // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
     // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
 
-    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -A FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingRule = this.wrapIptables(`sudo iptables -w -t nat -A FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
 
-    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -A FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -A FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
 
     await exec(cmdCreateOutgoingTCPRule);
     await exec(cmdCreateOutgoingRule);
