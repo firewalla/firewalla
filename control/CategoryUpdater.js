@@ -718,24 +718,27 @@ class CategoryUpdater {
 
   wrapIptables(rule) {        
     let command = " -I ";
+    let checkRule = null;
+
     if(rule.indexOf(command) > -1) {
-      const checkRule = rule.replace(command, " -C ");
-      return `${checkRule} &>/dev/null || ${rule}`;
-    }
+      checkRule = rule.replace(command, " -C ");
+    }      
 
     command = " -A ";
     if(rule.indexOf(command) > -1) {
-      const checkRule = rule.replace(command, " -C ");
-      return `${checkRule} &>/dev/null || ${rule}`;
+      checkRule = rule.replace(command, " -C ");
     }
 
     command = " -D ";
     if(rule.indexOf(command) > -1) {
-      const checkRule = rule.replace(command, " -C ");
-      return `${checkRule} &>/dev/null && ${rule}`;
+      checkRule = rule.replace(command, " -C ");
     }
 
-    return rule;
+    if(checkRule) {
+      return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+    } else {
+      return rule;  
+    }    
   }
 
   async iptablesBlockCategoryPerDeviceNew(category, macSet) {
