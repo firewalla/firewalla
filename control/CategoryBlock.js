@@ -62,7 +62,7 @@ class CategoryBlock {
     
     // this policy has scope
     if(options.macSet) {
-      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
+//      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
       await categoryUpdater.iptablesBlockCategoryPerDeviceNew(category, options.macSet);
     } else {
       // global policy
