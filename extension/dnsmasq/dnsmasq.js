@@ -72,6 +72,8 @@ const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
+let VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
 let statusCheckTimer = null;
@@ -1017,25 +1019,27 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    let cmd = `dig -4 +short +time=5 -p 8853 @localhost firewalla.encipher.io`;
-    log.debug("Verifying DNS connectivity...")
+    for (let i in VERIFICATION_DOMAINS) {
+      const domain = VERIFICATION_DOMAINS[i];
+      let cmd = `dig -4 +short +time=5 -p 8853 @localhost ${domain}`;
+      log.debug(`Verifying DNS connectivity via ${domain}...`)
 
-    try {
-      let {stdout, stderr} = await execAsync(cmd);
-      if (stdout === "") {
-        log.error("Got empty dns result when verifying dns connectivity:", {})
-        return false
-      } else if (stderr !== "") {
-        log.error("Got error output when verifying dns connectivity:", cmd, result.stderr, {})
-        return false
-      } else {
-        log.debug("DNS connectivity looks good")
-        return true
+      try {
+        let {stdout, stderr} = await execAsync(cmd);
+        if (stdout === "") {
+          log.error(`Got empty dns result when verifying dns connectivity to ${domain}:`, {})
+        } else if (stderr !== "") {
+          log.error(`Got error output when verifying dns connectivity to ${domain}:`, cmd, result.stderr, {})
+        } else {
+          log.debug("DNS connectivity looks good")
+          return true
+        }
+      } catch (err) {
+        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, {})
       }
-    } catch (err) {
-      log.error("Got error when verifying dns connectivity:", err.stdout, {})
-      return false
     }
+    log.error("DNS connectivity check fails to resolve all domains.");
+    return false;
   }
 
   async statusCheck() {

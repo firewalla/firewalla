@@ -37,7 +37,8 @@
     "leaseTime": "24h"
   },
   "dns": {
-    "defaultDNSServer": "8.8.8.8"
+    "defaultDNSServer": "8.8.8.8",
+    "verificationDomains": ["firewalla.encipher.io", "github.com", "google.com"]
   },
   "sysInfo": {
     "tailNum": 100
