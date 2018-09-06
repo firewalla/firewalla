@@ -65,6 +65,62 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
+function await_ip_assigned() {
+    dhclient_pid=`pgrep dhclient`;
+    ret=$?
+    for i in `seq 1 30`; do
+        if [[ $ret -ne 0 ]]; then
+            sleep 1
+            dhclient_pid=`pgrep dhclient`
+            ret=$?
+        else
+            break
+        fi
+    done
+    if [[ $ret -eq 0 ]]; then
+        sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
+        ret=$?
+        for i in `seq 1 30`; do
+            if [[ $ret -ne 0 ]]; then
+                sleep 1
+                sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
+                ret=$?
+            else
+                logger "IP address is assigned."
+                return 0
+            fi
+        done
+    fi
+    logger "IP address is not assigned yet."
+    return 1
+}
+
+await_ip_assigned
+
+function sync_time() {
+    time_website=$1
+    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
+    if [[ "x$time" == "x" ]]; then
+        logger "ERROR: Failed to load date info from website: $time_website"
+        return 1
+    else
+        sudo date -s "$time"
+    fi    
+}
+
+if [[ ! -f /.dockerenv ]]; then
+    logger "FIREWALLA.UPGRADE.DATE.SYNC"
+    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
+    ret=$?
+    if [[ $ret -ne 0 ]]; then
+        sudo systemctl stop ntp
+        sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
+        sudo systemctl start ntp
+    fi
+    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
+    sync
+fi
+
 GITHUB_STATUS_API=https://status.github.com/api.json
 
 logger `date`
@@ -94,27 +150,6 @@ then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
 fi
 
-function sync_time() {
-    time_website=$1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
-    if [[ "x$time" == "x" ]]; then
-        logger "ERROR: Failed to load date info from website: $time_website"
-        return 1
-    else
-        sudo date -s "$time"
-    fi    
-}
-
-if [[ ! -f /.dockerenv ]]; then
-    logger "FIREWALLA.UPGRADE.DATE.SYNC"
-    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
-    sudo systemctl stop ntp
-    sudo ntpdate -b -u -s time.nist.gov
-    sudo timeout 30 ntpd -gq
-    sudo systemctl start ntp
-    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
-    sync
-fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 
