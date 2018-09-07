@@ -162,6 +162,10 @@ class VPNClientConnectionAlarm extends Alarm {
   keysToCompareForDedup() {
     return ["p.dest.ip", "p.dest.port"];
   }
+
+  requiredKeys() {
+    return ["p.dest.ip", "p.dest.port"];
+  }
 }
 
 class VulnerabilityAlarm extends Alarm {

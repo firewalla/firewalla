@@ -180,7 +180,8 @@
     "DeviceHook": {
       "hostExpirationSecs": 3600
     },
-    "DestIPFoundHook": {}
+    "DestIPFoundHook": {},
+    "VPNHook": {}
   },
     "bro": {
       "notice" : {
