@@ -125,9 +125,3 @@ module.exports = {
   check: check
 };
 
-(async () => {
-  const result = await check();
-  console.log(result);
-  process.exit();
-})();
-
