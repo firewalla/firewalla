@@ -554,7 +554,7 @@ class DeviceHook extends Hook {
     let hostManager = new HostManager("cli", 'server', 'info')
     const data = await hostManager.loadPolicyAsync();
 
-    if (data && data['devicePresence'] === "true") {
+    if (data && data['devicePresence'] !== "false") {
       // device presence is enabled globally, check device settings further    
       const policy = await hostTool.loadDevicePolicyByMAC(mac);
       if (policy && policy['devicePresence'] === "true") {
