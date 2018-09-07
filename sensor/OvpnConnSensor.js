@@ -63,7 +63,7 @@ class OvpnConnSensor extends Sensor {
   processOvpnLog(data) {
     if (data.includes(": pool returned")) {
       // vpn client connection accepted
-      const words = data.split(' ', 6);
+      const words = data.split(/\s+/, 6);
       const remote = words[5];
       const peers = data.substr(data.indexOf('pool returned') + 14);
       // remote should be <name>/<ip>:<port>
