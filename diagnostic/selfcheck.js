@@ -89,7 +89,7 @@ async function gatewayLatency() {
   if (gateway) {
     const cmd = util.format("ping -n -c 10 -i 0.2 -w 3 %s | tail -n 1 | cut -d= -f2 | cut -d/ -f2", gateway);
     const result = await execAsync(cmd);
-    const latency = result.stdout.replace("\n", "");
+    const latency = result.stdout.replace("\n", "") + "ms";
     return latency;
   }
   return ERROR_STR;
@@ -110,7 +110,7 @@ async function cloudLatency() {
   const cloudUrl = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io";
   const cmd = util.format("curl -w \"%{time_total}\" -o /dev/null -s \"%s\"", cloudUrl);
   const result = await execAsync(cmd);
-  const latency = result.stdout;
+  const latency = result.stdout + "s";
   return latency;
 }
 
