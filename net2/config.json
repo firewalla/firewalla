@@ -24,7 +24,8 @@
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,
-    "alarm.large_upload.cooldown": 14400
+    "alarm.large_upload.cooldown": 14400,
+    "alarm.vpn_client_connection.cooldown": 14400
   },
   "secondaryInterface": {
     "intf":"eth0:0",
