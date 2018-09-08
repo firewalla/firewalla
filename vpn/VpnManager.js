@@ -259,7 +259,7 @@ module.exports = class {
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
             if (ovpn != null && regenerate == false) {
                 let password = fs.readFileSync(ovpn_password, 'utf8');
-                log.info("VPNManager:Found older ovpn file");
+                log.info("VPNManager:Found older ovpn file: " + ovpn_file);
                 callback(null, ovpn, password);
                 return;
             }
@@ -289,7 +289,7 @@ module.exports = class {
             log.info("VPNManager:GEN", cmd);
             this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
                 if (err) {
-                    log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
+                    log.error("VPNManager:INSTALL:Error", "Unable to ovpngen.sh.sh", err);
                 }
                 fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
                     if (callback) {
