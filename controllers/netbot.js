@@ -1493,6 +1493,16 @@ class netBot extends ControllerBot {
         })().catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       }
+      case "selfCheck": {
+        (async () => {
+          const sc = require("../diagnostic/selfcheck.js");
+          const result = await sc.check();
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
+      }
       case "transferTrend": {
         const deviceMac = msg.data.value.deviceMac;
         const destIP = msg.data.value.destIP;
