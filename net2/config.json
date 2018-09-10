@@ -24,7 +24,8 @@
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,
-    "alarm.large_upload.cooldown": 14400
+    "alarm.large_upload.cooldown": 14400,
+    "alarm.vpn_client_connection.cooldown": 14400
   },
   "secondaryInterface": {
     "intf":"eth0:0",
@@ -46,7 +47,8 @@
     "leaseTime": "24h"
   },
   "dns": {
-    "defaultDNSServer": "8.8.8.8"
+    "defaultDNSServer": "8.8.8.8",
+    "verificationDomains": ["firewalla.encipher.io", "github.com", "google.com"]
   },
   "sysInfo": {
     "tailNum": 100
@@ -82,6 +84,9 @@
     "APISensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
+    "OvpnConnSensor": {
+      "logPath": "/var/log/openvpn.log"
+    },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
@@ -176,7 +181,8 @@
     "DeviceHook": {
       "hostExpirationSecs": 3600
     },
-    "DestIPFoundHook": {}
+    "DestIPFoundHook": {},
+    "VPNHook": {}
   },
     "bro": {
       "notice" : {
@@ -255,6 +261,7 @@
       "new_device": true,
       "device_presence": true,
       "spoofing_device": false,
+      "vpn_client_connection": true,
       "cyber_security": true,
       "cyber_security.autoBlock": true,
       "vulnerability": false,

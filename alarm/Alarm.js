@@ -154,6 +154,20 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 }
 
+class VPNClientConnectionAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.dest.ip"];
+  }
+
+  requiredKeys() {
+    return ["p.dest.ip"];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -459,6 +473,7 @@ let classMapping = {
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
   ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
+  ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -475,6 +490,7 @@ module.exports = {
   NewDeviceAlarm: NewDeviceAlarm,
   DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
   SpoofingDeviceAlarm: SpoofingDeviceAlarm,
+  VPNClientConnectionAlarm: VPNClientConnectionAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,

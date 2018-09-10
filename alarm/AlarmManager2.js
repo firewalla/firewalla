@@ -390,7 +390,10 @@ module.exports = class {
     return new Promise((resolve, reject) => {
       let duration = fc.getTimingConfig("alarm.cooldown") || 15 * 60 // 15 minutes
       if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hour.
+        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hours.
+      }
+      if (alarm.type === 'ALARM_VPN_CLIENT_CONNECTION') {
+        duration = fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4; // for vpn client connection activities, only generate one alarm per 4 hours.
       }
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {

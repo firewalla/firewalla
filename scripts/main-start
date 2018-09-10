@@ -20,6 +20,9 @@
 
 logger "MAIN-STARTED STARTED $(date)"
 
+sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:blue:status/trigger'
+sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:green:pwr/trigger'
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${PI_HOME:=/home/pi}
 MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
@@ -330,18 +333,6 @@ if [[ ! -f /.dockerenv ]]; then
     sudo systemctl daemon-reload
 fi
 
-cd net2
-
-# this config is necessary for forwarding DNS requests to dnsmasq
-sudo sysctl -w net.ipv4.conf.all.route_localnet=1
-
-
-if [[ -f /.dockerenv ]]; then
-    forever start  -a --uid main  -c "${FIREWALLA_HOME}/bin/node --expose-gc"  ./main.js
-else
-    sudo systemctl restart firemain
-fi
-cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
 #forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
@@ -352,6 +343,19 @@ if [[ -z "$NO_FIREKICK_RESTART" ]]; then
   else
     sudo systemctl restart firekick
   fi
+fi
+
+cd ..
+cd net2
+
+# this config is necessary for forwarding DNS requests to dnsmasq
+sudo sysctl -w net.ipv4.conf.all.route_localnet=1
+
+
+if [[ -f /.dockerenv ]]; then
+    forever start  -a --uid main  -c "${FIREWALLA_HOME}/bin/node --expose-gc"  ./main.js
+else
+    sudo systemctl restart firemain
 fi
 
 cd ..

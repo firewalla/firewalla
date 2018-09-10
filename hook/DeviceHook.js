@@ -322,7 +322,7 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              const enabled = this.isPresenceEnabled(host.mac);
+              const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
                 await this.createAlarm(enrichedHost, 'device_presence');
               } else {
@@ -385,7 +385,7 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              const enabled = this.isPresenceEnabled(host.mac);
+              const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
                 await this.createAlarm(enrichedHost, 'device_presence');
               } else {
@@ -554,7 +554,7 @@ class DeviceHook extends Hook {
     let hostManager = new HostManager("cli", 'server', 'info')
     const data = await hostManager.loadPolicyAsync();
 
-    if (data && data['devicePresence'] === "true") {
+    if (data && data['devicePresence'] !== "false") {
       // device presence is enabled globally, check device settings further    
       const policy = await hostTool.loadDevicePolicyByMAC(mac);
       if (policy && policy['devicePresence'] === "true") {

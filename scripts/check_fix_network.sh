@@ -196,7 +196,7 @@ done
 echo OK
 
 : ${CHECK_FIX_NETWORK_RETRY:='yes'}
-while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
+while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     # only run once if requires NO retry
     test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
     echo -n "checking gateway ... "

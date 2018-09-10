@@ -181,7 +181,7 @@ module.exports = class FlowMonitor {
           return false;
         }
         if (!fc.isFeatureOn(featureName)) {
-          log.warn(`Feature ${featureName} is not enabled`);
+          log.debug(`Feature ${featureName} is not enabled`);
           return false;
         }
         return true;
