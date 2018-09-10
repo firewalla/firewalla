@@ -22,7 +22,7 @@ let fs = require('fs')
 let spawn = require('child_process').spawn
 let Promise = require('bluebird');
 
-const platform = require('../platform/PlatformLoader.js').getPlatform();
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec
 
