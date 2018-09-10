@@ -14,13 +14,13 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
-let util = require('util');
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const log = require('../net2/logger.js')(__filename);
+const util = require('util');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Tail = require('always-tail');
 const fs = require('fs');
 const cp = require('child_process');
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
 class OvpnConnSensor extends Sensor {
   constructor() {
@@ -30,14 +30,18 @@ class OvpnConnSensor extends Sensor {
   initLogWatcher() {
     if (!fs.existsSync(this.config.logPath)) {
       log.warn(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
-      setTimeout(this.initLogWatcher, 5000);
+      setTimeout(() => {
+        this.initLogWatcher();
+      }, 5000);
     } else {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", this.config.logPath);
       cp.exec(cmd, (err, stdout, stderr) => {
         if (err || stderr) {
           log.error(util.format("Failed to change permission for log file: %s", err || stderr));
-          setTimeout(this.initLogWatcher, 5000);
+          setTimeout(() => {
+            this.initLogWatcher();
+          }, 5000);
           return;
         }
         if (this.ovpnLog == null) {
@@ -49,7 +53,9 @@ class OvpnConnSensor extends Sensor {
               this.processOvpnLog(data);
             });
           } else {
-            setTimeout(this.initLogWatcher, 5000);
+            setTimeout(() => {
+              this.initLogWatcher();
+            }, 5000);
           }
         }
       });

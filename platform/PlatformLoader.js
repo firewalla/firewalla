@@ -20,7 +20,7 @@ let instance = null;
 const RedPlatform = require('./red/RedPlatform.js');
 const BluePlatform = require('./blue/BluePlatform.js');
 
-const exec = require('child-process').exec;
+const execSync = require('child_process').execSync;
 
 class PlatformLoader {
   constructor() {
@@ -35,7 +35,8 @@ class PlatformLoader {
       return this.platform;
     }
 
-    const uname = execSync("uname -m", 'utf8');
+    const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
+    
     switch (uname) {
     case "aarch64":
       this.platform = new BluePlatform();
