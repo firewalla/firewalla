@@ -16,10 +16,19 @@
 'use strict';
 
 const Platform = require('../Platform.js');
+const f = require('../../net2/Firewalla.js')
 
 class BluePlatform extends Platform {
   getBoardSerial() {
     return new Date() / 1;
+  }
+
+  getB4Binary() {
+    return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge7`;
+  }
+
+  getB6Binary() {
+    return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge6`;
   }
 }
 

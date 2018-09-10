@@ -19,18 +19,18 @@ const Platform = require('../Platform.js');
 
 const utils = require('../../lib/utils.js');
 
-class RedPlatform extends Platform {
+class DockerPlatform extends Platform {
   getBoardSerial() {
-    return utils.getCpuId();
+    return new Date() / 1;
   }
 
   getB4Binary() {
-    return `${f.getFirewallaHome()}/bin/real.armv7l/bitbridge7`;
+    return `${f.getFirewallaHome()}/bin/real.x86_64/bitbridge7`;
   }
 
   getB6Binary() {
-    return `${f.getFirewallaHome()}/bin/real.armv7l/bitbridge6`;
+    return `${f.getFirewallaHome()}/bin/real.x86_64/bitbridge6`;
   }
 }
 
-module.exports = RedPlatform;
+module.exports = DockerPlatform;
