@@ -316,7 +316,14 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vpn", value, (err, data) => {
+      var newValue = {};
+      if (data["vpn"]) {
+        newValue = JSON.parse(data["vpn"]);
+      }
+      Object.keys(value).forEach((k) => {
+        newValue[k] = value[k];
+      });
+      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
             callback(null, "Success");
@@ -1378,7 +1385,7 @@ class netBot extends ControllerBot {
             log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
-            vpnManager.configure(data[vpn]); // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.configure(JSON.parse(data["vpn"])); // this should set local port of VpnManager, which will be used in getOvpnFile
             vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
               if (err == null) {
                 datamodel.code = 200;

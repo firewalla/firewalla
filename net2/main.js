@@ -345,10 +345,11 @@ function run() {
       } else {
         var serverNetwork = null;
         var localPort = null;
-        if(data && data[vpn]) {
-          const vpnPolicy = data[vpn];
-          serverNetwork = vpnPolicy[serverNetwork] || null;
-          localPort = vpnPolicy[localPort] || null;
+        var vpnPolicy = {};
+        if(data && data["vpn"]) {
+          vpnPolicy = JSON.parse(data["vpn"]);
+          serverNetwork = vpnPolicy["serverNetwork"] || null;
+          localPort = vpnPolicy["localPort"] || null;
         }
         vpnManager.install("server", serverNetwork, localPort, (err)=>{
           if (err!=null) {

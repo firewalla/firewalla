@@ -171,8 +171,12 @@ module.exports = class {
 
     configure(config) {
         if (config) {
-            this.serverNetwork = config.serverNetwork;
-            this.localPort = config.localPort;
+            if (config.serverNetwork) {
+                this.serverNetwork = config.serverNetwork;
+            }
+            if (config.localPort) {
+                this.localPort = config.localPort;
+            }
         }
     }
 
@@ -299,7 +303,7 @@ module.exports = class {
                 return;
             }
 
-            let originalName = clientName;
+            let originalName = clientname;
             // Original name remains unchanged even if client name is trailed by random numbers.
             // So that client ovpn file name will remain unchanged while its content has been updated.
             if (regenerate == true) {
