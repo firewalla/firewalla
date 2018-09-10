@@ -20,31 +20,35 @@ let instance = null;
 const RedPlatform = require('./red/RedPlatform.js');
 const BluePlatform = require('./blue/BluePlatform.js');
 
-const exec = require('child-process-promise').exec();
+const exec = require('child-process').exec;
 
 class PlatformLoader {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
     }
     return instance;
   }
 
-  async getPlatform() {    
-    const uname = await exec("uname -m");
-    switch(uname) {
-      case "aarch64": {
-        return new BluePlatform();
-        break;
-      }
-      case "armv7l": {
-        return new RedPlatform();
-        break;
-      }
-      default:
+  getPlatform() {
+    if (this.platform) {
+      return this.platform;
+    }
+
+    const uname = execSync("uname -m", 'utf8');
+    switch (uname) {
+    case "aarch64":
+      this.platform = new BluePlatform();
+      break;
+    case "armv7l":
+      this.platform = new RedPlatform();
+      break;      
+    default:
       return null;
       break;
     }
+
+    return this.platform;
   }
 }
 

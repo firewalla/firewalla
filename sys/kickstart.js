@@ -82,6 +82,10 @@
   let FWInvitation = require('./invitation.js');
 
   const Diag = require('../extension/diag/app.js');
+
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.info("FireKick Starting ");
+log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
   
   function delay(t) {
     return new Promise(function(resolve) {
