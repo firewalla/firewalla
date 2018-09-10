@@ -416,17 +416,20 @@ module.exports = class {
     }
 
     let vpnManager = new VpnManager('info');
+    vpnManager.configure(config);
     if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
       vpnManager.stop();
       log.error("PolicyManager:VPN", "VPN Not avaliable");
       return;
     }
     if (config.state == true) {
-      vpnManager.start((err, external, port) => {
+      vpnManager.start((err, external, port, serverNetwork, localPort) => {
         if (err != null) {
           config.state = false;
           host.setPolicy("vpn", config);
         } else {
+          config.serverNetwork = serverNetwork;
+          config.localPort = localPort;
           if (external) {
             config.portmapped = true;
             host.setPolicy("vpn", config, (err) => {

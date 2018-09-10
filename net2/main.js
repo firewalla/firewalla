@@ -339,17 +339,33 @@ function run() {
 */
   setTimeout(()=>{
     var vpnManager = new VpnManager('info');
-    vpnManager.install((err)=>{
-      if (err!=null) {
-        log.info("VpnManager:Unable to start vpn", err);
-        hostManager.setPolicy("vpnAvaliable",false);
+    hostManager.loadPolicy((err, data) => {
+      if (err != null) {
+        log.error("Failed to load system policy for VPN", err);
       } else {
-        vpnManager.start((err)=>{
+        var serverNetwork = null;
+        var localPort = null;
+        if(data && data[vpn]) {
+          const vpnPolicy = data[vpn];
+          serverNetwork = vpnPolicy[serverNetwork] || null;
+          localPort = vpnPolicy[localPort] || null;
+        }
+        vpnManager.install("server", serverNetwork, localPort, (err)=>{
           if (err!=null) {
-            log.info("VpnManager:Unable to start vpn");
+            log.info("VpnManager:Unable to start vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            hostManager.setPolicy("vpnAvaliable",true);
+            vpnManager.start((err, external, port, serverNetwork, localPort)=>{
+              if (err!=null) {
+                log.info("VpnManager:Unable to start vpn");
+                hostManager.setPolicy("vpnAvaliable",false);
+              } else {
+                hostManager.setPolicy("vpnAvaliable",true);
+                vpnPolicy.serverNetwork = serverNetwork;
+                vpnPolicy.localPort = localPort;
+                hostManager.setPolicy("vpn", vpnPolicy);
+              }
+            });
           }
         });
       }

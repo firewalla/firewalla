@@ -16,6 +16,7 @@
 
 var instance = null;
 const log = require("../net2/logger.js")(__filename)
+const iptable = require("../net2/Iptables");
 var SysManager = require('../net2/SysManager.js');
 var sysManager = new SysManager('info');
 var firewalla = require('../net2/Firewalla.js');
@@ -92,6 +93,17 @@ module.exports = class {
         });
     }
 
+    setIptables(callback) {
+        const serverNetwork = this.serverNetwork;
+        const localIp = sysManager.myIp();
+        log.info("VpnManager:SetIptables", serverNetwork, localIp);
+        const commands =[
+            `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
+            `sudo iptables -w -t nat -I POSTROUTING 2 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}` // insert this rule next to first rule of POSTROUTING
+        ];
+        iptable.run(commands, callback);
+    }
+
     unpunchNat(opts, callback) {
         log.info("VpnManager:UnpunchNat", opts);
         this.upnp.removePortMapping(opts.protocol, opts.private,opts.public,(err)=>{
@@ -101,11 +113,11 @@ module.exports = class {
         });
     }
 
-    install(callback) {
-	let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh', fHome);
+    install(instance, serverNetwork, localPort, callback) {
+	let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
         this.install1 = require('child_process').exec(install1_cmd, (err, out, code) => {
             if (err) {
-                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh", err);
+                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh " +  instance, err);
             }
             if (err == null) {
                 publicIp.v4((err, ip) => {
@@ -129,16 +141,25 @@ module.exports = class {
                     if (mydns == null) {
                         mydns = "8.8.8.8"; // use google DNS as default
                     }
-                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s", fHome, sysManager.myIp(), ip, mydns);
+                    this.serverNetwork = serverNetwork || this.generateNetwork(); // should be randomly selected from 10.[20-199].[20-199].0 
+                    this.localPort = localPort || "1194"; // local port is default to 1194;
+                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s %s %s %s", fHome, 
+                        instance, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
                     log.info("VPNManager:INSTALL:cmd", install2_cmd);
                     this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
                         if (err) {
                             log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
                         }
                         log.info("VPNManager:INSTALL:Done");
-                        if (callback) {
-                            callback(err, null);
-                        }
+                        this.instanceName = instance;
+                        this.setIptables((err, result) => {
+                            if (err) {
+                                log.error("VPNManager:INSTALL:Error", "Failed to set iptables", err);
+                            }
+                            if (callback) {
+                                callback(err, null);
+                            }
+                        });
                     });
                 });
             } else {
@@ -148,16 +169,21 @@ module.exports = class {
         });
     }
 
-    configure(callback) {}
+    configure(config) {
+        if (config) {
+            this.serverNetwork = config.serverNetwork;
+            this.localPort = config.localPort;
+        }
+    }
 
     stop(callback) {
         this.started = false;
         this.unpunchNat({
             protocol: 'udp',
-            private: 1194,
-            public: 1194
+            private: this.localPort,
+            public: this.localPort
         });
-        require('child_process').exec("sudo systemctl stop openvpn@server", (err, out, code) => {
+        require('child_process').exec("sudo systemctl stop openvpn@" + this.instanceName, (err, out, code) => {
             log.info("Stopping OpenVpn", err);
             if (callback) {
                 callback(err);
@@ -174,8 +200,8 @@ module.exports = class {
         this.punchNat({
             type: 'udp',
             protocol: 'udp',
-            private: 1194,
-            public: 1194,
+            private: this.localPort,
+            public: this.localPort,
             ttl: 0,
             description: "Firewalla VPN"
         }, (external) => {
@@ -186,7 +212,7 @@ module.exports = class {
             }, ttlExpire/3*1000);
             if (callback) {
                 this.portmapped = true;
-                callback(null, external, 1194);
+                callback(null, external, this.localPort);
             }
         }, (err) => {
             log.info("VpnManager:Start:portMap:Failed: " + err);
@@ -204,7 +230,12 @@ module.exports = class {
         if (this.started) {
             log.info("VpnManager::StartedAlready");
             if (callback)
-                 callback(null, this.portmapped, this.portmapped);
+                 callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
+            return;
+        }
+
+        if (this.instanceName == null) {
+            callback("Server instance is not installed yet.");
             return;
         }
 
@@ -212,11 +243,11 @@ module.exports = class {
         
         this.unpunchNat({
             protocol: 'udp',
-            private: 1194,
-            public: 1194
+            private: this.localPort,
+            public: this.localPort
         },(err)=>{
-            require('child_process').exec("sudo systemctl start openvpn@server", (err, out, code) => {
-                log.info("VpnManager:Start", err);
+            require('child_process').exec("sudo systemctl start openvpn@" + this.instanceName, (err, out, code) => {
+                log.info("VpnManager:Start:" + this.instanceName, err);
                 if (err && this.started == false) {
                     if (callback) {
                         callback(err);
@@ -224,13 +255,13 @@ module.exports = class {
                     return;
                 }
                 this.started = true;
-                this.upnp.addPortMapping("udp",1194,1194,"Firewalla OpenVPN",(err)=>{
+                this.upnp.addPortMapping("udp",this.localPort,this.localPort,"Firewalla OpenVPN",(err)=>{
                    log.info("VpnManager:UPNP:SetDone", err);
                    if (err) {
-                       callback(null,null,null);            
+                       callback(null, null, null, this.serverNetwork, this.localPort);            
                    } else {
                        this.portmapped = true;
-                       callback(null,"success",1194);
+                       callback(null, "success", this.localPort, this.serverNetwork, this.localPort);
                    }
                 }); 
             });
@@ -247,12 +278,16 @@ module.exports = class {
         return retVal;
     }
 
-    getOvpnFile(clientname, serverNetwork, localPort, password, regenerate, callback) {
+    generateNetwork() {
+        // random segment from 20 to 199
+        const seg1 = Math.floor(Math.random() * 180 + 20);
+        const seg2 = Math.floor(Math.random() * 180 + 20);
+        return "10." + seg1 + "." + seg2 + ".0";
+    }
+
+    getOvpnFile(clientname, password, regenerate, callback) {
         let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
         let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
-
-        serverNetwork = serverNetwork || "10.8.0.0";
-        localPort = localPort || "1194";
 
         log.info("Reading ovpn file", ovpn_file,ovpn_password,regenerate);
         
@@ -264,6 +299,9 @@ module.exports = class {
                 return;
             }
 
+            let originalName = clientName;
+            // Original name remains unchanged even if client name is trailed by random numbers.
+            // So that client ovpn file name will remain unchanged while its content has been updated.
             if (regenerate == true) {
                 clientname = clientname + this.generatePassword(10);
             }
@@ -284,12 +322,12 @@ module.exports = class {
             
             const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s %s'; sync", 
-                fHome, vpnLockFile, clientname, password, sysManager.myIp(), ip, mydns, serverNetwork, localPort);
+            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync", 
+                fHome, vpnLockFile, clientname, password, ip, this.localPort, originalName);
             log.info("VPNManager:GEN", cmd);
             this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
                 if (err) {
-                    log.error("VPNManager:INSTALL:Error", "Unable to ovpngen.sh.sh", err);
+                    log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
                 }
                 fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
                     if (callback) {

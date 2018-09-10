@@ -1365,26 +1365,32 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
 
-        this.hostManager.loadPolicy(() => {
-          vpnManager.getOvpnFile("fishboneVPN1", null, null, null, regenerate, (err, ovpnfile, password) => {
-            let datamodel = {
-              type: 'jsonmsg',
-              mtype: 'reply',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-            };
-            if (err == null) {
-              datamodel.code = 200;
-              datamodel.data = {
-                ovpnfile: ovpnfile,
-                password: password,
-                portmapped: this.hostManager.policy['vpnPortmapped']
-              }
-            }
+        this.hostManager.loadPolicy((err, data) => {
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+          };
+          if (err != null) {
+            log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-          });
+          } else {
+            vpnManager.configure(data[vpn]); // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+              if (err == null) {
+                datamodel.code = 200;
+                datamodel.data = {
+                  ovpnfile: ovpnfile,
+                  password: password,
+                  portmapped: this.hostManager.policy['vpnPortmapped']
+                }
+              }
+              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+            });
+          }
         });
         break;
       case "shadowsocks":
