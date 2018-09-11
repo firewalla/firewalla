@@ -41,6 +41,7 @@ export NODE_PATH=~/.node_modules:$NODE_PATH
 
 mkdir -p "$HOME/.firewalla"
 mkdir -p "$HOME/.firewalla/tmp"
+mkdir -p "$HOME/.firewalla/pubKeys"
 mkdir -p "$HOME/logs"
 sudo rm -r -f /tmp/*
 cd $FIREWALLA_HOME
