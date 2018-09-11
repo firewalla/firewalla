@@ -13,7 +13,7 @@ setTimeout(function() {
     var VPN = require('../vpn/VpnManager.js');
     var vpn = new VPN('info');
 
-    vpn.getOvpnFile("test1", null, null, "123456", true, function(err, ovpn, password) {
+    vpn.getOvpnFile("test1", "123456", true, function(err, ovpn, password) {
         console.log(err);
         console.log(ovpn);
         console.log(password);
