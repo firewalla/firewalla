@@ -107,8 +107,10 @@ module.exports = class {
               return false;
             }
           }
+        } else {
+          // not a cidr subnet exception
+          if(val2 !== val) return false;        
         }
-        if(val2 !== val) return false;        
       }
 
       matched = true;
