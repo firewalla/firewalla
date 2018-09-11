@@ -1685,12 +1685,43 @@ class netBot extends ControllerBot {
         });
         break;
       case "proToken":
-      (async () => {
-        this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
+        (async () => {
+          this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "policies":
+        policyManager.loadActivePolicys((err, list) => {
+          if(err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let alarmIDs = list.map((p) => p.aid);
+            alarmManager.idsToAlarms(alarmIDs, (err, alarms) => {
+              if(err) {
+                log.error("Failed to get alarms by ids:", err, {});
+                this.simpleTxData(msg, {}, err, callback);
+                return;
+              }
+      
+              for(let i = 0; i < list.length; i ++) {
+                if(list[i] && alarms[i]) {
+                  list[i].alarmMessage = alarms[i].localizedInfo();
+                  list[i].alarmTimestamp = alarms[i].timestamp;
+                }
+              }
+              this.simpleTxData(msg, {list: list}, null, callback);
+            });
+          }
+        });
+        break;
+      case "hosts":
+        (async () => {
+          this.simpleTxData(msg, {hosts: 'Hosts'}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
