@@ -38,6 +38,9 @@ let license = require('../util/license.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
@@ -243,7 +246,8 @@ class FWInvitation {
         txtfield.ipaddress = ip;
 
         log.info("TXT:", txtfield, {});
-        this.service = intercomm.publish(null, FW_ENDPOINT_NAME + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
+        const serial = platform.getBoardSerial();
+        this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
         this.displayBonjourMessage(txtfield)
     });
 

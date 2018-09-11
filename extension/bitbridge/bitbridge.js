@@ -22,8 +22,7 @@ let fs = require('fs')
 let spawn = require('child_process').spawn
 let Promise = require('bluebird');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec
 
@@ -116,11 +115,11 @@ class BitBridge {
         
         require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
 
-        async(() => {
+        (async () => {
           if(fc.isFeatureOn("ipv6")) {
-            await (this.ipv6On())
+            await this.ipv6On();
           } else {
-            await (this.ipv6Off())
+            await this.ipv6Off();
           }
           fc.onFeature("ipv6", (feature, status) => {
             if(feature != "ipv6")
@@ -163,37 +162,29 @@ class BitBridge {
   }
 
   getBinary() {
-    if(firewalla.getPlatform() === "x86_64") {
-      return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge7";
-    }
-    
-    return firewalla.getFirewallaHome() + "/bin/bitbridge7";
+    return platform.getB4Binary();
   }
 
   getBinary6() {
-    if(firewalla.getPlatform() === "x86_64") {
-      return firewalla.getFirewallaHome() + "/bin/real.x86_64/bitbridge6";
-    }
-    
-    return firewalla.getFirewallaHome() + "/bin/bitbridge6";
+    return platform.getB6Binary();
   }
 
-  ipv6On() {
-    return async(() => {
-      await (exec("touch /home/pi/.firewalla/config/enablev6"))
-      await (exec("sudo pkill bitbridge6"))      
-    })().catch(err => {
+  async ipv6On() {
+    try {
+      await exec("touch /home/pi/.firewalla/config/enablev6");
+      await exec("sudo pkill bitbridge6");
+    } catch(err) {
       log.warn("Error when turn on ipv6", err);
-    })
+    }
   }
 
-  ipv6Off() {
-    return async(() => {
-      await (exec("rm -f /home/pi/.firewalla/config/enablev6"))
-      await (exec("sudo pkill bitbridge6"))      
-    })().catch(err => {
+  async ipv6Off() {
+    try {
+      await exec("rm -f /home/pi/.firewalla/config/enablev6");
+      await exec("sudo pkill bitbridge6");
+    } catch(err) {
       log.warn("Error when turn off ipv6", err);
-    })
+    }
   }
 }
 

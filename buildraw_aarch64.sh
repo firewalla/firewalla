@@ -117,11 +117,11 @@ function install_walla() {
 			fi
 			cd $basedir/imports && tar -zxf bro49.tar.gz && sudo cp -r -f $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro."
 			cp $basedir/bin/real/bit* $basedir/bin/
-		elif [[ $PLATFORM == "aarch64" ]]; then
-			if [[ ! -f $basedir/imports/bro-2.4.aarch64.tar.gz ]]; then
-				(cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/v1.95/bro-2.4.aarch64.tar.gz -O bro-2.4.aarch64.tar.gz)
-			fi
-			(cd $basedir/imports && tar -zxf bro-2.4.aarch64.tar.gz && sudo cp -r -f $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro.")
+		# elif [[ $PLATFORM == "aarch64" ]]; then
+		# 	if [[ ! -f $basedir/imports/bro-2.4.aarch64.tar.gz ]]; then
+		# 		(cd $basedir/imports && wget https://github.com/firewalla/firewalla/releases/download/v1.95/bro-2.4.aarch64.tar.gz -O bro-2.4.aarch64.tar.gz)
+		# 	fi
+		# 	(cd $basedir/imports && tar -zxf bro-2.4.aarch64.tar.gz && sudo cp -r -f $basedir/imports/bro /usr/local/ && rm -r -f $basedir/imports/bro || perr_and_exit "Failed to install bro.")
 		fi
 	fi
 	sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
