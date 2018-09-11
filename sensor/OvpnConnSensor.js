@@ -73,6 +73,7 @@ class OvpnConnSensor extends Sensor {
       const remote = words[5];
       const peers = data.substr(data.indexOf('pool returned') + 14);
       // remote should be <name>/<ip>:<port>
+      const profile = remote.split('/')[0];
       const client = remote.split('/')[1];
       const clientIP = client.split(':')[0];
       const clientPort = client.split(':')[1];
@@ -88,7 +89,7 @@ class OvpnConnSensor extends Sensor {
       if (peerIPv6Address === "(Not enabled)") {
         peerIPv6Address = null;
       }
-      log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s", client, peerIPv4Address, peerIPv6Address));
+      log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
       sem.emitEvent({
         type: "VPNConnectionAccepted",
         message: "A new VPN connection was accepted",
@@ -96,7 +97,8 @@ class OvpnConnSensor extends Sensor {
           remoteIP: clientIP,
           remotePort: clientPort,
           peerIP4: peerIPv4Address,
-          peerIP6: peerIPv6Address
+          peerIP6: peerIPv6Address,
+          profile: profile
         }
       });
     }
