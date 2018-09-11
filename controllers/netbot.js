@@ -1385,18 +1385,25 @@ class netBot extends ControllerBot {
             log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
-            vpnManager.configure(JSON.parse(data["vpn"])); // this should set local port of VpnManager, which will be used in getOvpnFile
-            vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-              if (err == null) {
-                datamodel.code = 200;
-                datamodel.data = {
-                  ovpnfile: ovpnfile,
-                  password: password,
-                  portmapped: this.hostManager.policy['vpnPortmapped']
-                }
+            // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.configure(JSON.parse(data["vpn"]), (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN", err);
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              } else {
+                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+                  if (err == null) {
+                    datamodel.code = 200;
+                    datamodel.data = {
+                      ovpnfile: ovpnfile,
+                      password: password,
+                      portmapped: this.hostManager.policy['vpnPortmapped']
+                    }
+                  }
+                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                });
               }
-              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-            });
+            }); 
           }
         });
         break;

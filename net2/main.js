@@ -343,28 +343,38 @@ function run() {
       if (err != null) {
         log.error("Failed to load system policy for VPN", err);
       } else {
-        var serverNetwork = null;
-        var localPort = null;
-        var vpnPolicy = {};
+        var vpnConfig = {};
         if(data && data["vpn"]) {
-          vpnPolicy = JSON.parse(data["vpn"]);
-          serverNetwork = vpnPolicy["serverNetwork"] || null;
-          localPort = vpnPolicy["localPort"] || null;
+          vpnConfig = JSON.parse(data["vpn"]);
         }
-        vpnManager.install("server", serverNetwork, localPort, (err)=>{
+        vpnManager.install("server", (err)=>{
           if (err!=null) {
-            log.info("VpnManager:Unable to start vpn server instance: server", err);
+            log.info("Unable to install vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            vpnManager.start((err, external, port, serverNetwork, localPort)=>{
-              if (err!=null) {
-                log.info("VpnManager:Unable to start vpn");
-                hostManager.setPolicy("vpnAvaliable",false);
+            vpnManager.configure(vpnConfig, (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN manager", err);
+                vpnConfig.state = false;
+                hostManager.setPolicy("vpn", vpnConfig);
               } else {
-                hostManager.setPolicy("vpnAvaliable",true);
-                vpnPolicy.serverNetwork = serverNetwork;
-                vpnPolicy.localPort = localPort;
-                hostManager.setPolicy("vpn", vpnPolicy);
+                if (vpnConfig["state"] == null || vpnConfig["state"] == true) {
+                  vpnManager.start((err, external, port, serverNetwork, localPort)=>{
+                    if (err!=null) {
+                      log.info("Unable to start vpn");
+                      vpnConfig.state = false;
+                      hostManager.setPolicy("vpn", vpnConfig);
+                      hostManager.setPolicy("vpnAvaliable",false);
+                    } else {
+                      log.info("VPN server is started successfully.");
+                      hostManager.setPolicy("vpnAvaliable",true);
+                      vpnConfig.state = true;
+                      vpnConfig.serverNetwork = serverNetwork;
+                      vpnConfig.localPort = localPort;
+                      hostManager.setPolicy("vpn", vpnConfig);
+                    }
+                  });
+                }
               }
             });
           }

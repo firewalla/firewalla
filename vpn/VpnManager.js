@@ -104,6 +104,16 @@ module.exports = class {
         iptable.run(commands, callback);
     }
 
+    unsetIptables(callback) {
+        const serverNetwork = this.serverNetwork;
+        const localIp = sysManager.myIp();
+        log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
+        const commands =[
+            `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
+        ];
+        iptable.run(commands, callback);
+    }
+
     unpunchNat(opts, callback) {
         log.info("VpnManager:UnpunchNat", opts);
         this.upnp.removePortMapping(opts.protocol, opts.private,opts.public,(err)=>{
@@ -113,54 +123,29 @@ module.exports = class {
         });
     }
 
-    install(instance, serverNetwork, localPort, callback) {
+    install(instance, callback) {
 	let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
         this.install1 = require('child_process').exec(install1_cmd, (err, out, code) => {
             if (err) {
-                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh " +  instance, err);
+                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " +  instance, err);
             }
             if (err == null) {
-                publicIp.v4((err, ip) => {
-                    if (err != null) {
-                        log.error("VPNManager:INSTALL:Error IP",ip,err);
-                        ip = sysManager.myDDNS();
-                        if (ip == null) {
-                             ip = sysManager.publicIp;
+                // !! Pay attention to the parameter "-E" which is used to preserve the
+                // enviornment valueables when running sudo commands
+                let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s", fHome, instance);
+                log.info("VPNManager:INSTALL:cmd", install2_cmd);
+                this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
+                    if (err) {
+                        log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
+                        if (callback) {
+                            callback(err, null);
                         }
-                        if (ip == null) {
-                            if (callback) 
-                                callback(err, null);
-                            return;
-                        }
+                        return;
                     }
-
-                    // !! Pay attention to the parameter "-E" which is used to preserve the
-                    // enviornment valueables when running sudo commands
-                    
-                    var mydns = sysManager.myDNS()[0]; 
-                    if (mydns == null) {
-                        mydns = "8.8.8.8"; // use google DNS as default
-                    }
-                    this.serverNetwork = serverNetwork || this.generateNetwork(); // should be randomly selected from 10.[20-199].[20-199].0 
-                    this.localPort = localPort || "1194"; // local port is default to 1194;
-                    let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s %s %s %s %s", fHome, 
-                        instance, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
-                    log.info("VPNManager:INSTALL:cmd", install2_cmd);
-                    this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
-                        if (err) {
-                            log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
-                        }
-                        log.info("VPNManager:INSTALL:Done");
-                        this.instanceName = instance;
-                        this.setIptables((err, result) => {
-                            if (err) {
-                                log.error("VPNManager:INSTALL:Error", "Failed to set iptables", err);
-                            }
-                            if (callback) {
-                                callback(err, null);
-                            }
-                        });
-                    });
+                    log.info("VPNManager:INSTALL:Done");
+                    this.instanceName = instance;
+                    if (callback)
+                        callback(null, null);
                 });
             } else {
                 if (callback) 
@@ -169,7 +154,7 @@ module.exports = class {
         });
     }
 
-    configure(config) {
+    configure(config, callback) {
         if (config) {
             if (config.serverNetwork) {
                 this.serverNetwork = config.serverNetwork;
@@ -178,6 +163,32 @@ module.exports = class {
                 this.localPort = config.localPort;
             }
         }
+        if (this.serverNetwork == null) {
+            this.serverNetwork = this.generateNetwork();
+        }
+        if (this.localPort == null) {
+            this.localPort = "1194";
+        }
+        if (this.instanceName == null) {
+            this.instanceName = "server";
+        }
+        var mydns = sysManager.myDNS()[0]; 
+        if (mydns == null) {
+            mydns = "8.8.8.8"; // use google DNS as default
+        }
+        const cmd = util.format("cd %s/vpn; sudo -E ./confgen.sh %s %s %s %s %s",
+            fHome, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
+        require('child_process').exec(cmd, (err, out, code) => {
+            if (err) {
+                log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
+                if (callback)
+                    callback(err);
+                return;
+            }
+            log.info("VPNManager:CONFIGURE:Done");
+            if (callback)
+                callback(null);
+        });
     }
 
     stop(callback) {
@@ -189,8 +200,14 @@ module.exports = class {
         });
         require('child_process').exec("sudo systemctl stop openvpn@" + this.instanceName, (err, out, code) => {
             log.info("Stopping OpenVpn", err);
-            if (callback) {
-                callback(err);
+            if (err) {
+                if (callback)
+                    callback(err);
+            } else {
+                this.unsetIptables((err, result) => {
+                    if (callback)
+                        callback(err);
+                });
             }
         });
     }
@@ -259,14 +276,28 @@ module.exports = class {
                     return;
                 }
                 this.started = true;
-                this.upnp.addPortMapping("udp",this.localPort,this.localPort,"Firewalla OpenVPN",(err)=>{
-                   log.info("VpnManager:UPNP:SetDone", err);
-                   if (err) {
-                       callback(null, null, null, this.serverNetwork, this.localPort);            
-                   } else {
-                       this.portmapped = true;
-                       callback(null, "success", this.localPort, this.serverNetwork, this.localPort);
-                   }
+                this.setIptables((err, result) => {
+                    if (err) {
+                        log.error("VpnManager:Start:Error", "Failed to set iptables", err);
+                        this.stop();
+                        if (callback) {
+                            callback(err);
+                        }                                
+                    } else {
+                        this.upnp.addPortMapping("udp",this.localPort,this.localPort,"Firewalla OpenVPN",(err)=>{ // public port and private port is equivalent by default
+                            log.info("VpnManager:UPNP:SetDone", err);
+                            if (err) {
+                                if (callback) {
+                                    callback(null, null, null, this.serverNetwork, this.localPort);            
+                                }
+                            } else {
+                                this.portmapped = true;
+                                if (callback) {
+                                    callback(null, "success", this.localPort, this.serverNetwork, this.localPort);
+                                }
+                            }
+                        });
+                    }
                 }); 
             });
         });
