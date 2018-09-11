@@ -1692,12 +1692,12 @@ class netBot extends ControllerBot {
         });
         break;
       case "policies":
-        policyManager.loadActivePolicys((err, list) => {
+        pm2.loadActivePolicys((err, list) => {
           if(err) {
             this.simpleTxData(msg, {}, err, callback);
           } else {
             let alarmIDs = list.map((p) => p.aid);
-            alarmManager.idsToAlarms(alarmIDs, (err, alarms) => {
+            am2.idsToAlarms(alarmIDs, (err, alarms) => {
               if(err) {
                 log.error("Failed to get alarms by ids:", err, {});
                 this.simpleTxData(msg, {}, err, callback);
@@ -1710,16 +1710,20 @@ class netBot extends ControllerBot {
                   list[i].alarmTimestamp = alarms[i].timestamp;
                 }
               }
-              this.simpleTxData(msg, {list: list}, null, callback);
+              this.simpleTxData(msg, {policies: list}, null, callback);
             });
           }
         });
         break;
       case "hosts":
-        (async () => {
-          this.simpleTxData(msg, {hosts: 'Hosts'}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+        let hosts = {};
+        this.hostManager.getHosts(() => {
+          this.hostManager.legacyHostsStats(hosts)
+            .then(() => {
+              this.simpleTxData(msg, hosts, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
         });
         break;
     default:
