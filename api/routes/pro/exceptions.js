@@ -19,7 +19,7 @@ module.exports = function(router, netbotHandler) {
     });
 
     router.put(endpoint + '/:eid', (req, res) => {
-      let id = {eid: parseInt(req.params.eid)}
+      let id = {eid: req.params.eid}
       netbotHandler(req._gid, 'cmd', 
       {
         item: 'exception:update',
@@ -31,7 +31,7 @@ module.exports = function(router, netbotHandler) {
       netbotHandler(req._gid, 'cmd', 
       {
         item: 'exception:delete',
-        value: {exceptionID: parseInt(req.param.eid)}
+        value: {exceptionID: req.params.eid}
       }).then(resp => res.status(resp.code).json(resp.data || resp.message));
     });
 }

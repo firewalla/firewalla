@@ -373,7 +373,7 @@ module.exports = class {
     if(e) {
       return this.getException(e.eid).then(() => {
         return new Promise((resolve, reject) => {
-        this._saveException(e.eid, exception, (err, ee) => {
+        this._saveException(e.eid, e, (err, ee) => {
           if(err) {
             reject(err)
           } else {
