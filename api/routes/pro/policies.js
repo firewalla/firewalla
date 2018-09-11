@@ -13,7 +13,8 @@ module.exports = function(router, netbotHandler) {
     router.post(endpoint, (req, res) => {
         netbotHandler(req._gid, 'cmd', 
         {
-            item: 'policy:create', value: req.body
+            item: 'policy:create',
+            value: req.body
         }).then(resp => res.status(resp.code).json(resp.data || resp.message));
     });
 
@@ -21,14 +22,16 @@ module.exports = function(router, netbotHandler) {
         let id = {pid: req.params.pid}
         netbotHandler(req._gid, 'cmd', 
         {
-            item: 'policy:update', value: {...req.body, ...id}
+            item: 'policy:update',
+            value: {...req.body, ...id}
         }).then(resp => res.status(resp.code).json(resp.data || resp.message));
     });
 
     router.delete(endpoint + '/:pid', (req, res) => {
         netbotHandler(req._gid, 'cmd', 
         {
-            item: 'policy:delete', value: {policyID: req.params.pid}
+            item: 'policy:delete',
+            value: {policyID: req.params.pid}
         }).then(resp => res.status(resp.code).json(resp.data || resp.message));
     });
 }
