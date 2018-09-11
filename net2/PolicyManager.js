@@ -416,33 +416,42 @@ module.exports = class {
     }
 
     let vpnManager = new VpnManager('info');
-    if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
-      vpnManager.stop();
-      log.error("PolicyManager:VPN", "VPN Not avaliable");
-      return;
-    }
-    if (config.state == true) {
-      vpnManager.start((err, external, port) => {
-        if (err != null) {
-          config.state = false;
-          host.setPolicy("vpn", config);
-        } else {
-          if (external) {
-            config.portmapped = true;
-            host.setPolicy("vpn", config, (err) => {
-              host.setPolicy("vpnPortmapped", true);
-            });
-          } else {
-            config.portmapped = false;
-            host.setPolicy("vpn", config, (err) => {
-              host.setPolicy("vpnPortmapped", true);
-            });
-          }
+    vpnManager.configure(config, (err) => {
+      if (err != null) {
+        log.error("PolicyManager:VPN", "Failed to configure vpn");
+        return;
+      } else {
+        if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
+          vpnManager.stop();
+          log.error("PolicyManager:VPN", "VPN Not avaliable");
+          return;
         }
-      });
-    } else {
-      vpnManager.stop();
-    }
+        if (config.state == true) {
+          vpnManager.start((err, external, port, serverNetwork, localPort) => {
+            if (err != null) {
+              config.state = false;
+              host.setPolicy("vpn", config);
+            } else {
+              config.serverNetwork = serverNetwork;
+              config.localPort = localPort;
+              if (external) {
+                config.portmapped = true;
+                host.setPolicy("vpn", config, (err) => {
+                  host.setPolicy("vpnPortmapped", true);
+                });
+              } else {
+                config.portmapped = false;
+                host.setPolicy("vpn", config, (err) => {
+                  host.setPolicy("vpnPortmapped", false);
+                });
+              }
+            }
+          });
+        } else {
+          vpnManager.stop();
+        }
+      }
+    });
   }
 
   scisurf(host, config) {

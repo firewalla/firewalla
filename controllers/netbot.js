@@ -316,7 +316,14 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vpn", value, (err, data) => {
+      var newValue = {};
+      if (data["vpn"]) {
+        newValue = JSON.parse(data["vpn"]);
+      }
+      Object.keys(value).forEach((k) => {
+        newValue[k] = value[k];
+      });
+      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
             callback(null, "Success");
@@ -1365,26 +1372,39 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
 
-        this.hostManager.loadPolicy(() => {
-          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-            let datamodel = {
-              type: 'jsonmsg',
-              mtype: 'reply',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-            };
-            if (err == null) {
-              datamodel.code = 200;
-              datamodel.data = {
-                ovpnfile: ovpnfile,
-                password: password,
-                portmapped: this.hostManager.policy['vpnPortmapped']
-              }
-            }
+        this.hostManager.loadPolicy((err, data) => {
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+          };
+          if (err != null) {
+            log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-          });
+          } else {
+            // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.configure(JSON.parse(data["vpn"]), (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN", err);
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              } else {
+                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+                  if (err == null) {
+                    datamodel.code = 200;
+                    datamodel.data = {
+                      ovpnfile: ovpnfile,
+                      password: password,
+                      portmapped: this.hostManager.policy['vpnPortmapped']
+                    }
+                  }
+                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                });
+              }
+            }); 
+          }
         });
         break;
       case "shadowsocks":
