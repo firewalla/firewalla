@@ -18,7 +18,7 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const utils = require('../../lib/utils.js');
-const led = require('../util/Led.js');
+const led = require('../../util/Led.js');
 
 class RedPlatform extends Platform {
 
