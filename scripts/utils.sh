@@ -6,5 +6,10 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run
     mkdir -p ~/.forever
     mkdir -p ~/logs
-    cd ~/.firewalla/; ln -s ~/.forever log; cd -
+    (
+        cd ~/.firewalla
+        if [[ ! -e log ]]; then
+            ln -s ~/.forever log;
+        fi
+    )
 }

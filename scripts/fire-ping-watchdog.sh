@@ -1,11 +1,14 @@
 #!/bin/bash -
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 # Check Memory as well here, if memory is low don't write ...
 #
 # this should deal with /dev/watchdog
 mem=$(free -m | awk '/-/{print $4}')
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= 20 )) &&  exit 0
+(( mem <= $REBOOT_FREE_MEMORY )) &&  exit 0
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')

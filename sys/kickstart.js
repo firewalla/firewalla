@@ -54,8 +54,10 @@
   const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
-  let led = require('../util/Led.js');
-  
+
+  const platformLoader = require('../platform/PlatformLoader.js');
+  const platform = platformLoader.getPlatform();
+
   let util = require('util');
   
   let f = require('../net2/Firewalla.js');
@@ -286,7 +288,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         });
         
         // new group without any apps bound;
-        led.on();
+        platform.turnOnPowerLED();
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -300,7 +302,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               callback(null, true);
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              platform.turnOffPowerLED();
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -311,7 +313,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           let onTimeout = function() {
             callback("404", false);
             
-            led.off();
+            platform.turnOffPowerLED();
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
@@ -346,7 +348,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              platform.turnOffPowerLED();
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
@@ -354,7 +356,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           
           let onTimeout = function() {
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-            led.off();
+            platform.turnOffPowerLED();
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }

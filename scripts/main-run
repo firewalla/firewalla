@@ -22,10 +22,11 @@
 
 logger "FIREWALLA.MAIN-RUN.START"
 
-sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:blue:status/trigger'
-sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:green:pwr/trigger'
-
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+heartbeatLED
 
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
@@ -44,7 +45,7 @@ sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 logger "Broadcast booting"
-(cd $FIREWALLA_HOME; timeout 30m node scripts/broadcast_booting.js) &
+(cd $FIREWALLA_HOME; pkill FWBroadcastBooting &>/dev/null; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
 $FIREWALLA_HOME/scripts/fire-time.sh
@@ -55,7 +56,7 @@ logger "FIREWALLA:MAIN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
 logger "FIREWALLA:MAIN:START"
-redis-cli del sys:upgrade
+redis-cli del sys:upgrade >/dev/null
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset

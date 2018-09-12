@@ -31,12 +31,21 @@ class PlatformLoader {
     return instance;
   }
 
+  getPlatformName() {
+    if (!this.platformName) {
+      const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
+      this.platformName = uname;
+    }
+
+    return this.platformName;
+  }
+
   getPlatform() {
     if (this.platform) {
       return this.platform;
     }
 
-    const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
+    const uname = this.getPlatformName();
     
     switch (uname) {
     case "aarch64":

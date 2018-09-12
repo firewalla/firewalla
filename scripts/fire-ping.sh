@@ -4,6 +4,10 @@
 #
 # this should deal with /dev/watchdog
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 mem=0
 
 swapmem=$(free -m | awk '/Swap:/{print $4}')
@@ -12,15 +16,15 @@ totalmem=$(( swapmem + realmem ))
 
 if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
   mem=$totalmem
-  (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= $MIN_FREE_MEMORY )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
 else
   mem=$realmem
-  (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= $MIN_FREE_MEMORY )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
 fi
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= 35 )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 35 $mem"
-(( mem <= 35 )) && /home/pi/firewalla/scripts/free-memory-lastresort 
+(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than $MIN_FREE_MEMORY $mem"
+(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
