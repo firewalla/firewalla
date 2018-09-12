@@ -41,18 +41,17 @@ const sysManager = new SysManager();
 const extensionFolder = fHome + "/extension/ss_client";
 
 // Files
-let redirectionBinary = extensionFolder + "/fw_ss_redir";
-let chinaDNSBinary = extensionFolder + "/chinadns";
-let ssClientBinary = `${extensionFolder}/fw_ss_client`;
 
-const dnsForwarderName = "dns_forwarder"
-const dnsForwarderBinary = `${extensionFolder}/${dnsForwarderName}`
 
-if(f.isDocker()) {
-  redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
-  chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
-  ssClientBinary = `${extensionFolder}/bin.x86_64/fw_ss_client`;
-}
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platformName = platformLoader.getPlatformName();
+
+const binaryFolder = `${extensionFolder}/bin.${platformName}`;
+
+const dnsForwarderBinary = `${binaryFolder}/dns_forwarder`;
+const redirectionBinary = `${binaryFolder}/fw_ss_redir`;
+const chinaDNSBinary = `${binaryFolder}/chinadns`;
+const ssClientBinary = `${binaryFolder}/fw_ss_client`;
 
 const enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
 const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
