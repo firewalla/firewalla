@@ -241,43 +241,46 @@ module.exports = class {
         callback(err);
         return;
       }
+      this._saveException(id, exception, callback);
+    });
+  }
 
-      exception.eid = id + ""; // convert it to string to make it consistent with redis
+  _saveException(id, exception, callback) {
+    exception.eid = id + ""; // convert it to string to make it consistent with redis
 
-      let exceptionKey = exceptionPrefix + id;
+    let exceptionKey = exceptionPrefix + id;
 
 
-      /*
-      {
-        "i.type": "domain",
-        "reason": "ALARM_GAME",
-        "type": "ALARM_GAME",
-        "timestamp": "1500913117.175",
-        "p.dest.id": "battle.net",
-        "target_name": "battle.net",
-        "target_ip": destIP,
-      }*/
+    /*
+    {
+      "i.type": "domain",
+      "reason": "ALARM_GAME",
+      "type": "ALARM_GAME",
+      "timestamp": "1500913117.175",
+      "p.dest.id": "battle.net",
+      "target_name": "battle.net",
+      "target_ip": destIP,
+    }*/
 
-      rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
-        if(err) {
-          log.error("Failed to set exception: " + err);
-          callback(err);
-          return;
+    rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
+      if(err) {
+        log.error("Failed to set exception: " + err);
+        callback(err);
+        return;
+      }
+
+      this.enqueue(exception, (err) => {
+        if(!err) {
+          audit.trace("Created exception", exception.eid);
+//            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
         }
 
-        this.enqueue(exception, (err) => {
-          if(!err) {
-            audit.trace("Created exception", exception.eid);
-//            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
-          }
-
-          callback(err, exception);
-        });
+        callback(err, exception);
       });
-
-      // ignore is set for backward compatibility, it's actually should be called "allow"
-      Bone.submitIntelFeedback('ignore', exception, 'exception');
     });
+
+    // ignore is set for backward compatibility, it's actually should be called "allow"
+    Bone.submitIntelFeedback('ignore', exception, 'exception');
   }
 
   exceptionExists(exceptionID) {
@@ -348,6 +351,37 @@ module.exports = class {
     const e = this.jsonToException(json);
     if(e) {
       return this.checkAndSaveAsync(e);
+    } else {
+      return Promise.reject(new Error("Invalid Exception"));
+    }
+  }
+
+  async updateException(json) {
+    if(!json) {
+      return Promise.reject(new Error("Invalid Exception"));
+    }
+
+    if (!json.eid) {
+      return Promise.reject(new Error("Invalid Exception ID"));
+    }
+
+    if(!json.timestamp) {
+      json.timestamp = new Date() / 1000;
+    }
+
+    const e = this.jsonToException(json);
+    if(e) {
+      return this.getException(e.eid).then(() => {
+        return new Promise((resolve, reject) => {
+        this._saveException(e.eid, e, (err, ee) => {
+          if(err) {
+            reject(err)
+          } else {
+            resolve(ee)
+          }
+        })
+      })
+    });
     } else {
       return Promise.reject(new Error("Invalid Exception"));
     }

@@ -118,6 +118,9 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
+const proServer = require('../api/bin/pro');
+const tokenManager = require('../api/middlewares/TokenManager').getInstance();
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1711,6 +1714,48 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "proToken":
+        (async () => {
+          this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "policies":
+        pm2.loadActivePolicys((err, list) => {
+          if(err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let alarmIDs = list.map((p) => p.aid);
+            am2.idsToAlarms(alarmIDs, (err, alarms) => {
+              if(err) {
+                log.error("Failed to get alarms by ids:", err, {});
+                this.simpleTxData(msg, {}, err, callback);
+                return;
+              }
+      
+              for(let i = 0; i < list.length; i ++) {
+                if(list[i] && alarms[i]) {
+                  list[i].alarmMessage = alarms[i].localizedInfo();
+                  list[i].alarmTimestamp = alarms[i].timestamp;
+                }
+              }
+              this.simpleTxData(msg, {policies: list}, null, callback);
+            });
+          }
+        });
+        break;
+      case "hosts":
+        let hosts = {};
+        this.hostManager.getHosts(() => {
+          this.hostManager.legacyHostsStats(hosts)
+            .then(() => {
+              this.simpleTxData(msg, hosts, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
+        });
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2368,7 +2413,16 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, null, err, callback);
           });
         break;
-    case "exception:delete":
+      case "exception:update":
+        em.updateException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
             this.simpleTxData(msg, null, null, callback);
@@ -2719,7 +2773,21 @@ class netBot extends ControllerBot {
       })
       break;
     }
-
+    case "startProServer": {
+      proServer.startProServer();
+      break;
+    }
+    case "stopProServer": {
+      proServer.stopProServer();
+      break;
+    }
+    case "generateProToken": {
+      tokenManager.generateToken(gid);
+      break;
+    }
+    case "revokeProToken": {
+      tokenManager.revokeToken(gid);
+    }
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;
