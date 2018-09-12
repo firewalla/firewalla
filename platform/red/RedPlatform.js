@@ -16,7 +16,7 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-
+const f = require('../../net2/Firewalla.js')
 const utils = require('../../lib/utils.js');
 
 class RedPlatform extends Platform {
