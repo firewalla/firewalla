@@ -56,7 +56,7 @@ logger "FIREWALLA:MAIN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
 logger "FIREWALLA:MAIN:START"
-redis-cli del sys:upgrade
+redis-cli del sys:upgrade >/dev/null
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
