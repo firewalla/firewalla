@@ -20,7 +20,7 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 
 const ledPaths = [
-  "/sys/devices/platform/leds/leds/nanopi:green:status",
+//  "/sys/devices/platform/leds/leds/nanopi:green:status",
   "/sys/devices/platform/leds/leds/nanopi:red:pwr"
 ];
 
