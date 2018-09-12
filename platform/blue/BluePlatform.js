@@ -17,8 +17,19 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
+const exec = require('child-process-promise').exec;
+
+const ledPaths = [
+  "/sys/devices/platform/leds/leds/nanopi:green:status",
+  "/sys/devices/platform/leds/leds/nanopi:red:pwr"
+];
 
 class BluePlatform extends Platform {
+
+  getName() {
+    return "blue";
+  }
+
   getBoardSerial() {
     return new Date() / 1;
   }
@@ -29,6 +40,29 @@ class BluePlatform extends Platform {
 
   getB6Binary() {
     return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge6`;
+  }
+
+  turnOnPowerLED() {
+    ledPaths.forEach(async (path) => {
+      const trigger = `${path}/trigger`;
+      const brightness = `${path}/brightness`;
+      await exec(`sudo bash -c 'echo none > ${trigger}'`);
+      await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+    });
+  }
+
+  turnOffPowerLED() {
+    ledPaths.forEach(async (path) => {
+      const trigger = `${path}/trigger`;
+      await exec(`sudo bash -c 'echo none > ${trigger}'`);
+    });
+  }
+
+  blinkPowerLED() {
+    ledPaths.forEach(async (path) => {
+      const trigger = `${path}/trigger`;
+      await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
+    });
   }
 }
 

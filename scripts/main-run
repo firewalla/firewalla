@@ -22,10 +22,11 @@
 
 logger "FIREWALLA.MAIN-RUN.START"
 
-sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:blue:status/trigger'
-sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:green:pwr/trigger'
-
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+heartbeatLED
 
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak

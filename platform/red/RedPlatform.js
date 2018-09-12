@@ -18,8 +18,14 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const utils = require('../../lib/utils.js');
+const led = require('../util/Led.js');
 
 class RedPlatform extends Platform {
+
+  getName() {
+    return "red";
+  }
+
   getBoardSerial() {
     return utils.getCpuId();
   }
@@ -30,6 +36,18 @@ class RedPlatform extends Platform {
 
   getB6Binary() {
     return `${f.getFirewallaHome()}/bin/real.armv7l/bitbridge6`;
+  }
+
+  turnOnPowerLED() {
+    led.on();
+  }
+
+  turnOffPowerLED() {
+    led.off();
+  }
+
+  blinkPowerLED() {
+    led.blink();
   }
 }
 
