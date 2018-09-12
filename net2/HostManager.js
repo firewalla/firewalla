@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 var iptool = require('ip');
 var os = require('os');
@@ -92,6 +92,8 @@ var linux = require('../util/linux.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+
+const tokenManager = require('../util/FWTokenManager.js');
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -1930,6 +1932,11 @@ module.exports = class HostManager {
       })()
     }
 
+    async jwtTokenForInit(json) {
+        const token = await tokenManager.getToken();
+        json.jwt = token;
+    }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -1993,7 +2000,8 @@ module.exports = class HostManager {
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
             this.boneDataForInit(json),
-            this.encipherMembersForInit(json)
+            this.encipherMembersForInit(json),
+            this.jwtTokenForInit(json)
           ]
 
           this.basicDataForInit(json, options);
