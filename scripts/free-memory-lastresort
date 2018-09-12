@@ -5,6 +5,11 @@ if [[ -e "/tmp/fire-last-resort" ]]; then
    echo "FIREWALLA: LAST RESPORT HAPPENING + SKIP"
    exit 1
 fi
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 touch /tmp/fire-last-resort
 logger "FIREWALLA: LAST RESPORT"
 date >> /home/pi/.forever/top_before_reboot.log
@@ -27,10 +32,10 @@ function get_free_mem() {
     
     if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
        mem=$totalmem
-       (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+       (( mem <= $MIN_FREE_MEMORY )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
     else
        mem=$realmem
-       (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+       (( mem <= $MIN_FREE_MEMORY )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
     fi
 }
 
@@ -38,8 +43,8 @@ get_free_mem
 
 echo "MEM is $mem"
 
-(( $mem > 45 )) && logger "FIREWALLA: memory problems resolved $mem"
-(( $mem > 45 )) && sleep 10 && rm -f /tmp/fire-last-resort &&  echo "$mem existed early" && exit 1 
+(( $mem > $SAFE_MIN_FREE_MEMORY )) && logger "FIREWALLA: memory problems resolved $mem"
+(( $mem > $SAFE_MIN_FREE_MEMORY )) && sleep 10 && rm -f /tmp/fire-last-resort &&  echo "$mem existed early" && exit 1 
 
 date >> /home/pi/.forever/top_before_reboot.log
 top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
@@ -65,8 +70,8 @@ echo "Last Resort Memory $mem $swapmem $realmem"
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
 
-(( mem <= 20 )) && logger "REBOOT: Memory less than 20 $mem"
-(( mem <= 20 )) && /home/pi/firewalla/scripts/fire-rebootf
+(( mem <= $REBOOT_FREE_MEMORY )) && logger "REBOOT: Memory less than $REBOOT_FREE_MEMORY $mem"
+(( mem <= $REBOOT_FREE_MEMORY )) && /home/pi/firewalla/scripts/fire-rebootf
 
 echo "Last Resort Memory End"
 date

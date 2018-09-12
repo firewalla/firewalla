@@ -23,7 +23,7 @@ else
 fi
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 35 $mem"
+(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than $MIN_FREE_MEMORY $mem"
 (( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')

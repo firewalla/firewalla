@@ -38,6 +38,10 @@ class RedPlatform extends Platform {
     return `${f.getFirewallaHome()}/bin/real.armv7l/bitbridge6`;
   }
 
+  getGCMemoryForMain() {
+    return 100;
+  }
+
   turnOnPowerLED() {
     led.on();
   }

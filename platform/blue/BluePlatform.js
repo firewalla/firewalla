@@ -42,6 +42,10 @@ class BluePlatform extends Platform {
     return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge6`;
   }
 
+  getGCMemoryForMain() {
+    return 200;
+  }
+
   turnOnPowerLED() {
     ledPaths.forEach(async (path) => {
       const trigger = `${path}/trigger`;

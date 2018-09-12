@@ -32,6 +32,8 @@ const await = require('asyncawait/await');
 
 const fs = require('fs');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 function updateTouchFile() {
   const mainTouchFile = "/dev/shm/main.touch";
 
@@ -320,7 +322,7 @@ function run() {
 
   setInterval(()=>{
     let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
-    if (memoryUsage>=100) {
+    if (memoryUsage>= platform.getGCMemoryForMain()) {
         try {
           if (global.gc) {
             global.gc();
