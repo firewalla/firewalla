@@ -324,20 +324,20 @@ function flush6(callback) {
     });
 }
 
-function run(listofcmds, callback) {
+function run(listofcmds, eachCallback, finalCallback) {
     async.eachLimit(listofcmds, 1, (cmd, cb) => {
         log.debug("IPTABLE:DNS:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
                 log.error("IPTABLE:DNS:Error unable to set", err, {});
             }
-            if (callback) {
-                callback(err, null);
+            if (eachCallback) {
+                eachCallback(err, null);
             }
             cb();
         });
     }, (err) => {
-        if (callback)
-            callback(err, null);
+        if (finalCallback)
+            finalCallback(err, null);
     });
 }

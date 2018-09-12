@@ -357,24 +357,6 @@ function run() {
                 log.error("Failed to configure VPN manager", err);
                 vpnConfig.state = false;
                 hostManager.setPolicy("vpn", vpnConfig);
-              } else {
-                if (vpnConfig["state"] == null || vpnConfig["state"] == true) {
-                  vpnManager.start((err, external, port, serverNetwork, localPort)=>{
-                    if (err!=null) {
-                      log.info("Unable to start vpn");
-                      vpnConfig.state = false;
-                      hostManager.setPolicy("vpn", vpnConfig);
-                      hostManager.setPolicy("vpnAvaliable",false);
-                    } else {
-                      log.info("VPN server is started successfully.");
-                      hostManager.setPolicy("vpnAvaliable",true);
-                      vpnConfig.state = true;
-                      vpnConfig.serverNetwork = serverNetwork;
-                      vpnConfig.localPort = localPort;
-                      hostManager.setPolicy("vpn", vpnConfig);
-                    }
-                  });
-                }
               }
             });
           }

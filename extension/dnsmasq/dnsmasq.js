@@ -136,6 +136,8 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
+
+
     }
 
     return instance;
@@ -484,6 +486,21 @@ module.exports = class DNSMASQ {
     });
   }
 
+  async updateVpnIptablesRules(newVpnSubnet) {
+    const oldVpnSubnet = this.vpnSubnet;
+    const localIP = sysManager.myIp();
+    const dns = `${localIP}:8853`;
+    if (oldVpnSubnet != newVpnSubnet) {
+      if (oldVpnSubnet != null) {
+        // remove iptables rule for old vpn subnet
+        await iptables.dnsChangeAsync(oldVpnSubnet, dns, false);
+      }
+      // then add new iptables rule for new vpn subnet
+      await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
+    }
+    this.vpnSubnet = newVpnSubnet
+  }
+
   async _add_all_iptables_rules() {
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
@@ -499,9 +516,11 @@ module.exports = class DNSMASQ {
       await iptables.dnsChangeAsync(subnet, dns, true);
     }
 
+    /* this will be done in DNSMASQSensor on demand.
     if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
       await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
     }
+    */
   }
 
   async _add_ip6tables_rules() {

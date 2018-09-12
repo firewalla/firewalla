@@ -32,6 +32,7 @@ var natupnp = require('nat-upnp');
 var ipTool = require('ip');
 var async = require('async');
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 var util = require('util');
 
 var linux = require('../util/linux');
@@ -101,7 +102,7 @@ module.exports = class {
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
             `sudo iptables -w -t nat -I POSTROUTING 2 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}` // insert this rule next to first rule of POSTROUTING
         ];
-        iptable.run(commands, callback);
+        iptable.run(commands, null, callback);
     }
 
     unsetIptables(callback) {
@@ -286,6 +287,12 @@ module.exports = class {
                     } else {
                         this.upnp.addPortMapping("udp",this.localPort,this.localPort,"Firewalla OpenVPN",(err)=>{ // public port and private port is equivalent by default
                             log.info("VpnManager:UPNP:SetDone", err);
+                            sem.emitEvent({
+                                type: "VPNSubnetChanged",
+                                message: "VPN subnet is updated",
+                                vpnSubnet: this.serverNetwork,
+                                toProcess: "FireMain"
+                            });
                             if (err) {
                                 if (callback) {
                                     callback(null, null, null, this.serverNetwork, this.localPort);            
