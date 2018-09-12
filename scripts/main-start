@@ -274,7 +274,7 @@ if [[ "$branch" == "release_pi_1_0" ]]; then
   check_upgrade jade 1.11.0
 fi
 
-if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
+if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
 fi
 
@@ -352,7 +352,7 @@ cd ..
 cd net2
 
 # this config is necessary for forwarding DNS requests to dnsmasq
-sudo sysctl -w net.ipv4.conf.all.route_localnet=1
+sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null
 
 
 if [[ -f /.dockerenv ]]; then
