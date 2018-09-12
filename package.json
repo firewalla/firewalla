@@ -7,19 +7,20 @@
     "test": "NODE_ENV=test mocha --exit test/test_*.js"
   },
   "devDependencies": {
+    "chai": "^3.5.0",
     "grunt": "^0.4.5",
     "grunt-contrib-jshint": "~0.10.0",
     "grunt-contrib-nodeunit": "~0.4.1",
     "grunt-istanbul": "^0.6.1",
     "grunt-mocha": "^0.4.13",
     "grunt-mocha-test": "^0.12.7",
-    "mocha": "^2.2.5",
-    "chai": "^3.5.0"
+    "mocha": "^2.2.5"
   },
   "dependencies": {
     "always-tail": "^0.2.0",
     "async": "^2.0.0-rc.5",
     "asyncawait": "1.0.6",
+    "bee-queue": "^1.2.2",
     "bl": "1.2.0",
     "bleno": "https://registry.npmjs.org/bleno/-/bleno-0.4.0.tgz",
     "body-parser": "1.9.x",
@@ -44,13 +45,14 @@
     "ip": "^1.1.2",
     "jade": "~1.11.0",
     "jsonfile": "^2.4.0",
-    "jsonwebtoken": "^5.4.0",
+    "jsonwebtoken": "^8.3.0",
     "later": "^1.2.0",
     "libnmap": "^0.2.29",
     "lodash": "^4.17.2",
     "minimatch": "3.0.4",
     "minimist": "*",
     "mobile-detect": "https://registry.npmjs.org/mobile-detect/-/mobile-detect-1.3.3.tgz",
+    "moment": "^2.15.0",
     "morgan": "~1.6.1",
     "mustache-express": "^1.2.5",
     "nat-pmp": "^1.0.0",
@@ -73,6 +75,7 @@
     "redis-timeseries": "git+https://git@github.com/melvinto/node-redis-timeseries.git",
     "request": "^2.67.0",
     "request-promise": "^4.2.2",
+    "requestretry": "^2.0.2",
     "serve-favicon": "~2.3.0",
     "socket.io-client": "^1.4.8",
     "stats-lite": "https://registry.npmjs.org/stats-lite/-/stats-lite-2.0.3.tgz",
@@ -86,7 +89,6 @@
     "uuid": "^2.0.1",
     "validator": "^9.4.1",
     "vorpal": "^1.7.7",
-    "winston": "2.4.0",
-    "moment": "^2.15.0"
+    "winston": "2.4.0"
   }
 }
