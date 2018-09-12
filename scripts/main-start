@@ -374,8 +374,8 @@ else
 fi
 cd ..
 
-sudo /usr/local/bro/bin/broctl cron
-sudo /usr/local/bro/bin/broctl cron enable
+sudo /usr/local/bro/bin/broctl cron &>/dev/null
+sudo /usr/local/bro/bin/broctl cron enable >/dev/null
 sync
 
 cd api

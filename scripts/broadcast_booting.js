@@ -15,6 +15,8 @@
 
 'use strict'
 
+process.title = "FWBroadcastBooting";
+
 const bonjour = require('bonjour')()
 const cp = require('child_process')
 
