@@ -25,6 +25,9 @@ const jwtlib = require('jsonwebtoken');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const log = require('../net2/logger.js')(__filename);
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
+const jwtKey = "sys:bone:jwt";
 
 class FWTokenManager {
   constructor() {
@@ -105,22 +108,51 @@ class FWTokenManager {
   // TOKEN VERIFICATION
   verify(token) {
     if(this.pubKeys.length > 0) {
-      const results = this.pubKeys.filter((key) => {
+      const results = this.pubKeys.map((key) => {
         try {
           const decoded = jwtlib.verify(token, key);
-          console.log(decoded);
-          return true;
+          return decoded;
         } catch(err) {
-          log.error("Failed to verify token with key:", err);
-          return false;
+          log.info("Failed to verify token with key:", err.message);
+          return null;
         }        
       });
 
-      return true;
+      const validTokens = results.filter((result) => result !== null);
+      if(validTokens.length > 0) {
+        return validTokens[0];
+      } else {
+        return null;
+      }
     } else {
-      return false;
+      return null;
     }
   }
+
+  licenseFromToken(token) {
+    const token = this.verify(token);
+    if(!token) {
+      return null;
+    }
+
+    const licenseString = token.license;
+    try {
+      const license = JSON.parse(licenseString);
+      return license;
+    } catch(err) {
+      log.error("Failed to parse license:", err);
+      return null;
+    }
+  }
+
+  async getToken() {
+    return rclient.getAsync(jwtKey);
+  }
+  
+  async loadLicenseFromToken() {
+    const jwtToken = await rclient.getAsync(jwtKey);
+    return this.licenseFromToken(jwtToken);
+  }  
 }
 
 module.exports = new FWTokenManager();
