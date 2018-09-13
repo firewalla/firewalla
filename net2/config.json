@@ -83,7 +83,7 @@
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "OvpnConnSensor": {
-      "logPath": "/var/log/openvpn.log"
+      "logPath": "/var/log/openvpn-server.log"
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
