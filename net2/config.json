@@ -170,6 +170,10 @@
         "expires": -1,
         "count": 200
       }
+    },
+    "DeviceOfflineSensor": {
+      "interval": 60,
+      "idle": 1800
     }
 },
   "hooks": {
@@ -257,7 +261,8 @@
       "game": true,
       "large_upload": true,
       "new_device": true,
-      "device_presence": true,
+      "device_online": true,
+      "device_offline": true,
       "spoofing_device": false,
       "vpn_client_connection": true,
       "cyber_security": true,

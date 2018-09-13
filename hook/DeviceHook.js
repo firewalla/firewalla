@@ -220,7 +220,7 @@ class DeviceHook extends Hook {
           if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
             // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-            await this.createAlarm(enrichedHost, 'spoofing_device');
+            await this.createAlarmAsync(enrichedHost, 'spoofing_device');
           }
           await hostTool.updateHost(enrichedHost);
         }
@@ -268,7 +268,7 @@ class DeviceHook extends Hook {
         await hostTool.updateMACKey(enrichedHost);
 
         if(!event.suppressAlarm) {
-          await this.createAlarm(enrichedHost);
+          await this.createAlarmAsync(enrichedHost);
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
         }
@@ -324,7 +324,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_presence');
+                await this.createAlarmAsync(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -370,7 +370,7 @@ class DeviceHook extends Hook {
         if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
           // ip address of gateway is taken over, handle it separately
           log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-          await this.createAlarm(enrichedHost, 'spoofing_device');
+          await this.createAlarmAsync(enrichedHost, 'spoofing_device');
         }
 
         await hostTool.updateHost(enrichedHost);
@@ -387,7 +387,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_presence');
+                await this.createAlarmAsync(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -444,7 +444,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarm(enrichedHost, 'device_presence');
+                await this.createAlarmAsync(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -483,6 +483,25 @@ class DeviceHook extends Hook {
       });
     
       
+    });
+
+    sem.on("DeviceOffline", (event) => {
+      const host = event.host;
+      (async ()=> {
+        try {
+          // device back online and offline both abide by device presence settings
+          const enabled = await this.isPresenceEnabled(host.mac);
+          if (enabled) {
+            await this.createAlarmAsync(host, 'device_offline');
+          } else {
+            log.info("Device presence is disabled for " + host.mac);
+          }
+        } catch (err) {
+          log.error("Failed to load device presence settings", err);
+        }
+      })().catch((err) => {
+        log.error("Failed to process DeviceOffline event:", err, {});
+      });
     });
   }
 
@@ -530,9 +549,9 @@ class DeviceHook extends Hook {
     })()
   }
 
-  createAlarmAsync(host) {
+  createAlarmAsync(host, type) {
     return new Promise((resolve, reject) => {
-      this.createAlarm(host, 'new_device', (err) => {
+      this.createAlarm(host, type, (err) => {
         if(err) {
           reject(err);
         } else {
@@ -579,45 +598,59 @@ class DeviceHook extends Hook {
     let am2 = new AM2();
 
     let name = this.getPreferredName(host)
-
-    if (type === "new_device") {
-      let alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-                                           name,
-                                           {
-                                             "p.device.id": name,
-                                             "p.device.name": name,
-                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
-                                             "p.device.mac": host.mac,
-                                             "p.device.vendor": host.macVendor
-                                           });
-    
-      am2.enqueueAlarm(alarm);
-    }
-    if (type === "device_presence") {
-      let alarm = new Alarm.DeviceBackOnlineAlarm(new Date() / 1000,
-                                           name,
-                                           {
-                                             "p.device.id": name,
-                                             "p.device.name": name,
-                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
-                                             "p.device.mac": host.mac,
-                                             "p.device.vendor": host.macVendor
-                                           });
-    
-      am2.enqueueAlarm(alarm);
-    }
-    if (type === "spoofing_device") {
-      let alarm = new Alarm.SpoofingDeviceAlarm(new Date() / 1000,
-                                           name,
-                                           {
-                                             "p.device.id": name,
-                                             "p.device.name": name,
-                                             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
-                                             "p.device.mac": host.mac,
-                                             "p.device.vendor": host.macVendor
-                                           });
-    
-      am2.enqueueAlarm(alarm);
+    let alarm = null;
+    switch (type) {
+      case "new_device":
+        alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor
+          });
+        am2.enqueueAlarm(alarm);
+        break;
+      case "device_online":
+        alarm = new Alarm.DeviceBackOnlineAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor
+          });
+        am2.enqueueAlarm(alarm);
+        break;
+      case "device_offline":
+        alarm = new Alarm.DeviceOfflineAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor,
+            "p.device.lastSeen": host.lastActiveTimestamp
+          });
+        am2.enqueueAlarm(alarm);
+        break;
+      case "spoofing_device":
+        alarm = new Alarm.SpoofingDeviceAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor
+          });
+        am2.enqueueAlarm(alarm);
+        break;
+      default:
+        log.error("Unsupported alarm type: ", type);
     }
   }
 
