@@ -23,8 +23,8 @@ esac
 
 
 function before_bro {
-  if [[ -d ${FW_PLATFORM_CUR_DIR}/before_bro]]; then
-    for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/before_bro/*.sh`; do
+  if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/before_bro ]]; then
+    for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/before_bro/*.sh`; do
       $script
     done
   fi
