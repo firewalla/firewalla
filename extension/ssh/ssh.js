@@ -5,6 +5,7 @@ var log = null;
 
 var fs = require('fs');
 var util = require('util');
+const cp = require('child_process');
 var key = require('../common/key.js');
 var jsonfile = require('jsonfile');
 
@@ -15,6 +16,8 @@ var fileRSAKey = f.getUserHome() + "/.ssh/id_rsa.firewalla";
 var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
 var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
+
+const execAsync = util.promisify(cp.exec);
 
 module.exports = class {
     constructor(loglevel) {
@@ -190,6 +193,12 @@ module.exports = class {
         }
         callback(err);
       });
+    }
+
+    async saveRSAPrivateKey(content, identity) {
+      const filename = identity || "id_firewalla"
+      let cmd = util.format("echo %s > ~/.ssh/%s && chmod 600 ~/.ssh/%s", content, filename, filename);
+      await execAsync(cmd);
     }
 
     removePreviousKeyFromAuthorizedKeys(callback) {

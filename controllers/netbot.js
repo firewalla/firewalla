@@ -2800,6 +2800,17 @@ class netBot extends ControllerBot {
       tokenManager.revokeToken(gid);
       break;
     }
+    case "saveRSAPrivateKey": {
+      const content = msg.data.value.privKey;
+      const identity = msg.data.value.identity;
+      (async () => {
+        await ssh.saveRSAPrivateKey(content, identity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;
