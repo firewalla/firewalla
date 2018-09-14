@@ -1526,6 +1526,17 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "blockCheck": {
+        const ipOrDomain = msg.data.value.ipOrDomain;
+        (async () => {
+          const rc = require("../diagnostic/rulecheck.js");
+          const result = await rc.checkIpOrDomain(ipOrDomain);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.siimpleTxData(msg, null, err, callback);
+        });
+        break;
+      }
       case "transferTrend": {
         const deviceMac = msg.data.value.deviceMac;
         const destIP = msg.data.value.destIP;

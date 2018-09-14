@@ -359,6 +359,8 @@ function run() {
                 log.error("Failed to configure VPN manager", err);
                 vpnConfig.state = false;
                 hostManager.setPolicy("vpn", vpnConfig);
+              } else {
+                hostManager.setPolicy("vpnAvaliable", true);
               }
             });
           }
