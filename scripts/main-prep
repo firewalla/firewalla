@@ -28,3 +28,8 @@ for prep_script in $(ls ${FIREWALLA_HOME}/scripts/prep/*.sh)
 do
     bash $prep_script
 done
+
+for prep_script in $(ls ${FW_PLATFORM_CUR_DIR}/hooks/before_main_run/*.sh)
+do
+    bash $prep_script
+done

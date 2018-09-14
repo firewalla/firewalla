@@ -10,3 +10,7 @@ MAX_NUM_OF_THREADS=20000
 function heartbeatLED {
   echo hi > /dev/null; # do nothing
 }
+
+function get_node_modules_url {
+  echo "https://github.com/firewalla/fnm.node8.x86_64"
+}

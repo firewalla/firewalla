@@ -12,3 +12,6 @@ function heartbeatLED {
   sudo sh -c 'echo heartbeat > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger'
 }
 
+function get_node_modules_url {
+  echo "https://github.com/firewalla/fnm.node8.aarch64"
+}
