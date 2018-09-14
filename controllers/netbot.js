@@ -2787,6 +2787,7 @@ class netBot extends ControllerBot {
     }
     case "revokeProToken": {
       tokenManager.revokeToken(gid);
+      break;
     }
     case "host:delete": {
       (async () => {
