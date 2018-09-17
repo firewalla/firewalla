@@ -34,14 +34,20 @@ async function _ensureRemoteMigrationFolder(host, identity) {
   await ssh.remoteCommand(host, cmd, f.getUserID(), identity);
 }
 
-async function exportDataPartition(partition, encryptionIdentity) {
-  await _ensureMigrationFolder();
-
+function _getPartitionFilePath(partition) {
+  return `${migrationFolder}/data_export.${partition}.firewalla`;
 }
 
-async function transferDataPartition(host, transferIdentity) {
-  await _ensureRemoteMigrationFolder(host, transferIdentity);
+async function exportDataPartition(partition, encryptionIdentity) {
+  await _ensureMigrationFolder();
+  const cmd = "touch " + _getPartitionFilePath(partition);
+  await execAsync(cmd);
+}
 
+async function transferDataPartition(host, partition, transferIdentity) {
+  await _ensureRemoteMigrationFolder(host, transferIdentity);
+  const sourcePath = _getPartitionFilePath(partition);
+  await ssh.scpFile(host, sourcePath, migrationFolder, false, transferIdentity, f.getUserID());
 }
 
 async function importDataPartition(partition, encryptionIdentity) {

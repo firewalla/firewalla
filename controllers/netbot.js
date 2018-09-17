@@ -2852,9 +2852,10 @@ class netBot extends ControllerBot {
     }
     case "migration:transfer": {
       const host = msg.data.value.host;
+      const partition = msg.data.value.partition;
       const transferIdentity = msg.data.value.transferIdentity;
       (async () => {
-        await migration.transferDataPartition(host, transferIdentity);
+        await migration.transferDataPartition(host, partition, transferIdentity);
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
