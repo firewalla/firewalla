@@ -18,6 +18,7 @@ var RSAComment = "firewalla";
 var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
 const execAsync = util.promisify(cp.exec);
+const readFileAsync = util.promisify(fs.readFile);
 
 module.exports = class {
     constructor(loglevel) {
@@ -195,9 +196,52 @@ module.exports = class {
       });
     }
 
+    async generateRSAKeyPair(identity) {
+      identity = identity || "id_rsa_firewalla";
+      const cmd = util.format('/bin/bash -c \'/bin/echo "y\n" | ssh-keygen -q -t rsa -f ~/.ssh/%s -N "" -C "%s"\'', identity, identity);
+      await execAsync(cmd);
+    }
+
+    async getRSAPublicKey(identity) {
+      identity = identity || "id_rsa_firewalla";
+      const filename = util.format("%s/.ssh/%s.pub", f.getUserHome(), identity);
+      if (fs.existsSync(filename)) {
+        const pubKey = await readFileAsync(filename, 'utf8');
+        return pubKey;
+      } else return null;      
+    }
+
+    async saveRSAPublicKey(content, identity) {
+      const filename = identity || "id_rsa_firewalla";
+      let cmd = util.format("echo -n '%s' > ~/.ssh/%s.pub && chmod 600 ~/.ssh/%s.pub", content, filename, filename);
+      await execAsync(cmd);
+      cmd = util.format("echo -n '%s' >> ~/.ssh/authorized_keys && chmod 644 ~/.ssh/authorized_keys", content);
+      await execAsync(cmd);
+    }
+
     async saveRSAPrivateKey(content, identity) {
-      const filename = identity || "id_firewalla"
-      let cmd = util.format("echo %s > ~/.ssh/%s && chmod 600 ~/.ssh/%s", content, filename, filename);
+      const filename = identity || "id_rsa_firewalla";
+      const cmd = util.format("echo -n '%s' > ~/.ssh/%s && chmod 600 ~/.ssh/%s", content, filename, filename);
+      await execAsync(cmd);
+    }
+
+    async remoteCommand(host, command, username, identity) {
+      username = username || "pi";
+      identity = identity || "id_rsa_firewalla";
+      const identity_file = util.format("~/.ssh/%s", identity);
+      const cmd = util.format("ssh -i %s %s@%s '%s'", identity_file, username, host, command);
+      await execAsync(cmd);
+    }
+
+    async scpFile(host, sourcePath, destPath, recursive, identity, username) {
+      username = username || "pi";
+      identity = identity || "id_rsa_firewalla";
+      const identity_file = util.format("~/.ssh/%s", identity);
+      var extraOpts = "";
+      if (recursive) {
+        extraOpts = "-r"
+      }
+      const cmd = util.format("scp -i %s %s %s %s@%s:%s", identity_file, extraOpts, sourcePath, username, host, destPath);
       await execAsync(cmd);
     }
 

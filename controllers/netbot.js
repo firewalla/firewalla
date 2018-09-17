@@ -121,6 +121,8 @@ const policyManager = new PolicyManager();
 const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
+const migration = require('../migration/migration.js');
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1433,6 +1435,21 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
+      case "generateRSAPublicKey": {
+        const identity = msg.data.value.identity;
+        (async () => {
+          const regenerate = msg.data.value.regenerate;
+          const prevKey = await ssh.getRSAPublicKey(identity);
+          if (prevKey === null || regenerate) {
+            await ssh.generateRSAKeyPair(identity);
+            const pubKey = await ssh.getRSAPublicKey(identity);
+            this.simpleTxData(msg, {publicKey: pubKey}, null, callback);
+          } else this.simpleTxData(msg, {publicKey: prevKey}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "sshPrivateKey":
 
         ssh.getPrivateKey((err, data) => {
@@ -2800,11 +2817,44 @@ class netBot extends ControllerBot {
       tokenManager.revokeToken(gid);
       break;
     }
-    case "saveRSAPrivateKey": {
-      const content = msg.data.value.privKey;
+    case "saveRSAPublicKey": {
+      const content = msg.data.value.pubKey;
       const identity = msg.data.value.identity;
       (async () => {
-        await ssh.saveRSAPrivateKey(content, identity);
+        await ssh.saveRSAPublicKey(content, identity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:export": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.exportDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:import": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.importDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:transfer": {
+      const host = msg.data.value.host;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferDataPartition(host, transferIdentity);
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
