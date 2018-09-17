@@ -551,13 +551,8 @@ class DeviceHook extends Hook {
 
   createAlarmAsync(host, type) {
     return new Promise((resolve, reject) => {
-      this.createAlarm(host, type, (err) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      })
+      this.createAlarm(host, type);
+      resolve();
     })
   }
 
@@ -583,13 +578,11 @@ class DeviceHook extends Hook {
     return false; // by default return false, a conservative fallback
   }
   
-  createAlarm(host, type, callback) {
+  createAlarm(host, type) {
     type = type || "new_device";
-    callback = callback || function() {}
 
     // check if new device alarm is enabled or not
     if(!fc.isFeatureOn(type)) {
-      callback(null)
       return
     }
 
