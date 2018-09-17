@@ -220,7 +220,7 @@ class DeviceHook extends Hook {
           if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
             // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-            await this.createAlarmAsync(enrichedHost, 'spoofing_device');
+            this.createAlarm(enrichedHost, 'spoofing_device');
           }
           await hostTool.updateHost(enrichedHost);
         }
@@ -268,7 +268,7 @@ class DeviceHook extends Hook {
         await hostTool.updateMACKey(enrichedHost);
 
         if(!event.suppressAlarm) {
-          await this.createAlarmAsync(enrichedHost);
+          this.createAlarm(enrichedHost);
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
         }
@@ -324,7 +324,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarmAsync(enrichedHost, 'device_online');
+                this.createAlarm(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -370,7 +370,7 @@ class DeviceHook extends Hook {
         if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
           // ip address of gateway is taken over, handle it separately
           log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-          await this.createAlarmAsync(enrichedHost, 'spoofing_device');
+          this.createAlarm(enrichedHost, 'spoofing_device');
         }
 
         await hostTool.updateHost(enrichedHost);
@@ -387,7 +387,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarmAsync(enrichedHost, 'device_online');
+                this.createAlarm(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -444,7 +444,7 @@ class DeviceHook extends Hook {
             try {
               const enabled = await this.isPresenceEnabled(host.mac);
               if (enabled) {
-                await this.createAlarmAsync(enrichedHost, 'device_online');
+                this.createAlarm(enrichedHost, 'device_online');
               } else {
                 log.info("Device presence is disabled for " + host.mac);
               }
@@ -492,7 +492,7 @@ class DeviceHook extends Hook {
           // device back online and offline both abide by device presence settings
           const enabled = await this.isPresenceEnabled(host.mac);
           if (enabled) {
-            await this.createAlarmAsync(host, 'device_offline');
+            this.createAlarm(host, 'device_offline');
           } else {
             log.info("Device presence is disabled for " + host.mac);
           }
