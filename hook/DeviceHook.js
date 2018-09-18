@@ -322,7 +322,7 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              const enabled = await this.isPresenceEnabled(host.mac);
+              const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
               if (enabled) {
                 this.createAlarm(enrichedHost, 'device_online');
               } else {
@@ -385,7 +385,7 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              const enabled = await this.isPresenceEnabled(host.mac);
+              const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
               if (enabled) {
                 this.createAlarm(enrichedHost, 'device_online');
               } else {
@@ -442,7 +442,7 @@ class DeviceHook extends Hook {
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
           if (!event.suppressAlarm) {
             try {
-              const enabled = await this.isPresenceEnabled(host.mac);
+              const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
               if (enabled) {
                 this.createAlarm(enrichedHost, 'device_online');
               } else {
@@ -490,7 +490,7 @@ class DeviceHook extends Hook {
       (async ()=> {
         try {
           // device back online and offline both abide by device presence settings
-          const enabled = await this.isPresenceEnabled(host.mac);
+          const enabled = await this.isFeatureEnabled(host.mac, "deviceOffline");
           if (enabled) {
             this.createAlarm(host, 'device_offline');
           } else {
@@ -564,16 +564,10 @@ class DeviceHook extends Hook {
     return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
   }
 
-  async isPresenceEnabled(mac) {
-    let hostManager = new HostManager("cli", 'server', 'info')
-    const data = await hostManager.loadPolicyAsync();
-
-    if (data && data['devicePresence'] !== "false") {
-      // device presence is enabled globally, check device settings further    
-      const policy = await hostTool.loadDevicePolicyByMAC(mac);
-      if (policy && policy['devicePresence'] === "true") {
-        return true;
-      }
+  async isFeatureEnabled(mac, feature) {
+    const policy = await hostTool.loadDevicePolicyByMAC(mac);
+    if (policy && policy[feature] === "true") {
+      return true;
     }
     return false; // by default return false, a conservative fallback
   }
