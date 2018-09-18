@@ -211,6 +211,28 @@ module.exports = class {
       } else return null;      
     }
 
+    async getRSAPEMPublicKey(identity) {
+      identity = identity || "id_rsa_firewalla";
+      const filename = util.format("%s/.ssh/%s.pub", f.getUserHome(), identity);
+      if (fs.existsSync(filename)) {
+        const cmd = util.format("ssh-keygen -f %s -e -m PKCS8", filename);
+        const result = await execAsync(cmd);
+        if (result.stderr) {
+          throw result.stderr;
+        }
+        return result.stdout;
+      } else return null;
+    }
+
+    async getRSAPEMPrivateKey(identity) {
+      identity = identity || "id_rsa_firewalla";
+      const filename = util.format("%s/.ssh/%s", f.getUserHome(), identity);
+      if (fs.existsSync(filename)) {
+        const content = await readFileAsync(filename);
+        return content;
+      } else return null;
+    }
+
     async saveRSAPublicKey(content, identity) {
       const filename = identity || "id_rsa_firewalla";
       let cmd = util.format("echo -n '%s' > ~/.ssh/%s.pub && chmod 600 ~/.ssh/%s.pub", content, filename, filename);
