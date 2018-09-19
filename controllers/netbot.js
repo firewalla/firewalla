@@ -2862,6 +2862,17 @@ class netBot extends ControllerBot {
       });
       break;
     }
+    case "migration:transferHiddenFolder": {
+      const host = msg.data.value.host;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferHiddenFolder(host, transferIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;
