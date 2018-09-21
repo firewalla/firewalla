@@ -35,6 +35,17 @@ class RedisManager {
     return this.rclient
   }
 
+  getBufferRedisClient() {
+    if (!this.bclient) {
+      // this client will return all replies as buffers instead of strings
+      this.bclient = redis.createClient({return_buffers: true});
+      this.bclient.on('error', (err) => {
+        log.err("Redis buffer client got error:", err, {});
+      });
+    }
+    return this.bclient;
+  }
+
   getMetricsRedisClient() {
     if(!this.mclient) {
       this.mclient = redis.createClient()
