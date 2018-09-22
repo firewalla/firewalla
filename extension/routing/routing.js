@@ -74,6 +74,7 @@ async function removePolicyRoutingRule(from, tableName) {
 async function addRouteToTable(dest, gateway, intf, tableName) {
   let cmd = null;
   dest = dest || "default";
+  tableName = tableName || "main";
   if (gateway) {
     cmd = util.format('sudo ip route add %s via %s dev %s table %s', dest, gateway, intf, tableName);
   } else {
@@ -82,6 +83,22 @@ async function addRouteToTable(dest, gateway, intf, tableName) {
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {
     log.error("Failed to add route to table.", stderr);
+    throw stderr;
+  }
+}
+
+async function removeRouteFromTable(dest, gateway, intf, tableName) {
+  let cmd = null;
+  dest = dest || "default";
+  tableName = tableName || "main";
+  if (gateway) {
+    cmd = util.format('sudo ip route del %s via %s dev %s table %s', dest, gateway, intf, tableName);
+  } else {
+    cmd = util.format('sudo ip route del %s dev %s table %s', dest, intf, tableName);
+  }
+  let {stdout, stderr} = await execAsync(cmd);
+  if (stderr !== "") {
+    log.error("Failed to remove route from table.", stderr);
     throw stderr;
   }
 }
@@ -100,5 +117,6 @@ module.exports = {
   createPolicyRoutingRule: createPolicyRoutingRule,
   removePolicyRoutingRule: removePolicyRoutingRule,
   addRouteToTable: addRouteToTable,
+  removeRouteFromTable: removeRouteFromTable,
   flushRoutingTable: flushRoutingTable
 }

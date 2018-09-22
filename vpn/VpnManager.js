@@ -268,7 +268,7 @@ module.exports = class {
             private: this.localPort,
             public: this.localPort
         },(err)=>{
-            require('child_process').exec("sudo systemctl restart openvpn@" + this.instanceName, (err, out, code) => {
+            require('child_process').exec("sudo systemctl restart openvpn@" + this.instanceName, (err, out, stderr) => {
                 log.info("VpnManager:Start:" + this.instanceName, err);
                 if (err && this.started == false) {
                     if (callback) {
