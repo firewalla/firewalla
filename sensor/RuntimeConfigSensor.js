@@ -22,7 +22,7 @@ const exec = require('child-process-promise').exec
 
 const Promise = require('bluebird');
 
-const Sensor = require('./Sensor.js').Sensor
+const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 

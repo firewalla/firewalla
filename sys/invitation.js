@@ -238,6 +238,8 @@ class FWInvitation {
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
+    txtfield.model = platformLoader.getPlatformName();
+
     this.displayLicense(this.symmetrickey.license)
     this.displayKey(this.symmetrickey.userkey);
 //    this.displayInvite(obj); // no need to display invite in firewalla any more

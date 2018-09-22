@@ -30,6 +30,8 @@ let Promise = require('bluebird');
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
+const platformLoader = require('../platform/PlatformLoader.js');
+
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
 var SysManager = require('./SysManager.js');
@@ -1485,6 +1487,7 @@ module.exports = class HostManager {
     json.ddns = sysManager.ddns;
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
+    json.model = platformLoader.getPlatformName();
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
