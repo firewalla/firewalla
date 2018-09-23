@@ -3,6 +3,11 @@
 rc=0
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+if [[ ${UNAME} == "aarch64" ]]; then
+    exit 0; # no need to manage nvm installation for arm 64
+fi
 
 node8_exists() {
     node_version=$(${FIREWALLA_HOME}/bin/node -v 2>/dev/null)
