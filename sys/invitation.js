@@ -154,8 +154,19 @@ class FWInvitation {
             try {
               let lic = await (bone.getLicenseAsync(userInfo.license, mac));
               if(lic) {
-                log.info("Got a new license:", lic, {});
-                await (license.writeLicense(lic));
+                const types = platform.getLicenseTypes();
+                if(types && lic.DATA && lic.DATA.LICENSE && 
+                  lic.DATA.LICENSE.constructor.name === 'String' &&
+                  !types.includes(lic.DATA.LICENSE.toLowerCase())) {
+                   // invalid license 
+                   log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
+                   return {
+                     status: "pending"
+                   };
+                } else {
+                  log.info("Got a new license:", lic, {});
+                  await (license.writeLicense(lic));
+                }
               }
             } catch(err) {
               log.error("Invalid license");
