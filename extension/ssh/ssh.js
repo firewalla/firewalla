@@ -251,7 +251,7 @@ module.exports = class {
       username = username || "pi";
       identity = identity || "id_rsa_firewalla";
       const identity_file = util.format("~/.ssh/%s", identity);
-      const cmd = util.format("ssh -i %s %s@%s '%s'", identity_file, username, host, command);
+      const cmd = util.format("ssh -o StrictHostKeyChecking=no -i %s %s@%s '%s'", identity_file, username, host, command);
       await execAsync(cmd);
     }
 
@@ -263,7 +263,7 @@ module.exports = class {
       if (recursive) {
         extraOpts = "-r"
       }
-      const cmd = util.format("scp -i %s %s %s %s@%s:%s", identity_file, extraOpts, sourcePath, username, host, destPath);
+      const cmd = util.format("scp -o StrictHostKeyChecking=no -i %s %s %s %s@%s:%s", identity_file, extraOpts, sourcePath, username, host, destPath);
       await execAsync(cmd);
     }
 
