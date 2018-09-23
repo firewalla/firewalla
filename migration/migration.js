@@ -24,17 +24,19 @@ const cp = require('child_process');
 const migrationFolder = f.getUserHome() + "/migration";
 const crypto = require('crypto');
 const fs = require('fs');
+const key = require('../extension/common/key.js');
 
 const execAsync = util.promisify(cp.exec);
 const readFileAsync = util.promisify(fs.readFile);
 const writeFileAsync = util.promisify(fs.writeFile);
 
-const ENCRYPT_BATCH = 128;
-const RSA_ENCRYPTION_KEY_SIZE = 256;
-
 const RedisMigrator = require('./RedisMigrator.js');
 const redisMigrator = new RedisMigrator();
 
+function _randomPassword() {
+  const password = key.randomPassword(32);
+  return password;
+}
 
 async function _ensureMigrationFolder() {
   const cmd = "mkdir -p " + migrationFolder;
@@ -55,32 +57,26 @@ function _getPartitionFilePath(partition) {
   return `${migrationFolder}/data_export.${partition}.firewalla`;
 }
 
-function _publicEncrypt(pubKey, buffer) {
-  let bytesEncrypted = 0;
-  let encryptedBuffers = [];
-
-  while (bytesEncrypted < buffer.length) {
-    const bytesToEncrypt = Math.min(ENCRYPT_BATCH, buffer.length - bytesEncrypted);
-    const tmpBuffer = new Buffer(bytesToEncrypt);
-    buffer.copy(tmpBuffer, 0, bytesEncrypted, bytesEncrypted + bytesToEncrypt);
-    const encryptedBuffer = crypto.publicEncrypt(pubKey, tmpBuffer);
-    encryptedBuffers.push(encryptedBuffer);
-    bytesEncrypted += bytesToEncrypt;
-  }
-  return Buffer.concat(encryptedBuffers)
+function _getPartitionKeyFilePath(partition) {
+  return `${migrationFolder}/data_export.${partition}.firewalla.key`;
 }
 
-function _privateDecrypt(privKey, buffer) {
-  let decryptedBuffers = [];
-  let totalBuffers = buffer.length / RSA_ENCRYPTION_KEY_SIZE;
+function _encryptAES(key, buffer) {
+  const iv = new Buffer(16);
+  iv.fill(0);
+  const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(key), iv);
+  let crypted = cipher.update(buffer);
+  crypted = Buffer.concat([crypted, cipher.final()]);
+  return crypted;
+}
 
-  for (let i = 0; i < totalBuffers; i++) {
-    const tmpBuffer = new Buffer(RSA_ENCRYPTION_KEY_SIZE);
-    buffer.copy(tmpBuffer, 0, i * RSA_ENCRYPTION_KEY_SIZE, (i + 1) * RSA_ENCRYPTION_KEY_SIZE);
-    const decryptedBuffer = crypto.privateDecrypt(privKey, tmpBuffer);
-    decryptedBuffers.push(decryptedBuffer);
-  }
-  return Buffer.concat(decryptedBuffers);
+function _decryptAES(key, buffer) {
+  const iv = new Buffer(16);
+  iv.fill(0);
+  const decipher = crypto.createDecipheriv("aes-256-cbc", Buffer.from(key), iv);
+  let decrypted = decipher.update(buffer);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted;
 }
 
 async function exportDataPartition(partition, encryptionIdentity) {
@@ -92,8 +88,12 @@ async function exportDataPartition(partition, encryptionIdentity) {
     await writeFileAsync(partitionFilePath, content);
   } else {
     const pubKey = await ssh.getRSAPEMPublicKey(encryptionIdentity);
+    const partitionKeyFilePath = _getPartitionKeyFilePath(partition);
+    const password = _randomPassword();
     if (pubKey !== null) {
-      const encryptedContent = _publicEncrypt(pubKey, content);
+      const encryptedPassword = crypto.publicEncrypt(pubKey, Buffer.from(password));
+      await writeFileAsync(partitionKeyFilePath, encryptedPassword);
+      const encryptedContent = _encryptAES(password, content);
       await writeFileAsync(partitionFilePath, encryptedContent);
     } else throw util.format("identity %s not found.", encryptionIdentity);
   }
@@ -104,8 +104,11 @@ async function importDataPartition(partition, encryptionIdentity) {
   let content = await readFileAsync(partitionFilePath); // content is buffer
   if (encryptionIdentity) {
     const privKey = await ssh.getRSAPEMPrivateKey(encryptionIdentity);
+    const partitionKeyFilePath = _getPartitionKeyFilePath(partition);
+    const encryptedPassword = await readFileAsync(partitionKeyFilePath);
     if (privKey !== null) {
-      content = _privateDecrypt(privKey, content);
+      const password = crypto.privateDecrypt(privKey, encryptedPassword);
+      content = _decryptAES(password, content);
     } else throw util.format("identity %s not found.", encryptionIdentity);
   }
   // import content
@@ -116,6 +119,10 @@ async function transferDataPartition(host, partition, transferIdentity) {
   await _ensureRemoteMigrationFolder(host, transferIdentity);
   const sourcePath = _getPartitionFilePath(partition);
   await ssh.scpFile(host, sourcePath, migrationFolder, false, transferIdentity, f.getUserID());
+  const keyFilePath = _getPartitionKeyFilePath(partition);
+  if (fs.existsSync(keyFilePath)) {
+    await ssh.scpFile(host, keyFilePath, migrationFolder, false, transferIdentity, f.getUserID());
+  }
 }
 
 async function transferHiddenFolder(host, transferIdentity) {
