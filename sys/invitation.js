@@ -238,7 +238,7 @@ class FWInvitation {
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
-    txtfield.model = platformLoader.getPlatformName();
+    txtfield.model = platform.getName();
 
     this.displayLicense(this.symmetrickey.license)
     this.displayKey(this.symmetrickey.userkey);
