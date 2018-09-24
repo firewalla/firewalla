@@ -25,6 +25,10 @@ class DockerPlatform extends Platform {
     return "docker";
   }
 
+  getLicenseTypes() {
+    return ["x0"];
+  }
+  
   getBoardSerial() {
     return new Date() / 1;
   }

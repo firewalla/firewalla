@@ -31,6 +31,7 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
 const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -1487,7 +1488,7 @@ module.exports = class HostManager {
     json.ddns = sysManager.ddns;
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
-    json.model = platformLoader.getPlatformName();
+    json.model = platform.getName();
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
