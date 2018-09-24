@@ -54,6 +54,7 @@
   const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
+  let diaglog = require("../util/Diaglog.js")
 
   const platformLoader = require('../platform/PlatformLoader.js');
   const platform = platformLoader.getPlatform();
@@ -290,6 +291,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         
         // new group without any apps bound;
         platform.turnOnPowerLED();
+        diaglog.log("PAIRSTART","Paring Ready")
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -304,6 +306,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
+              diaglog.log("PAIREND","Paring Ended")
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -315,8 +318,9 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             callback("404", false);
             
             platform.turnOffPowerLED();
+            diaglog.log("PAIREND","Paring Ended")
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
@@ -350,6 +354,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
+              diaglog.log("PAIREND","Paring Ended")
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
@@ -358,7 +363,8 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           let onTimeout = function() {
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             platform.turnOffPowerLED();
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            diaglog.log("PAIREND","Paring Ended");
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
