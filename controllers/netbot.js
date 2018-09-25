@@ -118,6 +118,11 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
+const proServer = require('../api/bin/pro');
+const tokenManager = require('../api/middlewares/TokenManager').getInstance();
+
+const migration = require('../migration/migration.js');
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -316,7 +321,14 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vpn", value, (err, data) => {
+      var newValue = {};
+      if (data["vpn"]) {
+        newValue = JSON.parse(data["vpn"]);
+      }
+      Object.keys(value).forEach((k) => {
+        newValue[k] = value[k];
+      });
+      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
             callback(null, "Success");
@@ -1365,26 +1377,39 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
 
-        this.hostManager.loadPolicy(() => {
-          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-            let datamodel = {
-              type: 'jsonmsg',
-              mtype: 'reply',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-            };
-            if (err == null) {
-              datamodel.code = 200;
-              datamodel.data = {
-                ovpnfile: ovpnfile,
-                password: password,
-                portmapped: this.hostManager.policy['vpnPortmapped']
-              }
-            }
+        this.hostManager.loadPolicy((err, data) => {
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+          };
+          if (err != null) {
+            log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-          });
+          } else {
+            // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.configure(JSON.parse(data["vpn"]), (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN", err);
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              } else {
+                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+                  if (err == null) {
+                    datamodel.code = 200;
+                    datamodel.data = {
+                      ovpnfile: ovpnfile,
+                      password: password,
+                      portmapped: this.hostManager.policy['vpnPortmapped']
+                    }
+                  }
+                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                });
+              }
+            }); 
+          }
         });
         break;
       case "shadowsocks":
@@ -1410,6 +1435,21 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
+      case "generateRSAPublicKey": {
+        const identity = msg.data.value.identity;
+        (async () => {
+          const regenerate = msg.data.value.regenerate;
+          const prevKey = await ssh.getRSAPublicKey(identity);
+          if (prevKey === null || regenerate) {
+            await ssh.generateRSAKeyPair(identity);
+            const pubKey = await ssh.getRSAPublicKey(identity);
+            this.simpleTxData(msg, {publicKey: pubKey}, null, callback);
+          } else this.simpleTxData(msg, {publicKey: prevKey}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "sshPrivateKey":
 
         ssh.getPrivateKey((err, data) => {
@@ -1500,6 +1540,17 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, result, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
+        });
+        break;
+      }
+      case "blockCheck": {
+        const ipOrDomain = msg.data.value.ipOrDomain;
+        (async () => {
+          const rc = require("../diagnostic/rulecheck.js");
+          const result = await rc.checkIpOrDomain(ipOrDomain);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.siimpleTxData(msg, null, err, callback);
         });
         break;
       }
@@ -1689,6 +1740,48 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {ip, ipinfo}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "proToken":
+        (async () => {
+          this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "policies":
+        pm2.loadActivePolicys((err, list) => {
+          if(err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let alarmIDs = list.map((p) => p.aid);
+            am2.idsToAlarms(alarmIDs, (err, alarms) => {
+              if(err) {
+                log.error("Failed to get alarms by ids:", err, {});
+                this.simpleTxData(msg, {}, err, callback);
+                return;
+              }
+      
+              for(let i = 0; i < list.length; i ++) {
+                if(list[i] && alarms[i]) {
+                  list[i].alarmMessage = alarms[i].localizedInfo();
+                  list[i].alarmTimestamp = alarms[i].timestamp;
+                }
+              }
+              this.simpleTxData(msg, {policies: list}, null, callback);
+            });
+          }
+        });
+        break;
+      case "hosts":
+        let hosts = {};
+        this.hostManager.getHosts(() => {
+          this.hostManager.legacyHostsStats(hosts)
+            .then(() => {
+              this.simpleTxData(msg, hosts, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
         });
         break;
     default:
@@ -2348,7 +2441,16 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, null, err, callback);
           });
         break;
-    case "exception:delete":
+      case "exception:update":
+        em.updateException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
             this.simpleTxData(msg, null, null, callback);
@@ -2699,7 +2801,78 @@ class netBot extends ControllerBot {
       })
       break;
     }
-
+    case "startProServer": {
+      proServer.startProServer();
+      break;
+    }
+    case "stopProServer": {
+      proServer.stopProServer();
+      break;
+    }
+    case "generateProToken": {
+      tokenManager.generateToken(gid);
+      break;
+    }
+    case "revokeProToken": {
+      tokenManager.revokeToken(gid);
+      break;
+    }
+    case "saveRSAPublicKey": {
+      const content = msg.data.value.pubKey;
+      const identity = msg.data.value.identity;
+      (async () => {
+        await ssh.saveRSAPublicKey(content, identity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:export": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.exportDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:import": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.importDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:transfer": {
+      const host = msg.data.value.host;
+      const partition = msg.data.value.partition;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferDataPartition(host, partition, transferIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:transferHiddenFolder": {
+      const host = msg.data.value.host;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferHiddenFolder(host, transferIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;

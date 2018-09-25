@@ -2,26 +2,21 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-# ovpngen <clientname> <keypassword> <local ip> <publicip> <dns>
+# ovpngen.sh <client name> <keypassword> <public ip> <local port> <original name>
 
-LOCALIP=$3
-DNS=$5
-: ${DNS:="8.8.8.8"}
+NAME=$1
+echo "Please enter a Name for the Client:"
+echo $NAME
 
+PUBLIC_IP=$3
+sed 's/PUBLIC_IP/'$PUBLIC_IP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt # Default.txt is temporarily used to generate ovpn file
+# Set local port
+LOCAL_PORT=$4
+: ${LOCALPORT:="1194"}
+sed -i "s/LOCAL_PORT/$LOCAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
 
-# Write config file for server using the template .txt file
-sed 's/LOCALIP/'$LOCALIP'/' <$FIREWALLA_HOME/vpn/server_config.txt >/etc/openvpn/server.conf
-
-# Set DNS
-sed -i "s=MYDNS=$DNS=" /etc/openvpn/server.conf
-
-if [ $ENCRYPT = 2048 ]; then
- sed -i 's:dh1024:dh2048:' /etc/openvpn/server.conf
-fi
-
-
-PUBLICIP=$4
-sed 's/PUBLICIP/'$PUBLICIP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt
+ORIGINAL_NAME=$5
+: ${ORIGINAL_NAME:=$NAME}
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
@@ -31,10 +26,6 @@ OKEY=".key"
 KEY=".3des.key" 
 CA="ca.crt" 
 TA="ta.key" 
-
-NAME=$1
-echo "Please enter a Name for the Client:"
-echo $NAME
  
 #Build the client key and then encrypt the key
 sudo chmod 777 -R /etc/openvpn
@@ -54,7 +45,7 @@ if [ ! -f $NAME$CRT ]; then
  echo "[ERROR]: Client Public Key Certificate not found: $NAME$CRT" 
  exit 
 fi 
-echo "Client�s cert found: $NAME$CR" 
+echo "Client�s cert found: $NAME$CRT" 
  
 #Then, verify that there is a private key for that client 
 if [ ! -f $NAME$KEY ]; then 
@@ -107,7 +98,7 @@ sudo chmod 600 -R /etc/openvpn
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
 echo $2 > ~/ovpns/$NAME$FILEEXT$PASSEXT
-cp ~/ovpns/$NAME$FILEEXT ~/ovpns/fishboneVPN1.ovpn
-cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/fishboneVPN1.ovpn.password
+cp ~/ovpns/$NAME$FILEEXT ~/ovpns/$ORIGINAL_NAME.ovpn
+cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/$ORIGINAL_NAME.ovpn.password
  
 # Original script written by Eric Jodoin.

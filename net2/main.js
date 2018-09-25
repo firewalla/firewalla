@@ -341,17 +341,28 @@ function run() {
 */
   setTimeout(()=>{
     var vpnManager = new VpnManager('info');
-    vpnManager.install((err)=>{
-      if (err!=null) {
-        log.info("VpnManager:Unable to start vpn", err);
-        hostManager.setPolicy("vpnAvaliable",false);
+    hostManager.loadPolicy((err, data) => {
+      if (err != null) {
+        log.error("Failed to load system policy for VPN", err);
       } else {
-        vpnManager.start((err)=>{
+        var vpnConfig = {};
+        if(data && data["vpn"]) {
+          vpnConfig = JSON.parse(data["vpn"]);
+        }
+        vpnManager.install("server", (err)=>{
           if (err!=null) {
-            log.info("VpnManager:Unable to start vpn");
+            log.info("Unable to install vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            hostManager.setPolicy("vpnAvaliable",true);
+            vpnManager.configure(vpnConfig, (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN manager", err);
+                vpnConfig.state = false;
+                hostManager.setPolicy("vpn", vpnConfig);
+              } else {
+                hostManager.setPolicy("vpnAvaliable", true);
+              }
+            });
           }
         });
       }

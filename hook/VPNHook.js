@@ -35,12 +35,13 @@ class VPNHook extends Hook {
       const remotePort = event.client.remotePort;
       const peerIP4 = event.client.peerIP4;
       const peerIP6 = event.client.peerIP6;
-      log.info(util.format("A new VPN client is connected, remote: %s:%s, peer ipv4: %s, peer ipv6: %s", remoteIP, remotePort, peerIP4, peerIP6));
-      this.createAlarm(remoteIP, remotePort, peerIP4, peerIP6, "vpn_client_connection");
+      const profile = event.client.profile;
+      log.info(util.format("A new VPN client is connected, remote: %s:%s, peer ipv4: %s, peer ipv6: %s, profile: %s", remoteIP, remotePort, peerIP4, peerIP6, profile));
+      this.createAlarm(remoteIP, remotePort, peerIP4, peerIP6, profile, "vpn_client_connection");
     });
   }
 
-  createAlarm(remoteIP, remotePort, peerIP4, peerIP6, type) {
+  createAlarm(remoteIP, remotePort, peerIP4, peerIP6, profile, type) {
     type = type || "vpn_client_connection";
 
     if (!fc.isFeatureOn(type)) {
@@ -61,8 +62,9 @@ class VPNHook extends Hook {
                                                   "p.dest.id": name,
                                                   "p.dest.ip": remoteIP,
                                                   "p.dest.port": remotePort,
-                                                  "p.dest.peerIP4": peerIP4,
-                                                  "p.dest.peerIP6": peerIP6
+                                                  "p.dest.ovpn.peerIP4": peerIP4,
+                                                  "p.dest.ovpn.peerIP6": peerIP6,
+                                                  "p.dest.ovpn.profile": profile
                                                 });
       am2.enqueueAlarm(alarm);
     }

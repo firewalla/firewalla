@@ -13,8 +13,6 @@
     "iptables": {
        "defaults": [
           "sudo sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
-          "sudo iptables -w -t nat -C POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP || false)|| true",
-          "sudo iptables -w -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
           "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
           "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
        ]
@@ -85,7 +83,7 @@
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "OvpnConnSensor": {
-      "logPath": "/var/log/openvpn.log"
+      "logPath": "/var/log/openvpn-server.log"
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
@@ -172,6 +170,10 @@
         "expires": -1,
         "count": 200
       }
+    },
+    "DeviceOfflineSensor": {
+      "interval": 60,
+      "idle": 1800
     }
 },
   "hooks": {
@@ -259,7 +261,8 @@
       "game": true,
       "large_upload": true,
       "new_device": true,
-      "device_presence": true,
+      "device_online": true,
+      "device_offline": true,
       "spoofing_device": false,
       "vpn_client_connection": true,
       "cyber_security": true,

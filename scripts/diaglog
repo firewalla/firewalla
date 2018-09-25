@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+#
+
+gwfile=/home/pi/.firewalla/run/saved_gw
+ipfile=/home/pi/.firewalla/run/saved_ip
+ip=$(ifconfig eth0 | grep "inet addr" | cut -d ':' -f 2 | cut -d ' ' -f 1)
+gw=$(cat $gwfile)
+mac=$(cat /sys/class/net/eth0/address)
+ts=$(date +%s)
+
+echo $ip,$gw,$mac
+
+while getopts e:m: option
+do
+ case "${option}"
+ in
+ e) EVENT=${OPTARG};;
+ m) MESSAGE=$OPTARG;;
+ esac
+done
+
+/usr/bin/logger "FIREWALLA:("DIAG $EVENT"): "$MESSAGE
+
+curl -d "{\"gw\":\"$gw\", \"fw\":\"$ip\",\"ts\":4,\"event\":\"$EVENT\",\"mac\":\"$mac\",\"msg\":\"$MESSAGE\",\"ts\":\"$ts\"}" -H "Content-Type: application/json" -X POST https://diag.firewalla.com/device/$gw
+

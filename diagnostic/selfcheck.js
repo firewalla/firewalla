@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
