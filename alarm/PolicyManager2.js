@@ -308,15 +308,22 @@ class PolicyManager2 {
         this.normalizePoilcy(policyCopy);
 
         await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
-        if(policyCopy.expire === "") {
+
+        if(policyCopy.expire === "" || ! "expire" in policyCopy) {
           await (rclient.hdelAsync(policyKey, "expire"))
         }
-        if(policyCopy.cronTime === "") {
+        if(policyCopy.cronTime === "" || ! "cronTime" in policyCopy) {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
         }
-        if(policyCopy.activatedTime === "") {
+        if(policyCopy.activatedTime === "" || ! "activatedTime" in policyCopy) {
           await (rclient.hdelAsync(policyKey, "activatedTime"))
+        }
+        
+        if(policyCopy.scope === "" || 
+        ! "scope" in policyCopy || 
+        (policyCopy.constructor.name === 'Array' && policy.length === 0)) {
+          await (rclient.hdelAsync(policyKey, "scope"))
         }
       })()
     } else {
