@@ -641,6 +641,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         host.spoof(policy[p]);
+      } else if (p === "vpnClient") {
+        host.vpnClient(policy[p]);
       } else if (p === "vpn") {
         this.vpn(host, policy[p], policy);
       } else if (p === "shadowsocks") {

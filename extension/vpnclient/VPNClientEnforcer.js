@@ -26,6 +26,7 @@ const execAsync = util.promisify(cp.exec);
 var instance = null;
 
 const VPN_CLIENT_RULE_TABLE = "vpn_client";
+const VPN_CLIENT_RULE_TABLE_ID = 101;
 
 class VPNClientEnforcer {
   constructor() {
@@ -33,36 +34,58 @@ class VPNClientEnforcer {
       instance = this;
     }
     this.enabledHosts = {};
-    setInterval(() => {
-      try {
-        log.info("Check and refresh routing rule for VPN client...");
-        this._periodicalRefreshRule();
-      } catch (err) {
-        log.error("Failed to refresh routing rule for VPN client: ", err);
-      }
-    }, 300 * 1000); // once every 5 minutes
+    if (process.title === "FireMain") {
+      setInterval(() => {
+        try {
+          log.info("Check and refresh routing rule for VPN client...");
+          this._periodicalRefreshRule();
+        } catch (err) {
+          log.error("Failed to refresh routing rule for VPN client: ", err);
+        }
+      }, 300 * 1000); // once every 5 minutes
+    }
     return instance;
   }
 
-  async enableVPNAccess(mac) {
+  async enableVPNAccess(mac, mode) {
     if (!this.enabledHosts[mac]) {
       const host = await hostTool.getMACEntry(mac);
+      host.vpnClientMode = mode;
       this.enabledHosts.mac = host;
-      if (host.ipv4Addr) {
-        await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+      switch (mode) {
+        case "dhcp":
+          const mode = require('../net2/Mode.js');
+          await mode.reloadSetupMode();
+          if (mode.isDHCPModeOn()) {
+            if (host.ipv4Addr && host.spoofing) {
+              await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+            }
+          } else {
+            log.warn(util.format("DHCP mode is not enabled, vpn access of %s is suspended.", mac));
+          }
+          break;
+        default:
+          log.error("Unsupported vpn client mode: " + mode);
       }
+      
     }
   }
 
   async disableVPNAccess(mac) {
     if (this.enabledHosts[mac]) {
       const host = this.enabledHosts[mac];
-      await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+      try {
+        await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+      } catch (err) {
+        log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
+      }
       delete this.enabledHosts[mac];
     }
   }
 
   async enforceVPNClientRoutes(remoteIP, intf) {
+    // ensure customized routing table is created
+    await routing.createCustomizedRoutingTable(VPN_CLIENT_RULE_TABLE_ID, VPN_CLIENT_RULE_TABLE);
     // add routes from main routing table to vpn client table except default route
     let cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
@@ -83,11 +106,28 @@ class VPNClientEnforcer {
     Object.keys(this.enabledHosts).forEach((mac) => {
       const host = await hostTool.getMACEntry(mac);
       const oldHost = this.enabledHosts[mac];
-      if (host.ipv4Addr !== oldHost.ipv4Addr) {
-        // need to refresh corresponding ip rule
-        await routing.removePolicyRoutingRule(oldhost.ipv4Addr, VPN_CLIENT_RULE_TABLE);
-        await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
-        this.enabledHosts.mac = host;
+      const enabledMode = oldHost.vpnClientMode;
+      host.vpnClientMode = enabledMode;
+      switch (enabledMode) {
+        case "dhcp":
+          const mode = require('../net2/Mode.js');
+          await mode.reloadSetupMode();
+          if (host.ipv4Addr !== oldHost.ipv4Addr || !mode.isDHCPModeOn() || !host.spoofing) {
+            // policy routing rule should be removed anyway if ip address is changed or dhcp mode is not enabled
+            // or host is not monitored
+            try {
+              await routing.removePolicyRoutingRule(oldhost.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+            } catch (err) {
+              log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
+            }
+          }
+          if (mode.isDHCPModeOn() && host.spoofing) {
+            await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+          }
+          this.enabledHosts.mac = host;
+          break;
+        default:
+          log.error("Unsupported vpn client mode: " + mode);
       }
     });
   }

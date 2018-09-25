@@ -314,6 +314,48 @@ class netBot extends ControllerBot {
     }
   }
 
+  _vpnClient(ip, value, callback) {
+    if (ip === "0.0.0.0") {
+      // start VPN client globally
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy("vpnClient", value, (err, data) => {
+          if (err == null) {
+            if (callback != null)
+              callback(null, "Success");
+          } else {
+            if (callback != null)
+              callback(err, "Unable to start vpn client");
+          }
+        });
+      });
+    } else {
+      // enable VPN client access on specific host
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy("vpnClient", value, (err, data) => {
+                if (err == null) {
+                  if (callback != null) 
+                    callback(null, "Success: " + ip);
+                } else {
+                  if (callback != null)
+                  callback(err, "Unable to enable vpn client access on " + ip);
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to enable vpn client access on " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "host not found: " + ip);
+        }
+      });
+    }
+  }
+
   _vpn(ip, value, callback) {
     if(ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
@@ -334,7 +376,7 @@ class netBot extends ControllerBot {
             callback(null, "Success");
         } else {
           if (callback != null)
-            callback(err, "Unable to block ip " + ip);
+            callback(err, "Unable to enable vpn on ip " + ip);
         }
       });
     });
@@ -1008,6 +1050,11 @@ class netBot extends ControllerBot {
               break;
             case "adblock":
               this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "vpnClient":
+              this._vpnClient(msg.target, mg.data.value.vpnClient, (err, obj) => {
                 cb(err);
               });
               break;

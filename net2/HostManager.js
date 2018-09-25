@@ -98,6 +98,13 @@ const hostTool = new HostTool()
 
 const tokenManager = require('../util/FWTokenManager.js');
 
+const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const vpnClientEnforcer = new VPNClientEnforcer();
+
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const ovpnClient = new OpenVPNClient();
+const defaultOvpnClientProfile = f.getUserHome() + "/.vpnclient.ovpn";
+
 /* alarms:
     alarmtype:  intel/newhost/scan/log
     severityscore: out of 100
@@ -497,6 +504,16 @@ class Host {
       }
     }
     return list;
+  }
+
+  async vpnClient(policy) {
+    const state = policy.state;
+    if (state === true) {
+      const mode = policy.mode || "dhcp";
+      await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
+    } else {
+      await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+    }
   }
 
 
@@ -2494,6 +2511,39 @@ module.exports = class HostManager {
         // do nothing if state is true
       }
     })()
+  }
+
+  async vpnClient(policy) {
+    const state = policy.state;
+    if (state === true) {
+      switch (policy.type) {
+        case "openvpn":
+          let ovpnClientProfile = defaultOvpnClientProfile;
+          if (policy.openvpn) {
+            ovpnClientProfile = policy.openvpn.profilePath || ovpnClientProfile;
+          }
+          await ovpnClient.setup({ovpnPath: ovpnClientProfile});
+          await ovpnClient.start();
+          // TODO: wait for a while to ensure that vpn tunnel is established
+          setTimeout(() => {
+            const remoteIP = await ovpnClient.getRemoteIP();
+            const intf = await ovpnClient.getInterfaceName();
+            await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+          }, 3000);
+          break;
+        default:
+          log.error("Unsupported vpn client type: " + policy.type);
+      }
+    } else {
+      switch (policy.type) {
+        case "openvpn":
+          await ovpnClient.stop();
+          await vpnClientEnforcer.flushVPNClientRoutes();
+          break;
+        default:
+          log.error("Unsupported vpn client type: " + policy.type);
+      }
+    }
   }
 
     policyToString() {
