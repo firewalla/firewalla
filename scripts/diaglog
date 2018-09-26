@@ -9,7 +9,7 @@ gw=$(cat $gwfile)
 mac=$(cat /sys/class/net/eth0/address)
 ts=$(date +%s)
 
-echo $ip,$gw,$mac
+#echo $ip,$gw,$mac
 
 while getopts e:m: option
 do
@@ -40,5 +40,4 @@ curl -i \
 -H "Content-Type:application/json" \
 -X POST --data "$(generate_post_data)" "https://diag.firewalla.com/device/$gw"
 
-#curl -d "{\"gw\":\"$gw\", \"fw\":\"$ip\",\"ts\":4,\"event\":\"$EVENT\",\"mac\":\"$mac\",\"msg\":\"$MESSAGE\",\"ts\":\"$ts\"}" -H "Content-Type: application/json" -X POST https://diag.firewalla.com/device/$gw
 
