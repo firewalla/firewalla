@@ -1938,7 +1938,9 @@ module.exports = class HostManager {
 
     async jwtTokenForInit(json) {
         const token = await tokenManager.getToken();
-        json.jwt = token;
+        if(token) {
+            json.jwt = token;
+        }        
     }
 
   encipherMembersForInit(json) {
