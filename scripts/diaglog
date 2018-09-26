@@ -22,5 +22,22 @@ done
 
 /usr/bin/logger "FIREWALLA:("DIAG $EVENT"): "$MESSAGE
 
-curl -d "{\"gw\":\"$gw\", \"fw\":\"$ip\",\"event\":\"$EVENT\",\"mac\":\"$mac\",\"msg\":\"$MESSAGE\",\"ts\":\"$ts\"}" -H "Content-Type: application/json" -X POST https://diag.firewalla.com/device/$gw
+generate_post_data() {
+  cat <<EOF
+  {
+    "gw":"$gw", 
+    "fw":"$ip",
+    "event":"$EVENT",
+    "mac":"$mac",
+    "msg":"$MESSAGE",
+    "ts":"$ts"
+  }
+EOF
+}
+
+curl -i \
+-H "Accept: application/json" \
+-H "Content-Type:application/json" \
+-X POST --data "$(generate_post_data)" "https://diag.firewalla.com/device/$gw"
+
 

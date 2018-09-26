@@ -198,7 +198,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     let meta = JSON.stringify({
       'type': config.serviceType,
       'member': config.memberType,
-      'model': platformLoader.getPlatformName()
+      'model': platform.getName()
     });
     eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
       log.info(r);

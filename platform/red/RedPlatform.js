@@ -26,6 +26,10 @@ class RedPlatform extends Platform {
     return "red";
   }
 
+  getLicenseTypes() {
+    return ["a0", "a1"];
+  }
+
   getBoardSerial() {
     return utils.getCpuId();
   }
