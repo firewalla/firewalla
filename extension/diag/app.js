@@ -219,7 +219,15 @@ class App {
         log.error("Failed to fetch log", err, {})
         res.status(404).send('')
       })
-    })
+    });
+
+    this.app.use('/pairing', (req, res) => {
+      if(this.broadcastInfo) {
+        res.json(this.broadcastInfo);
+      } else {
+        res.status(501).send('');
+      }      
+    });
 
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")

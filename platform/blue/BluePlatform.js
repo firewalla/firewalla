@@ -30,6 +30,10 @@ class BluePlatform extends Platform {
     return "blue";
   }
 
+  getLicenseTypes() {
+    return ["a2"];
+  }
+
   getBoardSerial() {
     return new Date() / 1;
   }
