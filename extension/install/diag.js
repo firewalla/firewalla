@@ -35,14 +35,17 @@ class FWDiag {
   }
 
   async getGatewayMac(gatewayIP) {
-      const cmd = `arping -f -I $(ip route show match 0/0 | awk '{print $5, $3}') | grep Unicast | sed 's=.*\\[==' | sed 's=\\].*=='`;
-      const result = await exec(cmd);
-      const mac = result.stdout;
-      if(mac) {
-        return mac.substring(0, 11);
-      } else {
-        return null;
-      }
+    const pingCmd = `ping -q -c 1 -w 2 ${gatewayIP} || /bin/true`;
+    await exec(pingCmd);
+
+    const arpCmd = `arp -a -n | grep ${gatewayIP} -w | awk '{print $4}'`;
+    const result = await exec(arpCmd);
+    const mac = result.stdout;
+    if(mac) {
+      return mac.substring(0, 11);
+    } else {
+      return null;
+    }
   }
 
   async getGatewayName(gatewayIP) {
