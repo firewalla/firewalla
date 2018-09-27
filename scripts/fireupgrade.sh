@@ -29,6 +29,9 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
+# ensure that run directory already exists
+mkdir -p /home/pi/.firewalla/run
+
 mode=${1:-'normal'}
 
 timeout_check() {
