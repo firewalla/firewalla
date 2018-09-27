@@ -164,6 +164,7 @@ class FWInvitation {
                      status: "pending"
                    };
                 } else {
+                  log.forceInfo("Got a new license");
                   log.info("Got a new license:", lic, {});
                   await (license.writeLicense(lic));
                 }
@@ -184,7 +185,7 @@ class FWInvitation {
           await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
         }
         
-        log.info(`Linked App ${eid} to this device successfully`);        
+        log.forceInfo(`Linked App ${eid} to this device successfully`);        
 
         return {
           status: "success",
