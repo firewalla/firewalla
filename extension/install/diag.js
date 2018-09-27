@@ -89,6 +89,11 @@ class FWDiag {
       if(result && result.mode) {
         await rclient.setAsync("recommend_firewalla_mode", result.mode);
       }
+
+      if(result && result.guessedRouter) {
+        await rclient.setAsync("guessed_router", JSON.stringify(result.guessedRouter));
+      }
+
       log.info("submitted info to diag server successfully with result", result);
     }
   }
