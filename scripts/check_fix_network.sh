@@ -109,15 +109,9 @@ ethernet_connected() {
 }
 
 ethernet_ip() {
-    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/)
+    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v '169.254.' | grep -v '192.168.218.1')
     if [[ -n "$eth_ip" ]]; then
-        if [[ ${eth_ip:0:8} == '169.254.' ]]; then
-            return 1
-        elif [[ $eth_ip == '192.168.218.1' ]]; then
-            return 1
-        else
-            return 0
-        fi
+        return 0
     else
         return 1
     fi

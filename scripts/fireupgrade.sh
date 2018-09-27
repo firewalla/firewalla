@@ -65,32 +65,24 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
+ethernet_ip() {
+    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v '169.254.' | grep -v '192.168.218.1')
+    if [[ -n "$eth_ip" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 function await_ip_assigned() {
-    dhclient_pid=`pgrep dhclient`;
-    ret=$?
     for i in `seq 1 30`; do
-        if [[ $ret -ne 0 ]]; then
+        if ! ethernet_ip; then
             sleep 1
-            dhclient_pid=`pgrep dhclient`
-            ret=$?
         else
-            break
+            logger "IP address is assigned"
+            return 0
         fi
     done
-    if [[ $ret -eq 0 ]]; then
-        sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
-        ret=$?
-        for i in `seq 1 30`; do
-            if [[ $ret -ne 0 ]]; then
-                sleep 1
-                sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
-                ret=$?
-            else
-                logger "IP address is assigned."
-                return 0
-            fi
-        done
-    fi
     logger "IP address is not assigned yet."
     return 1
 }
@@ -128,13 +120,7 @@ restore_values() {
     return $r
 }
 
-run_mode=$(redis-cli get mode)
-if [[ $run_mode == "dhcp" ]]; then
-    logger "Run in dhcp mode, restore previous network configurations..."
-    restore_values
-else
-    await_ip_assigned
-fi
+await_ip_assigned || restore_values
 
 function sync_time() {
     time_website=$1
