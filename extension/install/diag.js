@@ -91,9 +91,9 @@ class FWDiag {
       }
 
       if(result && result.guessedRouter) {
-        await rclient.setAsync("guessed_router", result.guessedRouter);
+        await rclient.setAsync("guessed_router", JSON.stringify(result.guessedRouter));
       }
-      
+
       log.info("submitted info to diag server successfully with result", result);
     }
   }
