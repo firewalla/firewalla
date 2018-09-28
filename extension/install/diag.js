@@ -12,6 +12,9 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 const get_interfaces_list_async = Promise.promisify(network.get_interfaces_list);
 const activeInterface = fConfig.monitoringInterface || "eth0";
 
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 const rp = require('request-promise');
 
 class FWDiag {
@@ -73,7 +76,8 @@ class FWDiag {
       mac: mac,
       ts: ts,
       gw_mac: gatewayMac,
-      gw_name: gatewayName   
+      gw_name: gatewayName,
+      model: platform.getName()
     });
   }
 
