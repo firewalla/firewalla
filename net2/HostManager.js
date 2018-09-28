@@ -2518,14 +2518,16 @@ module.exports = class HostManager {
     if (state === true) {
       switch (policy.type) {
         case "openvpn":
-          let ovpnClientProfile = defaultOvpnClientProfile;
+          const options = {ovpnPath: defaultOvpnClientProfile};
           if (policy.openvpn) {
-            ovpnClientProfile = policy.openvpn.profilePath || ovpnClientProfile;
+            options.ovpnPath = policy.openvpn.profilePath || defaultOvpnClientProfile;
+            if (policy.openvpn.password)
+              options.password = policy.openvpn.password;
           }
-          await ovpnClient.setup({ovpnPath: ovpnClientProfile});
+          await ovpnClient.setup(options);
           await ovpnClient.start();
           // TODO: wait for a while to ensure that vpn tunnel is established
-          setTimeout(() => {
+          setTimeout(async () => {
             const remoteIP = await ovpnClient.getRemoteIP();
             const intf = await ovpnClient.getInterfaceName();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);

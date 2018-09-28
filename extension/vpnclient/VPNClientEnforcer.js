@@ -15,7 +15,7 @@
 
 'use strict';
 
-const log = require('../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 const cp = require('child_process');
 const util = require('util');
 const routing = require('../routing/routing.js');
@@ -89,10 +89,10 @@ class VPNClientEnforcer {
     // add routes from main routing table to vpn client table except default route
     let cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
-    routes.split('\n').forEach((route) => {
+    await Promise.all(routes.split('\n').map(async route => {
       cmd = util.format("sudo ip route add %s table %s", route, VPN_CLIENT_RULE_TABLE);
       await execAsync(cmd);
-    });
+    }));
     // then add remote IP as gateway of default route to vpn client table
     cmd = util.format("sudo ip route add default via %s dev %s table %s", remoteIP, intf, VPN_CLIENT_RULE_TABLE);
     await execAsync(cmd);
@@ -103,7 +103,7 @@ class VPNClientEnforcer {
   }
 
   async _periodicalRefreshRule() {
-    Object.keys(this.enabledHosts).forEach((mac) => {
+    await Promise.all(Object.keys(this.enabledHosts).map(async mac => {
       const host = await hostTool.getMACEntry(mac);
       const oldHost = this.enabledHosts[mac];
       const enabledMode = oldHost.vpnClientMode;
@@ -129,7 +129,7 @@ class VPNClientEnforcer {
         default:
           log.error("Unsupported vpn client mode: " + mode);
       }
-    });
+    }));
   }
 }
 

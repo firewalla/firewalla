@@ -1054,7 +1054,7 @@ class netBot extends ControllerBot {
               });
               break;
             case "vpnClient":
-              this._vpnClient(msg.target, mg.data.value.vpnClient, (err, obj) => {
+              this._vpnClient(msg.target, msg.data.value.vpnClient, (err, obj) => {
                 cb(err);
               });
               break;

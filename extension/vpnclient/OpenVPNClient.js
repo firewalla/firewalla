@@ -15,10 +15,11 @@
 
 'use strict';
 
-const log = require('../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const cp = require('child_process');
 const util = require('util');
+const f = require('../../net2/Firewalla.js');
 
 var instance = null;
 
@@ -31,6 +32,8 @@ const execAsync = util.promisify(cp.exec);
 const SERVICE_NAME = "openvpn_client";
 const SERVICE_TEMPLATE_FILE = `${__dirname}/openvpn_client.service.template`;
 const SERVICE_FILE = `${__dirname}/${SERVICE_NAME}.service`;
+
+const PASSWORD_FILE = f.getUserHome() + "/.vpnclient.password";
 
 const routing = require('../routing/routing.js');
 
@@ -45,11 +48,17 @@ class OpenVPNClient extends VPNClient {
 
   async setup(options) {
     const ovpnPath = options["ovpnPath"];
+    const password = options["password"]; // password is optional
     if (!ovpnPath)
       throw "ovpnPath is not set";
     if (fs.existsSync(ovpnPath)) {
       this.ovpnPath = ovpnPath;
     } else throw util.format("ovpn file %s is not found", ovpnPath);
+    if (password) {
+      // update password in file if required
+      const cmd = util.format("echo %s > %s", password, PASSWORD_FILE);
+      await execAsync(cmd);
+    }
   }
 
   async start() {
@@ -58,8 +67,9 @@ class OpenVPNClient extends VPNClient {
     }
     let template = await readFileAsync(SERVICE_TEMPLATE_FILE, 'utf8');
     template = template.replace(/OVPN_CLIENT_CONF/g, this.ovpnPath);
+    template = template.replace(/OVPN_PASSWORD_FILE/g, PASSWORD_FILE);
     await writeFileAsync(SERVICE_FILE, template, 'utf8');
-    let cmd = util.format("sudo cp %s /etc/systemd/system");
+    let cmd = util.format("sudo cp %s /etc/systemd/system", SERVICE_FILE);
     await execAsync(cmd);
     cmd = util.format("sudo systemctl start %s", SERVICE_NAME);
     await execAsync(cmd);

@@ -15,8 +15,6 @@
 
 'use strict';
 
-const log = require('../net2/logger.js')(__filename);
-
 class VPNClient {
   constructor() {
   }
