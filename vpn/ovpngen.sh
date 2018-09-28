@@ -40,6 +40,14 @@ echo $NAME
 sudo chmod 777 -R /etc/openvpn
 cd /etc/openvpn/easy-rsa
 source ./vars
+if [ -f ~/ovpns/.ovpn.cn ]; then
+  # Invalidate previous profile
+  PREVIOUS_CN=`cat ~/ovpns/.ovpn.cn`
+  echo "revoke previous CN: $PREVIOUS_CN"
+  ./revoke-full $PREVIOUS_CN
+  sudo cp keys/crl.pem /etc/openvpn/crl.pem
+  sudo chmod 644 /etc/openvpn/crl.pem
+fi
 echo "build key pass"
 #./build-key-pass $NAME
 ./pkitool $NAME
@@ -104,10 +112,13 @@ echo "</tls-auth>" >> $NAME$FILEEXT
 # Copy the .ovpn profile to the home directory for convenient remote access
 cp /etc/openvpn/easy-rsa/keys/$NAME$FILEEXT ~/ovpns/$NAME$FILEEXT
 sudo chmod 600 -R /etc/openvpn
+sudo chmod 777 /etc/openvpn
+sudo chmod 644 /etc/openvpn/crl.pem
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
 echo $2 > ~/ovpns/$NAME$FILEEXT$PASSEXT
 cp ~/ovpns/$NAME$FILEEXT ~/ovpns/fishboneVPN1.ovpn
 cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/fishboneVPN1.ovpn.password
+echo "$NAME" > ~/ovpns/.ovpn.cn
  
 # Original script written by Eric Jodoin.

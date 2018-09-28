@@ -25,6 +25,7 @@ client-to-client
 duplicate-cn
 keepalive 10 120
 tls-auth /etc/openvpn/easy-rsa/keys/ta.key 0
+crl-verify /etc/openvpn/crl.pem
 cipher AES-128-CBC
 comp-lzo
 user nobody
