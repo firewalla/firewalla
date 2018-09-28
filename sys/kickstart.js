@@ -54,7 +54,6 @@
   const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
-  let diaglog = require("../util/Diaglog.js")
 
   const platformLoader = require('../platform/PlatformLoader.js');
   const platform = platformLoader.getPlatform();
@@ -77,6 +76,8 @@
   let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
 
   const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
+  const fwDiag = require('../extension/install/diag.js');
   
   // let NmapSensor = require('../sensor/NmapSensor');
   // let nmapSensor = new NmapSensor();
@@ -291,7 +292,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         
         // new group without any apps bound;
         platform.turnOnPowerLED();
-        diaglog.log("PAIRSTART","Pairing Ready")
+
+        fwDiag.submitInfo({
+          event: "PAIRSTART",
+          msg:"Pairing Ready"
+        });
+
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -306,7 +312,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
-              diaglog.log("PAIREND","Pairing Ended")
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended"
+              });
+
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -318,7 +329,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             callback("404", false);
             
             platform.turnOffPowerLED();
-            diaglog.log("PAIREND","Pairing Ended")
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended"
+            });
+
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
@@ -354,7 +370,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
-              diaglog.log("PAIREND","Pairing Ended")
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended"
+              });
+
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
@@ -363,7 +384,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           let onTimeout = function() {
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
             platform.turnOffPowerLED();
-            diaglog.log("PAIREND","Pairing Ended");
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended"
+            });
+
             require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
