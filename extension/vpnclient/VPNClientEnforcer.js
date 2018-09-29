@@ -54,7 +54,7 @@ class VPNClientEnforcer {
       this.enabledHosts.mac = host;
       switch (mode) {
         case "dhcp":
-          const mode = require('../net2/Mode.js');
+          const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
           if (mode.isDHCPModeOn()) {
             if (host.ipv4Addr && host.spoofing) {
@@ -112,7 +112,7 @@ class VPNClientEnforcer {
       host.vpnClientMode = enabledMode;
       switch (enabledMode) {
         case "dhcp":
-          const mode = require('../net2/Mode.js');
+          const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
           if (host.ipv4Addr !== oldHost.ipv4Addr || !mode.isDHCPModeOn() || !host.spoofing) {
             // policy routing rule should be removed anyway if ip address is changed or dhcp mode is not enabled
