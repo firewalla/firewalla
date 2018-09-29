@@ -31,6 +31,9 @@ heartbeatLED
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
 
+# ensure that run directory already exists
+mkdir -p /home/pi/.firewalla/run
+
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
 

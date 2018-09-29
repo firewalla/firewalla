@@ -29,6 +29,9 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
+# ensure that run directory already exists
+mkdir -p /home/pi/.firewalla/run
+
 mode=${1:-'normal'}
 
 timeout_check() {
@@ -65,37 +68,62 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
+ethernet_ip() {
+    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v '^169\.254\.' | grep -v '^192\.168\.218\.1$')
+    if [[ -n "$eth_ip" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 function await_ip_assigned() {
-    dhclient_pid=`pgrep dhclient`;
-    ret=$?
     for i in `seq 1 30`; do
-        if [[ $ret -ne 0 ]]; then
+        if ! ethernet_ip; then
             sleep 1
-            dhclient_pid=`pgrep dhclient`
-            ret=$?
         else
-            break
+            logger "IP address is assigned"
+            return 0
         fi
     done
-    if [[ $ret -eq 0 ]]; then
-        sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
-        ret=$?
-        for i in `seq 1 30`; do
-            if [[ $ret -ne 0 ]]; then
-                sleep 1
-                sudo grep "dhclient\[$dhclient_pid\]" /var/log/syslog | grep DHCPACK
-                ret=$?
-            else
-                logger "IP address is assigned."
-                return 0
-            fi
-        done
-    fi
     logger "IP address is not assigned yet."
     return 1
 }
 
-await_ip_assigned
+set_value() {
+    kind=$1
+    saved_value=$2
+    case ${kind} in
+        ip)
+            sudo /sbin/ip addr replace ${saved_value} dev eth0
+            ;;
+        gw)
+            sudo /sbin/route add default gw ${saved_value} eth0
+            ;;
+    esac
+}
+
+restore_values() {
+    r=0
+    logger "Restore saved values of ip/gw/dns"
+    for kind in ip gw
+    do
+        file=/home/pi/.firewalla/run/saved_${kind}
+        [[ -e "$file" ]] || continue
+        saved_value=$(cat $file)
+        [[ -n "$saved_value" ]] || continue
+        set_value $kind $saved_value || r=1
+    done
+    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
+        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
+    else
+        r=1
+    fi
+    sleep 3
+    return $r
+}
+
+await_ip_assigned || restore_values
 
 function sync_time() {
     time_website=$1
