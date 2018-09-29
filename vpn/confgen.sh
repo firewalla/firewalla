@@ -28,6 +28,7 @@ if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
   fi
   touch /etc/openvpn/crl.pem
   chmod 644 /etc/openvpn/crl.pem
+  chmod 777 /etc/openvpn
   minimumsize=100
   actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
   if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then
