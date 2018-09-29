@@ -710,14 +710,14 @@ class CategoryUpdater {
     const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`
     const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`
 
-    await exec(cmdDeleteOutgoingRule)
-    await exec(cmdDeleteIncomingRule)
-    await exec(cmdDeleteOutgoingTCPRule)
-    await exec(cmdDeleteIncomingTCPRule)
-    await exec(cmdDeleteOutgoingRule6)
-    await exec(cmdDeleteIncomingRule6)
-    await exec(cmdDeleteOutgoingTCPRule6)
-    await exec(cmdDeleteIncomingTCPRule6)
+    await exec(this.wrapIptables(cmdDeleteOutgoingRule))
+    await exec(this.wrapIptables(cmdDeleteIncomingRule))
+    await exec(this.wrapIptables(cmdDeleteOutgoingTCPRule))
+    await exec(this.wrapIptables(cmdDeleteIncomingTCPRule))
+    await exec(this.wrapIptables(cmdDeleteOutgoingRule6))
+    await exec(this.wrapIptables(cmdDeleteIncomingRule6))
+    await exec(this.wrapIptables(cmdDeleteOutgoingTCPRule6))
+    await exec(this.wrapIptables(cmdDeleteIncomingTCPRule6))
   }
 
   wrapIptables(rule) {        
