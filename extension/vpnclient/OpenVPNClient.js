@@ -75,10 +75,12 @@ class OpenVPNClient extends VPNClient {
     await execAsync(cmd);
     // remove two routes from main table which is inserted by OpenVPN client automatically,
     // otherwise tunnel will be enabled globally
-    const remoteIP = await this.getRemoteIP();
-    const intf = await this.getInterfaceName();
-    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
-    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
+    setTimeout(async () => {
+      const remoteIP = await this.getRemoteIP();
+      const intf = await this.getInterfaceName();
+      await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
+      await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
+    }, 10000);
   }
 
   async stop() {
@@ -91,9 +93,11 @@ class OpenVPNClient extends VPNClient {
   async getRemoteIP() {
     const cmd = "ifconfig | grep P-t-P | awk '{print $2,$3}'";
     const result = await execAsync(cmd);
-    const lines = result.split('\n');
+    const lines = result.stdout.split('\n');
     for (let i in lines) {
       const line = lines[i];
+      if (line.length == 0)
+        continue;
       const addrs = line.split(" ");
       const local = addrs[0].split(':')[1];
       const peer = addrs[1].split(':')[1];
@@ -107,7 +111,7 @@ class OpenVPNClient extends VPNClient {
 
   async getInterfaceName() {
     const remoteIP = await this.getRemoteIP();
-    const cmd = util.format("ifconfig | grep %s -B 1 | head -n 1 | awk '{print $1}'", remoteIP);
+    const cmd = util.format("ifconfig | grep %s -B 1 | head -n 1 | awk '{print $1}' | tr -d '\n'", remoteIP);
     const result = await execAsync(cmd);
     if (result.stderr !== "") {
       throw result.stderr;

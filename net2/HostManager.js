@@ -2531,7 +2531,7 @@ module.exports = class HostManager {
             const remoteIP = await ovpnClient.getRemoteIP();
             const intf = await ovpnClient.getInterfaceName();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
-          }, 3000);
+          }, 10000);
           break;
         default:
           log.error("Unsupported vpn client type: " + policy.type);

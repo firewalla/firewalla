@@ -3,10 +3,8 @@ Description=Firewalla OpenVPN Client Service
 After=network.target
 
 [Service]
-User=pi
 Restart=always
-WorkingDirectory=/home/pi/firewalla/extension/vpnclient
-ExecStart=sudo openvpn --config OVPN_CLIENT_CONF --askpass OVPN_PASSWORD_FILE
+ExecStart=/usr/sbin/openvpn --config OVPN_CLIENT_CONF --askpass OVPN_PASSWORD_FILE
 
 [Install]
 WantedBy=multi-user.target

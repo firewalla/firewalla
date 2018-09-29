@@ -89,9 +89,11 @@ class VPNClientEnforcer {
     // add routes from main routing table to vpn client table except default route
     let cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
-    await Promise.all(routes.split('\n').map(async route => {
-      cmd = util.format("sudo ip route add %s table %s", route, VPN_CLIENT_RULE_TABLE);
-      await execAsync(cmd);
+    await Promise.all(routes.stdout.split('\n').map(async route => {
+      if (route.length > 0) {
+        cmd = util.format("sudo ip route add %s table %s", route, VPN_CLIENT_RULE_TABLE);
+        await execAsync(cmd);
+      }
     }));
     // then add remote IP as gateway of default route to vpn client table
     cmd = util.format("sudo ip route add default via %s dev %s table %s", remoteIP, intf, VPN_CLIENT_RULE_TABLE);
