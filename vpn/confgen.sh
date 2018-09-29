@@ -20,6 +20,15 @@ if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
   same_network=$?
   grep -q "port $LOCAL_PORT" /etc/openvpn/$INSTANCE_NAME.conf
   same_port=$?
+  grep -q -w "crl-verify" /etc/openvpn/$INSTANCE_NAME.conf
+  crl_enabled=$?
+  if [[ $crl_enabled -ne 0 ]]; then
+    # ensure crl-verify is enabled in server config
+    echo -e "\ncrl-verify /etc/openvpn/crl.pem" >> /etc/openvpn/$INSTANCE_NAME.conf
+  fi
+  touch /etc/openvpn/crl.pem
+  chmod 644 /etc/openvpn/crl.pem
+  chmod 777 /etc/openvpn
   minimumsize=100
   actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
   if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then
