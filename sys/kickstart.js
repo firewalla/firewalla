@@ -266,6 +266,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   function inviteFirstAdmin(gid, callback) {
     log.forceInfo("Initializing first admin:", gid);
 
+    const gidPrefix = gid.substring(0, 8);
+
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
         log.info("Error looking up group", err, err.stack, {});
@@ -293,11 +295,6 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         // new group without any apps bound;
         platform.turnOnPowerLED();
 
-        fwDiag.submitInfo({
-          event: "PAIRSTART",
-          msg:"Pairing Ready"
-        });
-
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -315,7 +312,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
               fwDiag.submitInfo({
                 event: "PAIREND",
-                msg: "Pairing Ended"
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
               });
 
               setTimeout(()=> {
@@ -332,7 +330,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
             fwDiag.submitInfo({
               event: "PAIREND",
-              msg: "Pairing Ended"
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
             });
 
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
@@ -340,8 +339,18 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             });
           }
           
-          diag.expireDate = new Date() / 1000 + 3600
+          const expireDate = Math.floor(new Date() / 1000) + 3600;
+
+          diag.expireDate = expireDate;
+
           fwInvitation.broadcast(onSuccess, onTimeout);
+          
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate,
+            gidPrefix: gidPrefix
+          });
           
         } else {
           log.forceInfo(`Found existing group ${gid} with ${count} members`);
@@ -373,7 +382,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
               fwDiag.submitInfo({
                 event: "PAIREND",
-                msg: "Pairing Ended"
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
               });
 
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
@@ -387,16 +397,25 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
             fwDiag.submitInfo({
               event: "PAIREND",
-              msg: "Pairing Ended"
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
             });
 
             require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
-          diag.expireDate = new Date() / 1000 + 600
-          fwInvitation.broadcast(onSuccess, onTimeout);
+          const expireDate = Math.floor(new Date() / 1000) + 600;
+          diag.expireDate = expireDate;
+
+          fwInvitation.broadcast(onSuccess, onTimeout);          
           
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate
+          });
+
           callback(null, true);
         }
       }
