@@ -14,7 +14,7 @@ LOCAL_PORT=$5
 : ${LOCAL_PORT="1194"}
 
 if [ ! -s /etc/openvpn/crl.pem ]; then
-  # create crl file with dummy revokation list
+  # create crl file with dummy revocation list
   chmod 777 -R /etc/openvpn
   cd /etc/openvpn/easy-rsa
   source ./vars
