@@ -13,6 +13,20 @@ SERVER_NETWORK=$4
 LOCAL_PORT=$5
 : ${LOCAL_PORT="1194"}
 
+if [ ! -s /etc/openvpn/crl.pem ]; then
+  # create crl file with dummy revocation list
+  chmod 777 -R /etc/openvpn
+  cd /etc/openvpn/easy-rsa
+  source ./vars
+  ./pkitool dummy
+  ./revoke-full dummy
+  cp keys/crl.pem ../crl.pem
+  chmod 600 -R /etc/openvpn
+  chmod 777 /etc/openvpn
+  chmod 644 /etc/openvpn/crl.pem
+  cd -
+fi
+
 if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
   # make sure that server config with same instance name, server network and local port
   # will not be regenerated
@@ -26,9 +40,6 @@ if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
     # ensure crl-verify is enabled in server config
     echo -e "\ncrl-verify /etc/openvpn/crl.pem" >> /etc/openvpn/$INSTANCE_NAME.conf
   fi
-  touch /etc/openvpn/crl.pem
-  chmod 644 /etc/openvpn/crl.pem
-  chmod 777 /etc/openvpn
   minimumsize=100
   actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
   if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then
