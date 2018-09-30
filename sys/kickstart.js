@@ -57,7 +57,9 @@
   let led = require('../util/Led.js');
   
   let util = require('util');
-  
+
+  const fwDiag = require('../extension/install/diag.js');
+
   let f = require('../net2/Firewalla.js');
   
   let fConfig = require('../net2/config.js');
@@ -249,6 +251,8 @@
   function inviteFirstAdmin(gid, callback) {
     log.info("Initializing first admin:", gid);
 
+    const gidPrefix = gid.substring(0, 8);
+
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
         log.info("Error looking up group", err, err.stack, {});
@@ -288,6 +292,13 @@
               
               log.info("EXIT KICKSTART AFTER JOIN");
               led.off();
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
+              });
+
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -299,6 +310,13 @@
             callback("404", false);
             
             led.off();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
+            });
+
             log.info("EXIT KICKSTART AFTER TIMEOUT");
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
@@ -306,6 +324,13 @@
           
           diag.expireDate = new Date() / 1000 + 3600
           fwInvitation.broadcast(onSuccess, onTimeout);
+
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate,
+            gidPrefix: gidPrefix
+          });
           
         } else {
           log.info(`Found existing group ${gid} with ${count} members`);
@@ -332,6 +357,13 @@
               
               log.info("EXIT KICKSTART AFTER JOIN");
               led.off();
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
+              });
+
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
@@ -340,12 +372,24 @@
           let onTimeout = function() {
             log.info("EXIT KICKSTART AFTER TIMEOUT");
             led.off();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
+            });
             require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
           diag.expireDate = new Date() / 1000 + 600
           fwInvitation.broadcast(onSuccess, onTimeout);
+
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate
+          });
           
           callback(null, true);
         }

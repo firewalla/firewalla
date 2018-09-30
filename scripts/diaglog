@@ -1,0 +1,48 @@
+#!/bin/bash
+#
+#
+
+gwfile=/home/pi/.firewalla/run/saved_gw
+ipfile=/home/pi/.firewalla/run/saved_ip
+ip=$(ifconfig eth0 | grep "inet addr" | cut -d ':' -f 2 | cut -d ' ' -f 1)
+gw=$(cat $gwfile)
+gw_mac=$(arping -f -I $(ip route show match 0/0 | awk '{print $5, $3}') | grep Unicast | sed 's=.*\[==' | sed 's=\].*==')
+short_gw_mac=${gw_mac:0:11}
+gw_name=$(arp $gw | tail -n 1 | awk '{print $1}')
+mac=$(cat /sys/class/net/eth0/address)
+ts=$(date +%s)
+
+#echo $ip,$gw,$mac
+
+while getopts e:m: option
+do
+ case "${option}"
+ in
+ e) EVENT=${OPTARG};;
+ m) MESSAGE=$OPTARG;;
+ esac
+done
+
+/usr/bin/logger "FIREWALLA:("DIAG $EVENT"): "$MESSAGE
+
+generate_post_data() {
+  cat <<EOF
+  {
+    "gw":"$gw", 
+    "fw":"$ip",
+    "event":"$EVENT",
+    "mac":"$mac",
+    "msg":"$MESSAGE",
+    "ts":"$ts",
+    "gw_mac": "$short_gw_mac",
+    "gw_name": "$gw_name"
+  }
+EOF
+}
+
+curl -i \
+-H "Accept: application/json" \
+-H "Content-Type:application/json" \
+-X POST --data "$(generate_post_data)" "https://diag.firewalla.com/device/$gw"
+
+
