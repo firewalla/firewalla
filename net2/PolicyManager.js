@@ -409,6 +409,14 @@ module.exports = class {
     }
   }
 
+  async vpnClient(host, policy) {
+    const result = await host.vpnClient(policy);
+    if (policy.state === true && !result) {
+      policy.state = false;
+      host.setPolicy("vpnClient", policy);
+    }
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -642,7 +650,7 @@ module.exports = class {
       } else if (p === "monitor") {
         host.spoof(policy[p]);
       } else if (p === "vpnClient") {
-        host.vpnClient(policy[p]);
+        this.vpnClient(host, policy[p]);
       } else if (p === "vpn") {
         this.vpn(host, policy[p], policy);
       } else if (p === "shadowsocks") {

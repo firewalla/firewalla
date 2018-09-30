@@ -52,7 +52,13 @@ async function createCustomizedRoutingTable(id, tableName) {
 }
 
 async function createPolicyRoutingRule(from, tableName) {
-  let cmd = util.format('sudo ip rule add from %s lookup %s', from, tableName);
+  let cmd = "ip rule list";
+  let result = await execAsync(cmd);
+  if (result.stdout.includes(util.format("from %s lookup %s", from, tableName))) {
+    log.info("same ip rule already exists");
+    return;
+  }  
+  cmd = util.format('sudo ip rule add from %s lookup %s', from, tableName);
   log.info("Create new policy routing rule: ", cmd);
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {

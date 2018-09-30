@@ -75,12 +75,31 @@ class OpenVPNClient extends VPNClient {
     await execAsync(cmd);
     // remove two routes from main table which is inserted by OpenVPN client automatically,
     // otherwise tunnel will be enabled globally
-    setTimeout(async () => {
-      const remoteIP = await this.getRemoteIP();
-      const intf = await this.getInterfaceName();
-      await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
-      await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
-    }, 10000);
+    cmd = "sleep 10";
+    await execAsync(cmd);
+    const remoteIP = await this.getRemoteIP();
+    const intf = await this.getInterfaceName();
+    if (remoteIP !== null && remoteIP !== "" && intf !== null && intf !== "") {
+      try {
+        await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
+        await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
+      } catch (err) {
+        // these routes may not exist depending on server config
+        log.error("Failed to remove default vpn client route", err);
+      }
+      return true;
+    } else {
+      log.error("Failed to establish tunnel for OpenVPN client, stop it...");
+      return false;
+    }
+  }
+
+  async _isTunEstablished() {
+    const remoteIP = await this.getRemoteIP();
+    const intf = await this.getInterfaceName();
+    if (remoteIP !== null && remoteIP !== "" && intf !== null && intf !== "") {
+      return true;
+    } else return false;
   }
 
   async stop() {

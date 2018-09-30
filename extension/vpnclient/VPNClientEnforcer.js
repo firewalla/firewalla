@@ -51,13 +51,19 @@ class VPNClientEnforcer {
     if (!this.enabledHosts[mac]) {
       const host = await hostTool.getMACEntry(mac);
       host.vpnClientMode = mode;
-      this.enabledHosts.mac = host;
+      this.enabledHosts[mac] = host;
       switch (mode) {
         case "dhcp":
           const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
           if (mode.isDHCPModeOn()) {
             if (host.ipv4Addr && host.spoofing) {
+              try {
+                await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+              } catch (err) {
+                log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
+              }
+              log.info("Add vpn client routing rule for " + host.ipv4Addr);
               await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
             }
           } else {
@@ -87,6 +93,7 @@ class VPNClientEnforcer {
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(VPN_CLIENT_RULE_TABLE_ID, VPN_CLIENT_RULE_TABLE);
     // add routes from main routing table to vpn client table except default route
+    await routing.flushRoutingTable(VPN_CLIENT_RULE_TABLE);
     let cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
     await Promise.all(routes.stdout.split('\n').map(async route => {
@@ -96,8 +103,7 @@ class VPNClientEnforcer {
       }
     }));
     // then add remote IP as gateway of default route to vpn client table
-    cmd = util.format("sudo ip route add default via %s dev %s table %s", remoteIP, intf, VPN_CLIENT_RULE_TABLE);
-    await execAsync(cmd);
+    await routing.addRouteToTable("default", remoteIP, intf, VPN_CLIENT_RULE_TABLE);
   }
 
   async flushVPNClientRoutes() {
@@ -126,7 +132,7 @@ class VPNClientEnforcer {
           if (mode.isDHCPModeOn() && host.spoofing) {
             await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
           }
-          this.enabledHosts.mac = host;
+          this.enabledHosts[mac] = host;
           break;
         default:
           log.error("Unsupported vpn client mode: " + mode);

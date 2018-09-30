@@ -507,12 +507,18 @@ class Host {
   }
 
   async vpnClient(policy) {
-    const state = policy.state;
-    if (state === true) {
-      const mode = policy.mode || "dhcp";
-      await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
-    } else {
-      await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+    try {
+      const state = policy.state;
+      if (state === true) {
+        const mode = policy.mode || "dhcp";
+        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
+      } else {
+        await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+      }
+      return true;
+    } catch (err) {
+      log.error("Failed to set VPN client access on " + this.o.mac);
+      return false;
     }
   }
 
@@ -2524,26 +2530,39 @@ module.exports = class HostManager {
             if (policy.openvpn.password)
               options.password = policy.openvpn.password;
           }
-          await ovpnClient.setup(options);
-          await ovpnClient.start();
-          // TODO: wait for a while to ensure that vpn tunnel is established
-          setTimeout(async () => {
+          try {
+            await ovpnClient.setup(options);
+            const result = await ovpnClient.start();
+            if (!result) {
+              log.error("Failed to start vpn client");
+              return false;
+            }
             const remoteIP = await ovpnClient.getRemoteIP();
             const intf = await ovpnClient.getInterfaceName();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
-          }, 10000);
-          break;
+            return true;
+          } catch (err) {
+            log.error("Failed to start vpn client, ", err);
+            return false;
+          }
         default:
           log.error("Unsupported vpn client type: " + policy.type);
+          return false;
       }
     } else {
       switch (policy.type) {
         case "openvpn":
-          await ovpnClient.stop();
-          await vpnClientEnforcer.flushVPNClientRoutes();
-          break;
+          try {
+            await ovpnClient.stop();
+            await vpnClientEnforcer.flushVPNClientRoutes();
+            return true;
+          } catch (err) {
+            log.error("Failed to stop vpn client, ", err);  
+            return false;
+          }
         default:
           log.error("Unsupported vpn client type: " + policy.type);
+          return false;
       }
     }
   }
