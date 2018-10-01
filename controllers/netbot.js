@@ -1438,7 +1438,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
             // this should set local port of VpnManager, which will be used in getOvpnFile
-            vpnManager.configure(JSON.parse(data["vpn"]), (err) => {
+            vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
               if (err != null) {
                 log.error("Failed to configure VPN", err);
                 this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);

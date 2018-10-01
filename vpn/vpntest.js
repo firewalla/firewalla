@@ -9,7 +9,7 @@ setTimeout(() => {
             vpnManager.configure({
                 serverNetwork: "10.8.0.0",
                 localPort: "1194"
-            }, (err) => {
+            }, true, (err) => {
                 if (err != null) {
                     console.log("VpnManager: Unable to configure vpn");
                 } else {
