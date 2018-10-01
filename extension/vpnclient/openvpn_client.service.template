@@ -1,0 +1,11 @@
+[Unit]
+Description=Firewalla OpenVPN Client Service
+After=network.target
+
+[Service]
+Restart=always
+ExecStart=/usr/sbin/openvpn --config OVPN_CLIENT_CONF --askpass OVPN_PASSWORD_FILE
+
+[Install]
+WantedBy=multi-user.target
+

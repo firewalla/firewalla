@@ -155,7 +155,7 @@ module.exports = class {
         });
     }
 
-    configure(config, callback) {
+    configure(config, needRestart, callback) {
         if (config) {
             if (config.serverNetwork) {
                 this.serverNetwork = config.serverNetwork;
@@ -173,6 +173,7 @@ module.exports = class {
         if (this.instanceName == null) {
             this.instanceName = "server";
         }
+        this.needRestart = needRestart || false;
         var mydns = sysManager.myDNS()[0]; 
         if (mydns == null) {
             mydns = "8.8.8.8"; // use google DNS as default
@@ -249,7 +250,7 @@ module.exports = class {
     }
 
     start(callback) {
-        if (this.started) {
+        if (this.started && !this.needRestart) {
             log.info("VpnManager::StartedAlready");
             if (callback)
                  callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
@@ -268,7 +269,12 @@ module.exports = class {
             private: this.localPort,
             public: this.localPort
         },(err)=>{
-            require('child_process').exec("sudo systemctl start openvpn@" + this.instanceName, (err, out, code) => {
+            let op = "start";
+            if (this.needRestart) {
+                op = "restart";
+                this.needRestart = false;
+            }
+            require('child_process').exec(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName), (err, out, stderr) => {
                 log.info("VpnManager:Start:" + this.instanceName, err);
                 if (err && this.started == false) {
                     if (callback) {

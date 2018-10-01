@@ -43,6 +43,6 @@ EOF
 curl -i \
 -H "Accept: application/json" \
 -H "Content-Type:application/json" \
--X POST --data "$(generate_post_data)" "https://diag.firewalla.com/device/$gw"
+-X POST --data "$(generate_post_data)" "https://api.firewalla.com/diag/api/v1/device/$gw"
 
 

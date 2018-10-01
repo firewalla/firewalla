@@ -354,7 +354,7 @@ function run() {
             log.info("Unable to install vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            vpnManager.configure(vpnConfig, (err) => {
+            vpnManager.configure(vpnConfig, true, (err) => {
               if (err != null) {
                 log.error("Failed to configure VPN manager", err);
                 vpnConfig.state = false;

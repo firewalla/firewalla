@@ -1,6 +1,6 @@
 [Unit]
 Description=Firewalla Upgrade Service
-After=dhcpcd.service 
+After=dhcpcd.service redis.service
 Requires=network-online.target 
 Before=firewalla.service
 
