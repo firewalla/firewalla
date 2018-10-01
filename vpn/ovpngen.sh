@@ -38,6 +38,14 @@ if [ -f ~/ovpns/.ovpn.cn ]; then
   ./revoke-full $PREVIOUS_CN
   sudo cp keys/crl.pem /etc/openvpn/crl.pem
   sudo chmod 644 /etc/openvpn/crl.pem
+else
+  # Invalidate all previous client profiles
+  cat /etc/openvpn/easy-rsa/keys/index.txt | grep "^V" | grep fishboneVPN1 | cut -d/ -f7 | cut -d= -f2 | while read -r line; do
+    echo "revoke legacy CN: $line"
+    ./revoke-full $line
+  done
+  sudo cp keys/crl.pem /etc/openvpn/crl.pem
+  sudo chmod 644 /etc/openvpn/crl.pem
 fi
 echo "build key pass"
 #./build-key-pass $NAME
