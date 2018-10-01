@@ -706,14 +706,15 @@ class CategoryUpdater {
     const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`
     const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`
 
-    await exec(cmdDeleteOutgoingRule)
-    await exec(cmdDeleteIncomingRule)
-    await exec(cmdDeleteOutgoingTCPRule)
-    await exec(cmdDeleteIncomingTCPRule)
-    await exec(cmdDeleteOutgoingRule6)
-    await exec(cmdDeleteIncomingRule6)
-    await exec(cmdDeleteOutgoingTCPRule6)
-    await exec(cmdDeleteIncomingTCPRule6)
+    // a workaround to ignore execution errors
+    await exec(cmdDeleteOutgoingRule).catch(() => {})
+    await exec(cmdDeleteIncomingRule).catch(() => {})
+    await exec(cmdDeleteOutgoingTCPRule).catch(() => {})
+    await exec(cmdDeleteIncomingTCPRule).catch(() => {})
+    await exec(cmdDeleteOutgoingRule6).catch(() => {})
+    await exec(cmdDeleteIncomingRule6).catch(() => {})
+    await exec(cmdDeleteOutgoingTCPRule6).catch(() => {})
+    await exec(cmdDeleteIncomingTCPRule6).catch(() => {})
   }
 
   // This function requires the mac ipset has already been created
