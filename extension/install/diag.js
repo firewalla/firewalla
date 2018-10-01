@@ -81,7 +81,7 @@ class FWDiag {
     const data = await this.prepareData(payload);
     if(data.gw) {
       const options = {
-        uri: `https://diag.firewalla.com/device/${data.gw}`,
+        uri: `${fconfig.firewallaDiagServerURL}/${data.gw}` || `https://api.firewalla.com/diag/api/v1/device/${data.gw}`,
         method: 'POST',
         json: data
       }
