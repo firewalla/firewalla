@@ -2532,7 +2532,7 @@ class netBot extends ControllerBot {
           }
           
           while(new Date() / 1000 < begin + timeout) {
-            let secondsLeft =  (begin + timeout) - new Date() / 1000
+            const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
             log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
             running = await (spooferManager.isSpoofRunning())
             if(running) {
