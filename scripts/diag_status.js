@@ -11,7 +11,7 @@ program.parse(process.argv);
 
 if(!program.event || !program.message) {
   console.log("parameters event and message are required");
-  exit(0);
+  process.exit(1);
 }
 
 (async () => {
