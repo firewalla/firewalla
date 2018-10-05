@@ -20,4 +20,4 @@ if(!program.event || !program.message) {
     msg: program.message
   });
   process.exit(0);
-})
+})();
