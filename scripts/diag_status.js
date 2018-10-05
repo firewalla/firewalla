@@ -1,6 +1,7 @@
 'use strict'
 
 const fwDiag = require("../extension/install/diag.js");
+const program = require('commander');
 
 program.version('0.0.1')
   .option('--event [event]', 'event')
