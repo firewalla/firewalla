@@ -173,7 +173,9 @@ module.exports = class {
         if (this.instanceName == null) {
             this.instanceName = "server";
         }
-        this.needRestart = needRestart || false;
+        if (needRestart === true) {
+            this.needRestart = true;
+        }
         var mydns = sysManager.myDNS()[0]; 
         if (mydns == null) {
             mydns = "8.8.8.8"; // use google DNS as default

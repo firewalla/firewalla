@@ -143,14 +143,16 @@ class IPv6DiscoverySensor extends Sensor {
                  cb();
                  });
               */
-              let _host = macHostMap[mac];
-              if (_host) {
-                _host.push(v6addr);
-              } else {
-                _host = [v6addr];
-                macHostMap[mac]=_host;
+              if (parts.length >= 6 && parts[5].toUpperCase() !== "STALE") {
+                let _host = macHostMap[mac];
+                if (_host) {
+                  _host.push(v6addr);
+                } else {
+                  _host = [v6addr];
+                  macHostMap[mac]=_host;
+                }
+                cb()
               }
-              cb()
             }
           } else {
             cb();
