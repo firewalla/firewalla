@@ -1085,7 +1085,13 @@ module.exports = class DNSMASQ {
       if(!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      await this.stop(); // make sure iptables rules are also stopped..
+      if (this.dhcpMode) {
+        // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
+        log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
+        await this._remove_all_iptables_rules();
+      } else {
+        await this.stop(); // make sure iptables rules are also stopped..
+      }
       bone.log("error", {
         version: sysManager.version(),
         type: 'DNSMASQ CRASH',
