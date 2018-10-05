@@ -66,7 +66,7 @@ echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
-$HOME/firewalla/scripts/diaglog -e "MAINSTART" -m "Main starting $branch $current_tag "
+node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
