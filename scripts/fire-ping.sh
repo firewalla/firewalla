@@ -37,10 +37,19 @@ for i in `seq 1 10`; do
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
     else
-      echo "Ping Failed"
-      /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
-      sleep 1
-      touch /tmp/watchdog 
+      BACKUP_DOMAIN="firewalla.com"
+      if [ $((i % 2)) -eq 0 ]; then
+        BACKUP_DOMAIN="github.com"
+      fi
+      echo "Ping gateway failed. Trying backup domain $BACKUP_DOMAIN..."
+      if ping -w 3 -c 1 $BACKUP_DOMAIN &> /dev/null 
+      then
+        exit 0
+      else
+        /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
+        sleep 1
+        touch /tmp/watchdog 
+      fi
     fi
 done
 
