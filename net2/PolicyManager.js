@@ -410,10 +410,11 @@ module.exports = class {
   }
 
   async vpnClient(host, policy) {
+    const updatedPolicy = JSON.parse(JSON.stringify(policy));
     const result = await host.vpnClient(policy);
     if (policy.state === true && !result) {
-      policy.state = false;
-      host.setPolicy("vpnClient", policy);
+      updatedPolicy.state = false;
+      host.setPolicy("vpnClient", updatedPolicy);
     }
   }
 
@@ -434,22 +435,23 @@ module.exports = class {
           log.error("PolicyManager:VPN", "VPN Not avaliable");
           return;
         }
+        const updatedConfig = JSON.parse(JSON.stringify(config));
         if (config.state == true) {
           vpnManager.start((err, external, port, serverNetwork, localPort) => {
             if (err != null) {
-              config.state = false;
-              host.setPolicy("vpn", config);
+              updatedConfig.state = false;
+              host.setPolicy("vpn", updatedConfig);
             } else {
-              config.serverNetwork = serverNetwork;
-              config.localPort = localPort;
+              updatedConfig.serverNetwork = serverNetwork;
+              updatedConfig.localPort = localPort;
               if (external) {
-                config.portmapped = true;
-                host.setPolicy("vpn", config, (err) => {
+                updatedConfig.portmapped = true;
+                host.setPolicy("vpn", updatedConfig, (err) => {
                   host.setPolicy("vpnPortmapped", true);
                 });
               } else {
-                config.portmapped = false;
-                host.setPolicy("vpn", config, (err) => {
+                updatedConfig.portmapped = false;
+                host.setPolicy("vpn", updatedConfig, (err) => {
                   host.setPolicy("vpnPortmapped", false);
                 });
               }

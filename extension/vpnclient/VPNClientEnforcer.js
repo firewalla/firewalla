@@ -57,12 +57,14 @@ class VPNClientEnforcer {
           const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
           if (mode.isDHCPModeOn()) {
-            if (host.ipv4Addr && host.spoofing) {
+            if (host.ipv4Addr) {
               try {
                 await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
               } catch (err) {
                 log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
               }
+            }
+            if (host.spoofing === "true") {
               log.info("Add vpn client routing rule for " + host.ipv4Addr);
               await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
             }
@@ -120,16 +122,16 @@ class VPNClientEnforcer {
         case "dhcp":
           const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
-          if (host.ipv4Addr !== oldHost.ipv4Addr || !mode.isDHCPModeOn() || !host.spoofing) {
+          if (host.ipv4Addr !== oldHost.ipv4Addr || !mode.isDHCPModeOn() || host.spoofing === "false") {
             // policy routing rule should be removed anyway if ip address is changed or dhcp mode is not enabled
             // or host is not monitored
             try {
-              await routing.removePolicyRoutingRule(oldhost.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, VPN_CLIENT_RULE_TABLE);
             } catch (err) {
               log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
             }
           }
-          if (mode.isDHCPModeOn() && host.spoofing) {
+          if (mode.isDHCPModeOn() && host.spoofing === "true") {
             await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
           }
           this.enabledHosts[mac] = host;
