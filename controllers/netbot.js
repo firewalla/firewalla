@@ -67,6 +67,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
+const writeFileAsync = util.promisify(fs.writeFile);
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -2862,6 +2863,21 @@ class netBot extends ControllerBot {
     }
     case "revokeProToken": {
       tokenManager.revokeToken(gid);
+      break;
+    }
+    case "saveTextFile": {
+      const content = msg.data.value.content;
+      const path = msg.data.value.path;
+      if (!path || path === "") {
+        this.simpleTxData(msg, {}, "path should be specified", callback);
+      } else {
+        (async () => {
+          await writeFileAsync(path, content, 'utf8');
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+      }
       break;
     }
     case "saveRSAPublicKey": {
