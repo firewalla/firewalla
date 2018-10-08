@@ -53,12 +53,50 @@ class OpenVPNClient extends VPNClient {
       throw "ovpnPath is not set";
     if (fs.existsSync(ovpnPath)) {
       this.ovpnPath = ovpnPath;
+      await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
     if (password) {
       // update password in file if required
       const cmd = util.format("echo %s > %s", password, PASSWORD_FILE);
       await execAsync(cmd);
     }
+  }
+
+  async _reviseProfile(ovpnPath) {
+    const cmd = "openvpn --version | head -n 1 | awk '{print $2}'";
+    const result = await execAsync(cmd);
+    const version = result.stdout;
+    let content = await readFileAsync(ovpnPath, 'utf8');
+    let revisedContent = content;
+    if (version.startsWith("2.3.")) {
+      const lines = content.split("\n");
+      lines.forEach((line) => {
+        const options = line.split(/\s+/);
+        const option = options[0];
+        switch (option) {
+          case "compress":
+            // OpenVPN 2.3.x does not support 'compress' option
+            if (options.length > 1) {
+              const algorithm = options[1];
+              if (algorithm !== "lzo") {
+                throw util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm);
+              } else {
+                revisedContent = revisedContent.replace(/compress\s+lzo/g, "comp-lzo");
+              }
+            } else {
+              // turn off compression, set 'comp-lzo' to no
+              revisedContent = revisedContent.replace(/compress/g, "comp-lzo no");
+            }
+            break;
+          default:
+        }
+      })
+    }
+    if (version.startsWith("2.4.")) {
+      // 'comp-lzo' is deprecated in 2.4.x
+      revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
+    }
+    await writeFileAsync(ovpnPath, revisedContent, 'utf8');
   }
 
   async start() {
