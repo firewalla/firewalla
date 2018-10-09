@@ -189,6 +189,50 @@ class netBot extends ControllerBot {
     }
   }
 
+  _deviceOffline(ip, value, callback) {
+    log.info("_deviceOffline", ip, value);
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy('deviceOffline', value, (err, data) => {
+          if (err == null) {
+            if (callback != null) {
+              callback(null, "Success");
+            }
+          } else {
+            if (callback != null) {
+              callback(err, "Unable to change device offline config to ip " + ip);
+            }
+          }
+        });
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy('deviceOffline', value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success:" + ip);
+                } else {
+                  if (callback != null)
+                    callback(err, "Unable to change device offline config to ip " + ip)
+
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to change device offline config to ip " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "Host not found");
+        }
+      });
+    }
+  }
+
   _block(ip, blocktype, value, callback) {
     log.info("_block", ip, blocktype, value);
     if (ip === "0.0.0.0") {
@@ -1036,6 +1080,11 @@ class netBot extends ControllerBot {
               break;
             case "devicePresence":
               this._devicePresence(msg.target, msg.data.value.devicePresence, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "deviceOffline":
+              this._deviceOffline(msg.target, msg.data.value.deviceOffline, (err, obj) => {
                 cb(err);
               });
               break;
@@ -2588,7 +2637,7 @@ class netBot extends ControllerBot {
           }
           
           while(new Date() / 1000 < begin + timeout) {
-            let secondsLeft =  (begin + timeout) - new Date() / 1000
+            const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
             log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
             running = await (spooferManager.isSpoofRunning())
             if(running) {

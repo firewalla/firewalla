@@ -6,6 +6,7 @@
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL":"https://firewalla.encipher.io/license/api/v1",
+  "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
