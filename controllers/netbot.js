@@ -724,11 +724,11 @@ class netBot extends ControllerBot {
           if (msg.autoblock) {
             data.category = "com.firewalla.category.autoblockalarm";
           } else {
-            if (data.managementType === "") {
+            if (msg.managementType === "") {
               // default category
               data.category = "com.firewalla.category.alarm";
             } else {
-              data.category = "com.firewalla.category.alarm." + data.managementType;
+              data.category = "com.firewalla.category.alarm." + msg.managementType;
             }
           }
 
