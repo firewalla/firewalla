@@ -40,6 +40,10 @@ class Alarm {
     return;
   }
 
+  getManagementType() {
+    return "";
+  }
+
   getNotificationCategory() {
     return "NOTIF_" + this.getI18NCategory();
   }
@@ -139,6 +143,10 @@ class DeviceBackOnlineAlarm extends Alarm {
     super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
   }
 
+  getManagementType() {
+    return "info";
+  }
+
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
@@ -147,6 +155,10 @@ class DeviceBackOnlineAlarm extends Alarm {
 class DeviceOfflineAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
+  }
+
+  getManagementType() {
+    return "info";
   }
 
   keysToCompareForDedup() {

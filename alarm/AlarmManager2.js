@@ -286,7 +286,8 @@ module.exports = class {
           aid: alarm.aid,
           alarmNotifType:alarm.notifType,
           alarmType: alarm.type,
-          testing: alarm["p.monkey"]
+          testing: alarm["p.monkey"],
+          managementType: alarm.getManagementType()
         };
 
         if(alarm.result_method === "auto") {
