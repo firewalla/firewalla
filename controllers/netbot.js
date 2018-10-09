@@ -724,7 +724,12 @@ class netBot extends ControllerBot {
           if (msg.autoblock) {
             data.category = "com.firewalla.category.autoblockalarm";
           } else {
-            data.category = "com.firewalla.category.alarm";
+            if (data.managementType === "") {
+              // default category
+              data.category = "com.firewalla.category.alarm";
+            } else {
+              data.category = "com.firewalla.category.alarm." + data.managementType;
+            }
           }
 
           // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
