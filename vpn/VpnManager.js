@@ -335,9 +335,11 @@ module.exports = class {
         return "10." + seg1 + "." + seg2 + ".0";
     }
 
-    getOvpnFile(clientname, password, regenerate, callback) {
+    getOvpnFile(clientname, password, regenerate, compressAlg, callback) {
         let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
         let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
+        if (compressAlg == null)
+            compressAlg = "";
 
         log.info("Reading ovpn file", ovpn_file,ovpn_password,regenerate);
         
@@ -372,8 +374,8 @@ module.exports = class {
             
             const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync", 
-                fHome, vpnLockFile, clientname, password, ip, this.localPort, originalName);
+            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s'; sync", 
+                fHome, vpnLockFile, clientname, password, ip, this.localPort, originalName, compressAlg);
             log.info("VPNManager:GEN", cmd);
             this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
                 if (err) {

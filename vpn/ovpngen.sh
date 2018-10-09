@@ -2,7 +2,7 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-# ovpngen.sh <client name> <keypassword> <public ip> <local port> <original name>
+# ovpngen.sh <client name> <keypassword> <public ip> <local port> <original name> <compress algorithm>
 
 NAME=$1
 echo "Please enter a Name for the Client:"
@@ -17,6 +17,9 @@ sed -i "s/LOCAL_PORT/$LOCAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
 
 ORIGINAL_NAME=$5
 : ${ORIGINAL_NAME:=$NAME}
+
+COMPRESS_ALG=$6
+: ${COMPRESS_ALG=""}
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
@@ -47,6 +50,24 @@ else
   sudo cp keys/crl.pem /etc/openvpn/crl.pem
   sudo chmod 644 /etc/openvpn/crl.pem
 fi
+
+# create client config file in client-conf-dir
+if [[ "x$COMPRESS_ALG" == "x" ]]; then
+  sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
+  sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/$NAME
+  sudo chmod 644 /etc/openvpn/client_conf/$NAME
+else
+  if [[ $COMPRESS_ALG == "lzo" ]]; then
+    sed 's/COMP_LZO_OPT/comp-lzo/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
+    sed -i 's/COMPRESS_OPT/compress lzo/' /etc/openvpn/client_conf/$NAME
+    sudo chmod 644 /etc/openvpn/client_conf/$NAME
+  else
+    sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
+    sed -i 's/COMPRESS_OPT/compress '$COMPRESS_ALG'/' /etc/openvpn/client_conf/$NAME
+    sudo chmod 644 /etc/openvpn/client_conf/$NAME
+  fi
+fi
+
 echo "build key pass"
 #./build-key-pass $NAME
 ./pkitool $NAME
@@ -112,7 +133,9 @@ echo "</tls-auth>" >> $NAME$FILEEXT
 cp /etc/openvpn/easy-rsa/keys/$NAME$FILEEXT ~/ovpns/$NAME$FILEEXT
 sudo chmod 600 -R /etc/openvpn
 sudo chmod 777 /etc/openvpn
+sudo chmod 777 /etc/openvpn/client_conf
 sudo chmod 644 /etc/openvpn/crl.pem
+sudo chmod 644 /etc/openvpn/client_conf/*
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
 echo $2 > ~/ovpns/$NAME$FILEEXT$PASSEXT

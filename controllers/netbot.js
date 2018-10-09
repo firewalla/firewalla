@@ -1429,7 +1429,10 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-
+        let compAlg = "";
+        if (msg.data.value) {
+          compAlg = compAlg || msg.data.value.compress;
+        }
         this.hostManager.loadPolicy((err, data) => {
           let datamodel = {
             type: 'jsonmsg',
@@ -1449,7 +1452,7 @@ class netBot extends ControllerBot {
                 log.error("Failed to configure VPN", err);
                 this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
               } else {
-                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
+                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, (err, ovpnfile, password) => {
                   if (err == null) {
                     datamodel.code = 200;
                     datamodel.data = {
