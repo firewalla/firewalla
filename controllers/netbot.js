@@ -124,6 +124,8 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
+const config = require('../net2/config.js');
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1382,6 +1384,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
       }
+      break;
+    case "userConfig":
+      (async () => {
+        const updatedPart = msg.data.value || {};
+        await config.updateUserConfig(updatedPart);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
       break;
     default:
         this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
