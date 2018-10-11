@@ -213,6 +213,10 @@ class NmapSensor extends Sensor {
     return Promise.all(this.networkRanges.map((range) => {
 
       log.info("Scanning network", range, "to detect new devices...");
+      if (range.endsWith('/8')) {
+        log.info("Subnet " + range + " contains too many ip addresses to scan, skip it.")
+        return;
+      }
 
       let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
       if (fastMode === true) {
