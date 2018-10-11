@@ -103,7 +103,7 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
-const defaultOvpnClientProfile = f.getUserHome() + "/.vpnclient.ovpn";
+const defaultOvpnProfileId = "ovpn_client"
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -2529,9 +2529,9 @@ module.exports = class HostManager {
     if (state === true) {
       switch (policy.type) {
         case "openvpn":
-          const options = {ovpnPath: defaultOvpnClientProfile};
+          const options = {profileId: defaultOvpnProfileId};
           if (policy.openvpn) {
-            options.ovpnPath = policy.openvpn.profilePath || defaultOvpnClientProfile;
+            options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
             if (policy.openvpn.password)
               options.password = policy.openvpn.password;
           }

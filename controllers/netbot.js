@@ -124,8 +124,6 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
-const config = require('../net2/config.js');
-
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -1388,7 +1386,7 @@ class netBot extends ControllerBot {
     case "userConfig":
       (async () => {
         const updatedPart = msg.data.value || {};
-        await config.updateUserConfig(updatedPart);
+        await fc.updateUserConfig(updatedPart);
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
@@ -2933,19 +2931,23 @@ class netBot extends ControllerBot {
       tokenManager.revokeToken(gid);
       break;
     }
-    case "saveTextFile": {
+    case "saveOvpnProfile": {
       const content = msg.data.value.content;
-      const path = msg.data.value.path;
-      if (!path || path === "") {
-        this.simpleTxData(msg, {}, "path should be specified", callback);
-      } else {
-        (async () => {
-          await writeFileAsync(path, content, 'utf8');
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
+      let profileId = msg.data.value.profileId;
+      if (!profileId || profileId === "") {
+        // use default profile id
+        profileId = "ovpn_client";
       }
+      (async () => {
+        const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+        const cmd = "mkdir -p " + dirPath;
+        await exec(cmd);
+        const filePath = dirPath + "/" + profileId + ".ovpn";
+        await writeFileAsync(filePath, content, 'utf8');
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      }) 
       break;
     }
     case "saveRSAPublicKey": {
