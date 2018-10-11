@@ -310,7 +310,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
 
-              fwDiag.submitInfo({
+              await fwDiag.submitInfo({
                 event: "PAIREND",
                 msg: "Pairing Ended",
                 gidPrefix: gidPrefix
@@ -386,7 +386,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
 
-              fwDiag.submitInfo({
+              await fwDiag.submitInfo({
                 event: "PAIREND",
                 msg: "Pairing Ended",
                 gidPrefix: gidPrefix
