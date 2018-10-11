@@ -33,8 +33,6 @@ const SERVICE_NAME = "openvpn_client";
 const SERVICE_TEMPLATE_FILE = `${__dirname}/openvpn_client.service.template`;
 const SERVICE_FILE = `${__dirname}/${SERVICE_NAME}.service`;
 
-const PASSWORD_FILE = f.getUserHome() + "/.vpnclient.password";
-
 const routing = require('../routing/routing.js');
 
 class OpenVPNClient extends VPNClient {
@@ -47,19 +45,32 @@ class OpenVPNClient extends VPNClient {
   }
 
   async setup(options) {
-    const ovpnPath = options["ovpnPath"];
+    const profileId = options["profileId"];
     const password = options["password"]; // password is optional
-    if (!ovpnPath)
-      throw "ovpnPath is not set";
+    if (!profileId)
+      throw "profileId is not set";
+    this.profileId = profileId;
+    const ovpnPath = this._getProfilePath(profileId);
     if (fs.existsSync(ovpnPath)) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
     if (password) {
       // update password in file if required
-      const cmd = util.format("echo %s > %s", password, PASSWORD_FILE);
+      const passwordPath = this._getPasswordPath(profileId);
+      const cmd = util.format("echo %s > %s", password, passwordPath);
       await execAsync(cmd);
     }
+  }
+
+  _getProfilePath(profileId) {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + profileId + ".ovpn";
+    return path;
+  }
+
+  _getPasswordPath(profileId) {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + profileId + ".password";
+    return path;
   }
 
   async _reviseProfile(ovpnPath) {
@@ -105,7 +116,8 @@ class OpenVPNClient extends VPNClient {
     }
     let template = await readFileAsync(SERVICE_TEMPLATE_FILE, 'utf8');
     template = template.replace(/OVPN_CLIENT_CONF/g, this.ovpnPath);
-    template = template.replace(/OVPN_PASSWORD_FILE/g, PASSWORD_FILE);
+    const passwordPath = this._getPasswordPath(this.profileId);
+    template = template.replace(/OVPN_PASSWORD_FILE/g, passwordPath);
     await writeFileAsync(SERVICE_FILE, template, 'utf8');
     let cmd = util.format("sudo cp %s /etc/systemd/system", SERVICE_FILE);
     await execAsync(cmd);
