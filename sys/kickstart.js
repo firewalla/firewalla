@@ -423,7 +423,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           fwDiag.submitInfo({
             event: "PAIRSTART",
             msg:"Pairing Ready",
-            expire: expireDate
+            expire: expireDate,
+            gidPrefix: gidPrefix
           }).catch((err) => {
             log.error("Failed to submit diag info", err);
           });
