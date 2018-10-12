@@ -2542,9 +2542,15 @@ module.exports = class HostManager {
               log.error("Failed to start vpn client");
               return false;
             }
-            const remoteIP = await ovpnClient.getRemoteIP();
-            const intf = await ovpnClient.getInterfaceName();
-            await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            let refreshRoutes = (async() => {
+                const remoteIP = await ovpnClient.getRemoteIP();
+                const intf = await ovpnClient.getInterfaceName();
+                await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            });
+            await refreshRoutes();
+            this.vpnClientRoutesTask = setInterval(() => {
+                refreshRoutes();
+            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
             return true;
           } catch (err) {
             log.error("Failed to start vpn client, ", err);
@@ -2560,6 +2566,10 @@ module.exports = class HostManager {
           try {
             await ovpnClient.stop();
             await vpnClientEnforcer.flushVPNClientRoutes();
+            if (this.vpnClientRoutesTask) {
+                clearInterval(this.vpnClientRoutesTask);
+                this.vpnClientRoutesTask = null;
+            }
             return true;
           } catch (err) {
             log.error("Failed to stop vpn client, ", err);  
