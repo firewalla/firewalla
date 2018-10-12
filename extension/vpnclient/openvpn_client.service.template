@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Restart=always
-ExecStart=/usr/sbin/openvpn --config OVPN_CLIENT_CONF --askpass OVPN_PASSWORD_FILE
+ExecStart=/usr/sbin/openvpn --config OVPN_CLIENT_CONF --askpass OVPN_PASSWORD_FILE --script-security 2 --route-up /home/pi/firewalla/extension/vpnclient/ovpn_remove_pushed_routes.sh
 
 [Install]
 WantedBy=multi-user.target
