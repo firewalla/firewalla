@@ -68,6 +68,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
+const readdirAsync = util.promisify(fs.readdir);
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -1910,6 +1911,19 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, {}, err, callback);
             });
         });
+        break;
+      case "ovpnProfileIds":
+        (async () => {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const cmd = "mkdir -p " + dirPath;
+          await exec(cmd);
+          const files = await readdirAsync(dirPath);
+          const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+          const profileIds = ovpns.map(filename => filename.slice(0, filename.length - 5));
+          this.simpleTxData(msg, {"profileIds": profileIds}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
