@@ -363,21 +363,34 @@ class netBot extends ControllerBot {
     if (ip === "0.0.0.0") {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("vpnClient", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to start vpn client");
+        if (err == null) {
+          if (data && data.vpnClient) {
+            // vpnClient policy is updated by overlapping previous value
+            value = Object.assign({}, JSON.parse(data.vpnClient), value);
           }
-        });
+          this.hostManager.setPolicy("vpnClient", value, (err, data) => {
+            if (err == null) {
+              if (callback != null)
+                callback(null, "Success");
+            } else {
+              if (callback != null)
+                callback(err, "Unable to start vpn client");
+            }
+          });
+        } else {
+          if (callback != null)
+            callback(err, "Unable to start vpn client");
+        }
       });
     } else {
       // enable VPN client access on specific host
       this.hostManager.getHost(ip, (err, host) => {
         if (host != null) {
           host.loadPolicy((err, data) => {
+            if (data && data.vpnClient) {
+              // vpnClient policy is updated by overlapping previous value
+              value = Object.assign({}, JSON.parse(data.vpnClient), value);
+            }
             if (err == null) {
               host.setPolicy("vpnClient", value, (err, data) => {
                 if (err == null) {
