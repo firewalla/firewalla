@@ -68,7 +68,9 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
+const unlinkAsync = util.promisify(fs.unlink);
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -365,10 +367,6 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
-          if (data && data.vpnClient) {
-            // vpnClient policy is updated by overlapping previous value
-            value = Object.assign({}, JSON.parse(data.vpnClient), value);
-          }
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -388,10 +386,6 @@ class netBot extends ControllerBot {
       this.hostManager.getHost(ip, (err, host) => {
         if (host != null) {
           host.loadPolicy((err, data) => {
-            if (data && data.vpnClient) {
-              // vpnClient policy is updated by overlapping previous value
-              value = Object.assign({}, JSON.parse(data.vpnClient), value);
-            }
             if (err == null) {
               host.setPolicy("vpnClient", value, (err, data) => {
                 if (err == null) {
@@ -1912,15 +1906,27 @@ class netBot extends ControllerBot {
             });
         });
         break;
-      case "ovpnProfileIds":
+      case "ovpnProfiles":
         (async () => {
           const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
           const cmd = "mkdir -p " + dirPath;
           await exec(cmd);
           const files = await readdirAsync(dirPath);
           const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-          const profileIds = ovpns.map(filename => filename.slice(0, filename.length - 5));
-          this.simpleTxData(msg, {"profileIds": profileIds}, null, callback);
+          const profiles = await Promise.all(ovpns.map(async filename => {
+            const profileId = filename.slice(0, filename.length - 5);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            const profile = {profileId: profileId};
+            if (fs.existsSync(passwordPath)) {
+              const password = await readFileAsync(passwordPath, 'utf8');
+              if (password !== "dummy_ovpn_password") {
+                // a dummy place holder which indicates the profile is not password-protected
+                profile.password = password;
+              }
+            }
+            return profile;
+          }));
+          this.simpleTxData(msg, {"profiles": profiles}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
@@ -2961,6 +2967,7 @@ class netBot extends ControllerBot {
     case "saveOvpnProfile": {
       const content = msg.data.value.content;
       let profileId = msg.data.value.profileId;
+      const password = msg.data.value.password;
       if (!profileId || profileId === "") {
         // use default profile id
         profileId = "ovpn_client";
@@ -2969,12 +2976,40 @@ class netBot extends ControllerBot {
         const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
         const cmd = "mkdir -p " + dirPath;
         await exec(cmd);
-        const filePath = dirPath + "/" + profileId + ".ovpn";
-        await writeFileAsync(filePath, content, 'utf8');
+        const profilePath = dirPath + "/" + profileId + ".ovpn";
+        await writeFileAsync(profilePath, content, 'utf8');
+        if (password) {
+          const passwordPath = dirPath + "/" + profileId + ".password";
+          await writeFileAsync(passwordPath, password, 'utf8');
+        }
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
       }) 
+      break;
+    }
+    case "deleteOvpnProfile": {
+      const profileId = msg.data.value.profileId;
+      (async () => {
+        if (!profileId || profileId === "") {
+          this.simpleTxData(msg, {}, "profile id is not specified", callback);
+        } else {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const profilePath = dirPath + "/" + profileId + ".ovpn";
+          if (fs.existsSync(profilePath)) {
+            await unlinkAsync(profilePath);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            if (fs.existsSync(passwordPath)) {
+              await unlinkAsync(passwordPath);
+            }
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+          }
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
       break;
     }
     case "saveRSAPublicKey": {
