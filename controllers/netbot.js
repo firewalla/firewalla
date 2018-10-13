@@ -2967,7 +2967,8 @@ class netBot extends ControllerBot {
     case "saveOvpnProfile": {
       const content = msg.data.value.content;
       let profileId = msg.data.value.profileId;
-      const password = msg.data.value.password;
+      // at least create dummy password file anyway
+      const password = msg.data.value.password || "dummy_ovpn_password";
       if (!profileId || profileId === "") {
         // use default profile id
         profileId = "ovpn_client";
@@ -2978,10 +2979,8 @@ class netBot extends ControllerBot {
         await exec(cmd);
         const profilePath = dirPath + "/" + profileId + ".ovpn";
         await writeFileAsync(profilePath, content, 'utf8');
-        if (password) {
-          const passwordPath = dirPath + "/" + profileId + ".password";
-          await writeFileAsync(passwordPath, password, 'utf8');
-        }
+        const passwordPath = dirPath + "/" + profileId + ".password";
+        await writeFileAsync(passwordPath, password, 'utf8');
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
