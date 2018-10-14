@@ -2532,8 +2532,6 @@ module.exports = class HostManager {
           const options = {profileId: defaultOvpnProfileId};
           if (policy.openvpn) {
             options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
-            if (policy.openvpn.password)
-              options.password = policy.openvpn.password;
           }
           try {
             await ovpnClient.setup(options);
@@ -2564,6 +2562,11 @@ module.exports = class HostManager {
       switch (policy.type) {
         case "openvpn":
           try {
+            const options = {profileId: defaultOvpnProfileId};
+            if (policy.openvpn) {
+              options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
+            }
+            await ovpnClient.setup(options);
             await ovpnClient.stop();
             await vpnClientEnforcer.flushVPNClientRoutes();
             if (this.vpnClientRoutesTask) {
