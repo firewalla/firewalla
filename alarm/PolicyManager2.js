@@ -171,12 +171,27 @@ class PolicyManager2 {
               await (domainBlock.incrementalUpdateIPMapping(domain, {}))
               return
             } 
+
+            const matchBlockSetDomain = l.match(/ipmapping:blockset:({^:}*):domain:(.*)/);
+            if (matchBlockSetDomain) {
+              const blockSet = matchBlockSetDomain[1];
+              const domain = matchBlockSetDomain[2];
+              await (domainBlock.incrementalUpdateIPMapping(domain, {blockSet: blockSet}))
+              return;
+            }
             
             const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
             if(matchExactDomain) {
               const domain = matchExactDomain[1]
               await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
               return
+            }
+
+            const matchBlockSetExactDomain = l.match(/ipmapping:blockset:({^:}*):exactdomain:(.*)/);
+            if (matchBlockSetExactDomain) {
+              const blockSet = matchBlockSetExactDomain[1];
+              const domain = matchBlockSetExactDomain[2];
+              await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1, blockSet: blockSet}));
             }
           })
         })().catch((err) => {

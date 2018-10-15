@@ -115,10 +115,16 @@ class DomainBlock {
       return this.externalMapping
     }
 
+    let prefix = 'ipmapping';
+    if (options.blockSet) {
+      // create separate ip mapping set for specific block set
+      prefix = `ipmapping:blockset:${options.blockSet}`;
+    }
+
     if(options.exactMatch) {
-      return `ipmapping:exactdomain:${domain}`
+      return `${prefix}:exactdomain:${domain}`
     } else {
-      return `ipmapping:domain:${domain}`
+      return `${prefix}:domain:${domain}`
     }    
   }
 
@@ -309,7 +315,10 @@ class DomainBlock {
       for(let addr in set) {
         if(!existingSet[addr]) {
           await (rclient.saddAsync(key,addr))
-          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
+          let blockSet = "blocked_domain_set";
+          if (options.blockSet)
+            blockSet = options.blockSet;
+          await (Block.block(addr, blockSet).catch((err) => undefined))
         }
       }
 
