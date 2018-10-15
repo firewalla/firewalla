@@ -167,7 +167,7 @@ class PolicyScheduler {
     const timer = policyTimers[pid]
     const job = runningCronJobs[pid]
 
-    if(!job) {
+    if(job) {
       job.stop()
       delete runningCronJobs[pid]
     }    
