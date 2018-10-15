@@ -310,10 +310,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
 
-              fwDiag.submitInfo({
+              await fwDiag.submitInfo({
                 event: "PAIREND",
                 msg: "Pairing Ended",
                 gidPrefix: gidPrefix
+              }).catch((err) => {
+                log.error("Failed to submit diag info", err);
               });
 
               setTimeout(()=> {
@@ -332,6 +334,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               event: "PAIREND",
               msg: "Pairing Ended",
               gidPrefix: gidPrefix
+            }).catch((err) => {
+              log.error("Failed to submit diag info", err);
             });
 
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
@@ -350,6 +354,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             msg:"Pairing Ready",
             expire: expireDate,
             gidPrefix: gidPrefix
+          }).catch((err) => {
+            log.error("Failed to submit diag info", err);
           });
           
         } else {
@@ -380,10 +386,12 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
               platform.turnOffPowerLED();
 
-              fwDiag.submitInfo({
+              await fwDiag.submitInfo({
                 event: "PAIREND",
                 msg: "Pairing Ended",
                 gidPrefix: gidPrefix
+              }).catch((err) => {
+                log.error("Failed to submit diag info", err);
               });
 
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
@@ -399,6 +407,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               event: "PAIREND",
               msg: "Pairing Ended",
               gidPrefix: gidPrefix
+            }).catch((err) => {
+              log.error("Failed to submit diag info", err);
             });
 
             require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
@@ -413,7 +423,10 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           fwDiag.submitInfo({
             event: "PAIRSTART",
             msg:"Pairing Ready",
-            expire: expireDate
+            expire: expireDate,
+            gidPrefix: gidPrefix
+          }).catch((err) => {
+            log.error("Failed to submit diag info", err);
           });
 
           callback(null, true);
