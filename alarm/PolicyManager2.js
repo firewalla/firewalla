@@ -58,6 +58,9 @@ const ht = new HostTool()
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const DomainIPTool = require('../control/DomainIPTool.js');
+const domainIPTool = new DomainIPTool();
+
 const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
@@ -163,7 +166,7 @@ class PolicyManager2 {
 
       case "incrementalUpdate": {
         return async(() => {
-          const list = await (domainBlock.getAllIPMappings())
+          const list = await (domainIPTool.getAllIPMappings())
           list.forEach((l) => {
             const matchDomain = l.match(/ipmapping:domain:(.*)/)
             if(matchDomain) {
@@ -697,7 +700,7 @@ class PolicyManager2 {
   // cleanup before use
   cleanupPolicyData() {
     return async(() => {
-      await (domainBlock.removeAllDomainIPMapping())
+      await (domainIPTool.removeAllDomainIPMapping())
     })() 
   }
 
