@@ -153,7 +153,7 @@ class PolicyManager2 {
             await(this.enforce(policy))
           }
         })().catch((err) => {
-          log.error("unenforce policy failed:" + err)
+          log.error("reenforce policy failed:" + err)
         }).finally(() => {
           log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
           done()
