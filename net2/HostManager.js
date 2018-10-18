@@ -1517,6 +1517,7 @@ module.exports = class HostManager {
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
+    json.branch = f.getBranch();
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
