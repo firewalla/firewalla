@@ -15,7 +15,7 @@ server SERVER_NETWORK 255.255.255.0
 # Add route to Client routing table for the OpenVPN Subnet
 #push "route SERVER_NETWORK 255.255.255.0"
 # your local subnet
-push "route LOCAL_IP 255.255.255.0"
+#push "route LOCAL_IP 255.255.255.0"
 # Set your primary domain name server address to Google DNS 8.8.8.8
 push "dhcp-option DNS MY_DNS"
 # Override the Client default gateway by using 0.0.0.0/1 and

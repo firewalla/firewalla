@@ -70,6 +70,13 @@ function _encryptAES(key, buffer) {
   return crypted;
 }
 
+function _encryptAESStream(key) {
+  const iv = new Buffer(16);
+  iv.fill(0);
+  const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(key), iv);
+  return cipher;
+}
+
 function _decryptAES(key, buffer) {
   const iv = new Buffer(16);
   iv.fill(0);
@@ -79,13 +86,20 @@ function _decryptAES(key, buffer) {
   return decrypted;
 }
 
+function _decryptAESStream(key) {
+  const iv = new Buffer(16);
+  iv.fill(0);
+  const decipher = crypto.createDecipheriv("aes-256-cbc", Buffer.from(key), iv);
+  return decipher;
+}
+
 async function exportDataPartition(partition, encryptionIdentity) {
   await _ensureMigrationFolder();
   const partitionFilePath = _getPartitionFilePath(partition);
-  const content = await redisMigrator.export(partition); // content is buffer
   if (!encryptionIdentity) {
     // encryption is not applied
-    await writeFileAsync(partitionFilePath, content);
+    const partitionFileStream = fs.createWriteStream(partitionFilePath);
+    await redisMigrator.export(partition, partitionFileStream);
   } else {
     const pubKey = await ssh.getRSAPEMPublicKey(encryptionIdentity);
     const partitionKeyFilePath = _getPartitionKeyFilePath(partition);
@@ -93,26 +107,28 @@ async function exportDataPartition(partition, encryptionIdentity) {
     if (pubKey !== null) {
       const encryptedPassword = crypto.publicEncrypt(pubKey, Buffer.from(password));
       await writeFileAsync(partitionKeyFilePath, encryptedPassword);
-      const encryptedContent = _encryptAES(password, content);
-      await writeFileAsync(partitionFilePath, encryptedContent);
+      const cipherStream = _encryptAESStream(password);
+      const partitionFileStream = fs.createWriteStream(partitionFilePath);
+      cipherStream.pipe(partitionFileStream);
+      await redisMigrator.export(partition, cipherStream);
     } else throw util.format("identity %s not found.", encryptionIdentity);
   }
 }
 
 async function importDataPartition(partition, encryptionIdentity) {
   const partitionFilePath = _getPartitionFilePath(partition);
-  let content = await readFileAsync(partitionFilePath); // content is buffer
+  let partitionInputStream = fs.createReadStream(partitionFilePath);
   if (encryptionIdentity) {
     const privKey = await ssh.getRSAPEMPrivateKey(encryptionIdentity);
     const partitionKeyFilePath = _getPartitionKeyFilePath(partition);
     const encryptedPassword = await readFileAsync(partitionKeyFilePath);
     if (privKey !== null) {
       const password = crypto.privateDecrypt(privKey, encryptedPassword);
-      content = _decryptAES(password, content);
+      const decipherStream = _decryptAESStream(password);
+      partitionInputStream = partitionInputStream.pipe(decipherStream);
     } else throw util.format("identity %s not found.", encryptionIdentity);
   }
-  // import content
-  await redisMigrator.import(content);
+  await redisMigrator.import(partitionInputStream);
 }
 
 async function transferDataPartition(host, partition, transferIdentity) {

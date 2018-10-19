@@ -68,6 +68,9 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const readdirAsync = util.promisify(fs.readdir);
+const unlinkAsync = util.promisify(fs.unlink);
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -123,8 +126,6 @@ const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
-
-const config = require('../net2/config.js');
 
 class netBot extends ControllerBot {
 
@@ -365,15 +366,20 @@ class netBot extends ControllerBot {
     if (ip === "0.0.0.0") {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("vpnClient", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to start vpn client");
-          }
-        });
+        if (err == null) {
+          this.hostManager.setPolicy("vpnClient", value, (err, data) => {
+            if (err == null) {
+              if (callback != null)
+                callback(null, "Success");
+            } else {
+              if (callback != null)
+                callback(err, "Unable to start vpn client");
+            }
+          });
+        } else {
+          if (callback != null)
+            callback(err, "Unable to start vpn client");
+        }
       });
     } else {
       // enable VPN client access on specific host
@@ -1388,7 +1394,7 @@ class netBot extends ControllerBot {
     case "userConfig":
       (async () => {
         const updatedPart = msg.data.value || {};
-        await config.updateUserConfig(updatedPart);
+        await fc.updateUserConfig(updatedPart);
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
@@ -1899,6 +1905,31 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, {}, err, callback);
             });
         });
+        break;
+      case "ovpnProfiles":
+        (async () => {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const cmd = "mkdir -p " + dirPath;
+          await exec(cmd);
+          const files = await readdirAsync(dirPath);
+          const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+          const profiles = await Promise.all(ovpns.map(async filename => {
+            const profileId = filename.slice(0, filename.length - 5);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            const profile = {profileId: profileId};
+            if (fs.existsSync(passwordPath)) {
+              const password = await readFileAsync(passwordPath, 'utf8');
+              if (password !== "dummy_ovpn_password") {
+                // a dummy place holder which indicates the profile is not password-protected
+                profile.password = password;
+              }
+            }
+            return profile;
+          }));
+          this.simpleTxData(msg, {"profiles": profiles}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
@@ -2933,19 +2964,51 @@ class netBot extends ControllerBot {
       tokenManager.revokeToken(gid);
       break;
     }
-    case "saveTextFile": {
+    case "saveOvpnProfile": {
       const content = msg.data.value.content;
-      const path = msg.data.value.path;
-      if (!path || path === "") {
-        this.simpleTxData(msg, {}, "path should be specified", callback);
-      } else {
-        (async () => {
-          await writeFileAsync(path, content, 'utf8');
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
+      let profileId = msg.data.value.profileId;
+      // at least create dummy password file anyway
+      const password = msg.data.value.password || "dummy_ovpn_password";
+      if (!profileId || profileId === "") {
+        // use default profile id
+        profileId = "ovpn_client";
       }
+      (async () => {
+        const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+        const cmd = "mkdir -p " + dirPath;
+        await exec(cmd);
+        const profilePath = dirPath + "/" + profileId + ".ovpn";
+        await writeFileAsync(profilePath, content, 'utf8');
+        const passwordPath = dirPath + "/" + profileId + ".password";
+        await writeFileAsync(passwordPath, password, 'utf8');
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      }) 
+      break;
+    }
+    case "deleteOvpnProfile": {
+      const profileId = msg.data.value.profileId;
+      (async () => {
+        if (!profileId || profileId === "") {
+          this.simpleTxData(msg, {}, "profile id is not specified", callback);
+        } else {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const profilePath = dirPath + "/" + profileId + ".ovpn";
+          if (fs.existsSync(profilePath)) {
+            await unlinkAsync(profilePath);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            if (fs.existsSync(passwordPath)) {
+              await unlinkAsync(passwordPath);
+            }
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+          }
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
       break;
     }
     case "saveRSAPublicKey": {

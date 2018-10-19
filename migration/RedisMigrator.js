@@ -21,6 +21,7 @@
  let instance = null;
 
  const bclient = require('../util/redis_manager.js').getBufferRedisClient();
+ const readline = require('readline');
 
  const partitionKeyMap = {
   "devices": [
@@ -101,51 +102,67 @@ class RedisMigrator extends DataMigrator {
     return instance;
   }
 
-  async _serializeRedisKeys(keyPattern) {
+  async _serializeRedisKey(key) {
     let result = "";
-    const keys = await bclient.keysAsync(keyPattern);
-    await Promise.all(keys.map(async key => {
-      const keyDump = await bclient.dumpAsync(key);
+    const keyDump = await bclient.dumpAsync(key);
+    if (keyDump !== null) {
       const ttl = await bclient.pttlAsync(key); // in milliseconds
       const record = {
         key: key.toString(),
         ttl: ttl,
-        value: JSON.parse(JSON.stringify(keyDump)).data
+        value: keyDump
       };
-      result = result + JSON.stringify(record) + "\n";
-    }));
+      result = JSON.stringify(record) + "\n";  
+    }
     return result;
   }
 
-  async _deserializeRedisKeys(dump) {
-    const records = dump.split("\n");
-    await Promise.all(records.map(async record => {
-      if (record !== "") {
-        const recordJson = JSON.parse(record);
-        const key = recordJson.key;
-        const ttl = Math.max(0, recordJson.ttl);
-        const value = Buffer.from(recordJson.value);
-        await bclient.restoreAsync(key, ttl, value, "REPLACE");
-      }
-    }));
-  }
-
-  async export(partition) {
-    const keyPatterns = partitionKeyMap[partition];
-    let dump = "";
-    if (keyPatterns !== null) {
-      await Promise.all(keyPatterns.map(async pattern => {
-        const serializedData = await this._serializeRedisKeys(pattern);
-        dump = dump + serializedData;
-      }));
+  async _deserializeRedisKey(record) {
+    if (record !== "") {
+      const recordJson = JSON.parse(record);
+      const key = recordJson.key;
+      const ttl = Math.max(0, recordJson.ttl);
+      const value = Buffer.from(recordJson.value.data);
+      await bclient.restoreAsync(key, ttl, value, "REPLACE");
     }
-    const buffer = Buffer.from(dump);
-    return buffer;
   }
 
-  async import(buffer) {
-    const dump = buffer.toString("utf8");
-    await this._deserializeRedisKeys(dump);
+  async export(partition, outputStream) {
+    const keyPatterns = partitionKeyMap[partition];
+    if (keyPatterns !== null) {
+      for (let i in keyPatterns) {
+        const pattern = keyPatterns[i];
+        const keys = await bclient.keysAsync(pattern);
+        log.info("Pattern: " + pattern + ", number of keys to dump: " + keys.length);
+        while (keys.length > 0) {
+          // concurrency limit
+          const keysBatch = keys.splice(0, 4);
+          await Promise.all(keysBatch.map(async key => {
+            const serializedData = await this._serializeRedisKey(key);
+            outputStream.write(Buffer.from(serializedData));
+          }));
+        }
+        if (global.gc)
+          global.gc();
+      }
+    }
+    outputStream.end();
+  }
+
+  async import(inputStream) {
+    const lineReader = readline.createInterface({
+      input: inputStream
+    });
+    return new Promise((resolve, reject) => {
+      lineReader.on('line', (line) => {
+        this._deserializeRedisKey(line);
+      });
+      lineReader.on('close', () => {
+        if (global.gc)
+          global.gc();
+        resolve();
+      })
+    })
   }
 }
 
