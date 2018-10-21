@@ -28,7 +28,9 @@ describe('Country', () => {
     it('should return the right countries for ip addresses', (done) => {
       let mappings = {
         "123.58.180.7": "CN",
-        "151.101.73.67": "US"
+        "151.101.73.67": "JP",
+        "97.64.107.97": "US",
+        "58.38.224.108": "CN"
       }
 
       for(let ip in mappings) {
