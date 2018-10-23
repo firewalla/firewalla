@@ -146,8 +146,14 @@ async function _update_nat(legacyIpSubnet, currentIpSubnet) {
   // currentIpSubnet is optional, if it is set to null, no updated rule will be appended
   // ip subnet should be like 192.168.218.0/24, which usually appears in source address in nat table
   let cmd = util.format("sudo iptables -S -t nat | grep -e '%s'", legacyIpSubnet);
-  const result = await execAsync(cmd);
-  if (result.stdout) {
+  let result = null;
+  try {
+    result = await execAsync(cmd);
+  } catch (err) {
+    log.warn("No legacy nat rule was found for " + legacyIpSubnet);
+    return;
+  }
+  if (result && result.stdout) {
     const rules = result.stdout.split('\n').filter(line => line.length !== 0);
     for (let i in rules) {
       const rule = rules[i];
