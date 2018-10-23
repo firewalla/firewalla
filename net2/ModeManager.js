@@ -144,7 +144,7 @@ function _enableSecondaryInterface() {
 
 async function _update_nat(legacyIpSubnet, currentIpSubnet) {
   // currentIpSubnet is optional, if it is set to null, no updated rule will be appended
-  // ip subnet should be like 192.168.218.0/24, which usually appears in source address in nat table
+  // ip subnet should be like 192.168.218.0/24, which usually appears in source/dest matcher in nat table
   let cmd = util.format("sudo iptables -S -t nat | grep -e '%s'", legacyIpSubnet);
   let result = null;
   try {
