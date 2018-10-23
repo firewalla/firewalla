@@ -38,6 +38,11 @@ const SysManager = require("../net2/SysManager.js")
 const sysManager = new SysManager()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance()
+const DomainUpdater = require('./DomainUpdater.js');
+const domainUpdater = new DomainUpdater();
+
+const DomainIPTool = require('./DomainIPTool.js');
+const domainIPTool = new DomainIPTool();
 
 let globalLock = false
 
@@ -50,7 +55,6 @@ function delay(t) {
 class DomainBlock {
 
   constructor() {
-
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -73,6 +77,7 @@ class DomainBlock {
       }
 
       await (this.syncDomainIPMapping(domain, options))
+      domainUpdater.registerUpdate(domain, options);
       if(!options.ignoreApplyBlock) {
         await (this.applyBlock(domain, options))
       }
@@ -90,8 +95,10 @@ class DomainBlock {
       }      
 
       if(!this.externalMapping) {
-        await (this.removeDomainIPMapping(domain, options))
-      }      
+        await (domainIPTool.removeDomainIPMapping(domain, options))
+      }
+
+      domainUpdater.unregisterUpdate(domain, options);
 
       if(!options.no_dnsmasq_entry) {
         await (dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined))
@@ -107,53 +114,11 @@ class DomainBlock {
       }
     })()
   }
-
-  getDomainIPMappingKey(domain, options) {
-    options = options || {}
-
-    if(this.externalMapping) {
-      return this.externalMapping
-    }
-
-    if(options.exactMatch) {
-      return `ipmapping:exactdomain:${domain}`
-    } else {
-      return `ipmapping:domain:${domain}`
-    }    
-  }
-
-  removeDomainIPMapping(domain, options) {
-    const key = this.getDomainIPMappingKey(domain, options)
-    return rclient.delAsync(key)
-  }
-
-  removeAllDomainIPMapping() {
-    const patternDomainKey = `ipmapping:domain:*`
-    const domainKeys = await (rclient.keysAsync(patternDomainKey))
-    if(domainKeys) {
-      domainKeys.forEach((key) => {
-        await (rclient.delAsync(key))
-      })
-    }
-
-    const patternExactDomainKey = `ipmapping:exactdomain:*`
-    const exactDomainKeys = await (rclient.keysAsync(patternExactDomainKey))
-    if(exactDomainKeys) {
-      exactDomainKeys.forEach((key) => {
-        await (rclient.delAsync(key))
-      })
-    }
-  }
-
-  getMappedIPAddresses(domain, options) {
-    const key = this.getDomainIPMappingKey(domain, options)
-    return rclient.smembersAsync(key)
-  }
   
   applyBlock(domain, options) {
     const blockSet = options.blockSet || "blocked_domain_set"
     return async(() => {
-      const addresses = await (this.getMappedIPAddresses(domain, options))
+      const addresses = await (domainIPTool.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
           await (Block.block(addr, blockSet).catch((err) => undefined))
@@ -166,7 +131,7 @@ class DomainBlock {
     const blockSet = options.blockSet || "blocked_domain_set"
 
     return async(() => {
-      const addresses = await (this.getMappedIPAddresses(domain, options))
+      const addresses = await (domainIPTool.getMappedIPAddresses(domain, options))
       if(addresses) {
         addresses.forEach((addr) => {
           await (Block.unblock(addr, blockSet).catch((err) => undefined))
@@ -244,10 +209,10 @@ class DomainBlock {
   syncDomainIPMapping(domain, options) {
     options = options || {}
 
-    const key = this.getDomainIPMappingKey(domain, options)
+    const key = domainIPTool.getDomainIPMappingKey(domain, options)
     
     return async(() => {
-      await (this.resolveDomain(domain))
+      await (this.resolveDomain(domain)) // this will resolve domain via dns and add entries into reverse dns directly
 
       let list = []
 
@@ -272,7 +237,7 @@ class DomainBlock {
 
     log.info("Incrementally updating blocking list for", domain)
 
-    const key = this.getDomainIPMappingKey(domain, options)
+    const key = domainIPTool.getDomainIPMappingKey(domain, options)
 
     return async(() => {
       const existing = await(rclient.existsAsync(key))
@@ -281,7 +246,7 @@ class DomainBlock {
         return
       }
       
-      await (this.resolveDomain(domain))
+      await (this.resolveDomain(domain)) // this will resolve domain via dns and add entries into reverse dns directly
 
       let set = {}
 
@@ -298,7 +263,7 @@ class DomainBlock {
         })
       }
 
-      const existingAddresses = await (this.getMappedIPAddresses(domain, options))
+      const existingAddresses = await (domainIPTool.getMappedIPAddresses(domain, options))
 
       let existingSet = {}
       existingAddresses.forEach((addr) => {
@@ -309,24 +274,12 @@ class DomainBlock {
       for(let addr in set) {
         if(!existingSet[addr]) {
           await (rclient.saddAsync(key,addr))
-          await (Block.block(addr, "blocked_domain_set").catch((err) => undefined))
+          let blockSet = "blocked_domain_set";
+          if (options.blockSet)
+            blockSet = options.blockSet;
+          await (Block.block(addr, blockSet).catch((err) => undefined))
         }
       }
-
-    })()
-  }
-
-  getAllIPMappings() {
-    return async(() => {
-      let list = await (rclient.keysAsync("ipmapping:*"))
-      return list
-    })()
-  }
-
-  removeAllIPMappings() {
-    return async(() => {
-      const list = await (this.getAllIPMappings())
-      return rclient.delAsync(list)
     })()
   }
 }
