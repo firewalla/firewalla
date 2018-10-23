@@ -104,6 +104,7 @@ function _disableSpoofMode() {
 
 function _enableSecondaryInterface() {
   return new Promise((resolve, reject) => {  
+    fConfig = require('./config.js').getConfig(true);
     secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask)=>{
       if (err == null) {
         log.info("Successfully created secondary interface");
