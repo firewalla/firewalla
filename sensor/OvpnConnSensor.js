@@ -29,7 +29,7 @@ class OvpnConnSensor extends Sensor {
 
   initLogWatcher() {
     if (!fs.existsSync(this.config.logPath)) {
-      log.warn(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
+      log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
       setTimeout(() => {
         this.initLogWatcher();
       }, 5000);
