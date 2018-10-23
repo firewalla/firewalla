@@ -39,6 +39,9 @@ let curMode = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const cp = require('child_process');
+const execAsync = util.promisify(cp.exec);
+
 
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
@@ -105,7 +108,7 @@ function _disableSpoofMode() {
 function _enableSecondaryInterface() {
   return new Promise((resolve, reject) => {  
     fConfig = require('./config.js').getConfig(true);
-    secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask)=>{
+    secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask, legacyIp, legacySubnet)=>{
       if (err == null) {
         log.info("Successfully created secondary interface");
 
@@ -114,14 +117,58 @@ function _enableSecondaryInterface() {
         sysManager.secondarySubnet = subnet; 
         sysManager.secondaryIpnet = ipnet; 
         sysManager.secondaryMask  = mask;
-
-        resolve();
+        if (legacySubnet) {
+          (async () => {
+            // legacySubnet and subnet should be like 192.168.218.0/24
+            await _update_nat(legacySubnet, subnet); // update legacy rules for dnsmasq redirect and dhcp NAT
+            const newIpAddr = ip.split('/')[0];
+            const legacyIpAddr = legacyIp.split('/')[0];
+            if (newIpAddr && legacyIpAddr) { // newIpAddr and legacyIpAddr should be exact address xxx.xxx.xxx.xxx
+              await _update_nat(legacyIpAddr, newIpAddr); // update rule for diag redirect
+            }
+            resolve();
+          })().catch((err) => {
+            log.error("Failed to update nat for legacy IP subnet: " + legacySubnet, err);
+            reject(err);
+          });
+        } else {
+          resolve();
+        }
       } else {
         log.error("Failed to create secondary interface: " + err);
         reject(err);
       }
     });
   });
+}
+
+async function _update_nat(legacyIpSubnet, currentIpSubnet) {
+  // currentIpSubnet is optional, if it is set to null, no updated rule will be appended
+  // ip subnet should be like 192.168.218.0/24, which usually appears in source/dest matcher in nat table
+  let cmd = util.format("sudo iptables -S -t nat | grep -e '%s'", legacyIpSubnet);
+  let result = null;
+  try {
+    result = await execAsync(cmd);
+  } catch (err) {
+    log.warn("No legacy nat rule was found for " + legacyIpSubnet);
+    return;
+  }
+  if (result && result.stdout) {
+    const rules = result.stdout.split('\n').filter(line => line.length !== 0);
+    for (let i in rules) {
+      const rule = rules[i];
+      cmd = "sudo iptables -t nat -D" + rule.substring(2); // replace "-A" with "-D";
+      log.info("Command to delete legacy rule from iptables: " + cmd);
+      await execAsync(cmd);
+      if (currentIpSubnet) {
+        // do not add updated rule if current ip subnet is set to null
+        const newRule = rule.replace(new RegExp(legacyIpSubnet, "g"), currentIpSubnet);
+        cmd = "sudo iptables -t nat " + newRule;
+        log.info("Command to append updated rule to iptables: " + cmd);
+        await execAsync(cmd);
+      }
+    }
+  }
 }
 
 function _enforceDHCPMode() {
