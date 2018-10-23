@@ -295,7 +295,19 @@ class PolicyManager2 {
     // convert array to string so that redis can store it as value
     if(policy.scope && policy.scope.constructor.name === 'Array') {
       policy.scope = JSON.stringify(policy.scope)
-    }    
+    } 
+    
+    if(policy.expire && policy.expire === "") {
+      delete policy.expire;
+    }
+
+    if(policy.cronTime && policy.cronTime === "") {
+      delete policy.cronTime;
+    }
+
+    if(policy.activatedTime && policy.activatedTime === "") {
+      delete policy.activatedTime;
+    }
   }
 
   updatePolicyAsync(policy) {
