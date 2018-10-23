@@ -31,9 +31,7 @@ const execAsync = util.promisify(cp.exec);
 
 const SERVICE_NAME = "openvpn_client";
 const SERVICE_TEMPLATE_FILE = `${__dirname}/openvpn_client.service.template`;
-const SERVICE_FILE = `${__dirname}/${SERVICE_NAME}.service`;
-
-const PASSWORD_FILE = f.getUserHome() + "/.vpnclient.password";
+const SERVICE_FILE = `${__dirname}/${SERVICE_NAME}@.service`;
 
 const routing = require('../routing/routing.js');
 
@@ -47,19 +45,30 @@ class OpenVPNClient extends VPNClient {
   }
 
   async setup(options) {
-    const ovpnPath = options["ovpnPath"];
-    const password = options["password"]; // password is optional
-    if (!ovpnPath)
-      throw "ovpnPath is not set";
+    const profileId = options["profileId"];
+    if (!profileId)
+      throw "profileId is not set";
+    this.profileId = profileId;
+    const ovpnPath = this._getProfilePath(profileId);
     if (fs.existsSync(ovpnPath)) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
-    if (password) {
-      // update password in file if required
-      const cmd = util.format("echo %s > %s", password, PASSWORD_FILE);
-      await execAsync(cmd);
+    const passwordPath = this._getPasswordPath(profileId);
+    if (!fs.existsSync(passwordPath)) {
+      // create dummy password file, otherwise openvpn will report missing file on --askpass option
+      await writeFileAsync(passwordPath, "dummy_ovpn_password", 'utf8');
     }
+  }
+
+  _getProfilePath(profileId) {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + profileId + ".ovpn";
+    return path;
+  }
+
+  _getPasswordPath(profileId) {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + profileId + ".password";
+    return path;
   }
 
   async _reviseProfile(ovpnPath) {
@@ -100,16 +109,10 @@ class OpenVPNClient extends VPNClient {
   }
 
   async start() {
-    if (!this.ovpnPath) {
-      throw "OpenVPN client is not setup properly."
+    if (!this.profileId) {
+      throw "OpenVPN client is not setup properly. Profile id is missing."
     }
-    let template = await readFileAsync(SERVICE_TEMPLATE_FILE, 'utf8');
-    template = template.replace(/OVPN_CLIENT_CONF/g, this.ovpnPath);
-    template = template.replace(/OVPN_PASSWORD_FILE/g, PASSWORD_FILE);
-    await writeFileAsync(SERVICE_FILE, template, 'utf8');
-    let cmd = util.format("sudo cp %s /etc/systemd/system", SERVICE_FILE);
-    await execAsync(cmd);
-    cmd = util.format("sudo systemctl start %s", SERVICE_NAME);
+    let cmd = util.format("sudo systemctl start %s@%s", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     // remove two routes from main table which is inserted by OpenVPN client automatically,
     // otherwise tunnel will be enabled globally
@@ -141,9 +144,9 @@ class OpenVPNClient extends VPNClient {
   }
 
   async stop() {
-    let cmd = util.format("sudo systemctl stop %s", SERVICE_NAME);
+    let cmd = util.format("sudo systemctl stop %s@%s", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
-    cmd = util.format("sudo systemctl disable %s", SERVICE_NAME);
+    cmd = util.format("sudo systemctl disable %s@%s", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
   }
 

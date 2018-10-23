@@ -103,7 +103,7 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
-const defaultOvpnClientProfile = f.getUserHome() + "/.vpnclient.ovpn";
+const defaultOvpnProfileId = "ovpn_client"
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -532,12 +532,17 @@ class Host {
         log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
+        const dns = sysManager.myDNS();
 
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
         if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
           return;
+        }
+        if (dns && dns.includes(this.o.ipv4Addr)) {
+            // do not monitor dns server's traffic
+            return;
         }
         if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
           return;
@@ -2525,11 +2530,9 @@ module.exports = class HostManager {
     if (state === true) {
       switch (policy.type) {
         case "openvpn":
-          const options = {ovpnPath: defaultOvpnClientProfile};
+          const options = {profileId: defaultOvpnProfileId};
           if (policy.openvpn) {
-            options.ovpnPath = policy.openvpn.profilePath || defaultOvpnClientProfile;
-            if (policy.openvpn.password)
-              options.password = policy.openvpn.password;
+            options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
           }
           try {
             await ovpnClient.setup(options);
@@ -2538,9 +2541,15 @@ module.exports = class HostManager {
               log.error("Failed to start vpn client");
               return false;
             }
-            const remoteIP = await ovpnClient.getRemoteIP();
-            const intf = await ovpnClient.getInterfaceName();
-            await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            let refreshRoutes = (async() => {
+                const remoteIP = await ovpnClient.getRemoteIP();
+                const intf = await ovpnClient.getInterfaceName();
+                await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            });
+            await refreshRoutes();
+            this.vpnClientRoutesTask = setInterval(() => {
+                refreshRoutes();
+            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
             return true;
           } catch (err) {
             log.error("Failed to start vpn client, ", err);
@@ -2554,8 +2563,17 @@ module.exports = class HostManager {
       switch (policy.type) {
         case "openvpn":
           try {
+            const options = {profileId: defaultOvpnProfileId};
+            if (policy.openvpn) {
+              options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
+            }
+            await ovpnClient.setup(options);
             await ovpnClient.stop();
             await vpnClientEnforcer.flushVPNClientRoutes();
+            if (this.vpnClientRoutesTask) {
+                clearInterval(this.vpnClientRoutesTask);
+                this.vpnClientRoutesTask = null;
+            }
             return true;
           } catch (err) {
             log.error("Failed to stop vpn client, ", err);  

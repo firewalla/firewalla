@@ -20,12 +20,36 @@ var dynamicConfigs = {}
 let callbacks = {}
 
 let config = null;
+let userConfig = null;
 
-function getConfig() {
-  if(!config) {
+const util = require('util');
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+
+async function updateUserConfig(updatedPart) {
+  await getUserConfig(true);
+  userConfig = Object.assign({}, userConfig, updatedPart);
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+  getConfig(true);
+}
+
+async function getUserConfig(reload) {
+  if (!userConfig || reload === true) {
+    let userConfigFile = f.getUserConfigFolder() + "/config.json";
+    userConfig = {};
+    if (fs.existsSync(userConfigFile)) {
+      userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
+    }
+  }
+  return userConfig;
+}
+
+function getConfig(reload) {
+  if(!config || reload === true) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
-    let userConfig = {};
+    userConfig = {};
     if(fs.existsSync(userConfigFile)) {
       userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
     }
@@ -230,7 +254,9 @@ function getTimingConfig(key) {
 }
 
 module.exports = {
+  updateUserConfig: updateUserConfig,
   getConfig: getConfig,
+  getUserConfig: getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures: getFeatures,

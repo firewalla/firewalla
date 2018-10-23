@@ -70,18 +70,26 @@ exports.create = function (config, callback) {
             list = list.filter(function(x) { return is_interface_valid(x) });
             for (let i in list) {
                 if (list[i].name == config.secondaryInterface.intf) {
-                    log.info("Already Created Secondary Interface",list[i]);
-                    callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
-                    return;
-                }
-                let subnet = getSubnet(list[i].name, 'IPv4');
-                if (subnet == _secondaryIpSubnet) {
-                    _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
-                    _secondaryIp = config.secondaryInterface.ip2;
-                    _secondaryIpNet = config.secondaryInterface.ipnet2;
-                    _secondaryMask = config.secondaryInterface.ipmask2;
+                    if (list[i].netmask === "Mask:" + _secondaryMask && list[i].ip_address === _secondaryIp.split('/')[0]) {
+                        // same ip and subnet mask
+                        log.info("Already Created Secondary Interface",list[i]);
+                        callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask);
+                        return;
+                    } else {
+                        log.info("Update existing secondary interface: " + config.secondaryInterface.intf);
+                    }
+                } else {
+                    // other interface already occupies ip1, use alternative ip
+                    let subnet = getSubnet(list[i].name, 'IPv4');
+                    if (subnet == _secondaryIpSubnet) {
+                        _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
+                        _secondaryIp = config.secondaryInterface.ip2;
+                        _secondaryIpNet = config.secondaryInterface.ipnet2;
+                        _secondaryMask = config.secondaryInterface.ipmask2;
+                    }
                 }
             }
+            // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
             require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => {
                 if (err!=null) {
                     log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
