@@ -98,6 +98,7 @@ function sync_time() {
     time_website=$1
     time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
     if [[ "x$time" == "x" ]]; then
+        logger "ERROR: Failed to load date info from website: $time_website"
         return 1
     else
         sudo date -s "$time"
