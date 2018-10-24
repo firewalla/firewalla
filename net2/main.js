@@ -340,7 +340,7 @@ function run() {
   this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
 */
   setTimeout(()=>{
-    var vpnManager = new VpnManager('info');
+    var vpnManager = new VpnManager();
     hostManager.loadPolicy((err, data) => {
       if (err != null) {
         log.error("Failed to load system policy for VPN", err);
