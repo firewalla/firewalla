@@ -29,7 +29,7 @@ coverage
 build/Release
 
 # Dependency directories
-node_modules
+node_modules*
 jspm_packages
 
 # Optional npm cache directory
@@ -105,6 +105,9 @@ api/db/token.json
 
 .idea/
 .idea/workspace.xml
+
+.vscode/
+
 /test
 /.gitmodules
 /extension/frp/frpc.ini

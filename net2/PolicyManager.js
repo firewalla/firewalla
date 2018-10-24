@@ -424,7 +424,7 @@ module.exports = class {
       return; // doesn't support per-device policy
     }
 
-    let vpnManager = new VpnManager('info');
+    let vpnManager = new VpnManager();
     vpnManager.configure(config, false, (err) => {
       if (err != null) {
         log.error("PolicyManager:VPN", "Failed to configure vpn");
