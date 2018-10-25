@@ -24,11 +24,11 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-let cp = require('child_process');
-let cmd = __dirname + "/install_iptables_setup.sh";
+const cp = require('child_process');
+const cmd = "../control/install_iptables_setup.sh";
 cp.exec(cmd, (err, out) => {
   if (err) {
-    log.error("iptable initial flush failed: ", out)
+    log.error("iptable initial flush failed: ", err, out)
   }
   else {
     log.info("iptable initial flush succeed")
