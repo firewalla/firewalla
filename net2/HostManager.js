@@ -842,7 +842,7 @@ class Host {
                                     }
                                 }
 
-                                if (data._vendor!=null && this.o.macVendor == null) {
+                                if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
                                     this.o.macVendor = data._vendor;
                                 }
                                 if (data._name!=null) {
