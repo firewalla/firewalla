@@ -58,20 +58,20 @@ function updateTouchFile() {
   })
 }
 
-let bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 
-let firewalla = require("./Firewalla.js");
+const firewalla = require("./Firewalla.js");
 
-let ModeManager = require('./ModeManager.js')
-
-let mode = require('./Mode.js')
+const ModeManager = require('./ModeManager.js')
+const mode = require('./Mode.js')
 
 // api/main/monitor all depends on sysManager configuration
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
-let BoneSensor = require('../sensor/BoneSensor');
-let boneSensor = new BoneSensor();
+const BoneSensor = require('../sensor/BoneSensor');
+const boneSensor = new BoneSensor();
 
 const fc = require('./config.js')
 
