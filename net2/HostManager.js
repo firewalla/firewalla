@@ -810,6 +810,12 @@ class Host {
             ua_os_name : this.o.ua_os_name,
             name : this.name()
         };
+
+        // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
+        if(this.o.macVendor === 'Unknown') {
+            delete obj.vendor;
+        }
+
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
         }
@@ -836,7 +842,7 @@ class Host {
                                     }
                                 }
 
-                                if (data._vendor!=null && this.o.macVendor == null) {
+                                if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
                                     this.o.macVendor = data._vendor;
                                 }
                                 if (data._name!=null) {

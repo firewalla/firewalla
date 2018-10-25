@@ -3303,6 +3303,9 @@ class netBot extends ControllerBot {
                   replyid: msg.id,
                 }
                 if (json != null) {
+
+                  json.device = this.getDeviceName();
+                  
                   datamodel.code = 200;
                   datamodel.data = json;
 

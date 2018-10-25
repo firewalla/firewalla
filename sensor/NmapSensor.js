@@ -270,18 +270,24 @@ class NmapSensor extends Sensor {
     }
     
     if(host && host.mac) {
+      const hostInfo = {
+        ipv4: host.ipv4Addr,
+        ipv4Addr: host.ipv4Addr,
+        mac: host.mac,
+        macVendor: host.macVendor,
+        from: "nmap"
+      };
+
+      if(host.macVendor === 'Unknown') {
+        delete hostInfo.macVendor;
+      }
+
       sem.emitEvent({
         type: "DeviceUpdate",
         message: "Found a device via NmapSensor",
         suppressEventLogging: true,
         suppressAlarm: this.suppressAlarm,
-        host:  {
-          ipv4: host.ipv4Addr,
-          ipv4Addr: host.ipv4Addr,
-          mac: host.mac,
-          macVendor: host.macVendor,
-          from: "nmap"
-        }
+        host: hostInfo
       });
     }
   }

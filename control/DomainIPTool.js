@@ -55,13 +55,13 @@ class DomainIPTool {
   async removeAllDomainIPMapping() {
     const patternDomainKey = `ipmapping:domain:*`
     const domainKeys = await rclient.keysAsync(patternDomainKey)
-    if(domainKeys) {
+    if(domainKeys && domainKeys.length > 0) {
       await rclient.delAsync(domainKeys);
     }
 
     const patternExactDomainKey = `ipmapping:exactdomain:*`
     const exactDomainKeys = await rclient.keysAsync(patternExactDomainKey)
-    if(exactDomainKeys) {
+    if(exactDomainKeys && exactDomainKeys.length > 0) {
       await rclient.delAsync(exactDomainKeys);
     }
   }
@@ -79,7 +79,9 @@ class DomainIPTool {
 
   async removeAllIPMappings() {
     const list = await this.getAllIPMappings()
-    await rclient.delAsync(list)
+    if(list && list.length > 0) {
+      await rclient.delAsync(list)
+    }
   }
 }
 
