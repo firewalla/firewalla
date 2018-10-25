@@ -130,9 +130,6 @@ module.exports = class {
     });
   }
 
-  defaults(config) {
-  }
-
   block(mac, protocol, src, dst, sport, dport, state, callback) {
     if (state == true) {
       if (sysManager.isMyServer(dst) || sysManager.isMyServer(src)) {

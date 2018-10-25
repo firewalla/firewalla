@@ -17,15 +17,24 @@
 // config.discovery.networkInterface
 
 process.title = "FireMain";
-require('events').EventEmitter.prototype._maxListeners = 100;
 
-let log = require("./logger.js")(__filename);
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const log = require("./logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+let cp = require('child_process');
+let cmd = __dirname + "/install_iptables_setup.sh";
+cp.exec(cmd, (err, out) => {
+  if (err) {
+    log.error("iptable initial flush failed: ", out)
+  }
+});
+
+require('events').EventEmitter.prototype._maxListeners = 100;
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -57,13 +66,11 @@ let mode = require('./Mode.js')
 // api/main/monitor all depends on sysManager configuration
 var SysManager = require('./SysManager.js');
 var sysManager = new SysManager('info');
-var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
 
 const fc = require('./config.js')
-const cp = require('child_process')
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
@@ -109,7 +116,7 @@ process.on('uncaughtException',(err)=>{
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
     try {
-      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+      cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);
@@ -121,7 +128,7 @@ process.on('unhandledRejection', (reason, p)=>{
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
   // setTimeout(()=>{
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+  //   cp.execSync("touch /home/pi/.firewalla/managed_reboot")
   //   process.exit(1);
   // },1000*5);
 });
@@ -263,9 +270,6 @@ function run() {
     var policyManager = new PolicyManager('info');
 
     policyManager.flush(config, (err) => {
-
-      //policyManager.defaults(config);
-
       if(err) {
         log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
         return;
