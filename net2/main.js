@@ -30,6 +30,9 @@ cp.exec(cmd, (err, out) => {
   if (err) {
     log.error("iptable initial flush failed: ", out)
   }
+  else {
+    log.info("iptable initial flush succeed")
+  }
 });
 
 require('events').EventEmitter.prototype._maxListeners = 100;
