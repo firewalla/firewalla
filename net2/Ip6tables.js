@@ -254,3 +254,4 @@ function dnsUnredirect(server, port, cb) {
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
+exports.flush = flush 

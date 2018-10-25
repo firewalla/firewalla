@@ -74,7 +74,6 @@ exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
 exports.dnsChangeAsync = dnsChangeAsync;
 exports.flush = flush;
-exports.flush6 = flush6;
 exports.run = run;
 
 
