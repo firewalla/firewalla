@@ -2,7 +2,7 @@
 
 if [[ -e /.dockerenv ]]; then
     #Disable iptables in docker
-    sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F
+    sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -w -F && sudo ip6tables -w -F -t nat
     exit
 fi
 
