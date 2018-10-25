@@ -24,17 +24,6 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-const cp = require('child_process');
-const cmd = "../control/install_iptables_setup.sh";
-cp.exec(cmd, (err, out) => {
-  if (err) {
-    log.error("iptable initial flush failed: ", err, out)
-  }
-  else {
-    log.info("iptable initial flush succeed")
-  }
-});
-
 require('events').EventEmitter.prototype._maxListeners = 100;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -74,6 +63,7 @@ const BoneSensor = require('../sensor/BoneSensor');
 const boneSensor = new BoneSensor();
 
 const fc = require('./config.js')
+const cp = require('child_process');
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");

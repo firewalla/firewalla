@@ -303,20 +303,9 @@ function _dnsChange(ip, dns, state, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process').exec("sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F ", (err, out, code) => {
+    this.process = require('child_process').exec("sudo iptables -w -F && sudo iptables -w -F -t na", (err, out, code) => {
         if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
-}
-
-function flush6(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat", (err, out, code) => {
-        if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
+            log.error("IPTABLE:DNS:Error unable to flush", err, out);
         }
         if (callback) {
             callback(err, null);
@@ -329,7 +318,7 @@ function run(listofcmds, eachCallback, finalCallback) {
         log.debug("IPTABLE:DNS:RUNCOMMAND", cmd);
         this.process = require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
-                log.error("IPTABLE:DNS:Error unable to set", err, {});
+                log.error("IPTABLE:DNS:Error unable to run commands", err, {});
             }
             if (eachCallback) {
                 eachCallback(err, null);

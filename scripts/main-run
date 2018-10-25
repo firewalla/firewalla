@@ -45,6 +45,9 @@ sudo $FIREWALLA_HOME/scripts/check_reset.sh
 # Enable zram to increase memory
 logger "FIREWALLA:MAIN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
+# Flush iptables & ip6tables before any network involved work
+logger "FIREWALLA:MAIN:FLUSH_IPTABLES"
+sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
 logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 logger "Broadcast booting"

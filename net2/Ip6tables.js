@@ -152,20 +152,9 @@ function deleteRule(rule, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo iptables -w -F -t nat", (err, out, code) => {
+    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat", (err, out, code) => {
         if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
-}
-
-function flush6(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo iptables -w -F -t nat", (err, out, code) => {
-        if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
+            log.error("IP6TABLE:DNS:Error unable to flush", err, out);
         }
         if (callback) {
             callback(err, null);
