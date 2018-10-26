@@ -26,6 +26,22 @@ logger "FIREWALLA.MAIN-RUN.START"
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+sync_hosts() {
+    hostname=`cat /etc/hostname`
+    # should contain 127.0.0.1 <hostname>
+    cat /etc/hosts | grep -e "^127.0.0.1" | grep -e "$hostname" -q
+    if [[ $? -ne 0 ]]; then
+        sudo sed -i s/"^127.0.0.1"/"127.0.0.1  $hostname"/g /etc/hosts
+    fi
+    # should contain ::1 <hostname>
+    cat /etc/hosts | grep -e "^::1" | grep -e "$hostname" -q
+    if  [[ $? -ne 0 ]]; then
+        sudo sed -i s/"^::1"/"::1  $hostname"/g /etc/hosts
+    fi
+}
+
+sync_hosts
+
 heartbeatLED
 
 # remove overlay backup files
