@@ -14,7 +14,7 @@
  */
 'use strict';
 var ip = require('ip');
-var spawn = require('child_process').spawn;
+var cp = require('child_process');
 
 const log = require('./logger.js')(__filename);
 
@@ -88,18 +88,18 @@ function iptables(rule, callback) {
     return
   }
   
-  const proc = spawn(cmd, {shell: true});
-  proc.stderr.on('data', function (buf) {
-      log.error("IP6TABLE:IPTABLES:Failed to execute cmd ", cmd, buf.toString());
-  });
-  proc.on('exit', (code) => {
-      if (callback) {
-          callback(code, code);
-      }
-      running = false;
-      newRule(null, null);
-  });
-  return proc;
+  cp.exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      log.error("Failed to execute cmd ", cmd, err);
+    }
+    else if (stdout) {
+      log.info("Output captured for:", cmd, "\n", stdout)
+    }
+
+    callback(err, stdout)
+    running = false
+    newRule(null, null);
+  })
 }
 
 function iptablesArgs(rule) {
@@ -152,8 +152,7 @@ function deleteRule(rule, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process')
-        .exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw", (err, out, code) => {
+    this.process = cp.exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw", (err, out, code) => {
             if (err) {
                 log.error("IP6TABLE:FLUSH:Unable to flush", err, out);
             }
