@@ -2,7 +2,7 @@
 
 if [[ -e /.dockerenv ]]; then
     #Disable iptables in docker
-    sudo iptables -w -F && sudo iptables -w -F -t nat && sudo ip6tables -F
+    /home/pi/firewalla/scripts/flush_iptables.sh
     exit
 fi
 
