@@ -103,16 +103,18 @@ class DNSTool {
     const existing = await this.reverseDNSKeyExists(dns)
     
     let updated = false
+    const validAddresses = [];
 
     for (let i = 0; i < addresses.length; i++) {  
       const addr = addresses[i];
 
       if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
         await rclient.zaddAsync(key, new Date() / 1000, addr)
-        await domainUpdater.updateDomainMapping(dns, addresses);
+        validAddresses.push(addr);
         updated = true
       }
     }
+    await domainUpdater.updateDomainMapping(dns, validAddresses);
     
     if(updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, RED_HOLE_IP); // red hole is a placeholder ip for non-existing domain 
