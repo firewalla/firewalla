@@ -63,7 +63,7 @@ class PolicyScheduler {
     }
 
     const interval = cronParser.parseExpression(cronTime)
-    const lastDate = interval.prev()
+    const lastDate = interval.prev().getTime();
     const now = moment()
 
     const diff = now.diff(moment(lastDate), 'seconds')
