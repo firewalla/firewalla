@@ -152,33 +152,18 @@ function deleteRule(rule, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat", (err, out, code) => {
-        if (err) {
-            log.error("IP6TABLE:DNS:Error unable to flush", err, out);
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
-}
-
-function run(listofcmds, callback) {
-    async.eachLimit(listofcmds, 1, (cmd, cb) => {
-        log.debug("IPTABLE:RUNCOMMAND", cmd);
-        this.process = require('child_process').exec(cmd, (err, out, code) => {
+    this.process = require('child_process')
+        .exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw", (err, out, code) => {
             if (err) {
-                log.error("IPTABLE:DNS:Error unable to set", err, {});
+                log.error("IP6TABLE:FLUSH:Unable to flush", err, out);
             }
             if (callback) {
                 callback(err, null);
             }
-            cb();
         });
-    }, (err) => {
-        if (callback)
-            callback(err, null);
-    });
 }
+
+// run() is deleted as same functionality is provided in Iptables.run() 
 
 function dnsRedirectAsync(server, port) {
   return new Promise((resolve, reject) => {

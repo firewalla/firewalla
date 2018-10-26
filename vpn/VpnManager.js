@@ -99,8 +99,10 @@ module.exports = class {
         const localIp = sysManager.myIp();
         log.info("VpnManager:SetIptables", serverNetwork, localIp);
         const commands =[
+            // delete this rule if it exists, logical opertion ensures correct execution
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
-            `sudo iptables -w -t nat -I POSTROUTING 2 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}` // insert this rule next to first rule of POSTROUTING
+            // insert back as top rule in table
+            `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
         ];
         iptable.run(commands, null, callback);
     }
@@ -112,7 +114,7 @@ module.exports = class {
         const commands =[
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
         ];
-        iptable.run(commands, callback);
+        iptable.run(commands, null, callback);
     }
 
     unpunchNat(opts, callback) {
