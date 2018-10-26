@@ -2370,6 +2370,7 @@ class netBot extends ControllerBot {
           // no need to await, otherwise fireapi will also be restarted
           sysTool.restartServices();
           sysTool.restartFireKickService();
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
