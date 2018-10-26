@@ -45,7 +45,7 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 
 function iptables(rule, callback) {
-  log.debug("IPTABLE6: rule:",rule);
+  log.debug("IP6TABLE: rule:",rule);
   running = true;
   
   let cmd = 'ip6tables';
@@ -89,17 +89,17 @@ function iptables(rule, callback) {
   }
   
   const proc = spawn(cmd, {shell: true});
-    proc.stderr.on('data', function (buf) {
-        log.error("IP6TABLE6:", buf.toString());
-    });
-    proc.on('exit', (code) => {
-        if (callback) {
-            callback(null, code);
-        }
-        running = false;
-        newRule(null, null);
-    });
-    return proc;
+  proc.stderr.on('data', function (buf) {
+      log.error("IP6TABLE:IPTABLES:Failed to execute cmd ", cmd, buf.toString());
+  });
+  proc.on('exit', (code) => {
+      if (callback) {
+          callback(code, code);
+      }
+      running = false;
+      newRule(null, null);
+  });
+  return proc;
 }
 
 function iptablesArgs(rule) {
