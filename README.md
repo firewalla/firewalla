@@ -5,11 +5,13 @@
 * Current Beta Branch: beta_6_0
 * Unstable Branch: master
 
-## Software Image for Firewalla Red
+## Software Image
+### For Firewalla Red
 * https://github.com/firewalla/firewalla/releases/download/v1.957/fos.release_6_14.armv7l.img.gz
   * sha256sum: 896014e839a7198249b62b266664baaab529e1d8034261e1fa4a9599161288e4
-  
-## Software Image for Raspberry Pi (Not recommended, this image is very old)
+* Flash image to micro sd card, and put into Firewalla Red
+  * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
+### For Raspberry Pi (Not recommended, this image is out-of-date)
 ```
 If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
@@ -19,6 +21,7 @@ https://www.raspberrypi.org/documentation/installation/installing-images/
 ```
 We are focusing on delivering the official hardware, hence Raspberry Pi support is a bit lacking, we are hoping to pick it up soon.  We will be very likely selling a development version of Firewalla very soon.  It will be at cost with a small mark up to take care the labor involved. 
 
+## Build By Yourself
 ### To Build On Raspberry Pi
 - Download Jessie Lite
 ```
@@ -62,7 +65,7 @@ docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
 # to get an interactive shell
 docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
 ```
-
+## Apps
 ### iOS App
 https://itunes.apple.com/us/app/firewalla/id1180904053
 
@@ -70,19 +73,19 @@ https://itunes.apple.com/us/app/firewalla/id1180904053
 https://play.google.com/store/apps/details?id=com.firewalla.chancellor&hl=en_US
 
 
-### Firewalla Box Install Guide
+## Firewalla Box Install Guide
 https://firewalla.com/pages/install2
 
 If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
 
-### Contributions
+## Contributions
 
 * origin/master:  latest / greatest
 * release_pi_1:   current released code for pi, will be pulled automatically by all deployed boards.
 * dev_<>: development branchs.
 * Please do a pull request for features
 
-### Router Compatibility
+## Router Compatibility
 
 * For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
 
