@@ -1,19 +1,21 @@
 
-## Firewalla  (Beta)
-Support https://help.firewalla.com (email help@firewalla.com)
+## Firewalla
+* Support https://help.firewalla.com (email help@firewalla.com)
+* Current Stable Branch: release_6_0 
+* Current Beta Branch: beta_6_0
+* Unstable Branch: master
 
-Current Stable Branch: release_6_0 
-Current Beta Branch: beta_6_0
-
-## Install From Image
+## Software Image for Firewalla Red
+* https://github.com/firewalla/firewalla/releases/download/v1.957/fos.release_6_14.armv7l.img.gz
+  * sha256sum: 896014e839a7198249b62b266664baaab529e1d8034261e1fa4a9599161288e4
+  
+## Software Image for Raspberry Pi (Not recommended, this image is very old)
 ```
 If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
 Prepare a blank microsd card > 8GB size
 Follow the same step as installing a raspberry pi image
 https://www.raspberrypi.org/documentation/installation/installing-images/
-
-
 ```
 We are focusing on delivering the official hardware, hence Raspberry Pi support is a bit lacking, we are hoping to pick it up soon.  We will be very likely selling a development version of Firewalla very soon.  It will be at cost with a small mark up to take care the labor involved. 
 
@@ -61,14 +63,14 @@ docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
 docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
 ```
 
-### Get iOS App
+### iOS App
 https://itunes.apple.com/us/app/firewalla/id1180904053
 
-### Get Android App
+### Android App
 https://play.google.com/store/apps/details?id=com.firewalla.chancellor&hl=en_US
 
 
-### Install Guide
+### Firewalla Box Install Guide
 https://firewalla.com/pages/install2
 
 If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
