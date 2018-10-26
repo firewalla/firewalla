@@ -969,7 +969,8 @@ class PolicyManager2 {
             return domainBlock.blockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
               blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true
+              no_dnsmasq_entry: true,
+              no_dnsmasq_reload: true
             })
           } else {
             return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
@@ -992,7 +993,8 @@ class PolicyManager2 {
             return categoryBlock.blockCategory(policy.target, {
               blockSet: Block.getDstSet(policy.pid),
               macSet: Block.getMacSet(policy.pid),
-              no_dnsmasq_entry: true
+              no_dnsmasq_entry: true,
+              no_dnsmasq_reload: true
             })
           } else {
             return categoryBlock.blockCategory(policy.target)
@@ -1093,12 +1095,13 @@ class PolicyManager2 {
       case "dns":    
         return async(() => {
           if(scope) {
-            await (Block.advancedUnblock(policy.pid, scope, []))
-            return domainBlock.unblockDomain(policy.target, {
+            await (domainBlock.unblockDomain(policy.target, {
               exactMatch: policy.domainExactMatch, 
               blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true
-            })
+              no_dnsmasq_entry: true,
+              no_dnsmasq_reload: true
+            }))
+            return Block.advancedUnblock(policy.pid, scope, [])
           } else {
             return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
           }
@@ -1120,7 +1123,8 @@ class PolicyManager2 {
               blockSet: Block.getDstSet(policy.pid),
               macSet: Block.getMacSet(policy.pid),
               ignoreUnapplyBlock: true,
-              no_dnsmasq_entry: true
+              no_dnsmasq_entry: true,
+              no_dnsmasq_reload: true
             }))
             return Block.advancedUnblock(policy.pid, scope, [])
           } else {
