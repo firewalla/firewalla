@@ -92,8 +92,11 @@ function iptables(rule, callback) {
     if (err) {
       log.error("Failed to execute cmd ", cmd, err);
     }
-    else if (stdout) {
-      log.info("Output captured for:", cmd, "\n", stdout)
+    if (stdout) {
+      log.info("stdout captured for:", cmd, "\n", stdout)
+    }
+    if (stderr) {
+      log.info("stderr captured for:", cmd, "\n", stderr)
     }
 
     callback(err, stdout)
