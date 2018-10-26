@@ -32,22 +32,7 @@ MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
 
-
 mode=${1:-'normal'}
-
-sync_hosts() {
-    hostname=`cat /etc/hostname`
-    # should contain 127.0.0.1 <hostname>
-    cat /etc/hosts | grep -e "^127.0.0.1" | grep -e "$hostname" -q
-    if [[ $? -ne 0 ]]; then
-        sudo sed -i s/"^127.0.0.1"/"127.0.0.1  $hostname"/g /etc/hosts
-    fi
-    # should contain ::1 <hostname>
-    cat /etc/hosts | grep -e "^::1" | grep -e "$hostname" -q
-    if  [[ $? -ne 0 ]]; then
-        sudo sed -i s/"^::1"/"::1  $hostname"/g /etc/hosts
-    fi
-}
 
 timeout_check() {
     pid=${1:-$!}
@@ -70,9 +55,6 @@ timeout_check() {
     fi
     return 1
 }
-
-# ensure /etc/hostname and /etc/hosts are consistent
-sync_hosts
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
 if [ -s /home/pi/scripts/check_reset.sh ]
