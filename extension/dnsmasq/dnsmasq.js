@@ -644,11 +644,15 @@ module.exports = class DNSMASQ {
   }
   
   async checkStatus() {
-    let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
+    let cmd = `pgrep -f ${dnsmasqBinary}`;
     log.info("Command to check dnsmasq: ", cmd);
 
-    let {stdout, stderr} = await execAsync(cmd);
-    return stdout !== "";
+    try {
+      await execAsync(cmd);
+      return true;
+    } catch(err) {
+      return false;
+    }
   }
 
   checkIfRestartNeeded() {
