@@ -2042,6 +2042,12 @@ class netBot extends ControllerBot {
       let begin = msg.data && msg.data.start;
       let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
+      // A backward compatbiel fix for query host network stats for 'NOW'
+      // extend it to a full hour if not enough
+      if((end - begin) < 3600 && msg.data.hourblock === 0) {
+        end = begin + 3600; 
+      }
+
       let options = {}
       if(begin && end) {
         options.begin = begin
