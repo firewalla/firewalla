@@ -17,15 +17,16 @@
 // config.discovery.networkInterface
 
 process.title = "FireMain";
-require('events').EventEmitter.prototype._maxListeners = 100;
 
-let log = require("./logger.js")(__filename);
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const log = require("./logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+require('events').EventEmitter.prototype._maxListeners = 100;
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -46,24 +47,23 @@ function updateTouchFile() {
   })
 }
 
-let bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 
-let firewalla = require("./Firewalla.js");
+const firewalla = require("./Firewalla.js");
 
-let ModeManager = require('./ModeManager.js')
-
-let mode = require('./Mode.js')
+const ModeManager = require('./ModeManager.js')
+const mode = require('./Mode.js')
 
 // api/main/monitor all depends on sysManager configuration
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
-var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
-let BoneSensor = require('../sensor/BoneSensor');
-let boneSensor = new BoneSensor();
+const BoneSensor = require('../sensor/BoneSensor');
+const boneSensor = new BoneSensor();
 
 const fc = require('./config.js')
-const cp = require('child_process')
+const cp = require('child_process');
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
@@ -109,7 +109,7 @@ process.on('uncaughtException',(err)=>{
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
     try {
-      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+      cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);
@@ -121,7 +121,7 @@ process.on('unhandledRejection', (reason, p)=>{
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
   // setTimeout(()=>{
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+  //   cp.execSync("touch /home/pi/.firewalla/managed_reboot")
   //   process.exit(1);
   // },1000*5);
 });
@@ -263,9 +263,6 @@ function run() {
     var policyManager = new PolicyManager('info');
 
     policyManager.flush(config, (err) => {
-
-      //policyManager.defaults(config);
-
       if(err) {
         log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
         return;
@@ -340,7 +337,7 @@ function run() {
   this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
 */
   setTimeout(()=>{
-    var vpnManager = new VpnManager('info');
+    var vpnManager = new VpnManager();
     hostManager.loadPolicy((err, data) => {
       if (err != null) {
         log.error("Failed to load system policy for VPN", err);
