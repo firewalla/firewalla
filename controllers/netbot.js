@@ -38,8 +38,6 @@ let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
 let FlowManager = require('../net2/FlowManager.js');
 let flowManager = new FlowManager('info');
-let AlarmManager = require('../net2/AlarmManager.js');
-let alarmManager = new AlarmManager('info');
 let sysManager = new SysManager();
 let VpnManager = require("../vpn/VpnManager.js");
 let vpnManager = new VpnManager('info');
@@ -1470,23 +1468,15 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
-          let useNewDeviceHandler = appTool.isAppReadyForNewDeviceHandler(appInfo);
-          if(useNewDeviceHandler) {
-            let ip = msg.target;
-            log.info("Loading device info in a new way:", ip);
-            this.newDeviceHandler(msg, ip)
-            .then((json) => {
-              this.simpleTxData(msg, json, null, callback);
-            })
-            .catch((err) => {
-              this.simpleTxData(msg, null, err, callback);
-            })
-          } else {
-            log.info("Using the legacy way to get device info:", msg.target, {});
-            this.getAllIPForHost(msg.target, (err, ips) => {
-              this.deviceHandler(msg, gid, msg.target, ips, callback);
-            });
-          }
+          let ip = msg.target;
+          log.info("Loading device info in a new way:", ip);
+          this.newDeviceHandler(msg, ip)
+          .then((json) => {
+            this.simpleTxData(msg, json, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
         }
         break;
       case "vpn":
@@ -2108,126 +2098,6 @@ class netBot extends ControllerBot {
 
       return jsonobj;
     })();
-  }
-
-  deviceHandler(msg, gid, target, listip, callback) {
-    log.info("Getting Devices", gid, target, listip);
-    let hosts = [];
-    this.hostManager.getHost(target, (err, host) => {
-      if (host == null && target != "0.0.0.0") {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 404,
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-        return;
-      } else if (target == "0.0.0.0") {
-        listip = [];
-        for (let h in this.hostManager.hosts.all) {
-          let _host = this.hostManager.hosts.all[h];
-          hosts.push(_host);
-          listip.push(_host.o.ipv4Addr);
-          if (_host.ipv6Addr && _host.ipv6Addr.length > 0) {
-            for (let p in _host['ipv6Addr']) {
-              listip.push(_host['ipv6Addr'][p]);
-            }
-          }
-        }
-      } else {
-        hosts = [host];
-      }
-
-      log.info("Summarize", target, listip);
-
-
-      //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-
-      // getStats2 => load 24 hours download/upload trend
-      flowManager.getStats2(host)
-        .then(() => {
-//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
-          let jsonobj = {};
-          if (host) {
-            jsonobj = host.toJson();
-          }
-          alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
-            log.info("Found alarms");
-            jsonobj.alarms = alarms;
-            // hour block = summarize into blocks of hours ...
-            flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, false, (err, result, activities) => {
-              log.info("--- Connectionby most recent ---", result.length);
-              let response = {
-                time: [],
-                rx: [],
-                tx: [],
-                duration: []
-              };
-              let max = 50;
-              for (let i in result) {
-                let s = result[i];
-                response.time.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              flowManager.sort(result, 'rxdata');
-              log.info("-----------Sort by rx------------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.rx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              //log.info(JSON.stringify(response.rx));
-              flowManager.sort(result, 'txdata');
-              log.info("-----------  Sort by tx------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.tx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              jsonobj.flows = response;
-              jsonobj.activities = activities;
-
-              /*
-               flowManager.sort(result, 'duration');
-               log.info("-----------Sort by rx------------------------");
-               max = 10;
-               for (let i in result) {
-               let s = result[i];
-               response.duration.push(s);
-               if (max-- < 0) {
-               break;
-               }
-               }
-               */
-
-              // enrich flow info with country
-              this.enrichCountryInfo(jsonobj.flows);
-
-              // use new way to get recent connections
-              Promise.all([
-//                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
-              ]).then(() => {
-                this.simpleTxData(msg, jsonobj, null, callback);
-              }).catch((err) => {
-                this.simpleTxData(msg, null, err, callback);
-              });
-            });
-          });
-        });
-
-    });
   }
 
   enrichCountryInfo(flows) {
