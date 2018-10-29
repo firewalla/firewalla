@@ -49,7 +49,9 @@ async function _ensureRemoteMigrationFolder(host, identity) {
 }
 
 async function _ensureRemoteHiddenFolder(host, identity) {
-  const cmd = "mkdir -p " + f.getHiddenFolder();
+  let cmd = "mkdir -p " + f.getHiddenFolder() + "/run";
+  await ssh.remoteCommand(host, cmd, f.getUserID(), identity);
+  cmd = "mkdir -p " + f.getHiddenFolder() + "/config";
   await ssh.remoteCommand(host, cmd, f.getUserID(), identity);
 }
 
@@ -144,7 +146,10 @@ async function transferDataPartition(host, partition, transferIdentity) {
 async function transferHiddenFolder(host, transferIdentity) {
   await _ensureRemoteHiddenFolder(host, transferIdentity);
   await ssh.scpFile(host, `${f.getHiddenFolder()}/config`, f.getHiddenFolder(), true, transferIdentity);
-  await ssh.scpFile(host, `${f.getHiddenFolder()}/run`, f.getHiddenFolder(), true, transferIdentity);
+  // the reason why not just copy the whole /run folder lies in that saved_xx should not be override on target host
+  await ssh.scpFile(host, `${f.getHiddenFolder()}/run/dnsmasq-*`, f.getHiddenFolder() + "/run/", false, transferIdentity); // this should take care of dnsmasq-hosts and dnsmasq-alt-hosts
+  await ssh.scpFile(host, `${f.getHiddenFolder()}/run/dnsmasq.resolv.conf`, f.getHiddenFolder() + "/run/", false, transferIdentity);
+
 }
 
 module.exports = {
