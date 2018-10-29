@@ -42,6 +42,8 @@ class NetworkTool {
     return netif.ip_address != null && netif.mac_address != null && netif.type != null && !netif.ip_address.startsWith("169.254.");
   }
 
+  // _getSubnet() return value example
+  // [ '192.168.1.0/24' ]
   _getSubnet(networkInterface, family) {
     this.networkInterfaces = os.networkInterfaces();
     let interfaceData = this.networkInterfaces[networkInterface];
@@ -64,6 +66,34 @@ class NetworkTool {
 
   }
 
+  // listInterfaces(), output example:
+  // [
+  //   {
+  //     name: 'eth0',
+  //     ip_address: '192.168.10.4',
+  //     mac_address: '02:81:05:84:b0:5d',
+  //     ip6_addresses: ['fe80::81:5ff:fe84:b05d'],
+  //     ip6_masks: ['ffff:ffff:ffff:ffff::'],
+  //     gateway_ip: '192.168.10.1',
+  //     netmask: 'Mask:255.255.255.0',
+  //     type: 'Wired',
+  //     gateway: '192.168.10.1',
+  //     subnet: '192.168.10.0/24',
+  //     gateway6: '',
+  //     dns: ['192.168.10.1'],
+  //   },
+  //   {
+  //     name: 'eth0:0',
+  //     ip_address: '192.168.218.1',
+  //     mac_address: '02:81:05:84:b0:5d',
+  //     netmask: 'Mask:255.255.255.0',
+  //     type: 'Wired',
+  //     gateway: null,
+  //     subnet: '192.168.218.0/24',
+  //     gateway6: '',
+  //     dns: ['192.168.10.1'],
+  //   },
+  // ]
   listInterfaces() {
     return new Promise((resolve, reject) => {
 
@@ -93,6 +123,7 @@ class NetworkTool {
     });
   }
 
+  // same as listInterfaces() but filters non-local interfaces
   getLocalNetworkInterface() {
     let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
     if(!intfs) {
@@ -112,6 +143,7 @@ class NetworkTool {
       });
   }
 
+  // same as getSubnet() but filters non-local interfaces
   getLocalNetworkSubnets() {
     return async(() => {
       let interfaces = await (this.getLocalNetworkInterface());
