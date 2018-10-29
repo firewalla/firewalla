@@ -19,13 +19,37 @@ let instance = null;
 
 const log = require('../net2/logger.js')(__filename);
 
+const f = require('../net2/Firewalla.js');
+
+const configFile = `${f.getFirewallaHome()}/config.web.config`;
+
+const cloud = require('../encipher');
+const Promise = require('bluebird');
+
+const jsonfile = require('jsonfile');
+const readFileAsync = Promise.promisify(jsonfile.readFile);
+
 class FireWeb {
+
   constructor() {
     if(instance === null) {
-      instance = this;            
+      instance = this;
     }
 
     return instance;
+  }
+
+  async getCloudInstance() {
+    try {
+      const config = await readFileAsync(configFile);
+      const name = config.name || "firewalla_web";
+      const eptCloud = new cloud(name, null);
+      await eptCloud.loadKeys();
+      return eptCloud;
+    } catch(err) {
+      log.error(`Failed to load config from file ${configFile}: ${err}`);
+      return null;
+    }
   }
 
   getWebToken() {
