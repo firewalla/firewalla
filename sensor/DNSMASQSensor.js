@@ -130,7 +130,7 @@ class DNSMASQSensor extends Sensor {
 
           sem.on("VPNSubnetChanged", (event) => {
             if (!this.started) {
-              this._bufferEvent();
+              this._bufferEvent(event);
             } else {
               const subnet = event.vpnSubnet;
               if (subnet) {
