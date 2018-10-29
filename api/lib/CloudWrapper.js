@@ -28,7 +28,7 @@ var configFileLocation = "/encipher.config/netbot.config";
 
 var config = jsonfile.readFileSync(configFileLocation);
 if (config == null) {
-  console.log("Unable to read config file");
+  console.log("Unable to read config file", configFileLocation);
   process.exit(1);
 }
 

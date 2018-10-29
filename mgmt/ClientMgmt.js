@@ -23,6 +23,12 @@ const log = require('../net2/logger.js')(__filename);
 
 const mgmtKey = "clients";
 
+const clientTypes = {
+  web: "web",
+  user: "user",
+  admin: "admin"
+}
+
 class ClientMgmt {
   constructor() {
     if(instance === null) {
@@ -30,6 +36,36 @@ class ClientMgmt {
     }
 
     return instance;
+  }
+
+  async registerAdmin(client) {
+    if(!client || !client.eid || client.eid.constructor.name !== 'String') {
+      return new Error("Invalid Client");
+    }
+
+    client.type = clientTypes.admin;
+
+    return this.registerClient(client);
+  }
+
+  async registerWeb(client) {
+    if(!client || !client.eid || client.eid.constructor.name !== 'String') {
+      return new Error("Invalid Client");
+    }
+
+    client.type = clientTypes.web;
+
+    return this.registerClient(client);
+  }
+
+  async registerUser(client) {
+    if(!client || !client.eid || client.eid.constructor.name !== 'String') {
+      return new Error("Invalid Client");
+    }
+
+    client.type = clientTypes.user;
+
+    return this.registerClient(client);
   }
 
   async registerClient(client) {
@@ -73,6 +109,9 @@ class ClientMgmt {
     return client && client.type === 'web';
   }
   
+  isUserPhone(client) {
+    return client && client.type === 'user';
+  }
   
 }
 
