@@ -31,6 +31,8 @@ class DNSMASQSensor extends Sensor {
 
     this.dhcpMode = false;
     this.registered = false;
+    this.started = false;
+    this.eventBuffer = [];
   }
 
   _start() {
@@ -62,6 +64,19 @@ class DNSMASQSensor extends Sensor {
     sem.once('IPTABLES_READY', () => {
       this._run();
     })
+  }
+
+  _bufferEvent(event) {
+    log.info("Buffering event: " + event.type);
+    this.eventBuffer.push(event);
+  }
+
+  _emitBufferedEvent() {
+    if (this.eventBuffer && this.eventBuffer.length > 0) {
+      this.eventBuffer.forEach((event) => {
+        sem.emitEvent(event);
+      });
+    }
   }
 
   _run() {
@@ -129,45 +144,8 @@ class DNSMASQSensor extends Sensor {
 
         return this._start()
           .then(() => {
-            if(!this.registered) {
-              log.info("Registering dnsmasq events listeners");
-
-              sem.on("StartDNS", (event) => {
-                // NO NEED TO RELOAD DNSMASQ if it's gone, it's going to be managed by systemctl
-                // dnsmasq.checkStatus((status) => {
-                //   if(!status) {
-                //     this.reload();
-                //   }
-                // })
-              });
-
-              sem.on("StopDNS", (event) => {
-                // ignore StopDNS, as now it will always start as daemon process
-              });
-
-              sem.on("StartDHCP", (event) => {
-                log.info("Starting DHCP")
-                dnsmasq.enableDHCP();
-              });
-
-              sem.on("StopDHCP", (event) => {
-                dnsmasq.disableDHCP();
-              });
-
-              sem.on("ReloadDNSRule", (event) => {
-                this.reload();
-              });
-
-              sem.on("VPNSubnetChanged", (event) => {
-                const subnet = event.vpnSubnet;
-                if (subnet) {
-                  dnsmasq.updateVpnIptablesRules(subnet);
-                }
-              });
-
-
-              this.registered = true;
-            }
+            this.started = true;
+            this._emitBufferedEvent();
           })
       })
   }
