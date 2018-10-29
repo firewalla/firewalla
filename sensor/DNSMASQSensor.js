@@ -72,6 +72,61 @@ class DNSMASQSensor extends Sensor {
           dnsmasq.setDhcpMode(true);
         }
 
+        if(!this.registered) {
+          log.info("Registering dnsmasq events listeners");
+
+          sem.on("StartDNS", (event) => {
+            // NO NEED TO RELOAD DNSMASQ if it's gone, it's going to be managed by systemctl
+            // dnsmasq.checkStatus((status) => {
+            //   if(!status) {
+            //     this.reload();
+            //   }
+            // })
+          });
+
+          sem.on("StopDNS", (event) => {
+            // ignore StopDNS, as now it will always start as daemon process
+          });
+
+          sem.on("StartDHCP", (event) => {
+            if (!this.started) {
+              this._bufferEvent(event);
+            } else {
+              log.info("Starting DHCP")
+              dnsmasq.enableDHCP();
+            }
+          });
+
+          sem.on("StopDHCP", (event) => {
+            if (!this.started) {
+              this._bufferEvent(event);
+            } else {
+              dnsmasq.disableDHCP();
+            }
+          });
+
+          sem.on("ReloadDNSRule", (event) => {
+            if (!this.started) {
+              this._bufferEvent(event);
+            } else {
+              this.reload();
+            }
+          });
+
+          sem.on("VPNSubnetChanged", (event) => {
+            if (!this.started) {
+              this._bufferEvent(event);
+            } else {
+              const subnet = event.vpnSubnet;
+              if (subnet) {
+                dnsmasq.updateVpnIptablesRules(subnet);
+              }
+            }
+          });
+
+          this.registered = true;
+        }
+
         return this._start()
           .then(() => {
             if(!this.registered) {
