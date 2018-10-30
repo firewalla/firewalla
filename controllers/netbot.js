@@ -670,18 +670,6 @@ class netBot extends ControllerBot {
     this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
       //this.tx(this.primarygid, "Discovery started","message");
     });
-    this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
-      log.info("Found new host ", channel, type, ip);
-      if (o) {
-        let name = o.ipv4Addr;
-        if (o.name != null) {
-          name = o.name + " (" + o.ipv4Addr + ")";
-        } else if (o.macVendor != null) {
-          name = "(?)" + o.macVendor + " (" + o.ipv4Addr + ")";
-        }
-        this.tx2(this.primarygid, "New host found in network: " + name, "Found new host " + name, {uid: o.ipv4Addr});
-      }
-    });
     this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
       let m = null;
       let n = null;
@@ -1054,7 +1042,7 @@ class netBot extends ControllerBot {
 
   }
 
-  setHandler(gid, msg, callback) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy

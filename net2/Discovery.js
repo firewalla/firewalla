@@ -34,8 +34,6 @@ var sysManager = new SysManager('info');
 
 
 let Alarm = require('../alarm/Alarm.js');
-let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM2();
 
 let async = require('async');
 
@@ -104,28 +102,6 @@ module.exports = class {
     }
 
     return instances[name];
-  }
-
-  startDiscover(fast, callback) {
-    callback = callback || function () { }
-
-    this.discoverInterfaces((err, list) => {
-      log.info("Discovery::Scan", this.config.discovery.networkInterfaces, {});
-      for (let i in this.config.discovery.networkInterfaces) {
-
-        let intf = this.interfaces[this.config.discovery.networkInterfaces[i]];
-        if (intf != null) {
-          log.debug("Prepare to scan subnet", intf, {});
-          if (this.nmap == null) {
-            this.nmap = new Nmap(intf.subnet, false);
-          }
-          this.scan(intf.subnet, fast, (err, result) => {
-            this.neighborDiscoveryV6(intf.name, intf);
-            callback();
-          });
-        }
-      }
-    });
   }
 
   discoverMac(mac, callback) {
@@ -433,7 +409,6 @@ module.exports = class {
               log.error("Discovery:Nmap:Create:Error", err);
             } else {
               rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
-              //this.publisher.publish("DiscoveryEvent", "Host:Found", "0", host);
             }
           });
         }
