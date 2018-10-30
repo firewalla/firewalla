@@ -89,15 +89,6 @@ module.exports = class {
       let p = require('./MessageBus.js');
       this.publisher = new p(loglevel);
 
-      if (!noScan || noScan === false) {
-        this.publisher.subscribe("DiscoveryEvent", "Host:Detected", null, (channel, type, ip, obj) => {
-          if (type == "Host:Detected") {
-            log.info("Dynamic scanning found over Host:Detected", ip);
-            this.scan(ip, true, (err, result) => { });
-          }
-        });
-      }
-
       this.hostCache = {};
     }
 
