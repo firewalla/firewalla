@@ -110,7 +110,7 @@ class FireWeb {
 
     if(eptCloud.eid) {
       try {
-        const result = await netbotCloud.eptinviteGroupAsync(gid, this.eid);
+        const result = await netbotCloud.eptinviteGroupAsync(gid, eptCloud.eid);
         log.info(`Invite result: ${result}`);
         return;
       } catch(err) {
