@@ -448,6 +448,18 @@ let legoEptCloud = class {
         });
     }
 
+    async eptGroupListAsync(eid) {
+      return new Promise((resolve, reject) => {
+        this.eptGroupList(eid, (err, results) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(results);
+          }
+        })
+      });
+    }
+
     eptGroupList(eid, callback) {
         let options = {
             uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
@@ -1015,7 +1027,7 @@ let legoEptCloud = class {
                     this.notifySocket = false;
                 });
                 this.socket.on("glisten200",(data)=>{
-                     log.forceInfo("SOCKET Glisten 200 group indicator");
+                     log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {

@@ -60,7 +60,7 @@ class FireWeb {
       // register as web
       const eid = eptCloud.eid;
       await clientMgmt.registerWeb({eid});
-      
+
       this.eptCloud = eptCloud;
       return this.eptCloud;
     } catch(err) {
@@ -89,8 +89,13 @@ class FireWeb {
   async isAdded(gid) {
     const eptCloud = await this.getCloudInstance();
     try {
-      const groupInfo = await eptCloud.groupFindAsync(gid);
-      return true;
+      const groups = await eptCloud.eptGroupListAsync(eptCloud.eid);
+      for(const group of groups) {
+        if(group.gid === gid) {
+          return true;
+        }
+      }    
+      return false;
     } catch(err) {
       return false;
     }
