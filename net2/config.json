@@ -175,6 +175,9 @@
     "DeviceOfflineSensor": {
       "interval": 60,
       "idle": 1800
+    },
+    "FirewallaDiscoverSensor": {
+      "listenPort": 4096
     }
 },
   "hooks": {
