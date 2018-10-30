@@ -29,6 +29,8 @@ const Promise = require('bluebird');
 const jsonfile = require('jsonfile');
 const readFileAsync = Promise.promisify(jsonfile.readFile);
 
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 class FireWeb {
 
   constructor() {
@@ -40,21 +42,69 @@ class FireWeb {
   }
 
   async getCloudInstance() {
+    if(this.eptCloud) {
+      return this.eptCloud;
+    }
+
     try {
       const config = await readFileAsync(configFile);
       const name = config.name || "firewalla_web";
       const eptCloud = new cloud(name, null);
       await eptCloud.loadKeys();
-      return eptCloud;
+      this.eptCloud = eptCloud;
     } catch(err) {
       log.error(`Failed to load config from file ${configFile}: ${err}`);
       return null;
     }
   }
 
-  getWebToken() {
+  async enableWebToken(netbotCloud) {
+    const eptCloud = await this.getCloudInstance();
+    const gid = await rclient.hgetAsync("sys:ept", "gid");
+    const isAdded = await this.isAdded(gid);
+    if(!isAdded) { // add web token to group if not yet
+      await this.addWebTokenToGroup(netbotCloud, gid);
+    }
 
+    // return a format to pass back to fireguard
+    return {
+      publicKey: eptCloud.myPublicKey,
+      privateKey: eptCloud.myPrivateKey,
+      gid: gid
+    }
+  }
+
+  // Check if web token is already added to group gid
+  async isAdded(gid) {
+    const eptCloud = await this.getCloudInstance();
+    try {
+      const groupInfo = await eptCloud.groupFindAsync(gid);
+      return true;
+    } catch(err) {
+      return false;
+    }
+  }
+
+  async addWebTokenToGroup(netbotCloud, gid) {
+    if(!netbotCloud) {
+      return Promise.reject(new Error("Invalid Cloud Instance"));
+    }
+
+    const eptCloud = await this.getCloudInstance();
+
+    if(eptCloud.eid) {
+      try {
+        const result = await netbotCloud.eptinviteGroupAsync(gid, this.eid);
+        log.info(`Invite result: ${result}`);
+        return;
+      } catch(err) {
+        log.error(`Failed to invite ${eptCloud.eid} to group ${gid}, err: ${err}`);
+        return Promise.reject(err);
+      }
+    } else {
+      return Promise.reject(new Error("Invalid Cloud Instance for Web"));
+    }
   }
 }
 
-module.exports = FireWeb;
+module.exports = new FireWeb();

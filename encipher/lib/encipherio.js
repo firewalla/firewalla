@@ -552,6 +552,17 @@ let legoEptCloud = class {
         })
     }
 
+  groupFindAsync(gid) {
+    return new Promise((resolve, reject) => {
+      this.groupFind(gid, (err, result) => {
+        if (err)
+          reject(err)
+        else
+          resolve(result);
+      })
+    })
+  }
+
     groupFind(gid, callback) {
 
         if (this.appId === undefined || gid === undefined) {
