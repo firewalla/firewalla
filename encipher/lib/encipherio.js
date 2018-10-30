@@ -199,6 +199,8 @@ let legoEptCloud = class {
 
         this.myPublicKey = ursa.createPublicKey(pubKeyPem);
         this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+        this.mypubkeyfile = pubKeyPem;
+        this.myprivkeyfile = privateKeyPem;
       })();
     }
 
