@@ -21,7 +21,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const f = require('../net2/Firewalla.js');
 
-const configFile = `${f.getFirewallaHome()}/config.web.config`;
+const configFile = `${f.getFirewallaHome()}/config/web.config`;
 
 const cloud = require('../encipher');
 const Promise = require('bluebird');
@@ -37,7 +37,6 @@ class FireWeb {
     if(instance === null) {
       instance = this;
     }
-
     return instance;
   }
 
@@ -49,11 +48,15 @@ class FireWeb {
     try {
       const config = await readFileAsync(configFile);
       const name = config.name || "firewalla_web";
+      const appId = config.appId;
+      const appSecret = config.appSecret;
+
       const eptCloud = new cloud(name, null);
       await eptCloud.loadKeys();
+      await eptCloud.eptloginAsync(appId, appSecret, null, name);
       this.eptCloud = eptCloud;
     } catch(err) {
-      log.error(`Failed to load config from file ${configFile}: ${err}`);
+      log.error(`Failed to get cloud instance: ${err}`);
       return null;
     }
   }

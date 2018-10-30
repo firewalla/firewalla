@@ -254,6 +254,18 @@ let legoEptCloud = class {
     }
 
 
+    eptloginAsync(appId, appSecret, eptInfo, tag) {
+      return new Promise((resolve, reject) => {
+        this.eptlogin(appId, appSecret, eptInfo, tag, (err, eid) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(eid);
+          }
+        })
+      });
+    }
+
     // Info is not encrypted
     eptlogin(appId, appSecret, eptInfo, tag, callback) {
         this.appId = appId;
