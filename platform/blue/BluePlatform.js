@@ -71,6 +71,8 @@ class BluePlatform extends Platform {
     ledPaths.forEach(async (path) => {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo none > ${trigger}'`);
+      const brightness = `${path}/brightness`;
+      await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
     });
   }
 
