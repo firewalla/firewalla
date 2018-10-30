@@ -31,6 +31,8 @@ const readFileAsync = Promise.promisify(jsonfile.readFile);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const clientMgmt = require('./ClientMgmt.js');
+
 class FireWeb {
 
   constructor() {
@@ -54,6 +56,11 @@ class FireWeb {
       const eptCloud = new cloud(name, null);
       await eptCloud.loadKeys();
       await eptCloud.eptloginAsync(appId, appSecret, null, name);
+
+      // register as web
+      const eid = eptCloud.eid;
+      await clientMgmt.registerWeb({eid});
+      
       this.eptCloud = eptCloud;
       return this.eptCloud;
     } catch(err) {
