@@ -292,35 +292,6 @@ module.exports = class {
   }
 
 
-  scan(subnet, fast, callback) {
-    if (this.nmap == null) {
-      log.error("nmap object is null when trying to scan");
-      callback(null, null);
-      return;
-    }
-    log.info("Start scanning network:", subnet, fast);
-    this.publisher.publish("DiscoveryEvent", "Scan:Start", '0', {});
-    this.nmap.scan(subnet, fast, (err, hosts, ports) => {
-      if (err) {
-        log.error("Failed to scan: " + err);
-        return;
-      }
-      this.hosts = [];
-      for (let h in hosts) {
-        let host = hosts[h];
-        this.processHost(host);
-      }
-      //log.info("Done Processing ++++++++++++++++++++");
-      log.info("Network scanning is completed:", subnet, hosts.length);
-      setTimeout(() => {
-        callback(null, null);
-        log.info("Discovery:Scan:Done");
-        this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-        sysManager.setOperationalState("LastScan", Date.now() / 1000);
-      }, 2000);
-    });
-  }
-
   /* host.uid = ip4 adress
      host.mac = mac address
      host.ipv4Addr 
