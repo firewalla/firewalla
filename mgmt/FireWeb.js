@@ -55,6 +55,7 @@ class FireWeb {
       await eptCloud.loadKeys();
       await eptCloud.eptloginAsync(appId, appSecret, null, name);
       this.eptCloud = eptCloud;
+      return this.eptCloud;
     } catch(err) {
       log.error(`Failed to get cloud instance: ${err}`);
       return null;
@@ -71,8 +72,8 @@ class FireWeb {
 
     // return a format to pass back to fireguard
     return {
-      publicKey: eptCloud.myPublicKey,
-      privateKey: eptCloud.myPrivateKey,
+      publicKey: eptCloud.mypubkeyfile.toString('ascii'),
+      privateKey: eptCloud.myprivkeyfile.toString('ascii'),
       gid: gid
     }
   }
