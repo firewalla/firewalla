@@ -189,9 +189,9 @@ class FWInvitation {
 
         // admin or user
         if(this.recordFirstBinding) {
-          await clientMgmt.registerAdmin({eid});
+          await(clientMgmt.registerAdmin({eid}));
         } else {
-          await clientMgmt.registerUser({eid});
+          await(clientMgmt.registerUser({eid}));
         }
         
         log.forceInfo(`Linked App ${eid} to this device successfully`);        
