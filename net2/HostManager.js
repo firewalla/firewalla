@@ -1470,7 +1470,7 @@ module.exports = class HostManager {
       json.network.ip_address = fConfig.docker.hostIP;
     }
 
-    json.cpuid = utils.getCpuId();
+    json.cpuid = platform.getBoardSerial();
     json.uptime = process.uptime()
 
     if(sysManager.language) {
@@ -1505,7 +1505,7 @@ module.exports = class HostManager {
       json.isBeta = false
     }
 
-    json.cpuid = utils.getCpuId()
+    json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
     if (sysManager.sshPassword) {
       json.ssh = sysManager.sshPassword;
