@@ -8,8 +8,6 @@ let util = require('util');
 let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
 let i18n = require('../util/i18n.js');
 
-let uuid = require('uuid');
-
 let extend = require('util')._extend;
 
 // let moment = require('moment');

@@ -99,7 +99,9 @@ let nm = new NM();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
-const frp = fm.getSupportFRP()
+const frp = fm.getSupportFRP();
+
+const fireWeb = require('../mgmt/FireWeb.js');
 
 let f = require('../net2/Firewalla.js');
 
@@ -3091,6 +3093,17 @@ class netBot extends ControllerBot {
       })
       break;
     }
+
+    case "enableWebToken": {
+      (async () => {
+        const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+        this.simpleTxData(msg, tokenInfo, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;
