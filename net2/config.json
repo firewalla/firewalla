@@ -13,7 +13,7 @@
     },
     "iptables": {
        "defaults": [
-          "sudo sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
+          "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
           "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
           "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
        ]
@@ -29,15 +29,15 @@
   "secondaryInterface": {
     "intf":"eth0:0",
     "ipOnly": "192.168.218.1",
-     "ip":"192.168.218.1/24",
-     "ipsubnet":"192.168.218.0/24",
-     "ipnet":"192.168.218",
+    "ip":"192.168.218.1/24",
+    "ipsubnet":"192.168.218.0/24",
+    "ipnet":"192.168.218",
     "ipmask":"255.255.255.0",
     "ip2Only": "192.168.168.1",
-     "ip2":"192.168.168.1/24",
-     "ipsubnet2":"192.168.168.0/24",
-     "ipnet2":"192.168.168",
-     "ipmask2":"255.255.255.0"
+    "ip2":"192.168.168.1/24",
+    "ipsubnet2":"192.168.168.0/24",
+    "ipnet2":"192.168.168",
+    "ipmask2":"255.255.255.0"
   },
   "vpnInterface": {
     "subnet": "10.8.0.0/24"

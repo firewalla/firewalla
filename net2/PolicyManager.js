@@ -105,7 +105,7 @@ module.exports = class {
       return;
     }
 
-    iptable.flush6((err, data) => {
+    ip6table.flush((err, data) => {
       iptable.flush((err, data) => {
         let defaultTable = config['iptables']['defaults'];
         let myip = sysManager.myIp();
@@ -128,9 +128,6 @@ module.exports = class {
         callback(err);
       });
     });
-  }
-
-  defaults(config) {
   }
 
   block(mac, protocol, src, dst, sport, dport, state, callback) {

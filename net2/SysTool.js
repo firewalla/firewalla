@@ -37,6 +37,10 @@ class SysTool {
     return instance;
   }
 
+  stopServices() {
+    return exec(`${firewalla.getFirewallaHome()}/scripts/fire-stop`);
+  }
+
   // call main-run
   restartServices() {
     return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
