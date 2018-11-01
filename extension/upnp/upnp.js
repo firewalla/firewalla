@@ -268,7 +268,7 @@ module.exports = class {
                 return;
             }
 
-            upnpMappings.filter((m) => 
+            upnpMappings = _.reject(upnpMappings, (m) => 
                 m.localPort     == localPort &&
                 m.externalPort  == externalPort &&
                 m.protocol      === protocol
