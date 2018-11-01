@@ -46,9 +46,15 @@ for i in `seq 1 10`; do
       then
         exit 0
       else
-        /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
-        sleep 1
-        touch /tmp/watchdog 
+        echo "Ping backup domain $BACKUP_DOMAIN failed. Trying curl instead ..."
+        if curl -s "https://$BACKUP_DOMAIN" &> /dev/null
+        then
+          exit 0
+        else
+          /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
+          sleep 1
+          touch /tmp/watchdog 
+        fi
       fi
     fi
 done
