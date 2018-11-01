@@ -13,32 +13,31 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
-var ip = require('ip');
-var os = require('os');
-var dns = require('dns');
-var network = require('network');
-var linux = require('../util/linux.js');
-var Nmap = require('./Nmap.js');
+const log = require('./logger.js')(__filename);
+const ip = require('ip');
+const os = require('os');
+const dns = require('dns');
+const network = require('network');
+const linux = require('../util/linux.js');
+const Nmap = require('./Nmap.js');
 var instances = {};
 
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let l2 = require('../util/Layer2.js');
+const l2 = require('../util/Layer2.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
+const async = require('async');
 
-let Alarm = require('../alarm/Alarm.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
-let async = require('async');
-
-let HostTool = require('../net2/HostTool.js');
-let hostTool = new HostTool();
+const networkTool = require('./NetworkTool.js')();
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -119,6 +118,7 @@ module.exports = class {
 
           log.info("Start scanning network ", intf.subnet, "to look for mac", mac, {});
 
+          // intf.subnet is in v4 CIDR notation
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
             if (err) {
               log.error("Failed to scan: " + err);
@@ -201,48 +201,26 @@ module.exports = class {
     log.debug("Calling release function of Discovery");
   }
 
-  is_interface_valid(netif) {
-    return netif.ip_address != null && netif.mac_address != null && netif.type != null && !netif.ip_address.startsWith("169.254.");
-  }
-
   discoverInterfaces(callback) {
     this.interfaces = {};
-    linux.get_network_interfaces_list((err, list) => {
-      //   network.get_interfaces_list((err, list) => {
-      //            log.info("Found list of interfaces", list, {});
+    networkTool.listInterface().then(list => {
       let redisobjs = ['sys:network:info'];
-      if (list == null || list.length <= 0) {
-        log.error("Discovery::Interfaces", "No interfaces found");
-        if (callback) {
-          callback(null, []);
-        }
-        return;
-      }
-
-      // ignore any invalid interfaces
-      let self = this;
-
-      list.forEach((i) => {
-        log.info("Found interface %s %s", i.name, i.ip_address);
-      });
-
-      list = list.filter(function (x) { return self.is_interface_valid(x) });
-
       for (let i in list) {
         log.debug(list[i], {});
 
         redisobjs.push(list[i].name);
-        list[i].gateway = require('netroute').getGateway(list[i].name);
-        list[i].subnet = this.getSubnet(list[i].name, 'IPv4');
-        list[i].gateway6 = linux.gateway_ip6_sync();
-        if (list[i].subnet.length > 0) {
-          list[i].subnet = list[i].subnet[0];
-        }
-        list[i].dns = dns.getServers();
-        this.interfaces[list[i].name] = list[i];
         redisobjs.push(JSON.stringify(list[i]));
 
-        // "{\"name\":\"eth0\",\"ip_address\":\"192.168.2.225\",\"mac_address\":\"b8:27:eb:bd:54:da\",\"type\":\"Wired\",\"gateway\":\"192.168.2.1\",\"subnet\":\"192.168.2.0/24\"}"
+        /*
+        {
+          "name":"eth0",
+          "ip_address":"192.168.2.225",
+          "mac_address":"b8:27:eb:bd:54:da",
+          "type":"Wired",
+          "gateway":"192.168.2.1",
+          "subnet":"192.168.2.0/24"
+        }
+        */
         if (list[i].type == "Wired" && list[i].name != "eth0:0") {
           let host = {
             name: "Firewalla",
@@ -254,14 +232,7 @@ module.exports = class {
           this.processHost(host);
         }
       }
-      /*
-      let interfaces = os.interfaces();
-      for (let i in interfaces) {
-         for (let z in interfaces[i]) {
-             let interface = interfaces[i];
-         }
-      }
-      */
+
       log.debug("Setting redis", redisobjs, {});
 
       rclient.hmset(redisobjs, (error, result) => {
@@ -275,7 +246,6 @@ module.exports = class {
         }
       });
     });
-
   }
 
   filterByVendor(_vendor) {
