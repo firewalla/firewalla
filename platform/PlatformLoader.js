@@ -56,9 +56,9 @@ class PlatformLoader {
       break;      
     case "x86_64":
       this.platform = new DockerPlatform();
+      break;
     default:
       return null;
-      break;
     }
 
     return this.platform;
