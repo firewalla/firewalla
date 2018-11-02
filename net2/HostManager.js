@@ -1386,11 +1386,6 @@ module.exports = class HostManager {
             this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
                 log.info("New Host May be added rescan");
                 this.getHosts((err, result) => {
-                    if (this.type === 'server') {
-                        for (let i in result) {
-                            //result[i].spoof(true);
-                        }
-                    }
                     if (this.callbacks[type]) {
                         this.callbacks[type](channel, type, ip, obj);
                     }

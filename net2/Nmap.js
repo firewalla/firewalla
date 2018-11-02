@@ -15,9 +15,10 @@
 'use strict';
 var ip = require('ip');
 
-let util = require('util');
+const util = require('util');
 
-let Firewalla = require('../net2/Firewalla');
+const Firewalla = require('./Firewalla.js');
+const networkTool = require('./NetworkTool.js')();
 
 var debugging = false;
 // var log = function () {
@@ -68,38 +69,32 @@ module.exports = class {
     }
   }
 
-  scan(range, fast, callback) {
-    if (false == ip.isV4Format(range)) {
-      // workaround for docker enviornment, replace 16 to 24
-      range = range.replace('/16', '/24');
+  scan(range /*Must be v4 CIDR*/, fast, callback) {
+    if (!ip.isV4Format(range.split('/')[0])) {
+      callback(null, [], []);
+      return;
+    }
 
-      try {
-        let ip_info = ip.cidrSubnet(range);
-        if (ip_info) {
-          if (ip_info.subnetMaskLength < 24) {
-            // TODO: generate alarm
-            callback(null, [], []);
-            return;
-          }
-        }
-      } catch (e) {
-        log.error('Nmap:Scan:Error', range, fast, e, {});
-        callback(e);
-        return;
-      }
+    try {
+      range = networkTool.reduceSubnetTo24(range)
+    } catch (e) {
+      log.error('Nmap:Scan:Error', range, fast, e, {});
+      callback(e);
+      return;
     }
-    let cmdline = util.format(
-      'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
-      range,
-      xml2jsonBinary,
-    );
-    if (fast == true) {
-      cmdline = util.format(
-        'sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s',
-        range,
-        xml2jsonBinary,
-      );
-    }
+
+    let cmdline = fast
+      ? util.format(
+          'sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s',
+          range,
+          xml2jsonBinary
+        )
+      : util.format(
+          'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
+          range,
+          xml2jsonBinary
+        );
+
     log.info('Running commandline: ', cmdline);
 
     if (this.scanQ.length > 3) {
@@ -219,7 +214,7 @@ module.exports = class {
               host['os_match'] = hostjson['os']['osmatch']['name'];
               host['os_accuracy'] = hostjson['os']['osmatch']['accuracy'];
               host['os_class'] = JSON.stringify(
-                hostjson['os']['osmatch']['osclass'],
+                hostjson['os']['osmatch']['osclass']
               );
             }
 
@@ -253,7 +248,7 @@ module.exports = class {
           } catch (e) {}
         }
         callback(null, hosts, ports);
-      },
+      }
     );
     this.process.on('close', (code, signal) => {
       log.info('NMAP Closed');

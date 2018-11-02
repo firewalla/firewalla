@@ -171,12 +171,9 @@ class NmapSensor extends Sensor {
   getNetworkRanges() {
     return networkTool.getLocalNetworkInterface()
       .then((results) => {
-      this.networkRanges = results &&
-        results.map((x) => x.subnet)
-          .map((subnet) => {
-          return subnet.replace('/16', '/24') // a very hard code for 16 subnet
-        }) ;
-      return this.networkRanges;
+        this.networkRanges = results &&
+          results.map((x) => networkTool.reduceSubnetTo24(x.subnet))
+        return this.networkRanges;
       });
   }
 
@@ -213,9 +210,12 @@ class NmapSensor extends Sensor {
     return Promise.all(this.networkRanges.map((range) => {
 
       log.info("Scanning network", range, "to detect new devices...");
-      if (range.endsWith('/8')) {
-        log.info("Subnet " + range + " contains too many ip addresses to scan, skip it.")
-        return Promise.resolve();
+
+      try {
+        range = networkTool.reduceSubnetTo24(range)
+      } catch (e) {
+        log.error('Error reducing scan range:', range, fastMode, e);
+        return Promise.resolve(); // Skipping this scan
       }
 
       let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);

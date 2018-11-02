@@ -209,6 +209,7 @@ module.exports = class {
         log.debug(list[i], {});
 
         redisobjs.push(list[i].name);
+        this.interfaces[list[i].name] = list[i];
         redisobjs.push(JSON.stringify(list[i]));
 
         /*
@@ -552,27 +553,5 @@ module.exports = class {
     this.DB.Port.DBModel.findAll().then((objs) => {
       callback(null, objs);
     });
-  }
-
-  getSubnet(networkInterface, family) {
-    this.networkInterfaces = os.networkInterfaces();
-    let interfaceData = this.networkInterfaces[networkInterface];
-    if (interfaceData == null) {
-      return null;
-    }
-
-    var ipSubnets = [];
-
-
-    for (let i = 0; i < interfaceData.length; i++) {
-      if (interfaceData[i].family == family && interfaceData[i].internal == false) {
-        let subnet = ip.subnet(interfaceData[i].address, interfaceData[i].netmask);
-        let subnetmask = subnet.networkAddress + "/" + subnet.subnetMaskLength;
-        ipSubnets.push(subnetmask);
-      }
-    }
-
-    return ipSubnets;
-
   }
 }
