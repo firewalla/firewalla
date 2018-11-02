@@ -20,7 +20,7 @@ const Promise = require('bluebird');
 
 const linux = require('../util/linux.js');
 
-const fConfig = require('../net2/config.js').getConfig();
+const fConfig = require('./config.js').getConfig();
 
 const os = require('os');
 const ip = require('ip');
@@ -52,8 +52,8 @@ class NetworkTool {
   }
 
   // returns CIDR or null
-  _getSubnet(networkInterface, family) {
-    let interfaceData = os.networkInterfaces()[networkInterface.name];
+  _getSubnet(interfaceName, family) {
+    let interfaceData = os.networkInterfaces()[interfaceName];
     if (interfaceData == null) {
       return null
     }
@@ -132,7 +132,7 @@ class NetworkTool {
 
     return this.listInterfaces().then(list => {
       let list2 = list.filter(x => {
-        return intfs.includes(y => y === x.name);
+        return intfs.some(y => y === x.name);
       });
       if (list2.length === 0) {
         return null;
@@ -147,7 +147,7 @@ class NetworkTool {
     return async(() => {
       let interfaces = await(this.getLocalNetworkInterface());
       // a very hard code for 16 subnet
-      return interfaces && interfaces.map(x => reduceSubnetTo24(x.subnet));
+      return interfaces && interfaces.map(x => this.reduceSubnetTo24(x.subnet));
     })();
   }
 

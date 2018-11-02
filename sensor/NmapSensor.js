@@ -171,9 +171,8 @@ class NmapSensor extends Sensor {
   getNetworkRanges() {
     return networkTool.getLocalNetworkInterface()
       .then((results) => {
-        this.networkRanges = results &&
+        return results &&
           results.map((x) => networkTool.reduceSubnetTo24(x.subnet))
-        return this.networkRanges;
       });
   }
 
@@ -194,8 +193,8 @@ class NmapSensor extends Sensor {
       .then((result) => {
         if(result) {
           return this.getNetworkRanges()
-            .then(() => {
-              return this.runOnce(fastMode)
+            .then((range) => {
+              return this.runOnce(fastMode, range)
             })
         }
       }).catch((err) => {
@@ -203,11 +202,11 @@ class NmapSensor extends Sensor {
     })
   }
 
-  runOnce(fastMode) {
-    if(!this.networkRanges)
+  runOnce(fastMode, networkRanges) {
+    if(!networkRanges)
       return Promise.reject(new Error("network range is required"));
 
-    return Promise.all(this.networkRanges.map((range) => {
+    return Promise.all(networkRanges.map((range) => {
 
       log.info("Scanning network", range, "to detect new devices...");
 

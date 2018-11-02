@@ -203,7 +203,7 @@ module.exports = class {
 
   discoverInterfaces(callback) {
     this.interfaces = {};
-    networkTool.listInterface().then(list => {
+    networkTool.listInterfaces().then(list => {
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
         log.debug(list[i], {});
