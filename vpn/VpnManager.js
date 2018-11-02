@@ -216,7 +216,7 @@ module.exports = class {
                             sem.emitEvent({
                                 type: "VPNSubnetChanged",
                                 message: "VPN subnet is updated",
-                                vpnSubnet: this.serverNetwork,
+                                vpnSubnet: this.serverNetwork + "/24",
                                 toProcess: "FireMain"
                             });
                             if (err) {

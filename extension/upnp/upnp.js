@@ -39,7 +39,7 @@ let natupnp = require('./nat-upnp');
 
 let upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
-let natpmpTimeout = 86400000;  // 24 * 60 * 60 * 1000
+let natpmpTimeout = 86400;  // 1 day = 24 * 60 * 60 seconds
 
 let upnpIntervalHandler = null;
 let upnpMappings = [];
@@ -268,7 +268,7 @@ module.exports = class {
                 return;
             }
 
-            upnpMappings.filter((m) => 
+            upnpMappings = _.reject(upnpMappings, (m) => 
                 m.localPort     == localPort &&
                 m.externalPort  == externalPort &&
                 m.protocol      === protocol
@@ -310,11 +310,5 @@ module.exports = class {
             callback(null, !matches.isEmpty)
         });
     }
-
-    periodicalCheck(protocol, localPort, externalPort, description, callback) {
-        this.getLocalPortMappings
-    }
 }
-
-
 

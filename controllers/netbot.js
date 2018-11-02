@@ -97,7 +97,9 @@ let nm = new NM();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
-const frp = fm.getSupportFRP()
+const frp = fm.getSupportFRP();
+
+const fireWeb = require('../mgmt/FireWeb.js');
 
 let f = require('../net2/Firewalla.js');
 
@@ -2020,6 +2022,12 @@ class netBot extends ControllerBot {
       let begin = msg.data && msg.data.start;
       let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
+      // A backward compatbiel fix for query host network stats for 'NOW'
+      // extend it to a full hour if not enough
+      if((end - begin) < 3600 && msg.data.hourblock === 0) {
+        end = begin + 3600; 
+      }
+
       let options = {}
       if(begin && end) {
         options.begin = begin
@@ -2943,6 +2951,17 @@ class netBot extends ControllerBot {
       })
       break;
     }
+
+    case "enableWebToken": {
+      (async () => {
+        const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+        this.simpleTxData(msg, tokenInfo, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+
     case "host:delete": {
       (async () => {
         const hostMac = msg.data.value.mac;

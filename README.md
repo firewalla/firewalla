@@ -68,14 +68,15 @@ docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
 ```
 ## Apps
 ### iOS App
-https://itunes.apple.com/us/app/firewalla/id1180904053
+* App Store (Stable): https://itunes.apple.com/us/app/firewalla/id1180904053
+* TestFlight (Beta App): https://testflight.apple.com/join/qtUnSjJp
 
 ### Android App
-https://play.google.com/store/apps/details?id=com.firewalla.chancellor&hl=en_US
-
+* Google Play (Stable): https://play.google.com/store/apps/details?id=com.firewalla.chancellor&hl=en_US
+* Beta App: https://play.google.com/apps/testing/com.firewalla.chancellor
 
 ## Firewalla Box Install Guide
-https://firewalla.com/pages/install2
+https://firewalla.com/install
 
 If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
 

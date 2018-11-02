@@ -199,6 +199,8 @@ let legoEptCloud = class {
 
         this.myPublicKey = ursa.createPublicKey(pubKeyPem);
         this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+        this.mypubkeyfile = pubKeyPem;
+        this.myprivkeyfile = privateKeyPem;
       })();
     }
 
@@ -253,6 +255,18 @@ let legoEptCloud = class {
         }
     }
 
+
+    eptloginAsync(appId, appSecret, eptInfo, tag) {
+      return new Promise((resolve, reject) => {
+        this.eptlogin(appId, appSecret, eptInfo, tag, (err, eid) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(eid);
+          }
+        })
+      });
+    }
 
     // Info is not encrypted
     eptlogin(appId, appSecret, eptInfo, tag, callback) {
@@ -434,6 +448,18 @@ let legoEptCloud = class {
         });
     }
 
+    async eptGroupListAsync(eid) {
+      return new Promise((resolve, reject) => {
+        this.eptGroupList(eid, (err, results) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(results);
+          }
+        })
+      });
+    }
+
     eptGroupList(eid, callback) {
         let options = {
             uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
@@ -551,6 +577,17 @@ let legoEptCloud = class {
             }
         })
     }
+
+  groupFindAsync(gid) {
+    return new Promise((resolve, reject) => {
+      this.groupFind(gid, (err, result) => {
+        if (err)
+          reject(err)
+        else
+          resolve(result);
+      })
+    })
+  }
 
     groupFind(gid, callback) {
 
@@ -990,7 +1027,7 @@ let legoEptCloud = class {
                     this.notifySocket = false;
                 });
                 this.socket.on("glisten200",(data)=>{
-                     log.forceInfo("SOCKET Glisten 200 group indicator");
+                     log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {

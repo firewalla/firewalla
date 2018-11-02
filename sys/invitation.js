@@ -41,6 +41,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const clientMgmt = require('../mgmt/ClientMgmt.js');
+
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
@@ -183,6 +185,13 @@ class FWInvitation {
         // Record first binding time
         if(this.recordFirstBinding) {
           await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
+        }
+
+        // admin or user
+        if(this.recordFirstBinding) {
+          await(clientMgmt.registerAdmin({eid}));
+        } else {
+          await(clientMgmt.registerUser({eid}));
         }
         
         log.forceInfo(`Linked App ${eid} to this device successfully`);        

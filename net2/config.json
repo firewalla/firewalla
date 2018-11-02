@@ -9,11 +9,15 @@
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "cacheInit": true,
   "discovery": {
-    "networkInterfaces": ["eth0", "eth0:0", "wlan0"]
+    "networkInterfaces": [
+      "eth0",
+      "eth0:0",
+      "wlan0"
+    ]
   },
   "iptables": {
     "defaults": [
-      "sudo sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
+      "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
       "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
       "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
@@ -47,7 +51,11 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
-    "verificationDomains": ["firewalla.encipher.io", "github.com", "google.com"]
+    "verificationDomains": [
+      "firewalla.encipher.io",
+      "github.com",
+      "google.com"
+    ]
   },
   "sysInfo": {
     "tailNum": 100
@@ -175,6 +183,9 @@
     "DeviceOfflineSensor": {
       "interval": 60,
       "idle": 1800
+    },
+    "FirewallaDiscoverSensor": {
+      "listenPort": 4096
     }
   },
   "hooks": {
@@ -248,13 +259,11 @@
       "expires": 14400
     }
   },
-
   "features": {
     "intel:feedback": true,
     "ss_client:statusCheck": true,
     "familyMode": "v1"
   },
-
   "userFeatures": {
     "porn": true,
     "video": true,
@@ -281,7 +290,8 @@
     "upstream_dns": false,
     "insane_mode": false
   },
-
-  "hiddenFeatures": ["naughty_monkey"],
+  "hiddenFeatures": [
+    "naughty_monkey"
+  ],
   "pubKeys": []
 }
