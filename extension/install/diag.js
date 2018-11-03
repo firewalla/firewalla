@@ -59,7 +59,8 @@ class FWDiag {
   }
 
   async getBranchInfo() {
-    return exec("git rev-parse --abbrev-ref HEAD").stdout.replace(/\n$/, '');
+    const result = await exec("git rev-parse --abbrev-ref HEAD");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
   getVersion() {
@@ -67,11 +68,13 @@ class FWDiag {
   }
 
   async getLongVersion() {
-    return exec("git describe --tags").stdout.replace(/\n$/, '');
+    const result = await exec("git describe --tags");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
   async getTotalMemory() {
-    return exec("free -m | awk '/Mem:/ {print $2}'").stdout.replace(/\n$/, '');
+    const result = await exec("free -m | awk '/Mem:/ {print $2}'");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
   async prepareData(payload) {
@@ -123,6 +126,7 @@ class FWDiag {
     
     const firewallaIP = inter.ip_address;
     const mac = inter.mac_address;
+    const gateway = inter.gateway_ip;
 
     const gatewayMac = await this.getGatewayMac(gateway);
 
@@ -143,7 +147,7 @@ class FWDiag {
   }
 
   async sayHello() {
-    const data = await this.prepareHelloData(payload);
+    const data = await this.prepareHelloData();
     const options = {
       uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
       method: 'POST',
