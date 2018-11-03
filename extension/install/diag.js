@@ -131,9 +131,10 @@ class FWDiag {
     const gatewayMac = await this.getGatewayMac(gateway);
 
     const branch = await this.getBranchInfo();
-    const version = this.getVersion;
+    const version = this.getVersion();
     const longVersion = await this.getLongVersion();
     const memory = await this.getTotalMemory();
+    const model = platform.getName();
 
     return {      
       mac,
@@ -142,7 +143,8 @@ class FWDiag {
       branch,
       version,
       longVersion,
-      memory
+      memory,
+      model      
     };
   }
 
