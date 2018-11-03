@@ -135,6 +135,7 @@ class FWDiag {
     const longVersion = await this.getLongVersion();
     const memory = await this.getTotalMemory();
     const model = platform.getName();
+    const serial = platform.getBoardSerial();
 
     return {      
       mac,
@@ -144,7 +145,8 @@ class FWDiag {
       version,
       longVersion,
       memory,
-      model      
+      model,
+      serial
     };
   }
 
