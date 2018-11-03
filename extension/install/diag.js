@@ -58,6 +58,22 @@ class FWDiag {
     return name.replace(/\n$/, '')
   }
 
+  async getBranchInfo() {
+    return exec("git rev-parse --abbrev-ref HEAD").stdout.replace(/\n$/, '');
+  }
+
+  getVersion() {
+    return fConfig.version;
+  }
+
+  async getLongVersion() {
+    return exec("git describe --tags").stdout.replace(/\n$/, '');
+  }
+
+  async getTotalMemory() {
+    return exec("free -m | awk '/Mem:/ {print $2}'").stdout.replace(/\n$/, '');
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -100,6 +116,42 @@ class FWDiag {
 
       log.info("submitted info to diag server successfully with result", result);
     }
+  }
+
+  async prepareHelloData() {
+    const inter = await this.getNetworkInfo();
+    
+    const firewallaIP = inter.ip_address;
+    const mac = inter.mac_address;
+
+    const gatewayMac = await this.getGatewayMac(gateway);
+
+    const branch = await this.getBranchInfo();
+    const version = this.getVersion;
+    const longVersion = await this.getLongVersion();
+    const memory = await this.getTotalMemory();
+
+    return {      
+      mac,
+      firewallaIP,
+      gatewayMac,
+      branch,
+      version,
+      longVersion,
+      memory
+    };
+  }
+
+  async sayHello() {
+    const data = await this.prepareHelloData(payload);
+    const options = {
+      uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
+      method: 'POST',
+      json: data
+    }
+    const result = await rp(options);
+
+    log.info("said hello to Firewalla Cloud");
   }
 }
 
