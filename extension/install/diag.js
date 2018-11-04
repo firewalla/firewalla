@@ -129,12 +129,14 @@ class FWDiag {
     const mac = inter.mac_address;
     const gateway = inter.gateway_ip;
 
-    const gatewayMac = await this.getGatewayMac(gateway);
-
-    const branch = await this.getBranchInfo();
     const version = this.getVersion();
-    const longVersion = await this.getLongVersion();
-    const memory = await this.getTotalMemory();
+
+    const [gatewayMac, branch, longVersion, memory] = await require('bluebird').all([
+      this.getGatewayMac(gateway),
+      this.getBranchInfo(),
+      this.getLongVersion(),
+      this.getTotalMemory()
+    ]);
 
     return {      
       mac,
@@ -156,8 +158,7 @@ class FWDiag {
       method: 'POST',
       json: data
     }
-    const result = await rp(options);
-
+    await rp(options);
     log.info("said hello to Firewalla Cloud");
   }
 }
