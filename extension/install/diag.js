@@ -3,17 +3,16 @@
 let instance = null;
 
 const exec = require('child-process-promise').exec;
-const network = require('network');
-const Promise = require('bluebird');
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
-const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const get_interfaces_list_async = Promise.promisify(network.get_interfaces_list);
+const get_interfaces_list_async = require('bluebird').promisify(require('network').get_interfaces_list);
 const activeInterface = fConfig.monitoringInterface || "eth0";
 
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const model = platform.getName();
+const serial = platform.getBoardSerial();
 
 const rp = require('request-promise');
 
@@ -96,13 +95,15 @@ class FWDiag {
       ts: ts,
       gw_mac: gatewayMac,
       gw_name: gatewayName,
-      model: platform.getName()
+      model: model
     });
   }
 
   async submitInfo(payload) {
     const data = await this.prepareData(payload);
     if(data.gw) {
+      const rclient = require('../../util/redis_manager.js').getRedisClient();
+
       const options = {
         uri: `${fConfig.firewallaDiagServerURL}/${data.gw}` || `https://api.firewalla.com/diag/api/v1/device/${data.gw}`,
         method: 'POST',
@@ -134,8 +135,6 @@ class FWDiag {
     const version = this.getVersion();
     const longVersion = await this.getLongVersion();
     const memory = await this.getTotalMemory();
-    const model = platform.getName();
-    const serial = platform.getBoardSerial();
 
     return {      
       mac,
