@@ -58,6 +58,25 @@ class FWDiag {
     return name.replace(/\n$/, '')
   }
 
+  async getBranchInfo() {
+    const result = await exec("git rev-parse --abbrev-ref HEAD");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
+  getVersion() {
+    return fConfig.version;
+  }
+
+  async getLongVersion() {
+    const result = await exec("git describe --tags");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
+  async getTotalMemory() {
+    const result = await exec("free -m | awk '/Mem:/ {print $2}'");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -100,6 +119,47 @@ class FWDiag {
 
       log.info("submitted info to diag server successfully with result", result);
     }
+  }
+
+  async prepareHelloData() {
+    const inter = await this.getNetworkInfo();
+    
+    const firewallaIP = inter.ip_address;
+    const mac = inter.mac_address;
+    const gateway = inter.gateway_ip;
+
+    const gatewayMac = await this.getGatewayMac(gateway);
+
+    const branch = await this.getBranchInfo();
+    const version = this.getVersion();
+    const longVersion = await this.getLongVersion();
+    const memory = await this.getTotalMemory();
+    const model = platform.getName();
+    const serial = platform.getBoardSerial();
+
+    return {      
+      mac,
+      firewallaIP,
+      gatewayMac,
+      branch,
+      version,
+      longVersion,
+      memory,
+      model,
+      serial
+    };
+  }
+
+  async sayHello() {
+    const data = await this.prepareHelloData();
+    const options = {
+      uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
+      method: 'POST',
+      json: data
+    }
+    const result = await rp(options);
+
+    log.info("said hello to Firewalla Cloud");
   }
 }
 
