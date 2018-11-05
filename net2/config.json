@@ -186,7 +186,8 @@
     },
     "FirewallaDiscoverSensor": {
       "listenPort": 4096
-    }
+    },
+    "SubnetSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
