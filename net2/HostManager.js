@@ -43,6 +43,7 @@ var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -149,8 +150,6 @@ class Host {
 
         this.loadPolicy(callback);
       }
-
-      this.dnsmasq = new DNSMASQ();
     }
 
     update(obj) {

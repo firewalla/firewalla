@@ -29,9 +29,6 @@ const dns = require('dns');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
-const am2 = new require('../alarm/AlarmManager2.js')();
-const Alarm = require('../alarm/Alarm.js');
-
 let instance = null;
 
 class NetworkTool {
