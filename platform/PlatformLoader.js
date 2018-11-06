@@ -17,10 +17,6 @@
 
 let instance = null;
 
-const RedPlatform = require('./red/RedPlatform.js');
-const BluePlatform = require('./blue/BluePlatform.js');
-const DockerPlatform = require('./docker/DockerPlatform.js');
-
 const execSync = require('child_process').execSync;
 
 class PlatformLoader {
@@ -49,16 +45,19 @@ class PlatformLoader {
     
     switch (uname) {
     case "aarch64":
+      const BluePlatform = require('./blue/BluePlatform.js');
       this.platform = new BluePlatform();
       break;
     case "armv7l":
+      const RedPlatform = require('./red/RedPlatform.js');
       this.platform = new RedPlatform();
       break;      
     case "x86_64":
+      const DockerPlatform = require('./docker/DockerPlatform.js');
       this.platform = new DockerPlatform();
+      break;
     default:
       return null;
-      break;
     }
 
     return this.platform;

@@ -26,11 +26,6 @@ var later = require('later');
 var publicIp = require('public-ip');
 
 var fs = require('fs');
-var network = require('network');
-var natpmp = require('nat-pmp');
-var natupnp = require('nat-upnp');
-var ipTool = require('ip');
-var async = require('async');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 var util = require('util');
@@ -38,67 +33,22 @@ var util = require('util');
 var linux = require('../util/linux');
 var UPNP = require('../extension/upnp/upnp.js');
 
-var ttlExpire = 12*60*60;
+var ttlExpire = 12 * 60 * 60;
 
 module.exports = class {
     constructor() {
         if (instance == null) {
-            this.upnp = new UPNP("info",sysManager.myGateway());
+            this.upnp = new UPNP("info", sysManager.myGateway());
             instance = this;
         }
         return instance;
-    }
-
-    punchNat(opts, success, error) {
-        opts = opts || {}
-        opts.timeout = opts.timeout || 5000
-
-        log.info("VpnManager:PunchNat",opts);
-      
-        let replied = false;
-        // returns the IP of the gateway that your active network interface is linked to
-        linux.gateway_ip((err, gateway) => {
-            if (err) return error(err)
-            log.info("VpnManager:PublicGateway Checking",gateway,gateway.trim(),gateway.length);
-            if (ipTool.isPublic(gateway.trim())==true) {
-                log.info("VpnManager:PublicGateway True",gateway);
-                return success(gateway)
-            }
-
-            if (this.upnpClient == null) {
-                this.upnpClient = natupnp.createClient();
-            }
-            this.upnpClient.portMapping(opts, (err) => {
-                if (err == null) {
-                    log.info("VpnManager:NatUPNP Success");
-                    if (replied == false) {
-                        replied = true;
-                        success(null, "success", null);
-                    }
-                } else {
-                    if (replied == false) {
-                        log.error("VpnManager:NatUPNP failed",err);
-                        replied = true;
-                        error(err);
-                    }
-                }
-                setTimeout(() => {
-                    if (this.upnpClient) {
-                        this.upnpClient.close();
-                        this.upnpClient = null;
-                    } else {
-                        log.error("VpnManager:NatUPNP resetupnp client null");
-                    }
-                },1000);
-            });
-        });
     }
 
     setIptables(callback) {
         const serverNetwork = this.serverNetwork;
         const localIp = sysManager.myIp();
         log.info("VpnManager:SetIptables", serverNetwork, localIp);
-        const commands =[
+        const commands = [
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
             `sudo iptables -w -t nat -I POSTROUTING 2 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}` // insert this rule next to first rule of POSTROUTING
         ];
@@ -109,7 +59,7 @@ module.exports = class {
         const serverNetwork = this.serverNetwork;
         const localIp = sysManager.myIp();
         log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
-        const commands =[
+        const commands = [
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
         ];
         iptable.run(commands, callback);
@@ -117,7 +67,7 @@ module.exports = class {
 
     unpunchNat(opts, callback) {
         log.info("VpnManager:UnpunchNat", opts);
-        this.upnp.removePortMapping(opts.protocol, opts.private,opts.public,(err)=>{
+        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
             if (callback) {
                 callback(err);
             }
@@ -125,14 +75,14 @@ module.exports = class {
     }
 
     install(instance, callback) {
-	let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
+        let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
         this.install1 = require('child_process').exec(install1_cmd, (err, out, code) => {
             if (err) {
-                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " +  instance, err);
+                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " + instance, err);
             }
             if (err == null) {
                 // !! Pay attention to the parameter "-E" which is used to preserve the
-                // enviornment valueables when running sudo commands
+                // enviornment variables when running sudo commands
                 let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s", fHome, instance);
                 log.info("VPNManager:INSTALL:cmd", install2_cmd);
                 this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
@@ -149,7 +99,7 @@ module.exports = class {
                         callback(null, null);
                 });
             } else {
-                if (callback) 
+                if (callback)
                     callback(err, null);
             }
         });
@@ -176,7 +126,7 @@ module.exports = class {
         if (needRestart === true) {
             this.needRestart = true;
         }
-        var mydns = sysManager.myDNS()[0]; 
+        var mydns = sysManager.myDNS()[0];
         if (mydns == null) {
             mydns = "8.8.8.8"; // use google DNS as default
         }
@@ -216,46 +166,11 @@ module.exports = class {
         });
     }
 
-    setNat(callback) {
-        if (this.started == false) {
-            if (callback)
-                callback(null, null, null);
-            return;
-        }
-        this.punchNat({
-            type: 'udp',
-            protocol: 'udp',
-            private: this.localPort,
-            public: this.localPort,
-            ttl: 0,
-            description: "Firewalla VPN"
-        }, (external) => {
-            log.info("VpnManager:Start:portMap", external);
-            setTimeout(() => {
-                log.info("VpnManager:Restart:portMap");
-                this.setNat(null)
-            }, ttlExpire/3*1000);
-            if (callback) {
-                this.portmapped = true;
-                callback(null, external, this.localPort);
-            }
-        }, (err) => {
-            log.info("VpnManager:Start:portMap:Failed: " + err);
-            setTimeout(() => {
-                log.info("VpnManager:Restart:portMap");
-                this.setNat(null)
-            }, ttlExpire/3*1000);
-            if (callback) {
-                callback(null, null, null);
-            }
-        })
-    }
-
     start(callback) {
         if (this.started && !this.needRestart) {
             log.info("VpnManager::StartedAlready");
             if (callback)
-                 callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
+                callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
             return;
         }
 
@@ -265,12 +180,12 @@ module.exports = class {
         }
 
         this.upnp.gw = sysManager.myGateway();
-        
+
         this.unpunchNat({
             protocol: 'udp',
             private: this.localPort,
             public: this.localPort
-        },(err)=>{
+        }, (err) => {
             let op = "start";
             if (this.needRestart) {
                 op = "restart";
@@ -291,19 +206,19 @@ module.exports = class {
                         this.stop();
                         if (callback) {
                             callback(err);
-                        }                                
+                        }
                     } else {
-                        this.upnp.addPortMapping("udp",this.localPort,this.localPort,"Firewalla OpenVPN",(err)=>{ // public port and private port is equivalent by default
+                        this.upnp.addPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
                             log.info("VpnManager:UPNP:SetDone", err);
                             sem.emitEvent({
                                 type: "VPNSubnetChanged",
                                 message: "VPN subnet is updated",
-                                vpnSubnet: this.serverNetwork,
+                                vpnSubnet: this.serverNetwork + "/24",
                                 toProcess: "FireMain"
                             });
                             if (err) {
                                 if (callback) {
-                                    callback(null, null, null, this.serverNetwork, this.localPort);            
+                                    callback(null, null, null, this.serverNetwork, this.localPort);
                                 }
                             } else {
                                 this.portmapped = true;
@@ -313,7 +228,7 @@ module.exports = class {
                             }
                         });
                     }
-                }); 
+                });
             });
         });
     }
@@ -341,8 +256,8 @@ module.exports = class {
         if (compressAlg == null)
             compressAlg = "";
 
-        log.info("Reading ovpn file", ovpn_file,ovpn_password,regenerate);
-        
+        log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
+
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
             if (ovpn != null && regenerate == false) {
                 let password = fs.readFileSync(ovpn_password, 'utf8');
@@ -367,14 +282,14 @@ module.exports = class {
                 ip = sysManager.publicIp;
             }
 
-            var mydns = sysManager.myDNS()[0]; 
+            var mydns = sysManager.myDNS()[0];
             if (mydns == null) {
                 mydns = "8.8.8.8"; // use google DNS as default
             }
-            
+
             const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s'; sync", 
+            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s'; sync",
                 fHome, vpnLockFile, clientname, password, ip, this.localPort, originalName, compressAlg);
             log.info("VPNManager:GEN", cmd);
             this.getovpn = require('child_process').exec(cmd, (err, out, code) => {

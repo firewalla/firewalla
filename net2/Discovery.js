@@ -283,6 +283,7 @@ module.exports = class {
                         mac:list[i].mac_address.toUpperCase(),
                         ipv4Addr:list[i].ip_address,
                         ipv6Addr:list[i].ip6_addresses || JSON.stringify([]),
+                        macVendor:"Firewalla"
                     };
                     this.processHost(host);
                 }
