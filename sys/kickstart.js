@@ -87,6 +87,8 @@
 
   const Diag = require('../extension/diag/app.js');
 
+  let terminated = false;
+
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.forceInfo("FireKick Starting ");
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -509,9 +511,11 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   process.stdin.resume();
 
   function sendTerminatedInfoToDiagServer(gid) {
+    if (terminated)
+      return;
     const gidPrefix = gid.substring(0, 8);
     log.forceInfo("EXIT KICKSTART DUE TO PROCESS TERMINATION");
-
+    terminated = true;
     fwDiag.submitInfo({
       event: "FIREKICK_TERMINATED",
       msg: "Firekick Terminated",
