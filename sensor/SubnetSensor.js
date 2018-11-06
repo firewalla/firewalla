@@ -36,12 +36,14 @@ const am2 = new AlarmManager2();
 const checkInterval = 3*60*1000// 4 * 60 * 60 * 1000; //4 hours
 
 class SubnetSensor extends Sensor {
-  scheduledJob() {
+  async scheduledJob() {
     let detectedInterfaces = await(rclient.hgetallAsync('sys:network:info'));
 
     if (fConfig.discovery && fConfig.discovery.networkInterfaces) {
       fConfig.discovery.networkInterfaces.forEach(interfaceName => {
-        let intf = detectedInterfaces[interfaceName];
+        if (!detectedInterfaces[interfaceName]) return;
+
+        let intf = JSON.parse(detectedInterfaces[interfaceName]);
         if (intf && intf.subnet) {
           let subnet = ip.cidrSubnet(intf.subnet);
           if (subnet.subnetMaskLength < 24) {

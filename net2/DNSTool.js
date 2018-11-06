@@ -150,12 +150,6 @@ class DNSTool {
 
     return rclient.delAsync(key);
   }
-
-  getDNS(ip) {
-    let key = this.getDNSKey(ip);
-
-    return rclient.hgetallAsync(key);
-  }
 }
 
 

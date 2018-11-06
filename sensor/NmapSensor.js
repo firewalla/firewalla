@@ -314,14 +314,14 @@ class NmapSensor extends Sensor {
         }
 
         if(!findings) {
-          reject(new Error("Invalid nmap scan result"));
+          reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 
         let hostsJSON = findings.nmaprun && findings.nmaprun.host;
 
         if(!hostsJSON) {
-          reject(new Error("Invalid nmap scan result"));
+          reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 

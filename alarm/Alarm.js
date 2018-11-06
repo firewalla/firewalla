@@ -1,14 +1,15 @@
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
-let jsonfile = require('jsonfile');
-let util = require('util');
+const log = require('../net2/logger.js')(__filename, 'info');
+const jsonfile = require('jsonfile');
+const util = require('util');
 
 // FIXME: this profile should be loaded from cloud
-let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
-let i18n = require('../util/i18n.js');
+const profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
+const i18n = require('../util/i18n.js');
+const fc = require('../net2/config.js')
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
 // let moment = require('moment');
 
@@ -127,6 +128,10 @@ class Alarm {
 
     return true;
   }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.cooldown") || 15 * 60; // 15 minutes
+  }
 };
 
 
@@ -189,6 +194,11 @@ class VPNClientConnectionAlarm extends Alarm {
 
   requiredKeys() {
     return ["p.dest.ip"];
+  }
+
+  getExpirationTime() {
+    // for vpn client connection activities, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4;
   }
 }
 
@@ -466,6 +476,11 @@ class LargeTransferAlarm extends OutboundAlarm {
 
     return category
   }
+
+  getExpirationTime() {
+    // for upload activity, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
 }
 
 class VideoAlarm extends OutboundAlarm {
@@ -501,6 +516,10 @@ class SubnetAlarm extends Alarm {
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.subnet.cooldown") || 30 * 24 * 60 * 60;
+  }
 }
 
 let classMapping = {
@@ -516,7 +535,7 @@ let classMapping = {
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
-  ALARM_INTEL_REPORT: IntelReportAlarm.prototype
+  ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype
 }
 
