@@ -1589,8 +1589,6 @@ module.exports = class {
 
                     await broNotice.processNotice(alarm, obj);
 
-                    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`;
-
                     am2.enqueueAlarm(alarm);
                     
                 })().catch((err) => {
