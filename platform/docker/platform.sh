@@ -7,7 +7,6 @@ FIREAPI_MAX_MEMORY=200000
 MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
 
-
 function heartbeatLED {
   echo hi > /dev/null; # do nothing
 }
