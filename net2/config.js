@@ -5,13 +5,9 @@ let log = require("./logger.js")(__filename, "info");
 let fs = require('fs');
 let f = require('./Firewalla.js');
 
-const redis = require('redis')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const dynamicConfigKey = "sys:features"
 
@@ -130,39 +126,31 @@ function isFeatureOn(featureName) {
   }
 }
 
-function syncDynamicFeaturesConfigs() {
-  return async(() => {
-    let configs = await (rclient.hgetallAsync(dynamicConfigKey))
-    if(configs) {
-      dynamicConfigs = configs
-    } else {
-      dynamicConfigs = {}
-    }
-  })()
+async function syncDynamicFeaturesConfigs() {
+  let configs = await rclient.hgetallAsync(dynamicConfigKey);
+  if(configs) {
+    dynamicConfigs = configs
+  } else {
+    dynamicConfigs = {}
+  }
 }
 
-function enableDynamicFeature(featureName) {
-  return async(() => {
-    await (rclient.hsetAsync(dynamicConfigKey, featureName, '1'))
-    pclient.publish("config:feature:dynamic:enable", featureName)
-    dynamicConfigs[featureName] = '1'
-  })()
+async function enableDynamicFeature(featureName) {
+  await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
+  pclient.publish("config:feature:dynamic:enable", featureName)
+  dynamicConfigs[featureName] = '1'
 }
 
-function disableDynamicFeature(featureName) {
-  return async(() => {
-    await (rclient.hsetAsync(dynamicConfigKey, featureName, '0'))
-    pclient.publish("config:feature:dynamic:disable", featureName)
-    dynamicConfigs[featureName] = '0'
-  })()
+async function disableDynamicFeature(featureName) {
+  await rclient.hsetAsync(dynamicConfigKey, featureName, '0');
+  pclient.publish("config:feature:dynamic:disable", featureName)
+  dynamicConfigs[featureName] = '0'
 }
 
-function clearDynamicFeature(featureName) {
-  return async(() => {
-    await (rclient.hdel(dynamicConfigKey, featureName))
-    pclient.publish("config:feature:dynamic:clear", featureName)
-    delete dynamicConfigs[featureName]
-  })()
+async function clearDynamicFeature(featureName) {
+  await rclient.hdel(dynamicConfigKey, featureName);
+  pclient.publish("config:feature:dynamic:clear", featureName)
+  delete dynamicConfigs[featureName]
 }
 
 function getDynamicConfigs() {

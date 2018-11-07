@@ -3,17 +3,16 @@
 let instance = null;
 
 const exec = require('child-process-promise').exec;
-const network = require('network');
-const Promise = require('bluebird');
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
-const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const get_interfaces_list_async = Promise.promisify(network.get_interfaces_list);
+const get_interfaces_list_async = require('bluebird').promisify(require('network').get_interfaces_list);
 const activeInterface = fConfig.monitoringInterface || "eth0";
 
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const model = platform.getName();
+const serial = platform.getBoardSerial();
 
 const rp = require('request-promise');
 
@@ -58,6 +57,25 @@ class FWDiag {
     return name.replace(/\n$/, '')
   }
 
+  async getBranchInfo() {
+    const result = await exec("git rev-parse --abbrev-ref HEAD");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
+  getVersion() {
+    return fConfig.version;
+  }
+
+  async getLongVersion() {
+    const result = await exec("git describe --tags");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
+  async getTotalMemory() {
+    const result = await exec("free -m | awk '/Mem:/ {print $2}'");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -77,13 +95,15 @@ class FWDiag {
       ts: ts,
       gw_mac: gatewayMac,
       gw_name: gatewayName,
-      model: platform.getName()
+      model: model
     });
   }
 
   async submitInfo(payload) {
     const data = await this.prepareData(payload);
     if(data.gw) {
+      const rclient = require('../../util/redis_manager.js').getRedisClient();
+
       const options = {
         uri: `${fConfig.firewallaDiagServerURL}/${data.gw}` || `https://api.firewalla.com/diag/api/v1/device/${data.gw}`,
         method: 'POST',
@@ -100,6 +120,46 @@ class FWDiag {
 
       log.info("submitted info to diag server successfully with result", result);
     }
+  }
+
+  async prepareHelloData() {
+    const inter = await this.getNetworkInfo();
+    
+    const firewallaIP = inter.ip_address;
+    const mac = inter.mac_address;
+    const gateway = inter.gateway_ip;
+
+    const version = this.getVersion();
+
+    const [gatewayMac, branch, longVersion, memory] = await require('bluebird').all([
+      this.getGatewayMac(gateway),
+      this.getBranchInfo(),
+      this.getLongVersion(),
+      this.getTotalMemory()
+    ]);
+
+    return {      
+      mac,
+      firewallaIP,
+      gatewayMac,
+      branch,
+      version,
+      longVersion,
+      memory,
+      model,
+      serial
+    };
+  }
+
+  async sayHello() {
+    const data = await this.prepareHelloData();
+    const options = {
+      uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
+      method: 'POST',
+      json: data
+    }
+    await rp(options);
+    log.info("said hello to Firewalla Cloud");
   }
 }
 
