@@ -217,10 +217,9 @@ class NmapSensor extends Sensor {
         return Promise.resolve(); // Skipping this scan
       }
 
-      let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
-      if (fastMode === true) {
-        cmd = util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary);
-      }
+      let cmd = fastMode
+        ? util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
+        : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
 
       return NmapSensor.scan(cmd)
         .then((hosts) => {
