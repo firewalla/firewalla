@@ -43,7 +43,6 @@ var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -150,6 +149,8 @@ class Host {
 
         this.loadPolicy(callback);
       }
+
+      this.dnsmasq = new DNSMASQ();
     }
 
     update(obj) {
@@ -560,7 +561,7 @@ class Host {
             .then(() => {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
-                .then(() => dnsmasq.onSpoofChanged());
+                .then(() => this.dnsmasq.onSpoofChanged());
               log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
@@ -572,7 +573,7 @@ class Host {
             .then(() => {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
-                .then(() => dnsmasq.onSpoofChanged());
+                .then(() => this.dnsmasq.onSpoofChanged());
               log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = false;
             }).catch((err) => {
