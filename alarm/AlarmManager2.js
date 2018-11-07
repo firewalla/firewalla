@@ -411,11 +411,16 @@ module.exports = class {
                             .filter((a) => alarm.isDup(a));
 
         if(dups.length > 0) {
-          let cooldown = duration - (Date.now() / 1000 - dups[0].timestamp);
+          let latest = dups[0].timestamp;
+          let cooldown = duration - (Date.now() / 1000 - latest);
 
           log.info(util.format(
-            ':dedup: Dup Found! ExpirationTime: %s (%s), CoolDown: %s (%s)',
+            ':dedup: Dup Found! ExpirationTime: %s (%s)',
             moment.duration(duration * 1000).humanize(), duration,
+          ));
+          log.info(util.format(
+            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            new Date(latest * 1000).toLocaleString(),
             moment.duration(cooldown * 1000).humanize(), cooldown
           ));
 
