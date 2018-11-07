@@ -31,6 +31,7 @@ MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
 
+NODE_MODULE_REPO=$(get_node_modules_url)
 logger "Node module repo: $NODE_MODULE_REPO"
 
 export NODE_PATH=~/.node_modules:$NODE_PATH

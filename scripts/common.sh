@@ -17,6 +17,7 @@ function update_node_modules {
     ( cd $FIREWALLA_HOME
 
     CPU_PLATFORM=$(uname -m)
+    export NODE_MODULE_REPO=$(get_node_modules_url)
 
     if [[ $branch =~ release.* ]]; then
         # record production branch in redis
