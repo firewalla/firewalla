@@ -1,6 +1,8 @@
 #!/bin/bash -
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 branch=$(cd $FIREWALLA_HOME > /dev/null; git rev-parse --abbrev-ref HEAD)
 
@@ -15,11 +17,7 @@ function update_node_modules {
     ( cd $FIREWALLA_HOME
 
     CPU_PLATFORM=$(uname -m)
-    if [[ $CPU_PLATFORM == "x86_64" ]]; then
-        export NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.x86_64.git
-    else
-        export NODE_MODULE_REPO=https://github.com/firewalla/firewalla_nodemodules.git
-    fi
+    export NODE_MODULE_REPO=$(get_node_modules_url)
 
     if [[ $branch =~ release.* ]]; then
         # record production branch in redis

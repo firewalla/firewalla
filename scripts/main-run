@@ -102,3 +102,8 @@ else
     echo "WatchDog Started"
     logger "FIREWALLA:WATCHDOG:ENABLED"
 fi
+
+if [[ -n "$NO_FIREKICK_RESTART" ]]; then
+  # turn off led light since pairing is not activated
+  turnOffLED
+fi

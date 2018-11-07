@@ -83,7 +83,8 @@ module.exports = class {
             if (err == null) {
                 // !! Pay attention to the parameter "-E" which is used to preserve the
                 // enviornment variables when running sudo commands
-                let install2_cmd = util.format("cd %s/vpn; sudo -E ./install2.sh %s", fHome, instance);
+                const installLockFile = "/dev/shm/vpn_install2_lock_file";
+                let install2_cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./install2.sh %s'; sync", fHome, installLockFile, instance);
                 log.info("VPNManager:INSTALL:cmd", install2_cmd);
                 this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
                     if (err) {
@@ -130,8 +131,10 @@ module.exports = class {
         if (mydns == null) {
             mydns = "8.8.8.8"; // use google DNS as default
         }
-        const cmd = util.format("cd %s/vpn; sudo -E ./confgen.sh %s %s %s %s %s",
-            fHome, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
+        const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
+        const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s'; sync",
+            fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
+        log.info("VPNManager:CONFIGURE:cmd", cmd);
         require('child_process').exec(cmd, (err, out, code) => {
             if (err) {
                 log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
