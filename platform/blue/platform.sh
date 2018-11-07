@@ -8,8 +8,15 @@ MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
 
 function heartbeatLED {
-  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger'
+  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger' # intentionally not use green light as it is hard to be seen
   sudo sh -c 'echo heartbeat > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger'
+}
+
+function turnOffLED {
+  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger'
+  sudo sh -c 'echo 0 > /sys/devices/platform/leds/leds/nanopi:green:status/brightness'
+  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger' 
+  sudo sh -c 'echo 0 > /sys/devices/platform/leds/leds/nanopi:red:pwr/brightness'
 }
 
 function get_node_modules_url {

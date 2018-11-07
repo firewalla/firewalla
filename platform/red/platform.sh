@@ -12,6 +12,13 @@ function heartbeatLED {
   sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:green:pwr/trigger'
 }
 
+function turnOffLED {
+  sudo sh -c 'echo none > /sys/class/leds/nanopi:blue:status/trigger'
+  sudo sh -c 'echo 0 > /sys/class/leds/nanopi:blue:status/brightness'
+  sudo sh -c 'echo none > /sys/class/leds/nanopi:green:pwr/trigger'
+  sudo sh -c 'echo 0 > /sys/class/leds/nanopi:green:pwr/brightness'
+}
+
 function get_node_modules_url {
   local NODE_VERSION=$(${FIREWALLA_HOME}/bin/node -v 2>/dev/null)
 

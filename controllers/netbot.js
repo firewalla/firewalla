@@ -742,7 +742,9 @@ class netBot extends ControllerBot {
                    if (msg.alarmType  === "ALARM_LARGE_UPDATE") {
                        alarmType = "ALARM_BEHAVIOR";
                    }
-                   if (this.hostManager.policy["notify"][alarmType] === false) {
+                   if (this.hostManager.policy["notify"][alarmType] === false || 
+                   this.hostManager.policy["notify"][alarmType] === 0
+                   ) {
                        log.info("ALARM_NOTIFY_BLOCKED", msg);
                        return;
                    }
