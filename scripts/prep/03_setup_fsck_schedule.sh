@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MOUNT_COUNT=20
+MOUNT_COUNT=1
 INTERVAL=4w
 
 for device in `ls -1 /dev/mmcblk0p*`; do
