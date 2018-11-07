@@ -6,6 +6,7 @@ FIREMON_MAX_MEMORY=120000
 FIREAPI_MAX_MEMORY=100000
 MAX_NUM_OF_PROCESSES=2000
 MAX_NUM_OF_THREADS=10000
+export NODE_MODULE_REPO=https://github.com/firewalla/fnm.node8.armv7l
 
 function heartbeatLED {
   sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:blue:status/trigger'
