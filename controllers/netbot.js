@@ -124,6 +124,9 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+
 const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
@@ -1876,7 +1879,7 @@ class netBot extends ControllerBot {
         });
         break;
       case "policies":
-        pm2.loadActivePolicys((err, list) => {
+        pm2.loadActivePolicies((err, list) => {
           if(err) {
             this.simpleTxData(msg, {}, err, callback);
           } else {
@@ -2277,160 +2280,161 @@ class netBot extends ControllerBot {
    target: '0.0.0.0' }
    */
 
-  cmdHandler(gid, msg, callback) {
+  // Main Entry Point
+cmdHandler(gid, msg, callback) {
 
-    if(msg && msg.data && msg.data.item === 'ping') {
+  if(msg && msg.data && msg.data.item === 'ping') {
 
+  } else {
+    log.info("API: CmdHandler ",gid,msg,{});
+  }
+  if(msg.data.item === "dhcpCheck") {
+    (async() => {
+      let mode = require('../net2/Mode.js');
+      await mode.reloadSetupMode();
+      let dhcpModeOn = await mode.isDHCPModeOn();
+      if (dhcpModeOn) {
+        const dhcpFound = await dhcp.dhcpDiscover("eth0");
+        const response = {
+          DHCPMode: true,
+          DHCPDiscover: dhcpFound
+        };
+        this.simpleTxData(msg, response, null, callback);
       } else {
-        log.info("API: CmdHandler ",gid,msg,{});
+        this.simpleTxData(msg, {DHCPMode: false}, null, callback);
       }
-    if(msg.data.item === "dhcpCheck") {
-      (async() => {
-        let mode = require('../net2/Mode.js');
-        await mode.reloadSetupMode();
-        let dhcpModeOn = await mode.isDHCPModeOn();
-        if (dhcpModeOn) {
-          const dhcpFound = await dhcp.dhcpDiscover("eth0");
-          const response = {
-            DHCPMode: true,
-            DHCPDiscover: dhcpFound
-          };
-          this.simpleTxData(msg, response, null, callback);
-        } else {
-          this.simpleTxData(msg, {DHCPMode: false}, null, callback);
-        }        
+    })().catch((err) => {
+      log.error("Failed to do DHCP discover", err);
+      this.simpleTxData(msg, null, err, callback);
+    });
+    return;
+  }
+  if (msg.data.item === "reset") {
+    log.info("System Reset");
+    DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+    DeviceMgmtTool.resetDevice()
+
+    // direct reply back to app that system is being reset
+    this.simpleTxData(msg, null, null, callback)
+    return;
+  } else if (msg.data.item === "sendlog") {
+    log.info("sendLog");
+    this._sendLog(msg,callback);
+    return;
+  } else if (msg.data.item === "resetSSHKey") {
+    ssh.resetRSAPassword((err) => {
+      let code = 200;
+
+      let datamodel = {
+        type: 'jsonmsg',
+        mtype: 'init',
+        id: uuid.v4(),
+        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+        replyid: msg.id,
+        code: code
+      }
+      this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+    });
+    return;
+  }
+
+  switch (msg.data.item) {
+    case "upgrade":
+      async(() => {
+        sysTool.upgradeToLatest()
+        this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
-        log.error("Failed to do DHCP discover", err);
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break
+    case "shutdown":
+      async(() => {
+        sysTool.shutdownServices()
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break
+    case "reboot":
+      async(() => {
+        sysTool.rebootServices()
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break
+    case "resetpolicy":
+      async(() => {
+        sysTool.resetPolicy()
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break
+    case "stopService":
+      (async () => {
+        await sysTool.stopServices();
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    case "startService":
+      (async () => {
+        // no need to await, otherwise fireapi will also be restarted
+        sysTool.restartServices();
+        sysTool.restartFireKickService();
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    case "debugOn":
+      sysManager.debugOn((err) => {
         this.simpleTxData(msg, null, err, callback);
       });
-      return;
-    }
-    if (msg.data.item === "reset") {
-      log.info("System Reset");
-      DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice()
-
-      // direct reply back to app that system is being reset
-      this.simpleTxData(msg, null, null, callback)
-      return;
-    } else if (msg.data.item === "sendlog") {
-      log.info("sendLog");
-      this._sendLog(msg,callback);
-      return;
-    } else if (msg.data.item === "resetSSHKey") {
-      ssh.resetRSAPassword((err) => {
-        let code = 200;
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: code
-        }
-        this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+      break;
+    case "debugOff":
+      sysManager.debugOff((err) => {
+        this.simpleTxData(msg, null, err, callback);
       });
-      return;
-    }
+      break;
+    case "resetSSHPassword":
+      ssh.resetRandomPassword((err, password) => {
+        sysManager.setSSHPassword(password);
+        this.simpleTxData(msg, null, err, callback);
+      });
+      break;
 
-    switch (msg.data.item) {
-      case "upgrade":
-        async(() => {
-          sysTool.upgradeToLatest()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "shutdown":
-        async(() => {
-          sysTool.shutdownServices()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "reboot":
-        async(() => {
-          sysTool.rebootServices()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "resetpolicy":
-        async(() => {
-          sysTool.resetPolicy()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "stopService":
-        (async () => {
-          await sysTool.stopServices();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      case "startService":
-        (async () => {
-          // no need to await, otherwise fireapi will also be restarted
-          sysTool.restartServices();
-          sysTool.restartFireKickService();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      case "debugOn":
-        sysManager.debugOn((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "debugOff":
-        sysManager.debugOff((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "resetSSHPassword":
-        ssh.resetRandomPassword((err, password) => {
-          sysManager.setSSHPassword(password);
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+    case "resetSciSurfConfig":
+      const mssc = require('../extension/ss_client/multi_ss_client.js');
+      (async () => {
+        try {
+          await mssc.stop();
+          await mssc.clearConfig();  
+        } finally {
+          this.simpleTxData(msg, null, err, callback);  
+        }
+      })();
+      break;
+    case "ping":
+      let uptime = process.uptime();
+      let now = new Date();
 
-      case "resetSciSurfConfig":
-        const mssc = require('../extension/ss_client/multi_ss_client.js');
-        (async () => {
-          try {
-            await mssc.stop();
-            await mssc.clearConfig();  
-          } finally {
-            this.simpleTxData(msg, null, err, callback);  
-          }
-        })();
-        break;
-      case "ping":
-        let uptime = process.uptime();
-        let now = new Date();
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200,
-          data: {
-            uptime: uptime,
-            timestamp: now
-          }
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-        break;
+      let datamodel = {
+        type: 'jsonmsg',
+        mtype: 'reply',
+        id: uuid.v4(),
+        expires: Math.floor(Date.now() / 1000) + 60 * 5,
+        replyid: msg.id,
+        code: 200,
+        data: {
+          uptime: uptime,
+          timestamp: now
+        }
+      };
+      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+      break;
     case "alarm:block":
       am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
         if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
@@ -2459,31 +2463,31 @@ class netBot extends ControllerBot {
       });
       break;
     case "alarm:unblock":
-        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "alarm:unallow":
-        am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+      am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    case "alarm:unallow":
+      am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
 
-      case "alarm:unblock_and_allow":
-        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+    case "alarm:unblock_and_allow":
+      am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        if (err) {
+          log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
+          this.simpleTxData(msg, {}, err, callback);
+          return;
+        }
+
+        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
           if (err) {
-            log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
-            this.simpleTxData(msg, {}, err, callback);
-            return;
+            log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
           }
-
-          am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-            if (err) {
-              log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
-            }
-            this.simpleTxData(msg, {}, err, callback);
-          });
+          this.simpleTxData(msg, {}, err, callback);
         });
+      });
 
     case "alarm:ignore":
       async(() => {
@@ -2505,42 +2509,42 @@ class netBot extends ControllerBot {
       })
       break
 
-      case "policy:create":
-        pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
-          if (err) {
-            this.simpleTxData(msg, null, err, callback);
-            return;
+    case "policy:create":
+      pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
+        if (err) {
+          this.simpleTxData(msg, null, err, callback);
+          return;
+        }
+
+        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+          if(alreadyExists == "duplicated") {
+            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            return
+          } else if(alreadyExists == "duplicated_and_updated") {
+            const p = JSON.parse(JSON.stringify(policy2))
+            p.updated = true // a kind hacky, but works
+            this.simpleTxData(msg, p, err, callback)
+          } else {
+            this.simpleTxData(msg, policy2, err, callback)
           }
-
-          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists == "duplicated") {
-              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
-              return
-            } else if(alreadyExists == "duplicated_and_updated") {
-              const p = JSON.parse(JSON.stringify(policy2))
-              p.updated = true // a kind hacky, but works
-              this.simpleTxData(msg, p, err, callback)
-            } else {
-              this.simpleTxData(msg, policy2, err, callback)
-            }
-          });
         });
-        break;
+      });
+      break;
 
-      case "policy:update":
-        async(() => {
-          const policy = msg.data.value
-          const pid = policy.pid
-          const oldPolicy = await (pm2.getPolicy(pid))
-          await (pm2.updatePolicyAsync(policy))
-          const newPolicy = await (pm2.getPolicy(pid))
-          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
-          this.simpleTxData(msg,newPolicy, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
+    case "policy:update":
+      async(() => {
+        const policy = msg.data.value
+        const pid = policy.pid
+        const oldPolicy = await (pm2.getPolicy(pid))
+        await (pm2.updatePolicyAsync(policy))
+        const newPolicy = await (pm2.getPolicy(pid))
+        await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+        this.simpleTxData(msg,newPolicy, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback)
+      })
 
-        break;    
+      break;    
     case "policy:delete":
       async(() => {
         let policy = await (pm2.getPolicy(msg.data.value.policyID))
@@ -2607,34 +2611,34 @@ class netBot extends ControllerBot {
         }
       })();
       break;
-      case "exception:create":
-        em.createException(msg.data.value)
-          .then((result) => {
-            this.simpleTxData(msg, result, null, callback);
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        break;
-      case "exception:update":
-        em.updateException(msg.data.value)
-          .then((result) => {
-            this.simpleTxData(msg, result, null, callback);
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        break;
-      case "exception:delete":
-        em.deleteException(msg.data.value.exceptionID)
-          .then(() => {
-            this.simpleTxData(msg, null, null, callback);
-          }).catch((err) => {
+    case "exception:create":
+      em.createException(msg.data.value)
+        .then((result) => {
+          this.simpleTxData(msg, result, null, callback);
+        })
+        .catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         });
-        break;
-      case "reset":
-        break;
+      break;
+    case "exception:update":
+      em.updateException(msg.data.value)
+        .then((result) => {
+          this.simpleTxData(msg, result, null, callback);
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+      break;
+    case "exception:delete":
+      em.deleteException(msg.data.value.exceptionID)
+        .then(() => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+      break;
+    case "reset":
+      break;
     case "startSupport":
       async(() => {
         await (frp.start())
@@ -2666,7 +2670,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, new Error("invalid request"), callback)
           return
         }
-        
+
         await (hostTool.updateMACKey({
           mac: mac,
           manualSpoof: manualSpoof
@@ -2676,7 +2680,7 @@ class netBot extends ControllerBot {
         if(mode.isManualSpoofModeOn()) {
           await (spooferManager.loadManualSpoof(mac))
         }
-        
+
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -2696,7 +2700,7 @@ class netBot extends ControllerBot {
         let timeout = msg.data.value.timeout
 
         let running = false
-        
+
         if(timeout) {
           let begin = new Date() / 1000;
 
@@ -2705,7 +2709,7 @@ class netBot extends ControllerBot {
               setTimeout(resolve, t)
             });
           }
-          
+
           while(new Date() / 1000 < begin + timeout) {
             const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
             log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
@@ -2715,11 +2719,11 @@ class netBot extends ControllerBot {
             }
             await(delayFunction(1000))
           }
-          
+
         } else {
           running = await (spooferManager.isSpoofRunning())
         }
-        
+
         this.simpleTxData(msg, {running: running}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -2743,12 +2747,12 @@ class netBot extends ControllerBot {
             },
             toProcess: 'FireMain'
           })
-          
+
           this.simpleTxData(msg, {}, null, callback)
         } else {
           this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
         }
-        
+
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
       })
@@ -2760,7 +2764,7 @@ class netBot extends ControllerBot {
 
         // add current ip to spoof list
         await (spooferManager.directSpoof(ip))
-        
+
         let begin = new Date() / 1000;
 
         let result = false
@@ -2770,7 +2774,7 @@ class netBot extends ControllerBot {
             setTimeout(resolve, t)
           });
         }
-        
+
         while(new Date() / 1000 < begin + timeout) {
           log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
           result = await (spooferManager.isSpoof(ip))
@@ -2779,7 +2783,7 @@ class netBot extends ControllerBot {
           }
           await(delayFunction(1000))
         }
-        
+
         this.simpleTxData(msg, {
           result: result
         }, null, callback)
@@ -2793,7 +2797,7 @@ class netBot extends ControllerBot {
       async(() => {
         let ip = msg.data.value.ip
 
-        
+
       })()
     }
     case "bootingComplete":
@@ -2829,7 +2833,7 @@ class netBot extends ControllerBot {
       })
     case "switchBranch":
       let target = msg.data.value.target
-      
+
       async(() => {
         await (this.switchBranch(target))
         this.simpleTxData(msg, {}, null, callback)
@@ -3143,8 +3147,8 @@ class netBot extends ControllerBot {
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
       break;
-    }
   }
+}
 
   switchBranch(target) {
     return async(() => {
