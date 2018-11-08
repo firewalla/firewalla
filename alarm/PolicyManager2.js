@@ -591,62 +591,62 @@ class PolicyManager2 {
     }
   }
 
-    idsToPolicys(ids, callback) {
-      let multi = rclient.multi();
+  idsToPolicys(ids, callback) {
+    let multi = rclient.multi();
 
-      ids.forEach((pid) => {
-        multi.hgetall(policyPrefix + pid);
-      });
+    ids.forEach((pid) => {
+      multi.hgetall(policyPrefix + pid);
+    });
 
-      multi.exec((err, results) => {
-        if(err) {
-          log.error("Failed to load active policys (hgetall): " + err);
-          callback(err);
-          return;
-        }
-        
-        let rr = results.map((r) => {
-          if(r && r.scope && r.scope.constructor.name === 'String') {
-            try {
-              r.scope = JSON.parse(r.scope)
-            } catch(err) {
-              log.error("Failed to parse policy scope string:", r.scope, {})
-              r.scope = []
-            }
-          }
-          return this.jsonToPolicy(r)
-        }).filter((r) => r != null)
-
-        // recent first
-        rr.sort((a, b) => {
-          return b.timestamp > a.timestamp
-        })
-
-        callback(null, rr)
-
-      });
-    }
-
-    loadRecentPolicys(duration, callback) {
-      if(typeof(duration) == 'function') {
-        callback = duration;
-        duration = 86400;
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active policys (hgetall): " + err);
+        callback(err);
+        return;
       }
 
-      callback = callback || function() {}
-
-      let scoreMax = new Date() / 1000 + 1;
-      let scoreMin = scoreMax - duration;
-      rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
-        if(err) {
-          log.error("Failed to load active policys: " + err);
-          callback(err);
-          return;
+      let rr = results.map((r) => {
+        if(r && r.scope && r.scope.constructor.name === 'String') {
+          try {
+            r.scope = JSON.parse(r.scope)
+          } catch(err) {
+            log.error("Failed to parse policy scope string:", r.scope, {})
+            r.scope = []
+          }
         }
+        return this.jsonToPolicy(r)
+      }).filter((r) => r != null)
 
-        this.idsToPolicys(policyIDs, callback);
-      });
+      // recent first
+      rr.sort((a, b) => {
+        return b.timestamp > a.timestamp
+      })
+
+      callback(null, rr)
+
+    });
+  }
+
+  loadRecentPolicys(duration, callback) {
+    if(typeof(duration) == 'function') {
+      callback = duration;
+      duration = 86400;
     }
+
+    callback = callback || function() {}
+
+    let scoreMax = new Date() / 1000 + 1;
+    let scoreMin = scoreMax - duration;
+    rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
+      if(err) {
+        log.error("Failed to load active policys: " + err);
+        callback(err);
+        return;
+      }
+
+      this.idsToPolicys(policyIDs, callback);
+    });
+  }
 
   numberOfPolicys(callback) {
     callback = callback || function() {}
