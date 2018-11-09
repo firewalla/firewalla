@@ -2281,428 +2281,493 @@ class netBot extends ControllerBot {
    */
 
   // Main Entry Point
-cmdHandler(gid, msg, callback) {
+  cmdHandler(gid, msg, callback) {
 
-  if(msg && msg.data && msg.data.item === 'ping') {
+    if(msg && msg.data && msg.data.item === 'ping') {
 
-  } else {
-    log.info("API: CmdHandler ",gid,msg,{});
-  }
-  if(msg.data.item === "dhcpCheck") {
-    (async() => {
-      let mode = require('../net2/Mode.js');
-      await mode.reloadSetupMode();
-      let dhcpModeOn = await mode.isDHCPModeOn();
-      if (dhcpModeOn) {
-        const dhcpFound = await dhcp.dhcpDiscover("eth0");
-        const response = {
-          DHCPMode: true,
-          DHCPDiscover: dhcpFound
-        };
-        this.simpleTxData(msg, response, null, callback);
-      } else {
-        this.simpleTxData(msg, {DHCPMode: false}, null, callback);
-      }
-    })().catch((err) => {
-      log.error("Failed to do DHCP discover", err);
-      this.simpleTxData(msg, null, err, callback);
-    });
-    return;
-  }
-  if (msg.data.item === "reset") {
-    log.info("System Reset");
-    DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-    DeviceMgmtTool.resetDevice()
-
-    // direct reply back to app that system is being reset
-    this.simpleTxData(msg, null, null, callback)
-    return;
-  } else if (msg.data.item === "sendlog") {
-    log.info("sendLog");
-    this._sendLog(msg,callback);
-    return;
-  } else if (msg.data.item === "resetSSHKey") {
-    ssh.resetRSAPassword((err) => {
-      let code = 200;
-
-      let datamodel = {
-        type: 'jsonmsg',
-        mtype: 'init',
-        id: uuid.v4(),
-        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-        replyid: msg.id,
-        code: code
-      }
-      this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
-    });
-    return;
-  }
-
-  switch (msg.data.item) {
-    case "upgrade":
-      async(() => {
-        sysTool.upgradeToLatest()
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break
-    case "shutdown":
-      async(() => {
-        sysTool.shutdownServices()
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break
-    case "reboot":
-      async(() => {
-        sysTool.rebootServices()
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break
-    case "resetpolicy":
-      async(() => {
-        sysTool.resetPolicy()
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break
-    case "stopService":
-      (async () => {
-        await sysTool.stopServices();
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    case "startService":
-      (async () => {
-        // no need to await, otherwise fireapi will also be restarted
-        sysTool.restartServices();
-        sysTool.restartFireKickService();
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    case "debugOn":
-      sysManager.debugOn((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      });
-      break;
-    case "debugOff":
-      sysManager.debugOff((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      });
-      break;
-    case "resetSSHPassword":
-      ssh.resetRandomPassword((err, password) => {
-        sysManager.setSSHPassword(password);
-        this.simpleTxData(msg, null, err, callback);
-      });
-      break;
-
-    case "resetSciSurfConfig":
-      const mssc = require('../extension/ss_client/multi_ss_client.js');
-      (async () => {
-        try {
-          await mssc.stop();
-          await mssc.clearConfig();  
-        } finally {
-          this.simpleTxData(msg, null, err, callback);  
-        }
-      })();
-      break;
-    case "ping":
-      let uptime = process.uptime();
-      let now = new Date();
-
-      let datamodel = {
-        type: 'jsonmsg',
-        mtype: 'reply',
-        id: uuid.v4(),
-        expires: Math.floor(Date.now() / 1000) + 60 * 5,
-        replyid: msg.id,
-        code: 200,
-        data: {
-          uptime: uptime,
-          timestamp: now
-        }
-      };
-      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-      break;
-    case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
-        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-          this.simpleTxData(msg, {
-            policy: policy,
-            otherAlarms: otherBlockedAlarms,
-            alreadyExists: alreadyExists === "duplicated",
-            updated: alreadyExists === "duplicated_and_updated"
-          }, err, callback);
+    } else {
+      log.info("API: CmdHandler ",gid,msg,{});
+    }
+    if(msg.data.item === "dhcpCheck") {
+      (async() => {
+        let mode = require('../net2/Mode.js');
+        await mode.reloadSetupMode();
+        let dhcpModeOn = await mode.isDHCPModeOn();
+        if (dhcpModeOn) {
+          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const response = {
+            DHCPMode: true,
+            DHCPDiscover: dhcpFound
+          };
+          this.simpleTxData(msg, response, null, callback);
         } else {
-          this.simpleTxData(msg, policy, err, callback);
+          this.simpleTxData(msg, {DHCPMode: false}, null, callback);
         }
-      });
-      break;
-    case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
-        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-          this.simpleTxData(msg, {
-            exception: exception,
-            otherAlarms: otherAlarms,
-            alreadyExists: alreadyExists
-          }, err, callback);
-        } else {
-          this.simpleTxData(msg, exception, err, callback);
-        }
-      });
-      break;
-    case "alarm:unblock":
-      am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    case "alarm:unallow":
-      am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-
-    case "alarm:unblock_and_allow":
-      am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-        if (err) {
-          log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
-          this.simpleTxData(msg, {}, err, callback);
-          return;
-        }
-
-        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
-          if (err) {
-            log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
-          }
-          this.simpleTxData(msg, {}, err, callback);
-        });
-      });
-
-    case "alarm:ignore":
-      async(() => {
-        await (am2.ignoreAlarm(msg.data.value.alarmID))
-        this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
-        log.error("Failed to ignore alarm:", err, {})
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
+        log.error("Failed to do DHCP discover", err);
+        this.simpleTxData(msg, null, err, callback);
+      });
+      return;
+    }
+    if (msg.data.item === "reset") {
+      log.info("System Reset");
+      DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+      DeviceMgmtTool.resetDevice()
 
-    case "alarm:report":
-      async(() => {
-        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        log.error("Failed to report bug on alarm:", err, {})
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
+      // direct reply back to app that system is being reset
+      this.simpleTxData(msg, null, null, callback)
+      return;
+    } else if (msg.data.item === "sendlog") {
+      log.info("sendLog");
+      this._sendLog(msg,callback);
+      return;
+    } else if (msg.data.item === "resetSSHKey") {
+      ssh.resetRSAPassword((err) => {
+        let code = 200;
 
-    case "policy:create":
-      pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
-        if (err) {
+        let datamodel = {
+          type: 'jsonmsg',
+          mtype: 'init',
+          id: uuid.v4(),
+          expires: Math.floor(Date.now() / 1000) + 60 * 5,
+          replyid: msg.id,
+          code: code
+        }
+        this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+      });
+      return;
+    }
+
+    switch (msg.data.item) {
+      case "upgrade":
+        async(() => {
+          sysTool.upgradeToLatest()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "shutdown":
+        async(() => {
+          sysTool.shutdownServices()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "reboot":
+        async(() => {
+          sysTool.rebootServices()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "resetpolicy":
+        async(() => {
+          sysTool.resetPolicy()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "stopService":
+        (async () => {
+          await sysTool.stopServices();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      case "startService":
+        (async () => {
+          // no need to await, otherwise fireapi will also be restarted
+          sysTool.restartServices();
+          sysTool.restartFireKickService();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      case "debugOn":
+        sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
-          return;
-        }
-
-        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-          if(alreadyExists == "duplicated") {
-            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
-            return
-          } else if(alreadyExists == "duplicated_and_updated") {
-            const p = JSON.parse(JSON.stringify(policy2))
-            p.updated = true // a kind hacky, but works
-            this.simpleTxData(msg, p, err, callback)
-          } else {
-            this.simpleTxData(msg, policy2, err, callback)
-          }
         });
-      });
-      break;
+        break;
+      case "debugOff":
+        sysManager.debugOff((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
+      case "resetSSHPassword":
+        ssh.resetRandomPassword((err, password) => {
+          sysManager.setSSHPassword(password);
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
 
-    case "policy:update":
-      async(() => {
-        const policy = msg.data.value
-        const pid = policy.pid
-        const oldPolicy = await (pm2.getPolicy(pid))
-        await (pm2.updatePolicyAsync(policy))
-        const newPolicy = await (pm2.getPolicy(pid))
-        await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
-        this.simpleTxData(msg,newPolicy, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-
-      break;    
-    case "policy:delete":
-      async(() => {
-        let policy = await (pm2.getPolicy(msg.data.value.policyID))
-        if(policy) {
-          await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
-          policy.deleted = true // policy is marked ask deleted
-          this.simpleTxData(msg, policy, null, callback);          
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })                 
-      break;
-    case "policy:enable":
-      async(() => {
-        const policyID = msg.data.value.policyID
-        if(policyID) {
-          let policy = await (pm2.getPolicy(msg.data.value.policyID))
-          if(policy) {
-            await (pm2.enablePolicy(policy))
-            this.simpleTxData(msg, policy, null, callback);
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-          }
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-        }
-      })()
-      break;
-    case "policy:disable":
-      async(() => {
-        const policyID = msg.data.value.policyID
-        if(policyID) {
-          let policy = await (pm2.getPolicy(msg.data.value.policyID))
-          if(policy) {
-            await (pm2.disablePolicy(policy))
-            this.simpleTxData(msg, policy, null, callback);
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-          }
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-        }
-      })()
-      break;
-    case "intel:finger":
-      (async () => {
-        const target = msg.data.value.target;
-        if (target) {
-          let result;
+      case "resetSciSurfConfig":
+        const mssc = require('../extension/ss_client/multi_ss_client.js');
+        (async () => {
           try {
-            result = await bone.intelFinger(target);
-          } catch (err) {
-            log.error("Error when intel finger", err, {});
+            await mssc.stop();
+            await mssc.clearConfig();  
+          } finally {
+            this.simpleTxData(msg, null, err, callback);  
           }
-          if (result && result.whois) {
-            this.simpleTxData(msg, result, null, callback);
+        })();
+        break;
+      case "ping":
+        let uptime = process.uptime();
+        let now = new Date();
+
+        let datamodel = {
+          type: 'jsonmsg',
+          mtype: 'reply',
+          id: uuid.v4(),
+          expires: Math.floor(Date.now() / 1000) + 60 * 5,
+          replyid: msg.id,
+          code: 200,
+          data: {
+            uptime: uptime,
+            timestamp: now
+          }
+        };
+        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        break;
+      case "alarm:block":
+        am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
+          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+            this.simpleTxData(msg, {
+              policy: policy,
+              otherAlarms: otherBlockedAlarms,
+              alreadyExists: alreadyExists === "duplicated",
+              updated: alreadyExists === "duplicated_and_updated"
+            }, err, callback);
           } else {
-            this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+            this.simpleTxData(msg, policy, err, callback);
           }
-        } else {
-          this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
-        }
-      })();
-      break;
-    case "exception:create":
-      em.createException(msg.data.value)
-        .then((result) => {
-          this.simpleTxData(msg, result, null, callback);
+        });
+        break;
+      case "alarm:allow":
+        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
+          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+            this.simpleTxData(msg, {
+              exception: exception,
+              otherAlarms: otherAlarms,
+              alreadyExists: alreadyExists
+            }, err, callback);
+          } else {
+            this.simpleTxData(msg, exception, err, callback);
+          }
+        });
+        break;
+      case "alarm:unblock":
+        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "alarm:unallow":
+        am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+
+      case "alarm:unblock_and_allow":
+        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+          if (err) {
+            log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
+            this.simpleTxData(msg, {}, err, callback);
+            return;
+          }
+
+          am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+            if (err) {
+              log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
+            }
+            this.simpleTxData(msg, {}, err, callback);
+          });
+        });
+
+      case "alarm:ignore":
+        async(() => {
+          await (am2.ignoreAlarm(msg.data.value.alarmID))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignore alarm:", err, {})
+          this.simpleTxData(msg, {}, err, callback)
         })
-        .catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-      break;
-    case "exception:update":
-      em.updateException(msg.data.value)
-        .then((result) => {
-          this.simpleTxData(msg, result, null, callback);
+        break
+
+      case "alarm:report":
+        async(() => {
+          await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to report bug on alarm:", err, {})
+          this.simpleTxData(msg, {}, err, callback)
         })
-        .catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
+        break
+
+      case "policy:create":
+        pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
+          if (err) {
+            this.simpleTxData(msg, null, err, callback);
+            return;
+          }
+
+          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+            if(alreadyExists == "duplicated") {
+              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+              return
+            } else if(alreadyExists == "duplicated_and_updated") {
+              const p = JSON.parse(JSON.stringify(policy2))
+              p.updated = true // a kind hacky, but works
+              this.simpleTxData(msg, p, err, callback)
+            } else {
+              this.simpleTxData(msg, policy2, err, callback)
+            }
+          });
         });
-      break;
-    case "exception:delete":
-      em.deleteException(msg.data.value.exceptionID)
-        .then(() => {
-          this.simpleTxData(msg, null, null, callback);
-        }).catch((err) => {
+        break;
+
+      case "policy:update":
+        async(() => {
+          const policy = msg.data.value
+          const pid = policy.pid
+          const oldPolicy = await (pm2.getPolicy(pid))
+          await (pm2.updatePolicyAsync(policy))
+          const newPolicy = await (pm2.getPolicy(pid))
+          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+          this.simpleTxData(msg,newPolicy, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+
+        break;    
+      case "policy:delete":
+        async(() => {
+          let policy = await (pm2.getPolicy(msg.data.value.policyID))
+          if(policy) {
+            await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+            policy.deleted = true // policy is marked ask deleted
+            this.simpleTxData(msg, policy, null, callback);          
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })                 
+        break;
+      case "policy:enable":
+        async(() => {
+          const policyID = msg.data.value.policyID
+          if(policyID) {
+            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            if(policy) {
+              await (pm2.enablePolicy(policy))
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
+          }
+        })()
+        break;
+      case "policy:disable":
+        async(() => {
+          const policyID = msg.data.value.policyID
+          if(policyID) {
+            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            if(policy) {
+              await (pm2.disablePolicy(policy))
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
+          }
+        })()
+        break;
+      case "intel:finger":
+        (async () => {
+          const target = msg.data.value.target;
+          if (target) {
+            let result;
+            try {
+              result = await bone.intelFinger(target);
+            } catch (err) {
+              log.error("Error when intel finger", err, {});
+            }
+            if (result && result.whois) {
+              this.simpleTxData(msg, result, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+            }
+          } else {
+            this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
+          }
+        })();
+        break;
+      case "exception:create":
+        em.createException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "exception:update":
+        em.updateException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "exception:delete":
+        em.deleteException(msg.data.value.exceptionID)
+          .then(() => {
+            this.simpleTxData(msg, null, null, callback);
+          }).catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "reset":
+        break;
+      case "startSupport":
+        async(() => {
+          await (frp.start())
+          let config = frp.getConfig();
+          let newPassword = await(ssh.resetRandomPasswordAsync())
+          sysManager.setSSHPassword(newPassword); // in-memory update
+          config.password = newPassword
+          this.simpleTxData(msg, config, null, callback)
+        })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
-        });
-      break;
-    case "reset":
-      break;
-    case "startSupport":
-      async(() => {
-        await (frp.start())
-        let config = frp.getConfig();
-        let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.setSSHPassword(newPassword); // in-memory update
-        config.password = newPassword
-        this.simpleTxData(msg, config, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break;
-    case "stopSupport":
-      async(() => {
-        await (frp.stop())
-        let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.setSSHPassword(newPassword); // in-memory update
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break;
-    case "setManualSpoof":
-      async(() => {
-        let mac = msg.data.value.mac
-        let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
+        })
+        break;
+      case "stopSupport":
+        async(() => {
+          await (frp.stop())
+          let newPassword = await(ssh.resetRandomPasswordAsync())
+          sysManager.setSSHPassword(newPassword); // in-memory update
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      case "setManualSpoof":
+        async(() => {
+          let mac = msg.data.value.mac
+          let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
 
-        if(!mac) {
-          this.simpleTxData(msg, null, new Error("invalid request"), callback)
-          return
-        }
+          if(!mac) {
+            this.simpleTxData(msg, null, new Error("invalid request"), callback)
+            return
+          }
 
-        await (hostTool.updateMACKey({
-          mac: mac,
-          manualSpoof: manualSpoof
-        }))
+          await (hostTool.updateMACKey({
+            mac: mac,
+            manualSpoof: manualSpoof
+          }))
 
-        let mode = require('../net2/Mode.js')
-        if(mode.isManualSpoofModeOn()) {
-          await (spooferManager.loadManualSpoof(mac))
-        }
+          let mode = require('../net2/Mode.js')
+          if(mode.isManualSpoofModeOn()) {
+            await (spooferManager.loadManualSpoof(mac))
+          }
 
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "manualSpoofUpdate":
-      async(() => {
-        let modeManager = require('../net2/ModeManager.js');
-        await (modeManager.publishManualSpoofUpdate())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "isSpoofRunning":
-      async(() => {
-        let timeout = msg.data.value.timeout
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "manualSpoofUpdate":
+        async(() => {
+          let modeManager = require('../net2/ModeManager.js');
+          await (modeManager.publishManualSpoofUpdate())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "isSpoofRunning":
+        async(() => {
+          let timeout = msg.data.value.timeout
 
-        let running = false
+          let running = false
 
-        if(timeout) {
+          if(timeout) {
+            let begin = new Date() / 1000;
+
+            let delayFunction = function(t) {
+              return new Promise(function(resolve) {
+                setTimeout(resolve, t)
+              });
+            }
+
+            while(new Date() / 1000 < begin + timeout) {
+              const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
+              log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
+              running = await (spooferManager.isSpoofRunning())
+              if(running) {
+                break
+              }
+              await(delayFunction(1000))
+            }
+
+          } else {
+            running = await (spooferManager.isSpoofRunning())
+          }
+
+          this.simpleTxData(msg, {running: running}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "spoofMe":
+        async(() => {
+          let value = msg.data.value
+          let ip = value.ip
+          let name = value.name
+
+          if(iptool.isV4Format(ip)) {
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "Manual submit a new device via API",
+              host: {
+                ipv4: ip,
+                ipv4Addr: ip,
+                bname: name,
+                from:"spoofMe"
+              },
+              toProcess: 'FireMain'
+            })
+
+            this.simpleTxData(msg, {}, null, callback)
+          } else {
+            this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
+          }
+
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "validateSpoof": {
+        async(() => {
+          let ip = msg.data.value.ip
+          let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
+
+          // add current ip to spoof list
+          await (spooferManager.directSpoof(ip))
+
           let begin = new Date() / 1000;
+
+          let result = false
 
           let delayFunction = function(t) {
             return new Promise(function(resolve) {
@@ -2711,444 +2776,410 @@ cmdHandler(gid, msg, callback) {
           }
 
           while(new Date() / 1000 < begin + timeout) {
-            const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
-            log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-            running = await (spooferManager.isSpoofRunning())
-            if(running) {
+            log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
+            result = await (spooferManager.isSpoof(ip))
+            if(result) {
               break
             }
             await(delayFunction(1000))
           }
 
-        } else {
-          running = await (spooferManager.isSpoofRunning())
-        }
+          this.simpleTxData(msg, {
+            result: result
+          }, null, callback)
 
-        this.simpleTxData(msg, {running: running}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "spoofMe":
-      async(() => {
-        let value = msg.data.value
-        let ip = value.ip
-        let name = value.name
-
-        if(iptool.isV4Format(ip)) {
-          sem.emitEvent({
-            type: "DeviceUpdate",
-            message: "Manual submit a new device via API",
-            host: {
-              ipv4: ip,
-              ipv4Addr: ip,
-              bname: name,
-              from:"spoofMe"
-            },
-            toProcess: 'FireMain'
-          })
-
-          this.simpleTxData(msg, {}, null, callback)
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
-        }
-
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "validateSpoof": {
-      async(() => {
-        let ip = msg.data.value.ip
-        let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
-
-        // add current ip to spoof list
-        await (spooferManager.directSpoof(ip))
-
-        let begin = new Date() / 1000;
-
-        let result = false
-
-        let delayFunction = function(t) {
-          return new Promise(function(resolve) {
-            setTimeout(resolve, t)
-          });
-        }
-
-        while(new Date() / 1000 < begin + timeout) {
-          log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-          result = await (spooferManager.isSpoof(ip))
-          if(result) {
-            break
-          }
-          await(delayFunction(1000))
-        }
-
-        this.simpleTxData(msg, {
-          result: result
-        }, null, callback)
-
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break
-    }
-    case "spoof": {
-      async(() => {
-        let ip = msg.data.value.ip
-
-
-      })()
-    }
-    case "bootingComplete":
-      async(() => {
-        await (f.setBootingComplete())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })      
-      break
-    case "resetBootingComplete":
-      async(() => {
-        await (f.resetBootingComplete())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })      
-      break
-
-    case "joinBeta":
-      async(() => {
-        await (this.switchBranch("beta"))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    case "leaveBeta":
-      async(() => {
-        await (this.switchBranch("prod"))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    case "switchBranch":
-      let target = msg.data.value.target
-
-      async(() => {
-        await (this.switchBranch(target))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-
-      break
-    case "enableBinding":
-      sysTool.restartFireKickService()
-        .then(() => {
-          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
         })
-        .catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-      break
-    case "disableBinding":
-      sysTool.stopFireKickService()
-        .then(() => {
-          this.simpleTxData(msg, {}, null, callback)
-        })
-        .catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-      break
-    case "enableFeature": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.enableDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })    
-      break
-    }      
-    case "disableFeature": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.disableDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }      
-    case "clearFeatureDynamicFlag": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.clearDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }
-    case "releaseMonkey": {
-      async(() => {
-        sem.emitEvent({
-          type: "ReleaseMonkey",
-          message: "Release a monkey to test system",
-          toProcess: 'FireMain',
-          monkeyType: msg.data.value && msg.data.value.monkeyType
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }
-    case "addIncludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.addIncludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "removeIncludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.removeIncludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "addExcludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.addExcludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "removeExcludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.removeExcludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "startProServer": {
-      proServer.startProServer();
-      break;
-    }
-    case "stopProServer": {
-      proServer.stopProServer();
-      break;
-    }
-    case "generateProToken": {
-      tokenManager.generateToken(gid);
-      break;
-    }
-    case "revokeProToken": {
-      tokenManager.revokeToken(gid);
-      break;
-    }
-    case "saveOvpnProfile": {
-      const content = msg.data.value.content;
-      let profileId = msg.data.value.profileId;
-      // at least create dummy password file anyway
-      const password = msg.data.value.password || "dummy_ovpn_password";
-      if (!profileId || profileId === "") {
-        // use default profile id
-        profileId = "ovpn_client";
+        break
       }
-      (async () => {
-        const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-        const cmd = "mkdir -p " + dirPath;
-        await exec(cmd);
-        const profilePath = dirPath + "/" + profileId + ".ovpn";
-        await writeFileAsync(profilePath, content, 'utf8');
-        const passwordPath = dirPath + "/" + profileId + ".password";
-        await writeFileAsync(passwordPath, password, 'utf8');
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      }) 
-      break;
-    }
-    case "deleteOvpnProfile": {
-      const profileId = msg.data.value.profileId;
-      (async () => {
+      case "spoof": {
+        async(() => {
+          let ip = msg.data.value.ip
+
+
+        })()
+      }
+      case "bootingComplete":
+        async(() => {
+          await (f.setBootingComplete())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })      
+        break
+      case "resetBootingComplete":
+        async(() => {
+          await (f.resetBootingComplete())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })      
+        break
+
+      case "joinBeta":
+        async(() => {
+          await (this.switchBranch("beta"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      case "leaveBeta":
+        async(() => {
+          await (this.switchBranch("prod"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      case "switchBranch":
+        let target = msg.data.value.target
+
+        async(() => {
+          await (this.switchBranch(target))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+
+        break
+      case "enableBinding":
+        sysTool.restartFireKickService()
+          .then(() => {
+            this.simpleTxData(msg, {}, null, callback)
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, {}, err, callback)
+          })
+        break
+      case "disableBinding":
+        sysTool.stopFireKickService()
+          .then(() => {
+            this.simpleTxData(msg, {}, null, callback)
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, {}, err, callback)
+          })
+        break
+      case "enableFeature": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.enableDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })    
+        break
+      }      
+      case "disableFeature": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.disableDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }      
+      case "clearFeatureDynamicFlag": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.clearDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }
+      case "releaseMonkey": {
+        async(() => {
+          sem.emitEvent({
+            type: "ReleaseMonkey",
+            message: "Release a monkey to test system",
+            toProcess: 'FireMain',
+            monkeyType: msg.data.value && msg.data.value.monkeyType
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }
+      case "addIncludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.addIncludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "removeIncludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.removeIncludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "addExcludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.addExcludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "removeExcludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.removeExcludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "startProServer": {
+        proServer.startProServer();
+        break;
+      }
+      case "stopProServer": {
+        proServer.stopProServer();
+        break;
+      }
+      case "generateProToken": {
+        tokenManager.generateToken(gid);
+        break;
+      }
+      case "revokeProToken": {
+        tokenManager.revokeToken(gid);
+        break;
+      }
+      case "saveOvpnProfile": {
+        const content = msg.data.value.content;
+        let profileId = msg.data.value.profileId;
+        // at least create dummy password file anyway
+        const password = msg.data.value.password || "dummy_ovpn_password";
         if (!profileId || profileId === "") {
-          this.simpleTxData(msg, {}, "profile id is not specified", callback);
-        } else {
+          // use default profile id
+          profileId = "ovpn_client";
+        }
+        (async () => {
           const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const cmd = "mkdir -p " + dirPath;
+          await exec(cmd);
           const profilePath = dirPath + "/" + profileId + ".ovpn";
-          if (fs.existsSync(profilePath)) {
-            await unlinkAsync(profilePath);
-            const passwordPath = dirPath + "/" + profileId + ".password";
-            if (fs.existsSync(passwordPath)) {
-              await unlinkAsync(passwordPath);
+          await writeFileAsync(profilePath, content, 'utf8');
+          const passwordPath = dirPath + "/" + profileId + ".password";
+          await writeFileAsync(passwordPath, password, 'utf8');
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        }) 
+        break;
+      }
+      case "deleteOvpnProfile": {
+        const profileId = msg.data.value.profileId;
+        (async () => {
+          if (!profileId || profileId === "") {
+            this.simpleTxData(msg, {}, "profile id is not specified", callback);
+          } else {
+            const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+            const profilePath = dirPath + "/" + profileId + ".ovpn";
+            if (fs.existsSync(profilePath)) {
+              await unlinkAsync(profilePath);
+              const passwordPath = dirPath + "/" + profileId + ".password";
+              if (fs.existsSync(passwordPath)) {
+                await unlinkAsync(passwordPath);
+              }
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
             }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "saveRSAPublicKey": {
+        const content = msg.data.value.pubKey;
+        const identity = msg.data.value.identity;
+        (async () => {
+          await ssh.saveRSAPublicKey(content, identity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:export": {
+        const partition = msg.data.value.partition;
+        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        (async () => {
+          await migration.exportDataPartition(partition, encryptionIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:import": {
+        const partition = msg.data.value.partition;
+        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        (async () => {
+          await migration.importDataPartition(partition, encryptionIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:transfer": {
+        const host = msg.data.value.host;
+        const partition = msg.data.value.partition;
+        const transferIdentity = msg.data.value.transferIdentity;
+        (async () => {
+          await migration.transferDataPartition(host, partition, transferIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:transferHiddenFolder": {
+        const host = msg.data.value.host;
+        const transferIdentity = msg.data.value.transferIdentity;
+        (async () => {
+          await migration.transferHiddenFolder(host, transferIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+
+      case "enableWebToken": {
+        (async () => {
+          const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+          this.simpleTxData(msg, tokenInfo, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "host:delete": {
+        (async () => {
+          const hostMac = msg.data.value.mac;
+          const macExists = await hostTool.macExists(hostMac);
+          if (macExists) {
+            // delete related rules
+            let multi = rclient.multi();
+            multi.del('policy:mac:' + hostMac);
+
+            pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
+              if(err) {
+                throw new Error(err);
+              } else {
+                // filters out rules with inactive devices
+                rules = rules.filter(rule => {
+                  if (!rule.scope) return false;
+
+                  return rule.scope.some(mac =>
+                    this.hostManager.hosts.all.some(host => host.o.mac == hostMac)
+                  )
+                })
+
+                log.info('Found related rules:', rules);
+
+                // not necessary to check policy existence, result will be 0 in that case
+                rules.forEach(rule => {
+                  multi.zrem('policy_active', rule.pid);
+                  multi.del('policy:' + rule.pid);
+                })
+              }
+            })
+
+            await multi.execAsync().catch(e =>
+              log.info('Error removing related policy & rules', e);
+            );
+            
+            let ips = await hostTool.getIPsByMac(hostMac);
+            ips.forEach(async (ip) => {
+              const latestMac = await hostTool.getMacByIP(ip);
+              if (latestMac && latestMac === hostMac) {
+                // double check to ensure ip address is not taken over by other device
+                await hostTool.deleteHost(ip);
+              }
+            });
+            await hostTool.deleteMac(hostMac);
+            // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);
           } else {
-            this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+            let resp = {
+              type: 'jsonmsg',
+              mtype: 'cmd',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+              code: 404,
+              data: {"error": "device not found"}
+            };
+            this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
           }
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      default:
+        // unsupported action
+        this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
+        break;
     }
-    case "saveRSAPublicKey": {
-      const content = msg.data.value.pubKey;
-      const identity = msg.data.value.identity;
-      (async () => {
-        await ssh.saveRSAPublicKey(content, identity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:export": {
-      const partition = msg.data.value.partition;
-      const encryptionIdentity = msg.data.value.encryptionIdentity;
-      (async () => {
-        await migration.exportDataPartition(partition, encryptionIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:import": {
-      const partition = msg.data.value.partition;
-      const encryptionIdentity = msg.data.value.encryptionIdentity;
-      (async () => {
-        await migration.importDataPartition(partition, encryptionIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:transfer": {
-      const host = msg.data.value.host;
-      const partition = msg.data.value.partition;
-      const transferIdentity = msg.data.value.transferIdentity;
-      (async () => {
-        await migration.transferDataPartition(host, partition, transferIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:transferHiddenFolder": {
-      const host = msg.data.value.host;
-      const transferIdentity = msg.data.value.transferIdentity;
-      (async () => {
-        await migration.transferHiddenFolder(host, transferIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    }
-
-    case "enableWebToken": {
-      (async () => {
-        const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
-        this.simpleTxData(msg, tokenInfo, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-
-    case "host:delete": {
-      (async () => {
-        const hostMac = msg.data.value.mac;
-        const macExists = await hostTool.macExists(hostMac);
-        if (macExists) {
-          let ips = await hostTool.getIPsByMac(hostMac);
-          ips.forEach(async (ip) => {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-              await hostTool.deleteHost(ip);
-            }
-          });
-          await hostTool.deleteMac(hostMac);
-          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
-          this.simpleTxData(msg, {}, null, callback);
-        } else {
-          let resp = {
-            type: 'jsonmsg',
-            mtype: 'cmd',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 404,
-            data: {"error": "device not found"}
-          };
-          this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    }
-    default:
-      // unsupported action
-      this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
-      break;
   }
-}
 
   switchBranch(target) {
     return async(() => {
@@ -3175,7 +3206,15 @@ cmdHandler(gid, msg, callback) {
   }
 
   simpleTxData(msg, data, err, callback) {
-    this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, data, err), "jsondata", "", null, callback);
+    this.txData(
+      /* gid     */ this.primarygid,
+      /* msg     */ msg.data.item,
+      /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
+      /* type    */ "jsondata",
+      /* beepmsg */ "",
+      /* whisper */ null,
+      /* callback*/ callback
+    );
   }
 
   getDefaultResponseDataModel(msg, data, err) {

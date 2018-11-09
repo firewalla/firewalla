@@ -69,12 +69,6 @@ const scheduler = require('../extension/scheduler/scheduler.js')()
 
 const Queue = require('bee-queue')
 
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
-
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
