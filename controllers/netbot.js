@@ -17,10 +17,10 @@
 'use strict'
 
 process.title = "FireApi";
-let log = require('../net2/logger.js')(__filename, "info");
+const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
-let fs = require('fs');
+const fs = require('fs');
 
 const ControllerBot = require('../lib/ControllerBot.js');
 
@@ -34,22 +34,22 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
 
-let HostManager = require('../net2/HostManager.js');
-let SysManager = require('../net2/SysManager.js');
-let FlowManager = require('../net2/FlowManager.js');
-let flowManager = new FlowManager('info');
-let AlarmManager = require('../net2/AlarmManager.js');
-let alarmManager = new AlarmManager('info');
-let sysManager = new SysManager();
-let VpnManager = require("../vpn/VpnManager.js");
-let vpnManager = new VpnManager('info');
-let IntelManager = require('../net2/IntelManager.js');
-let intelManager = new IntelManager('debug');
+const HostManager = require('../net2/HostManager.js');
+const SysManager = require('../net2/SysManager.js');
+const FlowManager = require('../net2/FlowManager.js');
+const flowManager = new FlowManager('info');
+const AlarmManager = require('../net2/AlarmManager.js');
+const alarmManager = new AlarmManager('info');
+const sysManager = new SysManager();
+const VpnManager = require("../vpn/VpnManager.js");
+const vpnManager = new VpnManager('info');
+const IntelManager = require('../net2/IntelManager.js');
+const intelManager = new IntelManager('debug');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 
-let DeviceMgmtTool = require('../util/DeviceMgmtTool');
+const DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
@@ -72,30 +72,30 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 
-let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM2();
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
-let EM = require('../alarm/ExceptionManager.js');
-let em = new EM();
+const EM = require('../alarm/ExceptionManager.js');
+const em = new EM();
 
-let PM2 = require('../alarm/PolicyManager2.js');
-let pm2 = new PM2();
+const PM2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PM2();
 
-let SSH = require('../extension/ssh/ssh.js');
-let ssh = new SSH('info');
+const SSH = require('../extension/ssh/ssh.js');
+const ssh = new SSH('info');
 
-let country = require('../extension/country/country.js');
+const country = require('../extension/country/country.js');
 
-let builder = require('botbuilder');
-let uuid = require('uuid');
+const builder = require('botbuilder');
+const uuid = require('uuid');
 
-let async2 = require('async');
+const async2 = require('async');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let NM = require('../ui/NotifyManager.js');
-let nm = new NM();
+const NM = require('../ui/NotifyManager.js');
+const nm = new NM();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -103,29 +103,26 @@ const frp = fm.getSupportFRP();
 
 const fireWeb = require('../mgmt/FireWeb.js');
 
-let f = require('../net2/Firewalla.js');
+const f = require('../net2/Firewalla.js');
 
-let flowTool = require('../net2/FlowTool')();
+const flowTool = require('../net2/FlowTool')();
 
-let i18n = require('../util/i18n');
+const i18n = require('../util/i18n');
 
-let NetBotTool = require('../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
-let HostTool = require('../net2/HostTool');
-let hostTool = new HostTool();
+const HostTool = require('../net2/HostTool');
+const hostTool = new HostTool();
 
-let appTool = require('../net2/AppTool')();
+const appTool = require('../net2/AppTool')();
 
-let spooferManager = require('../net2/SpooferManager.js')
+const spooferManager = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
-
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
 
 const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
