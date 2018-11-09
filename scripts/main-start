@@ -62,7 +62,8 @@ echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
-node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
+# only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
+test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
 
 node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
