@@ -30,13 +30,9 @@ MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo 
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
-CPU_PLATFORM=$(uname -m)
 
-if [[ $CPU_PLATFORM == "x86_64" ]]; then
-    export NODE_MODULE_REPO=https://github.com/firewalla/fnm.node8.x86_64
-else
-    export NODE_MODULE_REPO=https://github.com/firewalla/fnm.node8.armv7l
-fi
+NODE_MODULE_REPO=$(get_node_modules_url)
+logger "Node module repo: $NODE_MODULE_REPO"
 
 export NODE_PATH=~/.node_modules:$NODE_PATH
 
@@ -66,7 +62,10 @@ echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
-node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
+# only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
+test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
+
+node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh

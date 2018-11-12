@@ -30,6 +30,8 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const moment = require('moment');
+
 const fc = require('../net2/config.js')
 
 const f = require('../net2/Firewalla.js');
@@ -396,6 +398,7 @@ module.exports = class {
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
         if(err) {
+          log.error(':dedup: Failed loading recent alarms', err);
           reject(err);
           return;
         }
@@ -405,6 +408,19 @@ module.exports = class {
                             .filter((a) => alarm.isDup(a));
 
         if(dups.length > 0) {
+          let latest = dups[0].timestamp;
+          let cooldown = duration - (Date.now() / 1000 - latest);
+
+          log.info(util.format(
+            ':dedup: Dup Found! ExpirationTime: %s (%s)',
+            moment.duration(duration * 1000).humanize(), duration,
+          ));
+          log.info(util.format(
+            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            new Date(latest * 1000).toLocaleString(),
+            moment.duration(cooldown * 1000).humanize(), cooldown
+          ));
+
           resolve(true);
         } else {
           resolve(false);
@@ -668,34 +684,33 @@ module.exports = class {
     })
   }
 
-    loadRecentAlarms(duration, callback) {
-      if(typeof(duration) == 'function') {
-        callback = duration;
-        duration = 10 * 60; // 10 minutes
-//        duration = 86400;
+  loadRecentAlarms(duration, callback) {
+    if(typeof(duration) == 'function') {
+      callback = duration;
+      duration = 10 * 60; // 10 minutes
+    }
+
+    callback = callback || function() {}
+
+    let scoreMax = new Date() / 1000 + 1;
+    let scoreMin = scoreMax - duration;
+    rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
+      if(err) {
+        log.error("Failed to load active alarms: " + err);
+        callback(err);
+        return;
       }
-
-      callback = callback || function() {}
-
-      let scoreMax = new Date() / 1000 + 1;
-      let scoreMin = scoreMax - duration;
-      rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
+      this.idsToAlarms(alarmIDs, (err, results) => {
         if(err) {
-          log.error("Failed to load active alarms: " + err);
           callback(err);
           return;
         }
-        this.idsToAlarms(alarmIDs, (err, results) => {
-          if(err) {
-            callback(err);
-            return;
-          }
 
-          results = results.filter((a) => a != null);
-          callback(err, results);
-        });
+        results = results.filter((a) => a != null);
+        callback(err, results);
       });
-    }
+    });
+  }
 
 
   loadArchivedAlarms(options) {
@@ -825,7 +840,7 @@ module.exports = class {
       }
     }
 
-    return detail;    
+    return detail;
   }
   
   // parseDomain(alarm) {
