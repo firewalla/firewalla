@@ -129,6 +129,8 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
+const _ = require('lodash')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -3110,38 +3112,48 @@ class netBot extends ControllerBot {
       case "host:delete": {
         (async () => {
           const hostMac = msg.data.value.mac;
+          log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
             // delete related rules
-            let multi = rclient.multi();
-            multi.del('policy:mac:' + hostMac);
-
             pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
               if(err) {
                 throw new Error(err);
               } else {
-                // filters out rules with inactive devices
-                rules = rules.filter(rule => {
-                  if (!rule.scope) return false;
+                let multi = rclient.multi();
+                // device specified policy
+                multi.del('policy:mac:' + hostMac);
 
-                  return rule.scope.some(mac =>
-                    this.hostManager.hosts.all.some(host => host.o.mac == hostMac)
-                  )
+                rules = rules.forEach(rule => {
+                  if (!rule.scope) return;
+
+                  if (rule.scope.some(mac => mac == hostMac)) {
+                    // rule targets only deleted device
+                    if (rule.scope.length <= 1) {
+                      multi.del('policy:' + rule.pid);
+                      log.info('remove policy:' + rule.pid);
+                      multi.zrem('policy_active', rule.pid);
+                      log.info('remove from policy_active:', rule.pid);
+                    }
+                    // rule targets NOT only deleted device
+                    else {
+                      let reducedScope = _.without(rule.scope, hostMac);
+                      multi.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+                      log.info('remove scope from policy:' + rule.pid, hostMac);
+                    }
+                  }
                 })
 
-                log.info('Found related rules:', rules);
-
-                // not necessary to check policy existence, result will be 0 in that case
-                rules.forEach(rule => {
-                  multi.zrem('policy_active', rule.pid);
-                  multi.del('policy:' + rule.pid);
-                })
+                multi.execAsync()
+                  .catch(e => {
+                    log.info('Error removing related policy & rules', e);
+                  })
+                  .then(res => {
+                    log.info('Successfully removed rules and policies.', res);
+                  });
               }
-            })
+            });
 
-            await multi.execAsync().catch(e =>
-              log.info('Error removing related policy & rules', e);
-            );
             
             let ips = await hostTool.getIPsByMac(hostMac);
             ips.forEach(async (ip) => {
