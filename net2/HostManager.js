@@ -103,15 +103,15 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
-const defaultOvpnProfileId = "ovpn_client"
+const defaultOvpnProfileId = "ovpn_client";
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 /* alarms:
-    alarmtype:  intel/newhost/scan/log
-    severityscore: out of 100
-    alarmseverity: major minor
-    */
+alarmtype:  intel/newhost/scan/log
+severityscore: out of 100
+alarmseverity: major minor
+*/
 
 
 class Host {
@@ -1406,11 +1406,11 @@ module.exports = class HostManager {
           this.safeExecPolicy()
 
           /*
-                this.loadPolicy((err,data)=> {
-                    log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
-                    policyManager.execute(this,"0.0.0.0",this.policy,null);
-                });
-                */
+          this.loadPolicy((err,data)=> {
+              log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
+              policyManager.execute(this,"0.0.0.0",this.policy,null);
+          });
+          */
           log.info("SystemPolicy:Changed", channel, ip, type, obj);
         });
 
@@ -1789,7 +1789,7 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicys(1000, {includingDisabled: 1}, (err, rules) => {
+      policyManager2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
