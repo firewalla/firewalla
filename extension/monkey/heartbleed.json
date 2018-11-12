@@ -1,0 +1,18 @@
+{
+  "ts": 1396973486.753913,
+  "uid": "CbvCDu1A0Yx1m0Yx4e",
+  "id.orig_h": "173.203.79.216",
+  "id.orig_p": 46592,
+  "id.resp_h": "162.219.2.166",
+  "id.resp_p": 443,
+  "proto": "tcp",
+  "note": "Heartbleed::SSL_Heartbeat_Attack",
+  "msg": "An TLS heartbleed attack was detected! Record length 16368. Payload length 16365",
+  "src": "173.203.79.216",
+  "dst": "162.219.2.166",
+  "p": 443,
+  "peer_descr": "bro",
+  "actions": ["Notice::ACTION_LOG"],
+  "suppress_for": 3600.0,
+  "dropped": false
+}

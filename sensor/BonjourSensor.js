@@ -78,7 +78,7 @@ class BonjourSensor extends Sensor {
     this.bonjourBrowserUdp.stop();
     this.bonjourBrowserhttp.stop();
 
-    this.bonjourTimer = setInterval(() => {
+    this.bonjourTimer = setTimeout(() => {
       this.bonjourBrowserTcp.start();
       this.bonjourBrowserUdp.start();
       this.bonjourBrowserhttp.start();

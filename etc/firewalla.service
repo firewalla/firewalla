@@ -1,7 +1,7 @@
 [Unit]
 Description=firewalla
-After=dhcpcd.service redis.service
-Requires=network-online.target redis.service
+After=dhcpcd.service redis-server.service
+Requires=network-online.target redis-server.service
 After=fireupgrade.service
 #Wants=brofish.service
 

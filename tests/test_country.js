@@ -19,20 +19,6 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
-let sample = require('./sample_data');
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
-
 let country = require('../extension/country/country.js');
 
 describe('Country', () => {
@@ -42,7 +28,9 @@ describe('Country', () => {
     it('should return the right countries for ip addresses', (done) => {
       let mappings = {
         "123.58.180.7": "CN",
-        "151.101.73.67": "US"
+        "151.101.73.67": "JP",
+        "97.64.107.97": "US",
+        "58.38.224.108": "CN"
       }
 
       for(let ip in mappings) {

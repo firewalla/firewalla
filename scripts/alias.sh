@@ -29,4 +29,11 @@ alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard F
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
+alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias rc='redis-cli'
+alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
+alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
+alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
+alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
+
+alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'

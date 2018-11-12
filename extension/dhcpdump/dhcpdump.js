@@ -134,7 +134,13 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
       let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
       if(match2) {
         obj.name = match2[1]
-      } 
+      }
+      
+      // locate message type
+      let match3 = line.match("OPTION:.{1,9}53.{1,9}DHCP message type +.{1,9}\\((.*)\\)");
+      if (match3) {
+        obj.mtype = match3[1];
+      }
     }
 
     if (obj.mac && obj.name) {

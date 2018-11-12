@@ -30,7 +30,10 @@ const ExceptionManager = require('../alarm/ExceptionManager.js')
 const em = new ExceptionManager()
 
 const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool()
+const hostTool = new HostTool();
+
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const am2 = new AlarmManager2();
 
 let Promise = require('bluebird');
 
@@ -38,6 +41,10 @@ let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
 let fConfig = require('../net2/config.js').getConfig();
+
+function arrayDiff(a, b) {
+  return a.filter(function(i) {return b.indexOf(i) < 0;});
+};
 
 class OldDataCleanSensor extends Sensor {
   constructor() {
@@ -127,26 +134,33 @@ class OldDataCleanSensor extends Sensor {
     
   }
 
-  cleanHourlyStats() {
+  async cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
-      rclient.keys("stats:hour*",(err,keys)=> {
-        let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
-        for (let j in keys) {
-          rclient.zscan(keys[j],0,(err,data)=>{
-            if (data && data.length==2) {
-              let array = data[1];
-              for (let i=0;i<array.length;i++) {
-                if (array[i]<expireDate) {
-                  rclient.zrem(keys[j],array[i]);
-                }
-                i += Number(1);
-              }
+    let keys = await rclient.keysAsync("stats:hour*");
+    let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
+    for (let j in keys) {
+      rclient.zscan(keys[j],0,(err,data)=>{
+        if (data && data.length==2) {
+          let array = data[1];
+          for (let i=0;i<array.length;i++) {
+            if (array[i]<expireDate) {
+              rclient.zrem(keys[j],array[i]);
             }
-          });
+            i += Number(1);
+          }
         }
       });
-
-    return Promise.resolve();
+    }
+    // expire legacy stats:last24 keys if its expiration is not set
+    keys = await rclient.keysAsync("stats:last24:*");
+    for (let j in keys) {
+      const key = keys[j];
+      const ttl = await rclient.ttlAsync(key);
+      if (ttl === -1) {
+        // legacy last 24 hour stats record, need to expire it.
+        await rclient.expireAsync(key, 3600 * 24);
+      }
+    }
   }
 
   cleanUserAgents() {
@@ -273,6 +287,20 @@ class OldDataCleanSensor extends Sensor {
     })()
   }
 
+  async cleanupAlarmExtendedKeys() {
+    log.info("Cleaning up alarm extended keys");
+    
+    const basicAlarms = await am2.listBasicAlarms();
+    const extendedAlarms = await am2.listExtendedAlarms();
+    
+    const diff = arrayDiff(extendedAlarms, basicAlarms);
+
+    for (let index = 0; index < diff.length; index++) {
+      const alarmID = diff[index];
+      await (am2.deleteExtendedAlarm(alarmID))
+    }
+  }
+
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
   //   const keys = await rclient.keysAsync(keyPattern);
@@ -310,6 +338,9 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+
+      await (this.cleanupAlarmExtendedKeys());
+
       // await (this.cleanBlueRecords())
       log.info("scheduledJob is executed successfully");
     })().catch((err) => {

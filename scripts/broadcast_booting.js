@@ -15,10 +15,12 @@
 
 'use strict'
 
+process.title = "FWBroadcastBooting";
+
 const bonjour = require('bonjour')()
 const cp = require('child_process')
 
-const cmd = "ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v 192.168.218.1 | head -n 1"
+const cmd = "ip addr show dev eth0 | awk '/inet /' | awk '$NF==\"eth0\" {print $2}' | cut -f1 -d/ | head -n 1"
 const ip = cp.execSync(cmd).toString().replace(/\n$/, '')
 
 const cmd3 = "redis-cli hget sys:ept gid"

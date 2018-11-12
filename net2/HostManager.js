@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 var iptool = require('ip');
 var os = require('os');
@@ -29,6 +29,9 @@ let Promise = require('bluebird');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -92,6 +95,15 @@ var linux = require('../util/linux.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+
+const tokenManager = require('../util/FWTokenManager.js');
+
+const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const vpnClientEnforcer = new VPNClientEnforcer();
+
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const ovpnClient = new OpenVPNClient();
+const defaultOvpnProfileId = "ovpn_client"
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -494,6 +506,22 @@ class Host {
     return list;
   }
 
+  async vpnClient(policy) {
+    try {
+      const state = policy.state;
+      if (state === true) {
+        const mode = policy.mode || "dhcp";
+        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
+      } else {
+        await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+      }
+      return true;
+    } catch (err) {
+      log.error("Failed to set VPN client access on " + this.o.mac);
+      return false;
+    }
+  }
+
 
     spoof(state) {
         log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
@@ -501,15 +529,20 @@ class Host {
             log.info("Host:Spoof:NoIP", this.o);
             return;
         }
-        log.debug("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+        log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
         let gateway = sysManager.monitoringInterface().gateway;
         let gateway6 = sysManager.monitoringInterface().gateway6;
+        const dns = sysManager.myDNS();
 
       if(fConfig.newSpoof) {
         // new spoof supports spoofing on same device for mutliple times,
         // so no need to check if it is already spoofing or not
-        if (this.o.ipv4Addr == gateway || this.o.mac == null || this.o.ipv4Addr == sysManager.myIp()) {
+        if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
           return;
+        }
+        if (dns && dns.includes(this.o.ipv4Addr)) {
+            // do not monitor dns server's traffic
+            return;
         }
         if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
           return;
@@ -518,20 +551,27 @@ class Host {
           return;
         }
         if(state === true) {
-          spoofer.newSpoof(this.o.ipv4Addr)
+          hostTool.getMacByIP(gateway).then((gatewayMac) => {
+            if (gatewayMac && gatewayMac === this.o.mac) {
+              // ignore devices that has same mac address as gateway
+              log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
+              return;
+            }
+            spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
-              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', true)
+              rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
-              log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
-            log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+            })
           })
         } else {
           spoofer.newUnspoof(this.o.ipv4Addr)
             .then(() => {
-              rclient.hsetAsync("host:mac:" + this.o.mac, 'spoofing', false)
+              rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
               log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
@@ -608,18 +648,18 @@ class Host {
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
     subscribe(ip, e) {
-        this.subscriber.subscribe("DiscoveryEvent", e, ip, (channel, type, ip, obj) => {
-            log.debug("Host:Subscriber", channel, type, ip, obj);
-            if (type == "Notice:Detected") {
+        this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
+            log.debug("Host:Subscriber", channel, type, ip2, obj);
+            if (type === "Notice:Detected") {
                 if (this.callbacks[e]) {
-                    this.callbacks[e](channel, ip, type, obj);
+                    this.callbacks[e](channel, ip2, type, obj);
                 }
-            } else if (type == "Intel:Detected") {
+            } else if (type === "Intel:Detected") {
                 // no need to handle intel here.                
-            } else if (type == "HostPolicy:Changed" && this.type == "server") {
+            } else if (type === "HostPolicy:Changed" && this.type === "server") {
                 this.applyPolicy((err)=>{
                 });
-                log.info("HostPolicy:Changed", channel, ip, type, obj);
+                log.info("HostPolicy:Changed", channel, ip, ip2, type, obj);
             }
         });
     }
@@ -770,6 +810,12 @@ class Host {
             ua_os_name : this.o.ua_os_name,
             name : this.name()
         };
+
+        // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
+        if(this.o.macVendor === 'Unknown') {
+            delete obj.vendor;
+        }
+
         if (this.o.deviceClass == "mobile") {
             obj.deviceClass = "mobile";
         }
@@ -796,7 +842,7 @@ class Host {
                                     }
                                 }
 
-                                if (data._vendor!=null && this.o.macVendor == null) {
+                                if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
                                     this.o.macVendor = data._vendor;
                                 }
                                 if (data._name!=null) {
@@ -1424,7 +1470,7 @@ module.exports = class HostManager {
       json.network.ip_address = fConfig.docker.hostIP;
     }
 
-    json.cpuid = utils.getCpuId();
+    json.cpuid = platform.getBoardSerial();
     json.uptime = process.uptime()
 
     if(sysManager.language) {
@@ -1459,7 +1505,7 @@ module.exports = class HostManager {
       json.isBeta = false
     }
 
-    json.cpuid = utils.getCpuId()
+    json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
     if (sysManager.sshPassword) {
       json.ssh = sysManager.sshPassword;
@@ -1476,6 +1522,8 @@ module.exports = class HostManager {
     json.ddns = sysManager.ddns;
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
+    json.model = platform.getName();
+    json.branch = f.getBranch();
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
@@ -1923,6 +1971,13 @@ module.exports = class HostManager {
       })()
     }
 
+    async jwtTokenForInit(json) {
+        const token = await tokenManager.getToken();
+        if(token) {
+            json.jwt = token;
+        }        
+    }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -1986,7 +2041,8 @@ module.exports = class HostManager {
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
             this.boneDataForInit(json),
-            this.encipherMembersForInit(json)
+            this.encipherMembersForInit(json),
+            this.jwtTokenForInit(json)
           ]
 
           this.basicDataForInit(json, options);
@@ -2475,6 +2531,67 @@ module.exports = class HostManager {
     })()
   }
 
+  async vpnClient(policy) {
+    const state = policy.state;
+    if (state === true) {
+      switch (policy.type) {
+        case "openvpn":
+          const options = {profileId: defaultOvpnProfileId};
+          if (policy.openvpn) {
+            options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
+          }
+          try {
+            await ovpnClient.setup(options);
+            const result = await ovpnClient.start();
+            if (!result) {
+              log.error("Failed to start vpn client");
+              return false;
+            }
+            let refreshRoutes = (async() => {
+                const remoteIP = await ovpnClient.getRemoteIP();
+                const intf = await ovpnClient.getInterfaceName();
+                await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            });
+            await refreshRoutes();
+            this.vpnClientRoutesTask = setInterval(() => {
+                refreshRoutes();
+            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
+            return true;
+          } catch (err) {
+            log.error("Failed to start vpn client, ", err);
+            return false;
+          }
+        default:
+          log.error("Unsupported vpn client type: " + policy.type);
+          return false;
+      }
+    } else {
+      switch (policy.type) {
+        case "openvpn":
+          try {
+            const options = {profileId: defaultOvpnProfileId};
+            if (policy.openvpn) {
+              options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
+            }
+            await ovpnClient.setup(options);
+            await ovpnClient.stop();
+            await vpnClientEnforcer.flushVPNClientRoutes();
+            if (this.vpnClientRoutesTask) {
+                clearInterval(this.vpnClientRoutesTask);
+                this.vpnClientRoutesTask = null;
+            }
+            return true;
+          } catch (err) {
+            log.error("Failed to stop vpn client, ", err);  
+            return false;
+          }
+        default:
+          log.error("Unsupported vpn client type: " + policy.type);
+          return false;
+      }
+    }
+  }
+
     policyToString() {
         if (this.policy == null || Object.keys(this.policy).length == 0) {
             return "No policy defined";
@@ -2504,6 +2621,18 @@ module.exports = class HostManager {
                 callback(err, null);
         });
 
+    }
+
+    loadPolicyAsync() {
+        return new Promise((resolve, reject) => {
+            this.loadPolicy((err, data) => {
+                if(err) {
+                    reject(err) 
+                } else {
+                    resolve(data)
+                }
+            });
+        });
     }
 
     loadPolicy(callback) {

@@ -140,6 +140,15 @@ class NaughtyMonkeySensor extends Sensor {
       case "abnormal_upload":
         await this.abnormal_upload();
         break;
+      case "heartbleed":
+        await this.heartbleed();
+        break;
+      case "heartbleedOutbound":
+        await this.heartbleedOutbound();
+        break;
+      case "ssh_interesting_login":
+        await this.interestingLogin();
+        break;
       case "malware":
       default:
         await this.malware();
@@ -159,7 +168,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async ssh_scan() {
     const ip = await this.randomFindDevice();
-    const remoteIP = "116.62.163.43";
+    const remoteIP = "116.62.163.55";
 
     const payload = {
       "ts": new Date() / 1000,
@@ -173,11 +182,16 @@ class NaughtyMonkeySensor extends Sensor {
       "dropped": false
     }
 
-    const file = "/blog/current/notice.log";
-    const cmd = `sudo bash -c 'echo \'${JSON.stringify(payload)}\' > ${file}`
-    await exec(cmd);
+    await this.appendNotice(payload);
+  }
 
-    await fs.appendFileAsync(file, JSON.stringify(payload));
+  async appendNotice(payload) {
+    const tmpfile = "/tmp/monkey";
+    await fs.writeFileAsync(tmpfile, JSON.stringify(payload) + "\n");
+
+    const file = "/blog/current/notice.log";    
+    const cmd = `sudo bash -c 'cat ${tmpfile} >> ${file}'`;
+    await exec(cmd);
   }
 
   async port_scan() {
@@ -224,6 +238,61 @@ class NaughtyMonkeySensor extends Sensor {
     const remote = this.randomFindTarget()
 
     await this.monkey(remote, ip, "malware");
+    await this.recordMonkey(remote);
+  }
+
+  async heartbleed() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = require("../extension/monkey/heartbleed.json");
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
+
+    const remote = heartbleedJSON["id.orig_h"];
+
+    await this.appendNotice(heartbleedJSON);
+    await this.recordMonkey(remote);
+  }
+
+  async heartbleedOutbound() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/heartbleed.json")));
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
+
+    const remote = heartbleedJSON["id.orig_h"];
+
+    // swap from and to
+    const x = heartbleedJSON["id.resp_h"];
+    heartbleedJSON["id.resp_h"] = heartbleedJSON["id.orig_h"];
+    heartbleedJSON["id.orig_h"] = x;   
+    
+    const y = heartbleedJSON["id.resp_p"];
+    heartbleedJSON["id.resp_p"] = heartbleedJSON["id.orig_p"];
+    heartbleedJSON["id.orig_p"] = y; 
+
+    const z = heartbleedJSON["src"];
+    heartbleedJSON["src"] = heartbleedJSON["dst"];
+    heartbleedJSON["dst"] = z;
+
+    await this.appendNotice(heartbleedJSON);
+    await this.recordMonkey(remote);
+  }
+
+  async interestingLogin() {
+    const ip = await this.randomFindDevice();
+
+    const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/interestinglogin.json")));
+    heartbleedJSON["id.resp_h"] = ip;
+    heartbleedJSON["dst"] = ip;
+    heartbleedJSON["ts"] = new Date() / 1000;
+
+    const remote = heartbleedJSON["id.orig_h"];
+
+    await this.appendNotice(heartbleedJSON);
     await this.recordMonkey(remote);
   }
 

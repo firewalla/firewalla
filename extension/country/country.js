@@ -4,13 +4,14 @@
 
 'use strict';
 
-let instance = null;
-let log = require("../../net2/logger.js")(__filename, "info");
+const log = require("../../net2/logger.js")(__filename, "info");
 
-let geoip = require('geoip-lite');
+global.geodatadir = `${__dirname}/data`;
+
+const geoip = require('geoip-lite');
 
 function getCountry(ip) {
-  let result = geoip.lookup(ip);
+  const result = geoip.lookup(ip);
   if(result) {
     return result.country;
   }

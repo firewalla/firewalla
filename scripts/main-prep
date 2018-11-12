@@ -24,7 +24,14 @@ logger "FIREWALLA.MAIN-PREP.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 for prep_script in $(ls ${FIREWALLA_HOME}/scripts/prep/*.sh)
+do
+    bash $prep_script
+done
+
+for prep_script in $(ls ${FW_PLATFORM_CUR_DIR}/hooks/before_main_run/*.sh 2>/dev/null)
 do
     bash $prep_script
 done

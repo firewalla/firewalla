@@ -29,6 +29,9 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
+# ensure that run directory already exists
+mkdir -p /home/pi/.firewalla/run
+
 mode=${1:-'normal'}
 
 timeout_check() {
@@ -65,6 +68,87 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
+ethernet_ip() {
+    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v '^169\.254\.' | grep -v '^192\.168\.218\.1$')
+    if [[ -n "$eth_ip" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function await_ip_assigned() {
+    for i in `seq 1 30`; do
+        if ! ethernet_ip; then
+            sleep 1
+        else
+            logger "IP address is assigned"
+            return 0
+        fi
+    done
+    logger "IP address is not assigned yet."
+    return 1
+}
+
+set_value() {
+    kind=$1
+    saved_value=$2
+    case ${kind} in
+        ip)
+            sudo /sbin/ip addr replace ${saved_value} dev eth0
+            ;;
+        gw)
+            sudo /sbin/route add default gw ${saved_value} eth0
+            ;;
+    esac
+}
+
+restore_values() {
+    r=0
+    logger "Restore saved values of ip/gw/dns"
+    for kind in ip gw
+    do
+        file=/home/pi/.firewalla/run/saved_${kind}
+        [[ -e "$file" ]] || continue
+        saved_value=$(cat $file)
+        [[ -n "$saved_value" ]] || continue
+        set_value $kind $saved_value || r=1
+    done
+    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
+        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
+    else
+        r=1
+    fi
+    sleep 3
+    return $r
+}
+
+await_ip_assigned || restore_values
+
+function sync_time() {
+    time_website=$1
+    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
+    if [[ "x$time" == "x" ]]; then
+        logger "ERROR: Failed to load date info from website: $time_website"
+        return 1
+    else
+        sudo date -s "$time"
+    fi    
+}
+
+if [[ ! -f /.dockerenv ]]; then
+    logger "FIREWALLA.UPGRADE.DATE.SYNC"
+    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
+    ret=$?
+    if [[ $ret -ne 0 ]]; then
+        sudo systemctl stop ntp
+        sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
+        sudo systemctl start ntp
+    fi
+    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
+    sync
+fi
+
 GITHUB_STATUS_API=https://status.github.com/api.json
 
 logger `date`
@@ -75,7 +159,7 @@ for i in `seq 1 10`; do
       rc=0
       break
     fi
-    /usr/bin/logger "FIREWALLA.UPGRADE NO Network $i"
+    /usr/bin/logger "ERROR: FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
 
@@ -94,27 +178,6 @@ then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
 fi
 
-function sync_time() {
-    time_website=$1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
-    if [[ "x$time" == "x" ]]; then
-        logger "ERROR: Failed to load date info from website: $time_website"
-        return 1
-    else
-        sudo date -s "$time"
-    fi    
-}
-
-if [[ ! -f /.dockerenv ]]; then
-    logger "FIREWALLA.UPGRADE.DATE.SYNC"
-    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
-    sudo systemctl stop ntp
-    sudo ntpdate -b -u -s time.nist.gov
-    sudo timeout 30 ntpd -gq
-    sudo systemctl start ntp
-    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
-    sync
-fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 

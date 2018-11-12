@@ -31,6 +31,7 @@ const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
 const fs = require('fs')
+const config = require('../../net2/config.js');
 Promise.promisifyAll(fs)
 
 const VIEW_PATH = 'view';
@@ -179,7 +180,8 @@ class App {
       if(eth0s) {
         for (let index = 0; index < eth0s.length; index++) {
           const eth0 = eth0s[index]
-          if(eth0.family == "IPv4" && eth0.address != "192.168.218.1") {
+          const secondaryIntfIP = config.getConfig().secondaryInterface.ipOnly;
+          if(eth0.family == "IPv4" && eth0.address != secondaryIntfIP) {
             return eth0.address
           }
         }
@@ -219,7 +221,15 @@ class App {
         log.error("Failed to fetch log", err, {})
         res.status(404).send('')
       })
-    })
+    });
+
+    this.app.use('/pairing', (req, res) => {
+      if(this.broadcastInfo) {
+        res.json(this.broadcastInfo);
+      } else {
+        res.status(501).send('');
+      }      
+    });
 
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")

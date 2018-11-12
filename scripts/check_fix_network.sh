@@ -29,7 +29,7 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            /sbin/ip addr show dev eth0 | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 192.168.218.1 | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
+            /sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
         gw)
             /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
@@ -109,15 +109,9 @@ ethernet_connected() {
 }
 
 ethernet_ip() {
-    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/)
+    eth_ip=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
     if [[ -n "$eth_ip" ]]; then
-        if [[ ${eth_ip:0:8} == '169.254.' ]]; then
-            return 1
-        elif [[ $eth_ip == '192.168.218.1' ]]; then
-            return 1
-        else
-            return 0
-        fi
+        return 0
     else
         return 1
     fi
@@ -196,7 +190,7 @@ done
 echo OK
 
 : ${CHECK_FIX_NETWORK_RETRY:='yes'}
-while [[ -n "CHECK_FIX_NETWORK_RETRY" ]]; do
+while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     # only run once if requires NO retry
     test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
     echo -n "checking gateway ... "

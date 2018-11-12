@@ -22,29 +22,25 @@ const exec = require('child-process-promise').exec
 
 const Promise = require('bluebird');
 
-const Sensor = require('./Sensor.js').Sensor
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class RuntimeConfigSensor extends Sensor {
-  run() {
-    async(() => {
-      try {
-        await (this.updateRedisConfig())
-      } catch(err) {
-        log.error("Failed to update redis config:", err, {})
-      }
+  async run() {
+    try {
+      await this.updateRedisConfig();
+      await this.schedule();
+    } catch(err) {
+      log.error("Failed to update redis config:", err, {})
+    }
 
-      setInterval(() => {
-        this.schedule()
-      }, 3600 * 1000) // update fake hw clock every hour
-    })()
+    setInterval(() => {
+      this.schedule()
+    }, 3600 * 1000) // update fake hw clock every hour
   }
 
-  updateRedisConfig() {
+  async updateRedisConfig() {
     // 900 seconds (15min) for one key change
     // 500 seconds (8.3min) for 10 keys change
     // 2 mins for 10000 keys change
@@ -52,18 +48,16 @@ class RuntimeConfigSensor extends Sensor {
     return exec(`redis-cli config set save "${saveConfig}"`)
   }
 
-  schedule() {
-    return async(() => {
-      try {
-        await (this.updateFakeClock())
-      } catch(err) {
-        log.error("Failed to record latest time to fake-hwlock:", err, {})
-      }
-    })()
+  async schedule() {
+    try {
+      await this.updateFakeClock();
+    } catch(err) {
+      log.error("Failed to record latest time to fake-hwlock:", err, {})
+    }
   }
 
-  updateFakeClock() {
-    return exec('sudo fake-hwclock')
+  async updateFakeClock() {
+    return exec('sudo fake-hwclock');
   }
 }
 

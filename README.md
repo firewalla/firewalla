@@ -1,8 +1,4 @@
-[![Build Status](https://travis-ci.org/firewalla/firewalla.svg?branch=master)](https://travis-ci.org/firewalla/firewalla)
-<a href="https://scan.coverity.com/projects/firewalla-firewalla">
-  <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/11583/badge.svg"/>
-</a>
+
 ## Firewalla  (Beta)
 Support https://help.firewalla.com (email help@firewalla.com)
 
@@ -30,7 +26,7 @@ follow direction to flash this to a card
 - Boot Pi and update
 ```
 sudo apt-get update
-sudo apt-get -y  dist-upgrade
+sudo apt-get -y dist-upgrade
 sudo apt-get -y install git
 
 ```
@@ -65,19 +61,15 @@ docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla
 docker run --privileged -p 8833:8833 -p 8834:8834 -ti firewalla su - pi
 ```
 
-### Get iPhone Software
-
-Encipher Connect is a secure messenger used to talk to Raspberry Pi.
-
-```
+### Get iOS App
 https://itunes.apple.com/us/app/firewalla/id1180904053
 
-```
+### Get Android App
+https://play.google.com/store/apps/details?id=com.firewalla.chancellor&hl=en_US
 
-* connect ethernet port to router.
-* install firewalla from app store.
-* launch firewalla 
-* tap on 'Firewalla' and connect
+
+### Install Guide
+https://firewalla.com/pages/install2
 
 If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth to link the app with the board. Final hardware will require a scan of a barcode.
 
@@ -88,36 +80,8 @@ If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth 
 * dev_<>: development branchs.
 * Please do a pull request for features
 
+### Router Compatibility
 
-### Following Routers are NOT supported in simple mode.
-
-#### ACTIONTEC
-* T3200M 
-
-#### ASUS
-* N600 RT-N56U (NAT Acceleration must be turned off)
-
-#### GOOGLE
-* OnHub TGR-1900 (TP-Link)
-* OnHub SRT-AC1900 (ASUS)
-
-#### LINKSYS
-* N600 EA2500 (Not support guest network)
-* AC1900 EA7500 (Express Forwarding must be disabled)
-* AC2400 EA8350
-* AC2600 Max-Stream EA8500 (Express Forwarding must be disabled)
-
-#### NETGEAR
-* N600 WNDR3400 (Not compatible with guest network)
-* AC1600 R6250
-* AC1750 R6400 
-* AC2350 Nighthawk X4 R7500
-* AC2600 Nighthawk X4S R7800 
-
-
-### DHCP Mode
-DHCP mode should work with most of the routers out there.  Except google.* router. 
-
-
+* For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
 
 

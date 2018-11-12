@@ -1,4 +1,8 @@
 #!/bin/bash -
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 logger 'FIREWALLA.BROFISH Start '
 mkdir /firewalla
 chmod 777 /firewalla
@@ -64,9 +68,12 @@ sudo cp etc/bro-cron /etc/cron.hourly/.
 
 # sudo systemctl reenable fireupgrade
 # sudo systemctl daemon-reload
-sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
+# sudo cp /home/pi/firewalla/etc/broctl.cfg  /usr/local/bro/etc/broctl.cfg
 sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
 sync
+
+before_bro
+
 /usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
 logger "FIREWALLA: Deployed BRO using BROCTL"
 sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
