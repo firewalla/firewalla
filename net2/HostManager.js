@@ -2232,7 +2232,7 @@ module.exports = class HostManager {
     })
   }
 
-  safeExecPolicy() {
+  safeExecPolicy(skipHosts) {
     // a very dirty hack, only call system policy change every 5 seconds
     const now = new Date() / 1000
     if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
@@ -2241,13 +2241,13 @@ module.exports = class HostManager {
       setTimeout(() => {
         if(this.pendingExecPolicy) {
           this.lastExecPolicyTime = new Date() / 1000
-          this.execPolicy()
+          this.execPolicy(skipHosts)
           this.pendingExecPolicy = false
         }
       }, (this.lastExecPolicyTime + 5 - now) * 1000)
     } else {
       this.lastExecPolicyTime = new Date() / 1000
-      this.execPolicy()
+      this.execPolicy(skipHosts)
       this.pendingExecPolicy = false
     }
   }
@@ -2287,7 +2287,7 @@ module.exports = class HostManager {
     // end of mutx check
 
     if(this.type === "server") {
-      this.safeExecPolicy()
+      this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
     }
     for (let h in this.hostsdb) {
       if (this.hostsdb[h]) {
@@ -2677,7 +2677,7 @@ module.exports = class HostManager {
     });
   }
 
-  execPolicy() {
+  execPolicy(skipHosts) {
     this.loadPolicy((err, data) => {
       log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
       if (this.type == "server") {
@@ -2690,8 +2690,11 @@ module.exports = class HostManager {
               if (ipchanged || (changed == true && err == null)) {
                 this.savePolicy(null);
               }
-              for (let i in this.hosts.all) {
-                this.hosts.all[i].applyPolicy();
+              if (!skipHosts) {
+                log.info("Apply host policies...");
+                for (let i in this.hosts.all) {
+                  this.hosts.all[i].applyPolicy();
+                }
               }
             });
           });
