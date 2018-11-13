@@ -1,23 +1,28 @@
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
-let jsonfile = require('jsonfile');
-let util = require('util');
+const log = require('../net2/logger.js')(__filename, 'info');
+const jsonfile = require('jsonfile');
+const util = require('util');
 
 // FIXME: this profile should be loaded from cloud
-let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
-let i18n = require('../util/i18n.js');
+const profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
+const i18n = require('../util/i18n.js');
+const fc = require('../net2/config.js')
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
 // let moment = require('moment');
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
+//   timestamp (when event occcured)
 //   device (each alarm should have a related device)
 //   message (a summarized information about what happened, need support localization)
 //   payloads (key-value pairs, used to populate message/investigation)
-//   timestamp (when event occcured)
+//      payload properties are prefixed in 3 different categories
+//      p:  primary     required to rander alarm list
+//      e:  extended    required to rander alarm detail
+//      r:  ?           required in neither scenarios above
 
 class Alarm {
   constructor(type, timestamp, device, info) {
@@ -112,8 +117,8 @@ class Alarm {
     if(alarm.type !== alarm2.type)
       return false;
 
-    for(var key in keysToCompare) {
-      let k = keysToCompare[key];
+    for(var i in keysToCompare) {
+      let k = keysToCompare[i];
       if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
 
       } else {
@@ -122,6 +127,10 @@ class Alarm {
     }
 
     return true;
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.cooldown") || 15 * 60; // 15 minutes
   }
 };
 
@@ -185,6 +194,11 @@ class VPNClientConnectionAlarm extends Alarm {
 
   requiredKeys() {
     return ["p.dest.ip"];
+  }
+
+  getExpirationTime() {
+    // for vpn client connection activities, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4;
   }
 }
 
@@ -462,6 +476,11 @@ class LargeTransferAlarm extends OutboundAlarm {
 
     return category
   }
+
+  getExpirationTime() {
+    // for upload activity, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
 }
 
 class VideoAlarm extends OutboundAlarm {
@@ -485,6 +504,24 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+class SubnetAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SUBNET", timestamp, device, info);
+  }
+
+  getManagementType() {
+    return "info";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.subnet.cooldown") || 30 * 24 * 60 * 60;
+  }
+}
+
 let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -498,7 +535,8 @@ let classMapping = {
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
-  ALARM_INTEL_REPORT: IntelReportAlarm.prototype
+  ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
+  ALARM_SUBNET: SubnetAlarm.prototype
 }
 
 module.exports = {
@@ -517,5 +555,6 @@ module.exports = {
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
+  SubnetAlarm: SubnetAlarm,
   mapping: classMapping
 }

@@ -192,7 +192,7 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
-  // make sure there is at least one usable enternet
+  // make sure there is at least one usable ethernet
   d.discoverInterfaces(function(err, list) {
     var failure = 1;
     if (list.length > 0) {
@@ -204,7 +204,7 @@ function run() {
     }
 
     if(failure) {
-      log.error("Failed to find any alive ethernets, taking down the entire main.js")
+      log.error("Failed to find any alive ethernet, taking down the entire main.js")
       process.exit(1);
     }
   });

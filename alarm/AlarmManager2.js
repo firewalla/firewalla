@@ -91,7 +91,7 @@ function formatBytes(bytes,decimals) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-// TODO: Support suppres alarm for a while
+// TODO: Support suppress alarm for a while
 
 module.exports = class {
   constructor() {
@@ -213,6 +213,7 @@ module.exports = class {
     return fc.isFeatureOn(featureKey)
   }
 
+  // chekc if required attributes present
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
@@ -273,6 +274,7 @@ module.exports = class {
     })()
   }
 
+  // Emmit ALARM:CREATED event, effectively create application notifications
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
@@ -285,7 +287,7 @@ module.exports = class {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
           aid: alarm.aid,
-          alarmNotifType:alarm.notifType,
+          alarmNotifType: alarm.notifType,
           alarmType: alarm.type,
           testing: alarm["p.monkey"],
           managementType: alarm.getManagementType()
@@ -390,13 +392,8 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = fc.getTimingConfig("alarm.cooldown") || 15 * 60 // 15 minutes
-      if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hours.
-      }
-      if (alarm.type === 'ALARM_VPN_CLIENT_CONNECTION') {
-        duration = fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4; // for vpn client connection activities, only generate one alarm per 4 hours.
-      }
+      // expirationTime managed within Alarm sub classes
+      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
         if(err) {
@@ -437,7 +434,7 @@ module.exports = class {
         alarm: alarm,
         action: "create"
       })
-      job.timeout(60000).save(function() {})
+      job.timeout(60000).save()
     }
   }
 

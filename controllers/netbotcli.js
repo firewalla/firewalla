@@ -519,18 +519,6 @@ class netBot extends ControllerBot {
         this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
             //this.tx(this.primarygid, "Discovery started","message");  
         });
-        this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
-            console.log("Found new host ", channel, type, ip, o);
-            if (o) {
-                let name = o.ipv4Addr;
-                if (o.name != null) {
-                    name = o.name + " (" + o.ipv4Addr + ")";
-                } else if (o.macVendor != null) {
-                    name = "(?)" + o.macVendor + " (" + o.ipv4Addr + ")";
-                }
-                this.tx(this.primarygid, "New host found in network: " + name, "Found new host");
-            }
-        });
         this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
             let m = null;
             let n = null;
