@@ -182,7 +182,7 @@
     },
     "DeviceOfflineSensor": {
       "interval": 60,
-      "idle": 1800
+      "idle": 2700
     },
     "FirewallaDiscoverSensor": {
       "listenPort": 4096
@@ -193,7 +193,7 @@
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
     "DeviceHook": {
-      "hostExpirationSecs": 3600
+      "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
     "VPNHook": {}
