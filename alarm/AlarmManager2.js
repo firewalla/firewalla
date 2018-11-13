@@ -193,8 +193,7 @@ module.exports = class {
   }
 
   addToActiveQueue(alarm, callback) {
-    //TODO
-    let score = parseFloat(alarm.timestamp);
+    let score = parseFloat(alarm.alarmTimestamp);
     let id = alarm.aid;
     rclient.zadd(alarmActiveKey, score, id, (err) => {
       if(err) {

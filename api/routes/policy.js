@@ -30,7 +30,7 @@ const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
 router.get('/list', (req, res, next) => {
-  pm2.loadActivePolicys((err, list) => {
+  pm2.loadActivePolicies((err, list) => {
     if(err) {
       res.status(500).send('');
       return;
