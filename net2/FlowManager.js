@@ -40,6 +40,9 @@ var flowconfig = {
 
 let flowTool = require('./FlowTool')();
 
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+
 class FlowGraph {
     constructor(name,flowarray) {
          if (flowarray) {
@@ -147,15 +150,15 @@ module.exports = class FlowManager {
     
 
   // use redis hash to store last 24 hours stats
-  recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, ip) {
+  recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, target) {
     
     if(!downloadBytes || !uploadBytes)
       return Promise.reject(new Error("either downloadBytes or uploadBytes is null"));
     
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let downloadKey = key + ":download";
     let uploadKey = key + ":upload";
@@ -225,11 +228,11 @@ module.exports = class FlowManager {
     return rclient.existsAsync("stats:last24:download");
   }
   
-  getLast24HoursDownloadsStats(ip) {
+  getLast24HoursDownloadsStats(target) {
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let downloadKey = key + ":download";
 
@@ -241,11 +244,11 @@ module.exports = class FlowManager {
       });
   }
 
-  getLast24HoursUploadsStats(ip) {
+  getLast24HoursUploadsStats(target) {
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let uploadKey = key + ":upload";
 
@@ -299,9 +302,9 @@ module.exports = class FlowManager {
   
   
     // stats are 'hour', 'day'
-    // stats:hour:ip_address score=bytes key=_ts-_ts%3600
-    // ip = 0.0.0.0 is system
-  recordStats(ip,type,ts,inBytes,outBytes,callback) {
+    // stats:hour:mac_address score=bytes key=_ts-_ts%3600
+    // target = 0.0.0.0 is system
+  recordStats(target,type,ts,inBytes,outBytes,callback) {
     callback = callback || function() {}
     
         let period = 3600;
@@ -310,8 +313,8 @@ module.exports = class FlowManager {
         } else if (type ==="month") {
             period = 60*60*24*30;
         }
-        let inkey = "stats:"+type+":in:"+ip;
-        let outkey = "stats:"+type+":out:"+ip;
+        let inkey = "stats:"+type+":in:"+target;
+        let outkey = "stats:"+type+":out:"+target;
         let subkey = ts-ts%period;
 
         if (inBytes == null || outBytes == null) {
@@ -331,7 +334,6 @@ module.exports = class FlowManager {
             return;
           }
 
-          let target = ip;
           if(target === "0.0.0.0")
             target = null;
           
@@ -461,8 +463,10 @@ module.exports = class FlowManager {
     
     host.flowsummary.tophour = tsnow;
 
-    let ipList = host.getAllIPs();
-    let downloadPromiseList = ipList.map((ip) => this.getLast24HoursDownloadsStats(ip));
+    const mac = host.o.mac;
+    let downloadPromiseList = [this.getLast24HoursDownloadsStats(mac)]; // you may be wondering why a single element list is used here. 
+    // It is changed from a previous implementation which aggregates stats by ip addresses, and a host may have multiple ip addresses. The promise list is retained to avoid changing code structure too much.
+
 
     return Promise.all(downloadPromiseList)
       .then((results) => {
@@ -471,7 +475,7 @@ module.exports = class FlowManager {
         host.flowsummary.flowinbytes = legacyFormat;
         host.flowsummary.inbytes = this.sumBytes(sum);
 
-        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadsStats(ip));
+        let uploadPromiseList = [this.getLast24HoursUploadsStats(mac)]; // the reason why a single element list is used here is same as the one above.
 
         return Promise.all(uploadPromiseList)
           .then((results) => {
@@ -483,25 +487,23 @@ module.exports = class FlowManager {
       });  
   }
   
-    getStats(iplist,type,from,to,callback) {
+    getStats(target,type,from,to,callback) {
       let outdb = {};
       let indb = {};
       let inbytes = 0;
       let outbytes = 0;
       let lotsofkeys = 24*30*6;  //half months ... of data 
-      log.debug("Getting stats:",type,iplist,from,to);
+      log.debug("Getting stats:",type,target,from,to);
 
       let multi = rclient.multi();
 
       let len = iplist.length;
 
-      iplist.forEach((ip) => {
-        let inkey = "stats:"+type+":in:"+ip;
-        let outkey = "stats:"+type+":out:"+ip;
+      let inkey = "stats:"+type+":in:"+target;
+      let outkey = "stats:"+type+":out:"+target;
         
-        multi.zscan(inkey, 0, 'count', lotsofkeys);
-        multi.zscan(outkey, 0, 'count', lotsofkeys);
-      });
+      multi.zscan(inkey, 0, 'count', lotsofkeys);
+      multi.zscan(outkey, 0, 'count', lotsofkeys);
 
       multi.exec((err, results) => {
 
@@ -614,12 +616,12 @@ module.exports = class FlowManager {
             if (flow.fd == "in") {
                 flow.txratio = flow.ob / flow.rb;
                 if (flow.rb == 0) {
-                    flow.txratio = Math.min(flow.ob, 10);
+                    flow.txratio = Math.min(flow.ob, 10); // ???
                 }
             } else if (flow.fd == "out") {
                 flow.txratio = flow.rb / flow.ob;
                 if (flow.ob == 0) {
-                    flow.txratio = Math.min(flow.rb);
+                    flow.txratio = Math.min(flow.rb); // ???
                 }
             } else {
                 log.error("FlowManager:FlowSummary:Error", flow);
@@ -740,17 +742,11 @@ module.exports = class FlowManager {
     }
 
     summarizeHostBytes(host,from,to,block,callback) {
-            let listip = []
-            listip.push(host.o.ipv4Addr);
-            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-                for (let j in host['ipv6Addr']) {
-                    listip.push(host['ipv6Addr'][j]);
-                }
-            }
+            const target = host.o.mac;
             host.flowsummary = {};
             host.flowsummary.inbytes = 0;
             host.flowsummary.outbytes = 0;
-            this.getStats(listip,block,from,to,callback);
+            this.getStats(target,block,from,to,callback);
     }
 
     summarizeBytes2(hosts,from,to,block,callback) {
@@ -913,11 +909,11 @@ module.exports = class FlowManager {
     }
     
     // append to existing flow or create new
-    appendFlow(conndb, flowObject, ip) {
+    appendFlow(conndb, flowObject) {
       let o = flowObject;
       
       let key = "";
-      if (o.sh == ip) {
+      if (o.sh == o.lh) {
         key = o.dh + ":" + o.fd;
       } else {
         key = o.sh + ":" + o.fd;
@@ -932,10 +928,11 @@ module.exports = class FlowManager {
     }   
   
     // conns in last 24 hours
-    recentOutgoingConnections(ip, interval) {
+    // 2018.11.13 This function is not used
+    recentOutgoingConnections(mac, interval) {
       interval = interval || 3600 * 24;
       
-      let key = "flow:conn:in:" + ip;
+      let key = "flow:conn:in:" + mac;
       let to = new Date() / 1000;
       let from = to - interval;
       
@@ -952,7 +949,7 @@ module.exports = class FlowManager {
         let conndb = {};
         
         flowObjects.forEach((flowObject) => {
-          this.appendFlow(conndb, flowObject, ip);  
+          this.appendFlow(conndb, flowObject);  
         });
         
         let connArray = [];
@@ -969,33 +966,33 @@ module.exports = class FlowManager {
       });
     }
     
-    summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
+    summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats, callback) {
         let sorted = [];
-        _async.each(ipList, (ip, cb) => {
-            let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,QUERY_MAX_FLOW], (err, result) => {
+        try {
+            let key = "flow:conn:" + direction + ":" + mac;
+            rclient.zrevrangebyscore([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW], (err, result) => {
                 let conndb = {};
                 let interval = 0;
                 let totalInBytes = 0;
                 let totalOutBytes = 0;
                 if (err == null) {
-                    if (result!=null && result.length>0) 
-                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
+                    if (result != null && result.length > 0)
+                        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length);
                     for (let i in result) {
                         let o = JSON.parse(result[i]);
-                        
-                        if(!this.isFlowValid(o))
-                          continue;
-                        
+
+                        if (!this.isFlowValid(o))
+                            continue;
+
                         if (saveStats) {
                             if (direction == 'in') {
-                                totalInBytes+=Number(o.rb);
-                                totalOutBytes+=Number(o.ob);
-                                this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
+                                totalInBytes += Number(o.rb);
+                                totalOutBytes += Number(o.ob);
+                                this.recordStats(mac, "hour", o.ts, Number(o.rb), Number(o.ob), null);
                             } else {
-                                totalInBytes+=Number(o.ob);
-                                totalOutBytes+=Number(o.rb);
-                                this.recordStats(ip,"hour",o.ts,Number(o.ob),Number(o.rb),null);
+                                totalInBytes += Number(o.ob);
+                                totalOutBytes += Number(o.rb);
+                                this.recordStats(mac, "hour", o.ts, Number(o.ob), Number(o.rb), null);
                             }
                         }
                         let ts = o.ts;
@@ -1016,7 +1013,7 @@ module.exports = class FlowManager {
                         if (o.pf) {
                             for (let k in o.pf) {
                                 // aggregate by dst host and dst port and direction
-                                if (o.sh == ip) {
+                                if (o.sh == o.lh) {
                                     key = o.dh + ":" + o.fd + ":" + k;
                                 } else {
                                     key = o.sh + ":" + o.fd + ":" + k;
@@ -1076,7 +1073,7 @@ module.exports = class FlowManager {
                                 }
                             }
                         } else {
-                            if (o.sh == ip) {
+                            if (o.sh == o.lh) {
                                 key = o.dh + ":" + o.fd;
                             } else {
                                 key = o.sh + ":" + o.fd;
@@ -1107,70 +1104,66 @@ module.exports = class FlowManager {
 
                     if (saveStats) {
                         let _ts = Math.ceil(Date.now() / 1000);
-                        this.recordStats("0.0.0.0","hour",_ts,totalInBytes,totalOutBytes,null);
+                        this.recordStats("0.0.0.0", "hour", _ts, totalInBytes, totalOutBytes, null);
                     }
 
                     for (let m in conndb) {
                         sorted.push(conndb[m]);
                     }
-                    
+
                     // trim to reduce size
-                    sorted.forEach(flowTool.trimFlow);                   
-                  
-                    if (result.length>0) 
-                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
+                    sorted.forEach(flowTool.trimFlow);
+
+                    if (result.length > 0)
+                        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length, totalInBytes, totalOutBytes);
                     conndb = {};
-                    cb();
                 } else {
                     log.error("Unable to search software");
-                    cb();
                 }
             });
-        }, (err) => {
-            if (err) {
-                log.error("Flow Manager Error");
-                callback(null, sorted);
-            } else {
-                log.debug("============ Host:Flows:Sorted", sorted.length);
-                if (sortby == "time") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.ts) - Number(a.ts);
-                    })
-                } else if (sortby == "rxdata") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.rb) - Number(a.rb);
-                    })
-                } else if (sortby == "txdata") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.ob) - Number(a.ob);
-                    })
-                }
+        } catch (err) {
+            log.error("Flow Manager Error");
+            callback(null, sorted);
+            return;
+        }
+        log.debug("============ Host:Flows:Sorted", sorted.length);
+        if (sortby == "time") {
+            sorted.sort(function (a, b) {
+                return Number(b.ts) - Number(a.ts);
+            })
+        } else if (sortby == "rxdata") {
+            sorted.sort(function (a, b) {
+                return Number(b.rb) - Number(a.rb);
+            })
+        } else if (sortby == "txdata") {
+            sorted.sort(function (a, b) {
+                return Number(b.ob) - Number(a.ob);
+            })
+        }
 
-                if (resolve == true) {
-                    log.debug("flows:sorted Query dns manager");
-                    dnsManager.query(sorted, "sh", "dh", (err) => {
-                        if (err != null) {
-                            log.error("flow:conn unable to map dns", err);
-                        }
-                        log.debug("flows:sorted Query dns manager returnes");
-                        this.summarizeActivityFromConnections(sorted,(err,activities)=>{
-                            //log.info("Activities",activities);
-                            let _sorted = [];
-                            for (let i in sorted) {
-                                if (flowUtil.checkFlag(sorted[i],'x')) {
-                                    //log.info("DroppingFlow",sorted[i]); 
-                                } else {
-                                    _sorted.push(sorted[i]);
-                                }
-                            }
-                            callback(null, _sorted,activities);
-                        });
-                    });;
-                } else {
-                    callback(null, sorted);
+        if (resolve == true) {
+            log.debug("flows:sorted Query dns manager");
+            dnsManager.query(sorted, "sh", "dh", (err) => {
+                if (err != null) {
+                    log.error("flow:conn unable to map dns", err);
                 }
-            }
-        });
+                log.debug("flows:sorted Query dns manager returnes");
+                this.summarizeActivityFromConnections(sorted, (err, activities) => {
+                    //log.info("Activities",activities);
+                    let _sorted = [];
+                    for (let i in sorted) {
+                        if (flowUtil.checkFlag(sorted[i], 'x')) {
+                            //log.info("DroppingFlow",sorted[i]); 
+                        } else {
+                            _sorted.push(sorted[i]);
+                        }
+                    }
+                    callback(null, _sorted, activities);
+                });
+            });
+        } else {
+            callback(null, sorted);
+        }
     }
 
     toStringShort(obj) {

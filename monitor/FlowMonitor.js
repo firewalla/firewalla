@@ -696,160 +696,161 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-    run(service, period, callback) {
-        callback = callback || function() {}
-        let runid = new Date()/1000
-        log.info("FlowMonitor Running Process :", service, period, runid);
-        const startTime = new Date() / 1000
-        hostManager.getHosts((err, result) => {
-            this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
-            result = result.filter(x => x) // workaround if host is undefined or null
-            _async.eachLimit(result,2, (host, cb) => {
-                let listip = [];
-                listip.push(host.o.ipv4Addr);
-                if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-                    for (let p in host['ipv6Addr']) {
-                        listip.push(host['ipv6Addr'][p]);
+  run(service, period, callback) {
+    callback = callback || function () { }
+    let runid = new Date() / 1000
+    log.info("FlowMonitor Running Process :", service, period, runid);
+    const startTime = new Date() / 1000
+    hostManager.getHosts((err, result) => {
+      this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
+      result = result.filter(x => x) // workaround if host is undefined or null
+      _async.eachLimit(result, 2, (host, cb) => {
+        const mac = host.o.mac;
+        let listip = [];
+        listip.push(host.o.ipv4Addr);
+        if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+          for (let p in host['ipv6Addr']) {
+            listip.push(host['ipv6Addr'][p]);
+          }
+        }
+        if (!service || service === "dlp") {
+          log.debug("DLP", mac);
+          this.flows(mac, period, host, (err, inSpec, outSpec) => {
+            log.debug("monitor:flow:", host.toShortString());
+            log.debug("inspec", inSpec);
+            log.debug("outspec", outSpec);
+            cb();
+            if (outSpec) {
+              if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
+                (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
+                (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
+                this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
+                  if (flow) {
+                    let copy = JSON.parse(JSON.stringify(flow));
+                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
+                    copy.msg = msg;
+                    let actionobj = {
+                      title: "Suspicious Large Upload",
+                      actions: ["block", "ignore"],
+                      src: flow.dh,
+                      dst: flow.sh,
+                      target: flow.lh,
+                      //info: ,
+                      //infourl:
+                      msg: msg
                     }
-                }
-                if (!service || service === "dlp") {
-                    log.debug("DLP",listip);
-                    this.flows(listip, period,host, (err, inSpec, outSpec) => {
-                        log.debug("monitor:flow:", host.toShortString());
-                        log.debug("inspec", inSpec);
-                        log.debug("outspec", outSpec);
-                      cb();
-                    if (outSpec) {
-                        if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
-                            (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
-                            (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
-                            this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
-                                if (flow) {
-                                    let copy = JSON.parse(JSON.stringify(flow));
-                                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
-                                    copy.msg = msg;
-                                    let actionobj = {
-                                        title: "Suspicious Large Upload",
-                                        actions: ["block","ignore"],
-                                        src: flow.dh,
-                                        dst: flow.sh,
-                                        target: flow.lh,
-                                      //info: ,
-                                      //infourl:
-                                        msg: msg
-                                    }
-                                    let remoteHost = flow.dh;
-                                    if (flow.lh == flow.dh) {
-                                        remoteHost = flow.sh;
-                                    }
-
-                                    intelManager.ipinfo(remoteHost).then(loc =>{
-                                        if (loc) {
-                                            copy.lobj = loc;
-                                        }
-
-                                        if(fc.isFeatureOn("large_upload")) {
-                                            let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
-                                                "p.device.id" : flow.dhname,
-                                                "p.device.name" : flow.dhname,
-                                                "p.device.ip" : flow.dh,
-                                                "p.device.port" : flow.dp || 0,
-                                                "p.dest.name": flow.shname || flow.sh,
-                                                "p.dest.ip": flow.sh,
-                                                "p.dest.port" : flow.sp,
-                                                "p.transfer.outbound.size" : flow.rb,
-                                                "p.transfer.inbound.size" : flow.ob,
-                                                "p.transfer.duration" : flow.du,
-                                                "p.local_is_client": 0, // connection is initiated from local
-                                                "p.flow": JSON.stringify(flow)
-                                              });
-
-                                          (async () => {
-                                            await alarmManager2.checkAndSaveAsync(alarm)
-                                          })().catch((err) => {
-                                            log.error("Failed to enrich and save alarm", err)
-                                          })
-                                        }
-                                    });
-                                }
-                            });
-                        }
+                    let remoteHost = flow.dh;
+                    if (flow.lh == flow.dh) {
+                      remoteHost = flow.sh;
                     }
-                    if (inSpec) {
-                        if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
-                            (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
-                            (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
-                            this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
-                                if (flow) {
-                                    let copy = JSON.parse(JSON.stringify(flow));
-                                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
-                                    copy.msg = msg;
-                                    let actionobj = {
-                                        title: "Suspicious Large Upload",
-                                        actions: ["block","ignore"],
-                                        src: flow.sh,
-                                        dst: flow.dh,
-                                        target: flow.lh,
-                                        msg: msg
-                                    }
-                                    let remoteHost = flow.dh;
-                                    if (flow.lh == flow.dh) {
-                                        remoteHost = flow.sh;
-                                    }
 
-                                    intelManager.ipinfo(remoteHost).then(loc => {
-                                        if (loc) {
-                                            copy.lobj = loc;
-                                        }
+                    intelManager.ipinfo(remoteHost).then(loc => {
+                      if (loc) {
+                        copy.lobj = loc;
+                      }
 
-                                        if(fc.isFeatureOn("large_upload")) {
-                                            // flow in means connection initiated from inside
-                                            // flow out means connection initiated from outside (more dangerous)
+                      if (fc.isFeatureOn("large_upload")) {
+                        let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
+                          "p.device.id": flow.dhname,
+                          "p.device.name": flow.dhname,
+                          "p.device.ip": flow.dh,
+                          "p.device.port": flow.dp || 0,
+                          "p.dest.name": flow.shname || flow.sh,
+                          "p.dest.ip": flow.sh,
+                          "p.dest.port": flow.sp,
+                          "p.transfer.outbound.size": flow.rb,
+                          "p.transfer.inbound.size": flow.ob,
+                          "p.transfer.duration": flow.du,
+                          "p.local_is_client": 0, // connection is initiated from remote
+                          "p.flow": JSON.stringify(flow)
+                        });
 
-                                            let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
-                                            "p.device.id" : flow.shname,
-                                            "p.device.name" : flow.shname,
-                                            "p.device.ip" : flow.sh,
-                                            "p.device.port" : flow.sp || 0,
-                                            "p.dest.name": flow.dhname || flow.dh,
-                                            "p.dest.ip": flow.dh,
-                                            "p.dest.port" : flow.dp,
-                                            "p.transfer.outbound.size" : flow.ob,
-                                            "p.transfer.inbound.size" : flow.rb,
-                                            "p.transfer.duration" : flow.du,
-                                            "p.local_is_client": 1, // connection is initiated from local
-                                            "p.flow": JSON.stringify(flow)
-                                            });
-
-                                            // ideally each destination should have a unique ID, now just use hostname as a workaround
-                                            // so destionationName, destionationHostname, destionationID are the same for now
-                                            (async () => {
-                                              await alarmManager2.checkAndSaveAsync(alarm)
-                                            })().catch((err) => {
-                                              log.error("Failed to enrich and save alarm", err)
-                                            })
-                                        }
-
-                                    });
-                                }
-                            });
-                        }
-                    }
-                });
-            } else if (service === "detect") {
-                  if(listip.length > 0) {
-                    log.info("Running Detect:",listip[0]);
+                        (async () => {
+                          await alarmManager2.checkAndSaveAsync(alarm)
+                        })().catch((err) => {
+                          log.error("Failed to enrich and save alarm", err)
+                        })
+                      }
+                    });
                   }
-                this.detect(listip, period, host, (err) => {
-                    cb();
                 });
+              }
             }
-        }, (err)=> {
-            const endTime = new Date() /1000
-            log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
-            this.garbagecollect();
-            callback();
-        });
+            if (inSpec) {
+              if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
+                (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
+                (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
+                this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
+                  if (flow) {
+                    let copy = JSON.parse(JSON.stringify(flow));
+                    let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
+                    copy.msg = msg;
+                    let actionobj = {
+                      title: "Suspicious Large Upload",
+                      actions: ["block", "ignore"],
+                      src: flow.sh,
+                      dst: flow.dh,
+                      target: flow.lh,
+                      msg: msg
+                    }
+                    let remoteHost = flow.dh;
+                    if (flow.lh == flow.dh) {
+                      remoteHost = flow.sh;
+                    }
+
+                    intelManager.ipinfo(remoteHost).then(loc => {
+                      if (loc) {
+                        copy.lobj = loc;
+                      }
+
+                      if (fc.isFeatureOn("large_upload")) {
+                        // flow in means connection initiated from inside
+                        // flow out means connection initiated from outside (more dangerous)
+
+                        let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
+                          "p.device.id": flow.shname,
+                          "p.device.name": flow.shname,
+                          "p.device.ip": flow.sh,
+                          "p.device.port": flow.sp || 0,
+                          "p.dest.name": flow.dhname || flow.dh,
+                          "p.dest.ip": flow.dh,
+                          "p.dest.port": flow.dp,
+                          "p.transfer.outbound.size": flow.ob,
+                          "p.transfer.inbound.size": flow.rb,
+                          "p.transfer.duration": flow.du,
+                          "p.local_is_client": 1, // connection is initiated from local
+                          "p.flow": JSON.stringify(flow)
+                        });
+
+                        // ideally each destination should have a unique ID, now just use hostname as a workaround
+                        // so destionationName, destionationHostname, destionationID are the same for now
+                        (async () => {
+                          await alarmManager2.checkAndSaveAsync(alarm)
+                        })().catch((err) => {
+                          log.error("Failed to enrich and save alarm", err)
+                        })
+                      }
+
+                    });
+                  }
+                });
+              }
+            }
+          });
+        } else if (service === "detect") {
+          if (mac) {
+            log.info("Running Detect:", mac);
+          }
+          this.detect(mac, period, host, (err) => {
+            cb();
+          });
+        }
+      }, (err) => {
+        const endTime = new Date() / 1000
+        log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
+        this.garbagecollect();
+        callback();
+      });
     });
   }
   // Reslve v6 or v4 address into a local host
