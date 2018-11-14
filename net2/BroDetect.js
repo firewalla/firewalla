@@ -249,7 +249,29 @@ module.exports = class {
             this.recording = false
             this.enableRecording = true
             this.cc = 0
+            this.ipMacMapping = {};
+            setInterval(() => {
+                this._flushIPMacMapping();
+            }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
         }
+    }
+
+    async _getMacByIP(ip) {
+        if (this.ipMacMapping[ip]) {
+            return this.ipMacMapping[ip];
+        } else {
+            const mac = await hostTool.getMacByIP(ip);
+            if (mac) {
+                this.ipMacMapping[ip] = mac;
+                return mac;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    _flushIPMacMapping() {
+        this.ipMacMapping = {};
     }
 
     start() {
@@ -595,7 +617,7 @@ module.exports = class {
   }
 
     // Only log ipv4 packets for now
-    processConnData(data) {
+    async processConnData(data) {
         try {
             let obj = JSON.parse(data);
             if (obj == null) {
@@ -951,7 +973,12 @@ module.exports = class {
             }
 
             if (tmpspec) {
-                let key = "flow:conn:" + tmpspec.fd + ":" + tmpspec.lh;
+                const mac = await this._getMacByIP(tmpspec.lh);
+                if (!mac) {
+                    log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
+                    return;
+                }
+                let key = "flow:conn:" + tmpspec.fd + ":" + mac;
                 let strdata = JSON.stringify(tmpspec);
 
             //     totalInBytes+=Number(o.rb);
@@ -1031,7 +1058,12 @@ module.exports = class {
                         log.error("Conn:Save:AFMAP:EXCEPTION", e);
                     }
                     delete spec._afmap;
-                    let key = "flow:conn:" + spec.fd + ":" + spec.lh;
+                    const mac = await this._getMacByIP(spec.lh);
+                    if (!mac) {
+                        log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
+                        continue;
+                    }
+                    let key = "flow:conn:" + spec.fd + ":" + mac;
                     let strdata = JSON.stringify(spec);
                     let ts = spec._ts;
                     if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
