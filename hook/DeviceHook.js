@@ -398,7 +398,7 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateMACKey(enrichedHost);
-        await hostTool.removeIpv4FromMacEntry(event.oldMac);
+        await hostTool.removeIPv4FromMacEntry(event.oldMac);
         
         log.info("MAC entry is updated with new IP");
 
@@ -406,7 +406,7 @@ class DeviceHook extends Hook {
         let hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr);
       })().catch((err) => {
-        log.error("Failed to process OldDeviceTakenDOverOtherDeivceIP event:", err, {});
+        log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err, {})
       })
     });
 
