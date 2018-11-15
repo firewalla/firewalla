@@ -15,6 +15,7 @@
   "NOTIF_TITLE_ALARM_VULNERABILITY": "Vulnerability Found",
   "NOTIF_TITLE_ALARM_INTEL_REPORT": "Security Report",
   "NOTIF_TITLE_ALARM_BRO_NOTICE": "Security Alarm",
+  "NOTIF_TITLE_ALARM_SUBNET": "Router Configuration Warning",
   "ALARM_PORN": "This device is visiting porn site {{{p.dest.name}}}.",
   "ALARM_VIDEO": "This device is watching video on {{{p.dest.name}}}.",
   "ALARM_GAME": "This device is playing games on {{{p.dest.name}}}.",
@@ -28,6 +29,7 @@
   "ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{p.num_of_domains}}} more sites from attacking {{{p.device.name}}}",
   "ALARM_INTEL_FROM_OUTSIDE": "{{{p.dest.name}}} is accessing this device's port {{{p.device.port}}}. {{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources",
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{{p.dest.name}}}:{{{p.dest.port}}}, which is marked as suspicious by {{{p.security.numOfReportSources}}} sources",
+  "ALARM_SUBNET": "Subnet is larger than /24, which limits Firewalla's functionalites",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{{p.dest.name}}} from accessing this device. ({{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources)",
   "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked this device from accessing {{{p.dest.name}}}. ({{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources)",
   "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing this device's port {{{p.device.port}}}.",
@@ -64,6 +66,7 @@
   "NOTIF_ALARM_VULNERABILITY_CVE-2017-0143": "Device {{{p.device.name}}} is vulnerable to WannaCry ransomware",
   "NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday.",
   "NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
+  "NOTIF_ALARM_SUBNET": "An configuration problem of your router is found",
   "INFO_ALARM_PORN": "Device {{{p.device.name}}} is visiting porn site {{{p.dest.name}}} {{{localizedRelativeTime}}}",
   "INFO_ALARM_VIDEO": "Device {{{p.device.name}}} is watching video on {{{p.dest.name}}} {{{localizedRelativeTime}}}",
   "INFO_ALARM_GAME": "Device {{{p.device.name}}} is playing games on {{{p.dest.name}}} {{{localizedRelativeTime}}}",
@@ -88,5 +91,6 @@
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{{p.security.primaryReason}}} site {{{p.dest.name}}} from accessing device {{{p.device.name}}} {{{localizedRelativeTime}}}.",
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{{p.device.name}}} from accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}} {{{localizedRelativeTime}}}.",
   "INFO_NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday.",
-  "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}"
+  "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
+  "INFO_ALARM_SUBNET": "Subnet is larger than /24, which limits Firewalla's functionalites"
 }

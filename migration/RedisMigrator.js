@@ -55,6 +55,7 @@
   "intel": [
     "category:*",
     "dynamicCategoryDomain:*",
+    "ipmapping:*",
     "intel:*",
     "lastCategory:*",
     "cache.intel:*",

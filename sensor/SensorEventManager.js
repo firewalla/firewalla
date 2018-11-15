@@ -12,6 +12,37 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+/* Event list at 2018.11.2 (via global search emitEvent)
+ *
+ * DDNS:Updated
+ * DestIPFound
+ * DeviceOffline
+ * DeviceUpdate
+ * IPTABLES_READY
+ * IPv6DeviceInfoUpdate
+ * NewDevice
+ * NewDeviceFound
+ * NewDeviceWithMacOnly
+ * OldDeviceChangedToNewIP
+ * OldDeviceTakenOverOtherDeviceIP
+ * PolicyEnforcement
+ * PublicIP:Updated
+ * RefreshMacBackupName
+ * RegularDeviceInfoUpdate
+ * ReleaseMonkey
+ * ReloadDNSRule
+ * StartDHCP
+ * StartDNS
+ * StopDHCP
+ * StopDNS
+ * UPDATE_CATEGORY_DYNAMIC_DOMAIN
+ * VPNConnectionAccepted
+ * VPNSubnetChanged
+ *
+ */
+
+
 'use strict';
 
 let log = require('../net2/logger.js')(__filename);

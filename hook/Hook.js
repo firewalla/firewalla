@@ -34,7 +34,5 @@ module.exports = class {
     });
   }
 
-  run() {
-    // do nothing
-  }
+  run() { }
 }

@@ -49,9 +49,6 @@ let default_stddev_limit = 8;
 let default_inbound_min_length = 1000000;
 let deafult_outbound_min_length = 500000;
 
-let AlarmManager = require('../net2/AlarmManager.js');
-let alarmManager = new AlarmManager('debug');
-
 let IntelManager = require('../net2/IntelManager.js');
 let intelManager = new IntelManager('debug');
 

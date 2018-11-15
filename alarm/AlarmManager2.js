@@ -30,6 +30,8 @@ let util = require('util');
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
+const moment = require('moment');
+
 const fc = require('../net2/config.js')
 
 const f = require('../net2/Firewalla.js');
@@ -89,7 +91,7 @@ function formatBytes(bytes,decimals) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-// TODO: Support suppres alarm for a while
+// TODO: Support suppress alarm for a while
 
 module.exports = class {
   constructor() {
@@ -191,8 +193,7 @@ module.exports = class {
   }
 
   addToActiveQueue(alarm, callback) {
-    //TODO
-    let score = parseFloat(alarm.timestamp);
+    let score = parseFloat(alarm.alarmTimestamp);
     let id = alarm.aid;
     rclient.zadd(alarmActiveKey, score, id, (err) => {
       if(err) {
@@ -212,6 +213,7 @@ module.exports = class {
     return fc.isFeatureOn(featureKey)
   }
 
+  // chekc if required attributes present
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
     for(var i = 0; i < keys.length; i++) {
@@ -272,6 +274,7 @@ module.exports = class {
     })()
   }
 
+  // Emmit ALARM:CREATED event, effectively create application notifications
   notifAlarm(alarmID) {
     return this.getAlarm(alarmID)
       .then((alarm) => {
@@ -284,7 +287,7 @@ module.exports = class {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
           aid: alarm.aid,
-          alarmNotifType:alarm.notifType,
+          alarmNotifType: alarm.notifType,
           alarmType: alarm.type,
           testing: alarm["p.monkey"],
           managementType: alarm.getManagementType()
@@ -389,16 +392,12 @@ module.exports = class {
 
   dedup(alarm) {
     return new Promise((resolve, reject) => {
-      let duration = fc.getTimingConfig("alarm.cooldown") || 15 * 60 // 15 minutes
-      if(alarm.type === 'ALARM_LARGE_UPLOAD') {
-        duration = fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4 // for upload activity, only generate one alarm per 4 hours.
-      }
-      if (alarm.type === 'ALARM_VPN_CLIENT_CONNECTION') {
-        duration = fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4; // for vpn client connection activities, only generate one alarm per 4 hours.
-      }
+      // expirationTime managed within Alarm sub classes
+      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
       
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
         if(err) {
+          log.error(':dedup: Failed loading recent alarms', err);
           reject(err);
           return;
         }
@@ -408,6 +407,19 @@ module.exports = class {
                             .filter((a) => alarm.isDup(a));
 
         if(dups.length > 0) {
+          let latest = dups[0].timestamp;
+          let cooldown = duration - (Date.now() / 1000 - latest);
+
+          log.info(util.format(
+            ':dedup: Dup Found! ExpirationTime: %s (%s)',
+            moment.duration(duration * 1000).humanize(), duration,
+          ));
+          log.info(util.format(
+            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            new Date(latest * 1000).toLocaleString(),
+            moment.duration(cooldown * 1000).humanize(), cooldown
+          ));
+
           resolve(true);
         } else {
           resolve(false);
@@ -422,7 +434,7 @@ module.exports = class {
         alarm: alarm,
         action: "create"
       })
-      job.timeout(60000).save(function() {})
+      job.timeout(60000).save()
     }
   }
 
@@ -671,34 +683,33 @@ module.exports = class {
     })
   }
 
-    loadRecentAlarms(duration, callback) {
-      if(typeof(duration) == 'function') {
-        callback = duration;
-        duration = 10 * 60; // 10 minutes
-//        duration = 86400;
+  loadRecentAlarms(duration, callback) {
+    if(typeof(duration) == 'function') {
+      callback = duration;
+      duration = 10 * 60; // 10 minutes
+    }
+
+    callback = callback || function() {}
+
+    let scoreMax = new Date() / 1000 + 1;
+    let scoreMin = scoreMax - duration;
+    rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
+      if(err) {
+        log.error("Failed to load active alarms: " + err);
+        callback(err);
+        return;
       }
-
-      callback = callback || function() {}
-
-      let scoreMax = new Date() / 1000 + 1;
-      let scoreMin = scoreMax - duration;
-      rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
+      this.idsToAlarms(alarmIDs, (err, results) => {
         if(err) {
-          log.error("Failed to load active alarms: " + err);
           callback(err);
           return;
         }
-        this.idsToAlarms(alarmIDs, (err, results) => {
-          if(err) {
-            callback(err);
-            return;
-          }
 
-          results = results.filter((a) => a != null);
-          callback(err, results);
-        });
+        results = results.filter((a) => a != null);
+        callback(err, results);
       });
-    }
+    });
+  }
 
 
   loadArchivedAlarms(options) {
@@ -828,7 +839,7 @@ module.exports = class {
       }
     }
 
-    return detail;    
+    return detail;
   }
   
   // parseDomain(alarm) {
