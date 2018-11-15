@@ -154,7 +154,6 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
-
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
@@ -178,6 +177,7 @@ class HostTool {
   getMacKey(mac) {
     return "host:mac:" + mac;
   }
+
   deleteMac(mac) {
     return rclient.delAsync(this.getMacKey(mac));
   }
@@ -293,6 +293,14 @@ class HostTool {
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
+  removeIPv4FromMacEntry(mac) {
+    // Keep uid for now as it's used in a lot of places
+    // TODO: use mac as uid should be a true fix to this
+    return rclient.multi()
+      .hdel(this.getMacKey(mac), "ipv4")
+      .hdel(this.getMacKey(mac), "ipv4Addr")
+      .execAsync()
+  }
 
   ////////////// IPV6 /////////////////////
 
