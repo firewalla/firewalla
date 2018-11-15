@@ -6,13 +6,16 @@
 * Unstable Branch: master
 
 ## Software Image
-### For Firewalla Red
+### Firewalla Blue
+* Image in Beta Testing (invitation only)
+* You can pre-order Firewalla Blue at https://www.indiegogo.com/projects/firewalla-blue-cybersecurity-for-home-business
+### Firewalla Red
 * https://github.com/firewalla/firewalla/releases/download/v1.957/fos.release_6_14.armv7l.img.gz
   * sha256sum: 896014e839a7198249b62b266664baaab529e1d8034261e1fa4a9599161288e4
 * Flash image to micro sd card, and put into Firewalla Red
   * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
-* You can purchase Firewalla from https://firewalla.com
-### For Raspberry Pi (Not recommended, this image is out-of-date)
+* You can order Firewalla Red at https://firewalla.com
+### Raspberry Pi (Not recommended, this image is out-of-date)
 ```
 If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
