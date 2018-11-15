@@ -97,8 +97,8 @@ class DeviceHook extends Hook {
       // 2. if this is an existing mac address, and it has same ipv4 address => RegularDeviceInfoUpdate
       // it may update redis ip6 keys if additional ip addresses are added
       if(ipv4Addr) {
-        let data = await(hostTool.getIPv4Entry(ipv4Addr))
-        if(data && data.mac === mac) {
+        let ip4Entry = await(hostTool.getIPv4Entry(ipv4Addr))
+        if(ip4Entry && ip4Entry.mac === mac) {
           sem.emitEvent({
             type: "RegularDeviceInfoUpdate",
             message: "Refresh device status @ DeviceHook",
@@ -111,7 +111,7 @@ class DeviceHook extends Hook {
 
         // 3. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
-        if(!data) {
+        if(!ip4Entry) {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
             message: "An old device used a new IP @ DeviceHook",
@@ -123,13 +123,13 @@ class DeviceHook extends Hook {
 
         // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is already owned by someone in redis) => OldDeviceTakenOverOtherDeviceIP
         // it may update redis ip6 keys if additional ip addresses are added
-        if(data && data.mac !== mac) {
+        if(ip4Entry && ip4Entry.mac !== mac) {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
             message: "An old device used IP used to be other device @ DeviceHook",
             suppressAlarm: event.suppressAlarm,
             host: host,
-            oldMac: data.mac
+            oldMac: ip4Entry.mac
           })
           return
         }
@@ -222,7 +222,7 @@ class DeviceHook extends Hook {
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
             this.createAlarm(enrichedHost, 'spoofing_device');
           }
-          await hostTool.updateHost(enrichedHost);
+          await hostTool.updateIPv4Host(enrichedHost);
         }
 
         // v6
@@ -308,7 +308,7 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await hostTool.updateHost(enrichedHost); //v4
+        await hostTool.updateIPv4Host(enrichedHost); //v4
         await hostTool.updateIPv6Host(enrichedHost); //v6
 
         log.info("New host entry is created for this old device");
@@ -373,7 +373,7 @@ class DeviceHook extends Hook {
           this.createAlarm(enrichedHost, 'spoofing_device');
         }
 
-        await hostTool.updateHost(enrichedHost);
+        await hostTool.updateIPv4Host(enrichedHost);
         await hostTool.updateIPv6Host(enrichedHost); //v6
 
         if(enrichedHost.ipv6Addr) {
@@ -431,7 +431,7 @@ class DeviceHook extends Hook {
         }
 
         // FIXME: shoud not keep minimal info for host key, not all
-        await hostTool.updateHost(enrichedHost);   // host:ip4:.......
+        await hostTool.updateIPv4Host(enrichedHost);   // host:ip4:.......
 
         await hostTool.updateIPv6Host(enrichedHost); // host:ip6:.........
 

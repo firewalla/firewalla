@@ -1464,7 +1464,7 @@ class netBot extends ControllerBot {
         if (msg.target) {
           let ip = msg.target;
           log.info("Loading device info in a new way:", ip);
-          this.newDeviceHandler(msg, ip)
+          this.deviceHandler(msg, ip)
           .then((json) => {
             this.simpleTxData(msg, json, null, callback);
           })
@@ -2015,7 +2015,7 @@ class netBot extends ControllerBot {
     })();
   }
   
-  newDeviceHandler(msg, ip) { // WARNING: ip could be ip address or mac address, name it ip is just for backward compatible
+  deviceHandler(msg, ip) { // WARNING: ip could be ip address or mac address, name it ip is just for backward compatible
     log.info("Getting info on device", ip, {});
 
     return async(() => {

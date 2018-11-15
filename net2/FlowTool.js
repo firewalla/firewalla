@@ -233,6 +233,7 @@ class FlowTool {
     })();
   }
 
+  // merge adjacent flows with same key via this._getKey()
   _mergeFlows(flowObjects) {
     let mergedFlowObjects = [];
     let lastFlowObject = null;

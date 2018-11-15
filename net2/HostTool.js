@@ -103,7 +103,7 @@ class HostTool {
     return rclient.hsetAsync(key, "bname", name)
   }
 
-  updateHost(host) {
+  updateIPv4Host(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
 
@@ -226,7 +226,7 @@ class HostTool {
       let host = null
 
       if (iptool.isV4Format(ip)) {
-        host = await (this.getIPv4Entry(ip))        
+        host = await (this.getIPv4Entry(ip))
       } else if(iptool.isV6Format(ip)) {
         host = await (this.getIPv6Entry(ip))
       } else {
