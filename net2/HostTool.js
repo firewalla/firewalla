@@ -293,13 +293,23 @@ class HostTool {
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
-  removeIPv4FromMacEntry(mac) {
-    // Keep uid for now as it's used in a lot of places
+  async removeDupIPv4FromMacEntry(mac, ip) {
+    // Keep uid for now as it's used as keys in a lot of places
     // TODO: use mac as uid should be a true fix to this
-    return rclient.multi()
-      .hdel(this.getMacKey(mac), "ipv4")
-      .hdel(this.getMacKey(mac), "ipv4Addr")
-      .execAsync()
+
+    let macEntry = await (this.getMACEntry(mac));
+    if (!macEntry) {
+      log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
+      return Promise.resolve();
+    }
+    log.info('removeDupIPv4FromMacEntry:', mac, macEntry);
+
+    let trans = rclient.multi()
+
+    if (macEntry.ipv4 == ip) trans.hdel(this.getMacKey(mac), "ipv4");
+    if (macEntry.ipv4Addr == ip) trans.hdel(this.getMacKey(mac), "ipv4Addr");
+
+    return trans.execAsync()
   }
 
   ////////////// IPV6 /////////////////////
