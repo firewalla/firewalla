@@ -543,14 +543,14 @@ module.exports = class FlowMonitor {
         });
     }
 
-    detect(listip, period,host,callback) {
+    async detect(mac, period,host) {
         let end = Date.now() / 1000;
         let start = end - period; // in seconds
         //log.info("Detect",listip);
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true, (err, result,activities) => {
-            this.flowIntel(result);
-            this.summarizeNeighbors(host,result,'in');
-            if (activities !=null) {
+        let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+            this.flowIntel(result.connections);
+            this.summarizeNeighbors(host,result.connections,'in');
+            if (result.activities !=null) {
                 /*
                 if (host.activities!=null) {
                     if (host.activities.app && host.activities.app.length >0) {
@@ -564,46 +564,43 @@ module.exports = class FlowMonitor {
                 }
                 host.save("activities",null);
                 */
-                host.activities = activities;
+                host.activities = result.activities;
                 host.save("activities",null);
             }
-          flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true,(err, result,activities2) => {
-                this.flowIntel(result);
-                this.summarizeNeighbors(host,result,'out');
-                if (callback)
-                    callback();
-            });
-        });
+        result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+        this.flowIntel(result.connections);
+        this.summarizeNeighbors(host,result.connections,'out');
     }
 
 
-    flows(listip, period,host, callback) {
-        // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
-        let end = Date.now() / 1000;
-        let start = end - this.monitorTime; // in seconds
-        flowManager.summarizeConnections(listip, "in", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, result,activities) => {
+  async flows(mac, period, host, callback) {
+    // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
+    let end = Date.now() / 1000;
+    let start = end - this.monitorTime; // in seconds
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
 
-          let inbound_min_length = default_inbound_min_length;
-          let outbound_min_length = deafult_outbound_min_length;
-          let stddev_limit = default_stddev_limit;
+    let inbound_min_length = default_inbound_min_length;
+    let outbound_min_length = deafult_outbound_min_length;
+    let stddev_limit = default_stddev_limit;
 
-          if(fc.isFeatureOn("insane_mode")) {
-            inbound_min_length = 1000;
-            outbound_min_length = 1000;
-            stddev_limit = 1;
-          }
-
-          let inSpec = flowManager.getFlowCharacteristics(result, "in", inbound_min_length, stddev_limit);
-          if (activities !=null) {
-              host.activities = activities;
-              host.save("activities",null);
-          }
-          flowManager.summarizeConnections(listip, "out", end, start, "time", this.monitorTime/60.0/60.0, true,false, (err, resultout) => {
-              let outSpec = flowManager.getFlowCharacteristics(resultout, "out", outbound_min_length, stddev_limit);
-              callback(null, inSpec, outSpec);
-          });
-        });
+    if (fc.isFeatureOn("insane_mode")) {
+      inbound_min_length = 1000;
+      outbound_min_length = 1000;
+      stddev_limit = 1;
     }
+
+    let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", inbound_min_length, stddev_limit);
+    if (result.activities != null) {
+      host.activities = result.activities;
+      host.save("activities", null);
+    }
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
+    let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
+    return {
+      inSpec: inSpec,
+      outSpec, outSpec
+    };
+  }
 
     //
     // monitor:flow:ip:<>: <ts score> / { notification }
@@ -696,26 +693,18 @@ module.exports = class FlowMonitor {
       rxRanked:
     */
 
-  run(service, period, callback) {
-    callback = callback || function () { }
+  async run(service, period) {
     let runid = new Date() / 1000
     log.info("FlowMonitor Running Process :", service, period, runid);
     const startTime = new Date() / 1000
     hostManager.getHosts((err, result) => {
       this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
       result = result.filter(x => x) // workaround if host is undefined or null
-      _async.eachLimit(result, 2, (host, cb) => {
+      _async.eachLimit(result, 2, async (host, cb) => {
         const mac = host.o.mac;
-        let listip = [];
-        listip.push(host.o.ipv4Addr);
-        if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-          for (let p in host['ipv6Addr']) {
-            listip.push(host['ipv6Addr'][p]);
-          }
-        }
         if (!service || service === "dlp") {
           log.debug("DLP", mac);
-          this.flows(mac, period, host, (err, inSpec, outSpec) => {
+          const {inSpec, outSpec} = await this.flows(mac, period, host);
             log.debug("monitor:flow:", host.toShortString());
             log.debug("inspec", inSpec);
             log.debug("outspec", outSpec);
@@ -836,12 +825,11 @@ module.exports = class FlowMonitor {
                 });
               }
             }
-          });
         } else if (service === "detect") {
           if (mac) {
             log.info("Running Detect:", mac);
           }
-          this.detect(mac, period, host, (err) => {
+          this.detect(mac, period, host).then(() => {
             cb();
           });
         }
@@ -849,7 +837,6 @@ module.exports = class FlowMonitor {
         const endTime = new Date() / 1000
         log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
         this.garbagecollect();
-        callback();
       });
     });
   }

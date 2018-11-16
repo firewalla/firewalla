@@ -579,6 +579,7 @@ class netBot extends ControllerBot {
     }
 
     flows(listip) {
+        // TODO: not consistent with current function declaration
         flowManager.summarizeConnections(listip, "in", '+inf', '-inf', "time", true, (err, result) => {
             console.log("--- Connectionby most recent ---");
             let max = 10;
