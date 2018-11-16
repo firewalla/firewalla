@@ -760,7 +760,7 @@ module.exports = class FlowManager {
         });
     }
 
-    summarizeActivityFromConnections(flows,callback) {
+    async summarizeActivityFromConnections(flows) {
         let appdb = {};
         let activitydb = {};
 
@@ -838,18 +838,13 @@ module.exports = class FlowManager {
         // linear these flows
        
         if (!hasFlows) {
-            if (callback) {
-                callback(null,null);
-            }
-            return;
+            return null;
         }
 
         //log.info("### Cleaning",flowobj);
 
         bone.flowgraph("clean", [flowobj],(err,data)=>{
-            if (callback) {
-                callback(err,data);
-            }
+            return data;
         });
     }
 
@@ -966,205 +961,212 @@ module.exports = class FlowManager {
       });
     }
     
-    summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats, callback) {
-        let sorted = [];
-        try {
-            let key = "flow:conn:" + direction + ":" + mac;
-            rclient.zrevrangebyscore([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW], (err, result) => {
-                let conndb = {};
-                let interval = 0;
-                let totalInBytes = 0;
-                let totalOutBytes = 0;
-                if (err == null) {
-                    if (result != null && result.length > 0)
-                        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length);
-                    for (let i in result) {
-                        let o = JSON.parse(result[i]);
+  async summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats) {
+    let sorted = [];
+    try {
+      let key = "flow:conn:" + direction + ":" + mac;
+      const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
+      let conndb = {};
+      let interval = 0;
+      let totalInBytes = 0;
+      let totalOutBytes = 0;
 
-                        if (!this.isFlowValid(o))
-                            continue;
+      if (result != null && result.length > 0)
+        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length);
+      for (let i in result) {
+        let o = JSON.parse(result[i]);
 
-                        if (saveStats) {
-                            if (direction == 'in') {
-                                totalInBytes += Number(o.rb);
-                                totalOutBytes += Number(o.ob);
-                                this.recordStats(mac, "hour", o.ts, Number(o.rb), Number(o.ob), null);
-                            } else {
-                                totalInBytes += Number(o.ob);
-                                totalOutBytes += Number(o.rb);
-                                this.recordStats(mac, "hour", o.ts, Number(o.ob), Number(o.rb), null);
-                            }
-                        }
-                        let ts = o.ts;
-                        if (o._ts) {
-                            ts = o._ts;
-                        }
-                        if (interval == 0 || ts < interval) {
-                            if (interval == 0) {
-                                interval = Date.now() / 1000;
-                            }
-                            interval = interval - hours * 60 * 60;
-                            for (let j in conndb) {
-                                sorted.push(conndb[j]);
-                            }
-                            conndb = {};
-                        }
-                        let key = "";
-                        if (o.pf) {
-                            for (let k in o.pf) {
-                                // aggregate by dst host and dst port and direction
-                                if (o.sh == o.lh) {
-                                    key = o.dh + ":" + o.fd + ":" + k;
-                                } else {
-                                    key = o.sh + ":" + o.fd + ":" + k;
-                                }
-                                let flow = conndb[key];
-                                if (flow == null) {
-                                    conndb[key] = o;
-                                    flow = conndb[key];
-                                    let dp = k.split("\.", 2).slice(-1)[0];
-                                    // double check to ensure that k is <proto>.<port_number>
-                                    if (/^\d+$/.test(dp)) {
-                                        // flow.dp already exists in temp flow spec, 
-                                        // however overriding dp here should do no harm
-                                        // in case of stashed flow spec, dp can be parsed from port flow
-                                        // therefore in most cases, dp should be included in summarized flow
-                                        flow.dp = dp;
-                                    }
-                                    flow.rb = o.pf[k].rb;
-                                    flow.ct = o.pf[k].ct;
-                                    flow.ob = o.pf[k].ob;
-                                    flow.du = o.du;
-                                    if (o.pf[k].sp) {
-                                        flow.sp_array = o.pf[k].sp;
-                                    }
-                                } else {
-                                    // use rb, ob and ct in port flow since key contains dst port
-                                    flow.rb += o.pf[k].rb;
-                                    flow.ct += o.pf[k].ct;
-                                    flow.ob += o.pf[k].ob;
-                                    flow.du += o.du;
-                                    if (flow.ts < o.ts) {
-                                        flow.ts = o.ts;
-                                    }
-                                    if (o.pf[k].sp) {
-                                        if (flow.sp_array) {
-                                            flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
-                                        } else {
-                                            flow.sp_array = o.pf[k].sp;
-                                        }
-                                    }
-                                    // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-                                    if (o.flows) {
-                                        if (flow.flows) {
-                                            flow.flows = flow.flows.concat(o.flows);
-                                        } else {
-                                            flow.flows = o.flows;
-                                        }
-                                    }
-                                }
-                                // NOTE: flow.pf will be removed in flowTool.trimFlow...
-                                if (flow.pf[k] != null) {
-                                    flow.pf[k].rb += o.pf[k].rb;
-                                    flow.pf[k].ob += o.pf[k].ob;
-                                    flow.pf[k].ct += o.pf[k].ct;
-                                } else {
-                                    flow.pf[k] = o.pf[k]
-                                }
-                            }
-                        } else {
-                            if (o.sh == o.lh) {
-                                key = o.dh + ":" + o.fd;
-                            } else {
-                                key = o.sh + ":" + o.fd;
-                            }
-                            //     let key = o.sh+":"+o.dh+":"+o.fd;
-                            let flow = conndb[key];
-                            if (flow == null) {
-                                conndb[key] = o;
-                            } else {
-                                flow.rb += o.rb;
-                                flow.ct += o.ct;
-                                flow.ob += o.ob;
-                                flow.du += o.du;
-                                if (flow.ts < o.ts) {
-                                    flow.ts = o.ts;
-                                }
-                                // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-                                if (o.flows) {
-                                    if (flow.flows) {
-                                        flow.flows = flow.flows.concat(o.flows);
-                                    } else {
-                                        flow.flows = o.flows;
-                                    }
-                                }
-                            }
-                        }
-                    }
+        if (!this.isFlowValid(o))
+          continue;
 
-                    if (saveStats) {
-                        let _ts = Math.ceil(Date.now() / 1000);
-                        this.recordStats("0.0.0.0", "hour", _ts, totalInBytes, totalOutBytes, null);
-                    }
-
-                    for (let m in conndb) {
-                        sorted.push(conndb[m]);
-                    }
-
-                    // trim to reduce size
-                    sorted.forEach(flowTool.trimFlow);
-
-                    if (result.length > 0)
-                        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length, totalInBytes, totalOutBytes);
-                    conndb = {};
+        if (saveStats) {
+          if (direction == 'in') {
+            totalInBytes += Number(o.rb);
+            totalOutBytes += Number(o.ob);
+            this.recordStats(mac, "hour", o.ts, Number(o.rb), Number(o.ob), null);
+          } else {
+            totalInBytes += Number(o.ob);
+            totalOutBytes += Number(o.rb);
+            this.recordStats(mac, "hour", o.ts, Number(o.ob), Number(o.rb), null);
+          }
+        }
+        let ts = o.ts;
+        if (o._ts) {
+          ts = o._ts;
+        }
+        if (interval == 0 || ts < interval) {
+          if (interval == 0) {
+            interval = Date.now() / 1000;
+          }
+          interval = interval - hours * 60 * 60;
+          for (let j in conndb) {
+            sorted.push(conndb[j]);
+          }
+          conndb = {};
+        }
+        let key = "";
+        if (o.pf) {
+          for (let k in o.pf) {
+            // aggregate by dst host and dst port and direction
+            if (o.sh == o.lh) {
+              key = o.dh + ":" + o.fd + ":" + k;
+            } else {
+              key = o.sh + ":" + o.fd + ":" + k;
+            }
+            let flow = conndb[key];
+            if (flow == null) {
+              conndb[key] = o;
+              flow = conndb[key];
+              let dp = k.split("\.", 2).slice(-1)[0];
+              // double check to ensure that k is <proto>.<port_number>
+              if (/^\d+$/.test(dp)) {
+                // flow.dp already exists in temp flow spec, 
+                // however overriding dp here should do no harm
+                // in case of stashed flow spec, dp can be parsed from port flow
+                // therefore in most cases, dp should be included in summarized flow
+                flow.dp = dp;
+              }
+              flow.rb = o.pf[k].rb;
+              flow.ct = o.pf[k].ct;
+              flow.ob = o.pf[k].ob;
+              flow.du = o.du;
+              if (o.pf[k].sp) {
+                flow.sp_array = o.pf[k].sp;
+              }
+            } else {
+              // use rb, ob and ct in port flow since key contains dst port
+              flow.rb += o.pf[k].rb;
+              flow.ct += o.pf[k].ct;
+              flow.ob += o.pf[k].ob;
+              flow.du += o.du;
+              if (flow.ts < o.ts) {
+                flow.ts = o.ts;
+              }
+              if (o.pf[k].sp) {
+                if (flow.sp_array) {
+                  flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
                 } else {
-                    log.error("Unable to search software");
+                  flow.sp_array = o.pf[k].sp;
                 }
-            });
-        } catch (err) {
-            log.error("Flow Manager Error");
-            callback(null, sorted);
-            return;
-        }
-        log.debug("============ Host:Flows:Sorted", sorted.length);
-        if (sortby == "time") {
-            sorted.sort(function (a, b) {
-                return Number(b.ts) - Number(a.ts);
-            })
-        } else if (sortby == "rxdata") {
-            sorted.sort(function (a, b) {
-                return Number(b.rb) - Number(a.rb);
-            })
-        } else if (sortby == "txdata") {
-            sorted.sort(function (a, b) {
-                return Number(b.ob) - Number(a.ob);
-            })
-        }
-
-        if (resolve == true) {
-            log.debug("flows:sorted Query dns manager");
-            dnsManager.query(sorted, "sh", "dh", (err) => {
-                if (err != null) {
-                    log.error("flow:conn unable to map dns", err);
+              }
+              // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+              if (o.flows) {
+                if (flow.flows) {
+                  flow.flows = flow.flows.concat(o.flows);
+                } else {
+                  flow.flows = o.flows;
                 }
-                log.debug("flows:sorted Query dns manager returnes");
-                this.summarizeActivityFromConnections(sorted, (err, activities) => {
-                    //log.info("Activities",activities);
-                    let _sorted = [];
-                    for (let i in sorted) {
-                        if (flowUtil.checkFlag(sorted[i], 'x')) {
-                            //log.info("DroppingFlow",sorted[i]); 
-                        } else {
-                            _sorted.push(sorted[i]);
-                        }
-                    }
-                    callback(null, _sorted, activities);
-                });
-            });
+              }
+            }
+            // NOTE: flow.pf will be removed in flowTool.trimFlow...
+            if (flow.pf[k] != null) {
+              flow.pf[k].rb += o.pf[k].rb;
+              flow.pf[k].ob += o.pf[k].ob;
+              flow.pf[k].ct += o.pf[k].ct;
+            } else {
+              flow.pf[k] = o.pf[k]
+            }
+          }
         } else {
-            callback(null, sorted);
+          if (o.sh == o.lh) {
+            key = o.dh + ":" + o.fd;
+          } else {
+            key = o.sh + ":" + o.fd;
+          }
+          //     let key = o.sh+":"+o.dh+":"+o.fd;
+          let flow = conndb[key];
+          if (flow == null) {
+            conndb[key] = o;
+          } else {
+            flow.rb += o.rb;
+            flow.ct += o.ct;
+            flow.ob += o.ob;
+            flow.du += o.du;
+            if (flow.ts < o.ts) {
+              flow.ts = o.ts;
+            }
+            // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+            if (o.flows) {
+              if (flow.flows) {
+                flow.flows = flow.flows.concat(o.flows);
+              } else {
+                flow.flows = o.flows;
+              }
+            }
+          }
         }
+      }
+
+      if (saveStats) {
+        let _ts = Math.ceil(Date.now() / 1000);
+        this.recordStats("0.0.0.0", "hour", _ts, totalInBytes, totalOutBytes, null);
+      }
+
+      for (let m in conndb) {
+        sorted.push(conndb[m]);
+      }
+
+      // trim to reduce size
+      sorted.forEach(flowTool.trimFlow);
+
+      if (result.length > 0)
+        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length, totalInBytes, totalOutBytes);
+      conndb = {};
+    } catch (err) {
+      log.error("Flow Manager Error");
+      return {
+        connections: sorted,
+        activities: null
+      };
     }
+    log.debug("============ Host:Flows:Sorted", sorted.length);
+    if (sortby == "time") {
+      sorted.sort(function (a, b) {
+        return Number(b.ts) - Number(a.ts);
+      })
+    } else if (sortby == "rxdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.rb) - Number(a.rb);
+      })
+    } else if (sortby == "txdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.ob) - Number(a.ob);
+      })
+    }
+
+    if (resolve == true) {
+      log.debug("flows:sorted Query dns manager");
+      return new Promise((resolve, reject) => {
+        dnsManager.query(sorted, "sh", "dh", (err) => {
+          if (err != null) {
+            log.error("flow:conn unable to map dns", err);
+          }
+          log.debug("flows:sorted Query dns manager returnes");
+          (async () => {
+            const activities = await this.summarizeActivityFromConnections(sorted);
+            //log.info("Activities",activities);
+            let _sorted = [];
+            for (let i in sorted) {
+              if (flowUtil.checkFlag(sorted[i], 'x')) {
+                //log.info("DroppingFlow",sorted[i]); 
+              } else {
+                _sorted.push(sorted[i]);
+              }
+            }
+            resolve({
+              connections: _sorted,
+              activities: activities
+            });
+          })();
+        });
+      });
+    } else {
+      return {
+        connections: sorted,
+        activities: null
+      };
+    }
+  }
 
     toStringShort(obj) {
         //  // "{\"ts\":1464328076.816846,\"sh\":\"192.168.2.192\",\"dh\":\"224.0.0.251\",\"ob\":672001,\"rb\":0,\"ct\":1,\"fd\":\"in\",\"lh\":\"192.168.2.192\",\"bl\":3600}"
