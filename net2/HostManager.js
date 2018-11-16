@@ -103,15 +103,15 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
-const defaultOvpnProfileId = "ovpn_client"
+const defaultOvpnProfileId = "ovpn_client";
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 /* alarms:
-    alarmtype:  intel/newhost/scan/log
-    severityscore: out of 100
-    alarmseverity: major minor
-    */
+alarmtype:  intel/newhost/scan/log
+severityscore: out of 100
+alarmseverity: major minor
+*/
 
 
 class Host {
@@ -1388,11 +1388,6 @@ module.exports = class HostManager {
         this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           log.info("New Host May be added rescan");
           this.getHosts((err, result) => {
-            if (this.type === 'server') {
-              for (let i in result) {
-                //result[i].spoof(true);
-              }
-            }
             if (this.callbacks[type]) {
               this.callbacks[type](channel, type, ip, obj);
             }
@@ -1406,11 +1401,11 @@ module.exports = class HostManager {
           this.safeExecPolicy()
 
           /*
-                this.loadPolicy((err,data)=> {
-                    log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
-                    policyManager.execute(this,"0.0.0.0",this.policy,null);
-                });
-                */
+          this.loadPolicy((err,data)=> {
+              log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
+              policyManager.execute(this,"0.0.0.0",this.policy,null);
+          });
+          */
           log.info("SystemPolicy:Changed", channel, ip, type, obj);
         });
 
@@ -1789,7 +1784,7 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicys(1000, {includingDisabled: 1}, (err, rules) => {
+      policyManager2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
@@ -2232,7 +2227,7 @@ module.exports = class HostManager {
     })
   }
 
-  safeExecPolicy() {
+  safeExecPolicy(skipHosts) {
     // a very dirty hack, only call system policy change every 5 seconds
     const now = new Date() / 1000
     if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
@@ -2241,13 +2236,13 @@ module.exports = class HostManager {
       setTimeout(() => {
         if(this.pendingExecPolicy) {
           this.lastExecPolicyTime = new Date() / 1000
-          this.execPolicy()
+          this.execPolicy(skipHosts)
           this.pendingExecPolicy = false
         }
       }, (this.lastExecPolicyTime + 5 - now) * 1000)
     } else {
       this.lastExecPolicyTime = new Date() / 1000
-      this.execPolicy()
+      this.execPolicy(skipHosts)
       this.pendingExecPolicy = false
     }
   }
@@ -2287,7 +2282,7 @@ module.exports = class HostManager {
     // end of mutx check
 
     if(this.type === "server") {
-      this.safeExecPolicy()
+      this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
     }
     for (let h in this.hostsdb) {
       if (this.hostsdb[h]) {
@@ -2677,7 +2672,7 @@ module.exports = class HostManager {
     });
   }
 
-  execPolicy() {
+  execPolicy(skipHosts) {
     this.loadPolicy((err, data) => {
       log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
       if (this.type == "server") {
@@ -2690,8 +2685,11 @@ module.exports = class HostManager {
               if (ipchanged || (changed == true && err == null)) {
                 this.savePolicy(null);
               }
-              for (let i in this.hosts.all) {
-                this.hosts.all[i].applyPolicy();
+              if (!skipHosts) {
+                log.info("Apply host policies...");
+                for (let i in this.hosts.all) {
+                  this.hosts.all[i].applyPolicy();
+                }
               }
             });
           });

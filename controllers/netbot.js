@@ -17,10 +17,10 @@
 'use strict'
 
 process.title = "FireApi";
-let log = require('../net2/logger.js')(__filename, "info");
+const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
-let fs = require('fs');
+const fs = require('fs');
 
 const ControllerBot = require('../lib/ControllerBot.js');
 
@@ -34,22 +34,20 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
 
-let HostManager = require('../net2/HostManager.js');
-let SysManager = require('../net2/SysManager.js');
-let FlowManager = require('../net2/FlowManager.js');
-let flowManager = new FlowManager('info');
-let AlarmManager = require('../net2/AlarmManager.js');
-let alarmManager = new AlarmManager('info');
-let sysManager = new SysManager();
-let VpnManager = require("../vpn/VpnManager.js");
-let vpnManager = new VpnManager('info');
-let IntelManager = require('../net2/IntelManager.js');
-let intelManager = new IntelManager('debug');
+const HostManager = require('../net2/HostManager.js');
+const SysManager = require('../net2/SysManager.js');
+const FlowManager = require('../net2/FlowManager.js');
+const flowManager = new FlowManager('info');
+const sysManager = new SysManager();
+const VpnManager = require("../vpn/VpnManager.js");
+const vpnManager = new VpnManager('info');
+const IntelManager = require('../net2/IntelManager.js');
+const intelManager = new IntelManager('debug');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 
-let DeviceMgmtTool = require('../util/DeviceMgmtTool');
+const DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
@@ -72,30 +70,30 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 
-let AM2 = require('../alarm/AlarmManager2.js');
-let am2 = new AM2();
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
-let EM = require('../alarm/ExceptionManager.js');
-let em = new EM();
+const EM = require('../alarm/ExceptionManager.js');
+const em = new EM();
 
-let PM2 = require('../alarm/PolicyManager2.js');
-let pm2 = new PM2();
+const PM2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PM2();
 
-let SSH = require('../extension/ssh/ssh.js');
-let ssh = new SSH('info');
+const SSH = require('../extension/ssh/ssh.js');
+const ssh = new SSH('info');
 
-let country = require('../extension/country/country.js');
+const country = require('../extension/country/country.js');
 
-let builder = require('botbuilder');
-let uuid = require('uuid');
+const builder = require('botbuilder');
+const uuid = require('uuid');
 
-let async2 = require('async');
+const async2 = require('async');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let NM = require('../ui/NotifyManager.js');
-let nm = new NM();
+const NM = require('../ui/NotifyManager.js');
+const nm = new NM();
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -103,21 +101,21 @@ const frp = fm.getSupportFRP();
 
 const fireWeb = require('../mgmt/FireWeb.js');
 
-let f = require('../net2/Firewalla.js');
+const f = require('../net2/Firewalla.js');
 
-let flowTool = require('../net2/FlowTool')();
+const flowTool = require('../net2/FlowTool')();
 
-let i18n = require('../util/i18n');
+const i18n = require('../util/i18n');
 
-let NetBotTool = require('../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
-let HostTool = require('../net2/HostTool');
-let hostTool = new HostTool();
+const HostTool = require('../net2/HostTool');
+const hostTool = new HostTool();
 
-let appTool = require('../net2/AppTool')();
+const appTool = require('../net2/AppTool')();
 
-let spooferManager = require('../net2/SpooferManager.js')
+const spooferManager = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
@@ -128,6 +126,8 @@ const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
+
+const _ = require('lodash')
 
 class netBot extends ControllerBot {
 
@@ -674,18 +674,6 @@ class netBot extends ControllerBot {
     this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
       //this.tx(this.primarygid, "Discovery started","message");
     });
-    this.subscriber.subscribe("DiscoveryEvent", "Host:Found", null, (channel, type, ip, o) => {
-      log.info("Found new host ", channel, type, ip);
-      if (o) {
-        let name = o.ipv4Addr;
-        if (o.name != null) {
-          name = o.name + " (" + o.ipv4Addr + ")";
-        } else if (o.macVendor != null) {
-          name = "(?)" + o.macVendor + " (" + o.ipv4Addr + ")";
-        }
-        this.tx2(this.primarygid, "New host found in network: " + name, "Found new host " + name, {uid: o.ipv4Addr});
-      }
-    });
     this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
       let m = null;
       let n = null;
@@ -1060,7 +1048,7 @@ class netBot extends ControllerBot {
 
   }
 
-  setHandler(gid, msg, callback) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
@@ -1474,23 +1462,15 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
-          let useNewDeviceHandler = appTool.isAppReadyForNewDeviceHandler(appInfo);
-          if(useNewDeviceHandler) {
-            let ip = msg.target;
-            log.info("Loading device info in a new way:", ip);
-            this.newDeviceHandler(msg, ip)
-            .then((json) => {
-              this.simpleTxData(msg, json, null, callback);
-            })
-            .catch((err) => {
-              this.simpleTxData(msg, null, err, callback);
-            })
-          } else {
-            log.info("Using the legacy way to get device info:", msg.target, {});
-            this.getAllIPForHost(msg.target, (err, ips) => {
-              this.deviceHandler(msg, gid, msg.target, ips, callback);
-            });
-          }
+          let ip = msg.target;
+          log.info("Loading device info in a new way:", ip);
+          this.newDeviceHandler(msg, ip)
+          .then((json) => {
+            this.simpleTxData(msg, json, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          })
         }
         break;
       case "vpn":
@@ -1876,7 +1856,7 @@ class netBot extends ControllerBot {
         });
         break;
       case "policies":
-        pm2.loadActivePolicys((err, list) => {
+        pm2.loadActivePolicies((err, list) => {
           if(err) {
             this.simpleTxData(msg, {}, err, callback);
           } else {
@@ -2120,126 +2100,6 @@ class netBot extends ControllerBot {
     })();
   }
 
-  deviceHandler(msg, gid, target, listip, callback) {
-    log.info("Getting Devices", gid, target, listip);
-    let hosts = [];
-    this.hostManager.getHost(target, (err, host) => {
-      if (host == null && target != "0.0.0.0") {
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 404,
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-        return;
-      } else if (target == "0.0.0.0") {
-        listip = [];
-        for (let h in this.hostManager.hosts.all) {
-          let _host = this.hostManager.hosts.all[h];
-          hosts.push(_host);
-          listip.push(_host.o.ipv4Addr);
-          if (_host.ipv6Addr && _host.ipv6Addr.length > 0) {
-            for (let p in _host['ipv6Addr']) {
-              listip.push(_host['ipv6Addr'][p]);
-            }
-          }
-        }
-      } else {
-        hosts = [host];
-      }
-
-      log.info("Summarize", target, listip);
-
-
-      //  flowManager.summarizeBytes([host], msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16, (err, sys) => {
-
-      // getStats2 => load 24 hours download/upload trend
-      flowManager.getStats2(host)
-        .then(() => {
-//            flowManager.summarizeBytes2(hosts, Date.now() / 1000 - 60*60*24, -1,'hour', (err, sys) => {
-//                log.info("Summarized devices: ", msg.data.end, msg.data.start, (msg.data.end - msg.data.start) / 16,sys,{});
-          let jsonobj = {};
-          if (host) {
-            jsonobj = host.toJson();
-          }
-          alarmManager.read(target, msg.data.alarmduration, null, null, null, (err, alarms) => {
-            log.info("Found alarms");
-            jsonobj.alarms = alarms;
-            // hour block = summarize into blocks of hours ...
-            flowManager.summarizeConnections(listip, msg.data.direction, msg.data.end, msg.data.start, "time", msg.data.hourblock, true, false, (err, result, activities) => {
-              log.info("--- Connectionby most recent ---", result.length);
-              let response = {
-                time: [],
-                rx: [],
-                tx: [],
-                duration: []
-              };
-              let max = 50;
-              for (let i in result) {
-                let s = result[i];
-                response.time.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              flowManager.sort(result, 'rxdata');
-              log.info("-----------Sort by rx------------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.rx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              //log.info(JSON.stringify(response.rx));
-              flowManager.sort(result, 'txdata');
-              log.info("-----------  Sort by tx------------------");
-              max = 15;
-              for (let i in result) {
-                let s = result[i];
-                response.tx.push(s);
-                if (max-- < 0) {
-                  break;
-                }
-              }
-              jsonobj.flows = response;
-              jsonobj.activities = activities;
-
-              /*
-               flowManager.sort(result, 'duration');
-               log.info("-----------Sort by rx------------------------");
-               max = 10;
-               for (let i in result) {
-               let s = result[i];
-               response.duration.push(s);
-               if (max-- < 0) {
-               break;
-               }
-               }
-               */
-
-              // enrich flow info with country
-              this.enrichCountryInfo(jsonobj.flows);
-
-              // use new way to get recent connections
-              Promise.all([
-//                flowTool.prepareRecentFlowsForHost(jsonobj, listip)
-              ]).then(() => {
-                this.simpleTxData(msg, jsonobj, null, callback);
-              }).catch((err) => {
-                this.simpleTxData(msg, null, err, callback);
-              });
-            });
-          });
-        });
-
-    });
-  }
-
   enrichCountryInfo(flows) {
     // support time flow first
     let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
@@ -2277,13 +2137,14 @@ class netBot extends ControllerBot {
    target: '0.0.0.0' }
    */
 
+  // Main Entry Point
   cmdHandler(gid, msg, callback) {
 
     if(msg && msg.data && msg.data.item === 'ping') {
 
-      } else {
-        log.info("API: CmdHandler ",gid,msg,{});
-      }
+    } else {
+      log.info("API: CmdHandler ",gid,msg,{});
+    }
     if(msg.data.item === "dhcpCheck") {
       (async() => {
         let mode = require('../net2/Mode.js');
@@ -2298,7 +2159,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, response, null, callback);
         } else {
           this.simpleTxData(msg, {DHCPMode: false}, null, callback);
-        }        
+        }
       })().catch((err) => {
         log.error("Failed to do DHCP discover", err);
         this.simpleTxData(msg, null, err, callback);
@@ -2431,34 +2292,34 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
-    case "alarm:block":
-      am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
-        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-          this.simpleTxData(msg, {
-            policy: policy,
-            otherAlarms: otherBlockedAlarms,
-            alreadyExists: alreadyExists === "duplicated",
-            updated: alreadyExists === "duplicated_and_updated"
-          }, err, callback);
-        } else {
-          this.simpleTxData(msg, policy, err, callback);
-        }
-      });
-      break;
-    case "alarm:allow":
-      am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
-        if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-          this.simpleTxData(msg, {
-            exception: exception,
-            otherAlarms: otherAlarms,
-            alreadyExists: alreadyExists
-          }, err, callback);
-        } else {
-          this.simpleTxData(msg, exception, err, callback);
-        }
-      });
-      break;
-    case "alarm:unblock":
+      case "alarm:block":
+        am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
+          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+            this.simpleTxData(msg, {
+              policy: policy,
+              otherAlarms: otherBlockedAlarms,
+              alreadyExists: alreadyExists === "duplicated",
+              updated: alreadyExists === "duplicated_and_updated"
+            }, err, callback);
+          } else {
+            this.simpleTxData(msg, policy, err, callback);
+          }
+        });
+        break;
+      case "alarm:allow":
+        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
+          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+            this.simpleTxData(msg, {
+              exception: exception,
+              otherAlarms: otherAlarms,
+              alreadyExists: alreadyExists
+            }, err, callback);
+          } else {
+            this.simpleTxData(msg, exception, err, callback);
+          }
+        });
+        break;
+      case "alarm:unblock":
         am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -2485,25 +2346,25 @@ class netBot extends ControllerBot {
           });
         });
 
-    case "alarm:ignore":
-      async(() => {
-        await (am2.ignoreAlarm(msg.data.value.alarmID))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        log.error("Failed to ignore alarm:", err, {})
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
+      case "alarm:ignore":
+        async(() => {
+          await (am2.ignoreAlarm(msg.data.value.alarmID))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignore alarm:", err, {})
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
 
-    case "alarm:report":
-      async(() => {
-        await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        log.error("Failed to report bug on alarm:", err, {})
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
+      case "alarm:report":
+        async(() => {
+          await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to report bug on alarm:", err, {})
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
 
       case "policy:create":
         pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
@@ -2541,72 +2402,72 @@ class netBot extends ControllerBot {
         })
 
         break;    
-    case "policy:delete":
-      async(() => {
-        let policy = await (pm2.getPolicy(msg.data.value.policyID))
-        if(policy) {
-          await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
-          policy.deleted = true // policy is marked ask deleted
-          this.simpleTxData(msg, policy, null, callback);          
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })                 
-      break;
-    case "policy:enable":
-      async(() => {
-        const policyID = msg.data.value.policyID
-        if(policyID) {
+      case "policy:delete":
+        async(() => {
           let policy = await (pm2.getPolicy(msg.data.value.policyID))
           if(policy) {
-            await (pm2.enablePolicy(policy))
-            this.simpleTxData(msg, policy, null, callback);
+            await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+            policy.deleted = true // policy is marked ask deleted
+            this.simpleTxData(msg, policy, null, callback);          
           } else {
             this.simpleTxData(msg, null, new Error("invalid policy"), callback);
           }
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-        }
-      })()
-      break;
-    case "policy:disable":
-      async(() => {
-        const policyID = msg.data.value.policyID
-        if(policyID) {
-          let policy = await (pm2.getPolicy(msg.data.value.policyID))
-          if(policy) {
-            await (pm2.disablePolicy(policy))
-            this.simpleTxData(msg, policy, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })                 
+        break;
+      case "policy:enable":
+        async(() => {
+          const policyID = msg.data.value.policyID
+          if(policyID) {
+            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            if(policy) {
+              await (pm2.enablePolicy(policy))
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
           } else {
-            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
           }
-        } else {
-          this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-        }
-      })()
-      break;
-    case "intel:finger":
-      (async () => {
-        const target = msg.data.value.target;
-        if (target) {
-          let result;
-          try {
-            result = await bone.intelFinger(target);
-          } catch (err) {
-            log.error("Error when intel finger", err, {});
-          }
-          if (result && result.whois) {
-            this.simpleTxData(msg, result, null, callback);
+        })()
+        break;
+      case "policy:disable":
+        async(() => {
+          const policyID = msg.data.value.policyID
+          if(policyID) {
+            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            if(policy) {
+              await (pm2.disablePolicy(policy))
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
           } else {
-            this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
           }
-        } else {
-          this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
-        }
-      })();
-      break;
+        })()
+        break;
+      case "intel:finger":
+        (async () => {
+          const target = msg.data.value.target;
+          if (target) {
+            let result;
+            try {
+              result = await bone.intelFinger(target);
+            } catch (err) {
+              log.error("Error when intel finger", err, {});
+            }
+            if (result && result.whois) {
+              this.simpleTxData(msg, result, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
+            }
+          } else {
+            this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
+          }
+        })();
+        break;
       case "exception:create":
         em.createException(msg.data.value)
           .then((result) => {
@@ -2630,519 +2491,560 @@ class netBot extends ControllerBot {
           .then(() => {
             this.simpleTxData(msg, null, null, callback);
           }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
+            this.simpleTxData(msg, null, err, callback);
+          });
         break;
       case "reset":
         break;
-    case "startSupport":
-      async(() => {
-        await (frp.start())
-        let config = frp.getConfig();
-        let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.setSSHPassword(newPassword); // in-memory update
-        config.password = newPassword
-        this.simpleTxData(msg, config, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break;
-    case "stopSupport":
-      async(() => {
-        await (frp.stop())
-        let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.setSSHPassword(newPassword); // in-memory update
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break;
-    case "setManualSpoof":
-      async(() => {
-        let mac = msg.data.value.mac
-        let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
+      case "startSupport":
+        async(() => {
+          await (frp.start())
+          let config = frp.getConfig();
+          let newPassword = await(ssh.resetRandomPasswordAsync())
+          sysManager.setSSHPassword(newPassword); // in-memory update
+          config.password = newPassword
+          this.simpleTxData(msg, config, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      case "stopSupport":
+        async(() => {
+          await (frp.stop())
+          let newPassword = await(ssh.resetRandomPasswordAsync())
+          sysManager.setSSHPassword(newPassword); // in-memory update
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      case "setManualSpoof":
+        async(() => {
+          let mac = msg.data.value.mac
+          let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
 
-        if(!mac) {
-          this.simpleTxData(msg, null, new Error("invalid request"), callback)
-          return
-        }
-        
-        await (hostTool.updateMACKey({
-          mac: mac,
-          manualSpoof: manualSpoof
-        }))
+          if(!mac) {
+            this.simpleTxData(msg, null, new Error("invalid request"), callback)
+            return
+          }
 
-        let mode = require('../net2/Mode.js')
-        if(mode.isManualSpoofModeOn()) {
-          await (spooferManager.loadManualSpoof(mac))
-        }
-        
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "manualSpoofUpdate":
-      async(() => {
-        let modeManager = require('../net2/ModeManager.js');
-        await (modeManager.publishManualSpoofUpdate())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "isSpoofRunning":
-      async(() => {
-        let timeout = msg.data.value.timeout
+          await (hostTool.updateMACKey({
+            mac: mac,
+            manualSpoof: manualSpoof
+          }))
 
-        let running = false
-        
-        if(timeout) {
+          let mode = require('../net2/Mode.js')
+          if(mode.isManualSpoofModeOn()) {
+            await (spooferManager.loadManualSpoof(mac))
+          }
+
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "manualSpoofUpdate":
+        async(() => {
+          let modeManager = require('../net2/ModeManager.js');
+          await (modeManager.publishManualSpoofUpdate())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "isSpoofRunning":
+        async(() => {
+          let timeout = msg.data.value.timeout
+
+          let running = false
+
+          if(timeout) {
+            let begin = new Date() / 1000;
+
+            let delayFunction = function(t) {
+              return new Promise(function(resolve) {
+                setTimeout(resolve, t)
+              });
+            }
+
+            while(new Date() / 1000 < begin + timeout) {
+              const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
+              log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
+              running = await (spooferManager.isSpoofRunning())
+              if(running) {
+                break
+              }
+              await(delayFunction(1000))
+            }
+
+          } else {
+            running = await (spooferManager.isSpoofRunning())
+          }
+
+          this.simpleTxData(msg, {running: running}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "spoofMe":
+        async(() => {
+          let value = msg.data.value
+          let ip = value.ip
+          let name = value.name
+
+          if(iptool.isV4Format(ip)) {
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "Manual submit a new device via API",
+              host: {
+                ipv4: ip,
+                ipv4Addr: ip,
+                bname: name,
+                from:"spoofMe"
+              },
+              toProcess: 'FireMain'
+            })
+
+            this.simpleTxData(msg, {}, null, callback)
+          } else {
+            this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
+          }
+
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break
+      case "validateSpoof": {
+        async(() => {
+          let ip = msg.data.value.ip
+          let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
+
+          // add current ip to spoof list
+          await (spooferManager.directSpoof(ip))
+
           let begin = new Date() / 1000;
+
+          let result = false
 
           let delayFunction = function(t) {
             return new Promise(function(resolve) {
               setTimeout(resolve, t)
             });
           }
-          
+
           while(new Date() / 1000 < begin + timeout) {
-            const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
-            log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-            running = await (spooferManager.isSpoofRunning())
-            if(running) {
+            log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
+            result = await (spooferManager.isSpoof(ip))
+            if(result) {
               break
             }
             await(delayFunction(1000))
           }
-          
-        } else {
-          running = await (spooferManager.isSpoofRunning())
-        }
-        
-        this.simpleTxData(msg, {running: running}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "spoofMe":
-      async(() => {
-        let value = msg.data.value
-        let ip = value.ip
-        let name = value.name
 
-        if(iptool.isV4Format(ip)) {
-          sem.emitEvent({
-            type: "DeviceUpdate",
-            message: "Manual submit a new device via API",
-            host: {
-              ipv4: ip,
-              ipv4Addr: ip,
-              bname: name,
-              from:"spoofMe"
-            },
-            toProcess: 'FireMain'
-          })
-          
-          this.simpleTxData(msg, {}, null, callback)
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
-        }
-        
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      break
-    case "validateSpoof": {
-      async(() => {
-        let ip = msg.data.value.ip
-        let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
+          this.simpleTxData(msg, {
+            result: result
+          }, null, callback)
 
-        // add current ip to spoof list
-        await (spooferManager.directSpoof(ip))
-        
-        let begin = new Date() / 1000;
-
-        let result = false
-
-        let delayFunction = function(t) {
-          return new Promise(function(resolve) {
-            setTimeout(resolve, t)
-          });
-        }
-        
-        while(new Date() / 1000 < begin + timeout) {
-          log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-          result = await (spooferManager.isSpoof(ip))
-          if(result) {
-            break
-          }
-          await(delayFunction(1000))
-        }
-        
-        this.simpleTxData(msg, {
-          result: result
-        }, null, callback)
-
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
-      break
-    }
-    case "spoof": {
-      async(() => {
-        let ip = msg.data.value.ip
-
-        
-      })()
-    }
-    case "bootingComplete":
-      async(() => {
-        await (f.setBootingComplete())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })      
-      break
-    case "resetBootingComplete":
-      async(() => {
-        await (f.resetBootingComplete())
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })      
-      break
-
-    case "joinBeta":
-      async(() => {
-        await (this.switchBranch("beta"))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    case "leaveBeta":
-      async(() => {
-        await (this.switchBranch("prod"))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-    case "switchBranch":
-      let target = msg.data.value.target
-      
-      async(() => {
-        await (this.switchBranch(target))
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-
-      break
-    case "enableBinding":
-      sysTool.restartFireKickService()
-        .then(() => {
-          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
         })
-        .catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-      break
-    case "disableBinding":
-      sysTool.stopFireKickService()
-        .then(() => {
-          this.simpleTxData(msg, {}, null, callback)
-        })
-        .catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-      break
-    case "enableFeature": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.enableDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })    
-      break
-    }      
-    case "disableFeature": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.disableDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }      
-    case "clearFeatureDynamicFlag": {
-      const featureName = msg.data.value.featureName
-      async(() => {
-        if(featureName) {
-          await (fc.clearDynamicFeature(featureName))
-        }
-      })().then(() => {
-        this.simpleTxData(msg, {}, null, callback)
-      })
-      .catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }
-    case "releaseMonkey": {
-      async(() => {
-        sem.emitEvent({
-          type: "ReleaseMonkey",
-          message: "Release a monkey to test system",
-          toProcess: 'FireMain',
-          monkeyType: msg.data.value && msg.data.value.monkeyType
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break
-    }
-    case "addIncludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.addIncludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "removeIncludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.removeIncludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "addExcludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.addExcludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "removeExcludeDomain": {
-      (async () => {
-        const category = msg.data.value.category
-        const domain = msg.data.value.domain
-        await (categoryUpdater.removeExcludedDomain(category,domain))
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
-          category: category,
-          toProcess: "FireMain"
-        })
-        this.simpleTxData(msg, {}, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback)
-      })
-      break;
-    }
-    case "startProServer": {
-      proServer.startProServer();
-      break;
-    }
-    case "stopProServer": {
-      proServer.stopProServer();
-      break;
-    }
-    case "generateProToken": {
-      tokenManager.generateToken(gid);
-      break;
-    }
-    case "revokeProToken": {
-      tokenManager.revokeToken(gid);
-      break;
-    }
-    case "saveOvpnProfile": {
-      const content = msg.data.value.content;
-      let profileId = msg.data.value.profileId;
-      // at least create dummy password file anyway
-      const password = msg.data.value.password || "dummy_ovpn_password";
-      if (!profileId || profileId === "") {
-        // use default profile id
-        profileId = "ovpn_client";
+        break
       }
-      (async () => {
-        const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-        const cmd = "mkdir -p " + dirPath;
-        await exec(cmd);
-        const profilePath = dirPath + "/" + profileId + ".ovpn";
-        await writeFileAsync(profilePath, content, 'utf8');
-        const passwordPath = dirPath + "/" + profileId + ".password";
-        await writeFileAsync(passwordPath, password, 'utf8');
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      }) 
-      break;
-    }
-    case "deleteOvpnProfile": {
-      const profileId = msg.data.value.profileId;
-      (async () => {
+      case "spoof": {
+        async(() => {
+          let ip = msg.data.value.ip
+
+
+        })()
+      }
+      case "bootingComplete":
+        async(() => {
+          await (f.setBootingComplete())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })      
+        break
+      case "resetBootingComplete":
+        async(() => {
+          await (f.resetBootingComplete())
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })      
+        break
+
+      case "joinBeta":
+        async(() => {
+          await (this.switchBranch("beta"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      case "leaveBeta":
+        async(() => {
+          await (this.switchBranch("prod"))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+      case "switchBranch":
+        let target = msg.data.value.target
+
+        async(() => {
+          await (this.switchBranch(target))
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+
+        break
+      case "enableBinding":
+        sysTool.restartFireKickService()
+          .then(() => {
+            this.simpleTxData(msg, {}, null, callback)
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, {}, err, callback)
+          })
+        break
+      case "disableBinding":
+        sysTool.stopFireKickService()
+          .then(() => {
+            this.simpleTxData(msg, {}, null, callback)
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, {}, err, callback)
+          })
+        break
+      case "enableFeature": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.enableDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })    
+        break
+      }      
+      case "disableFeature": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.disableDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }      
+      case "clearFeatureDynamicFlag": {
+        const featureName = msg.data.value.featureName
+        async(() => {
+          if(featureName) {
+            await (fc.clearDynamicFeature(featureName))
+          }
+        })().then(() => {
+          this.simpleTxData(msg, {}, null, callback)
+        })
+        .catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }
+      case "releaseMonkey": {
+        async(() => {
+          sem.emitEvent({
+            type: "ReleaseMonkey",
+            message: "Release a monkey to test system",
+            toProcess: 'FireMain',
+            monkeyType: msg.data.value && msg.data.value.monkeyType
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break
+      }
+      case "addIncludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.addIncludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "removeIncludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.removeIncludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "addExcludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.addExcludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "removeExcludeDomain": {
+        (async () => {
+          const category = msg.data.value.category
+          const domain = msg.data.value.domain
+          await (categoryUpdater.removeExcludedDomain(category,domain))
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
+      case "startProServer": {
+        proServer.startProServer();
+        break;
+      }
+      case "stopProServer": {
+        proServer.stopProServer();
+        break;
+      }
+      case "generateProToken": {
+        tokenManager.generateToken(gid);
+        break;
+      }
+      case "revokeProToken": {
+        tokenManager.revokeToken(gid);
+        break;
+      }
+      case "saveOvpnProfile": {
+        const content = msg.data.value.content;
+        let profileId = msg.data.value.profileId;
+        // at least create dummy password file anyway
+        const password = msg.data.value.password || "dummy_ovpn_password";
         if (!profileId || profileId === "") {
-          this.simpleTxData(msg, {}, "profile id is not specified", callback);
-        } else {
+          // use default profile id
+          profileId = "ovpn_client";
+        }
+        (async () => {
           const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const cmd = "mkdir -p " + dirPath;
+          await exec(cmd);
           const profilePath = dirPath + "/" + profileId + ".ovpn";
-          if (fs.existsSync(profilePath)) {
-            await unlinkAsync(profilePath);
-            const passwordPath = dirPath + "/" + profileId + ".password";
-            if (fs.existsSync(passwordPath)) {
-              await unlinkAsync(passwordPath);
+          await writeFileAsync(profilePath, content, 'utf8');
+          const passwordPath = dirPath + "/" + profileId + ".password";
+          await writeFileAsync(passwordPath, password, 'utf8');
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        }) 
+        break;
+      }
+      case "deleteOvpnProfile": {
+        const profileId = msg.data.value.profileId;
+        (async () => {
+          if (!profileId || profileId === "") {
+            this.simpleTxData(msg, {}, "profile id is not specified", callback);
+          } else {
+            const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+            const profilePath = dirPath + "/" + profileId + ".ovpn";
+            if (fs.existsSync(profilePath)) {
+              await unlinkAsync(profilePath);
+              const passwordPath = dirPath + "/" + profileId + ".password";
+              if (fs.existsSync(passwordPath)) {
+                await unlinkAsync(passwordPath);
+              }
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
             }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "saveRSAPublicKey": {
+        const content = msg.data.value.pubKey;
+        const identity = msg.data.value.identity;
+        (async () => {
+          await ssh.saveRSAPublicKey(content, identity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:export": {
+        const partition = msg.data.value.partition;
+        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        (async () => {
+          await migration.exportDataPartition(partition, encryptionIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:import": {
+        const partition = msg.data.value.partition;
+        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        (async () => {
+          await migration.importDataPartition(partition, encryptionIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:transfer": {
+        const host = msg.data.value.host;
+        const partition = msg.data.value.partition;
+        const transferIdentity = msg.data.value.transferIdentity;
+        (async () => {
+          await migration.transferDataPartition(host, partition, transferIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "migration:transferHiddenFolder": {
+        const host = msg.data.value.host;
+        const transferIdentity = msg.data.value.transferIdentity;
+        (async () => {
+          await migration.transferHiddenFolder(host, transferIdentity);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+
+      case "enableWebToken": {
+        (async () => {
+          const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+          this.simpleTxData(msg, tokenInfo, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "host:delete": {
+        (async () => {
+          const hostMac = msg.data.value.mac;
+          log.info('host:delete', hostMac);
+          const macExists = await hostTool.macExists(hostMac);
+          if (macExists) {
+            // delete related rules
+            pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
+              if(err) {
+                throw new Error(err);
+              } else {
+                let multi = rclient.multi();
+                // device specified policy
+                multi.del('policy:mac:' + hostMac);
+
+                rules = rules.forEach(rule => {
+                  if (!rule.scope) return;
+
+                  if (rule.scope.some(mac => mac == hostMac)) {
+                    // rule targets only deleted device
+                    if (rule.scope.length <= 1) {
+                      multi.del('policy:' + rule.pid);
+                      log.info('remove policy:' + rule.pid);
+                      multi.zrem('policy_active', rule.pid);
+                      log.info('remove from policy_active:', rule.pid);
+                    }
+                    // rule targets NOT only deleted device
+                    else {
+                      let reducedScope = _.without(rule.scope, hostMac);
+                      multi.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+                      log.info('remove scope from policy:' + rule.pid, hostMac);
+                    }
+                  }
+                })
+
+                multi.execAsync()
+                  .catch(e => {
+                    log.info('Error removing related policy & rules', e);
+                  })
+                  .then(res => {
+                    log.info('Successfully removed rules and policies.', res);
+                  });
+              }
+            });
+
+            
+            let ips = await hostTool.getIPsByMac(hostMac);
+            ips.forEach(async (ip) => {
+              const latestMac = await hostTool.getMacByIP(ip);
+              if (latestMac && latestMac === hostMac) {
+                // double check to ensure ip address is not taken over by other device
+                await hostTool.deleteHost(ip);
+              }
+            });
+            await hostTool.deleteMac(hostMac);
+            // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);
           } else {
-            this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+            let resp = {
+              type: 'jsonmsg',
+              mtype: 'cmd',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+              code: 404,
+              data: {"error": "device not found"}
+            };
+            this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
           }
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    }
-    case "saveRSAPublicKey": {
-      const content = msg.data.value.pubKey;
-      const identity = msg.data.value.identity;
-      (async () => {
-        await ssh.saveRSAPublicKey(content, identity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:export": {
-      const partition = msg.data.value.partition;
-      const encryptionIdentity = msg.data.value.encryptionIdentity;
-      (async () => {
-        await migration.exportDataPartition(partition, encryptionIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:import": {
-      const partition = msg.data.value.partition;
-      const encryptionIdentity = msg.data.value.encryptionIdentity;
-      (async () => {
-        await migration.importDataPartition(partition, encryptionIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:transfer": {
-      const host = msg.data.value.host;
-      const partition = msg.data.value.partition;
-      const transferIdentity = msg.data.value.transferIdentity;
-      (async () => {
-        await migration.transferDataPartition(host, partition, transferIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-    case "migration:transferHiddenFolder": {
-      const host = msg.data.value.host;
-      const transferIdentity = msg.data.value.transferIdentity;
-      (async () => {
-        await migration.transferHiddenFolder(host, transferIdentity);
-        this.simpleTxData(msg, {}, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    }
-
-    case "enableWebToken": {
-      (async () => {
-        const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
-        this.simpleTxData(msg, tokenInfo, null, callback);
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      break;
-    }
-
-    case "host:delete": {
-      (async () => {
-        const hostMac = msg.data.value.mac;
-        const macExists = await hostTool.macExists(hostMac);
-        if (macExists) {
-          let ips = await hostTool.getIPsByMac(hostMac);
-          ips.forEach(async (ip) => {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-              await hostTool.deleteHost(ip);
-            }
-          });
-          await hostTool.deleteMac(hostMac);
-          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
-          this.simpleTxData(msg, {}, null, callback);
-        } else {
-          let resp = {
-            type: 'jsonmsg',
-            mtype: 'cmd',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 404,
-            data: {"error": "device not found"}
-          };
-          this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      })
-      break;
-    }
-    default:
-      // unsupported action
-      this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
-      break;
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      default:
+        // unsupported action
+        this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
+        break;
     }
   }
 
@@ -3171,7 +3073,15 @@ class netBot extends ControllerBot {
   }
 
   simpleTxData(msg, data, err, callback) {
-    this.txData(this.primarygid, msg.data.item, this.getDefaultResponseDataModel(msg, data, err), "jsondata", "", null, callback);
+    this.txData(
+      /* gid     */ this.primarygid,
+      /* msg     */ msg.data.item,
+      /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
+      /* type    */ "jsondata",
+      /* beepmsg */ "",
+      /* whisper */ null,
+      /* callback*/ callback
+    );
   }
 
   getDefaultResponseDataModel(msg, data, err) {

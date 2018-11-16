@@ -28,7 +28,8 @@
   "timing": {
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
-    "alarm.vpn_client_connection.cooldown": 14400
+    "alarm.vpn_client_connection.cooldown": 14400,
+    "alarm.subnet.cooldown": 2592000
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -182,18 +183,19 @@
     },
     "DeviceOfflineSensor": {
       "interval": 60,
-      "idle": 1800
+      "idle": 2700
     },
     "FirewallaDiscoverSensor": {
       "listenPort": 4096
-    }
+    },
+    "SubnetSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
     "DeviceHook": {
-      "hostExpirationSecs": 3600
+      "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
     "VPNHook": {}

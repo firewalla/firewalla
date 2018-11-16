@@ -5,6 +5,7 @@ npm-debug.log*
 .DS_Store
 
 *.swp
+tags
 # Runtime data
 pids
 *.pid

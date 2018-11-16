@@ -71,7 +71,7 @@ const Queue = require('bee-queue')
 
 function delay(t) {
   return new Promise(function(resolve) {
-    setTimeout(resolve, t)
+    setTimeout(resolve, t);
   });
 }
 
@@ -480,7 +480,7 @@ class PolicyManager2 {
 
   getPolicy(policyID) {
     return new Promise((resolve, reject) => {
-      this.idsToPolicys([policyID], (err, results) => {
+      this.idsToPolicies([policyID], (err, results) => {
         if(err) {
           reject(err);
           return;
@@ -500,7 +500,7 @@ class PolicyManager2 {
     let pm2 = this
     return async(() => {
       return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(1000, {
+        pm2.loadActivePolicies(1000, {
           includingDisabled: true
         }, (err, policies)=>{
           if (err) {
@@ -603,7 +603,7 @@ class PolicyManager2 {
     }
   }
 
-  idsToPolicys(ids, callback) {
+  idsToPolicies(ids, callback) {
     let multi = rclient.multi();
 
     ids.forEach((pid) => {
@@ -612,7 +612,7 @@ class PolicyManager2 {
 
     multi.exec((err, results) => {
       if(err) {
-        log.error("Failed to load active policys (hgetall): " + err);
+        log.error("Failed to load active policies (hgetall): " + err);
         callback(err);
         return;
       }
@@ -639,7 +639,7 @@ class PolicyManager2 {
     });
   }
 
-  loadRecentPolicys(duration, callback) {
+  loadRecentPolicies(duration, callback) {
     if(typeof(duration) == 'function') {
       callback = duration;
       duration = 86400;
@@ -651,16 +651,16 @@ class PolicyManager2 {
     let scoreMin = scoreMax - duration;
     rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
       if(err) {
-        log.error("Failed to load active policys: " + err);
+        log.error("Failed to load active policies: " + err);
         callback(err);
         return;
       }
 
-      this.idsToPolicys(policyIDs, callback);
+      this.idsToPolicies(policyIDs, callback);
     });
   }
 
-  numberOfPolicys(callback) {
+  numberOfPolicies(callback) {
     callback = callback || function() {}
 
     rclient.zcount(policyActiveKey, "-inf", "+inf", (err, result) => {
@@ -674,10 +674,10 @@ class PolicyManager2 {
     });
   }
 
-  loadActivePolicysAsync(number) {
+  loadActivePoliciesAsync(number) {
     number = number || 1000 // default 1000
     return new Promise((resolve, reject) => {
-      this.loadActivePolicys(number, (err, policies) => {
+      this.loadActivePolicies(number, (err, policies) => {
         if(err) {
           reject(err)
         } else {
@@ -689,7 +689,7 @@ class PolicyManager2 {
   
   // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
-  loadActivePolicys(number, options, callback) {
+  loadActivePolicies(number, options, callback) {
 
     if(typeof(number) == 'function') {
       callback = number;
@@ -706,12 +706,12 @@ class PolicyManager2 {
 
     rclient.zrevrange(policyActiveKey, 0, number -1 , (err, results) => {
       if(err) {
-        log.error("Failed to load active policys: " + err);
+        log.error("Failed to load active policies: " + err);
         callback(err);
         return;
       }
 
-      this.idsToPolicys(results, (err, policyRules) => {
+      this.idsToPolicies(results, (err, policyRules) => {
         if(options.includingDisabled) {
           callback(err, policyRules)
         } else {
@@ -730,7 +730,7 @@ class PolicyManager2 {
 
   enforceAllPolicies() {
     return new Promise((resolve, reject) => {
-      this.loadActivePolicys((err, rules) => {
+      this.loadActivePolicies((err, rules) => {
         
         return async(() => {
           rules.forEach((rule) => {
@@ -887,10 +887,17 @@ class PolicyManager2 {
   }
 
   async _removeActivatedTime(policy) {
-    await (this.updatePolicyAsync({
+
+    const p = await this.getPolicy(policy.pid);
+
+    if(!p) { // no need to update policy if policy is already deleted
+      return;
+    }
+
+    await this.updatePolicyAsync({
       pid: policy.pid,
       activatedTime: ""
-    }))
+    })
 
     delete policy.activatedTime;
     return policy;
@@ -1152,7 +1159,7 @@ class PolicyManager2 {
   }
 
   match(alarm, callback) {
-    this.loadActivePolicys((err, policies) => {
+    this.loadActivePolicies((err, policies) => {
       if(err) {
         log.error("Failed to load active policy rules")
         callback(err)
@@ -1175,7 +1182,7 @@ class PolicyManager2 {
   // utility functions
   findPolicy(target, type) {
     return async(() => {
-      let rules = await (this.loadActivePolicysAsync())
+      let rules = await (this.loadActivePoliciesAsync())
 
       for (const index in rules) {
         const rule = rules[index]
