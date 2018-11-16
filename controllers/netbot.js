@@ -2983,7 +2983,7 @@ class netBot extends ControllerBot {
                 multi.del('policy:mac:' + hostMac);
 
                 rules = rules.forEach(rule => {
-                  if (!rule.scope) return;
+                  if (_.isEmpty(rule.scope)) return;
 
                   if (rule.scope.some(mac => mac == hostMac)) {
                     // rule targets only deleted device

@@ -27,6 +27,8 @@ const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
 
+const _ = require('lodash');
+
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
@@ -1791,7 +1793,7 @@ module.exports = class HostManager {
         } else {
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
-            if (!rule.scope) return true;
+            if (_.isEmpty(rule.scope)) return true;
 
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)
