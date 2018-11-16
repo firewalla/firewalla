@@ -311,9 +311,20 @@ class PolicyManager2 {
 
   normalizePoilcy(policy) {
     // convert array to string so that redis can store it as value
-    if(policy.scope && policy.scope.constructor.name === 'Array') {
-      policy.scope = JSON.stringify(policy.scope)
-    } 
+    if(policy.scope) {
+      if (policy.scope.constructor.name === 'Array') {
+        if (policy.scope.length > 0)
+          policy.scope = JSON.stringify(policy.scope);
+        else
+          delete policy.scope;
+      }
+      else {
+        // TODO: delete scope is not proper here, while throwing Error will
+        // crash the process. We need to throw Error once it could properly
+        // handled
+        log.error('normalizePolicy: Invalid scope', policy.scope);
+      }
+    }
     
     if(policy.expire && policy.expire === "") {
       delete policy.expire;
@@ -371,6 +382,7 @@ class PolicyManager2 {
       })
     })
   }
+
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
@@ -398,12 +410,12 @@ class PolicyManager2 {
           return;
         }
 
-        this.addToActiveQueue(policy, (err) => {
+        this.addToActiveQueue(policyCopy, (err) => {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
-          this.tryPolicyEnforcement(policy)
-          callback(null, policy)
+          this.tryPolicyEnforcement(policyCopy)
+          callback(null, policyCopy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
