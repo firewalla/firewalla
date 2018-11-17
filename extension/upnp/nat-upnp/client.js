@@ -97,6 +97,13 @@ Client.prototype.getMappings = function getMappings(options, callback) {
           return callback(null);
         }
 
+        if(data === null || data === undefined) {
+          callback(null);
+          return;
+        }
+
+        try {
+
         var key;
         var match = Object.keys(data).some(function(k) {
           if (!/:GetGenericPortMappingEntryResponse/.test(k)) return false;
@@ -113,7 +120,6 @@ Client.prototype.getMappings = function getMappings(options, callback) {
 
         data = data[key];
 
-      try {
         var result = {
           public: {
             host: typeof data.NewRemoteHost === 'string' &&

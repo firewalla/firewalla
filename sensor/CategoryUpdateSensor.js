@@ -28,7 +28,7 @@ const categoryUpdater = new CategoryUpdater();
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
-  // "video": "app.video",
+  "av": "app.video",
   "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
 }
 

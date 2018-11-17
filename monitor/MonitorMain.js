@@ -238,6 +238,10 @@ function run() {
 
 sem.on("ChangeLogLevel", (event) => {
   if(event.name && event.level) {
-    require('../net2/LoggerManager.js').setLogLevel(event.name, event.level);
+    if(event.name === "*") {
+      require('../net2/LoggerManager.js').setGlobalLogLevel(event.level);
+    } else {
+      require('../net2/LoggerManager.js').setLogLevel(event.name, event.level);
+    }
   }
 });

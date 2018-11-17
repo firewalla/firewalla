@@ -124,7 +124,7 @@ class Whois {
     try {
       whois = await Promise.race([
         new Promise(resolve => setTimeout(resolve, this.timeout)),
-        _whois(_target, {host: 'whois.iana.org', port: 43})
+        _whois(_target, {host: 'whois.iana.org', ip: "192.0.32.59", port: 43})
       ]);
     } catch (err) {
       log.error(`Unable to lookup whois information for target: ${_target}, original target is: ${target}`, err);

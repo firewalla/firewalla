@@ -95,18 +95,17 @@ module.exports = class {
       instance = this;
       this.publisher = new c('info');
 
-      if(f.isMonitor()) {
-        this.setupAlarmQueue();
-      }
+      this.setupAlarmQueue();
     }
     return instance;
   }
 
   setupAlarmQueue() {
-    this.queue = new Queue('alarm')
 
-    this.queue.removeOnFailure = true
-    this.queue.removeOnSuccess = true
+    this.queue = new Queue(`alarm-${f.getProcessName()}`, {
+      removeOnFailure: true,
+      removeOnSuccess: true
+    })
 
     this.queue.on('error', (err) => {
       log.error("Queue got err:", err)
@@ -353,9 +352,11 @@ module.exports = class {
             (async () => {
               const extendedAlarmKey = `_alarmDetail:${alarm.aid}`;
               
-              rclient.hmsetAsync(extendedAlarmKey, extended);
-              rclient.expireat(alarmKey, parseInt((+new Date) / 1000) + expiring);
-
+              // if there is any extended info
+              if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
+                await rclient.hmsetAsync(extendedAlarmKey, extended);
+                await rclient.expireatAsync(extendedAlarmKey, parseInt((+new Date) / 1000) + expiring);
+              }
               
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
@@ -731,6 +732,11 @@ module.exports = class {
       // TODO: support more than 20 in the future
       callback(null, result > 20 ? 20 : result);
     });
+  }
+
+  async numberOfArchivedAlarms() {
+    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+    return count;
   }
 
   // top 50 only by default
@@ -1113,18 +1119,8 @@ module.exports = class {
           i_target = alarm["p.device.ip"];
           break;
         case "ALARM_BRO_NOTICE":
-          if(alarm["p.noticeType"] && alarm["p.noticeType"] === "SSH::Password_Guessing") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else if(alarm["p.noticeType"] && alarm["p.noticeType"] === "Scan::Port_Scan") {
-            i_type = "ip"
-            i_target = alarm["p.dest.ip"]
-          } else {
-            log.error("Unsupported alarm type for allowing: ", alarm, {})
-            callback(new Error("Unsupported alarm type for allowing: " + alarm.type))
-            return
-          }
-
+          i_type = "ip";
+          i_target = alarm["p.dest.ip"];
           break;
         default:
 

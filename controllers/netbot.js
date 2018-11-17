@@ -1940,6 +1940,7 @@ class netBot extends ControllerBot {
       }
     if (msg.data.item === "reset") {
       log.info("System Reset");
+      DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
       DeviceMgmtTool.resetDevice()
 
       // direct reply back to app that system is being reset
@@ -2225,6 +2226,15 @@ class netBot extends ControllerBot {
         }
       })();
       break;
+      case "exception:create":
+        em.createException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
     case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {

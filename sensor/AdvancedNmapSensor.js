@@ -85,13 +85,11 @@ class AdvancedNmapSensor extends Sensor {
 
     am2.enrichDeviceInfo(alarm)
       .then((alarm) => {
-	      return am2.checkAndSaveAsync(alarm)
-	      .then(() => {
-      		log.info("Created a vulnerability alarm", alarm.aid, "on device", ip, {});
-        })
-    }).catch((err) => {
-      log.error("Failed to create vulnerability alarm:", err, err.stack, {});
-    })
+        am2.enqueueAlarm(alarm);
+        log.info("Created a vulnerability alarm", alarm.aid, "on device", ip, {});
+      }).catch((err) => {
+        log.error("Failed to create vulnerability alarm:", err, err.stack, {});
+      })
   }
   
   isSensorEnable() {

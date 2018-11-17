@@ -1,5 +1,5 @@
 {
-  "version": 1.956,
+  "version": 1.957,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
@@ -37,7 +37,8 @@
     "leaseTime": "24h"
   },
   "dns": {
-    "defaultDNSServer": "8.8.8.8"
+    "defaultDNSServer": "8.8.8.8",
+    "verificationDomains": ["firewalla.encipher.io", "github.com", "google.com"]
   },
   "sysInfo": {
     "tailNum": 100
@@ -58,6 +59,7 @@
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "Cymon2Intel",
+    "SSLIntel",
     "TransferContextIntel",
     "MonkeyIntel"
   ],
@@ -72,6 +74,7 @@
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "NaughtyMonkeySensor": {},
+    "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
@@ -82,9 +85,6 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
-    "PolicyGuardSensor": {
-      "interval": 7200000
-    },
     "FlowUploadSensor" : {
       "interval":900,
       "maxFlows": 50000,

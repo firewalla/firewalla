@@ -36,6 +36,17 @@ class DeviceMgmtTool {
   _getOverlayUpperWorkDirectory() {
     return Firewalla.getOverlayUpperDirPartition() + "/overlay-workdir";
   }
+
+  deleteGroup(eptcloud, gid) {
+    log.info("Delete group " + gid);
+    eptcloud.deleteGroup(gid, (err, body) => {
+      if (err != null) {
+        log.error("Error occurred while deleting group: " + err + ", body: " + body);
+      } else {
+        log.info("Group " + gid + " is deleted.");
+      }
+    });
+  }
   
   resetDevice() {
     log.info("Resetting device to factory defaults...");
