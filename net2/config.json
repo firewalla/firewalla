@@ -85,9 +85,6 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor":{},
-    "PolicyGuardSensor": {
-      "interval": 7200000
-    },
     "FlowUploadSensor" : {
       "interval":900,
       "maxFlows": 50000,
