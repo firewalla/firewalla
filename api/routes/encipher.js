@@ -105,6 +105,7 @@ router.post('/simple', (req, res, next) => {
   const item = req.query.item || ""
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
+  const start = req.query.start
 
   let body = {
     "message": {
@@ -137,6 +138,7 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.mtype = command
   body.message.obj.data.item = item
   body.message.obj.target = target
+  body.message.obj.data.start = start
 
   
   try {
