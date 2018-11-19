@@ -843,8 +843,10 @@ module.exports = class FlowManager {
 
         //log.info("### Cleaning",flowobj);
 
-        bone.flowgraph("clean", [flowobj],(err,data)=>{
-            return data;
+        return new Promise((resolve, reject) => {
+          bone.flowgraph("clean", [flowobj],(err,data)=>{
+            resolve(data);
+          });
         });
     }
 

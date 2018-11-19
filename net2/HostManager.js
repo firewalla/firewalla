@@ -1052,7 +1052,7 @@ class Host {
     return json;
   }
 
-  async summarizeSoftware(ip, from, to, callback) {
+  async summarizeSoftware(ip, from, to) {
     try {
       const result = await rclient.zrevrangebyscoreAsync(["software:ip:" + ip, to, from]);
       let softwaresdb = {};
