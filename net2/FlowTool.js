@@ -428,8 +428,8 @@ class FlowTool {
     .map((x) => {
       return {
         ts: x.ts,
-        ob: x.ob,
-        rb: x.rb
+        ob: x.sh === destinationIP ? x.rb : x.ob, // ob stands for number of bytes transferred from local to remote, regardless of flow direction
+        rb: x.sh === destinationIP ? x.ob : x.rb  // rb strands for number of bytes transferred from remote to local, regardless of flow direction
       }
     })
 
@@ -439,13 +439,21 @@ class FlowTool {
   async getTransferTrend(deviceMAC, destinationIP, options) {
     options = options || {};
     
-    const results = await hostTool.getIPsByMac(deviceMAC);
-
     const transfers = [];
 
-    const t_in = await this._getTransferTrend(deviceMAC, destinationIP, options);
-    transfers.push.apply(transfers, t_in);
-
+    if (!options.direction || options.direction === "in") {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.direction = "in";
+      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      transfers.push.apply(transfers, t_in);
+    }
+    
+    if (!options.direction || options.direction === "out") {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.direction = "out";
+      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      transfers.push.apply(transfers, t_out);
+    }
     return this._aggregateTransferBy10Min(transfers);
   }
 
