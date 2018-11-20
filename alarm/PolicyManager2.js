@@ -875,10 +875,17 @@ class PolicyManager2 {
   }
 
   async _removeActivatedTime(policy) {
-    await (this.updatePolicyAsync({
+
+    const p = await this.getPolicy(policy.pid);
+
+    if(!p) { // no need to update policy if policy is already deleted
+      return;
+    }
+
+    await this.updatePolicyAsync({
       pid: policy.pid,
       activatedTime: ""
-    }))
+    })
 
     delete policy.activatedTime;
     return policy;

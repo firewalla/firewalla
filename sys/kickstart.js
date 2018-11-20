@@ -87,6 +87,8 @@
 
   const Diag = require('../extension/diag/app.js');
 
+  let terminated = false;
+
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.forceInfo("FireKick Starting ");
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -268,6 +270,10 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     const gidPrefix = gid.substring(0, 8);
 
+    process.on('SIGTERM', exitHandler.bind(null, {
+      terminated: true, cleanup: true, gid: gid, exit: true
+    }));
+
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
         log.info("Error looking up group", err, err.stack, {});
@@ -414,7 +420,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
-          
+
           const expireDate = Math.floor(new Date() / 1000) + 600;
           diag.expireDate = expireDate;
 
@@ -503,10 +509,32 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   })
   
   process.stdin.resume();
+
+  function sendTerminatedInfoToDiagServer(gid) {
+    if (terminated)
+      return;
+    const gidPrefix = gid.substring(0, 8);
+    log.forceInfo("EXIT KICKSTART DUE TO PROCESS TERMINATION");
+    terminated = true;
+    fwDiag.submitInfo({
+      event: "FIREKICK_TERMINATED",
+      msg: "Firekick Terminated",
+      gidPrefix: gidPrefix
+    }).catch((err) => {
+      log.err("failed to submit diag info on termination", err);
+    });
+  }
   
   function exitHandler(options, err) {
     if (err) log.info(err.stack);
-    if (options.exit) process.exit();
+    if (options.cleanup) platform.turnOffPowerLED();
+    if (options.terminated) sendTerminatedInfoToDiagServer(options.gid);
+    if (options.exit) {
+      // previous function calls may be async and needs additional time to complete
+      require('child_process').exec("sleep 5", (err, stdout, stderr) => {
+        process.exit();
+      });
+    }
   }
   
   //do something when app is closing
@@ -517,7 +545,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   //catches ctrl+c event
   process.on('SIGINT', exitHandler.bind(null, {
     exit: true
-}));
+  }));
 
 process.on('uncaughtException',(err)=>{
   log.info("################### CRASH #############");
