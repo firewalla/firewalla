@@ -166,7 +166,6 @@ done
 if [[ $rc -ne 0 ]]
 then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
-    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
     if [ -s /home/pi/scripts/check_fix_network.sh ]
     then
         external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/scripts/check_fix_network.sh'
@@ -203,6 +202,15 @@ echo $branch > /tmp/REPO_BRANCH
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
+  exit 0
+fi
+
+# when local patch exists, normal upgrade is skipped
+# all "unmanaged" upgrade is treated as normal upgrade, periodical fireupgrade_check.sh
+# and BoneSensor.checkin() triggered upgrades are either "soft" or "hard"
+if [[ -e "/home/pi/.firewalla/.local_patch" && "$mode" == "normal" ]]; then
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  echo '======= SKIP NORMAL MODE UPGRADE BECAUSE OF FLAG /home/pi/.firewalla/.local_patch ======='
   exit 0
 fi
 

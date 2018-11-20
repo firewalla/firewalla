@@ -3339,10 +3339,6 @@ process.on('unhandledRejection', (reason, p)=>{
     msg:msg,
     stack:reason.stack
   },null);
-  // setTimeout(() => {
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
-  //   process.exit(1);
-  // }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
 process.on('uncaughtException', (err) => {
