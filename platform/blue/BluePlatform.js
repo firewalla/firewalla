@@ -90,6 +90,7 @@ class BluePlatform extends Platform {
   }
 
   async applyCPUDefaultProfile() {
+    log.info("Applying CPU default profile...");
     const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
     await exec(cmd);
     return this.reload();
@@ -104,6 +105,7 @@ class BluePlatform extends Platform {
   }
 
   async applyCPUBoostProfile() {
+    log.info("Applying CPU boost profile...");
     const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
     await exec(cmd);
     return this.reload();
