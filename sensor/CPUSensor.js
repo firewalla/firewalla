@@ -36,12 +36,14 @@ class CPUSensor extends Sensor {
     } else {
       await this.turnOff();
     }
-    fc.onFeature(featureName, (feature, status) => {
-      if(feature != featureName)
-        return
-      
+    
+    fc.onFeature(featureName, async (feature, status) => {
+      if(feature != featureName) {
+        return;        
+      }
+            
       if(status) {
-        await this.turnOn();
+        await this.turnOn();    
       } else {
         await this.turnOff();
       }
