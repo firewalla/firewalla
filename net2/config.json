@@ -109,9 +109,6 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {},
-    "PolicyGuardSensor": {
-      "interval": 7200000
-    },
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
@@ -230,6 +227,7 @@
       "path": "/blog/current/software.log",
       "expires": 604800
     },
+<<<<<<< HEAD
     "http": {
       "path": "/blog/current/http.log",
       "expires": 1800
@@ -298,4 +296,13 @@
     "naughty_monkey"
   ],
   "pubKeys": []
+=======
+
+    "hiddenFeatures": [
+      "naughty_monkey"
+    ],
+    "pubKeys": [
+
+    ]
+>>>>>>> 868a40da1e0c63aac7cfeb5f28495e4ce9fd7309
 }

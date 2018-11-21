@@ -436,8 +436,8 @@ class FlowTool {
     .map((x) => {
       return {
         ts: x.ts,
-        ob: x.ob,
-        rb: x.rb
+        ob: x.sh === destinationIP ? x.rb : x.ob, // ob stands for number of bytes transferred from local to remote, regardless of flow direction
+        rb: x.sh === destinationIP ? x.ob : x.rb  // rb strands for number of bytes transferred from remote to local, regardless of flow direction
       }
     })
 
