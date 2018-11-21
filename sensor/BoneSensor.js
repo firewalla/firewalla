@@ -48,13 +48,15 @@ class BoneSensor extends Sensor {
 
   apiRun() {
     // register get/set handlers for fireapi
-    extensionManager.onGet("cloudInstance", (msg) => {
+    extensionManager.onGet("cloudInstance", async (msg) => {
       return this.getCloudInstanceURL();
     })
 
-    extensionManager.onSet("cloudInstance", (msg, data) => {
-      const url = `https://firewalla.encipher.io/bone/api/${data}`;
-      return this.setCloudInstanceURL(url);
+    extensionManager.onSet("cloudInstance", async (msg, data) => {
+      if(data.instance) {
+        const url = `https://firewalla.encipher.io/bone/api/${data.instance}`;
+        return this.setCloudInstanceURL(url);
+      }
     })
   }
 
