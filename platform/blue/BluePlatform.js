@@ -25,6 +25,8 @@ const ledPaths = [
   "/sys/devices/platform/leds/leds/nanopi:red:pwr"
 ];
 
+const cpuProfilePath = "/etc/default/cpufrequtils";
+
 class BluePlatform extends Platform {
 
   getName() {
@@ -81,6 +83,30 @@ class BluePlatform extends Platform {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
     });
+  }
+
+  getCPUDefaultFile() {
+    return `{__dirname}/files/cpu_default.conf`;
+  }
+
+  async applyCPUDefaultProfile() {
+    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
+    await exec(cmd);
+    return this.reload();
+  }
+
+  async reload() {
+    return exec("sudo systemctl reload cpufrequtils");
+  }
+
+  getCPUBoostFile() {
+    return `{__dirname}/files/cpu_boost.conf`;
+  }
+
+  async applyCPUBoostProfile() {
+    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
+    await exec(cmd);
+    return this.reload();
   }
 }
 

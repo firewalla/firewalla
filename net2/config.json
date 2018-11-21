@@ -108,6 +108,7 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "CPUSensor": {},
     "PolicyGuardSensor": {
       "interval": 7200000
     },

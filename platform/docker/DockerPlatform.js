@@ -40,6 +40,14 @@ class DockerPlatform extends Platform {
   getB6Binary() {
     return `${f.getFirewallaHome()}/bin/real.x86_64/bitbridge6`;
   }
+  
+  async applyCPUDefaultProfile() {
+    return; // do nothing for red
+  }
+
+  async applyCPUBoostProfile() {
+    return; // do nothing for red
+  }
 }
 
 module.exports = DockerPlatform;
