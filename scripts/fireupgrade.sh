@@ -206,12 +206,16 @@ if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
 fi
 
 # when local patch exists, normal upgrade is skipped
-# all "unmanaged" upgrade is treated as normal upgrade, periodical fireupgrade_check.sh
+# all "unmanaged" upgrades are treated as normal upgrade, periodical fireupgrade_check.sh
 # and BoneSensor.checkin() triggered upgrades are either "soft" or "hard"
-if [[ -e "/home/pi/.firewalla/.local_patch" && "$mode" == "normal" ]]; then
+if [[ -e "/home/pi/.firewalla/.local_patch" && "$mode" == "normal" ]]
+then
   /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP NORMAL MODE UPGRADE BECAUSE OF FLAG /home/pi/.firewalla/.local_patch ======='
   exit 0
+else
+  # local patch is effectively removed after managed patch (soft or hard)
+  sudo rm -f /home/pi/.firewalla/.local_patch
 fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
