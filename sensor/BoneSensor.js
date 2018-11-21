@@ -18,6 +18,8 @@ const log = require('../net2/logger.js')(__filename);
 
 const Bone = require('../lib/Bone');
 
+const extensionManager = require('./ExtensionManager.js')
+
 const Sensor = require('./Sensor.js').Sensor;
 
 const serviceConfigKey = "bone:service:config";
