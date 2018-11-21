@@ -55,5 +55,4 @@ else
    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.HARD Starting $current_tag to $latest_tag"
    redis-cli publish System:Upgrade:Hard $latest_version
    redis-cli set sys:upgrade $latest_version
-   /home/pi/firewalla/scripts/fireupgrade.sh hard
 fi
