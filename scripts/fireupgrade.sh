@@ -210,11 +210,13 @@ fi
 # and BoneSensor.checkin() triggered upgrades are either "soft" or "hard"
 if [[ -e "/home/pi/.firewalla/.local_patch" && "$mode" == "normal" ]]
 then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE($mode) NO UPGRADE"
   echo '======= SKIP NORMAL MODE UPGRADE BECAUSE OF FLAG /home/pi/.firewalla/.local_patch ======='
   exit 0
 else
   # local patch is effectively removed after managed patch (soft or hard)
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE($mode) REMOVING LOCAL PATCH"
+  echo '======= REMOVE LOCAL PATCH FLAG /home/pi/.firewalla/.local_patch ======='
   sudo rm -f /home/pi/.firewalla/.local_patch
 fi
 
@@ -233,7 +235,7 @@ echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
 
-/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
+/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE($mode) Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
