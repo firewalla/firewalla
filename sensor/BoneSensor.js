@@ -48,25 +48,25 @@ class BoneSensor extends Sensor {
 
   apiRun() {
     // register get/set handlers for fireapi
-    extensionManager.onGet("cloudService", (msg) => {
-      return this.getCloudServerURL();
+    extensionManager.onGet("cloudInstance", (msg) => {
+      return this.getCloudInstanceURL();
     })
 
-    extensionManager.onSet("cloudService", (msg, data) => {
+    extensionManager.onSet("cloudInstance", (msg, data) => {
       const url = `https://firewalla.encipher.io/bone/api/${data}`;
-      return this.setCloudServerURL(url);
+      return this.setCloudInstanceURL(url);
     })
   }
 
-  async getCloudServerURL() {
+  async getCloudInstanceURL() {
     return rclient.getAsync(CLOUD_URL_KEY);
   }
 
-  async setCloudServerURL(url) {
-    const curUrl = await this.getCloudServerURL();
+  async setCloudInstanceURL(url) {
+    const curUrl = await this.getCloudInstanceURL();
     if(curUrl === url) {
       return;
-    }
+    }    
 
     log.info(`Applying new cloud url: ${url}`);
 
@@ -79,16 +79,16 @@ class BoneSensor extends Sensor {
     });
   }
 
-  async applyNewCloudServerURL() {
-    const curUrl = await this.getCloudServerURL();
+  async applyNewCloudInstanceURL() {
+    const curUrl = await this.getCloudInstanceURL();
 
     log.info(`Applying new cloud server url ${curUrl}`);
-    
+
     return this.checkIn();
   }
 
   async checkIn() {
-    const url = await this.getCloudServerURL();
+    const url = await this.getCloudInstanceURL();
 
     if(url) {
       Bone.setEndpoint(url);
@@ -183,7 +183,7 @@ class BoneSensor extends Sensor {
     }, syncInterval);
 
     sem.on("CloudURLUpdate", async (event) => {
-      return this.applyNewCloudServerURL()
+      return this.applyNewCloudInstanceURL()
     })
   }
 
