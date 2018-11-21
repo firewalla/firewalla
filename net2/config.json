@@ -227,7 +227,6 @@
       "path": "/blog/current/software.log",
       "expires": 604800
     },
-<<<<<<< HEAD
     "http": {
       "path": "/blog/current/http.log",
       "expires": 1800
