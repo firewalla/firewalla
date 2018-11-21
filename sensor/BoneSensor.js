@@ -36,6 +36,8 @@ const fConfig = require('../net2/config.js').getConfig();
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const CLOUD_URL_KEY = "sys:bone:url";
+
 class BoneSensor extends Sensor {
   scheduledJob() {
     Bone.waitUtilCloudReady(() => {
