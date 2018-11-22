@@ -198,6 +198,7 @@ current_tag=$(git describe --tags)
 echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
+redis-cli hset sys:upgrade previous.tag $current_tag
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
@@ -234,6 +235,7 @@ current_tag=$(git describe --tags)
 echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
+redis-cli hset sys:upgrade current.tag $current_tag
 
 /home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE($mode) Done $branch"
 

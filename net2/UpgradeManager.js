@@ -21,7 +21,7 @@ function finishUpgrade() {
 }
 
 function getUpgradeInfo(callback) {
-    rclient.get("sys:upgrade",(err,data)=>{ 
+    rclient.hgetall("sys:upgrade", (err, data)=>{ 
         if (callback) {
             callback(err,data);
         }

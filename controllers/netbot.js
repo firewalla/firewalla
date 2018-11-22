@@ -695,26 +695,6 @@ class netBot extends ControllerBot {
         }
       }
     });
-    this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
-      /*
-       let m = null;
-       let n = null;
-       log.info("Monitor:Flow:In", channel, ip, msg, "=====");
-       if (ip && msg) {
-       if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-       let flow = msg['txRatioRanked'][0];
-       if (flow.rank > 0) {
-       return;
-       }
-       m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-       n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-       }
-       }
-       if (m)
-       this.tx2(this.primarygid, m, n, {id:msg.id});
-       */
-    });
-
 
     this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
       if (msg) {
@@ -796,7 +776,9 @@ class netBot extends ControllerBot {
     setTimeout(() => {
       this.scanStart();
       async(() => {
-        let branchChanged = await (sysManager.isBranchJustChanged())
+        let branchChanged = await (sysManager.isBranchJustChanged());
+        let upgrade = await (sysManager.getUpgradeInfo());
+        let sysInfo = await (sysManager.getSysInfoAsync());
         if(branchChanged) {
           let branch = null
           
@@ -812,6 +794,7 @@ class netBot extends ControllerBot {
             break;
           default:
             // do nothing, should not happen here
+            log.error("=== Got branch change status", branchChanged, "===")
             break;
           }
 
@@ -822,7 +805,14 @@ class netBot extends ControllerBot {
             sysManager.clearBranchChangeFlag()            
           }
 
-        } else {
+        }
+        else if (upgrade['current.tag'] != upgrade['previous.tag']
+          && sysInfo.repo.tag === upgrade['current.tag'])
+          // An actual upgrade happended and it's finished
+        {
+          rclient.publish('System:Upgrade:Done', sysInfo.repo.tag);
+        }
+        else {
           if (sysManager.systemRebootedByUser(true)) {
             if (nm.canNotify() == true) {
               this.tx(this.primarygid, "200", "Firewalla reboot completed.");
@@ -868,7 +858,7 @@ class netBot extends ControllerBot {
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
              break;
-         case "System:Upgrade:Soft":
+         case "System:Upgrade:Done":
              if (msg) {
                 let notifyMsg = {
                   title: `Firewalla is upgraded to ${msg}`,
@@ -964,7 +954,7 @@ class netBot extends ControllerBot {
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
-    sclient.subscribe("System:Upgrade:Soft");
+    sclient.subscribe("System:Upgrade:Done");
     sclient.subscribe("SS:DOWN")
     sclient.subscribe("SS:FAILOVER")
     sclient.subscribe("SS:START:FAILED")
