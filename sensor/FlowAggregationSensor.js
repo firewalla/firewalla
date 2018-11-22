@@ -363,31 +363,28 @@ class FlowAggregationSensor extends Sensor {
     log.debug(msg);
 
     return async(() => {
-      let ips = await (hostTool.getIPsByMac(macAddress));
 
       let flows = [];
 
       let recentFlow = null;
 
-      ips.forEach((ip) => {
-        let cache = {};
+      let cache = {};
 
-        let outgoingFlows = await (flowTool.queryFlows(ip, "in", begin, end)); // in => outgoing
-        let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => {
-          return await (this._flowHasActivity(f, cache));
-        });
-
-        flows.push.apply(flows, outgoingFlowsHavingIntels);
-        recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
-
-
-        let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
-        let incomingFlowsHavingIntels = incomingFlows.filter((f) => {
-          return await (this._flowHasActivity(f, cache));
-        });
-        flows.push.apply(flows, incomingFlowsHavingIntels);
-        recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
+      let outgoingFlows = await (flowTool.queryFlows(macAddress, "in", begin, end)); // in => outgoing
+      let outgoingFlowsHavingIntels = outgoingFlows.filter((f) => {
+        return await (this._flowHasActivity(f, cache));
       });
+
+      flows.push.apply(flows, outgoingFlowsHavingIntels);
+      recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
+
+
+      let incomingFlows = await (flowTool.queryFlows(macAddress, "out", begin, end)); // out => incoming
+      let incomingFlowsHavingIntels = incomingFlows.filter((f) => {
+        return await (this._flowHasActivity(f, cache));
+      });
+      flows.push.apply(flows, incomingFlowsHavingIntels);
+      recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
 
       // now flows array should only contain flows having intels
 
@@ -476,16 +473,12 @@ class FlowAggregationSensor extends Sensor {
     log.debug(msg);
 
     return async(() => {
-      let ips = await (hostTool.getIPsByMac(macAddress));
-
       let flows = [];
-
-      ips.forEach((ip) => {
-        let outgoingFlows = await (flowTool.queryFlows(ip, "in", begin, end)); // in => outgoing
-        flows.push.apply(flows, outgoingFlows);
-        let incomingFlows = await (flowTool.queryFlows(ip, "out", begin, end)); // out => incoming
-        flows.push.apply(flows, incomingFlows);
-      });
+      let outgoingFlows = await (flowTool.queryFlows(macAddress, "in", begin, end)); // in => outgoing
+      flows.push.apply(flows, outgoingFlows);
+      let incomingFlows = await (flowTool.queryFlows(macAddress, "out", begin, end)); // out => incoming
+      flows.push.apply(flows, incomingFlows);
+      
 
       let traffic = this.trafficGroupByDestIP(flows);
 

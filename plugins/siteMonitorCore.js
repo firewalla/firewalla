@@ -125,15 +125,15 @@ this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, ip
     console.log("Discovery Started");
 });
 
-function flows(listip, direction) {
-    flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true,false, (err, result) => {
-        console.log("--- Connectionby most recent ---", result.length);
+async function flows(mac, direction) {
+    let {connections, activities} = await flowManager.summarizeConnections(mac, direction, end, start, "time", hours, true,false);
+        console.log("--- Connection by most recent ---", connections.length);
         let max = 10;
         if (program.dynaflow) {
             max = 100;
         }
-        for (let i in result) {
-            let s = result[i];
+        for (let i in connections) {
+            let s = connections[i];
             if (program.dynaflow) {
                 console.log(s.dhname);
             } else {
@@ -143,21 +143,21 @@ function flows(listip, direction) {
                 break;
             }
         }
-        flowManager.sort(result, 'rxdata');
+        flowManager.sort(connections, 'rxdata');
         console.log("-----------Sort by rx------------------------");
         max = 10;
-        for (let i in result) {
-            let s = result[i];
+        for (let i in connections) {
+            let s = connections[i];
             console.log(flowManager.toStringShort(s));
             if (max-- < 0) {
                 break;
             }
         }
-        flowManager.sort(result, 'txdata');
+        flowManager.sort(connections, 'txdata');
         console.log("-----------  Sort by tx------------------");
         max = 10;
-        for (let i in result) {
-            let s = result[i];
+        for (let i in connections) {
+            let s = connections[i];
             console.log(flowManager.toStringShort(s));
             if (max-- < 0) {
                 break;
@@ -165,17 +165,15 @@ function flows(listip, direction) {
         }
 
         if (direction == 'in')
-            flows(listip, 'out');
+            await flows(mac, 'out');
 
         console.log("Contacting FlowManager");
-        flowManager.getFlowCharacteristics(result, direction, 1000000, 2);
-    });
+        flowManager.getFlowCharacteristics(connections, direction, 1000000, 2);
 }
 
 setTimeout(() => {
     if (program.host == null) {
         watcher.getHosts((err, result) => {
-            let listip = [];
             flowManager.summarizeBytes(result, end, start, (end - start) / 16, (err, sys) => {
                 console.log("System Rx", sys);
                 for (let i in result) {
@@ -193,19 +191,10 @@ setTimeout(() => {
                     if (program.spoof) {
                         result[i].spoof(true);
                     }
-                    listip.push(result[i].o.ipv4Addr);
-                    if (result[i].ipv6Addr && result[i].ipv6Addr.length > 0) {
-                        for (let j in result[i]['ipv6Addr']) {
-                            listip.push(result[i]['ipv6Addr'][j]);
-                        }
-                    }
-
                     result[i].redisCleanRange(48);
+                    flows(result[i].o.mac, 'in');
                 }
-                flows(listip, 'in');
-
             });
-
         });
     } else {
         ip = program.host;
@@ -234,21 +223,12 @@ setTimeout(() => {
 
                 }
                 console.log("--- Connectionby most recent ---");
-                let listp = [];
-                listp.push(result.o.ipv4Addr);
-                if (result.ipv6Addr && result.ipv6Addr.length > 0) {
-                    for (let j in result.ipv6Addr) {
-                        listp.push(result.ipv6Addr[j]);
-                    }
-                }
 
-                flows(listp, 'in');
+                flows(result[i].o.mac, 'in');
 
                 if (program.spoof) {
                     result.spoof(true);
                 }
-
-
             });
         });
     }

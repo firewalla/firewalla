@@ -165,11 +165,11 @@ function run() {
     }
 
     setStatus(_status, {running: true, runBy: 'scheduler'});
-    flowMonitor.run(type, tick, () => {
+    flowMonitor.run(type, tick).then(() => {
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
-    });
+    })
   }, tick * 1000);
 
   setInterval(() => {
@@ -193,7 +193,7 @@ function run() {
     }
     
     setStatus(_status, {running: true, runBy: 'scheduler'});
-    flowMonitor.run(type, 60, () => {
+    flowMonitor.run(type, 60).then(() => {
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
@@ -210,7 +210,7 @@ function run() {
       return;
     }
     setStatus(_status, {running: true, runBy: 'signal'});
-    flowMonitor.run(type, tick, () => {
+    flowMonitor.run(type, tick).then(() => {
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
@@ -227,7 +227,7 @@ function run() {
       return;
     }
     setStatus(_status, {running: true, runBy: 'signal'});
-    flowMonitor.run(type, 60, () => {
+    flowMonitor.run(type, 60).then(() => {
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
