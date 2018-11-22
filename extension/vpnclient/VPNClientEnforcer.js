@@ -25,6 +25,8 @@ const hostTool = new HostTool();
 const Config = require('../../net2/config.js');
 const fConfig = Config.getConfig();
 
+const minimatch = require('minimatch')
+
 const execAsync = util.promisify(cp.exec);
 var instance = null;
 
