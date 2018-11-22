@@ -139,7 +139,7 @@ module.exports = class {
       })
 
       upgradeManager.getUpgradeInfo((err, data) => {
-        if (data.hard) {
+        if (data && data.hard) {
           this.upgradeEvent = data.hard;
         }
       });
@@ -626,10 +626,10 @@ module.exports = class {
       callback(null,{
         ip: this.myIp(),
         mac: this.myMAC(),
-        serial: serial,
-        repoBranch: repoBranch,
-        repoHead: repoHead,
-        repoTag: repoTag,
+        serial: this.serial,
+        repoBranch: this.repo.branch,
+        repoHead: this.repo.head,
+        repoTag: this.repo.tag,
         language: this.language,
         timezone: this.timezone,
         memory: data

@@ -42,7 +42,7 @@ latest_major_version=${splited_latest_version[0]}
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.CHECK Starting $current_tag,$latest_tag,$current_version,$latest_version,$current_major_version,$latest_major_version"
 
-if [ "$current_tag" == "$latest_tag" ]; then  
+if [ "$current_tag" == "$latest_tag" ]; then
    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.DONE.NOTHING"
    exit 0
 fi 
@@ -53,5 +53,5 @@ if [ "$current_major_version" == "$latest_major_version" ]; then
 else
    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.HARD Starting $current_tag to $latest_tag"
    redis-cli publish System:Upgrade:Hard $latest_version
-   redis-cli set sys:upgrade hard $latest_version
+   redis-cli hset sys:upgrade hard $latest_version
 fi
