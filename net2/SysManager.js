@@ -138,8 +138,9 @@ module.exports = class {
         }
       })
 
-      upgradeManager.getUpgradeInfo((err, data) => {
-        if (data && data.hard) {
+      // only in hard upgrade mode
+      rclient.get("sys:upgrade", (err, data)=>{
+        if (data) {
           this.upgradeEvent = data.hard;
         }
       });
@@ -577,12 +578,10 @@ module.exports = class {
   }
 
   /*
-/* 
-  /*
--rw-rw-r-- 1 pi pi  7 Sep 30 06:53 REPO_BRANCH
--rw-rw-r-- 1 pi pi 41 Sep 30 06:55 REPO_HEAD
--rw-rw-r-- 1 pi pi 19 Sep 30 06:55 REPO_TAG
-*/
+  -rw-rw-r-- 1 pi pi  7 Sep 30 06:53 REPO_BRANCH
+  -rw-rw-r-- 1 pi pi 41 Sep 30 06:55 REPO_HEAD
+  -rw-rw-r-- 1 pi pi 19 Sep 30 06:55 REPO_TAG
+  */
 
 
 
@@ -612,9 +611,9 @@ module.exports = class {
     }
 
     try {
-      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8");
-      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8");
-      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG","utf8");
+      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8").trim();
+      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
+      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG","utf8").trim();
     } catch (err) {
       log.error("Failed to load repo info from /tmp");
     }

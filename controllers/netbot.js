@@ -43,7 +43,6 @@ const VpnManager = require("../vpn/VpnManager.js");
 const vpnManager = new VpnManager('info');
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
-const upgradeManager = require("../net2/UpgradeManager.js");
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -778,8 +777,6 @@ class netBot extends ControllerBot {
       this.scanStart();
       async(() => {
         let branchChanged = await (sysManager.isBranchJustChanged());
-        let upgrade = await (upgradeManager.getUpgradeInfo());
-        let sysInfo = await (sysManager.getSysInfoAsync());
         if(branchChanged) {
           let branch = null
           
@@ -806,13 +803,6 @@ class netBot extends ControllerBot {
             sysManager.clearBranchChangeFlag()            
           }
 
-        }
-        else if (upgrade && upgrade['current.tag'] != upgrade['previous.tag']
-          && sysInfo.repo.tag === upgrade['current.tag'])
-          // An actual upgrade happended and it's finished
-        {
-          rclient.publish('System:Upgrade:Done', sysInfo.repo.tag);
-          rclient.hset('sys:upgrade', 'previous.tag', upgrade['current.tag']);
         }
         else {
           if (sysManager.systemRebootedByUser(true)) {

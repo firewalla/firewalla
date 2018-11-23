@@ -53,5 +53,5 @@ if [ "$current_major_version" == "$latest_major_version" ]; then
 else
    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.HARD Starting $current_tag to $latest_tag"
    redis-cli publish System:Upgrade:Hard $latest_version
-   redis-cli hset sys:upgrade hard $latest_version
+   redis-cli set sys:upgrade $latest_version
 fi
