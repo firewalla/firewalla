@@ -166,6 +166,7 @@ done
 if [[ $rc -ne 0 ]]
 then
     /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
+    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
     if [ -s /home/pi/scripts/check_fix_network.sh ]
     then
         external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/scripts/check_fix_network.sh'
@@ -198,27 +199,11 @@ current_tag=$(git describe --tags)
 echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
-redis-cli hset sys:upgrade previous.tag $current_tag
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
   /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
   exit 0
-fi
-
-# when local patch exists, normal upgrade is skipped
-# all "unmanaged" upgrades are treated as normal upgrade, periodical fireupgrade_check.sh
-# and BoneSensor.checkin() triggered upgrades are either "soft" or "hard"
-if [[ -e "/home/pi/.firewalla/.local_patch" && "$mode" == "normal" ]]
-then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE($mode) NO UPGRADE"
-  echo '======= SKIP NORMAL MODE UPGRADE BECAUSE OF FLAG /home/pi/.firewalla/.local_patch ======='
-  exit 0
-else
-  # local patch is effectively removed after managed patch (soft or hard)
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE($mode) REMOVING LOCAL PATCH"
-  echo '======= REMOVE LOCAL PATCH FLAG /home/pi/.firewalla/.local_patch ======='
-  sudo rm -f /home/pi/.firewalla/.local_patch
 fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
@@ -235,9 +220,8 @@ current_tag=$(git describe --tags)
 echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
-redis-cli hset sys:upgrade current.tag $current_tag
 
-/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE($mode) Done $branch"
+/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
