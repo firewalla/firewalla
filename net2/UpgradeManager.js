@@ -1,10 +1,11 @@
 'use strict';
-var childProcess = require('child_process');
+const fs = require("fs");
+
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const fs = require("fs");
 
 /*
  * If the system is upgrading ... 
@@ -18,18 +19,20 @@ function isUpgrading() {
  */
 async function finishUpgrade() {
   if (fs.existsSync("/tmp/FWUPGRADING")) {
+    log.info('FinishUpgrade');
     let sysInfo = await sysManager.getSysInfoAsync()
 
-    if (fs.existsSync('/tmp/BEGORE_UPGRADE_TAG')) {
-      let tagBeforeUpgrade = fs.readSync('/tmp/BEGORE_UPGRADE_TAG').trim();
+    if (fs.existsSync('/tmp/REPO_TAG_BEFORE_UPGRADE')) {
+      let tagBeforeUpgrade = fs.readSync('/tmp/REPO_TAG_BEFORE_UPGRADE').trim();
 
       // there's actually an version upgrade/change happened
       if (tagBeforeUpgrade != sysInfo.repoTag) {
+        log.info('Actual upgrade happened, sending notification');
         rclient.publish('System:Upgrade:Done', sysInfo.repoTag);
       }
     }
 
-    fs.writeFileSync('/tmp/BEGORE_UPGRADE_TAG', sysInfo.repoTag, 'utf8');
+    fs.writeFileSync('/tmp/REPO_TAG_BEFORE_UPGRADE', sysInfo.repoTag, 'utf8');
     fs.unlinkSync("/tmp/FWUPGRADING");
   }
 }
