@@ -11,19 +11,19 @@ const sysManager = new SysManager('info');
  * If the system is upgrading ... 
  */
 function isUpgrading() {
-  return fs.existsSync("/tmp/FWUPGRADING");
+  return fs.existsSync("/home/pi/.firewalla/run/upgrade-inprogress");
 }
 
 /* 
  * Mark the system finished rebooting after reboot
  */
 async function finishUpgrade() {
-  if (fs.existsSync("/tmp/FWUPGRADING")) {
+  let sysInfo = await sysManager.getSysInfoAsync()
+  if (fs.existsSync("/home/pi/.firewalla/run/upgrade-inprogress")) {
     log.info('FinishUpgrade');
-    let sysInfo = await sysManager.getSysInfoAsync()
 
-    if (fs.existsSync('/tmp/REPO_TAG_BEFORE_UPGRADE')) {
-      let tagBeforeUpgrade = fs.readSync('/tmp/REPO_TAG_BEFORE_UPGRADE').trim();
+    if (fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')) {
+      let tagBeforeUpgrade = fs.readSync('/home/pi/.firewalla/run/upgrade-pre-tag').trim();
 
       // there's actually an version upgrade/change happened
       if (tagBeforeUpgrade != sysInfo.repoTag) {
@@ -32,9 +32,9 @@ async function finishUpgrade() {
       }
     }
 
-    fs.writeFileSync('/tmp/REPO_TAG_BEFORE_UPGRADE', sysInfo.repoTag, 'utf8');
-    fs.unlinkSync("/tmp/FWUPGRADING");
+    fs.unlinkSync("/home/pi/.firewalla/run/upgrade-inprogress");
   }
+  fs.writeFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', sysInfo.repoTag, 'utf8');
 }
 
 // sys:upgrade is used only in HARD mode

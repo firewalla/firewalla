@@ -26,7 +26,7 @@ ${FIREWALLA_HOME}/scripts/fireupgrade_post.sh
 
 # call upgrade
 ${FIREWALLA_HOME}/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"
-touch /tmp/FWUPGRADING
+touch /home/pi/.firewalla/run/upgrade-inprogress
 touch /home/pi/.firewalla/managed_reboot
 
 # call main-run without restarting firekick

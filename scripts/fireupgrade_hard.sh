@@ -19,6 +19,6 @@
 # This script should only handle upgrade, nothing else
 
 /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed with reboot in hard mode"
-touch /tmp/FWUPGRADING
+touch /home/pi/.firewalla/run/upgrade-inprogress
 redis-cli del sys:upgrade >/dev/null
 /home/pi/firewalla/scripts/fire-reboot
