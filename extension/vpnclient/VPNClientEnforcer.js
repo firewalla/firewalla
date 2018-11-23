@@ -23,7 +23,7 @@ const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const Config = require('../../net2/config.js');
-const fConfig = Config.getConfig();
+let fConfig = Config.getConfig();
 
 const minimatch = require('minimatch')
 
