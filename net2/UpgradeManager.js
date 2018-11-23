@@ -1,7 +1,7 @@
 'use strict';
 var childProcess = require('child_process');
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 const fs = require("fs");

@@ -21,7 +21,6 @@ var network = require('network');
 var instance = null;
 var fs = require('fs');
 var license = require('../util/license.js');
-var upgradeManager = require("./UpgradeManager.js");
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
