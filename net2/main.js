@@ -268,7 +268,6 @@ function run() {
         type: 'IPTABLES_READY'
       });
 
-
       async(() => {
         await (mode.reloadSetupMode()) // make sure get latest mode from redis
         await (ModeManager.apply())
