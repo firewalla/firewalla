@@ -342,4 +342,5 @@ function run(listofcmds, eachCallback, finalCallback) {
           finalCallback(error, null);
       }
     );
+  })
 }

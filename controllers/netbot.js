@@ -947,11 +947,12 @@ class netBot extends ControllerBot {
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Done");
-    sclient.subscribe("SS:DOWN")
-    sclient.subscribe("SS:FAILOVER")
-    sclient.subscribe("SS:START:FAILED")
+    sclient.subscribe("SS:DOWN");
+    sclient.subscribe("SS:FAILOVER");
+    sclient.subscribe("SS:START:FAILED");
     sclient.subscribe("APP:NOTIFY");
 
+    rclient.hset("sys:config", "notification.ready", true);
   }
 
   boneMsgHandler(msg) {

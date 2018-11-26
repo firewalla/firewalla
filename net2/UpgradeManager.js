@@ -8,6 +8,21 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
+function sendNotification() {
+  rclient.hget('sys:config', 'notification.ready', (err, data) => {
+    if (err) return;  // halt, probably redis down
+
+    if (!data) {
+      log.info("Notification not ready, waiting...");
+      setTimeout(sendNotification, 1000*10);
+    }
+    else {
+      pclient.publish('System:Upgrade:Done', sysInfo.repoTag);
+    }
+
+  })
+}
+
 /*
  * If the system is upgrading ... 
  */
@@ -30,7 +45,8 @@ async function finishUpgrade() {
     // there's actually an version upgrade/change happened
     if (tagBeforeUpgrade != sysInfo.repoTag) {
       log.info('Actual upgrade happened, sending notification');
-      pclient.publish('System:Upgrade:Done', sysInfo.repoTag);
+      
+      sendNotification();
     }
 
     fs.unlinkSync("/home/pi/.firewalla/run/upgrade-inprogress");
