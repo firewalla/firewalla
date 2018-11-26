@@ -947,6 +947,7 @@ class netBot extends ControllerBot {
     });
     sclient.subscribe("System:Upgrade:Hard");
     sclient.subscribe("System:Upgrade:Done");
+    log.info('Subscribed to System:Upgrade:Done');
     sclient.subscribe("SS:DOWN")
     sclient.subscribe("SS:FAILOVER")
     sclient.subscribe("SS:START:FAILED")

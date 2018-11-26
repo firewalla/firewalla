@@ -100,11 +100,6 @@ module.exports = class {
     callback = callback || function () {
     }
 
-    if (require('./UpgradeManager.js').isUpgrading() == true) {
-      callback(null);
-      return;
-    }
-
     ip6table.flush((err, data) => {
       iptable.flush((err, data) => {
         let defaultTable = config['iptables']['defaults'];
