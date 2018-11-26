@@ -29,22 +29,27 @@ String.prototype.capitalizeFirstLetter = function () {
 var production = false;
 
 if (process.env.FWPRODUCTION) {
-  console.log("FWDEBUG SET TO PRODUCTION");
+  console.log("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
 if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-  console.log("FWDEBUG SET TO PRODUCTION");
+  console.log("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
 var globalLogLevel = 'info';
-if(production) {
+
+if (process.env.FWDEBUG) {
+  globalLogLevel = process.env.FWDEBUG;
+  console.log("LOGGER SET TO", globalLogLevel);
+}
+else if (production) {
   globalLogLevel = 'warn';
 }
 
 function getFileTransport() {
-  let loglevel = 'info';
+  let loglevel = globalLogLevel;
   // if (production) {
   //   loglevel = 'warn';
   // }   
@@ -73,13 +78,13 @@ function getFileTransport() {
 }
 
 function getConsoleTransport() {
-  let loglevel = 'info';
+  let loglevel = globalLogLevel;
   // if (production) {
   //   loglevel = 'warn';
   // }    
 
   return new(winston.transports.Console)({
-    loglevel: loglevel,
+    level: loglevel,
     timestamp: function() {
       return moment().format('YYYY-MM-DD HH:mm:ss')
     },
@@ -97,7 +102,7 @@ function getConsoleTransport() {
 
 function getTestTransport() {
   return new(winston.transports.File) ({
-    level: 'info',
+    level: globalLogLevel,
     name: 'log-file-test',
     filename: "test.log",
     dirname: "/home/pi/.forever",
@@ -123,11 +128,11 @@ if (process.env.NODE_ENV === 'test') {
 
 function setupLogger(transports) {  
   var logger = new (winston.Logger)({
+    level: globalLogLevel,
     transports: transports
   });
 
   return logger
-
 }
 
 // pass in function arguments object and returns string with whitespaces
@@ -163,8 +168,10 @@ module.exports = function (component) {
     }
   }
 
+  // winston 1.1.2 use different ordering on log levels
+
   wrap.info = function () {
-    if (logger.levels[getLogLevel()] < logger.levels['info']) {
+    if (logger.levels[getLogLevel()] > logger.levels['info']) {
       return // do nothing
     }
     logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
@@ -175,21 +182,21 @@ module.exports = function (component) {
   }
 
   wrap.error = function () {
-    if (logger.levels[getLogLevel()] < logger.levels['error']) {
+    if (logger.levels[getLogLevel()] > logger.levels['error']) {
       return // do nothing
     }
     logger.log.apply(logger, ["error", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.warn = function () {
-    if (logger.levels[getLogLevel()] < logger.levels['warn']) {
+    if (logger.levels[getLogLevel()] > logger.levels['warn']) {
       return // do nothing
     }
     logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.debug = function () {
-    if (logger.levels[getLogLevel()] < logger.levels['debug']) {
+    if (logger.levels[getLogLevel()] > logger.levels['debug']) {
       return // do nothing
     }
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
