@@ -132,6 +132,7 @@ module.exports = class {
               if(nbControllers[groupID]) {
                 return;
               }
+              rclient.setAsync("groupName", group.name);              
               let NetBotController = require("../../controllers/netbot.js");
               let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
               nbConfig.controller = config.controllers[0];

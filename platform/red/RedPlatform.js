@@ -57,6 +57,14 @@ class RedPlatform extends Platform {
   blinkPowerLED() {
     led.blink();
   }
+
+  async applyCPUDefaultProfile() {
+    return; // do nothing for red
+  }
+
+  async applyCPUBoostProfile() {
+    return; // do nothing for red
+  }
 }
 
 module.exports = RedPlatform;

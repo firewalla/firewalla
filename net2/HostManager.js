@@ -1918,6 +1918,13 @@ module.exports = class HostManager {
     return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));
   }
 
+  async getCloudURL(json) {
+    const url = await rclient.getAsync("sys:bone:url");
+    if(json && json.ept && json.ept.url && json.ept.url !== url)  {
+      json.ept.url = url;
+    }
+  }
+  
   /* 
    * data here may be used to recover Firewalla configuration 
    */
@@ -1932,6 +1939,7 @@ module.exports = class HostManager {
         this.exceptionRulesForInit(json),
         this.natDataForInit(json),
         this.ignoredIPDataForInit(json),
+        this.getCloudURL(json)
       ]
 
       this.basicDataForInit(json, {});

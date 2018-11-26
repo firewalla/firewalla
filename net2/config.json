@@ -66,7 +66,8 @@
   },
   "apiSensors": {
     "APIRelaySensor": {},
-    "VPNRelaySensor": {}
+    "VPNRelaySensor": {},
+    "BoneSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -107,9 +108,7 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
-    "PolicyGuardSensor": {
-      "interval": 7200000
-    },
+    "CPUSensor": {},
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
