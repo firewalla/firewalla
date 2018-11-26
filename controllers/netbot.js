@@ -952,7 +952,7 @@ class netBot extends ControllerBot {
     sclient.subscribe("SS:START:FAILED");
     sclient.subscribe("APP:NOTIFY");
 
-    rclient.hset("sys:config", "notification.ready", true);
+    rclient.hset("sys:service:FireApi", "notification", "ready");
   }
 
   boneMsgHandler(msg) {
