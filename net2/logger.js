@@ -171,10 +171,8 @@ module.exports = function (component) {
     }
   }
 
-  // winston 1.1.2 use different ordering on log levels
-
   wrap.info = function () {
-    if (logger.levels[getLogLevel()] > logger.levels['info']) {
+    if (logger.levels[getLogLevel()] < logger.levels['info']) {
       return // do nothing
     }
     logger.log.apply(logger, ["info", component + ": " + argumentsToString(arguments)]);
@@ -185,21 +183,21 @@ module.exports = function (component) {
   }
 
   wrap.error = function () {
-    if (logger.levels[getLogLevel()] > logger.levels['error']) {
+    if (logger.levels[getLogLevel()] < logger.levels['error']) {
       return // do nothing
     }
     logger.log.apply(logger, ["error", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.warn = function () {
-    if (logger.levels[getLogLevel()] > logger.levels['warn']) {
+    if (logger.levels[getLogLevel()] < logger.levels['warn']) {
       return // do nothing
     }
     logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
   wrap.debug = function () {
-    if (logger.levels[getLogLevel()] > logger.levels['debug']) {
+    if (logger.levels[getLogLevel()] < logger.levels['debug']) {
       return // do nothing
     }
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
