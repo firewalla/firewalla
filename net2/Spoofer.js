@@ -29,6 +29,11 @@ let firewalla = require('./Firewalla.js');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+// hosts in key unmonitored_hosts will be auto removed in 8 seconds.
+// hosts in key unmonitored_hosts_all will not be auto removed
+// key unmonitored_hosts_all is used to prevent same host from inserting to unmonitored_hosts multiple times
+// this way can reduce amount of good arp spoofs.
+const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
 
@@ -70,6 +75,7 @@ module.exports = class {
 
       if(flag) {
         await (rclient.saddAsync(monitoredKey, address))
+        await (rclient.sremAsync(unmonitoredKeyAll, address));
         await (rclient.sremAsync(unmonitoredKey, address))
       }
     })()
@@ -81,10 +87,14 @@ module.exports = class {
       
       if(flag) {
         await (rclient.sremAsync(monitoredKey, address))
-        await (rclient.saddAsync(unmonitoredKey, address))
-        setTimeout(() => {
-          rclient.sremAsync(unmonitoredKey, address)
-        }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
+        const isMember = await (rclient.sismemberAsync(unmonitoredKeyAll, address));
+        if(!isMember) {
+          await (rclient.saddAsync(unmonitoredKey, address))
+          await (rclient.saddAsync(unmonitoredKeyAll, address))
+          setTimeout(() => {
+            rclient.sremAsync(unmonitoredKey, address)
+          }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
+        }        
       }
     })()
   }  

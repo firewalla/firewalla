@@ -25,6 +25,7 @@ const ledPaths = [
 //  "/sys/devices/platform/leds/leds/nanopi:green:status",
   "/sys/devices/platform/leds/leds/nanopi:red:pwr"
 ];
+const log = require("../../net2/logger.js")(__filename);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
