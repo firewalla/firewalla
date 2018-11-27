@@ -115,7 +115,6 @@ module.exports = class {
       sclient.subscribe("System:LanguageChange");
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
-      sclient.subscribe("System:Upgrade:Done");
       sclient.subscribe("System:SSHPasswordChange");
 
       this.delayedActions();
@@ -140,7 +139,7 @@ module.exports = class {
       // only in hard upgrade mode
       rclient.get("sys:upgrade", (err, data)=>{
         if (data) {
-          this.upgradeEvent = data.hard;
+          this.upgradeEvent = data;
         }
       });
 

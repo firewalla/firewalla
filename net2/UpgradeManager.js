@@ -4,68 +4,50 @@ const fs = require("fs");
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const pclient = require('../util/redis_manager.js').getPublishClient();
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-
-function sendNotification(version) {
-  rclient.hget('sys:service:FireApi', 'notification', (err, data) => {
-    if (err) return;  // halt, probably redis down
-
-    if (!data) {
-      log.info("Notification not ready, waiting...");
-      setTimeout(() => {sendNotification(version)}, 1000*10);
-    }
-    else {
-      pclient.publish('System:Upgrade:Done', version);
-    }
-
-  })
-}
 
 /*
  * If the system is upgrading ... 
  */
 function isUpgrading() {
-  return fs.existsSync("/home/pi/.firewalla/run/upgrade-inprogress");
+  return require('fs').existsSync("/tmp/FWUPGRADING");
 }
 
 /* 
  * Mark the system finished rebooting after reboot
  */
-async function finishUpgrade() {
-  let sysInfo = await sysManager.getSysInfoAsync()
-  if (fs.existsSync("/home/pi/.firewalla/run/upgrade-inprogress")) {
-    log.info('FinishUpgrade');
-
-    let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
-      ? fs.readFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', 'utf8').trim()
-      : 'UnknownVersion';
-
-    // there's actually an version upgrade/change happened
-    if (tagBeforeUpgrade != sysInfo.repoTag) {
-      log.info('Actual upgrade happened, sending notification');
-      
-      sendNotification(sysInfo.repoTag);
-    }
-
-    fs.unlinkSync("/home/pi/.firewalla/run/upgrade-inprogress");
+function finishUpgrade() {
+  if (require('fs').existsSync("/tmp/FWUPGRADING")) {
+    require("fs").unlinkSync("/tmp/FWUPGRADING");
   }
-  fs.writeFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', sysInfo.repoTag, 'utf8');
 }
 
-// sys:upgrade is used only in HARD mode
-function getUpgradeInfo(callback) {
-  rclient.get("sys:upgrade", (err, data)=>{
-    if (callback) {
-      callback(err,data);
-    }
-  });
+async function getUpgradeInfo() {
+  let sysInfo = await sysManager.getSysInfoAsync();
+
+  let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
+    ? fs.readFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', 'utf8').trim()
+    : 'UnknownVersion';
+  
+  let result = {
+    upgraded: tagBeforeUpgrade != sysInfo.repoTag,
+    from:     tagBeforeUpgrade,
+    to:       sysInfo.repoTag
+  }
+
+  return result;
+}
+
+async function updateVersionTag() {
+  let sysInfo = await sysManager.getSysInfoAsync()
+  fs.writeFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', sysInfo.repoTag, 'utf8');
 }
 
 module.exports = {
   isUpgrading:isUpgrading,
   finishUpgrade: finishUpgrade, 
-  getUpgradeInfo: getUpgradeInfo
+  getUpgradeInfo: getUpgradeInfo,
+  updateVersionTag: updateVersionTag
 };
 

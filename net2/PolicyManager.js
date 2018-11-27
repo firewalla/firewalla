@@ -96,11 +96,13 @@ module.exports = class {
   }
 
   // this should flush ip6tables as well
-  //
-  // currently, this is only called on main.run(). flush iptables could affect all
-  // network traffics, make sure it's called only when necessary
   flush(config, callback) {
     callback = callback || function () {
+    }
+
+    if (require('./UpgradeManager.js').isUpgrading() == true) {
+      callback(null);
+      return;
     }
 
     ip6table.flush((err, data) => {

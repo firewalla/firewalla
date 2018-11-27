@@ -256,7 +256,7 @@ function run() {
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
-    var policyManager = new PolicyManager('debug');
+    var policyManager = new PolicyManager();
 
     policyManager.flush(config, (err) => {
       if(err) {

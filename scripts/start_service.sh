@@ -35,8 +35,6 @@ case $service in
         ;;
 esac
 
-redis-cli del "sys:service:$service"
-
 # Only update firewalla and node_modules if service has been up for more than a
 # given period of time in seconds
 service_elapsed_seconds=$(ps axo cmd,etimes | awk "/^${service}/ {print \$2}")

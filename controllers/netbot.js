@@ -43,6 +43,7 @@ const VpnManager = require("../vpn/VpnManager.js");
 const vpnManager = new VpnManager('info');
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
+const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -777,6 +778,7 @@ class netBot extends ControllerBot {
       this.scanStart();
       async(() => {
         let branchChanged = await (sysManager.isBranchJustChanged());
+        let upgradeInfo = await (upgradeManager.getUpgradeInfo())
         if(branchChanged) {
           let branch = null
           
@@ -802,7 +804,11 @@ class netBot extends ControllerBot {
             this.tx(this.primarygid, "200", msg)
             sysManager.clearBranchChangeFlag()            
           }
-
+        }
+        else if (upgradeInfo.upgraded) {
+          let msg = `Firewalla is upgraded to ${upgradeInfo.to}`;
+          this.tx(this.primarygid, "200", msg);
+          upgradeManager.updateVersionTag();
         }
         else {
           if (sysManager.systemRebootedByUser(true)) {
@@ -846,18 +852,6 @@ class netBot extends ControllerBot {
                    } 
                 let data = {
                    gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data);
-             }
-             break;
-         case "System:Upgrade:Done":
-             if (msg) {
-                let notifyMsg = {
-                  title: `Firewalla is upgraded to ${msg}`,
-                  body: ""
-                }
-                let data = {
-                  gid: this.primarygid,
                 };
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
@@ -946,13 +940,10 @@ class netBot extends ControllerBot {
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
-    sclient.subscribe("System:Upgrade:Done");
     sclient.subscribe("SS:DOWN");
     sclient.subscribe("SS:FAILOVER");
     sclient.subscribe("SS:START:FAILED");
     sclient.subscribe("APP:NOTIFY");
-
-    rclient.hset("sys:service:FireApi", "notification", "ready");
   }
 
   boneMsgHandler(msg) {
