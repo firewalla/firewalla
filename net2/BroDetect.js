@@ -617,7 +617,7 @@ module.exports = class {
   }
 
     // Only log ipv4 packets for now
-    async processConnData(data) {
+    processConnData(data) {
         try {
             let obj = JSON.parse(data);
             if (obj == null) {
@@ -973,38 +973,38 @@ module.exports = class {
             }
 
             if (tmpspec) {
-                const mac = await this._getMacByIP(tmpspec.lh);
-                if (!mac) {
+                this._getMacByIP(tmpspec.lh).then((mac) => {
+                  if (!mac) {
                     log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
                     return;
-                }
-                let key = "flow:conn:" + tmpspec.fd + ":" + mac;
-                let strdata = JSON.stringify(tmpspec);
+                  }
+                  let key = "flow:conn:" + tmpspec.fd + ":" + mac;
+                  let strdata = JSON.stringify(tmpspec);
 
-            //     totalInBytes+=Number(o.rb);
-            //     totalOutBytes+=Number(o.ob);
-            //     this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
-            // } else {
-            //     totalInBytes+=Number(o.ob);
-            //     totalOutBytes+=Number(o.rb);
-                
-            // not sure to use tmpspec.ts or now???
-                if(tmpspec.fd == 'in') {
-                  // use now instead of the start time of this flow
-                  this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
-                  //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
-                } else {
-                  this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
-                  //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
-                }
-                    
+                  //     totalInBytes+=Number(o.rb);
+                  //     totalOutBytes+=Number(o.ob);
+                  //     this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
+                  // } else {
+                  //     totalInBytes+=Number(o.ob);
+                  //     totalOutBytes+=Number(o.rb);
 
-                //let redisObj = [key, tmpspec.ts, strdata];
-                let redisObj = [key, now, strdata];
-                log.debug("Conn:Save:Temp", redisObj);
+                  // not sure to use tmpspec.ts or now???
+                  if (tmpspec.fd == 'in') {
+                    // use now instead of the start time of this flow
+                    this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
+                    //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+                  } else {
+                    this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
+                    //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+                  }
 
 
-                rclient.zadd(redisObj, (err, response) => {
+                  //let redisObj = [key, tmpspec.ts, strdata];
+                  let redisObj = [key, now, strdata];
+                  log.debug("Conn:Save:Temp", redisObj);
+
+
+                  rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {
 
                       let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
@@ -1023,10 +1023,14 @@ module.exports = class {
                       }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
 
-                        if (this.config.bro.conn.expires) {
-                            //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
-                        }
-                    } else {}
+                      if (this.config.bro.conn.expires) {
+                        //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
+                      }
+                    } else { }
+                  });
+                }).catch((err) => {
+                  log.error("Unable to save tmpspec: " + JSON.stringify(tmpspec), err);
+                  return;
                 });
             }
 
@@ -1058,40 +1062,41 @@ module.exports = class {
                         log.error("Conn:Save:AFMAP:EXCEPTION", e);
                     }
                     delete spec._afmap;
-                    const mac = await this._getMacByIP(spec.lh);
-                    if (!mac) {
+                    this._getMacByIP(spec.lh).then((mac) => {
+                      if (!mac) {
                         log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
-                        continue;
-                    }
-                    let key = "flow:conn:" + spec.fd + ":" + mac;
-                    let strdata = JSON.stringify(spec);
-                    let ts = spec._ts;
-                    if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
-                        ts = spec.ts;
-                    }
-                    let redisObj = [key, ts, strdata];
-                    if (stashed[key]) {
-                        stashed[key].push(redisObj);
-                    } else {
-                        stashed[key]=[redisObj];
-                    }
-
-
-                    try {
-                        if (spec.ob>0 && spec.rb>0 && spec.ct>1) {
+                      } else {
+                        let key = "flow:conn:" + spec.fd + ":" + mac;
+                        let strdata = JSON.stringify(spec);
+                        let ts = spec._ts;
+                        if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
+                          ts = spec.ts;
+                        }
+                        let redisObj = [key, ts, strdata];
+                        if (stashed[key]) {
+                          stashed[key].push(redisObj);
+                        } else {
+                          stashed[key]=[redisObj];
+                        }
+  
+                        try {
+                          if (spec.ob>0 && spec.rb>0 && spec.ct>1) {
                             let hostChanged = hostsChanged[spec.lh];
                             if (hostChanged == null) {
-                                hostsChanged[spec.lh] = Number(spec.ts);
+                              hostsChanged[spec.lh] = Number(spec.ts);
                             } else {
-                                if (hostChanged < spec.ts) {
-                                    hostsChanged[spec.lh] = spec.ts;
-                                }
+                              if (hostChanged < spec.ts) {
+                                hostsChanged[spec.lh] = spec.ts;
+                              }
                             }
+                          }
+                        } catch (e) {
+                          log.error("Conn:Save:Host:EXCEPTION", e);
                         }
-                    } catch (e) {
-                        log.error("Conn:Save:Host:EXCEPTION", e);
-                    }
-
+                      }
+                    }).catch((err) => {
+                      log.error("Failed to update flow stash", err);
+                    });
                 }
 
                 let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
