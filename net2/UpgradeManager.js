@@ -11,15 +11,15 @@ const sysManager = new SysManager('info');
  * If the system is upgrading ... 
  */
 function isUpgrading() {
-  return require('fs').existsSync("/tmp/FWUPGRADING");
+  return fs.existsSync("/tmp/FWUPGRADING");
 }
 
 /* 
  * Mark the system finished rebooting after reboot
  */
 function finishUpgrade() {
-  if (require('fs').existsSync("/tmp/FWUPGRADING")) {
-    require("fs").unlinkSync("/tmp/FWUPGRADING");
+  if (fs.existsSync("/tmp/FWUPGRADING")) {
+    fs.unlinkSync("/tmp/FWUPGRADING");
   }
 }
 
