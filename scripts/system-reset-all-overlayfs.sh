@@ -6,6 +6,10 @@
 # clean database
 /usr/bin/redis-cli flushall
 
+# remove rdb file in case of corrupted rdb files
+sudo systemctl stop redis-server
+sudo rm /data/redis/*
+
 # clean up logs
 : ${FIREWALLA_LOG_DIR:=/log}
 
