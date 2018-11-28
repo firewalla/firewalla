@@ -337,7 +337,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             platform.turnOffPowerLED();
 
             fwDiag.submitInfo({
-              event: "PAIREND",
+              event: "PAIREND_TIMEOUT",
               msg: "Pairing Ended",
               gidPrefix: gidPrefix
             }).catch((err) => {
@@ -410,7 +410,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             platform.turnOffPowerLED();
 
             fwDiag.submitInfo({
-              event: "PAIREND",
+              event: "PAIREND_TIMEOUT",
               msg: "Pairing Ended",
               gidPrefix: gidPrefix
             }).catch((err) => {
