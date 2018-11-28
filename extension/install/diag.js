@@ -13,6 +13,12 @@ const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const model = platform.getName();
 const serial = platform.getBoardSerial();
+const fs = require('fs');
+const Promise = require('bluebird');
+
+const f = require('../../net2/Firewalla.js');
+
+Promise.promisifyAll(fs);
 
 const rp = require('request-promise');
 
@@ -81,6 +87,16 @@ class FWDiag {
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
+  async hasLicenseFile() {
+    const filePath = `${f.getHiddenFolder()}/license`;
+    try {
+      const stat = fs.accessAsync(filePath, fs.constants.F_OK);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -136,12 +152,13 @@ class FWDiag {
 
     const version = this.getVersion();
 
-    const [gatewayMac, branch, longVersion, memory, gid] = await require('bluebird').all([
+    const [gatewayMac, branch, longVersion, memory, gid, hasLicense] = await require('bluebird').all([
       this.getGatewayMac(gateway),
       this.getBranchInfo(),
       this.getLongVersion(),
       this.getTotalMemory(),
-      this.getGID()
+      this.getGID(),
+      this.hasLicenseFile()
     ]);
 
     return {      
@@ -154,7 +171,8 @@ class FWDiag {
       memory,
       model,
       serial,
-      gid
+      gid,
+      hasLicense
     };
   }
 
