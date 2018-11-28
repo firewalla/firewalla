@@ -187,7 +187,10 @@
     "FirewallaDiscoverSensor": {
       "listenPort": 4096
     },
-    "SubnetSensor": {}
+    "SubnetSensor": {},
+    "DataMigrationSensor": {
+      "migrationCodeNames": ["clairvoyant"]
+    }
   },
   "hooks": {
     "NewDeviceHook": {},

@@ -27,6 +27,8 @@ const exec = require('child-process-promise').exec
 
 let Promise = require('bluebird');
 
+const _ = require('lodash');
+
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 
@@ -1050,44 +1052,48 @@ class Host {
     return json;
   }
 
-  summarizeSoftware(ip, from, to, callback) {
-    rclient.zrevrangebyscore(["software:ip:" + ip, to, from], (err, result) => {
+  async summarizeSoftware(ip, from, to) {
+    try {
+      const result = await rclient.zrevrangebyscoreAsync(["software:ip:" + ip, to, from]);
       let softwaresdb = {};
-      if (err == null) {
-        log.debug("SUMMARIZE SOFTWARE: ", ip, from, to, result.length);
-        for (let i in result) {
-          let o = JSON.parse(result[i]);
-          let obj = softwaresdb[o.name];
-          if (obj == null) {
-            softwaresdb[o.name] = o;
-            o.lastActiveTimestamp = Number(o.ts);
-            o.count = 1;
-          } else {
-            if (obj.lastActiveTimestamp < Number(o.ts)) {
-              obj.lastActiveTimestamp = Number(o.ts);
-            }
-            obj.count += 1;
+      log.debug("SUMMARIZE SOFTWARE: ", ip, from, to, result.length);
+      for (let i in result) {
+        let o = JSON.parse(result[i]);
+        let obj = softwaresdb[o.name];
+        if (obj == null) {
+          softwaresdb[o.name] = o;
+          o.lastActiveTimestamp = Number(o.ts);
+          o.count = 1;
+        } else {
+          if (obj.lastActiveTimestamp < Number(o.ts)) {
+            obj.lastActiveTimestamp = Number(o.ts);
           }
+          obj.count += 1;
         }
-
-        let softwares = [];
-        for (let i in softwaresdb) {
-          softwares.push(softwaresdb[i]);
-        }
-        softwares.sort(function (a, b) {
-          return Number(b.count) - Number(a.count);
-        })
-        let softwaresrecent = softwares.slice(0);
-        softwaresrecent.sort(function (a, b) {
-          return Number(b.lastActiveTimestamp) - Number(a.lastActiveTimestamp);
-        })
-        callback(null, softwares, softwaresrecent);
-      } else {
-        log.error("Unable to search software");
-        callback(err, null, null);
       }
 
-    });
+      let softwares = [];
+      for (let i in softwaresdb) {
+        softwares.push(softwaresdb[i]);
+      }
+      softwares.sort(function (a, b) {
+        return Number(b.count) - Number(a.count);
+      })
+      let softwaresrecent = softwares.slice(0);
+      softwaresrecent.sort(function (a, b) {
+        return Number(b.lastActiveTimestamp) - Number(a.lastActiveTimestamp);
+      })
+      return {
+        byCount: softwares,
+        byTime: softwaresrecent
+      };
+    } catch (err) {
+      log.error("Unable to search software");
+      return {
+        byCount: null,
+        byTime: null
+      };
+    }
   }
 
   summarizeHttpFlows(ip, from, to, callback) {
@@ -1112,19 +1118,11 @@ class Host {
     rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
   }
 
-  getHostAsync(ip) {
-    return new Promise((resolve, reject) => {
-      this.getHost(ip, (err, host) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(host);
-        }
-      })
-    })
+  async getHostAsync(ip) {
+    return await this.getHost(ip);
   }
 
-  getHost(ip, callback) {
+  async getHost(ip) {
     let key = "host:ip4:" + ip;
     log.debug("Discovery:FindHostWithIP", key, ip);
     let start = "-inf";
@@ -1135,8 +1133,9 @@ class Host {
       start = now - this.summarygap * 60 * 60;
       end = now;
     }
-    rclient.hgetall(key, (err, data) => {
-      if (err == null && data != null) {
+    try {
+      const data = await rclient.hgetallAsync(key);
+      if (data != null) {
         this.o = data;
 
         if(this.mgr.type === 'server') {
@@ -1144,26 +1143,24 @@ class Host {
           this.subscribe(ip, "Intel:Detected");
         }
 
-        this.summarizeSoftware(ip, start, end, (err, sortedbycount, sortedbyrecent) => {
-          //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
-          this.softwareByCount = sortedbycount;
-          this.softwareByRecent = sortedbyrecent;
-          rclient.zrevrangebyscore(["notice:" + ip, end, start], (err, result) => {
-            this.notice = result
-            rclient.zrevrangebyscore(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10], (err, result) => {
-              this.http = result;
-              flowManager.summarizeConnections([ip], "in", end, start, "rxdata", 1, true,false, (err, result) => {
-                this.conn = result;
-                callback(null, this);
-              });
-            });
-          });
-        });
+        const {byCount, byTime} = await this.summarizeSoftware(ip, start, end);
+        //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
+        this.softwareByCount = byCount;
+        this.softwareByRecent = byTime;
+        let result = await rclient.zrevrangebyscoreAsync(["notice:" + ip, end, start]);
+        this.notice = result
+        result = await rclient.zrevrangebyscoreAsync(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10]);
+        this.http = result;
+        let {connections, activities} = flowManager.summarizeConnections(data.mac, "in", end, start, "rxdata", 1, true,false);
+        this.conn = connections;
+        return this;
       } else {
-        log.error("Discovery:FindHostWithIP:Error", key, err);
-        callback(err, null);
+        return null;
       }
-    });
+    } catch (err) {
+      log.error("Discovery:FindHostWithIP:Error", key, err);
+      return null;
+    }
   }
 
   redisclean() {
@@ -1791,7 +1788,7 @@ module.exports = class HostManager {
         } else {
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
-            if (!rule.scope) return true;
+            if (_.isEmpty(rule.scope)) return true;
 
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)

@@ -209,21 +209,18 @@ class FlowTool {
     json.flows.recent = [];
 
     return async(() => {
-      let ips = await (hostTool.getIPsByMac(mac));
       let allFlows = [];
-      ips.forEach((ip) => {
-        let flows = await(this.getRecentOutgoingConnections(ip, options));
-        flows.forEach((f) => {
-          f.device = mac;
-        });
-        allFlows.push.apply(allFlows, flows);
+      let flows = await(this.getRecentOutgoingConnections(mac, options));
+      flows.forEach((f) => {
+        f.device = mac;
+      });
+      allFlows.push.apply(allFlows, flows);
 
-        let flows2 = await(this.getRecentIncomingConnections(ip, options));
-        flows2.forEach((f) => {
-          f.device = mac;
-        });
-        allFlows.push.apply(allFlows, flows2);
-      })
+      let flows2 = await(this.getRecentIncomingConnections(mac, options));
+      flows2.forEach((f) => {
+        f.device = mac;
+      });
+      allFlows.push.apply(allFlows, flows2);
 
       allFlows.sort((a, b) => {
         return b.ts - a.ts;
@@ -277,12 +274,12 @@ class FlowTool {
     return f;
   }
 
-  getRecentOutgoingConnections(ip, options) {
-    return this.getRecentConnections(ip, "in", options)
+  getRecentOutgoingConnections(target, options) {
+    return this.getRecentConnections(target, "in", options)
   }
 
-  getRecentIncomingConnections(ip, options) {
-    return this.getRecentConnections(ip, "out", options);
+  getRecentIncomingConnections(target, options) {
+    return this.getRecentConnections(target, "out", options);
   }
 
 
@@ -352,21 +349,16 @@ class FlowTool {
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
     return async(() => {
-      let allIPs = await (hostTool.getAllIPs());
+      const allMacs = await (hostTool.getAllMACs());
       let allFlows = [];
-      allIPs.forEach((ips_mac) => {
-        let ips = ips_mac.ips
-        ips.forEach((ip) => {
-          options.mac = ips_mac.mac;
-          let flows = await (this.getRecentConnections(ip, direction, options));
-          flows.map((flow) => {
-            flow.device = ips_mac.mac
-          })
-
-          allFlows.push.apply(allFlows, flows);
-
-
+      allMacs.forEach((mac) => {        
+        options.mac = mac; // Why is options.mac set here? This function get recent connections of the entire network. It seems that a specific mac address doesn't make any sense.
+        let flows = await (this.getRecentConnections(mac, direction, options));
+        flows.map((flow) => {
+          flow.device = mac
         })
+
+        allFlows.push.apply(allFlows, flows);
       });
 
       allFlows.sort((a, b) => {
@@ -408,13 +400,13 @@ class FlowTool {
     });
   }
 
-  async _getTransferTrend(ip, destinationIP, options) {
+  async _getTransferTrend(target, destinationIP, options) {
     options = options || {};
     const end = options.end || Math.floor(new Date() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
     const direction = options.direction || 'in';
     
-    const key = util.format("flow:conn:%s:%s", direction, ip);
+    const key = util.format("flow:conn:%s:%s", direction, target);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
 
@@ -447,30 +439,30 @@ class FlowTool {
   async getTransferTrend(deviceMAC, destinationIP, options) {
     options = options || {};
     
-    const results = await hostTool.getIPsByMac(deviceMAC);
-
     const transfers = [];
 
-    for (let index = 0; index < results.length; index++) {
-      const ip = results[index];
-      const t_in = await this._getTransferTrend(ip, destinationIP, options);
-      transfers.push.apply(transfers, t_in);
-
+    if (!options.direction || options.direction === "in") {
       const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.direction = 'out';
-      const t_out = await this._getTransferTrend(ip, destinationIP, optionsCopy);
+      optionsCopy.direction = "in";
+      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      transfers.push.apply(transfers, t_in);
+    }
+    
+    if (!options.direction || options.direction === "out") {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.direction = "out";
+      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
       transfers.push.apply(transfers, t_out);
     }
-
     return this._aggregateTransferBy10Min(transfers);
   }
 
-  getRecentConnections(ip, direction, options) {
+  getRecentConnections(target, direction, options) {
     options = options || {};
 
     let max_recent_flow = options.maxRecentFlow || MAX_RECENT_FLOW;
 
-    let key = util.format("flow:conn:%s:%s", direction, ip);
+    let key = util.format("flow:conn:%s:%s", direction, target);
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
@@ -551,11 +543,11 @@ class FlowTool {
     })();
   }
 
-  getFlowKey(ip, type) {
-    return util.format("flow:conn:%s:%s", type, ip);
+  getFlowKey(mac, type) {
+    return util.format("flow:conn:%s:%s", type, mac);
   }
-  addFlow(ip, type, flow) {
-    let key = this.getFlowKey(ip, type);
+  addFlow(mac, type, flow) {
+    let key = this.getFlowKey(mac, type);
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -564,8 +556,8 @@ class FlowTool {
     return rclient.zaddAsync(key, flow.ts, JSON.stringify(flow));
   }
 
-  removeFlow(ip, type, flow) {
-    let key = this.getFlowKey(ip, type);
+  removeFlow(mac, type, flow) {
+    let key = this.getFlowKey(mac, type);
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -574,8 +566,8 @@ class FlowTool {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
-  flowExists(ip, type, flow) {
-    let key = this.getFlowKey(ip, type);
+  flowExists(mac, type, flow) {
+    let key = this.getFlowKey(mac, type);
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -592,8 +584,8 @@ class FlowTool {
     })();
   }
 
-  queryFlows(ip, type, begin, end) {
-    let key = this.getFlowKey(ip, type);
+  queryFlows(mac, type, begin, end) {
+    let key = this.getFlowKey(mac, type);
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
       .then((flowStrings) => {
