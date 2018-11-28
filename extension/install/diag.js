@@ -90,7 +90,7 @@ class FWDiag {
   async hasLicenseFile() {
     const filePath = `${f.getHiddenFolder()}/license`;
     try {
-      const stat = fs.accessAsync(filePath, fs.constants.F_OK);
+      const stat = await fs.accessAsync(filePath, fs.constants.F_OK);
       return true;
     } catch (err) {
       return false;
