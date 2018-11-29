@@ -592,14 +592,14 @@ class PolicyManager2 {
     this.loadActivePoliciesAsync(1000, {includingDisabled: 1})
       .then(rules => {
         // device specified policy
-        rclient.del('policy:mac:' + hostMac);
+        rclient.del('policy:mac:' + mac);
         policyIds = [];
         policyKeys = [];
 
         rules = rules.forEach(rule => {
           if (_.isEmpty(rule.scope)) return;
 
-          if (rule.scope.some(mac => mac == hostMac)) {
+          if (rule.scope.some(m => m == mac)) {
             // rule targets only deleted device
             if (rule.scope.length <= 1) {
               policyIds.push(rule.pid);
@@ -607,9 +607,9 @@ class PolicyManager2 {
             }
             // rule targets NOT only deleted device
             else {
-              let reducedScope = _.without(rule.scope, hostMac);
+              let reducedScope = _.without(rule.scope, mac);
               rclient.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
-              log.info('remove scope from policy:' + rule.pid, hostMac);
+              log.info('remove scope from policy:' + rule.pid, mac);
             }
           }
         })
