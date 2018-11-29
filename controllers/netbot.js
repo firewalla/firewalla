@@ -2991,8 +2991,8 @@ class netBot extends ControllerBot {
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.delAsync([
-                  "monitor:flow:in:" + ip;
-                  "monitor:flow:out:" + ip;
+                  "monitor:flow:in:" + ip,
+                  "monitor:flow:out:" + ip
                 ]);
               }
             });
