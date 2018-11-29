@@ -2980,7 +2980,7 @@ class netBot extends ControllerBot {
             await pm2.deleteMacRelatedPolicies(hostMac);
 
             await flowAggrTool.removeAggrFlowsAll(hostMac);
-            await flowManager.removeFlowAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
             ips.forEach(async (ip) => {

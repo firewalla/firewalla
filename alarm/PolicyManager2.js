@@ -731,15 +731,16 @@ class PolicyManager2 {
     if(typeof(number) == 'function') {
       callback = number;
       number = 1000; // by default load last 1000 policy rules, for self-protection
-      options = {}
+      options = {};
     }
 
     if(typeof options === 'function') {
-      callback = options
-      options = {}
+      callback = options;
+      options = {};
     }
 
-    callback = callback || function() {}
+    options = options || {};
+    callback = callback || function() {};
 
     rclient.zrevrange(policyActiveKey, 0, number -1 , (err, results) => {
       if(err) {
