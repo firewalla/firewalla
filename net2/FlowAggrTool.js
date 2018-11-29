@@ -175,7 +175,7 @@ class FlowAggrTool {
     return rclient.delAsync(key);
   }
 
-  removeAllFlowKeys(mac, trafficDirection, interval) {
+  async removeAllFlowKeys(mac, trafficDirection, interval) {
     let keyPattern =
       !trafficDirection ? util.format("aggrflow:%s:*", mac) :
       !interval         ? util.format("aggrflow:%s:%s:*", mac, trafficDirection) :
