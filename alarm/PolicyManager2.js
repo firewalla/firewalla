@@ -593,10 +593,10 @@ class PolicyManager2 {
       .then(rules => {
         // device specified policy
         rclient.del('policy:mac:' + mac);
-        policyIds = [];
-        policyKeys = [];
+        let policyIds = [];
+        let policyKeys = [];
 
-        rules = rules.forEach(rule => {
+        rules.forEach(rule => {
           if (_.isEmpty(rule.scope)) return;
 
           if (rule.scope.some(m => m == mac)) {
