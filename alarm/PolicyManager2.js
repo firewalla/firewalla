@@ -69,6 +69,8 @@ const scheduler = require('../extension/scheduler/scheduler.js')()
 
 const Queue = require('bee-queue')
 
+const _ = require('lodash')
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t);
@@ -586,6 +588,41 @@ class PolicyManager2 {
       });
   }
 
+  deleteMacRelatedPolicies(mac) {
+    this.loadActivePoliciesAsync(1000, {includingDisabled: 1})
+      .then(rules => {
+        // device specified policy
+        rclient.del('policy:mac:' + hostMac);
+        policyIds = [];
+        policyKeys = [];
+
+        rules = rules.forEach(rule => {
+          if (_.isEmpty(rule.scope)) return;
+
+          if (rule.scope.some(mac => mac == hostMac)) {
+            // rule targets only deleted device
+            if (rule.scope.length <= 1) {
+              policyIds.push(rule.pid);
+              policyKeys.push('policy:' + rule.pid);
+            }
+            // rule targets NOT only deleted device
+            else {
+              let reducedScope = _.without(rule.scope, hostMac);
+              rclient.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+              log.info('remove scope from policy:' + rule.pid, hostMac);
+            }
+          }
+        })
+
+        rclient.del(policyKeys);
+        rclient.zrem('policy_active', policyIds);
+        log.info('Deleted', mac, 'related policies:', policyKeys);
+      })
+      .catch(e => {
+        log.error('Error removing', mac, 'related policy & rules', e);
+      })
+  }
+
   jsonToPolicy(json) {
     if(!json) {
       return null;
@@ -674,10 +711,10 @@ class PolicyManager2 {
     });
   }
 
-  loadActivePoliciesAsync(number) {
+  loadActivePoliciesAsync(number, options) {
     number = number || 1000 // default 1000
     return new Promise((resolve, reject) => {
-      this.loadActivePolicies(number, (err, policies) => {
+      this.loadActivePolicies(number, options, (err, policies) => {
         if(err) {
           reject(err)
         } else {

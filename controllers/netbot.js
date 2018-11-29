@@ -107,6 +107,9 @@ const flowTool = require('../net2/FlowTool')();
 
 const i18n = require('../util/i18n');
 
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
+
 const NetBotTool = require('../net2/NetBotTool');
 const netBotTool = new NetBotTool();
 
@@ -2973,45 +2976,11 @@ class netBot extends ControllerBot {
           log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
-            // delete related rules
-            pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
-              if(err) {
-                throw new Error(err);
-              } else {
-                let multi = rclient.multi();
-                // device specified policy
-                multi.del('policy:mac:' + hostMac);
 
-                rules = rules.forEach(rule => {
-                  if (_.isEmpty(rule.scope)) return;
+            await pm2.deleteMacRelatedPolicies(hostMac);
 
-                  if (rule.scope.some(mac => mac == hostMac)) {
-                    // rule targets only deleted device
-                    if (rule.scope.length <= 1) {
-                      multi.del('policy:' + rule.pid);
-                      log.info('remove policy:' + rule.pid);
-                      multi.zrem('policy_active', rule.pid);
-                      log.info('remove from policy_active:', rule.pid);
-                    }
-                    // rule targets NOT only deleted device
-                    else {
-                      let reducedScope = _.without(rule.scope, hostMac);
-                      multi.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
-                      log.info('remove scope from policy:' + rule.pid, hostMac);
-                    }
-                  }
-                })
-
-                multi.execAsync()
-                  .catch(e => {
-                    log.info('Error removing related policy & rules', e);
-                  })
-                  .then(res => {
-                    log.info('Successfully removed rules and policies.', res);
-                  });
-              }
-            });
-
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
             ips.forEach(async (ip) => {
@@ -3019,6 +2988,12 @@ class netBot extends ControllerBot {
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
                 await hostTool.deleteHost(ip);
+
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.delAsync([
+                  "monitor:flow:in:" + ip;
+                  "monitor:flow:out:" + ip;
+                ]);
               }
             });
             await hostTool.deleteMac(hostMac);

@@ -14,18 +14,20 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let async2 = require('async');
+const async2 = require('async');
 
-let util = require('util');
+const util = require('util');
+
+const _ = require('lodash')
 
 let instance = null;
 
@@ -174,14 +176,14 @@ class FlowAggrTool {
   }
 
   removeAllFlowKeys(mac, trafficDirection, interval) {
-    let keyPattern = util.format("aggrflow:%s:%s:%s:*", mac, trafficDirection, interval);
+    let keyPattern =
+      !trafficDirection ? util.format("aggrflow:%s:*", mac) :
+      !interval         ? util.format("aggrflow:%s:%s:*", mac, trafficDirection) :
+                          util.format("aggrflow:%s:%s:%s:*", mac, trafficDirection, interval);
 
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern));
-      keys.forEach((key) => {
-        await (rclient.delAsync(key))
-      })
-    })();
+    let keys = await (rclient.keysAsync(keyPattern));
+    
+    return rclient.delAsync(keys);
   }
 
   // this is to make sure flow data is not flooded enough to consume all memory
@@ -382,15 +384,13 @@ class FlowAggrTool {
     return this.getTopSumFlowByKey(sumFlowKey, count);
   }
 
-  removeAllSumFlows(mac, trafficDirection) {
-    let keyPattern = util.format("sumflow:%s:%s:*", mac, trafficDirection);
+  async removeAllSumFlows(mac, trafficDirection) {
+    let keyPattern = trafficDirection
+      ? util.format("sumflow:%s:%s:*", mac, trafficDirection)
+      : util.format("sumflow:%s:*", mac);
 
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern));
-      keys.forEach((key) => {
-        await (rclient.delAsync(key))
-      })
-    })();
+    let keys = await (rclient.keysAsync(keyPattern));
+    return rclient.delAsync(keys);
   }
 
   getFlowTrafficByDestIP(mac, trafficDirection, interval, ts, destIP) {
@@ -568,6 +568,28 @@ class FlowAggrTool {
   getLastCategoryActivity(mac) {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
+  }
+
+  async removeAggrFlowsAll(mac) {
+    let keys = [];
+
+    let search = await (Promise.all([
+      rclient.keysAsync('lastsumflow:' + mac + ':*'),
+      rclient.keysAsync('category:host:' + mac + ':*'),
+      rclient.keysAsync('app:host:' + mac + ':*'),
+    ]))
+
+    keys.push(
+      ... _.flatten(search),
+      'lastcategory:host:' + mac,
+      'lastapp:host:' + mac
+    )
+
+    return Promise.all([
+      rclient.delAsync(keys),
+      this.removeAllFlowKeys(mac),
+      this.removeAllSumFlows(mac),
+    ])
   }
 }
 

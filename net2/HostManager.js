@@ -1096,19 +1096,6 @@ class Host {
     }
   }
 
-  summarizeHttpFlows(ip, from, to, callback) {
-    rclient.zrevrangebyscore(["flow:http:in:" + ip, to, from, "LIMIT", 0, 1000], (err, results) => {
-      if (err == null && results.length > 0) {
-        for (let i in results) {
-          let flow
-        }
-      } else {
-        log.error("Unable to search software");
-        callback(err, null, null);
-      }
-    });
-  }
-
   //This is an older function replaced by redisclean
   redisCleanRange(hours) {
     let now = Date.now() / 1000;
@@ -1431,22 +1418,6 @@ module.exports = class HostManager {
   on(event, callback) {
     this.callbacks[event] = callback;
   }
-
-  /*
-        getHost4(ip,callback) {
-            let key = "host:ip4:"+ip;
-            log.debug("Discovery:FindHostWithIP",key,ip);
-            rclient.hgetall(key, (err,data)=> {
-                if (data == null || err!=null) {
-                    callback(err, null);
-                } else {
-                    let host = new Host(data);
-                    callback(null,host);
-                }
-            });
-        }
-
-*/
 
   basicDataForInit(json, options) {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
