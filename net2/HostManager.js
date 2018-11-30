@@ -1988,6 +1988,13 @@ module.exports = class HostManager {
     }        
   }
 
+  async groupNameForInit(json) {
+    const groupName = await rclient.getAsync("groupName");
+    if(groupName) {
+      json.groupName = groupName;
+    }
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2052,7 +2059,8 @@ module.exports = class HostManager {
           this.ignoredIPDataForInit(json),
           this.boneDataForInit(json),
           this.encipherMembersForInit(json),
-          this.jwtTokenForInit(json)
+          this.jwtTokenForInit(json),
+          this.groupNameForInit(json)          
         ]
 
         this.basicDataForInit(json, options);

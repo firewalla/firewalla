@@ -19,6 +19,7 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
+const log = require('../../net2/logger.js')(__filename);
 
 const ledPaths = [
 //  "/sys/devices/platform/leds/leds/nanopi:green:status",
@@ -87,7 +88,7 @@ class BluePlatform extends Platform {
   }
 
   getCPUDefaultFile() {
-    return `{__dirname}/files/cpu_default.conf`;
+    return `${__dirname}/files/cpu_default.conf`;
   }
 
   async applyCPUDefaultProfile() {
@@ -102,7 +103,7 @@ class BluePlatform extends Platform {
   }
 
   getCPUBoostFile() {
-    return `{__dirname}/files/cpu_boost.conf`;
+    return `${__dirname}/files/cpu_boost.conf`;
   }
 
   async applyCPUBoostProfile() {
