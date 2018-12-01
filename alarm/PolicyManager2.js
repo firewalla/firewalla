@@ -20,11 +20,11 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let flat = require('flat');
+const flat = require('flat');
 
-let audit = require('../util/audit.js');
-let util = require('util');
-let Bone = require('../lib/Bone.js');
+const audit = require('../util/audit.js');
+const util = require('util');
+const Bone = require('../lib/Bone.js');
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -38,19 +38,19 @@ const sysManager = new SysManager('info');
 
 let instance = null;
 
-let policyActiveKey = "policy_active";
+const policyActiveKey = "policy_active";
 
-let policyIDKey = "policy:id";
-let policyPrefix = "policy:";
-let initID = 1;
+const policyIDKey = "policy:id";
+const policyPrefix = "policy:";
+const initID = 1;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
-let Block = require('../control/Block.js');
+const Block = require('../control/Block.js');
 
-let Policy = require('./Policy.js');
+const Policy = require('./Policy.js');
 
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
@@ -114,8 +114,8 @@ class PolicyManager2 {
 
     this.queue.process((job, done) => {
       const event = job.data
-      const policy = this.jsonToPolicy(event.policy)
-      const oldPolicy = this.jsonToPolicy(event.oldPolicy)
+      const policy = new Policy(event.policy)
+      const oldPolicy = new Policy(event.oldPolicy)
       const action = event.action
       
       switch(action) {
@@ -299,44 +299,30 @@ class PolicyManager2 {
     });
   }
 
-  createPolicyFromJson(json, callback) {
-    callback = callback || function() {}    
+  redisfyPolicy(policy) {
+    if (!policy instanceof Policy) {
+      log.error(new Error('Not Policy instance'));
+    }
 
-    callback(null, this.jsonToPolicy(json));
-  }
+    const p = JSON.parse(JSON.stringify(policy))
 
-  createPolicy(json) {
-    return this.jsonToPolicy(json)
-  }
-
-  normalizePoilcy(policy) {
     // convert array to string so that redis can store it as value
-    if(policy.scope) {
-      if (policy.scope.constructor.name === 'Array') {
-        if (policy.scope.length > 0)
-          policy.scope = JSON.stringify(policy.scope);
-        else
-          delete policy.scope;
-      }
-      else {
-        // TODO: delete scope is not proper here, while throwing Error will
-        // crash the process. We need to throw Error once it could properly
-        // handled
-        log.error('normalizePolicy: Invalid scope', policy.scope);
-      }
+    if(p.scope) {
+      if (p.scope.length > 0)
+        p.scope = JSON.stringify(p.scope);
+      else
+        delete p.scope;
     }
     
-    if(policy.expire && policy.expire === "") {
-      delete policy.expire;
+    if(p.expire && p.expire === "") {
+      delete p.expire;
     }
 
     if(policy.cronTime && policy.cronTime === "") {
-      delete policy.cronTime;
+      delete p.cronTime;
     }
-
-    if(policy.activatedTime && policy.activatedTime === "") {
-      delete policy.activatedTime;
-    }
+    
+    return flat.flatten(p);
   }
 
   updatePolicyAsync(policy) {
@@ -344,26 +330,21 @@ class PolicyManager2 {
     if(pid) {
       const policyKey = policyPrefix + pid;
       return async(() => {
-        const policyCopy = JSON.parse(JSON.stringify(policy))
+        let redisfied = this.redisfyPolicy(policy);
 
-        this.normalizePoilcy(policyCopy);
+        await (rclient.hmsetAsync(policyKey, redisfied));
 
-        await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
-
-        if(policyCopy.expire === "" || ! "expire" in policyCopy) {
+        if (!redisfied.expire) {
           await (rclient.hdelAsync(policyKey, "expire"))
         }
-        if(policyCopy.cronTime === "" || ! "cronTime" in policyCopy) {
+        if (!redisfied.cronTime) {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
         }
-        if(policyCopy.activatedTime === "" || ! "activatedTime" in policyCopy) {
+        if (!redisfied.activatedTime) {
           await (rclient.hdelAsync(policyKey, "activatedTime"))
         }
-        
-        if(policyCopy.scope === "" || 
-        ! "scope" in policyCopy || 
-        (policyCopy.constructor.name === 'Array' && policy.length === 0)) {
+        if (!redisfied.scope) {
           await (rclient.hdelAsync(policyKey, "scope"))
         }
       })()
@@ -399,23 +380,21 @@ class PolicyManager2 {
 
       let policyKey = policyPrefix + id;
 
-      const policyCopy = JSON.parse(JSON.stringify(policy))
-
-      this.normalizePoilcy(policyCopy);
+      let redisfied = this.redisfyPolicy(policy);
     
-      rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
+      rclient.hmset(policyKey, redisfied, (err) => {
         if(err) {
           log.error("Failed to set policy: " + err);
           callback(err);
           return;
         }
 
-        this.addToActiveQueue(policyCopy, (err) => {
+        this.addToActiveQueue(policy, (err) => {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
-          this.tryPolicyEnforcement(policyCopy)
-          callback(null, policyCopy)
+          this.tryPolicyEnforcement(policy)
+          callback(null, policy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
@@ -425,6 +404,7 @@ class PolicyManager2 {
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
+    if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
@@ -586,23 +566,6 @@ class PolicyManager2 {
       });
   }
 
-  jsonToPolicy(json) {
-    if(!json) {
-      return null;
-    }
-
-    let proto = Policy.prototype;
-    if(proto) {
-      let obj = Object.assign(Object.create(proto), json);
-      if(!obj.timestamp)
-        obj.timestamp = new Date() / 1000;
-      return obj;
-    } else {
-      log.error("Unsupported policy type: " + json.type);
-      return null;
-    }
-  }
-
   idsToPolicies(ids, callback) {
     let multi = rclient.multi();
 
@@ -617,17 +580,9 @@ class PolicyManager2 {
         return;
       }
 
-      let rr = results.map((r) => {
-        if(r && r.scope && r.scope.constructor.name === 'String') {
-          try {
-            r.scope = JSON.parse(r.scope)
-          } catch(err) {
-            log.error("Failed to parse policy scope string:", r.scope, {})
-            r.scope = []
-          }
-        }
-        return this.jsonToPolicy(r)
-      }).filter((r) => r != null)
+      let rr = results
+        .map((r) => new Policy(r))
+        .filter((r) => r != null)
 
       // recent first
       rr.sort((a, b) => {

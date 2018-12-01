@@ -1031,7 +1031,7 @@ module.exports = class {
         }
 
         let p = new Policy({
-          type: i_type, //alarm.type,
+          type: i_type,
           alarm_type: alarm.type,
           target: i_target,
           aid: alarmID,

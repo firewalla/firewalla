@@ -15,15 +15,16 @@
 
 'use strict'
 
-let express = require('express');
-let router = express.Router();
-let bodyParser = require('body-parser')
+const express = require('express');
+const router = express.Router();
+const bodyParser = require('body-parser')
 
-let PM2 = require('../../alarm/PolicyManager2.js');
-let pm2 = new PM2();
+const Policy = require('../../alarm/Policy.js');
+const PM2 = require('../../alarm/PolicyManager2.js');
+const pm2 = new PM2();
 
-let AM2 = require('../../alarm/AlarmManager2');
-let am2 = new AM2();
+const AM2 = require('../../alarm/AlarmManager2');
+const am2 = new AM2();
 
 
 const async = require('asyncawait/async')
@@ -73,19 +74,18 @@ let jsonParser = bodyParser.json()
 router.post('/create',
             jsonParser,
             (req, res, next) => {
-              pm2.createPolicyFromJson(req.body, (err, policy) => {
-                if(err) {
-                  res.status(400).send("Invalid policy data");
-                  return;
-                }
+              let policy = new Policy(req.body);
+              if(policy = null) {
+                res.status(400).send("Invalid policy data");
+                return;
+              }
 
-                pm2.checkAndSave(policy, (err, policyID) => {
-                  if(err) {
-                    res.status(500).send('Failed to create json: ' + err);
-                  } else {
-                    res.status(201).json({policyID:policyID});
-                  }
-                });
+              pm2.checkAndSave(policy, (err, policyID) => {
+                if(err) {
+                  res.status(500).send('Failed to create json: ' + err);
+                } else {
+                  res.status(201).json({policyID:policyID});
+                }
               });
             });
 
@@ -104,19 +104,18 @@ router.post('/create/ip_port',
                 type: "ip_port"
               };
 
-              pm2.createPolicyFromJson(json, (err, policy) => {
-                if(err) {
-                  res.status(400).send("Invalid policy data");
-                  return;
-                }
+              let policy = new Policy(json);
+              if(policy == null) {
+                res.status(400).send("Invalid policy data");
+                return;
+              }
 
-                pm2.checkAndSave(policy, (err, policyID) => {
-                  if(err) {
-                    res.status(400).send('Failed to create json: ' + err);
-                  } else {
-                    res.status(201).json({policyID:policyID});
-                  }
-                });
+              pm2.checkAndSave(policy, (err, policyID) => {
+                if(err) {
+                  res.status(400).send('Failed to create json: ' + err);
+                } else {
+                  res.status(201).json({policyID:policyID});
+                }
               });
             });
 

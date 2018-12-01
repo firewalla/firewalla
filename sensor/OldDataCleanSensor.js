@@ -23,6 +23,7 @@ let Sensor = require('./Sensor.js').Sensor;
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
+const Policy = require('../alarm/Policy.js')
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
@@ -372,7 +373,7 @@ class OldDataCleanSensor extends Sensor {
             if(!rule) {
               log.info(`Migrating blockin policy for host ${mac} to policyRule`)
               const hostInfo = await (hostTool.getMACEntry(mac))
-              const newRule = pm2.createPolicy({
+              const newRule = new Policy({
                 target: mac,
                 type: "mac",
                 target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,

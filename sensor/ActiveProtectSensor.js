@@ -27,6 +27,7 @@ const extensionManager = require('./ExtensionManager.js')
 
 const fc = require('../net2/config.js')
 
+const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
@@ -77,7 +78,7 @@ class ActiveProtectSensor extends Sensor {
         type: policyType
       }
 
-      const policy = pm2.createPolicy(policyPayload);
+      const policy = new Policy(policyPayload);
 
       try {
         const policyResult = await pm2.checkAndSaveAsync(policy)  
