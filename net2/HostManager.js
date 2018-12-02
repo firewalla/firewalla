@@ -1985,6 +1985,11 @@ module.exports = class HostManager {
     }
   }
 
+  async asyncBasicDataForInit(json) {
+    const speed = await platform.getNetworkSpeed();
+    json.nicSpeed = speed;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2050,7 +2055,8 @@ module.exports = class HostManager {
           this.boneDataForInit(json),
           this.encipherMembersForInit(json),
           this.jwtTokenForInit(json),
-          this.groupNameForInit(json)          
+          this.groupNameForInit(json),
+          this.asyncBasicDataForInit(json)          
         ]
 
           await (this.loadDDNSForInit(json));

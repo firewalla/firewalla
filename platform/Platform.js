@@ -15,8 +15,16 @@
 
 'use strict';
 
-class Platform {
+const fConfig = require('../net2/config.js').getConfig();
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
+class Platform {
+  async getNetworkSpeed() {
+    const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
+    return output;
+  }
 }
 
 module.exports = Platform;
