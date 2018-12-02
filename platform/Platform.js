@@ -23,7 +23,7 @@ Promise.promisifyAll(fs);
 class Platform {
   async getNetworkSpeed() {
     const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
-    return output;
+    return output.trim();
   }
 }
 
