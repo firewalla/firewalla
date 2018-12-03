@@ -33,6 +33,8 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
+const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
 const SysManager = require('../net2/SysManager.js');
@@ -2057,7 +2059,7 @@ class netBot extends ControllerBot {
           let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
-        }        
+        }
       }
 
       let host = await (this.hostManager.getHostAsync(ip));
@@ -2979,6 +2981,7 @@ class netBot extends ControllerBot {
 
             await pm2.deleteMacRelatedPolicies(hostMac);
 
+            await categoryFlowTool.delAllCategories(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
             

@@ -110,6 +110,7 @@ class CategoryFlowTool {
         }
       }).filter((x) => x != null)
 
+      // removes duplicate
       return categories.filter((elem, pos) => {
         return categories.indexOf(elem) == pos;
       })

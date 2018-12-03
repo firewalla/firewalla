@@ -182,8 +182,11 @@ class FlowAggrTool {
                           util.format("aggrflow:%s:%s:%s:*", mac, trafficDirection, interval);
 
     let keys = await (rclient.keysAsync(keyPattern));
-    
-    return rclient.delAsync(keys);
+
+    if (keys.length)
+      return rclient.delAsync(keys);
+    else
+      return Promise.resolve(0);
   }
 
   // this is to make sure flow data is not flooded enough to consume all memory
@@ -390,7 +393,11 @@ class FlowAggrTool {
       : util.format("sumflow:%s:*", mac);
 
     let keys = await (rclient.keysAsync(keyPattern));
-    return rclient.delAsync(keys);
+
+    if (keys.length)
+      return rclient.delAsync(keys);
+    else
+      return Promise.resolve(0);
   }
 
   getFlowTrafficByDestIP(mac, trafficDirection, interval, ts, destIP) {
