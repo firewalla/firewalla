@@ -600,8 +600,8 @@ class netBot extends ControllerBot {
     });
   }
   
-  _portforward(ip, msg, callback) {
-    log.info("_portforward",ip,msg);
+  _portforward(msg, callback) {
+    log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
     this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
@@ -1169,9 +1169,10 @@ class netBot extends ControllerBot {
               });
               break;
             case "portforward":
-              this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+              this._portforward(msg.data.value.portforward, (err, obj) => {
                 cb(err);
               });
+              break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
@@ -2991,6 +2992,16 @@ class netBot extends ControllerBot {
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
                 await hostTool.deleteHost(ip);
+
+                // remove port forwarding
+                this._portforward({
+                  "toPort": "*",
+                  "protocol": "*",
+                  "toIP": ip,
+                  "type": "portforward",
+                  "state": false,
+                  "dport": "*"
+                })
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.delAsync([

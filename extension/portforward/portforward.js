@@ -73,11 +73,9 @@ class PortForward {
                 await (this.addPort(obj));
               }
               await (this.saveConfig());
-            }         
+            }
           })();
-        } else {
-          
-        } 
+        }
       });
 
       instance = this      
@@ -121,6 +119,7 @@ class PortForward {
 
   // return -1 if not found
   //        index if found 
+  //        undefined, null, 0, false, '*' will be recognized as wildcards
 
   find(map) {
     if (this.config == null || this.config.maps == null) {
@@ -128,7 +127,12 @@ class PortForward {
     } else {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
-        if (_map.dport == map.dport && _map.toIP == map.toIP && _map.toPort == map.toPort) {
+        if (
+          (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
+          (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
+          (!map.protocl || map.protocol == "*" || _map.protocol == map.protocol) &&
+          _map.toIP == map.toIP
+        ) {
           return i;
         }
       }
@@ -168,12 +172,13 @@ class PortForward {
   removePort(map) {
     return async(()=>{
       let old = this.find(map);
-      if (old >= 0) {
+      while (old >= 0) {
         this.config.maps[old].state = false;
         map = this.config.maps[old];
         this.config.maps.splice(old,1);
         log.info("PortForwarder:removePort Found MAP",map);
-      } 
+        old = this.find(map);
+      }
       map.state = false;
       // we call remove anyway ... even there is no entry
       const dupMap = JSON.parse(JSON.stringify(map))
