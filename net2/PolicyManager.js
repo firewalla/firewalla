@@ -40,7 +40,7 @@ let dnsmasq = new DNSMASQ();
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let ss_client = require('../extension/ss_client/ss_client.js');
+let mss_client = require('../extension/ss_client/multi_ss_client.js');
 
 var firewalla = require('../net2/Firewalla.js');
 
@@ -348,6 +348,7 @@ module.exports = class {
   }
 
   async upstreamDns(policy) {
+
     log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
     const ips = policy.ips;
     const state = policy.state;
@@ -408,56 +409,77 @@ module.exports = class {
     }
   }
 
-  vpn(host, config, policies) {
-    let vpnManager = new VpnManager('info');
-    if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
-      vpnManager.stop();
-      log.error("PolicyManager:VPN", "VPN Not avaliable");
-      return;
-    }
-    if (config.state == true) {
-      vpnManager.start((err, external, port) => {
-        if (err != null) {
-          config.state = false;
-          host.setPolicy("vpn", config);
-        } else {
-          if (external) {
-            config.portmapped = true;
-            host.setPolicy("vpn", config, (err) => {
-              host.setPolicy("vpnPortmapped", true);
-            });
-          } else {
-            config.portmapped = false;
-            host.setPolicy("vpn", config, (err) => {
-              host.setPolicy("vpnPortmapped", true);
-            });
-          }
-        }
-      });
-    } else {
-      vpnManager.stop();
+  async vpnClient(host, policy) {
+    const updatedPolicy = JSON.parse(JSON.stringify(policy));
+    const result = await host.vpnClient(policy);
+    if (policy.state === true && !result) {
+      updatedPolicy.state = false;
+      host.setPolicy("vpnClient", updatedPolicy);
     }
   }
 
+  vpn(host, config, policies) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("vpn doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
+    let vpnManager = new VpnManager();
+    vpnManager.configure(config, false, (err) => {
+      if (err != null) {
+        log.error("PolicyManager:VPN", "Failed to configure vpn");
+        return;
+      } else {
+        if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
+          vpnManager.stop();
+          log.error("PolicyManager:VPN", "VPN Not avaliable");
+          return;
+        }
+        const updatedConfig = JSON.parse(JSON.stringify(config));
+        if (config.state == true) {
+          vpnManager.start((err, external, port, serverNetwork, localPort) => {
+            if (err != null) {
+              updatedConfig.state = false;
+              host.setPolicy("vpn", updatedConfig);
+            } else {
+              updatedConfig.serverNetwork = serverNetwork;
+              updatedConfig.localPort = localPort;
+              if (external) {
+                updatedConfig.portmapped = true;
+                host.setPolicy("vpn", updatedConfig, (err) => {
+                  host.setPolicy("vpnPortmapped", true);
+                });
+              } else {
+                updatedConfig.portmapped = false;
+                host.setPolicy("vpn", updatedConfig, (err) => {
+                  host.setPolicy("vpnPortmapped", false);
+                });
+              }
+            }
+          });
+        } else {
+          vpnManager.stop();
+        }
+      }
+    });
+  }
+
   scisurf(host, config) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("scisurf doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
 
-      if (!ss_client.configExists() || !config.config) {
-        log.error("init config is required from app side for first start");
-      }
-
-      if (config.config) {
-        ss_client.setConfig(config.config);
+      if(!mss_client.readyToStart()) {
+        log.error("MSS client is not ready to start yet");
+        return;
       }
       
       (async () => {
-        await ss_client.startAsync()
-
+        await mss_client.start()
         log.info("SciSurf feature is enabled successfully");
-        log.info("chinadns:", ss_client.getChinaDNS());
-        
-        await dnsmasq.setUpstreamDNS(ss_client.getChinaDNS())
-        log.info("dnsmasq upstream dns is set to", ss_client.getChinaDNS());
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err, {})
       })
@@ -465,17 +487,21 @@ module.exports = class {
     } else {
       
       (async () => {
-        await ss_client.stopAsync()
+        await mss_client.stop()
         log.info("SciSurf feature is disabled successfully");
         dnsmasq.setUpstreamDNS(null);
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);
       })
-      
     }
   }
 
   shadowsocks(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("shadowsocks doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
     let ss = new shadowsocks('info');
 
@@ -505,6 +531,11 @@ module.exports = class {
   }
 
   dnsmasq(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("dnsmasq doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
       sem.emitEvent({
         type: "StartDNS"
@@ -547,6 +578,11 @@ module.exports = class {
   }
 
   externalAccess(host, config, callback) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("externalAccess doesn't support per device policy", host);
+      return; // doesn't support per-device policy
+    }
+
     if (config.state == true) {
       externalAccessFlag = true;
       this.addAPIPortMapping();
@@ -615,6 +651,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         host.spoof(policy[p]);
+      } else if (p === "vpnClient") {
+        this.vpnClient(host, policy[p]);
       } else if (p === "vpn") {
         this.vpn(host, policy[p], policy);
       } else if (p === "shadowsocks") {

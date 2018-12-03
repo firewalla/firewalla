@@ -40,6 +40,10 @@ class Alarm {
     return;
   }
 
+  getManagementType() {
+    return "";
+  }
+
   getNotificationCategory() {
     return "NOTIF_" + this.getI18NCategory();
   }
@@ -134,6 +138,58 @@ class NewDeviceAlarm extends Alarm {
   }
 }
 
+class DeviceBackOnlineAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
+  }
+
+  getManagementType() {
+    return "info";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac"];
+  }
+}
+
+class DeviceOfflineAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
+  }
+
+  getManagementType() {
+    return "info";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac"];
+  }
+}
+
+class SpoofingDeviceAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SPOOFING_DEVICE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.device.name", "p.device.ip"]
+  }
+}
+
+class VPNClientConnectionAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.dest.ip"];
+  }
+
+  requiredKeys() {
+    return ["p.dest.ip"];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -169,6 +225,30 @@ class BroNoticeAlarm extends Alarm {
 
   requiredKeys() {
     return [];
+  }
+
+  getI18NCategory() {
+    let category = this.type;
+
+    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
+    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
+      category = `${category}_${this["p.noticeType"]}`;
+    }
+
+    if("p.local_is_client" in this) {
+      if(this["p.local_is_client"] === "1") {
+        category = `${category}_OUTBOUND`;
+      } else {
+        category = `${category}_INBOUND`;
+      }
+    }
+
+    if(this.result === "block" &&
+    this.result_method === "auto") {
+      category = `${category}_AUTOBLOCK`;
+    }
+    
+    return category;
   }
 }
 
@@ -254,7 +334,7 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 }
 
@@ -413,6 +493,10 @@ let classMapping = {
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
+  ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
+  ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
+  ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
+  ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -427,6 +511,10 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
+  DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
+  DeviceOfflineAlarm: DeviceOfflineAlarm,
+  SpoofingDeviceAlarm: SpoofingDeviceAlarm,
+  VPNClientConnectionAlarm: VPNClientConnectionAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,

@@ -114,7 +114,25 @@ module.exports = class {
     }
     cbs.push(callback);
   }
-      
+
+  subscribeOnce(channel, type, ip, callback) {
+    let key = null;
+
+    if (ip == null) {
+      key = channel + "." + type;
+    } else {
+      key = channel + "." + type + "." + ip;
+    }
+
+    let cbs = this.callbacks[key];
+
+    if(cbs) {
+      return; // already subscribed...
+    }
+
+    this.subscribe(channel, type, ip, callback);
+  }
+
     subscribe(channel, type, ip, callback) {
         //log.debug("MBus:Subscribe",channel,type,ip);
       sclient.subscribe(channel);

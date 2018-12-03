@@ -29,6 +29,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const URL = require("url");
 const bone = require("../lib/Bone");
+const dhcp = require("../extension/dhcp/dhcp.js");
+
+const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
 
 let HostManager = require('../net2/HostManager.js');
 let SysManager = require('../net2/SysManager.js');
@@ -63,6 +67,10 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const readdirAsync = util.promisify(fs.readdir);
+const unlinkAsync = util.promisify(fs.unlink);
 
 let AM2 = require('../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -114,6 +122,11 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
+const proServer = require('../api/bin/pro');
+const tokenManager = require('../api/middlewares/TokenManager').getInstance();
+
+const migration = require('../migration/migration.js');
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -133,6 +146,94 @@ class netBot extends ControllerBot {
 
   _unignore(ip, callback) {
     this.hostManager.unignoreIP(ip, callback);
+  }
+
+  _devicePresence(ip, value, callback) {
+    log.info("_devicePresence", ip, value);
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy('devicePresence', value, (err, data) => {
+          if (err == null) {
+            if (callback != null) {
+              callback(null, "Success");
+            }
+          } else {
+            if (callback != null) {
+              callback(err, "Unable to change presence config to ip " + ip);
+            }
+          }
+        });
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy('devicePresence', value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success:" + ip);
+                } else {
+                  if (callback != null)
+                    callback(err, "Unable to change presence config to ip " + ip)
+
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to change presence config to ip " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "Host not found");
+        }
+      });
+    }
+  }
+
+  _deviceOffline(ip, value, callback) {
+    log.info("_deviceOffline", ip, value);
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy('deviceOffline', value, (err, data) => {
+          if (err == null) {
+            if (callback != null) {
+              callback(null, "Success");
+            }
+          } else {
+            if (callback != null) {
+              callback(err, "Unable to change device offline config to ip " + ip);
+            }
+          }
+        });
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy('deviceOffline', value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success:" + ip);
+                } else {
+                  if (callback != null)
+                    callback(err, "Unable to change device offline config to ip " + ip)
+
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to change device offline config to ip " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "Host not found");
+        }
+      });
+    }
   }
 
   _block(ip, blocktype, value, callback) {
@@ -261,21 +362,85 @@ class netBot extends ControllerBot {
     }
   }
 
+  _vpnClient(ip, value, callback) {
+    if (ip === "0.0.0.0") {
+      // start VPN client globally
+      this.hostManager.loadPolicy((err, data) => {
+        if (err == null) {
+          this.hostManager.setPolicy("vpnClient", value, (err, data) => {
+            if (err == null) {
+              if (callback != null)
+                callback(null, "Success");
+            } else {
+              if (callback != null)
+                callback(err, "Unable to start vpn client");
+            }
+          });
+        } else {
+          if (callback != null)
+            callback(err, "Unable to start vpn client");
+        }
+      });
+    } else {
+      // enable VPN client access on specific host
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy("vpnClient", value, (err, data) => {
+                if (err == null) {
+                  if (callback != null) 
+                    callback(null, "Success: " + ip);
+                } else {
+                  if (callback != null)
+                  callback(err, "Unable to enable vpn client access on " + ip);
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to enable vpn client access on " + ip);
+            }
+          });
+        } else {
+          if (callback != null)
+            callback("error", "host not found: " + ip);
+        }
+      });
+    }
+  }
+
   _vpn(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vpn", value, (err, data) => {
+      var newValue = {};
+      if (data["vpn"]) {
+        newValue = JSON.parse(data["vpn"]);
+      }
+      Object.keys(value).forEach((k) => {
+        newValue[k] = value[k];
+      });
+      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
             callback(null, "Success");
         } else {
           if (callback != null)
-            callback(err, "Unable to block ip " + ip);
+            callback(err, "Unable to enable vpn on ip " + ip);
         }
       });
     });
   }
 
   _shadowsocks(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
         if (err == null) {
@@ -290,6 +455,11 @@ class netBot extends ControllerBot {
   }
 
   _scisurf(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("scisurf", value, (err, data) => {
         if (err == null) {
@@ -304,6 +474,11 @@ class netBot extends ControllerBot {
   }
 
   _vulScan(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("vulScan", value, (err, data) => {
         if (err == null) {
@@ -318,6 +493,11 @@ class netBot extends ControllerBot {
   }
 
   _dnsmasq(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
         if (err == null) {
@@ -332,6 +512,11 @@ class netBot extends ControllerBot {
   }
 
   _externalAccess(ip, value, callback) {
+    if(ip !== "0.0.0.0") {
+      callback(null); // per-device policy rule is not supported
+      return;
+    }
+
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("externalAccess", value, (err, data) => {
         if (err == null) {
@@ -442,6 +627,9 @@ class netBot extends ControllerBot {
     let self = this;
     this.compress = true;
     this.scanning = false;
+
+    this.eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+    this.eptCloudExtension.run(); // auto update group info from cloud
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
@@ -554,7 +742,9 @@ class netBot extends ControllerBot {
                    if (msg.alarmType  === "ALARM_LARGE_UPDATE") {
                        alarmType = "ALARM_BEHAVIOR";
                    }
-                   if (this.hostManager.policy["notify"][alarmType] === false) {
+                   if (this.hostManager.policy["notify"][alarmType] === false || 
+                   this.hostManager.policy["notify"][alarmType] === 0
+                   ) {
                        log.info("ALARM_NOTIFY_BLOCKED", msg);
                        return;
                    }
@@ -588,13 +778,18 @@ class netBot extends ControllerBot {
           if (msg.autoblock) {
             data.category = "com.firewalla.category.autoblockalarm";
           } else {
-            data.category = "com.firewalla.category.alarm";
+            if (msg.managementType === "") {
+              // default category
+              data.category = "com.firewalla.category.alarm";
+            } else {
+              data.category = "com.firewalla.category.alarm." + msg.managementType;
+            }
           }
 
           // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
           async(() => {
             let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
-            if(flag) {
+            if(flag == "1") {
               notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
             }
             if(msg["testing"] && msg["testing"] == 1) {
@@ -893,6 +1088,16 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
+            case "devicePresence":
+              this._devicePresence(msg.target, msg.data.value.devicePresence, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "deviceOffline":
+              this._deviceOffline(msg.target, msg.data.value.deviceOffline, (err, obj) => {
+                cb(err);
+              });
+              break;
             case "blockin":
               this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
                 cb(err);
@@ -910,6 +1115,11 @@ class netBot extends ControllerBot {
               break;
             case "adblock":
               this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "vpnClient":
+              this._vpnClient(msg.target, msg.data.value.vpnClient, (err, obj) => {
                 cb(err);
               });
               break;
@@ -1091,13 +1301,12 @@ class netBot extends ControllerBot {
         break;
       case "scisurfconfig":
         let v = msg.data.value;
-
-        // TODO validate input ??
+        
         if (v.from && v.from === "firewalla") {
-          let scisurf = require('../extension/ss_client/ss_client.js');
-          scisurf.saveConfig(v, (err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          });
+          const mssc = require('../extension/ss_client/multi_ss_client.js');
+          mssc.saveConfig(v)
+            .then(() => this.simpleTxData(msg, {}, null, callback))
+            .catch((err) => this.simpleTxData(msg, null, err, callback));
         } else {
           this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
         }
@@ -1183,6 +1392,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
       }
+      break;
+    case "userConfig":
+      (async () => {
+        const updatedPart = msg.data.value || {};
+        await fc.updateUserConfig(updatedPart);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
       break;
     default:
         this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
@@ -1279,27 +1497,43 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-
-        this.hostManager.loadPolicy(() => {
-          vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, (err, ovpnfile, password) => {
-            let datamodel = {
-              type: 'jsonmsg',
-              mtype: 'reply',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-            };
-            if (err == null) {
-              datamodel.code = 200;
-              datamodel.data = {
-                ovpnfile: ovpnfile,
-                password: password,
-                portmapped: this.hostManager.policy['vpnPortmapped']
-              }
-            }
+        let compAlg = "";
+        if (msg.data.value) {
+          compAlg = compAlg || msg.data.value.compress;
+        }
+        this.hostManager.loadPolicy((err, data) => {
+          let datamodel = {
+            type: 'jsonmsg',
+            mtype: 'reply',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+          };
+          if (err != null) {
+            log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-          });
+          } else {
+            // this should set local port of VpnManager, which will be used in getOvpnFile
+            vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
+              if (err != null) {
+                log.error("Failed to configure VPN", err);
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              } else {
+                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, (err, ovpnfile, password) => {
+                  if (err == null) {
+                    datamodel.code = 200;
+                    datamodel.data = {
+                      ovpnfile: ovpnfile,
+                      password: password,
+                      portmapped: this.hostManager.policy['vpnPortmapped']
+                    }
+                  }
+                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                });
+              }
+            }); 
+          }
         });
         break;
       case "shadowsocks":
@@ -1325,6 +1559,21 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
+      case "generateRSAPublicKey": {
+        const identity = msg.data.value.identity;
+        (async () => {
+          const regenerate = msg.data.value.regenerate;
+          const prevKey = await ssh.getRSAPublicKey(identity);
+          if (prevKey === null || regenerate) {
+            await ssh.generateRSAKeyPair(identity);
+            const pubKey = await ssh.getRSAPublicKey(identity);
+            this.simpleTxData(msg, {publicKey: pubKey}, null, callback);
+          } else this.simpleTxData(msg, {publicKey: prevKey}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "sshPrivateKey":
 
         ssh.getPrivateKey((err, data) => {
@@ -1371,10 +1620,11 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let ssc = require('../extension/ss_client/ss_client.js');
-        ssc.loadConfig((err, result) => {
-          this.simpleTxData(msg, result || {}, err, callback);
-        });
+        let mssc = require('../extension/ss_client/multi_ss_client.js');
+
+        mssc.loadConfig()
+          .then((result) => this.simpleTxData(msg, result || {}, null, callback))
+          .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       case "language":
         this.simpleTxData(msg, {language: sysManager.language}, null, callback);
@@ -1405,6 +1655,27 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
           }
         })().catch((err) => this.simpleTxData(msg, null, err, callback));
+        break;
+      }
+      case "selfCheck": {
+        (async () => {
+          const sc = require("../diagnostic/selfcheck.js");
+          const result = await sc.check();
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
+      }
+      case "blockCheck": {
+        const ipOrDomain = msg.data.value.ipOrDomain;
+        (async () => {
+          const rc = require("../diagnostic/rulecheck.js");
+          const result = await rc.checkIpOrDomain(ipOrDomain);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.siimpleTxData(msg, null, err, callback);
+        });
         break;
       }
       case "transferTrend": {
@@ -1595,6 +1866,73 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "proToken":
+        (async () => {
+          this.simpleTxData(msg, {token: tokenManager.getToken(gid)}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "policies":
+        pm2.loadActivePolicys((err, list) => {
+          if(err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let alarmIDs = list.map((p) => p.aid);
+            am2.idsToAlarms(alarmIDs, (err, alarms) => {
+              if(err) {
+                log.error("Failed to get alarms by ids:", err, {});
+                this.simpleTxData(msg, {}, err, callback);
+                return;
+              }
+      
+              for(let i = 0; i < list.length; i ++) {
+                if(list[i] && alarms[i]) {
+                  list[i].alarmMessage = alarms[i].localizedInfo();
+                  list[i].alarmTimestamp = alarms[i].timestamp;
+                }
+              }
+              this.simpleTxData(msg, {policies: list}, null, callback);
+            });
+          }
+        });
+        break;
+      case "hosts":
+        let hosts = {};
+        this.hostManager.getHosts(() => {
+          this.hostManager.legacyHostsStats(hosts)
+            .then(() => {
+              this.simpleTxData(msg, hosts, null, callback);
+            }).catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
+        });
+        break;
+      case "ovpnProfiles":
+        (async () => {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const cmd = "mkdir -p " + dirPath;
+          await exec(cmd);
+          const files = await readdirAsync(dirPath);
+          const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+          const profiles = await Promise.all(ovpns.map(async filename => {
+            const profileId = filename.slice(0, filename.length - 5);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            const profile = {profileId: profileId};
+            if (fs.existsSync(passwordPath)) {
+              const password = await readFileAsync(passwordPath, 'utf8');
+              if (password !== "dummy_ovpn_password") {
+                // a dummy place holder which indicates the profile is not password-protected
+                profile.password = password;
+              }
+            }
+            return profile;
+          }));
+          this.simpleTxData(msg, {"profiles": profiles}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -1705,6 +2043,12 @@ class netBot extends ControllerBot {
 
       let begin = msg.data && msg.data.start;
       let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+      // A backward compatbiel fix for query host network stats for 'NOW'
+      // extend it to a full hour if not enough
+      if((end - begin) < 3600 && msg.data.hourblock === 0) {
+        end = begin + 3600; 
+      }
 
       let options = {}
       if(begin && end) {
@@ -1938,6 +2282,27 @@ class netBot extends ControllerBot {
       } else {
         log.info("API: CmdHandler ",gid,msg,{});
       }
+    if(msg.data.item === "dhcpCheck") {
+      (async() => {
+        let mode = require('../net2/Mode.js');
+        await mode.reloadSetupMode();
+        let dhcpModeOn = await mode.isDHCPModeOn();
+        if (dhcpModeOn) {
+          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const response = {
+            DHCPMode: true,
+            DHCPDiscover: dhcpFound
+          };
+          this.simpleTxData(msg, response, null, callback);
+        } else {
+          this.simpleTxData(msg, {DHCPMode: false}, null, callback);
+        }        
+      })().catch((err) => {
+        log.error("Failed to do DHCP discover", err);
+        this.simpleTxData(msg, null, err, callback);
+      });
+      return;
+    }
     if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
@@ -2000,6 +2365,24 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "stopService":
+        (async () => {
+          await sysTool.stopServices();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      case "startService":
+        (async () => {
+          // no need to await, otherwise fireapi will also be restarted
+          sysTool.restartServices();
+          sysTool.restartFireKickService();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -2012,26 +2395,22 @@ class netBot extends ControllerBot {
         break;
       case "resetSSHPassword":
         ssh.resetRandomPassword((err, password) => {
-          sysManager.sshPassword = password;
+          sysManager.setSSHPassword(password);
           this.simpleTxData(msg, null, err, callback);
         });
         break;
 
       case "resetSciSurfConfig":
-        let ssc = require('../extension/ss_client/ss_client.js');
-        ssc.stop((err) => {
-          // stop should always succeed
-          if (err) {
-            // stop again if failed
-            ssc.stop((err) => {
-            });
+        const mssc = require('../extension/ss_client/multi_ss_client.js');
+        (async () => {
+          try {
+            await mssc.stop();
+            await mssc.clearConfig();  
+          } finally {
+            this.simpleTxData(msg, null, err, callback);  
           }
-          ssc.clearConfig((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        });
+        })();
         break;
-
       case "ping":
         let uptime = process.uptime();
         let now = new Date();
@@ -2235,7 +2614,16 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, null, err, callback);
           });
         break;
-    case "exception:delete":
+      case "exception:update":
+        em.updateException(msg.data.value)
+          .then((result) => {
+            this.simpleTxData(msg, result, null, callback);
+          })
+          .catch((err) => {
+            this.simpleTxData(msg, null, err, callback);
+          });
+        break;
+      case "exception:delete":
         em.deleteException(msg.data.value.exceptionID)
           .then(() => {
             this.simpleTxData(msg, null, null, callback);
@@ -2250,7 +2638,7 @@ class netBot extends ControllerBot {
         await (frp.start())
         let config = frp.getConfig();
         let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.sshPassword = newPassword // in-memory update
+        sysManager.setSSHPassword(newPassword); // in-memory update
         config.password = newPassword
         this.simpleTxData(msg, config, null, callback)
       })().catch((err) => {
@@ -2261,7 +2649,7 @@ class netBot extends ControllerBot {
       async(() => {
         await (frp.stop())
         let newPassword = await(ssh.resetRandomPasswordAsync())
-        sysManager.sshPassword = newPassword // in-memory update
+        sysManager.setSSHPassword(newPassword); // in-memory update
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback);
@@ -2317,7 +2705,7 @@ class netBot extends ControllerBot {
           }
           
           while(new Date() / 1000 < begin + timeout) {
-            let secondsLeft =  (begin + timeout) - new Date() / 1000
+            const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
             log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
             running = await (spooferManager.isSpoofRunning())
             if(running) {
@@ -2586,6 +2974,158 @@ class netBot extends ControllerBot {
       })
       break;
     }
+    case "startProServer": {
+      proServer.startProServer();
+      break;
+    }
+    case "stopProServer": {
+      proServer.stopProServer();
+      break;
+    }
+    case "generateProToken": {
+      tokenManager.generateToken(gid);
+      break;
+    }
+    case "revokeProToken": {
+      tokenManager.revokeToken(gid);
+      break;
+    }
+    case "saveOvpnProfile": {
+      const content = msg.data.value.content;
+      let profileId = msg.data.value.profileId;
+      // at least create dummy password file anyway
+      const password = msg.data.value.password || "dummy_ovpn_password";
+      if (!profileId || profileId === "") {
+        // use default profile id
+        profileId = "ovpn_client";
+      }
+      (async () => {
+        const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+        const cmd = "mkdir -p " + dirPath;
+        await exec(cmd);
+        const profilePath = dirPath + "/" + profileId + ".ovpn";
+        await writeFileAsync(profilePath, content, 'utf8');
+        const passwordPath = dirPath + "/" + profileId + ".password";
+        await writeFileAsync(passwordPath, password, 'utf8');
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      }) 
+      break;
+    }
+    case "deleteOvpnProfile": {
+      const profileId = msg.data.value.profileId;
+      (async () => {
+        if (!profileId || profileId === "") {
+          this.simpleTxData(msg, {}, "profile id is not specified", callback);
+        } else {
+          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+          const profilePath = dirPath + "/" + profileId + ".ovpn";
+          if (fs.existsSync(profilePath)) {
+            await unlinkAsync(profilePath);
+            const passwordPath = dirPath + "/" + profileId + ".password";
+            if (fs.existsSync(passwordPath)) {
+              await unlinkAsync(passwordPath);
+            }
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+          }
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
+    case "saveRSAPublicKey": {
+      const content = msg.data.value.pubKey;
+      const identity = msg.data.value.identity;
+      (async () => {
+        await ssh.saveRSAPublicKey(content, identity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:export": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.exportDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:import": {
+      const partition = msg.data.value.partition;
+      const encryptionIdentity = msg.data.value.encryptionIdentity;
+      (async () => {
+        await migration.importDataPartition(partition, encryptionIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:transfer": {
+      const host = msg.data.value.host;
+      const partition = msg.data.value.partition;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferDataPartition(host, partition, transferIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
+    case "migration:transferHiddenFolder": {
+      const host = msg.data.value.host;
+      const transferIdentity = msg.data.value.transferIdentity;
+      (async () => {
+        await migration.transferHiddenFolder(host, transferIdentity);
+        this.simpleTxData(msg, {}, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
+    case "host:delete": {
+      (async () => {
+        const hostMac = msg.data.value.mac;
+        const macExists = await hostTool.macExists(hostMac);
+        if (macExists) {
+          let ips = await hostTool.getIPsByMac(hostMac);
+          ips.forEach(async (ip) => {
+            const latestMac = await hostTool.getMacByIP(ip);
+            if (latestMac && latestMac === hostMac) {
+              // double check to ensure ip address is not taken over by other device
+              await hostTool.deleteHost(ip);
+            }
+          });
+          await hostTool.deleteMac(hostMac);
+          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+          this.simpleTxData(msg, {}, null, callback);
+        } else {
+          let resp = {
+            type: 'jsonmsg',
+            mtype: 'cmd',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+            code: 404,
+            data: {"error": "device not found"}
+          };
+          this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      })
+      break;
+    }
     default:
       // unsupported action
       this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -2772,6 +3312,9 @@ class netBot extends ControllerBot {
                   replyid: msg.id,
                 }
                 if (json != null) {
+
+                  json.device = this.getDeviceName();
+                  
                   datamodel.code = 200;
                   datamodel.data = json;
 

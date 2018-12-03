@@ -136,6 +136,8 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
+
+
     }
 
     return instance;
@@ -484,6 +486,21 @@ module.exports = class DNSMASQ {
     });
   }
 
+  async updateVpnIptablesRules(newVpnSubnet) {
+    const oldVpnSubnet = this.vpnSubnet;
+    const localIP = sysManager.myIp();
+    const dns = `${localIP}:8853`;
+    if (oldVpnSubnet != newVpnSubnet) {
+      if (oldVpnSubnet != null) {
+        // remove iptables rule for old vpn subnet
+        await iptables.dnsChangeAsync(oldVpnSubnet, dns, false);
+      }
+      // then add new iptables rule for new vpn subnet
+      await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
+    }
+    this.vpnSubnet = newVpnSubnet
+  }
+
   async _add_all_iptables_rules() {
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
@@ -494,9 +511,16 @@ module.exports = class DNSMASQ {
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
 
-    subnets.forEach(async subnet => {
+    for (let index = 0; index < subnets.length; index++) {
+      const subnet = subnets[index];
       await iptables.dnsChangeAsync(subnet, dns, true);
-    })
+    }
+
+    /* this will be done in DNSMASQSensor on demand.
+    if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
+      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
+    }
+    */
   }
 
   async _add_ip6tables_rules() {
@@ -620,11 +644,15 @@ module.exports = class DNSMASQ {
   }
   
   async checkStatus() {
-    let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
+    let cmd = `pgrep -f ${dnsmasqBinary}`;
     log.info("Command to check dnsmasq: ", cmd);
 
-    let {stdout, stderr} = await execAsync(cmd);
-    return stdout !== "";
+    try {
+      await execAsync(cmd);
+      return true;
+    } catch(err) {
+      return false;
+    }
   }
 
   checkIfRestartNeeded() {
@@ -768,7 +796,7 @@ module.exports = class DNSMASQ {
 
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
-    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile} --local-service`;
+    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
     let cmdAlt = null;
 
     if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
@@ -1061,7 +1089,13 @@ module.exports = class DNSMASQ {
       if(!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      await this.stop(); // make sure iptables rules are also stopped..
+      if (this.dhcpMode) {
+        // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
+        log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
+        await this._remove_all_iptables_rules();
+      } else {
+        await this.stop(); // make sure iptables rules are also stopped..
+      }
       bone.log("error", {
         version: sysManager.version(),
         type: 'DNSMASQ CRASH',

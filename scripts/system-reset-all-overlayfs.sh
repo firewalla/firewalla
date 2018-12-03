@@ -20,7 +20,7 @@ sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
 sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 # touch a fw reset file to support new image
-if [[ -f /support_fw_reset ]]; then
+if [[ -f /support_fw_reset || -f /etc/support_fw_reset ]]; then
     sudo mount -o remount,rw /media/root-ro
     sudo touch /media/root-ro/fw_reset
     sudo mount -o remount,ro /media/root-ro

@@ -1,12 +1,12 @@
 client
 dev tun
 proto udp
-remote PUBLICIP 1194
+remote PUBLIC_IP LOCAL_PORT
 resolv-retry infinite
 nobind
 persist-key
 persist-tun
-compress lzo
+compress
 remote-cert-tls server
 mute-replay-warnings
 key-direction 1

@@ -268,11 +268,12 @@ function constants(name) {
   return __constants[name]
 }
 
-const BLACK_HOLE_IP = "198.51.100.99"
-const BLUE_HOLE_IP = "198.51.100.100"
+const BLACK_HOLE_IP = "198.51.100.99";
+const BLUE_HOLE_IP = "198.51.100.100";
+const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
-  return ip === BLACK_HOLE_IP || ip === BLUE_HOLE_IP
+  return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip);
 }
 
 function isMain() {

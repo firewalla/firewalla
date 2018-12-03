@@ -217,6 +217,26 @@ function getRedisMemoryUsage() {
   });
 }
 
+function getCategoryStats() {
+  try {
+    const output = require('child_process').execSync(`${f.getFirewallaHome()}/scripts/category_blocking_stats.sh`, {encoding: 'utf8'})
+    const lines = output.split("\n");
+
+    let stats = {};
+    lines.forEach((line) => {
+      const entries = line.split(" ");
+      const category = entries[0];
+      const num = entries[1];
+      stats[category] = num;
+    })
+
+    return stats;
+
+  } catch(err) {
+    return {};
+  }
+}
+
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -237,7 +257,8 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    diskInfo: diskInfo
+    diskInfo: diskInfo,
+    categoryStats: getCategoryStats()
   }
 
   return sysinfo;

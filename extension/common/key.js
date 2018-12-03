@@ -107,7 +107,8 @@ function generate(options) {
 function generatePassword(len) {
   return generate({
     length: len,
-    numbers: true
+	numbers: true,
+	exclude: "Il1o0O"
   });
 }
 

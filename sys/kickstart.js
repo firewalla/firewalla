@@ -54,8 +54,10 @@
   const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
-  let led = require('../util/Led.js');
-  
+
+  const platformLoader = require('../platform/PlatformLoader.js');
+  const platform = platformLoader.getPlatform();
+
   let util = require('util');
   
   let f = require('../net2/Firewalla.js');
@@ -72,6 +74,10 @@
   
   let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
   let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
+
+  const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
+  const fwDiag = require('../extension/install/diag.js');
   
   // let NmapSensor = require('../sensor/NmapSensor');
   // let nmapSensor = new NmapSensor();
@@ -80,6 +86,16 @@
   let FWInvitation = require('./invitation.js');
 
   const Diag = require('../extension/diag/app.js');
+
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.forceInfo("FireKick Starting ");
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+  
+  function delay(t) {
+    return new Promise(function(resolve) {
+      setTimeout(resolve, t)
+    });
+  }
   
   (async() => {
     await sysManager.setConfig(firewallaConfig)
@@ -183,6 +199,7 @@
     let meta = JSON.stringify({
       'type': config.serviceType,
       'member': config.memberType,
+      'model': platform.getName()
     });
     eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
       log.info(r);
@@ -211,7 +228,7 @@
             log.info("Failed to reset ssh password");
           } else {
             log.info("A new random SSH password is used!");
-            sysManager.sshPassword = password;
+            sysManager.setSSHPassword(password);
           }
         });
       }, 15000);
@@ -247,7 +264,9 @@
   }
 
   function inviteFirstAdmin(gid, callback) {
-    log.info("Initializing first admin:", gid);
+    log.forceInfo("Initializing first admin:", gid);
+
+    const gidPrefix = gid.substring(0, 8);
 
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
@@ -268,12 +287,14 @@
         
         rclient.hset("sys:ept", "group_member_cnt", count);
 
-        recordAllRegisteredClients(gid).catch((err) => {
-          log.info("Failed to record registered clients, err:", err, {})
-        })
+        const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+        eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
+          log.error("Failed to record registered clients, err:", err, {})
+        });
         
         // new group without any apps bound;
-        led.on();
+        platform.turnOnPowerLED();
+
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -286,8 +307,17 @@
               postAppLinked(); // app linked, do any post-link tasks
               callback(null, true);
               
-              log.info("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
+              platform.turnOffPowerLED();
+
+              await fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
+              }).catch((err) => {
+                log.error("Failed to submit diag info", err);
+              });
+
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -298,17 +328,38 @@
           let onTimeout = function() {
             callback("404", false);
             
-            led.off();
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            platform.turnOffPowerLED();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
+            }).catch((err) => {
+              log.error("Failed to submit diag info", err);
+            });
+
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
-          diag.expireDate = new Date() / 1000 + 3600
+          const expireDate = Math.floor(new Date() / 1000) + 3600;
+
+          diag.expireDate = expireDate;
+
           fwInvitation.broadcast(onSuccess, onTimeout);
           
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate,
+            gidPrefix: gidPrefix
+          }).catch((err) => {
+            log.error("Failed to submit diag info", err);
+          });
+          
         } else {
-          log.info(`Found existing group ${gid} with ${count} members`);
+          log.forceInfo(`Found existing group ${gid} with ${count} members`);
           
           postAppLinked(); // already linked
           
@@ -324,35 +375,67 @@
           
           let onSuccess = function(payload) {
             return (async() => {
-              await recordAllRegisteredClients(gid).catch((err) => {
-                log.info("Failed to record registered clients, err:", err, {})
-              })
+              
+              const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+              await eptCloudExtension.job().catch((err) => {
+                log.error("Failed to update group info, err:", err, {})
+              });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
-              log.info("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              log.forceInfo("EXIT KICKSTART AFTER JOIN");
+              platform.turnOffPowerLED();
+
+              await fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended",
+                gidPrefix: gidPrefix
+              }).catch((err) => {
+                log.error("Failed to submit diag info", err);
+              });
+
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
           }
           
           let onTimeout = function() {
-            log.info("EXIT KICKSTART AFTER TIMEOUT");
-            led.off();
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
+            platform.turnOffPowerLED();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended",
+              gidPrefix: gidPrefix
+            }).catch((err) => {
+              log.error("Failed to submit diag info", err);
+            });
+
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
-          diag.expireDate = new Date() / 1000 + 600
-          fwInvitation.broadcast(onSuccess, onTimeout);
+          const expireDate = Math.floor(new Date() / 1000) + 600;
+          diag.expireDate = expireDate;
+
+          fwInvitation.broadcast(onSuccess, onTimeout);          
           
+          fwDiag.submitInfo({
+            event: "PAIRSTART",
+            msg:"Pairing Ready",
+            expire: expireDate,
+            gidPrefix: gidPrefix
+          }).catch((err) => {
+            log.error("Failed to submit diag info", err);
+          });
+
           callback(null, true);
         }
       }
     });
   }
-  
+
+
   function launchService2(gid,callback) {
     fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
     

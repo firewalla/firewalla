@@ -4,6 +4,10 @@
 #
 # this should deal with /dev/watchdog
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 mem=0
 
 swapmem=$(free -m | awk '/Swap:/{print $4}')
@@ -12,15 +16,15 @@ totalmem=$(( swapmem + realmem ))
 
 if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
   mem=$totalmem
-  (( mem <= 35 )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= $MIN_FREE_MEMORY )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
 else
   mem=$realmem
-  (( mem <= 35 )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
+  (( mem <= $MIN_FREE_MEMORY )) && echo fireapi real mem $mem >> /home/pi/.forever/top_before_reboot.log
 fi
 
 (( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
-(( mem <= 35 )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 35 $mem"
-(( mem <= 35 )) && /home/pi/firewalla/scripts/free-memory-lastresort 
+(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than $MIN_FREE_MEMORY $mem"
+(( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
 DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
@@ -33,10 +37,25 @@ for i in `seq 1 10`; do
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0
     else
-      echo "Ping Failed"
-      /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
-      sleep 1
-      touch /tmp/watchdog 
+      BACKUP_DOMAIN="firewalla.com"
+      if [ $((i % 2)) -eq 0 ]; then
+        BACKUP_DOMAIN="github.com"
+      fi
+      echo "Ping gateway failed. Trying backup domain $BACKUP_DOMAIN..."
+      if ping -w 3 -c 1 $BACKUP_DOMAIN &> /dev/null 
+      then
+        exit 0
+      else
+        echo "Ping backup domain $BACKUP_DOMAIN failed. Trying curl instead ..."
+        if curl -s "https://$BACKUP_DOMAIN" &> /dev/null
+        then
+          exit 0
+        else
+          /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA PING NO Local Network $DEFAULT_ROUTE"
+          sleep 1
+          touch /tmp/watchdog 
+        fi
+      fi
     fi
 done
 

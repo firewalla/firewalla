@@ -24,8 +24,31 @@ logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+sync_hosts() {
+    hostname=`cat /etc/hostname`
+    # should contain 127.0.0.1 <hostname>
+    cat /etc/hosts | grep -e "^127.0.0.1" | grep -e "$hostname" -q
+    if [[ $? -ne 0 ]]; then
+        sudo sed -i s/"^127.0.0.1"/"127.0.0.1  $hostname"/g /etc/hosts
+    fi
+    # should contain ::1 <hostname>
+    cat /etc/hosts | grep -e "^::1" | grep -e "$hostname" -q
+    if  [[ $? -ne 0 ]]; then
+        sudo sed -i s/"^::1"/"::1  $hostname"/g /etc/hosts
+    fi
+}
+
+sync_hosts
+
+heartbeatLED
+
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+
+# ensure that run directory already exists
+mkdir -p /home/pi/.firewalla/run
 
 # resize last partitions if necessary
 # sudo $FIREWALLA_HOME/scripts/init_resize.sh
@@ -41,7 +64,7 @@ sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 logger "Broadcast booting"
-(cd $FIREWALLA_HOME; timeout 30m node scripts/broadcast_booting.js) &
+(cd $FIREWALLA_HOME; pkill FWBroadcastBooting &>/dev/null; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab
 $FIREWALLA_HOME/scripts/fire-time.sh
@@ -52,7 +75,7 @@ logger "FIREWALLA:MAIN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
 logger "FIREWALLA:MAIN:START"
-redis-cli del sys:upgrade
+redis-cli del sys:upgrade >/dev/null
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
@@ -78,4 +101,9 @@ else
     sudo service watchdog start
     echo "WatchDog Started"
     logger "FIREWALLA:WATCHDOG:ENABLED"
+fi
+
+if [[ -n "$NO_FIREKICK_RESTART" ]]; then
+  # turn off led light since pairing is not activated
+  turnOffLED
 fi

@@ -49,6 +49,7 @@ class DHCPSensor extends Sensor {
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,
             name: obj.name,
+            mtype: obj.mtype,
             from: 'dhcp',
             message: "may found a new device by dhcp"
           });

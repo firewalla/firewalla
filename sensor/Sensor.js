@@ -43,7 +43,7 @@ let Sensor = class {
   // main entry for firemain
   run() {
     // do nothing in base class
-    log.info(require('util').format("%s is launched", typeof this.constructor));
+    log.info(require('util').format("%s is launched", this.constructor.name));
   }
 
 

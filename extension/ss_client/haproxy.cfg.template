@@ -1,0 +1,16 @@
+defaults
+    mode tcp
+    timeout connect 10000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+frontend ss-in
+    mode tcp
+    bind 127.0.0.1:HAPROXY_LOCAL_PORT
+    default_backend ss-out
+
+backend ss-out
+    mode tcp
+    balance roundrobin
+HAPROXY_SERVERS
+

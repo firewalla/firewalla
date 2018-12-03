@@ -30,11 +30,16 @@ let Promise = require('bluebird');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const exec = require('child-process-promise').exec;
+
 let networkTool = require('../net2/NetworkTool')();
 
 let license = require('../util/license.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
@@ -149,8 +154,20 @@ class FWInvitation {
             try {
               let lic = await (bone.getLicenseAsync(userInfo.license, mac));
               if(lic) {
-                log.info("Got a new license:", lic, {});
-                await (license.writeLicense(lic));
+                const types = platform.getLicenseTypes();
+                if(types && lic.DATA && lic.DATA.LICENSE && 
+                  lic.DATA.LICENSE.constructor.name === 'String' &&
+                  !types.includes(lic.DATA.LICENSE.toLowerCase())) {
+                   // invalid license 
+                   log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
+                   return {
+                     status: "pending"
+                   };
+                } else {
+                  log.forceInfo("Got a new license");
+                  log.info("Got a new license:", lic, {});
+                  await (license.writeLicense(lic));
+                }
               }
             } catch(err) {
               log.error("Invalid license");
@@ -168,7 +185,7 @@ class FWInvitation {
           await (rclient.setAsync('firstBinding', "" + (new Date() / 1000)))
         }
         
-        log.info(`Linked App ${eid} to this device successfully`);        
+        log.forceInfo(`Linked App ${eid} to this device successfully`);        
 
         return {
           status: "success",
@@ -233,6 +250,8 @@ class FWInvitation {
 
     txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
 
+    txtfield.model = platform.getName();
+
     this.displayLicense(this.symmetrickey.license)
     this.displayKey(this.symmetrickey.userkey);
 //    this.displayInvite(obj); // no need to display invite in firewalla any more
@@ -241,7 +260,8 @@ class FWInvitation {
         txtfield.ipaddress = ip;
 
         log.info("TXT:", txtfield, {});
-        this.service = intercomm.publish(null, FW_ENDPOINT_NAME + utils.getCpuId(), 'devhi', 8833, 'tcp', txtfield);
+        const serial = platform.getBoardSerial();
+        this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
         this.displayBonjourMessage(txtfield)
     });
 
@@ -249,6 +269,23 @@ class FWInvitation {
       intercomm.bpublish(gid, obj.r, config.serviceType);
     }
 
+    const cmd = "awk '{print $1}' /proc/uptime";
+    (async () => {
+      try {
+        const result = await exec(cmd);
+        const stdout = result.stdout;
+        const stderr = result.stderr;
+        if (stderr) {
+          log.warn("Unexpected result of uptime: " + stderr);
+        }
+        if (stdout) {
+          const seconds = stdout.replace(/\n$/, '');
+          log.forceInfo("Time elapsed since system boot: " + seconds);
+        }
+      } catch (err) {
+        log.warn("Failed to get system uptime.", err);
+      }
+    })();
     let timer = setInterval(() => {
       async(() => {
         let rid = obj.r;

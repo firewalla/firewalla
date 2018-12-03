@@ -20,8 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 
-const f = require('../net2/Firewalla.js')
-
 const iptool = require('ip')
 
 const util = require('util');
@@ -31,6 +29,8 @@ const firewalla = require('../net2/Firewalla.js');
 const RED_HOLE_IP="198.51.100.101";
 
 let instance = null;
+const DomainUpdater = require('../control/DomainUpdater.js');
+const domainUpdater = new DomainUpdater();
 
 class DNSTool {
 
@@ -95,7 +95,7 @@ class DNSTool {
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return f.isReservedBlockingIP(addr) != true
+      return firewalla.isReservedBlockingIP(addr) != true
     })
 
     let key = this.getReverseDNSKey(dns)
@@ -103,15 +103,18 @@ class DNSTool {
     const existing = await this.reverseDNSKeyExists(dns)
     
     let updated = false
+    const validAddresses = [];
 
     for (let i = 0; i < addresses.length; i++) {  
       const addr = addresses[i];
 
       if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
         await rclient.zaddAsync(key, new Date() / 1000, addr)
+        validAddresses.push(addr);
         updated = true
       }
     }
+    await domainUpdater.updateDomainMapping(dns, validAddresses);
     
     if(updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, RED_HOLE_IP); // red hole is a placeholder ip for non-existing domain 

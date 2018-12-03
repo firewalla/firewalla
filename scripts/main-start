@@ -21,23 +21,24 @@
 logger "MAIN-STARTED STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+heartbeatLED
+
 : ${PI_HOME:=/home/pi}
 MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
-CPU_PLATFORM=$(uname -m)
 
-if [[ $CPU_PLATFORM == "x86_64" ]]; then
-    export NODE_MODULE_REPO=https://github.com/firewalla/fnm.node8.x86_64
-else
-    export NODE_MODULE_REPO=https://github.com/firewalla/fnm.node8.armv7l
-fi
+NODE_MODULE_REPO=$(get_node_modules_url)
+logger "Node module repo: $NODE_MODULE_REPO"
 
 export NODE_PATH=~/.node_modules:$NODE_PATH
 
 mkdir -p "$HOME/.firewalla"
 mkdir -p "$HOME/.firewalla/tmp"
+mkdir -p "$HOME/.firewalla/pubKeys"
 mkdir -p "$HOME/logs"
 sudo rm -r -f /tmp/*
 cd $FIREWALLA_HOME
@@ -61,6 +62,10 @@ echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
+# only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
+test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
+
+node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
@@ -187,19 +192,19 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
          cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      fi
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
-     mkdir /home/pi/.forever
+     mkdir -p /home/pi/.forever
      sudo rm -r -f /home/pi/.forever/*
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6a $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
-     mkdir /home/pi/.forever
+     mkdir -p /home/pi/.forever
      [[ -e /tmp/FWPRODUCTION ]] && rm /tmp/FWPRODUCTION
   fi
 else
      cp $FIREWALLA_HOME/bin/mock/* $FIREWALLA_HOME/bin/.
-     mkdir /home/pi/.forever
+     mkdir -p /home/pi/.forever
      rm /tmp/FWPRODUCTION
 fi
 
@@ -223,7 +228,7 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
 #nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
-sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
+sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
 
@@ -269,7 +274,7 @@ if [[ "$branch" == "release_pi_1_0" ]]; then
   check_upgrade jade 1.11.0
 fi
 
-if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
+if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
     npm install network@git+https://git@github.com/melvinto/network.git
 fi
 
@@ -290,6 +295,7 @@ function create_bootstrap_scripts_folder() {
     # sha256sum must be running under scripts folder
     if ! (cd $FIREWALLA_HOME/scripts; sha256sum -c $CHECKSUM_FILE) &> /dev/null; then
         logger "MAIN-START BOOTSTRAP FILE CHECKSUM FAILED"
+        (cd $FIREWALLA_HOME/scripts; sha256sum -c $CHECKSUM_FILE) | logger # print checksum details to logger for debugging purpose
         return 1 # checksum failed
     fi
 
@@ -330,18 +336,6 @@ if [[ ! -f /.dockerenv ]]; then
     sudo systemctl daemon-reload
 fi
 
-cd net2
-
-# this config is necessary for forwarding DNS requests to dnsmasq
-sudo sysctl -w net.ipv4.conf.all.route_localnet=1
-
-
-if [[ -f /.dockerenv ]]; then
-    forever start  -a --uid main  -c "${FIREWALLA_HOME}/bin/node --expose-gc"  ./main.js
-else
-    sudo systemctl restart firemain
-fi
-cd ..
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
 #forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
@@ -350,8 +344,23 @@ if [[ -z "$NO_FIREKICK_RESTART" ]]; then
   if [[ -f /.dockerenv ]]; then
     forever start  -a --uid kickui -c "${FIREWALLA_HOME}/bin/node --expose-gc"  kickstart.js --config /encipher.config/netbot.config
   else
+    echo "Restarting FireKick..."
     sudo systemctl restart firekick
   fi
+fi
+
+cd ..
+cd net2
+
+# this config is necessary for forwarding DNS requests to dnsmasq
+sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null
+
+
+if [[ -f /.dockerenv ]]; then
+    forever start  -a --uid main  -c "${FIREWALLA_HOME}/bin/node --expose-gc"  ./main.js
+else
+    echo "Restarting FireMain..."
+    sudo systemctl restart firemain
 fi
 
 cd ..
@@ -361,18 +370,20 @@ cd monitor
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid monitor -c "${FIREWALLA_HOME}/bin/node --expose-gc"  MonitorMain.js
 else
+    echo "Restarting FireMon..."
     sudo systemctl restart firemon
 fi
 cd ..
 
-sudo /usr/local/bro/bin/broctl cron
-sudo /usr/local/bro/bin/broctl cron enable
+sudo /usr/local/bro/bin/broctl cron &>/dev/null
+sudo /usr/local/bro/bin/broctl cron enable >/dev/null
 sync
 
 cd api
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid api -c "${FIREWALLA_HOME}/bin/node --expose-gc"  bin/www
 else
+    echo "Restarting FireApi..."
     sudo systemctl restart fireapi
 fi
 cd ..
@@ -413,6 +424,10 @@ DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n 
 #update_nmap_data_file
 
 # run post_run in background
+# Be careful that this script will be not executed when upgrading in a remote support connection
+# because restarting fireapi above will kill the connection, and the upgrade script will fail to reach the code here.
 ${FIREWALLA_HOME}/scripts/post_run.sh &>/dev/null </dev/null
 
 logger "MAIN-STARTED EXITED $(date)"
+
+logger "UPTIME: $(awk '{print $1}' /proc/uptime)"

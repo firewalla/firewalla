@@ -1,5 +1,8 @@
 #!/bin/bash -
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 firemon_pid=$(pidof FireMon)
 firemain_pid=$(pidof FireMain)
 firemon_mem2=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
@@ -22,7 +25,7 @@ devNotify=$(redis-cli hget sys:config devNotify)
 /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: FireApi Critical Memory Restart2 mon:$firemon_mem2, api:$fireapi_mem2, main:$firemain_mem2,bro:$bro_mem2,redis:$redis_mem2,b7:$bitbridge7_mem2,b6:$bitbridge6_mem2,proc:$NOP, thread:$NOT main_thread:$firemain_threads mon_threads:$firemon_threads mainfile:$firemain_NOF monfile:$firemon_NOF sys:$NOF"
 #free -m | logger
 
-if (( firemain_mem2 >= 140000)); then
+if (( firemain_mem2 >= ${FIREMAIN_MAX_MEMORY})); then
   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireMain Critical Memory Restart2"+$firemain_mem2
   sudo service firemain restart
   if [[ $branch == "master" && "x${devNotify}" == "x1" ]]; then
@@ -30,7 +33,7 @@ if (( firemain_mem2 >= 140000)); then
   fi
 fi
 
-if (( firemon_mem2 >= 120000)); then
+if (( firemon_mem2 >= ${FIREMON_MAX_MEMORY})); then
   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: Firemon Critical Memory Restart2"+$firemon_mem2
   sudo service firemon restart
   if [[ $branch == "master" && "x${devNotify}" == "x1" ]]; then
@@ -38,23 +41,16 @@ if (( firemon_mem2 >= 120000)); then
   fi
 fi
 
-if [[ $(uname -m) == "aarch64" ]]; then
-       (( fireapi_mem2 >= 140000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
-       (( fireapi_mem2 >= 140000)) && ( touch /home/pi/.firewalla/managed_reboot; sudo service fireapi restart )
-else
-       (( fireapi_mem2 >= 100000)) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
-       (( fireapi_mem2 >= 100000)) && ( touch /home/pi/.firewalla/managed_reboot; sudo service fireapi restart )
-fi
+(( fireapi_mem2 >= $FIREAPI_MAX_MEMORY )) && /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: FireApi Critical Memory Restart2"+$fireapi_mem2
+(( fireapi_mem2 >= $FIREAPI_MAX_MEMORY )) && ( touch /home/pi/.firewalla/managed_reboot; sudo service fireapi restart )
 
-if [ $NOP -gt 2000 ]
-then
-   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: PROCESS > 2000 REBOOT $NOP"
+if [[ $NOP -gt $MAX_NUM_OF_PROCESSES ]]; then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: PROCESS > $MAX_NUM_OF_PROCESSES REBOOT $NOP"
    /home/pi/firewalla/scripts/fire-rebootf
 fi
 
-if [ $NOT -gt 10000 ]
-then
-   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: THREADS > 10000 REBOOT $NOT"
+if [[ $NOT -gt $MAX_NUM_OF_THREADS ]]; then
+   /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA: THREADS > $MAX_NUM_OF_THREADS REBOOT $NOT"
    /home/pi/firewalla/scripts/fire-rebootf
 fi
 

@@ -265,7 +265,8 @@ module.exports = class FlowMonitor {
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
                         "p.dest.name": actionobj.dhname,
-                        "p.dest.ip": actionobj.dst
+                        "p.dest.ip": actionobj.dst,
+                        "p.dest.port": flow.dp
                       });
 
                       alarmManager2.enqueueAlarm(alarm);
@@ -301,7 +302,8 @@ module.exports = class FlowMonitor {
                       "p.device.name" : actionobj.shname,
                       "p.device.ip": flow.sh,
                       "p.dest.name": actionobj.dhname,
-                      "p.dest.ip": actionobj.dst
+                      "p.dest.ip": actionobj.dst,
+                      "p.dest.port": flow.dp
                     });
 
                     alarmManager2.enqueueAlarm(alarm);
@@ -328,6 +330,7 @@ module.exports = class FlowMonitor {
                           "id.resp_h": flow.dh,
                           "id.orig_p": flow.sp,
                           "id.resp_p": flow.dp,
+                          sp_array: flow.sp_array,
                           "seen.indicator_type": "Intel::DOMAIN",
                         };
                         if (flow.intel && flow.intel.action ) {
@@ -357,6 +360,7 @@ module.exports = class FlowMonitor {
                             "id.resp_h": flow.sh,
                             "id.orig_p": flow.dp,
                             "id.resp_p": flow.sp,
+                            sp_array: flow.sp_array,
                             "seen.indicator_type":"Intel::DOMAIN",
                         };
 
@@ -412,7 +416,8 @@ module.exports = class FlowMonitor {
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
                         "p.dest.name": actionobj.dhname,
-                        "p.dest.ip": actionobj.dst
+                        "p.dest.ip": actionobj.dst,
+                        "p.dest.port": flow.dp
                       });
 
 
@@ -876,11 +881,27 @@ module.exports = class FlowMonitor {
     }
   }
 
+  getDevicePorts(obj) {
+    if(sysManager.isLocalIP(obj['id.orig_h'])) {
+      return obj['sp_array'];
+    } else {
+      return [obj['id.resp_p']];
+    }
+  }
+
   getRemotePort(obj) {
     if(!sysManager.isLocalIP(obj['id.orig_h'])) {
       return obj['id.orig_p'];
     } else {
       return obj['id.resp_p'];
+    }
+  }
+
+  getRemotePorts(obj) {
+    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
+      return obj['sp_array'];
+    } else {
+      return [obj['id.resp_p']];
     }
   }
 
@@ -1013,6 +1034,9 @@ module.exports = class FlowMonitor {
       "p.source": "firewalla_intel",
       "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
+      "e.device.ports": this.getDevicePorts(flowObj),
+      "e.dest.ports": this.getRemotePorts(flowObj),
+      "p.from": intelObj.from
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
@@ -1076,8 +1100,11 @@ module.exports = class FlowMonitor {
       "p.security.reason": reason,
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
-      "p.dest.whois": JSON.stringify(iobj.whois),
-      "p.severity.score": iobj.severityscore
+//      "p.dest.whois": JSON.stringify(iobj.whois),
+      "p.severity.score": iobj.severityscore,
+      "p.from": iobj.from,
+      "e.device.ports": this.getDevicePorts(flowObj),
+      "e.dest.ports": this.getRemotePorts(flowObj)
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {

@@ -63,7 +63,7 @@ class PolicyScheduler {
     }
 
     const interval = cronParser.parseExpression(cronTime)
-    const lastDate = interval.prev()
+    const lastDate = interval.prev().getTime();
     const now = moment()
 
     const diff = now.diff(moment(lastDate), 'seconds')
@@ -167,7 +167,7 @@ class PolicyScheduler {
     const timer = policyTimers[pid]
     const job = runningCronJobs[pid]
 
-    if(!job) {
+    if(job) {
       job.stop()
       delete runningCronJobs[pid]
     }    

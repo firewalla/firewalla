@@ -27,7 +27,7 @@ let await = require('asyncawait/await');
 
 let exec = require('child-process-promise').exec;
 
-let command = "dig +short myip.opendns.com @208.67.220.222";
+let command = "dig +short myip.opendns.com @resolver1.opendns.com";
 let redisKey = "sys:network:info";
 let redisHashKey = "publicIp";
 

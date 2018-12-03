@@ -17,4 +17,4 @@
 #
 
 /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed in normal mode"
-redis-cli del sys:upgrade
+redis-cli del sys:upgrade >/dev/null

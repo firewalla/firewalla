@@ -59,6 +59,17 @@ module.exports = class {
     return true
   }
 
+  isSecurityAlarm(alarm) {
+    const securityAlarmTypes = [
+      "ALARM_SPOOFING_DEVICE",
+      "ALARM_BRO_NOTICE",
+      "ALARM_INTEL",
+      "ALARM_VULNERABILITY"
+    ];
+
+    return securityAlarmTypes.includes(alarm.type);
+  }
+
   match(alarm) {
 
     let matched = false;
@@ -74,6 +85,11 @@ module.exports = class {
       if(!alarm[key]) return false;
       let val2 = alarm[key];
 
+      if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
+        matched = true;
+        continue;
+      }
+
       if(val.startsWith("*.")) {
         // use glob matching
         if(!minimatch(val2, val) && // NOT glob match
@@ -87,10 +103,14 @@ module.exports = class {
           let mask = cidrParts[1];
           if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
             // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
-            return ip.cidrSubnet(val).contains(val2);
+            if(!ip.cidrSubnet(val).contains(val2)) {
+              return false;
+            }
           }
+        } else {
+          // not a cidr subnet exception
+          if(val2 !== val) return false;        
         }
-        if(val2 !== val) return false;        
       }
 
       matched = true;

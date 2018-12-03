@@ -15,689 +15,392 @@
 
 'use strict';
 
-let instance = null;
-let log = require("../../net2/logger.js")(__filename, "info");
+const log = require("../../net2/logger.js")(__filename, "info");
 
-let started = false;
-
-let fs = require('fs');
-let util = require('util');
-let jsonfile = require('jsonfile');
+const fs = require('fs');
+const util = require('util');
+const jsonfile = require('jsonfile');
 const p = require('child_process');
-const _async = require('async');
+
+const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const exec = require('child-process-promise').exec
-
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-const pclient = require('../../util/redis_manager.js').getPublishClient()
 
 const Promise = require('bluebird')
 
 const jsonfileWrite = Promise.promisify(jsonfile.writeFile)
+Promise.promisifyAll(fs);
 
-let f = require('../../net2/Firewalla.js');
-const fc = require('../../net2/config.js')
-let fHome = f.getFirewallaHome();
+const f = require('../../net2/Firewalla.js');
+const fHome = f.getFirewallaHome();
 
-let SysManager = require('../../net2/SysManager');
-let sysManager = new SysManager();
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
 
-let userID = f.getUserID();
-
-var extend = require('util')._extend;
-
-let extensionFolder = fHome + "/extension/ss_client";
+const extensionFolder = fHome + "/extension/ss_client";
 
 // Files
-let redirectionBinary = extensionFolder + "/fw_ss_redir";
-let chinaDNSBinary = extensionFolder + "/chinadns";
-const dnsForwarderName = "dns_forwarder"
-const dnsForwarderBinary = `${extensionFolder}/${dnsForwarderName}`
 
-if(f.isDocker()) {
-  redirectionBinary = extensionFolder + "/bin.x86_64/fw_ss_redir";
-  chinaDNSBinary = extensionFolder + "/bin.x86_64/chinadns";
-}
 
-let enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
-let disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platformName = platformLoader.getPlatformName();
 
-let chnrouteFile = extensionFolder + "/chnroute";
-let chnrouteRestoreForIpset = extensionFolder + "/chnroute.ipset.save";
+const binaryFolder = `${extensionFolder}/bin.${platformName}`;
 
-let ssConfigKey = "scisurf.config";
-let ssConfigPath = f.getUserConfigFolder() + "/ss_client.config.json";
+const dnsForwarderBinary = `${binaryFolder}/dns_forwarder`;
+const redirectionBinary = `${binaryFolder}/fw_ss_redir`;
+const chinaDNSBinary = `${binaryFolder}/chinadns`;
+const ssClientBinary = `${binaryFolder}/fw_ss_client`;
+
+const enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
+const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
+
+const onlineScript = extensionFolder + "/iptables_online.sh";
+const offlineScript = extensionFolder + "/iptables_offline.sh";
+
+const chnrouteFile = extensionFolder + "/chnroute";
+
 var ssConfig = null;
 
+const localSSClientPort = 8822;
+const localSSClientAddress = "0.0.0.0";
+
 let localRedirectionPort = 8820;
-let localRedirectionAddress = "0.0.0.0";
+const localRedirectionAddress = "0.0.0.0";
 let chinaDNSPort = 8854;
 let chinaDNSAddress = "127.0.0.1";
-let redirectionPidPath = f.getRuntimeInfoFolder() + "/ss_client.redirection.pid";
 
 const localDNSForwarderPort = 8857
 const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
 
-let selectedConfig = null
-let oldSelectedConfig = null
-
-let statusCheckTimer = null
-
-function loadConfig(callback) {
-  callback = callback || function() {}
-  
-  rclient.get(ssConfigKey, (err, result) => {
-    if(err) {
-      log.error("Failed to load ssconfig from redis: " + err);
-      callback(err);
-      return;
-    }
-    try {
-      if(result) {
-        ssConfig = JSON.parse(result);
-        callback(null, ssConfig);
-      } else {
-        callback(null, null); // by default, {} => config not initliazed
-      }
-    } catch (e) {
-      log.error("Failed to parse json: " + e);
-      callback(e);
-    }
-  });
-}
-
-function clearConfig(callback) {
-  callback = callback || function() {}
-
-  rclient.del(ssConfigKey, (err) => {
-    if(err) {
-      log.error("Failed to clear ssconfig: " + err);
-      callback(err);
-      return;
-    }
-
-    ssConfig = null;
-    try {
-      fs.unlinkSync(ssConfigPath);
-    } catch(err) {
-      log.error(`Failed to remove file: ${ssConfigPath}, error: ${err}`)
-    }
-    callback(null);
-  });
-}
-
-/*
- * 1. install
- * 2. prepare ipset
- * 3. setup dns forwarder
- * 4. setup redirection
- * 5. setup chinadns
- * 6. setup iptables
- */
-
-async function startAsync(options) { 
-  options = options || {}
-  
-  const config = await selectConfig()
-  
-  log.info("Starting with ss config:", config.server)
-
-  if(options.failover && oldSelectedConfig) {
-    log.info(`Switching ss server from ${oldSelectedConfig.server} to ${selectedConfig.server}.`)
-  }
-  
-  await stopAsync({suppressError: true})
-  
-  try {
-    await _prepareSSConfigAsync()
-    await _installAsync()
-    await _enableIpsetAsync()
-    await _startDNSForwarderAsync()
-    await _startRedirectionAsync()
-    await _enableChinaDNSAsync()
-    await _enableIptablesRuleAsync()
-
-    if(!statusCheckTimer) {
-      statusCheckTimer = setInterval(() => {
-        statusCheck()
-      }, 1000 * 60) // check status every minute
-      log.info("Status check timer installed")
-    }
-    started = true;
-    
-    if(options.failover && oldSelectedConfig) {
-      await pclient.publishAsync("SS:FAILOVER", JSON.stringify({
-        newServer: selectedConfig.server,
-        oldServer: oldSelectedConfig.server
-      }))
-    }
-    
-  } catch(err) {
-    log.error("Got error when starting ss:", err)
-    if(options.failover) {
-      await pclient.publishAsync("SS:DOWN", config.server)
-    } else {
-      await pclient.publishAsync("SS:START:FAILED", config.server)
-    }
-
-    await stopAsync()
-  }
-}
-
-function start(callback) {
-  callback = callback || function() {}
-
-  loadConfig((err, config) => {
-    if(err) {
-      log.error("Failed to load config");
-      callback(err);
-      return;
-    }
-
+class SSClient {
+  constructor(config, options) {
     if(!config) {
-      callback(new Error("ss not configured"));
-      return;
+      throw new Error("Invalid name or config when new SSClient");
     }
 
-    saveConfigToFile();
+    options = options || {}
     
-    // always stop before start
+    this.name = `${config.server}:${config.server_port}`;
+    this.config = config;
+    this.options = options;
+    this.started = false;
+    this.statusCheckTimer = null;
 
-    stop({suppressError: true}, (err) => {
+    log.info(`Creating ss client ${this.name}, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
+  }
+  
+  // file paths
+  getConfigPath() {
+    return `${f.getUserConfigFolder()}/ss_client.${this.name}.config.json`;
+  }
+  
+  getRedirPIDPath() {
+    return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.redir.pid`;
+  }
+  
+  getClientPidPath() {
+    return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.client.pid`;
+  }
+  
+  // ports
+  getRedirPort() {
+    return this.options.redirPort || localRedirectionPort; // by default 8820
+  }
+  
+  getLocalPort() {
+    return this.options.localPort || localSSClientPort; // by default 8822
+  }
+  
+  getChinaDNSPort() {
+    return this.options.chinaDNSPort || chinaDNSPort; // by default 8854
+  }
+  
+  getDNSForwardPort() {
+    return this.options.dnsForwarderPort || localDNSForwarderPort; // by default 8857
+  }
+  
+  async start() {
+    log.info("Starting SS...");
 
-      // ignore stop error
+    const options = this.options;
+    
+    try {
+      await this.stop();
+      await this._createConfigFile();
+      await this._startDNSForwarder();
+      await this._startRedirection();
+      await this._startSSClient();
+      options.gfw && await this._enableChinaDNS();
+      await this._enableIptablesRule();
+
+      if(!this.statusCheckTimer) {
+        this.statusCheckTimer = setInterval(() => {
+//          statusCheck()
+        }, 1000 * 60) // check status every minute
+        log.info("Status check timer installed")
+      }
+      this.started = true;
       
-      _install((err) => {
-        if(err) {
-          log.error("Fail to install ipset");
-          callback(err);
-          stop(); // stop everything if anything wrong.
-          return;
-        }
-        
-        _enableIpset((err) => {
-          if(err) {
-            _disableIpset();
-            callback(err);
-            stop(); // stop everything if anything wrong.
-            return;
-          }
+    } catch(err) {
+      log.error("Failed to start SS, err:", err);
+      // when any err occurs, revoke ss_client
+      await this.stop();
+    }
+  }
 
-          _startDNSForwarder((err) => {
-            if(err) {
-              callback(err);
-              stop(); // stop everything if anything wrong.
-              return;
-            }
+  async stop() {
 
-            _startRedirection((err) => {
-              if(err) {
-                callback(err);
-                stop(); // stop everything if anything wrong.
-                return;
-              }
-              
-              _enableChinaDNS((err) => {
-                if(err) {
-                  callback(err);
-                  stop(); // stop everything if anything wrong.
-                  return;
-                }
-                
-                _enableIptablesRule((err) => {
-                  if(err) {
-                    stop(); // stop everything if anything wrong.
-                  } else {
-                    if(!statusCheckTimer) {
-                      statusCheckTimer = setInterval(() => {
-                        statusCheck()
-                      }, 1000 * 60) // check status every minute
-                      log.info("Status check timer installed")
-                    }
-                    started = true;
-                  }
-                  callback(err);
-                });
-              });
-            });
-          });  
-        });
-      });      
+    log.info("Stopping everything on ss_client");
+
+    if(this.statusCheckTimer) {
+      clearInterval(this.statusCheckTimer)
+      this.statusCheckTimer = null
+      log.info("status check timer is stopped")
+    }
+
+    await this._disableIptablesRule().catch(() => {});
+    await this._disableChinaDNS().catch(() => {});
+    await this._stopSSClient().catch(() => {});
+    await this._stopRedirection().catch(() => {});
+    await this._stopDNSForwarder().catch(() => {});
+    
+    this.started = false;
+  }
+
+  async bypassSSServer() {
+    const chainName = `FW_SHADOWSOCKS${this.name}`;
+
+    if(this.ssServers) {
+      for (let i = 0; i < this.ssServers.length; i++) {
+        const ssServer = this.ssServers[i];
+        const cmd = `sudo iptables -w -t nat -I ${chainName} -d ${ssServer} -j RETURN`;
+        await exec(cmd).catch((err) => {});
+      }
+    }
+  }
+
+  async unbypassSSServer() {
+    const chainName = `FW_SHADOWSOCKS${this.name}`;
+
+    if(this.ssServers) {
+      for (let i = 0; i < this.ssServers.length; i++) {
+        const ssServer = this.ssServers[i];
+        const cmd = `sudo iptables -w -t nat -D ${chainName} -d ${ssServer} -j RETURN`;
+        await exec(cmd).catch((err) => {});
+      }
+    }
+  }
+  
+  async goOnline() {
+    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
+      this.name,
+      this.config.server,
+      this.getRedirPort(),
+      remoteDNS,
+      remoteDNSPort,
+      onlineScript);
+
+    log.info("Running cmd:", cmd);
+
+    await exec(cmd).catch((err) => {
+      log.error(`Got error when ${this.name} go online:`, err)
     });
-  });
-}
 
-function stop(options, callback) {
-  options = options || {}
-  
-  if(typeof options === 'function') {
-    callback = options
-    options = {}
+    await this.bypassSSServer();
+
+    let port = null;
+
+    if(this.options.gfw) {
+      port = this.getChinaDNS();
+    } else {
+      port = this.getDNSForwardPort();
+    }
+
+    await dnsmasq.setUpstreamDNS(port);
+
+    log.info("dnsmasq upstream dns is set to", this.getChinaDNS());
   }
   
-  callback = callback || function() {}
+  async goOffline() {
+    await dnsmasq.setUpstreamDNS(null)
 
-  log.info("Stopping everything on ss_client");
+    await this.unbypassSSServer();
 
-  if(statusCheckTimer) {
-    clearInterval(statusCheckTimer)
-    statusCheckTimer = null
-    log.info("status check timer is stopped")
-  }
-  
-  _async.applyEachSeries([ _disableIptablesRule,
-                          _disableChinaDNS,
-                          _stopRedirection,
-                          _stopDNSForwarder,
-                          _disableIpset],
-                        (err) => {
-                          if(err && ! options.suppressError ) {
-                            log.error("Got error when stop: " + err);
-                          }
-                          started=false;
-                          callback(null); // never report error on stop
-                        });
-}
+    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
+      this.name,
+      this.config.server,
+      this.getRedirPort(),
+      remoteDNS,
+      remoteDNSPort,
+      offlineScript);
 
-const stopAsync = Promise.promisify(stop)
-
-function _install(callback) {
-  callback = callback || function() {}
-
-  p.exec("bash -c 'sudo which ipset &>/dev/null || sudo apt-get install -y ipset'", callback);
-}
-
-const _installAsync = Promise.promisify(_install)
-
-function uninstall(callback) {
-  // TODO
-}
-
-// random select one server config if multiple configurations exist
-async function selectConfig() {
-  const configString = await rclient.getAsync(ssConfigKey)
-  const config = JSON.parse(configString)
-  if(!config) {
-    return null
+    log.info("Running cmd:", cmd);
+    return exec(cmd).catch((err) => {
+      log.error(`Got error when ${this.name} go offline:`, err);
+    });
   }
 
-  oldSelectedConfig = selectedConfig
-  
-  // multiple server configurations
-  if(config.servers && config.servers.constructor.name === 'Array') {
-    const servers = config.servers
+  // START
+  async _createConfigFile() {
+    return jsonfileWrite(this.getConfigPath(), this.config);
+  }
+
+  async _startDNSForwarder() {
+    const cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${this.getDNSForwardPort()} -s ${remoteDNS}:${remoteDNSPort}`
+
+    log.info("dns forwarder cmd:", cmd, {})
+
+    const process = p.spawn(cmd, {shell: true})
+
+    process.on('exit', (code, signal) => {
+      if(code !== 0) {
+        log.error("dns forwarder exited with error:", code, signal, {})
+      } else {
+        log.info("dns forwarder exited successfully!")
+      }
+    })
+  }
+
+  async _startRedirection() {
+    const cmd = util.format("%s -c %s -l %d -f %s -b %s",
+      redirectionBinary,
+      this.getConfigPath(),
+      this.getRedirPort(),
+      this.getRedirPIDPath(),
+      localRedirectionAddress);
+
+    log.info("Running cmd:", cmd);
     
-    if(selectedConfig == null) {
-      const len = servers.length
-      const selectIndex = Math.floor(Math.random() * len)
-      selectedConfig = servers[selectIndex]
-      return servers[selectIndex]
-    } else {
-      // do not select the current selected server
-      const filteredServers = servers.filter((x) => x.server !== selectedConfig.server)
-      const len = filteredServers.length
-      const selectIndex = Math.floor(Math.random() * len)
-      selectedConfig = filteredServers[selectIndex]
-      return filteredServers[selectIndex]
-    }
-  } else {
-    selectedConfig = config
-    return selectedConfig
-  }
-}
-
-async function _prepareSSConfigAsync() {
-  if(selectedConfig) {
-    await jsonfileWrite(ssConfigPath, selectedConfig)
-  } else {
-    log.error("No ss config is selected");
-    return Promise.reject(new Error("No ss config is selected"))
-  }
-}
-
-function saveConfigToFile() {
-  if(!ssConfig.server_port)
-    ssConfig.server_port = ssConfig.port
-  
-  if(!ssConfig.method) {
-    ssConfig.method = "chacha20-ietf-poly1305";
-  }
-  
-  jsonfile.writeFileSync(ssConfigPath, ssConfig, {spaces: 2});
-}
-
-function saveConfig(config, callback) {
-  rclient.set(ssConfigKey, JSON.stringify(config), (err) => {
-    if(err) {
-      callback(err);
-      return;
-    }
-    
-    ssConfig = config;
-    // ss config file will be runtime generated, since multiple servers could be available for choose
-//    saveConfigToFile();
-    callback(null);
-  });
-}
-
-function validateConfig(config) {
-  // TODO
-}
-
-function _startDNSForwarder(callback) {
-  callback = callback || function() {}
-
-  let cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${localDNSForwarderPort} -s ${remoteDNS}:${remoteDNSPort}`
-
-  log.info("dns forwarder cmd:", cmd, {})
-
-  let process = p.spawn(cmd, {shell: true})
-
-  process.on('exit', (code, signal) => {
-    if(code != 0) {
-      log.error("dns forwarder exited with error:", code, signal, {})
-    } else {
-      log.info("dns forwarder exited successfully!")
-    }
-  })
-  
-  callback(null)  
-}
-
-const _startDNSForwarderAsync = Promise.promisify(_startDNSForwarder)
-
-
-function _stopDNSForwarder(callback) {
-  callback = callback || function() {}
-
-  let cmd = `pkill ${dnsForwarderName}`;
-
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.debug("Failed to kill dns forwarder:", err, {})
-    } else {
-      log.info("DNS Forwarder killed")
-    }
-    callback(err)
-  })
-}
-
-const _stopDNSForwarderAsync = Promise.promisify(_stopDNSForwarder)
-
-function _startRedirection(callback) {
-  callback = callback || function() {}
-
-  let cmd = util.format("%s -c %s -l %d -f %s -b %s",
-                        redirectionBinary,
-                        ssConfigPath,
-                        localRedirectionPort,
-                        redirectionPidPath,
-                        localRedirectionAddress);
-
-  log.info("Running cmd:", cmd);
-  // ss_redirection will put itself to background mode
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to start redirection: " + err);
-    } else {
-      log.info("Redirection is started successfully");
-    }
-    callback(err);
-  });
-}
-
-const _startRedirectionAsync = Promise.promisify(_startRedirection)
-
-
-function _stopRedirection(callback) {
-  callback = callback || function() {}
-
-  let cmd = "pkill fw_ss_redir";
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {      
-      log.error("Failed to stop redirection: " + stderr);
-    } else {
-      log.info("redirection is stopped successfully");
-    }
-  });
-  callback(null);
-}
-
-const _stopRedirectionAsync = Promise.promisify(_stopRedirection)
-
-
-function _enableIpset(callback) {
-  callback = callback || function() {}
-  
-  let cmd = "sudo ipset -! restore -file " + chnrouteRestoreForIpset;
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to restore ipset data for chnroute: " + stderr);
-    } else {
-      log.info("ipset data is restored successfully");
-    }
-    callback(err);
-  });
-}
-
-const _enableIpsetAsync = Promise.promisify(_enableIpset)
-
-
-function _disableIpset(callback) {
-  callback = callback || function() {}
-
-  let cmd = "sudo ipset destroy chnroute";
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to remove ipset data for chnroute: " + stderr);
-    } else {
-      log.info("ipset data is removed successfully");
-    }
-    callback(null);
-  });
-}
-
-const _disableIpsetAsync = Promise.promisify(_disableIpset)
-
-
-function _enableIptablesRule(callback) {
-  callback = callback || function() {}
-
-  let cmd = util.format("FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
-                        selectedConfig.server,
-                        localRedirectionPort,
-                        remoteDNS,
-                        remoteDNSPort,
-                        enableIptablesBinary);
-
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to enable iptables rules: " + stderr);
-    } else {
-      log.info("iptables rules are updated successfully");
-    }
-    callback(err);
-  });
-}
-
-const _enableIptablesRuleAsync = Promise.promisify(_enableIptablesRule)
-
-
-function _disableIptablesRule(callback) {
-  callback = callback || function() {}
-
-  let cmd = disableIptablesBinary;
-
-  log.info("Running cmd:", cmd);
-  p.exec(cmd, (err, stdout, stderr) => {
-    if(err) {
-      log.error("Failed to disable iptables rules: " + stderr);
-    } else {
-      log.info("iptables rules are removed successfully");
-    }
-    callback(null);
-  });
-}
-
-const _disableIptablesRuleAsync = Promise.promisify(_disableIptablesRule)
-
-
-function _enableChinaDNS(callback) {
-  callback = callback || function() {}
-
-
-  let localDNSServers = sysManager.myDNS();
-  if(localDNSServers == null || localDNSServers.length == 0) {
-    // only use 114 dns server if local dns server is not available (NOT LIKELY)
-    localDNSServers = ["114.114.114.114"];
+    return exec(cmd);
   }
 
-  const localDNS = localDNSServers[0];
-
-  fs.appendFile(chnrouteFile, localDNS, (err) => {
-    if(err) {
-      log.error("Failed to append local dns info to chnroute file, err:", err);
-      callback(err);
-      return;
+  async _enableChinaDNS() {
+    let localDNSServers = sysManager.myDNS();
+    if(localDNSServers == null || localDNSServers.length == 0) {
+      // only use 114 dns server if local dns server is not available (NOT LIKELY)
+      localDNSServers = ["114.114.114.114"];
     }
 
-    let dnsConfig = util.format("%s,%s:%d",
-                              localDNSServers[0],
-                              "127.0.0.1",
-                              localDNSForwarderPort
-                             )
-  
-    let args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
+    const dnsConfig = util.format("%s,%s:%d",
+      localDNSServers[0],
+      "127.0.0.1",
+      localDNSForwarderPort
+    )
+
+    const args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
 
     log.info("Running cmd:", chinaDNSBinary, args);
 
-    let chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
+    const chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
 
     chinadns.on('close', (code) => {
       log.info("chinadns exited with code", code);
     });
+  }
+
+  async _enableIptablesRule() {
+
+    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
+      this.name,
+      this.config.server,
+      this.getRedirPort(),
+      remoteDNS,
+      remoteDNSPort,
+      enableIptablesBinary);
+
+    log.info("Running cmd:", cmd);
     
-    callback(null);
-
-  });
+    return exec(cmd);
+  }
   
-}
+  /*
+   * /home/pi/firewalla/extension/ss_client/fw_ss_client
+   *   -c /home/pi/.firewalla/config/ss_client.config.json
+   *   -l 8822
+   *   -f /home/pi/.firewalla/run/ss_client.pid
+    *  -b 0.0.0.0
+   */
+  async _startSSClient() {
+    const cmd = `${ssClientBinary} -c ${this.getConfigPath()} -l ${this.getLocalPort()} -b ${localSSClientAddress} -f ${this.getClientPidPath()}`;
+    log.info("Starting ss client...");
+    return exec(cmd);
+  }
+  
+  // STOP
+//   await _disableIptablesRuleAsync().catch(() => {});
+// await _disableChinaDNSAsync().catch(() => {});
+// await _stopSSClient().catch(() => {});
+// await _stopRedirectionAsync().catch(() => {});
+// await _stopDNSForwarderAsync().catch(() => {});
+// await _disableIpsetAsync().catch(() => {});
 
-const _enableChinaDNSAsync = Promise.promisify(_enableChinaDNS)
-
-
-function _disableChinaDNS(callback) {
-  callback = callback || function() {}
-
-  const revertCommand = `git checkout HEAD -- ${chnrouteFile}`;
-
-  p.exec(revertCommand, (err, stdout, stderr) => {
-    // ignore err
-    let cmd = util.format("pkill chinadns");
-
-    p.exec(cmd, (err, stdout, stderr) => {
-      if(err) {
-        // log.error("Failed to disable chinadns");
-      } else {
-      log.info("chinadns is stopped successfully");
-      }
-      callback(null);
+  async _disableIptablesRule() {
+    const cmd = util.format("FW_NAME=%s %s",
+      this.name,
+      disableIptablesBinary);
+    
+    log.info("Running cmd:", cmd);
+    return exec(cmd).catch((err) => {
+//      log.error("Got error when disable ss iptables rule set:", err);
     });
-  });
-}
-
-const _disableChinaDNSAsync = Promise.promisify(_disableChinaDNS)
-
-function isStarted() {
-  return started;
-}
-
-function readConfig() {
-  try {
-    let config = jsonfile.readFileSync(ssConfigPath);
-    return config;
-  } catch (err) {
-    return null;
   }
-}
 
-function configExists() {
-  return readConfig() !== null;
-}
-
-function getChinaDNS() {
-  return chinaDNSAddress + "#" + chinaDNSPort;
-}
-
-function hasMultipleServers() {
-  return ssConfig && ssConfig.servers
-}
-
-async function statusCheck() {
+  async _disableChinaDNS() {
+    const cmd = `pkill -f 'chinadns.*p ${this.getChinaDNSPort()} .*${this.getDNSForwardPort()}'`;
+    
+    return exec(cmd).catch((err) => {
+//      log.error("Got error when disable china dns:", err);
+    });
+  }
   
-  return; // TBD need a better status check solution
-  
-  let checkResult = await verifyDNSConnectivity()
-  
-  // retry if failed
-  if(!checkResult) {
-    checkResult = await verifyDNSConnectivity()
-  }
-  if(!checkResult) {
-    checkResult = await verifyDNSConnectivity()
+  async _stopSSClient() {
+    const cmd = `pkill -f 'fw_ss_client.*${this.getClientPidPath()}'`;
+    log.info("Stopping ss client...", cmd);
+    return exec(cmd).catch((err) => {
+//      log.info("Failed to stop ss client", err);
+    });
   }
 
-  if(!checkResult) {
-    let psResult = await exec("ps aux | grep ss")
-    let stdout = psResult.stdout
-    log.info("ss client running status: \n", stdout)
-
-    try {
-      await startAsync({failover: true})  
-    } catch(err) {
-      log.error("Failed to restart ss_client:", err)
-    }
+  async _stopRedirection() {
+    const cmd = `pkill 'fw_ss_redir.*${this.getRedirPIDPath()}'`;
+    log.info("Running cmd:", cmd);
+    
+    return exec(cmd).catch((err) => {
+//      log.error("Failed to stop redir:", err);
+    });
   }
+  
+  async _stopDNSForwarder() {
+    const cmd = `pkill 'dns_forwarder.*${this.getDNSForwardPort()}'`;
+    log.info("Running cmd:", cmd);
+
+    return exec(cmd).catch((err) => {
+//      log.error("Failed to stop redir:", err);
+    });
+  }
+  
+
+  
+  getChinaDNS() {
+    return chinaDNSAddress + "#" + this.getChinaDNSPort();
+  }
+  
+  async cleanup() {
+    // TODO: cleanup all temp files
+  }
+
+
+  isStarted() {
+    return this.started;
+  }
+  
+  async statusCheck() {
+  }
+
 }
 
-async function verifyDNSConnectivity() {
-  let cmd = `dig -4 +short -p 8853 @localhost www.google.com`
-  log.info("Verifying DNS connectivity...")
+module.exports = SSClient;
 
-  try {
-    let result = await exec(cmd)
-    if(result.stdout === "") {
-      log.error("Got empty dns result when verifying dns connectivity")
-      return false
-    } else if(result.stderr !== "") {
-      log.error("Got error output when verifying dns connectivity:", result.stderr)
-      return false
-    } else {
-      log.info("DNS connectivity looks good")
-      return true
-    }
-  } catch(err) {
-    log.error("Got error when verifying dns connectivity:", err.stdout)
-    return false
-  }
-
-}
-
-module.exports = {
-  start:start,
-  startAsync: startAsync,
-  stop:stop,
-  stopAsync: stopAsync,
-  saveConfig:saveConfig,
-  isStarted:isStarted,
-  configExists:configExists,
-  getChinaDNS:getChinaDNS,
-  loadConfig:loadConfig,
-  clearConfig:clearConfig,
-  selectedConfig: selectedConfig
-};

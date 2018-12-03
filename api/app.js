@@ -23,7 +23,7 @@ passport.use(new Strategy(
     });
   }));
 
-var encipher = require('./routes/fastencipher2');
+var encipher = require('./routes/fastencipher2').router;
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -52,6 +52,7 @@ subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 subpath_v1.use('/encipher', encipher);
+subpath_v1.use('/encipher_raw', require('./routes/encipher.js'));
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -68,7 +69,7 @@ if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
     log.error("Got error when handling request: " + err, err.stack, {});
     res.status(err.status || 500);
-    res.render('error', {
+    res.json({
       message: err.message,
       error: err
     });
@@ -80,7 +81,7 @@ if (app.get('env') === 'development') {
 app.use(function(err, req, res, next) {
   log.error("Got error when handling request: " + err, err.stack, {});
   res.status(err.status || 500);
-  res.render('error', {
+  res.json({
     message: err.message,
     error: {}
   });

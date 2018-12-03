@@ -1,25 +1,31 @@
 {
-  "version": 1.957,
+  "version": 1.958,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
+  "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
+  "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL":"https://firewalla.encipher.io/license/api/v1",
+  "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "cacheInit": true,
     "discovery": {
       "networkInterfaces": ["eth0","eth0:0","wlan0"]
     },
     "iptables": {
        "defaults": [
-          "sudo sudo iptables -t nat -A POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
-          "sudo iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP &>/dev/null && (sudo iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP || false)|| true",
-          "sudo iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-          "sudo ip6tables -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
-          "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
+          "sudo sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
+          "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
+          "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
        ]
     },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
   "newSpoof": true,
+  "timing": {
+    "alarm.cooldown": 900,
+    "alarm.large_upload.cooldown": 14400,
+    "alarm.vpn_client_connection.cooldown": 14400
+  },
   "secondaryInterface": {
     "intf":"eth0:0",
     "ipOnly": "192.168.218.1",
@@ -32,6 +38,9 @@
      "ipsubnet2":"192.168.168.0/24",
      "ipnet2":"192.168.168",
      "ipmask2":"255.255.255.0"
+  },
+  "vpnInterface": {
+    "subnet": "10.8.0.0/24"
   },
   "dhcp": {
     "leaseTime": "24h"
@@ -60,6 +69,7 @@
     "WhoisDomainIntel",
     "Cymon2Intel",
     "SSLIntel",
+    "UAIntel",
     "TransferContextIntel",
     "MonkeyIntel"
   ],
@@ -73,6 +83,9 @@
     "APISensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
+    "OvpnConnSensor": {
+      "logPath": "/var/log/openvpn-server.log"
+    },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "DNSMASQSensor": {},
@@ -155,14 +168,21 @@
         "expires": -1,
         "count": 200
       }
+    },
+    "DeviceOfflineSensor": {
+      "interval": 60,
+      "idle": 1800
     }
 },
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
     "DeviceStatusUpdateHook": {},
-    "DeviceHook": {},
-    "DestIPFoundHook": {}
+    "DeviceHook": {
+      "hostExpirationSecs": 3600
+    },
+    "DestIPFoundHook": {},
+    "VPNHook": {}
   },
     "bro": {
       "notice" : {
@@ -221,6 +241,9 @@
       },
       "userAgent": {
          "expires": 604800
+      },
+      "activityUserAgent": {
+        "expires": 14400
       }
     },
 
@@ -236,6 +259,10 @@
       "game": true,
       "large_upload": true,
       "new_device": true,
+      "device_online": true,
+      "device_offline": true,
+      "spoofing_device": false,
+      "vpn_client_connection": true,
       "cyber_security": true,
       "cyber_security.autoBlock": true,
       "vulnerability": false,
@@ -255,6 +282,8 @@
 
     "hiddenFeatures": [
       "naughty_monkey"
-    ]     
+    ],
+    "pubKeys": [
 
+    ]
 }

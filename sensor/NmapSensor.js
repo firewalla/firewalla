@@ -213,6 +213,10 @@ class NmapSensor extends Sensor {
     return Promise.all(this.networkRanges.map((range) => {
 
       log.info("Scanning network", range, "to detect new devices...");
+      if (range.endsWith('/8')) {
+        log.info("Subnet " + range + " contains too many ip addresses to scan, skip it.")
+        return Promise.resolve();
+      }
 
       let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
       if (fastMode === true) {
@@ -266,18 +270,24 @@ class NmapSensor extends Sensor {
     }
     
     if(host && host.mac) {
+      const hostInfo = {
+        ipv4: host.ipv4Addr,
+        ipv4Addr: host.ipv4Addr,
+        mac: host.mac,
+        macVendor: host.macVendor,
+        from: "nmap"
+      };
+
+      if(host.macVendor === 'Unknown') {
+        delete hostInfo.macVendor;
+      }
+
       sem.emitEvent({
         type: "DeviceUpdate",
         message: "Found a device via NmapSensor",
         suppressEventLogging: true,
         suppressAlarm: this.suppressAlarm,
-        host:  {
-          ipv4: host.ipv4Addr,
-          ipv4Addr: host.ipv4Addr,
-          mac: host.mac,
-          macVendor: host.macVendor,
-          from: "nmap"
-        }
+        host: hostInfo
       });
     }
   }
@@ -305,13 +315,16 @@ class NmapSensor extends Sensor {
         }
 
         if(!findings) {
+          reject(new Error("Invalid nmap scan result"));
           return;
         }
 
         let hostsJSON = findings.nmaprun && findings.nmaprun.host;
 
-        if(!hostsJSON)
+        if(!hostsJSON) {
+          reject(new Error("Invalid nmap scan result"));
           return;
+        }
 
         if(hostsJSON.constructor !== Array) {
           hostsJSON = [hostsJSON];
