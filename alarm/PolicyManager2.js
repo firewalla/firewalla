@@ -614,8 +614,10 @@ class PolicyManager2 {
           }
         })
 
-        rclient.del(policyKeys);
-        rclient.zrem('policy_active', policyIds);
+        if (policyIds.length) { // policyIds & policyKeys should have same length
+          rclient.del(policyKeys);
+          rclient.zrem('policy_active', policyIds);
+        }
         log.info('Deleted', mac, 'related policies:', policyKeys);
       })
       .catch(e => {

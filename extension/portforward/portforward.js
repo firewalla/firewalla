@@ -72,13 +72,14 @@ class PortForward {
               } else {
                 await (this.addPort(obj));
               }
+              // TODO: config should be saved after rule successfully applied
               await (this.saveConfig());
             }
           })();
         }
       });
 
-      instance = this      
+      instance = this
     }
 
     return instance
@@ -130,7 +131,7 @@ class PortForward {
         if (
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
-          (!map.protocl || map.protocol == "*" || _map.protocol == map.protocol) &&
+          (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
           _map.toIP == map.toIP
         ) {
           return i;
@@ -169,23 +170,21 @@ class PortForward {
   }
 
   // save config should follow this
-  removePort(map) {
-    return async(()=>{
-      let old = this.find(map);
-      while (old >= 0) {
-        this.config.maps[old].state = false;
-        map = this.config.maps[old];
-        this.config.maps.splice(old,1);
-        log.info("PortForwarder:removePort Found MAP",map);
-        old = this.find(map);
-      }
-      map.state = false;
+  async removePort(map) {
+    let old = this.find(map);
+    while (old >= 0) {
+      this.config.maps[old].state = false;
+      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]))
+      this.config.maps.splice(old, 1);
+
+      log.info("PortForwarder:removePort Found MAP", dupMap);
+
       // we call remove anyway ... even there is no entry
-      const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
       let state = await (iptable.portforwardAsync(dupMap));
-      return state;
-    })()
+
+      old = this.find(map);
+    }
   }
 
   restore() {
