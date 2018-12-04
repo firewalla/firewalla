@@ -18,7 +18,6 @@ let log = require('./logger.js')(__filename);
 
 var ip = require('ip');
 var spawn = require('child_process').spawn;
-var async = require('async');
 
 let Promise = require('bluebird');
 
@@ -302,33 +301,46 @@ function _dnsChange(ip, dns, state, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process')
-        .exec("sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw", (err, out, code) => {
-            if (err) {
-                log.error("IPTABLE:FLUSH:Unable to flush", err, out);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-        });
+  this.process = require('child_process').exec(
+    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw",
+    (err, out, code) => {
+      if (err) {
+        log.error("IPTABLE:FLUSH:Unable to flush", err, out);
+      }
+      if (callback) {
+        callback(err, null);
+      }
+    }
+  );
 }
 
 function run(listofcmds, eachCallback, finalCallback) {
-    async.eachLimit(listofcmds, 1, (cmd, cb) => {
-        log.info("IPTABLE:RUNCOMMAND", cmd);
-        let err = null;
-        try {
-            require('child_process').execSync(cmd, {timeout: 10000}); // set timeout to 10s
-        } catch(e) {
-            log.error("IPTABLE:RUN:Unable to run commands", e.message);
-            err = e;
+  require('async').eachLimit(listofcmds, 1, async (cmd, cb) => {
+    log.info("IPTABLE:RUNCOMMAND", cmd);
+
+    await require('child_process').exec(
+      cmd,
+      {timeout: 10000}, // set timeout to 10s
+      (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
         }
+        if (stderr) {
+          log.warn("IPTABLE:RUN:", cmd, stderr);
+        }
+        if (stdout) {
+          log.debug("IPTABLE:RUN:", cmd, stdout);
+        }
+
         if (eachCallback) {
-            eachCallback(err, null);
+          eachCallback(err, null);
         }
         cb(err);
-    }, (error) => {
+      },
+      (error) => {
         if (finalCallback)
-            finalCallback(error, null);
-    });
+          finalCallback(error, null);
+      }
+    );
+  })
 }

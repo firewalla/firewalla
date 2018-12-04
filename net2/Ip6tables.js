@@ -106,24 +106,24 @@ function iptables(rule, callback) {
 }
 
 function iptablesArgs(rule) {
-    var args = [];
+  var args = [];
 
-    if (!rule.chain) rule.chain = 'INPUT';
+  if (!rule.chain) rule.chain = 'INPUT';
   if(rule.table) args = args.concat(["-t", rule.table])
-    if (rule.chain) args = args.concat([rule.action, rule.chain]);
-    if (rule.protocol) args = args.concat(["-p", rule.protocol]);
-    if (rule.src) args = args.concat(["--source", rule.src]);
-    if (rule.dst) args = args.concat(["--destination", rule.dst]);
-    if (rule.sport) args = args.concat(["--sport", rule.sport]);
-    if (rule.dport) args = args.concat(["--dport", rule.dport]);
-    if (rule.in) args = args.concat(["-i", rule.in]);
-    if (rule.out) args = args.concat(["-o", rule.out]);
-    if (rule.target) args = args.concat(["-j", rule.target]);
-    if (rule.list) args = args.concat(["-n", "-v"]);
+  if (rule.chain) args = args.concat([rule.action, rule.chain]);
+  if (rule.protocol) args = args.concat(["-p", rule.protocol]);
+  if (rule.src) args = args.concat(["--source", rule.src]);
+  if (rule.dst) args = args.concat(["--destination", rule.dst]);
+  if (rule.sport) args = args.concat(["--sport", rule.sport]);
+  if (rule.dport) args = args.concat(["--dport", rule.dport]);
+  if (rule.in) args = args.concat(["-i", rule.in]);
+  if (rule.out) args = args.concat(["-o", rule.out]);
+  if (rule.target) args = args.concat(["-j", rule.target]);
+  if (rule.list) args = args.concat(["-n", "-v"]);
   if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
   if(rule.todest) args = args.concat(["--to-destination", rule.todest])
 
-    return args;
+  return args;
 }
 
 function newRule(rule, callback) {
@@ -155,14 +155,17 @@ function deleteRule(rule, callback) {
 }
 
 function flush(callback) {
-    this.process = cp.exec("sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw", (err, out, code) => {
-            if (err) {
-                log.error("IP6TABLE:FLUSH:Unable to flush", err, out);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-        });
+  this.process = cp.exec(
+    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw",
+    (err, out, code) => {
+      if (err) {
+        log.error("IP6TABLE:FLUSH:Unable to flush", err, out);
+      }
+      if (callback) {
+        callback(err, null);
+      }
+    }
+  );
 }
 
 // run() is deleted as same functionality is provided in Iptables.run() 

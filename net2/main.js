@@ -120,10 +120,6 @@ process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
-  // setTimeout(()=>{
-  //   cp.execSync("touch /home/pi/.firewalla/managed_reboot")
-  //   process.exit(1);
-  // },1000*5);
 });
 
 let hl = null;
@@ -260,7 +256,7 @@ function run() {
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
-    var policyManager = new PolicyManager('info');
+    var policyManager = new PolicyManager();
 
     policyManager.flush(config, (err) => {
       if(err) {
@@ -271,7 +267,6 @@ function run() {
       sem.emitEvent({
         type: 'IPTABLES_READY'
       });
-
 
       async(() => {
         await (mode.reloadSetupMode()) // make sure get latest mode from redis

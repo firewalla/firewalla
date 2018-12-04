@@ -45,6 +45,7 @@ const VpnManager = require("../vpn/VpnManager.js");
 const vpnManager = new VpnManager('info');
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
+const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -700,26 +701,6 @@ class netBot extends ControllerBot {
         }
       }
     });
-    this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
-      /*
-       let m = null;
-       let n = null;
-       log.info("Monitor:Flow:In", channel, ip, msg, "=====");
-       if (ip && msg) {
-       if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-       let flow = msg['txRatioRanked'][0];
-       if (flow.rank > 0) {
-       return;
-       }
-       m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-       n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-       }
-       }
-       if (m)
-       this.tx2(this.primarygid, m, n, {id:msg.id});
-       */
-    });
-
 
     this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
       if (msg) {
@@ -801,7 +782,8 @@ class netBot extends ControllerBot {
     setTimeout(() => {
       this.scanStart();
       async(() => {
-        let branchChanged = await (sysManager.isBranchJustChanged())
+        let branchChanged = await (sysManager.isBranchJustChanged());
+        let upgradeInfo = await (upgradeManager.getUpgradeInfo())
         if(branchChanged) {
           let branch = null
           
@@ -817,6 +799,7 @@ class netBot extends ControllerBot {
             break;
           default:
             // do nothing, should not happen here
+            log.error("=== Got branch change status", branchChanged, "===")
             break;
           }
 
@@ -826,8 +809,13 @@ class netBot extends ControllerBot {
             this.tx(this.primarygid, "200", msg)
             sysManager.clearBranchChangeFlag()            
           }
-
-        } else {
+        }
+        else if (upgradeInfo.upgraded) {
+          let msg = `Firewalla is upgraded to ${upgradeInfo.to}`;
+          this.tx(this.primarygid, "200", msg);
+          upgradeManager.updateVersionTag();
+        }
+        else {
           if (sysManager.systemRebootedByUser(true)) {
             if (nm.canNotify() == true) {
               this.tx(this.primarygid, "200", "Firewalla reboot completed.");
@@ -869,18 +857,6 @@ class netBot extends ControllerBot {
                    } 
                 let data = {
                    gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data);
-             }
-             break;
-         case "System:Upgrade:Soft":
-             if (msg) {
-                let notifyMsg = {
-                  title: `Firewalla is upgraded to ${msg}`,
-                  body: ""
-                }
-                let data = {
-                  gid: this.primarygid,
                 };
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
@@ -969,12 +945,10 @@ class netBot extends ControllerBot {
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
-    sclient.subscribe("System:Upgrade:Soft");
-    sclient.subscribe("SS:DOWN")
-    sclient.subscribe("SS:FAILOVER")
-    sclient.subscribe("SS:START:FAILED")
+    sclient.subscribe("SS:DOWN");
+    sclient.subscribe("SS:FAILOVER");
+    sclient.subscribe("SS:START:FAILED");
     sclient.subscribe("APP:NOTIFY");
-
   }
 
   boneMsgHandler(msg) {
@@ -3328,10 +3302,6 @@ process.on('unhandledRejection', (reason, p)=>{
     msg:msg,
     stack:reason.stack
   },null);
-  // setTimeout(() => {
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
-  //   process.exit(1);
-  // }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
 process.on('uncaughtException', (err) => {
