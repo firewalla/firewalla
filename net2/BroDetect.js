@@ -1311,49 +1311,6 @@ module.exports = class {
     }
 
 
-    processSslData2(data) {
-        try {
-            let obj = JSON.parse(data);
-            if (obj == null) {
-                log.error("SSL:Drop", obj);
-                return;
-            }
-
-            let host = obj["id.orig_h"];
-            let dst = obj["id.resp_h"];
-            let dsthost = obj['server_name'];
-            let flowdir = "in";
-            // Cache
-            let appCacheObj = {
-                uid: obj.uid,
-                host: obj.server_name,
-                ssl: true,
-                rqbl: 0,
-                rsbl: 0,
-            };
-
-            this.addAppMap(appCacheObj.uid, appCacheObj);
-
-            // TODO: Need to write code take care to ensure orig host is us ...
-            let key = "flow:ssl:" + flowdir + ":" + host;
-            let strdata = JSON.stringify(obj);
-            let redisObj = [key, obj.ts, strdata];
-            log.debug("SSL:Save", redisObj);
-            rclient.zadd(redisObj, (err, response) => {
-                if (err == null) {
-                    if (this.config.bro.ssl.expires) {
-                        rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
-                    }
-                } else {
-                    log.error("SSL:Save:Error", err);
-                }
-            });
-
-        } catch (e) {
-            log.error("SSL:Error Unable to save", e, data, e.stack, {});
-        }
-    }
-
     cleanUpSanDNS(obj) {
       // san.dns may be an array, need to convert it to string to avoid redis warning
       if(obj["san.dns"] && obj["san.dns"].constructor === Array) {

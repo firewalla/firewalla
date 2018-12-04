@@ -14,36 +14,36 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let async2 = require('async');
+const async2 = require('async');
 
-let util = require('util');
+const util = require('util');
 
-let FlowAggrTool = require('../net2/FlowAggrTool');
-let flowAggrTool = new FlowAggrTool();
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let DestIPFoundHook = require('../hook/DestIPFoundHook');
-let destIPFoundHook = new DestIPFoundHook();
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
+const destIPFoundHook = new DestIPFoundHook();
 
-let HostTool = require('../net2/HostTool');
-let hostTool = new HostTool();
+const HostTool = require('../net2/HostTool');
+const hostTool = new HostTool();
 
-let AppFlowTool = require('../flow/AppFlowTool.js')
-let appFlowTool = new AppFlowTool()
+const AppFlowTool = require('../flow/AppFlowTool.js')
+const appFlowTool = new AppFlowTool()
 
-let CategoryFlowTool = require('../flow/CategoryFlowTool.js')
-let categoryFlowTool = new CategoryFlowTool()
+const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+const categoryFlowTool = new CategoryFlowTool()
 
 let instance = null;
 

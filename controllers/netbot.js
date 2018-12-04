@@ -33,6 +33,8 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
+const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
 const SysManager = require('../net2/SysManager.js');
@@ -106,6 +108,9 @@ const f = require('../net2/Firewalla.js');
 const flowTool = require('../net2/FlowTool')();
 
 const i18n = require('../util/i18n');
+
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
 const NetBotTool = require('../net2/NetBotTool');
 const netBotTool = new NetBotTool();
@@ -595,8 +600,8 @@ class netBot extends ControllerBot {
     });
   }
   
-  _portforward(ip, msg, callback) {
-    log.info("_portforward",ip,msg);
+  _portforward(msg, callback) {
+    log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
     this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
@@ -1164,9 +1169,10 @@ class netBot extends ControllerBot {
               });
               break;
             case "portforward":
-              this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+              this._portforward(msg.data.value.portforward, (err, obj) => {
                 cb(err);
               });
+              break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
@@ -2054,7 +2060,7 @@ class netBot extends ControllerBot {
           let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
-        }        
+        }
       }
 
       let host = await (this.hostManager.getHostAsync(ip));
@@ -2973,45 +2979,12 @@ class netBot extends ControllerBot {
           log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
-            // delete related rules
-            pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
-              if(err) {
-                throw new Error(err);
-              } else {
-                let multi = rclient.multi();
-                // device specified policy
-                multi.del('policy:mac:' + hostMac);
 
-                rules = rules.forEach(rule => {
-                  if (_.isEmpty(rule.scope)) return;
+            await pm2.deleteMacRelatedPolicies(hostMac);
 
-                  if (rule.scope.some(mac => mac == hostMac)) {
-                    // rule targets only deleted device
-                    if (rule.scope.length <= 1) {
-                      multi.del('policy:' + rule.pid);
-                      log.info('remove policy:' + rule.pid);
-                      multi.zrem('policy_active', rule.pid);
-                      log.info('remove from policy_active:', rule.pid);
-                    }
-                    // rule targets NOT only deleted device
-                    else {
-                      let reducedScope = _.without(rule.scope, hostMac);
-                      multi.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
-                      log.info('remove scope from policy:' + rule.pid, hostMac);
-                    }
-                  }
-                })
-
-                multi.execAsync()
-                  .catch(e => {
-                    log.info('Error removing related policy & rules', e);
-                  })
-                  .then(res => {
-                    log.info('Successfully removed rules and policies.', res);
-                  });
-              }
-            });
-
+            await categoryFlowTool.delAllCategories(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
             ips.forEach(async (ip) => {
@@ -3019,6 +2992,22 @@ class netBot extends ControllerBot {
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
                 await hostTool.deleteHost(ip);
+
+                // remove port forwarding
+                this._portforward({
+                  "toPort": "*",
+                  "protocol": "*",
+                  "toIP": ip,
+                  "type": "portforward",
+                  "state": false,
+                  "dport": "*"
+                })
+
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.delAsync([
+                  "monitor:flow:in:" + ip,
+                  "monitor:flow:out:" + ip
+                ]);
               }
             });
             await hostTool.deleteMac(hostMac);
