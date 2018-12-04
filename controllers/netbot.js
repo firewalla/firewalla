@@ -40,7 +40,6 @@ const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
 const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
-const vpnManager = new VpnManager('info');
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
@@ -1497,6 +1496,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
             // this should set local port of VpnManager, which will be used in getOvpnFile
+            const vpnManager = new VpnManager('info'); // VpnManager is a singleton
             vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
               if (err != null) {
                 log.error("Failed to configure VPN", err);
