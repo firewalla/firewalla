@@ -18,7 +18,8 @@ const config = winston.config;
 
 const loggerManager = require('./LoggerManager.js');
 
-let path = require('path');
+const path = require('path');
+const fs = require('fs');
 
 const moment = require('moment')
 
@@ -29,22 +30,30 @@ String.prototype.capitalizeFirstLetter = function () {
 var production = false;
 
 if (process.env.FWPRODUCTION) {
-  console.log("FWDEBUG SET TO PRODUCTION");
+  console.log("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
-if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
-  console.log("FWDEBUG SET TO PRODUCTION");
+if (fs.existsSync("/tmp/FWPRODUCTION")) {
+  console.log("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
 var globalLogLevel = 'info';
-if(production) {
+
+if (process.env.FWDEBUG) {
+  globalLogLevel = process.env.FWDEBUG;
+  console.log("LOGGER SET TO", globalLogLevel);
+} else if (fs.existsSync("/home/pi/.firewalla/config/FWDEBUG")) {
+  globalLogLevel = fs.readFileSync("/home/pi/.firewalla/config/FWDEBUG", "utf8").trim();
+  console.log("LOGGER SET TO", globalLogLevel);
+}
+else if (production) {
   globalLogLevel = 'warn';
 }
 
 function getFileTransport() {
-  let loglevel = 'info';
+  let loglevel = globalLogLevel;
   // if (production) {
   //   loglevel = 'warn';
   // }   
@@ -73,13 +82,13 @@ function getFileTransport() {
 }
 
 function getConsoleTransport() {
-  let loglevel = 'info';
+  let loglevel = globalLogLevel;
   // if (production) {
   //   loglevel = 'warn';
   // }    
 
   return new(winston.transports.Console)({
-    loglevel: loglevel,
+    level: loglevel,
     timestamp: function() {
       return moment().format('YYYY-MM-DD HH:mm:ss')
     },
@@ -97,7 +106,7 @@ function getConsoleTransport() {
 
 function getTestTransport() {
   return new(winston.transports.File) ({
-    level: 'info',
+    level: globalLogLevel,
     name: 'log-file-test',
     filename: "test.log",
     dirname: "/home/pi/.forever",
@@ -127,7 +136,6 @@ function setupLogger(transports) {
   });
 
   return logger
-
 }
 
 // pass in function arguments object and returns string with whitespaces

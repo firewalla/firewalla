@@ -33,6 +33,8 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
+const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
+const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
 const SysManager = require('../net2/SysManager.js');
@@ -40,9 +42,9 @@ const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
 const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
-const vpnManager = new VpnManager('info');
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
+const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -106,6 +108,9 @@ const f = require('../net2/Firewalla.js');
 const flowTool = require('../net2/FlowTool')();
 
 const i18n = require('../util/i18n');
+
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
 const NetBotTool = require('../net2/NetBotTool');
 const netBotTool = new NetBotTool();
@@ -595,8 +600,8 @@ class netBot extends ControllerBot {
     });
   }
   
-  _portforward(ip, msg, callback) {
-    log.info("_portforward",ip,msg);
+  _portforward(msg, callback) {
+    log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
     this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
@@ -695,26 +700,6 @@ class netBot extends ControllerBot {
         }
       }
     });
-    this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
-      /*
-       let m = null;
-       let n = null;
-       log.info("Monitor:Flow:In", channel, ip, msg, "=====");
-       if (ip && msg) {
-       if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-       let flow = msg['txRatioRanked'][0];
-       if (flow.rank > 0) {
-       return;
-       }
-       m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-       n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-       }
-       }
-       if (m)
-       this.tx2(this.primarygid, m, n, {id:msg.id});
-       */
-    });
-
 
     this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
       if (msg) {
@@ -796,7 +781,8 @@ class netBot extends ControllerBot {
     setTimeout(() => {
       this.scanStart();
       async(() => {
-        let branchChanged = await (sysManager.isBranchJustChanged())
+        let branchChanged = await (sysManager.isBranchJustChanged());
+        let upgradeInfo = await (upgradeManager.getUpgradeInfo())
         if(branchChanged) {
           let branch = null
           
@@ -812,6 +798,7 @@ class netBot extends ControllerBot {
             break;
           default:
             // do nothing, should not happen here
+            log.error("=== Got branch change status", branchChanged, "===")
             break;
           }
 
@@ -821,8 +808,13 @@ class netBot extends ControllerBot {
             this.tx(this.primarygid, "200", msg)
             sysManager.clearBranchChangeFlag()            
           }
-
-        } else {
+        }
+        else if (upgradeInfo.upgraded) {
+          let msg = `Firewalla is upgraded to ${upgradeInfo.to}`;
+          this.tx(this.primarygid, "200", msg);
+          upgradeManager.updateVersionTag();
+        }
+        else {
           if (sysManager.systemRebootedByUser(true)) {
             if (nm.canNotify() == true) {
               this.tx(this.primarygid, "200", "Firewalla reboot completed.");
@@ -864,18 +856,6 @@ class netBot extends ControllerBot {
                    } 
                 let data = {
                    gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data);
-             }
-             break;
-         case "System:Upgrade:Soft":
-             if (msg) {
-                let notifyMsg = {
-                  title: `Firewalla is upgraded to ${msg}`,
-                  body: ""
-                }
-                let data = {
-                  gid: this.primarygid,
                 };
                 this.tx2(this.primarygid, "", notifyMsg, data);
              }
@@ -964,12 +944,10 @@ class netBot extends ControllerBot {
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
-    sclient.subscribe("System:Upgrade:Soft");
-    sclient.subscribe("SS:DOWN")
-    sclient.subscribe("SS:FAILOVER")
-    sclient.subscribe("SS:START:FAILED")
+    sclient.subscribe("SS:DOWN");
+    sclient.subscribe("SS:FAILOVER");
+    sclient.subscribe("SS:START:FAILED");
     sclient.subscribe("APP:NOTIFY");
-
   }
 
   boneMsgHandler(msg) {
@@ -1164,9 +1142,10 @@ class netBot extends ControllerBot {
               });
               break;
             case "portforward":
-              this._portforward(msg.target, msg.data.value.portforward, (err, obj) => {
+              this._portforward(msg.data.value.portforward, (err, obj) => {
                 cb(err);
               });
+              break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
                 cb(err);
@@ -1497,6 +1476,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
             // this should set local port of VpnManager, which will be used in getOvpnFile
+            const vpnManager = new VpnManager('info'); // VpnManager is a singleton
             vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
               if (err != null) {
                 log.error("Failed to configure VPN", err);
@@ -2054,7 +2034,7 @@ class netBot extends ControllerBot {
           let error = new Error("Invalid Mac");
           error.code = 404;
           return Promise.reject(error);
-        }        
+        }
       }
 
       let host = await (this.hostManager.getHostAsync(ip));
@@ -2973,45 +2953,12 @@ class netBot extends ControllerBot {
           log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
-            // delete related rules
-            pm2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
-              if(err) {
-                throw new Error(err);
-              } else {
-                let multi = rclient.multi();
-                // device specified policy
-                multi.del('policy:mac:' + hostMac);
 
-                rules = rules.forEach(rule => {
-                  if (_.isEmpty(rule.scope)) return;
+            await pm2.deleteMacRelatedPolicies(hostMac);
 
-                  if (rule.scope.some(mac => mac == hostMac)) {
-                    // rule targets only deleted device
-                    if (rule.scope.length <= 1) {
-                      multi.del('policy:' + rule.pid);
-                      log.info('remove policy:' + rule.pid);
-                      multi.zrem('policy_active', rule.pid);
-                      log.info('remove from policy_active:', rule.pid);
-                    }
-                    // rule targets NOT only deleted device
-                    else {
-                      let reducedScope = _.without(rule.scope, hostMac);
-                      multi.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
-                      log.info('remove scope from policy:' + rule.pid, hostMac);
-                    }
-                  }
-                })
-
-                multi.execAsync()
-                  .catch(e => {
-                    log.info('Error removing related policy & rules', e);
-                  })
-                  .then(res => {
-                    log.info('Successfully removed rules and policies.', res);
-                  });
-              }
-            });
-
+            await categoryFlowTool.delAllCategories(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
             ips.forEach(async (ip) => {
@@ -3019,6 +2966,22 @@ class netBot extends ControllerBot {
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
                 await hostTool.deleteHost(ip);
+
+                // remove port forwarding
+                this._portforward({
+                  "toPort": "*",
+                  "protocol": "*",
+                  "toIP": ip,
+                  "type": "portforward",
+                  "state": false,
+                  "dport": "*"
+                })
+
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.delAsync([
+                  "monitor:flow:in:" + ip,
+                  "monitor:flow:out:" + ip
+                ]);
               }
             });
             await hostTool.deleteMac(hostMac);
@@ -3339,10 +3302,6 @@ process.on('unhandledRejection', (reason, p)=>{
     msg:msg,
     stack:reason.stack
   },null);
-  // setTimeout(() => {
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
-  //   process.exit(1);
-  // }, 1000 * 20); // just ensure fire api lives long enough to upgrade itself if available
 });
 
 process.on('uncaughtException', (err) => {

@@ -44,7 +44,7 @@ class BoneSensor extends Sensor {
       this.checkIn()
         .then(() => {})
         .catch((err) => {
-        log.error("Failed to check in", err, {});
+          log.error("Failed to check in", err, {});
         })
 
     })

@@ -175,6 +175,7 @@ class PolicyScheduler {
     if(timer) {
       return async(() => {
         await (this.unenforce(policy))
+        clearTimeout(timer);
         delete policyTimers[pid]
       })()      
     }
