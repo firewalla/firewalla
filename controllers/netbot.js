@@ -781,43 +781,33 @@ class netBot extends ControllerBot {
         let upgradeInfo = await (upgradeManager.getUpgradeInfo())
         if(branchChanged) {
           let branch = null
-          
-          switch(branchChanged) {
-          case "1":
-            branch = "back to stable release"
-            break;
-          case "2":
-            branch = "to beta release"
-            break;
-          case "3":
-            branch = "to development release"
-            break;
-          default:
-            // do nothing, should not happen here
-            log.error("=== Got branch change status", branchChanged, "===")
-            break;
-          }
 
           if(branch) {
-            let msg = `Device '${this.getDeviceName()}' has switched ${branch} ${sysManager.version()} successfully`
+            let msg = i18n.__mf("NOTIF_BRANCH_CHANGE", {
+              deviceName: this.getDeviceName(),
+              branchChanged: branchChanged,
+              version: sysManager.version()
+            })
             log.info(msg)
             this.tx(this.primarygid, "200", msg)
             sysManager.clearBranchChangeFlag()            
           }
         }
         else if (upgradeInfo.upgraded) {
-          let msg = `Firewalla is upgraded to ${upgradeInfo.to}`;
+          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", upgradeInfo);
           this.tx(this.primarygid, "200", msg);
           upgradeManager.updateVersionTag();
         }
         else {
           if (sysManager.systemRebootedByUser(true)) {
             if (nm.canNotify() == true) {
-              this.tx(this.primarygid, "200", "Firewalla reboot completed.");
+              this.tx(this.primarygid, "200", i18n.__("NOTIF_REBOOT_COMPLETE"));
             }
           } else if (sysManager.systemRebootedDueToIssue(true) == false) {
             if (nm.canNotify() == true) {
-              this.tx(this.primarygid, "200", "🔥 Firewalla Device '" + this.getDeviceName() + "' Awakens!");
+              this.tx(this.primarygid, "200",
+                i18n.__("NOTIF_AWAKES", {deviceName: this.getDeviceName()})
+              );
             }
           }
         }
@@ -829,9 +819,6 @@ class netBot extends ControllerBot {
     this.hostManager.on("Scan:Done", (channel, type, ip, obj) => {
       if (type == "Scan:Done") {
         this.scanning = false;
-        for (let h in this.hosts) {
-          //this.hosts[h].clean();
-        }
         this.scanStart();
       }
     });
