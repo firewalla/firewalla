@@ -136,12 +136,14 @@ class FWDiag {
 
     const version = this.getVersion();
 
-    const [gatewayMac, branch, longVersion, memory, gid] = await require('bluebird').all([
+    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed] = await require('bluebird').all([
       this.getGatewayMac(gateway),
       this.getBranchInfo(),
       this.getLongVersion(),
       this.getTotalMemory(),
-      this.getGID()
+      this.getGID(),
+      this.hasLicenseFile(),
+      platform.getNetworkSpeed()
     ]);
 
     return {      
@@ -154,7 +156,9 @@ class FWDiag {
       memory,
       model,
       serial,
-      gid
+      gid,
+      hasLicense,
+      nicSpeed
     };
   }
 
