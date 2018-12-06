@@ -416,8 +416,8 @@ class PolicyManager2 {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
-          this.tryPolicyEnforcement(policyCopy)
-          callback(null, policyCopy)
+          this.tryPolicyEnforcement(policy)
+          callback(null, policy)
         });
 
         Bone.submitIntelFeedback('block', policy, 'policy');
