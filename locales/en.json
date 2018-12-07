@@ -2,6 +2,10 @@
   "SECURITY_ALERT": "Security Alarm",
   "SECURITY_REPORT": "Security Daily Report",
   "ACTIVITY_ALERT": "Activity Alarm",
+  "NOTIF_BRANCH_CHANGE": "Device {deviceName} has switched {branchChanged, select, 1 {back to stable} 2 {to beta} 3 {to development} other {to unofficial}} release {version} successfully",
+  "NOTIF_UPGRADE_COMPLETE": "Firewalla has upgraded to {{{to}}}",
+  "NOTIF_REBOOT_COMPLETE": "Firewalla reboot completed",
+  "NOTIF_AWAKES": "🔥 Firewalla Device {{{deviceName}}} Awakes!",
   "NOTIF_TITLE_ALARM_VIDEO": "Video Alarm",
   "NOTIF_TITLE_ALARM_GAME": "Gaming Alarm",
   "NOTIF_TITLE_ALARM_PORN": "Porn Alarm",
@@ -16,6 +20,7 @@
   "NOTIF_TITLE_ALARM_INTEL_REPORT": "Security Report",
   "NOTIF_TITLE_ALARM_BRO_NOTICE": "Security Alarm",
   "NOTIF_TITLE_ALARM_SUBNET": "Router Configuration Warning",
+  "NOTIF_TITLE_ALARM_UPNP": "New UPnP Mapping Detected",
   "ALARM_PORN": "This device is visiting porn site {{{p.dest.name}}}.",
   "ALARM_VIDEO": "This device is watching video on {{{p.dest.name}}}.",
   "ALARM_GAME": "This device is playing games on {{{p.dest.name}}}.",
@@ -30,6 +35,7 @@
   "ALARM_INTEL_FROM_OUTSIDE": "{{{p.dest.name}}} is accessing this device's port {{{p.device.port}}}. {{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources",
   "ALARM_INTEL_FROM_INSIDE": "This device is accessing {{{p.dest.name}}}:{{{p.dest.port}}}, which is marked as suspicious by {{{p.security.numOfReportSources}}} sources",
   "ALARM_SUBNET": "Subnet is larger than /24, which limits Firewalla's functionalities",
+  "ALARM_UPNP": "{{{p.upnp.description}}}: {{{p.upnp.protocol}}} port {{{p.upnp.private.port}}} on {{{p.device.name}}} opened as external port {{{p.upnp.public.port}}}",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Auto blocked {{{p.dest.name}}} from accessing this device. ({{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources)",
   "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked this device from accessing {{{p.dest.name}}}. ({{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources)",
   "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing this device's port {{{p.device.port}}}.",
@@ -67,6 +73,7 @@
   "NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday.",
   "NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
   "NOTIF_ALARM_SUBNET": "An configuration problem of your router is found",
+  "NOTIF_ALARM_UPNP": "{{{p.upnp.protocol}}} port {{{p.upnp.private.port}}} on {{{p.device.name}}} is opened",
   "INFO_ALARM_PORN": "Device {{{p.device.name}}} is visiting porn site {{{p.dest.name}}} {{{localizedRelativeTime}}}",
   "INFO_ALARM_VIDEO": "Device {{{p.device.name}}} is watching video on {{{p.dest.name}}} {{{localizedRelativeTime}}}",
   "INFO_ALARM_GAME": "Device {{{p.device.name}}} is playing games on {{{p.dest.name}}} {{{localizedRelativeTime}}}",
@@ -92,5 +99,6 @@
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Auto blocked device {{{p.device.name}}} from accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}} {{{localizedRelativeTime}}}.",
   "INFO_NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday.",
   "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
-  "INFO_ALARM_SUBNET": "Subnet is larger than /24, which limits Firewalla's functionalities"
+  "INFO_ALARM_SUBNET": "Subnet is larger than /24, which limits Firewalla's functionalities",
+  "INFO_ALARM_UPNP": "{{{p.upnp.description}}}: {{{p.upnp.protocol}}} port {{{p.upnp.private.port}}} on {{{p.device.name}}} opened as external port {{{p.upnp.public.port}}}"
 }
