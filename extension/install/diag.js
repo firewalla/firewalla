@@ -76,6 +76,11 @@ class FWDiag {
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
+  async getGID() {
+    const result = await exec("redis-cli hget sys:ept gid");
+    return result && result.stdout && result.stdout.replace(/\n$/, '')
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -131,11 +136,14 @@ class FWDiag {
 
     const version = this.getVersion();
 
-    const [gatewayMac, branch, longVersion, memory] = await require('bluebird').all([
+    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed] = await require('bluebird').all([
       this.getGatewayMac(gateway),
       this.getBranchInfo(),
       this.getLongVersion(),
-      this.getTotalMemory()
+      this.getTotalMemory(),
+      this.getGID(),
+      this.hasLicenseFile(),
+      platform.getNetworkSpeed()
     ]);
 
     return {      
@@ -147,7 +155,10 @@ class FWDiag {
       longVersion,
       memory,
       model,
-      serial
+      serial,
+      gid,
+      hasLicense,
+      nicSpeed
     };
   }
 
