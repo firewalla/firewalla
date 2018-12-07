@@ -1589,7 +1589,8 @@ class netBot extends ControllerBot {
       case "fetchNewAlarms":
         (async () => {
           const sinceTS = msg.data.value.sinceTS;
-          const alarms = await am2.fetchNewAlarms(sinceTS, {});
+          const timeout = msg.data.value.timeout || 60;
+          const alarms = await am2.fetchNewAlarms(sinceTS, {timeout});
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
