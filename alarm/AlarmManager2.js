@@ -289,7 +289,7 @@ module.exports = class {
         
         // publish to others
         sem.sendEventToAll({
-          event: "Alarm:NewAlarm",
+          type: "Alarm:NewAlarm",
           message: "A new alarm is generated",
           alarm: alarm
         });
