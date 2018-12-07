@@ -89,7 +89,7 @@ class SensorEventManager extends EventEmitter {
   
   sendEvent(event, target) {
     this.emitEvent(Object.assign({}, event, {
-      toProcess: this.getRemoteChannel(target)
+      toProcess: target
     }))
   }
 
