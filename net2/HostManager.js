@@ -2059,6 +2059,10 @@ module.exports = class HostManager {
           this.asyncBasicDataForInit(json)          
         ]
 
+          this.basicDataForInit(json, options);
+
+          await (requiredPromises);
+
           await (this.loadDDNSForInit(json));
 
           await (this.legacyHostFlag(json))
