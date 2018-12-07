@@ -81,6 +81,7 @@ class SensorEventManager extends EventEmitter {
     });
 
     sclient.subscribe(this.getRemoteChannel(process.title));
+    sclient.subscribe(this.getRemoteChannel("*")); // subscribe events for all components
   }
 
   clearEventType(eventType) {
