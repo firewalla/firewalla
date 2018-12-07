@@ -119,10 +119,7 @@ class SensorEventManager extends EventEmitter {
       // this event is meant to send to another process
       let channel = this.getRemoteChannel(event.toProcess);
       pclient.publish(channel, JSON.stringify(event));
-
-      if(event.toProcess !== "*") {
-        return;
-      }
+      return; // local will also be processed in .on(channel, event)..
     }
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
