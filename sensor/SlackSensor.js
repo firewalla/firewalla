@@ -28,6 +28,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const slack = require('../extension/slack/slack.js');
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 let callback = async (event) => {
   const alarm = am2.jsonToAlarm(event.alarm);
