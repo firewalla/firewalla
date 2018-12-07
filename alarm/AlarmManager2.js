@@ -430,7 +430,7 @@ module.exports = class {
           log.info(util.format(
             ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
             new Date(latest * 1000).toLocaleString(),
-            moment.duration(cooldown * 1000).humanize(), cooldown
+            moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
           ));
 
           resolve(true);
