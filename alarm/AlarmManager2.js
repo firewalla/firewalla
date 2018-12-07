@@ -46,6 +46,8 @@ const dnsManager = new DNSManager('info');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const delay = require('../util/util.js').delay;
+
 let Policy = require('./Policy.js');
 
 let PolicyManager2 = require('./PolicyManager2.js');
@@ -79,6 +81,8 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const Queue = require('bee-queue')
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail";
 
@@ -283,6 +287,15 @@ module.exports = class {
           return
         }
         
+        // publish to others
+        sem.sendEventToAll({
+          event: "Alarm:NewAlarm",
+          message: "A new alarm is generated",
+          alarm: alarm
+        });
+        
+        
+        // TODO: eventually this legacy mode should be replaced
         let data = {
           notif: alarm.localizedNotification(),
           alarmID: alarm.aid,
@@ -668,6 +681,49 @@ module.exports = class {
         resolve(results)
       })                       
     })
+  }
+
+  // This function will only return when there is new alarm data or timeout
+  async fetchNewAlarms(sinceTS, {timeout}) {
+    const alarms = this.loadAlarmsByTimestamp(sinceTS);
+    timeout = timeout || 60;
+
+    if(alarms.length > 0) {
+      return alarms;
+    }
+
+    // wait for new alarm coming or timeout
+    const result = await Promise.race([
+      delay(timeout * 1000),
+      this.newAlarmEvent()
+    ]);
+
+    if(result) {
+      return [result];
+    } else {
+      return [];
+    }
+  }
+
+  async newAlarmEvent() {
+    return new Promise((resolve, reject) => {
+      sem.once("Alarm:NewAlarm", (event) => {
+        resolve(this.jsonToAlarm(event.alarm));
+      });
+    });
+  }
+
+  async loadAlarmsByTimestamp(sinceTS) {
+    sinceTS = sinceTS || 0;
+
+    // zrevrangebyscore alarm_active 1544164497 0 withscores limit 0 10  
+    const alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, new Date() / 1000, sinceTS);
+
+    let alarms = await this.idsToAlarmsAsync(alarmIDs);
+
+    alarms = alarms.filter((a) => a != null);
+
+    return alarms;
   }
 
   loadRecentAlarmsAsync(duration) {

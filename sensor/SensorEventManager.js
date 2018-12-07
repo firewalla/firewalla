@@ -39,7 +39,7 @@
  * UPDATE_CATEGORY_DYNAMIC_DOMAIN
  * VPNConnectionAccepted
  * VPNSubnetChanged
- *
+ * Alarm:NewAlarm
  */
 
 
@@ -67,7 +67,7 @@ class SensorEventManager extends EventEmitter {
 
   subscribeEvent() {
     sclient.on("message", (channel, message) => {
-      if(channel === this.getRemoteChannel(process.title)) {
+      if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
           let m = JSON.parse(message)
@@ -87,7 +87,28 @@ class SensorEventManager extends EventEmitter {
     this.removeAllListeners(eventType)
   }
   
+  sendEvent(event, target) {
+    this.emitEvent(Object.assign({}, event, {
+      toProcess: this.getRemoteChannel(target)
+    }))
+  }
 
+  sendEventToFireApi(event) {
+    this.sendEvent(event, "FireApi");
+  }
+
+  sendEventToFireMain(event) {
+    this.sendEvent(event, "FireMain");
+  }
+
+  sendEventToFireMon(event) {
+    this.sendEvent(event, "FireMon");
+  }
+
+  sendEventToAll(event) {
+    this.sendEvent(event, "*");
+  }
+  
   emitEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
@@ -121,6 +142,16 @@ class SensorEventManager extends EventEmitter {
         .replace(/.*\//, "")
         .replace(/:[^:]*$/,""));
     super.on(event, callback);
+  }
+
+  once(event, callback) {
+    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
+    log.debug("Subscribing event", event, "from",
+    new Error().stack.split("\n")[2]
+      .replace("     at", "")
+      .replace(/.*\//, "")
+      .replace(/:[^:]*$/,""));
+   super.once(event, callback);
   }
 
   clearAllSubscriptions() {
