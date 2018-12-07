@@ -220,7 +220,7 @@ module.exports = class {
       let k = keys[i];
       if(!alarm[k]) {
         // typically bug occurs if reaching this code block
-        log.error("Invalid payload for " + this.type + ", missing " + k, new Error("").stack, {});
+        log.error("Invalid payload for " + alarm.type + ", missing " + k, new Error("").stack, {});
         log.error("Invalid alarm is: " + alarm, {});
         return false;
       }
