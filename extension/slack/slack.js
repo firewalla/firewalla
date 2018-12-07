@@ -17,6 +17,7 @@
 const rp = require('request-promise');
 const log = require('../../net2/logger.js')(__filename);
 const config = require('../../net2/config.js').getConfig();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
 let instance = null;
 
@@ -27,22 +28,24 @@ class Slack {
     }
     
     this.url = config.slack && config.slack.url;
+    this.redisConfiguredURL = null;
 
     return instance;
   }
 
-  /*
-   * curl -X POST -H 'Content-type: application/json' --data '{"text":"Hello, World!"}' https://hooks.slack.com/services/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
-   */
   async postMessage(message) {
 
-    if(!this.url) {
-      log.error("Slack URL is not configured, skipping sending slack message");
+    if(!this.redisConfiguredURL) {
+      this.redisConfiguredURL = await rclient.hgetAsync("sys:config", "slack_url");
+    }
+
+    if(!this.url && !this.redisConfiguredURL) {
+      log.debug("Slack URL is not configured, skipping sending slack message");
       return;
     }
 
     const options = {
-      uri: this.url,
+      uri: this.redisConfiguredURL || this.url,
       json: {
         text: message
       },

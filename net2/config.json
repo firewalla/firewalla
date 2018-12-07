@@ -93,6 +93,7 @@
     "NmapSensor": {},
     "BoneSensor": {},
     "APISensor": {},
+    "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {},
     "OvpnConnSensor": {

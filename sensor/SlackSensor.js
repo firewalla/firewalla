@@ -28,15 +28,46 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const slack = require('../extension/slack/slack.js');
 
+let callback = async (event) => {
+  const alarm = am2.jsonToAlarm(event.alarm);
+  const alarmMessage = alarm.localizedNotification();
+  const groupName = await rclient.getAsync("groupName");
+  const message = `[${groupName}] ${alarmMessage}`;
+  await slack.postMessage(message);
+};
+
 class SlackSensor extends Sensor {
-  run() {
-    sem.on('Alarm:NewAlarm', async (event) => {
-      const alarm = am2.jsonToAlarm(event.alarm);
-      const alarmMessage = alarm.localizedNotification();
-      const groupName = await rclient.getAsync("groupName");
-      const message = `${groupName} ${alarmMessage}`;
-      await slack.postMessage(message);
-    });
+  async run() {
+    // Disable slack for production or beta
+    if (f.isProductionOrBeta()) {
+      return;
+    }
+
+    const featureName = "slack";
+
+    if (fc.isFeatureOn(featureName)) {
+      this.sub();
+    }
+
+    fc.onFeature(featureName, async (feature, status) => {
+      if(feature != featureName) {
+        return;        
+      }
+      
+      if(status) {
+        this.sub();
+      } else {
+        this.unsub();
+      }
+    })
+  }
+
+  sub() {
+    sem.on('Alarm:NewAlarm', callback);
+  }
+
+  unsub() {
+    sem.off('Alarm:NewAlarm', callback);
   }
 }
 
