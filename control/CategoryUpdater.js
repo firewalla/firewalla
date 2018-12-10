@@ -753,16 +753,24 @@ class CategoryUpdater {
     // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
     // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
 
-    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT --reject-with icmp-port-unreachable`);
+    const cmdCreateOutgoingDropRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`);
+    const cmdCreateIncomingTCPRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT --reject-with icmp-port-unreachable`);
+    const cmdCreateIncomingDropRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`);
 
-    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT --reject-with icmp-port-unreachable`);
+    const cmdCreateOutgoingDropRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`);
+    const cmdCreateIncomingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT --reject-with icmp-port-unreachable`);
+    const cmdCreateIncomingDropRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`);
 
     await exec(cmdCreateOutgoingTCPRule);
-    await exec(cmdCreateOutgoingUDPRule);
+    await exec(cmdCreateOutgoingDropRule);
+    await exec(cmdCreateIncomingTCPRule);
+    await exec(cmdCreateIncomingDropRule);
     await exec(cmdCreateOutgoingTCPRule6);
-    await exec(cmdCreateOutgoingUDPRule6);
+    await exec(cmdCreateOutgoingDropRule6);
+    await exec(cmdCreateIncomingTCPRule6);
+    await exec(cmdCreateIncomingDropRule6);
   }
 
   // This function requires the mac ipset has already been created
@@ -798,11 +806,11 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-    const cmdDeleteOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t raw -D FW_RAW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t raw -D FW_RAW_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
 
-    const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-    const cmdDeleteOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t raw -D FW_RAW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
+    const cmdDeleteOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t raw -D FW_RAW_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
 
     await exec(cmdDeleteOutgoingTCPRule);
     await exec(cmdDeleteOutgoingUDPRule);
