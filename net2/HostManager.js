@@ -1978,6 +1978,18 @@ module.exports = class HostManager {
         }        
     }
 
+  async groupNameForInit(json) {
+    const groupName = await rclient.getAsync("groupName");
+    if(groupName) {
+      json.groupName = groupName;
+    }
+  }
+
+  async asyncBasicDataForInit(json) {
+    const speed = await platform.getNetworkSpeed();
+    json.nicSpeed = speed;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2025,25 +2037,27 @@ module.exports = class HostManager {
 
         async(() => {
 
-          let requiredPromises = [
-            this.last24StatsForInit(json),
-            this.last60MinStatsForInit(json),
-//            this.last60MinTopTransferForInit(json),
-            this.extensionDataForInit(json),
-            this.last30daysStatsForInit(json),
-            this.policyDataForInit(json),
-            this.legacyHostsStats(json),
-            this.modeForInit(json),
-            this.policyRulesForInit(json),
-            this.exceptionRulesForInit(json),
-            this.newAlarmDataForInit(json),
-            this.archivedAlarmNumberForInit(json),
-            this.natDataForInit(json),
-            this.ignoredIPDataForInit(json),
-            this.boneDataForInit(json),
-            this.encipherMembersForInit(json),
-            this.jwtTokenForInit(json)
-          ]
+        let requiredPromises = [
+          this.last24StatsForInit(json),
+          this.last60MinStatsForInit(json),
+          //            this.last60MinTopTransferForInit(json),
+          this.extensionDataForInit(json),
+          this.last30daysStatsForInit(json),
+          this.policyDataForInit(json),
+          this.legacyHostsStats(json),
+          this.modeForInit(json),
+          this.policyRulesForInit(json),
+          this.exceptionRulesForInit(json),
+          this.newAlarmDataForInit(json),
+          this.archivedAlarmNumberForInit(json),
+          this.natDataForInit(json),
+          this.ignoredIPDataForInit(json),
+          this.boneDataForInit(json),
+          this.encipherMembersForInit(json),
+          this.jwtTokenForInit(json),
+          this.groupNameForInit(json),
+          this.asyncBasicDataForInit(json)          
+        ]
 
           this.basicDataForInit(json, options);
 

@@ -65,7 +65,7 @@ sudo iptables -w -t nat -F FW_NAT_BLOCK
 
 sudo iptables -w -t nat -C FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo iptables -w -t nat -A FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
-sudo iptables -w -t nat -C PREROUTING -p tcp -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -I PREROUTING -p tcp -j FW_NAT_BLOCK
+sudo iptables -w -t nat -C PREROUTING -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -I PREROUTING -j FW_NAT_BLOCK
 
 if [[ -e /.dockerenv ]]; then
   sudo iptables -w -C OUTPUT -p all -j FW_BLOCK &>/dev/null || sudo iptables -w -A OUTPUT -p all -j FW_BLOCK
@@ -115,7 +115,7 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ip6tables -w -t nat -C FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
-  sudo ip6tables -w -t nat -C PREROUTING -p tcp -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -p tcp -j FW_NAT_BLOCK
+  sudo ip6tables -w -t nat -C PREROUTING -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -j FW_NAT_BLOCK
 fi
 
 # redirect blue hole ip 80/443 port to localhost
