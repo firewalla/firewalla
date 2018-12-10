@@ -62,8 +62,8 @@ class CategoryBlock {
     
     // this policy has scope
     if(options.macSet) {
-//      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
-      await categoryUpdater.iptablesBlockCategoryPerDeviceNew(category, options.macSet);
+      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
+//      await categoryUpdater.iptablesBlockCategoryPerDeviceNew(category, options.macSet);
     } else {
       // global policy
       await categoryUpdater.iptablesBlockCategory(category)
@@ -82,8 +82,8 @@ class CategoryBlock {
     // this policy has scope
     if(options.macSet) {
       // TBD
-//      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
-      await categoryUpdater.iptablesUnblockCategoryPerDeviceNew(category, options.macSet);
+      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
+//      await categoryUpdater.iptablesUnblockCategoryPerDeviceNew(category, options.macSet);
     } else {
       // global policy
       await categoryUpdater.iptablesUnblockCategory(category)
