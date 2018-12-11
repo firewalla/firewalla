@@ -75,7 +75,7 @@ class SensorEventManager extends EventEmitter {
           // only process redis events not originated from this process
           // local event will be processed by EventEmitter
           if(m.fromProcess !== process.title) {
-            this.emitEvent(m);
+            this.emitLocalEvent(m); // never send remote pubsub event back to remote 
           }
         } catch (err) {
           log.error("Failed to parse channel message:", err, {});
@@ -115,19 +115,9 @@ class SensorEventManager extends EventEmitter {
     this.sendEvent(event, "*");
   }
   
-  emitEvent(event) {
+  emitLocalEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
-    }
-
-    if(event.toProcess && event.toProcess !== process.title) {
-      // this event is meant to send to another process
-      let channel = this.getRemoteChannel(event.toProcess);
-      const eventCopy = Object.assign({}, event, {
-        fromProcess: process.title
-      });
-      pclient.publish(channel, JSON.stringify(eventCopy));
-      return; // local will also be processed in .on(channel, event)..
     }
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
@@ -141,6 +131,23 @@ class SensorEventManager extends EventEmitter {
     } else {
       this.emit(event.type, event);
     }
+  }
+
+  emitEvent(event) {
+    if(event.toProcess && event.toProcess !== process.title) {
+      if(!event.suppressEventLogging) {
+        log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
+      }
+
+      // this event is meant to send to another process
+      let channel = this.getRemoteChannel(event.toProcess);
+      const eventCopy = JSON.parse(JSON.stringify(event));
+      eventCopy.fromProcess = process.title;
+      pclient.publish(channel, JSON.stringify(eventCopy));
+      return; // local will also be processed in .on(channel, event)..
+    }
+
+    this.emitLocalEvent(event);
   }
 
   on(event, callback) {

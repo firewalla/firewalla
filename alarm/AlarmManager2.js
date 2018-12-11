@@ -717,7 +717,8 @@ module.exports = class {
     sinceTS = sinceTS || 0;
 
     // zrevrangebyscore alarm_active 1544164497 0 withscores limit 0 10  
-    const alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, new Date() / 1000, sinceTS);
+    // use ( to exclude sinceTS itself
+    const alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, new Date() / 1000, `(${sinceTS}`);
 
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
 
