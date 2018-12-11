@@ -69,7 +69,10 @@ function compressPayloadIfRequired(req, res, next) {
         return;
       }
 
-      res.body = JSON.stringify({payload: output.toString('base64')});
+      res.body = JSON.stringify({
+        compressed: 1,
+        payload: output.toString('base64')
+      });
       log.debug("compressed message size: ", res.body.length, {});
       next();
     });
