@@ -914,8 +914,8 @@ let legoEptCloud = class {
         const after = compressedPayload.length;
 
         if(before !== 0) {
-            const compressRatio = ((before - after) / after * 100).toFixed(1);
-            log.info(`Compression enabled, size is reduced ${compressRatio}`);
+            const compressRatio = ((before - after) / before * 100).toFixed(1);
+            log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
         }
         
         this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)
