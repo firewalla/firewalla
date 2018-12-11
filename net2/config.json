@@ -31,6 +31,11 @@
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.subnet.cooldown": 2592000
   },
+  "alternativeIpSubnet": {
+    "ip": "192.168.200.2",
+    "gateway": "192.168.200.1",
+    "netmask": "255.255.255.0"
+  },
   "secondaryInterface": {
     "intf": "eth0:0",
     "ipOnly": "192.168.218.1",

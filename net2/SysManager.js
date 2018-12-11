@@ -103,12 +103,18 @@ module.exports = class {
             break;
           case "System:TimezoneChange":
             this.timezone = message;
+            break;
           case "System:SSHPasswordChange":
             let SSH = require('../extension/ssh/ssh.js');
             let ssh = new SSH('info');
             ssh.getPassword((err, password) => {
               this.sshPassword = password;
             });
+            break;
+          case "System:IPChange":
+            this.update(null);
+            break;
+          }
         }
       });
       sclient.subscribe("System:DebugChange");
@@ -116,6 +122,7 @@ module.exports = class {
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
       sclient.subscribe("System:SSHPasswordChange");
+      sclient.subscribe("System:IPChange");
 
       this.delayedActions();
 

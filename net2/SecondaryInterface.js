@@ -112,8 +112,9 @@ exports.create = function(config, callback) {
           }
         } else {
           // other interface already occupies ip1, use alternative ip
-          let subnet = getSubnet(list[i].name, 'IPv4');
-          if (subnet == _secondaryIpSubnet) {
+          let subnets = getSubnet(list[i].name, 'IPv4');
+          // one interface may have multiple ip addresses assigned
+          if (subnets.includes(_secondaryIpSubnet)) {
             _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
             _secondaryIp = config.secondaryInterface.ip2;
             _secondaryIpNet = config.secondaryInterface.ipnet2;
