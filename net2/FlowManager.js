@@ -1017,7 +1017,7 @@ module.exports = class FlowManager {
             }
             let flow = conndb[key];
             if (flow == null) {
-              conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other.
+              conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other. The devil is in the details!!
               flow = conndb[key];
               let dp = k.split("\.", 2).slice(-1)[0];
               // double check to ensure that k is <proto>.<port_number>
