@@ -315,32 +315,34 @@ function flush(callback) {
 }
 
 function run(listofcmds, eachCallback, finalCallback) {
-  require('async').eachLimit(listofcmds, 1, async (cmd, cb) => {
-    log.info("IPTABLE:RUNCOMMAND", cmd);
+  require('async').eachLimit(listofcmds, 1,
+    async (cmd, cb) => { // iteratee
+      log.info("IPTABLE:RUNCOMMAND", cmd);
 
-    await require('child_process').exec(
-      cmd,
-      {timeout: 10000}, // set timeout to 10s
-      (err, stdout, stderr) => {
-        if (err) {
-          log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
-        }
-        if (stderr) {
-          log.warn("IPTABLE:RUN:", cmd, stderr);
-        }
-        if (stdout) {
-          log.debug("IPTABLE:RUN:", cmd, stdout);
-        }
+      await require('child_process').exec(
+        cmd,
+        {timeout: 10000}, // set timeout to 10s
+        (err, stdout, stderr) => {
+          if (err) {
+            log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
+          }
+          if (stderr) {
+            log.warn("IPTABLE:RUN:", cmd, stderr);
+          }
+          if (stdout) {
+            log.debug("IPTABLE:RUN:", cmd, stdout);
+          }
 
-        if (eachCallback) {
-          eachCallback(err, null);
+          if (eachCallback) {
+            eachCallback(err, null);
+          }
+          cb(err);
         }
-        cb(err);
-      },
-      (error) => {
-        if (finalCallback)
-          finalCallback(error, null);
-      }
-    );
-  })
+      )
+    },
+    (error) => {
+      if (finalCallback)
+        finalCallback(error, null);
+    }
+  )
 }
