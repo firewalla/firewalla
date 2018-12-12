@@ -36,6 +36,7 @@ const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
 const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
@@ -137,7 +138,17 @@ module.exports = class DNSMASQ {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
 
+      sclient.on("message", (channel, message) => {
+        switch (channel) {
+          case "System:IPChange":
+            this._update_iptables_rules();
+            break;
+          default:
+            log.warn("Unknown message channel: ", channel, message);
+        }
+      });
 
+      sclient.subscribe("System:IPChange");
     }
 
     return instance;
@@ -501,6 +512,14 @@ module.exports = class DNSMASQ {
     this.vpnSubnet = newVpnSubnet
   }
 
+  async _update_iptables_rules() {
+    // if dnsmasq is stopped, _redirectedSubnets is cleared, then no need to update iptables rules
+    if (this._redirectedSubnets && this._redirectedSubnets.length > 0) {
+      await this._remove_iptables_rules();
+      await this._add_iptables_rules();
+    }
+  }
+
   async _add_all_iptables_rules() {
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
@@ -511,6 +530,8 @@ module.exports = class DNSMASQ {
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
 
+    this._redirectedSubnets = subnets;
+    this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       await iptables.dnsChangeAsync(subnet, dns, true);
@@ -576,12 +597,19 @@ module.exports = class DNSMASQ {
   async _remove_iptables_rules() {
     try {
       let subnets = await networkTool.getLocalNetworkSubnets();
+      // remove rules corresponding to subnets that are previous added
+      if (this._redirectedSubnets && this._redirectedSubnets.length > 0)
+        subnets = this._redirectedSubnets;
       let localIP = sysManager.myIp();
       let dns = `${localIP}:8853`;
+      if (this._targetDns)
+        dns = this._targetDns;
 
       subnets.forEach(async subnet => {
         await iptables.dnsChangeAsync(subnet, dns, false, true);
       })
+      this._redirectedSubnets = [];
+      this._targetDns = null;
 
       await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {
@@ -716,7 +744,7 @@ module.exports = class DNSMASQ {
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
-    let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
+    let cidrSec = ip.cidrSubnet(sysManager.mySubnet2());
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));

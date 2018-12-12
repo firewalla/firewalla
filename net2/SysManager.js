@@ -114,7 +114,6 @@ module.exports = class {
           case "System:IPChange":
             this.update(null);
             break;
-          }
         }
       });
       sclient.subscribe("System:DebugChange");
@@ -528,6 +527,18 @@ module.exports = class {
 
   mySubnet() {
     return this.monitoringInterface().subnet;
+  }
+
+  mySubnet2() {
+    let secondInterface = this.sysinfo &&
+      this.config.monitoringInterface2 &&
+      this.sysinfo[this.config.monitoringInterface2]
+
+    if(secondInterface) {
+      return secondInterface.subnet;
+    } else {
+      return null;
+    }
   }
 
   mySubnetNoSlash() {

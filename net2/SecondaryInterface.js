@@ -89,15 +89,17 @@ exports.create = function(config, callback) {
           ) {
             // same ip and subnet mask
             log.info('Already Created Secondary Interface', list[i]);
-            callback(
-              null,
-              _secondaryIp,
-              _secondaryIpSubnet,
-              _secondaryIpNet,
-              _secondaryMask,
-              legacyIp,
-              legacySubnet
-            );
+            if (callback) {
+              callback(
+                null,
+                _secondaryIp,
+                _secondaryIpSubnet,
+                _secondaryIpNet,
+                _secondaryMask,
+                legacyIp,
+                legacySubnet
+              );
+            }
             return;
           } else {
             log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
@@ -105,8 +107,8 @@ exports.create = function(config, callback) {
               list[i].ip_address,
               list[i].netmask.substring(5)
             );
-            // should be like 192.168.218.1/24
-            legacyIp = legacyIpSubnet.firstAddress + '/' + legacyIpSubnet.subnetMaskLength;
+            // should be like 192.168.218.1
+            legacyIp = list[i].ip_address; 
             // should be like 192.168.218.0/24
             legacySubnet = legacyIpSubnet.networkAddress + '/' + legacyIpSubnet.subnetMaskLength;
           }

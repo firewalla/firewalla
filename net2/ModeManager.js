@@ -121,6 +121,7 @@ async function _changeToAlternativeIpSubnet() {
     return;
   const altIpSubnet = fConfig.alternativeIpSubnet.ipsubnet;
   const altGateway = fConfig.alternativeIpSubnet.gateway;
+  const secondaryIpSubnet = sysManager.mySubnet2();
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";
@@ -134,22 +135,30 @@ async function _changeToAlternativeIpSubnet() {
     } else {
       await writeFileAsync(simpleIpFile, oldIpSubnet);
     }
-    try {
-      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
-      log.info("Command to remove old ip assignment: " + cmd);
-      await execAsync(cmd);
-    } catch (err) {
-      log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
-    }
-    const oldIp = oldIpSubnet.split('/')[0];
-    await iptables.dnsChangeAsync(oldIpSubnet, oldIp + ":8853", false); // remove old dns DNAT rule
+    // add new ip subnet before deleting old one
     cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
     log.info("Command to add new ip assignment: " + cmd);
     await execAsync(cmd);
     const altIp = altIpSubnet.split('/')[0];
-    await iptables.dnsChangeAsync(altIpSubnet, altIp + ":8853", true); // add new dns DNAT rule
+    // dns change is done in dnsmasq.js
+    // await iptables.dnsChangeAsync(altIpSubnet, altIp + ":8853", true); // add new dns DNAT rule
+    // await iptables.dnsChangeAsync(secondaryIpSubnet, altIp + ":8853", true); // add new dns DNAT rule for dhcp subnet
+    await iptables.diagHttpChangeAsync(altIp, true); // add new diag http redirect rule
     const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
     await writeFileAsync(savedIpFile, altIpSubnet);
+
+    try {
+      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
+      log.info("Command to remove old ip assignment: " + cmd);
+      await execAsync(cmd);
+      const oldIp = oldIpSubnet.split('/')[0];
+      // dns change is done in dnsmasq.js
+      // await iptables.dnsChangeAsync(oldIpSubnet, oldIp + ":8853", false); // remove old dns DNAT rule
+      // await iptables.dnsChangeAsync(secondaryIpSubnet, oldIp + ":8853", false); // remove old dns DNAT rule for dhcp subnet
+      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
+    } catch (err) {
+      log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
+    }
   }
 
   if (oldGateway !== altGateway) {
@@ -161,15 +170,8 @@ async function _changeToAlternativeIpSubnet() {
     } else {
       await writeFileAsync(simpleGwFile, oldGateway);
     }
-    try {
-      cmd = util.format("sudo /sbin/ip route delete default via %s dev eth0", oldGateway);
-      log.info("Command to remove old gateway assignment: " + cmd);
-      await execAsync(cmd);
-    } catch (err) {
-      log.error(util.format("Old gateway %s is not found in routing table.", oldGateway));
-    }
     cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", altGateway);
-    log.info("Command to add new gateway assignment: " + cmd);
+    log.info("Command to update gateway assignment: " + cmd);
     await execAsync(cmd);
     const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
     await writeFileAsync(savedGwFile, altGateway);
@@ -219,19 +221,22 @@ function _enableSecondaryInterface() {
             sysManager.secondaryMask = mask;
             if (legacySubnet) {
               (async () => {
-                // legacySubnet and subnet should be like 192.168.218.0/24
-                const fwIp = sysManager.myIp();
-                await iptables.dnsChangeAsync(legacySubnet, fwIp, false); // remove old dns DNAT rule
-                await iptables.dnsChangeAsync(subnet, fwIp, true); // add new dns DNAT rule
-                await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
+                if (legacySubnet) {
+                  // legacySubnet and subnet should be like 192.168.218.0/24
+                  const fwIp = sysManager.myIp();
+                  // dns change is done in dnsmasq.js
+                  // await iptables.dnsChangeAsync(legacySubnet, fwIp, false); // remove old dns DNAT rule
+                  await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
+                  if (legacyIp) { // legacyIp should be exact address like 192.168.218.1
+                    await iptables.diagHttpChangeAsync(legacyIp, false);
+                  }
+                }
+                // dns change is done in dnsmasq.js
+                // await iptables.dnsChangeAsync(subnet, fwIp, true); // add new dns DNAT rule
                 await iptables.dhcpSubnetChangeAsync(subnet, true); // add new DHCP MASQUERADE rule
-                // await _update_nat(legacySubnet, subnet); // update legacy rules for dnsmasq redirect and dhcp NAT
-                const newIpAddr = ip.split('/')[0];
-                const legacyIpAddr = legacyIp.split('/')[0];
-                if (newIpAddr && legacyIpAddr) { // newIpAddr and legacyIpAddr should be exact address xxx.xxx.xxx.xxx
-                  await iptables.diagHttpChangeAsync(legacyIpAddr, false);
+                const newIpAddr = ip.split('/')[0]; // newIpAddr should be like 192.168.220.1
+                if (newIpAddr) {
                   await iptables.diagHttpChangeAsync(newIpAddr, true);
-                  // await _update_nat(legacyIpAddr, newIpAddr); // update rule for diag redirect
                 }
                 resolve();
               })().catch((err) => {
@@ -249,35 +254,6 @@ function _enableSecondaryInterface() {
       }
     });
   });
-}
-
-async function _update_nat(legacyIpSubnet, currentIpSubnet) {
-  // currentIpSubnet is optional, if it is set to null, no updated rule will be appended
-  // ip subnet should be like 192.168.218.0/24, which usually appears in source/dest matcher in nat table
-  let cmd = util.format("sudo iptables -S -t nat | grep -e '%s'", legacyIpSubnet);
-  let result = null;
-  try {
-    result = await execAsync(cmd);
-  } catch (err) {
-    log.warn("No legacy nat rule was found for " + legacyIpSubnet);
-    return;
-  }
-  if (result && result.stdout) {
-    const rules = result.stdout.split('\n').filter(line => line.length !== 0);
-    for (let i in rules) {
-      const rule = rules[i];
-      cmd = "sudo iptables -t nat -D" + rule.substring(2); // replace "-A" with "-D";
-      log.info("Command to delete legacy rule from iptables: " + cmd);
-      await execAsync(cmd);
-      if (currentIpSubnet) {
-        // do not add updated rule if current ip subnet is set to null
-        const newRule = rule.replace(new RegExp(legacyIpSubnet, "g"), currentIpSubnet);
-        cmd = "sudo iptables -t nat " + newRule;
-        log.info("Command to append updated rule to iptables: " + cmd);
-        await execAsync(cmd);
-      }
-    }
-  }
 }
 
 function _enforceDHCPMode() {
