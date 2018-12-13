@@ -14,6 +14,8 @@
  */
 'use strict';
 
+const Promise = require('bluebird');
+
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
   sources.forEach(function (source) {
@@ -60,7 +62,14 @@ function getPreferredBName(hostObject) {
   return hostObject.ipv4Addr
 }
 
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t);
+  });
+}
+
 module.exports = {
   extend:extend,
-  getPreferredBName: getPreferredBName
+  getPreferredBName: getPreferredBName,
+  delay: delay
 }

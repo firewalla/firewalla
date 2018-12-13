@@ -39,7 +39,7 @@
  * UPDATE_CATEGORY_DYNAMIC_DOMAIN
  * VPNConnectionAccepted
  * VPNSubnetChanged
- *
+ * Alarm:NewAlarm
  */
 
 
@@ -66,12 +66,17 @@ class SensorEventManager extends EventEmitter {
   }
 
   subscribeEvent() {
-    sclient.on("message", (channel, message) => {
-      if(channel === this.getRemoteChannel(process.title)) {
+    sclient.on("message", (channel, message) => {      
+      if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
           let m = JSON.parse(message)
-          this.emitEvent(m);
+
+          // only process redis events not originated from this process
+          // local event will be processed by EventEmitter
+          if(m.fromProcess !== process.title) {
+            this.emitLocalEvent(m); // never send remote pubsub event back to remote 
+          }
         } catch (err) {
           log.error("Failed to parse channel message:", err, {});
         }
@@ -81,23 +86,38 @@ class SensorEventManager extends EventEmitter {
     });
 
     sclient.subscribe(this.getRemoteChannel(process.title));
+    sclient.subscribe(this.getRemoteChannel("*")); // subscribe events for all components
   }
 
   clearEventType(eventType) {
     this.removeAllListeners(eventType)
   }
   
+  sendEvent(event, target) {
+    this.emitEvent(Object.assign({}, event, {
+      toProcess: target
+    }))
+  }
 
-  emitEvent(event) {
+  sendEventToFireApi(event) {
+    this.sendEvent(event, "FireApi");
+  }
+
+  sendEventToFireMain(event) {
+    this.sendEvent(event, "FireMain");
+  }
+
+  sendEventToFireMon(event) {
+    this.sendEvent(event, "FireMon");
+  }
+
+  sendEventToAll(event) {
+    this.sendEvent(event, "*");
+  }
+  
+  emitLocalEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
-    }
-
-    if(event.toProcess && event.toProcess !== process.title) {
-      // this event is meant to send to another process
-      let channel = this.getRemoteChannel(event.toProcess);
-      pclient.publish(channel, JSON.stringify(event));
-      return;
     }
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
@@ -113,6 +133,23 @@ class SensorEventManager extends EventEmitter {
     }
   }
 
+  emitEvent(event) {
+    if(event.toProcess && event.toProcess !== process.title) {
+      if(!event.suppressEventLogging) {
+        log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
+      }
+
+      // this event is meant to send to another process
+      let channel = this.getRemoteChannel(event.toProcess);
+      const eventCopy = JSON.parse(JSON.stringify(event));
+      eventCopy.fromProcess = process.title;
+      pclient.publish(channel, JSON.stringify(eventCopy));
+      return; // local will also be processed in .on(channel, event)..
+    }
+
+    this.emitLocalEvent(event);
+  }
+
   on(event, callback) {
     // Error.stack is slow, so expecting subscription calls are not many, use it carefully
     log.debug("Subscribing event", event, "from",
@@ -121,6 +158,16 @@ class SensorEventManager extends EventEmitter {
         .replace(/.*\//, "")
         .replace(/:[^:]*$/,""));
     super.on(event, callback);
+  }
+
+  once(event, callback) {
+    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
+    log.debug("Subscribing event", event, "from",
+    new Error().stack.split("\n")[2]
+      .replace("     at", "")
+      .replace(/.*\//, "")
+      .replace(/:[^:]*$/,""));
+   super.once(event, callback);
   }
 
   clearAllSubscriptions() {
