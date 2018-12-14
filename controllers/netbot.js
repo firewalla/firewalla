@@ -1586,6 +1586,16 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
         });
         break;
+      case "fetchNewAlarms":
+        (async () => {
+          const sinceTS = msg.data.value.sinceTS;
+          const timeout = msg.data.value.timeout || 60;
+          const alarms = await am2.fetchNewAlarms(sinceTS, {timeout});
+          this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
       case "alarm":
         let alarmID = msg.data.value.alarmID;
         am2.getAlarm(alarmID)

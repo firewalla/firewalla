@@ -907,8 +907,18 @@ let legoEptCloud = class {
           compressMode: true,
           data: output.toString('base64')
         };
+
+        const compressedPayload = JSON.stringify(payload);
+
+        const before = msgstr.length;
+        const after = compressedPayload.length;
+
+        if(before !== 0) {
+            const compressRatio = ((before - after) / before * 100).toFixed(1);
+            log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+        }
         
-        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, 5, callback)
+        this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)
       })
     } else {
       this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
