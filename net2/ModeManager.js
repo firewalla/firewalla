@@ -51,6 +51,7 @@ const execAsync = util.promisify(cp.exec);
 const fs = require('fs');
 const writeFileAsync = Promise.promisify(fs.writeFile);
 const readFileAsync = Promise.promisify(fs.readFile);
+const unlinkAsync = Promise.promisify(fs.unlink);
 
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
@@ -114,6 +115,105 @@ function _disableSpoofMode() {
   }
 }
 
+// for ipv4 only
+async function _saveSimpleModeNetworkSettings() {
+  const ipSubnet = sysManager.mySubnet();
+  const gateway = sysManager.myGateway();
+  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
+  let cmd = "";
+  if (fs.existsSync(simpleIpFile)) {
+    // simple_ip file already exists. This is likely an update of alternative ip/subnet and should not override simple_ip file
+    log.info("simple_ip file already exists. No need to override it.");
+  } else {
+    await writeFileAsync(simpleIpFile, ipSubnet);
+  }
+
+  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
+  if (fs.existsSync(simpleGwFile)) {
+    // simple_gw file already exists. This is likely an update of alternative gateway and should not override simple_gw file
+    log.info("simple_gw file already exists. No need to override it.");
+  } else {
+    await writeFileAsync(simpleGwFile, gateway);
+  }
+
+  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
+  if (fs.existsSync(simpleResolvFile)) {
+    // simple_resolv.conf already exists. This is likely an update of alternative dns and should not override simple_resolv.conf file
+    log.info("simple_resolv.conf file already exists. No need to override it.");
+  } else {
+    cmd = util.format("cp /etc/resolv.conf %s", simpleResolvFile);
+    await execAsync(cmd);
+  }
+}
+
+// for ipv4 only
+async function _restoreSimpleModeNetworkSettings() {
+  const oldIpSubnet = sysManager.myIp();
+  let cmd = "";
+
+  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
+  if (fs.existsSync(simpleIpFile)) {
+    // delete old ip from eth0
+    const simpleIpSubnet = await readFileAsync(simpleIpFile, "utf8");
+    try {
+      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
+      log.info("Command to remove old ip assignment: " + cmd);
+      await execAsync(cmd);
+      const oldIp = oldIpSubnet.split('/')[0];
+      // dns rule change is done in dnsmasq.js
+      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
+    } catch (err) {
+      log.warn(util.format("Old ip subnet %s is not found on eth0."), oldIpSubnet);
+    }
+
+    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", simpleIpSubnet);
+    log.info("Command to restore simple ip assignment: " + cmd);
+    await execAsync(cmd);
+    const simpleIp = simpleIpSubnet.split('/')[0];
+    // dns rule change is done in dnsmasq.js
+    await iptables.diagHttpChangeAsync(simpleIp, true); // add new diag http redirect rule
+    await unlinkAsync(simpleIpFile); // remove simple_ip file
+    const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
+    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleIpSubnet, savedIpFile);
+    await execAsync(cmd);
+  } else {
+    log.info("simple_ip file is not found. No need to update ip address.");
+  }
+
+  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
+  if (fs.existsSync(simpleGwFile)) {
+    // update default route
+    const simpleGateway = await readFileAsync(simpleGwFile, "utf8");
+    cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", simpleGateway);
+    log.info("Command to update simple gateway assignment: " + cmd);
+    await execAsync(cmd);
+    await unlinkAsync(simpleGwFile); // remove simple_gw file
+    const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
+    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleGateway, savedGwFile);
+    await execAsync(cmd);
+  } else {
+    log.info("simple_gw file is not found. No need to udpate default route.");
+  }
+
+  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
+  if (fs.existsSync(simpleResolvFile)) {
+    cmd = util.format("sudo cp %s /etc/resolv.conf", simpleResolvFile);
+    await execAsync(cmd);
+    await unlinkAsync(simpleResolvFile); // remove simple_resolv.conf file
+  } else {
+    log.info("simple_resolv.conf file is not found. No need to update dns.");
+  }
+
+  return new Promise((resolve, reject) => {
+    // rescan all interfaces to reflect network changes
+    d.discoverInterfaces(() => {
+      sysManager.update(() => {
+        resolve();
+      });
+    });
+  });
+}
+
 async function _changeToAlternativeIpSubnet() {
   fConfig = Config.getConfig(true);
   // backward compatibility if alternativeIpSubnet is not set
@@ -121,70 +221,43 @@ async function _changeToAlternativeIpSubnet() {
     return;
   const altIpSubnet = fConfig.alternativeIpSubnet.ipsubnet;
   const altGateway = fConfig.alternativeIpSubnet.gateway;
-  const secondaryIpSubnet = sysManager.mySubnet2();
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";
   
   if (oldIpSubnet !== altIpSubnet) {
-    // save ip address of simple mode, and delete it from eth0
-    const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
-    if (fs.existsSync(simpleIpFile)) {
-      // simple_ip file already exists. This is likely an update of alternative ip/subnet and should not override simple_ip file
-      log.info("simple_ip file already exists. No need to override it.");
-    } else {
-      await writeFileAsync(simpleIpFile, oldIpSubnet);
-    }
-    // add new ip subnet before deleting old one
-    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
-    log.info("Command to add new ip assignment: " + cmd);
-    await execAsync(cmd);
-    const altIp = altIpSubnet.split('/')[0];
-    // dns change is done in dnsmasq.js
-    // await iptables.dnsChangeAsync(altIpSubnet, altIp + ":8853", true); // add new dns DNAT rule
-    // await iptables.dnsChangeAsync(secondaryIpSubnet, altIp + ":8853", true); // add new dns DNAT rule for dhcp subnet
-    await iptables.diagHttpChangeAsync(altIp, true); // add new diag http redirect rule
-    const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
-    await writeFileAsync(savedIpFile, altIpSubnet);
-
+    // delete old ip from eth0
     try {
       cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
       const oldIp = oldIpSubnet.split('/')[0];
-      // dns change is done in dnsmasq.js
-      // await iptables.dnsChangeAsync(oldIpSubnet, oldIp + ":8853", false); // remove old dns DNAT rule
-      // await iptables.dnsChangeAsync(secondaryIpSubnet, oldIp + ":8853", false); // remove old dns DNAT rule for dhcp subnet
+      // dns rule change is done in dnsmasq.js
       await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
     } catch (err) {
       log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
     }
+
+    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
+    log.info("Command to add alternative ip assignment: " + cmd);
+    await execAsync(cmd);
+    const altIp = altIpSubnet.split('/')[0];
+    // dns rule change is done in dnsmasq.js
+    await iptables.diagHttpChangeAsync(altIp, true); // add new diag http redirect rule
+    const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
+    cmd = util.format("sudo bash -c 'echo %s > %s'", altIpSubnet, savedIpFile);
+    await execAsync(cmd);
   }
 
   if (oldGateway !== altGateway) {
-    // save gateway of simple mode, and delete it from routing table
-    const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
-    if (fs.existsSync(simpleGwFile)) {
-      // simple_gw file already exists. This is likely an update of alternative ip/subnet and should not override simple_gw file
-      log.info("simple_gw file already exists. No need to override it.");
-    } else {
-      await writeFileAsync(simpleGwFile, oldGateway);
-    }
+    // update default route
     cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", altGateway);
-    log.info("Command to update gateway assignment: " + cmd);
+    log.info("Command to update alternative gateway assignment: " + cmd);
     await execAsync(cmd);
     const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
-    await writeFileAsync(savedGwFile, altGateway);
+    cmd = util.format("sudo bash -c 'echo %s > %s'", altGateway, savedGwFile);
+    await execAsync(cmd);
 
-    // save dns of simple mode, and update it
-    const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
-    if (fs.existsSync(simpleResolvFile)) {
-      // simple_resolv.conf already exists. This is likely an update of alternative dns and should not override simple_resolv.conf file
-      log.info("simple_resolv.conf file already exists. No need to override it.");
-    } else {
-      cmd = util.format("cp /etc/resolv.conf %s", simpleResolvFile);
-      await execAsync(cmd);
-    }
     cmd = util.format("sudo sed -i s/%s/%s/g /etc/resolv.conf", oldGateway, altGateway);
     log.info("Command to update resolv.conf: " + cmd);
     await execAsync(cmd);
@@ -210,29 +283,23 @@ function _enableSecondaryInterface() {
     secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask, legacyIp, legacySubnet)=>{
       if (err == null) {
         log.info("Successfully created secondary interface");
-        d.discoverInterfaces(() => {
-          sysManager.update(() => {
-            // secondary interface ip changed, reload sysManager in all Fire* processes
-            pclient.publishAsync("System:IPChange", "");
-            // register the secondary interface info to sysManager
-            sysManager.secondaryIp = ip;
-            sysManager.secondarySubnet = subnet;
-            sysManager.secondaryIpnet = ipnet;
-            sysManager.secondaryMask = mask;
-            if (legacySubnet) {
+        // register the secondary interface info to sysManager
+        sysManager.secondaryIp = ip;
+        sysManager.secondarySubnet = subnet;
+        sysManager.secondaryIpnet = ipnet;
+        sysManager.secondaryMask = mask;
+        if (legacySubnet) { // secondary ip is changed
+          d.discoverInterfaces(() => {
+            sysManager.update(() => {
+              // secondary interface ip changed, reload sysManager in all Fire* processes
               (async () => {
-                if (legacySubnet) {
-                  // legacySubnet and subnet should be like 192.168.218.0/24
-                  const fwIp = sysManager.myIp();
-                  // dns change is done in dnsmasq.js
-                  // await iptables.dnsChangeAsync(legacySubnet, fwIp, false); // remove old dns DNAT rule
-                  await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
-                  if (legacyIp) { // legacyIp should be exact address like 192.168.218.1
-                    await iptables.diagHttpChangeAsync(legacyIp, false);
-                  }
+                // legacySubnet should be like 192.168.218.0/24
+                // dns change is done in dnsmasq.js
+                await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
+                if (legacyIp) { // legacyIp should be exact address like 192.168.218.1
+                  await iptables.diagHttpChangeAsync(legacyIp, false);
                 }
                 // dns change is done in dnsmasq.js
-                // await iptables.dnsChangeAsync(subnet, fwIp, true); // add new dns DNAT rule
                 await iptables.dhcpSubnetChangeAsync(subnet, true); // add new DHCP MASQUERADE rule
                 const newIpAddr = ip.split('/')[0]; // newIpAddr should be like 192.168.220.1
                 if (newIpAddr) {
@@ -243,11 +310,11 @@ function _enableSecondaryInterface() {
                 log.error("Failed to update nat for legacy IP subnet: " + legacySubnet, err);
                 reject(err);
               });
-            } else {
-              resolve();
-            }
+            });
           });
-        });
+        } else {
+          resolve();
+        }
       } else {
         log.error("Failed to create secondary interface: " + err);
         reject(err);
@@ -285,13 +352,17 @@ function apply() {
     
     switch(mode) {
     case Mode.MODE_DHCP:
+      await (_saveSimpleModeNetworkSettings())
       await (_changeToAlternativeIpSubnet())
       await (_enableSecondaryInterface())
       await (_enforceDHCPMode())
+      pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_AUTO_SPOOF:
+      await (_enableSecondaryInterface()) // secondary interface ip/subnet may be changed
+      await (_restoreSimpleModeNetworkSettings())
       await (_enforceSpoofMode())
-
+      pclient.publishAsync("System:IPChange", "");
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
 

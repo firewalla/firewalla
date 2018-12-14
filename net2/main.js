@@ -65,6 +65,8 @@ const boneSensor = new BoneSensor();
 const fc = require('./config.js')
 const cp = require('child_process');
 
+const pclient = require('../util/redis_manager.js').getPublishClient()
+
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
@@ -225,7 +227,8 @@ function run() {
     d.discoverInterfaces((err, list) => {
       if(!err && list && list.length >= 2) {
         sysManager.update(null) // if new interface is found, update sysManager
-
+        const pclient = require('../util/redis_manager.js').getPublishClient()
+        pclient.publishAsync("System:IPChange", "");
         // recreate port direct after secondary interface is created
         // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
       }
