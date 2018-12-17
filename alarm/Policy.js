@@ -17,9 +17,9 @@
 
 const log = require('../net2/logger.js')(__filename, 'info');
 
-const extend = require('util')._extend
+const util = require('util');
 
-const minimatch = require("minimatch")
+const minimatch = require("minimatch");
 
 const _ = require('lodash');
 
@@ -43,7 +43,7 @@ module.exports = class {
   constructor(info) {
     this.timestamp = new Date() / 1000;
     if(info)
-      extend(this, info);
+      Object.assign(this, info);
   }
 
   isEqualToPolicy(policy) {
@@ -138,7 +138,19 @@ module.exports = class {
       }
       break
     case "devicePort":
-      return false // no alarm supports on devicePort yet
+      if (alarm['p.device.mac'] &&
+          alarm["p.upnp.private.port"] &&
+          alarm["p.upnp.protocol"]
+      ) {
+        let alarmTarget = util.format("%s:%s:%s",
+          alarm["p.device.mac"],
+          alarm["p.upnp.private.port"],
+          alarm["p.upnp.protocol"]
+        )
+        return alarmTarget === this.target;
+      } else {
+        return false;
+      }
       break
     default:
       return false

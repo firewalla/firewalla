@@ -28,34 +28,27 @@
 let instance = null;
 let log = null;
 
-let util = require('util');
+const log = require("../../net2/logger.js")(__file);
+const util = require('util');
 
-let _ = require('lodash');
+const _ = require('lodash');
 
-let f = require('../../net2/Firewalla.js');
+const f = require('../../net2/Firewalla.js');
 
-let natpmp = require('./nat-pmp');
-let natupnp = require('./nat-upnp');
+const natpmp = require('./nat-pmp');
+const natupnp = require('./nat-upnp');
 
-let upnpClient = natupnp.createClient();
+const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
-let natpmpTimeout = 86400;  // 1 day = 24 * 60 * 60 seconds
+const natpmpTimeout = 86400;  // 1 day = 24 * 60 * 60 seconds
 
 let upnpIntervalHandler = null;
 let upnpMappings = [];
 const upnpCheckInterval = 15 * 60 * 1000 // 15 mins
 
-function mappingCompare(natUpnpMapping, localMapping) {
-  // "==" is used instead of "===" with intention here to enable comparison between number and string
-  return  natUpnpMapping.public.port   ==  localMapping.externalPort &&
-    natUpnpMapping.private.port  ==  localMapping.localPort &&
-    natUpnpMapping.protocol      === localMapping.protocol;
-}
-
 module.exports = class {
   constructor(loglevel, gw) {
     if (instance == null) {
-      log = require("../../net2/logger.js")("upnp.js", loglevel || "info");
       this.gw = gw;
       instance = this;
       this.refreshTimers = {};
@@ -77,7 +70,7 @@ module.exports = class {
             upnpMappings.forEach((check) => {
               log.info("Checking registered mapping:", check);
               if (_.isEmpty(
-                results.find((m) => mappingCompare(m, check))
+                results.find((m) => this.mappingCompare(m, check))
               )) {
                 log.info("Mapping no longer exists, adding back to router...")
                 let { protocol, localPort, externalPort, description } = check;
@@ -99,10 +92,13 @@ module.exports = class {
     try {
       if (this._natpmpClient == null) {
         this._natpmpClient = natpmp.connect(this.gw);
+        this._natpmpClient.on('error', err => {
+          log.error("natpmp emitted," err)
+        })
       }
       return this._natpmpClient;
     } catch (e) {
-      log.error("UPNP:natpmpClient Unable to initalize", e, {});
+      log.error("UPNP:natpmpClient Unable to initalize", e);
     }
   }
 
@@ -115,13 +111,6 @@ module.exports = class {
         if (err != null || ip == null) {
           this.upnpEnabled = false;
           if (this.natpmpClient()) {
-
-            let timeout = true;
-            setTimeout(() => {
-              if (timeout) {
-                callback(null, this.upnpEnabled, false)
-              }
-            }, 5 * 1000)
 
             this.natpmpClient().externalIp((err, info) => {
               if (err == null && info != null) {
@@ -184,7 +173,7 @@ module.exports = class {
       let mappingObj = { protocol, localPort, externalPort, description };
 
       // check if mapping registered
-      if (_.isEmpty(upnpMappings.find((m) => 
+      if (_.isEmpty(upnpMappings.find((m) =>
         m.localPort     == localPort &&
         m.externalPort  == externalPort &&
         m.protocol      === protocol
@@ -268,7 +257,7 @@ module.exports = class {
         return;
       }
 
-      upnpMappings = _.reject(upnpMappings, (m) => 
+      upnpMappings = _.reject(upnpMappings, (m) =>
         m.localPort     == localPort &&
         m.externalPort  == externalPort &&
         m.protocol      === protocol
@@ -292,6 +281,10 @@ module.exports = class {
     });
   }
 
+  getPortMappingsUPNP(callback) {
+    upnpClient.getMappings(callback);
+  }
+
   hasPortMapping(protocol, localPort, externalPort, description, callback) {
     upnpClient.getMappings({
       // local: true
@@ -303,12 +296,23 @@ module.exports = class {
         return;
       }
       log.debug(util.inspect(results));
-      let matches = results.find((r) => mappingCompare(r, {protocol, localPort, externalPort}));
+      let matches = results.find((r) => this.mappingCompare(r, {protocol, localPort, externalPort}));
 
-      console.log(util.inspect(matches));
+      log.debug(util.inspect(matches));
 
       callback(null, !matches.isEmpty)
     });
+  }
+
+  getRegisteredUpnpMappings() {
+    return upnpMappings;
+  }
+
+  mappingCompare(natUpnpMapping, localMapping) {
+    // "==" is used instead of "===" with intention here to enable comparison between number and string
+    return  natUpnpMapping.public.port   ==  localMapping.externalPort &&
+      natUpnpMapping.private.port  ==  localMapping.localPort &&
+      natUpnpMapping.protocol      === localMapping.protocol;
   }
 }
 

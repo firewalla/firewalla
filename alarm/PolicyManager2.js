@@ -1109,10 +1109,10 @@ class PolicyManager2 {
       return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
     case "devicePort":
       return async(() => {
-      let data = await (this.parseDevicePortRule(policy.target))
-      if(data) {
-        Block.unblockPublicPort(data.ip, data.port, data.protocol)
-      }
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        }
       })()
       break;
     case "category":

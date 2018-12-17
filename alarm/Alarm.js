@@ -29,18 +29,14 @@ class Alarm {
     this.aid = 0;
     this.type = type;
     this.device = device;
-//    this.payloads = payloads;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
     this.notifType = `NOTIF_TITLE_${this.type}`; // default security
-    if(info)
-      extend(this, info);
 
-    // check schema, minimal required key/value pairs in payloads
+    if (info) Object.assign(this, info);
+
 //    this.validate(type);
 
-
-    return;
   }
 
   getManagementType() {
@@ -119,7 +115,7 @@ class Alarm {
 
     for(var i in keysToCompare) {
       let k = keysToCompare[i];
-      if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
+      if(alarm[k] && alarm2[k] && alarm[k] == alarm2[k]) {
 
       } else {
         return false;
@@ -530,7 +526,7 @@ class UpnpAlarm extends Alarm {
 
   keysToCompareForDedup() {
     return [
-      'p.device.ip',
+      'p.device.mac',
       'p.upnp.protocol',
       //'p.upnp.public.host', check header of UPNPSensor for details
       'p.upnp.public.port',
@@ -544,7 +540,7 @@ class UpnpAlarm extends Alarm {
   }
 
   getExpirationTime() {
-    return fc.getTimingConfig('alarm.upnp.cooldown') || 30 * 24 * 60 * 60;
+    return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
   }
 }
 
