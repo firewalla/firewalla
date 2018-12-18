@@ -952,8 +952,8 @@ module.exports = class {
                 if (port_flow == null) {
                     port_flow = {
                         sp: [obj['id.orig_p']],
-                        ob: Number(flowspec.ob),
-                        rb: Number(flowspec.rb),
+                        ob: Number(obj.orig_bytes),
+                        rb: Number(obj.resp_bytes),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
