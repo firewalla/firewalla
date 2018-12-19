@@ -2368,9 +2368,12 @@ class netBot extends ControllerBot {
         break
 
       case "policy:create":
-        let policy = new Policy(msg.data.value)
-        if (policy == null) {
-          this.simpleTxData(msg, null, "Error creating policy", callback);
+        let policy
+        try {
+          policy = new Policy(msg.data.value)
+        } catch (err) {
+          log.error('Error creating policy', err);
+          this.simpleTxData(msg, null, err, callback);
           return;
         }
 

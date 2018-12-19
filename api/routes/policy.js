@@ -19,6 +19,8 @@ const express = require('express');
 const router = express.Router();
 const bodyParser = require('body-parser')
 
+const log = require('../../net2/logger.js')(__filename);
+
 const Policy = require('../../alarm/Policy.js');
 const PM2 = require('../../alarm/PolicyManager2.js');
 const pm2 = new PM2();
@@ -75,10 +77,6 @@ router.post('/create',
             jsonParser,
             (req, res, next) => {
               let policy = new Policy(req.body);
-              if(policy = null) {
-                res.status(400).send("Invalid policy data");
-                return;
-              }
 
               pm2.checkAndSave(policy, (err, policyID) => {
                 if(err) {
@@ -105,10 +103,6 @@ router.post('/create/ip_port',
               };
 
               let policy = new Policy(json);
-              if(policy == null) {
-                res.status(400).send("Invalid policy data");
-                return;
-              }
 
               pm2.checkAndSave(policy, (err, policyID) => {
                 if(err) {

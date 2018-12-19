@@ -20,8 +20,6 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const flat = require('flat');
-
 const audit = require('../util/audit.js');
 const util = require('util');
 const Bone = require('../lib/Bone.js');
@@ -299,38 +297,12 @@ class PolicyManager2 {
     });
   }
 
-  redisfyPolicy(policy) {
-    if (!policy instanceof Policy) {
-      log.error(new Error('Not Policy instance'));
-    }
-
-    const p = JSON.parse(JSON.stringify(policy))
-
-    // convert array to string so that redis can store it as value
-    if(p.scope) {
-      if (p.scope.length > 0)
-        p.scope = JSON.stringify(p.scope);
-      else
-        delete p.scope;
-    }
-    
-    if(p.expire && p.expire === "") {
-      delete p.expire;
-    }
-
-    if(policy.cronTime && policy.cronTime === "") {
-      delete p.cronTime;
-    }
-    
-    return flat.flatten(p);
-  }
-
   updatePolicyAsync(policy) {
     const pid = policy.pid
     if(pid) {
       const policyKey = policyPrefix + pid;
       return async(() => {
-        let redisfied = this.redisfyPolicy(policy);
+        let redisfied = policy.redisfy();
 
         await (rclient.hmsetAsync(policyKey, redisfied));
 
@@ -380,9 +352,7 @@ class PolicyManager2 {
 
       let policyKey = policyPrefix + id;
 
-      let redisfied = this.redisfyPolicy(policy);
-    
-      rclient.hmset(policyKey, redisfied, (err) => {
+      rclient.hmset(policyKey, policy.redisfy(), (err) => {
         if(err) {
           log.error("Failed to set policy: " + err);
           callback(err);
@@ -581,8 +551,17 @@ class PolicyManager2 {
       }
 
       let rr = results
-        .map((r) => new Policy(r))
-        .filter((r) => r != null)
+        .map(r => {
+          let p = null;
+          try {
+            p = new Policy(r)
+          } catch(e) {
+            log.error(e, r);
+          } finally {
+            return p;
+          }
+        })
+        .filter(r => r != null)
 
       // recent first
       rr.sort((a, b) => {

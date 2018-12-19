@@ -78,9 +78,8 @@ class ActiveProtectSensor extends Sensor {
         type: policyType
       }
 
-      const policy = new Policy(policyPayload);
-
       try {
+        const policy = new Policy(policyPayload);
         const policyResult = await pm2.checkAndSaveAsync(policy)  
         
         log.info("default_c policy is created successfully, pid:", policyResult.pid);

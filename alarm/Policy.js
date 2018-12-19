@@ -15,11 +15,12 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
 const minimatch = require("minimatch")
 
 const _ = require('lodash')
+const flat = require('flat');
 
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
@@ -37,9 +38,9 @@ function arraysEqual(a, b) {
   return true;
 }
 
-module.exports = class {
+class Policy {
   constructor(raw) {
-    if (!raw) return null;
+    if (!raw) throw new Error("Empty policy payload");
 
     Object.assign(this, raw);
 
@@ -177,5 +178,28 @@ module.exports = class {
     }
   }
 
+  // return a new object ready for redis writing
+  redisfy() {
+    let p = JSON.parse(JSON.stringify(this))
+
+    // convert array to string so that redis can store it as value
+    if(p.scope) {
+      if (p.scope.length > 0)
+        p.scope = JSON.stringify(p.scope);
+      else
+        delete p.scope;
+    }
+
+    if (p.expire === "") {
+      delete p.expire;
+    }
+
+    if (p.cronTime === "") {
+      delete p.cronTime;
+    }
+
+    return flat.flatten(p);
+  }
 }
 
+module.exports = Policy
