@@ -101,7 +101,7 @@ class UPNPSensor extends Sensor {
                   'p.upnp.local'        : current.local
                 }
               );
-              await am2.enrichDeviceInfo(alarm)
+              am2.enrichDeviceInfo(alarm)
                 .catch(e => {
                   log.error('Failed to enrich device info for Alarm:', alarm.aid)
                   return alarm;

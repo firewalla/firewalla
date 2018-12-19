@@ -11,7 +11,7 @@
  * Module dependencies.
  */
 
-const log = require("../../net2/logger.js")(__file);
+const log = require("../../net2/logger.js")(__filename);
 var dgram = require('dgram');
 var assert = require('assert');
 var debug = require('debug')('nat-pmp');

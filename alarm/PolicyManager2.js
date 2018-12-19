@@ -430,7 +430,7 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        if(this.isFirewallaCloud(policy)) {
+        if(this.isFirewallaOrCloud(policy)) {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
@@ -816,12 +816,14 @@ class PolicyManager2 {
     })()
   }
     
-  isFirewallaCloud(policy) {
+  isFirewallaOrCloud(policy) {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
+           // compare mac, ignoring case
+           target.substring(0,17).localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -956,7 +958,7 @@ class PolicyManager2 {
     return async(() => {
       await (this._refreshActivatedTime(policy))
 
-      if(this.isFirewallaCloud(policy)) {
+      if(this.isFirewallaOrCloud(policy)) {
         return Promise.reject(new Error("Firewalla cloud can't be blocked."))
       }
   
@@ -995,7 +997,7 @@ class PolicyManager2 {
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-      if(this.isFirewallaCloud(policy)) {
+      if(this.isFirewallaOrCloud(policy)) {
         return Promise.reject(new Error("Firewalla cloud can't be blocked."))
       }
 

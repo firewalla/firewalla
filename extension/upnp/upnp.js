@@ -26,9 +26,8 @@
 'use strict';
 
 let instance = null;
-let log = null;
 
-const log = require("../../net2/logger.js")(__file);
+const log = require("../../net2/logger.js")(__filename);
 const util = require('util');
 
 const _ = require('lodash');
@@ -93,8 +92,8 @@ module.exports = class {
       if (this._natpmpClient == null) {
         this._natpmpClient = natpmp.connect(this.gw);
         this._natpmpClient.on('error', err => {
-          log.error("natpmp emitted," err)
-        })
+          log.error("natpmp emitted", err);
+        });
       }
       return this._natpmpClient;
     } catch (e) {
