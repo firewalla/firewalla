@@ -4,6 +4,10 @@
   "ALARM_PORN": "此设备访问了色情网站{{{p.dest.name}}}.",
   "ALARM_VIDEO": "此设备访问了视频网站{{{p.dest.name}}}.",
   "ALARM_GAME": "此设备玩了游戏{{{p.dest.name}}}.",
+  "NOTIF_BRANCH_CHANGE": "{deviceName} 已成功切换{branchChanged, select, 1 {回稳定} 2 {至测试} 3 {至开发} other {至非官方}}版 {version}",
+  "NOTIF_UPGRADE_COMPLETE": "Firewalla 已升级至 {{{to}}}",
+  "NOTIF_REBOOT_COMPLETE": "Firewalla 重启完毕",
+  "NOTIF_AWAKEN": "🔥 Firewalla {{{deviceName}}} 启动成功!",
   "NOTIF_TITLE_ALARM_VIDEO": "Video Alarm",
   "NOTIF_TITLE_ALARM_GAME": "Gaming Alarm",
   "NOTIF_TITLE_ALARM_PORN": "Porn Alarm",
@@ -18,6 +22,7 @@
   "NOTIF_TITLE_ALARM_INTEL_REPORT": "Security Report",
   "NOTIF_TITLE_ALARM_BRO_NOTICE": "Security Alarm",
   "NOTIF_TITLE_ALARM_SUBNET": "路由器配置警告",
+  "NOTIF_TITLE_ALARM_UPNP": "发现新的UPnP映射",
   "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE": "此设备上传了{{{p.transfer.outbound.humansize}}}数据到{{{p.dest.name}}}",
   "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE": "此设备上传了{{{p.transfer.outbound.humansize}}}数据到{{{p.dest.name}}}",
   "ALARM_NEW_DEVICE": "发现新设备\"{{{p.device.name}}}\"接入您的网络",
@@ -25,6 +30,7 @@
   "ALARM_INTEL_FROM_OUTSIDE": "{{{p.dest.name}}}正在访问此设备的{{{p.device.port}}}端口, 该地址已被{{{p.security.numOfReportSources}}}家安全机构标记为可疑地址。",
   "ALARM_INTEL_FROM_INSIDE": "此设备正在访问{{{p.dest.name}}}的{{{p.dest.port}}}端口,该地址已被{{{p.security.numOfReportSources}}}家安全机构标记为可疑地址。",
   "ALARM_SUBNET": "当前子网大于/24，这将使Firewalla的功能受限",
+  "ALARM_UPNP": "{{{p.upnp.description}}}：{{{p.device.name}}}上的{{{p.upnp.protocol}}}端口{{{p.upnp.private.port}}}被打开，映射于路由器的{{{p.upnp.public.port}}}端口",
   "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "已自动阻止{{{p.dest.name}}}访问该设备，{{{p.dest.name}}}已被{{{p.security.numOfReportSources}}}家安全机构标记为可疑地址",
   "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已自动阻止设备\"{{{p.device.name}}}\"访问{{{p.dest.name}}}，{{{p.dest.name}}}已被{{{p.security.numOfReportSources}}}家安全机构标记为可疑地址",
   "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{{p.security.primaryReason}}}网站{{{p.dest.name}}}正在访问此设备的{{{p.device.port}}}端口。",
@@ -53,6 +59,7 @@
   "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "已自动阻止{{{p.security.primaryReason}}}网站{{{p.dest.name}}}访问设备\"{{{p.device.name}}}\"。",
   "NOTIF_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "已自动阻止设备\"{{{p.device.name}}}\"访问{{{p.security.primaryReason}}}网站{{{p.dest.readableName}}}。",
   "NOTIF_ALARM_SUBNET": "检测到一个路由器子网配置问题",
+  "NOTIF_ALARM_UPNP": "{{{p.device.name}}}上的{{{p.upnp.protocol}}}端口{{{p.upnp.private.port}}}被打开",
   "INFO_ALARM_PORN": "{{{localizedRelativeTime}}}设备{{{p.device.name}}} ({{{p.device.ip}}})访问了色情网站{{{p.dest.name}}}.",
   "INFO_ALARM_VIDEO": "{{{localizedRelativeTime}}}设备{{{p.device.name}}} ({{{p.device.ip}}})访问了视频网站{{{p.dest.name}}}.",
   "INFO_ALARM_GAME": "{{{localizedRelativeTime}}}设备{{{p.device.name}}} ({{{p.device.ip}}})玩了游戏{{{p.dest.name}}}.",
@@ -66,5 +73,6 @@
   "INFO_FW_INTEL_ALARM_INTEL_FROM_INSIDE": "{{{localizedRelativeTime}}}设备\"{{{p.device.name}}}\"正在访问{{{p.security.primaryReason}}}网站{{{p.dest.readableName}}}。",
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "{{{localizedRelativeTime}}}已自动阻止{{{p.security.primaryReason}}}网站{{{p.dest.name}}}访问设备\"{{{p.device.name}}}\"。",
   "INFO_FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "{{{localizedRelativeTime}}}已自动阻止设备\"{{{p.device.name}}}\"访问{{{p.security.primaryReason}}}网站{{{p.dest.readableName}}}。",
-  "INFO_ALARM_SUBNET": "当前子网大于/24，这将使Firewalla的功能受限"
+  "INFO_ALARM_SUBNET": "当前子网大于/24，这将使Firewalla的功能受限",
+  "INFO_ALARM_UPNP": "{{{p.upnp.description}}}：{{{p.device.name}}}上的{{{p.upnp.protocol}}}端口{{{p.upnp.private.port}}}被打开，映射于路由器的{{{p.upnp.public.port}}}端口"
 }

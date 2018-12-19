@@ -292,8 +292,7 @@ class IntelAlarm extends Alarm {
   getI18NCategory() {
     this["p.dest.readableName"] = this.getReadableDestination()
     
-    if(this.result === "block" &&
-    this.result_method === "auto") {
+    if(this.result === "block" && this.result_method === "auto") {
       if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
         if(this["p.local_is_client"] === "1") {
           return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
@@ -507,6 +506,7 @@ class PornAlarm extends OutboundAlarm {
 class SubnetAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SUBNET", timestamp, device, info);
+    this["p.showMap"] = false;
   }
 
   getManagementType() {
@@ -519,6 +519,32 @@ class SubnetAlarm extends Alarm {
 
   getExpirationTime() {
     return fc.getTimingConfig("alarm.subnet.cooldown") || 30 * 24 * 60 * 60;
+  }
+}
+
+class UpnpAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_UPNP', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return [
+      'p.device.ip',
+      'p.upnp.protocol',
+      //'p.upnp.public.host', check header of UPNPSensor for details
+      'p.upnp.public.port',
+      'p.upnp.private.host',
+      'p.upnp.private.port'
+    ];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.upnp.cooldown') || 30 * 24 * 60 * 60;
   }
 }
 
@@ -536,7 +562,8 @@ let classMapping = {
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
-  ALARM_SUBNET: SubnetAlarm.prototype
+  ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_UPNP: UpnpAlarm.prototype
 }
 
 module.exports = {
@@ -556,5 +583,6 @@ module.exports = {
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
+  UpnpAlarm: UpnpAlarm,
   mapping: classMapping
 }

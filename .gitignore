@@ -5,6 +5,7 @@ npm-debug.log*
 .DS_Store
 
 *.swp
+.vimrc
 tags
 # Runtime data
 pids

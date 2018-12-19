@@ -113,15 +113,15 @@ class FlowGraph {
          }
 
          let removed = Number(0);
-         for (let i = insertindex; i <this.flowarray.length;i++) {
+         for (let i = insertindex; i < this.flowarray.length; i++) {
              let e = this.flowarray[Number(i)];
-             if (e[1]<flowEnd) {
+             if (e[1] < flowEnd) {
                  ob += e[2];
                  rb += e[3];
                  ct += e[4];
                  removed++;
                  continue;
-             } else if (e[1]>=flowEnd) {
+             } else if (e[1] >= flowEnd) {
                  ob += e[2];
                  rb += e[3];
                  ct += e[4];
@@ -1017,7 +1017,7 @@ module.exports = class FlowManager {
             }
             let flow = conndb[key];
             if (flow == null) {
-              conndb[key] = o;
+              conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other. The devil is in the details!!
               flow = conndb[key];
               let dp = k.split("\.", 2).slice(-1)[0];
               // double check to ensure that k is <proto>.<port_number>
@@ -1280,4 +1280,18 @@ module.exports = class FlowManager {
         return sorted;
     }
 
+  removeFlowsAll(mac) {
+    // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
+
+    let keys = [
+      'flow:conn:in:' + mac,
+      'flow:conn:out:' + mac,
+      'stats:hour:in:' + mac,
+      'stats:hour:out:' + mac,
+      'stats:last24:' + mac + ':upload',
+      'stats:last24:' + mac + ':download',
+    ];
+
+    return rclient.delAsync(keys);
+  }
 }

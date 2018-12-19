@@ -21,9 +21,14 @@ function m(msgTemplate, info) {
   return i18n.__(msgTemplate, flat.unflatten(info));
 }
 
+function mf(msgTemplate, info) {
+  return i18n.__mf(msgTemplate, flat.unflatten(info));
+}
+
 module.exports = {
   "__": m,
   // setLocale: i18n.setLocale,
+  "__mf": mf,
   setLocale: () => {}, // disable set locale feature for now
   getLocale: i18n.getLocale
 };

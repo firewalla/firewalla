@@ -19,7 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const minimatch = require("minimatch")
 
-const _ = require('lodash')
+const _ = require('lodash');
 const flat = require('flat');
 
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
@@ -135,6 +135,16 @@ class Policy {
 
     if(this.isExpired()) {
       return false // always return unmatched if policy is already expired
+    }
+
+    if (
+      this.scope &&
+      _.isArray(this.scope) &&
+      !_.isEmpty(this.scope) &&
+      alarm['p.device.mac'] &&
+      !this.scope.includes(alarm['p.device.mac'])
+    ) {
+      return false; // scope not match
     }
 
     // for each policy type
