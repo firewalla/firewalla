@@ -26,6 +26,7 @@ class ExtensionManager {
       this.hooks = {}
       this.onGets = {}
       this.onSets = {}
+      this.onCmds = {};
       this.cmdMap = {}
       instance = this
     }

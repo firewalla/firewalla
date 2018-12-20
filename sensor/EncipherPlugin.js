@@ -29,24 +29,19 @@ class EncipherPlugin extends Sensor {
 
   apiRun() {
     extensionManager.onCmd("group:eid:delete", async (msg, data) => {
-      const gid = data.gid;
       const eid = data.eid;
-      return this.deleteEidFromGroup(gid, eid);
+      return this.deleteEidFromGroup(eid);
     })
   }
 
-  async deleteEidFromGroup(gid, eid) {
+  async deleteEidFromGroup(eid) {
     if(!this.eptcloud) {
       return;
     }
 
-    const curGid = await encipherTool.getGID();
-    if(gid !== curGid) {
-      throw new Error(`Invalid gid ${gid}`);
-    }
-
+    const gid = await encipherTool.getGID();
     return this.eptcloud.deleteEidFromGroup(gid, eid);
   }
 }
 
-module.exports = APIRelaySensor;
+module.exports = EncipherPlugin;
