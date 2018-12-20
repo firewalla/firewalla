@@ -67,7 +67,8 @@
   "apiSensors": {
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
-    "BoneSensor": {}
+    "BoneSensor": {},
+    "EncipherPlugin": {}
   },
   "intels": [
     "DedupAlarm",
