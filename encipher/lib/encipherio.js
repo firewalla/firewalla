@@ -39,6 +39,7 @@ let fConfig = require('../../net2/config.js').getConfig();
 
 let exec = require('child-process-promise').exec;
 
+const rp = require('request-promise');
 
 let instance = {};
 
@@ -540,6 +541,26 @@ let legoEptCloud = class {
                 }
             }
         });
+    }
+
+    async deleteEidFromGroup(gid, eid) {
+      if (!gid || !eid) {
+        throw new Error("require gid and eid when deleting eid from group");
+      }
+
+      const options = {
+        uri: `${this.endpoint}/group/${gid}/${eid}`,
+        family: 4,
+        method: 'DELETE',
+        auth: {
+          bearer: this.token
+        }
+      }
+
+      log.info(`deleting eid ${eid} from group ${gid}`);
+      const result = await rp(options);
+      log.info(`deleted eid ${eid} from group ${gid}`);
+      return result;
     }
 
     deleteGroup(gid, callback) {

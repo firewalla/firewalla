@@ -2122,6 +2122,22 @@ class netBot extends ControllerBot {
     } else {
       log.info("API: CmdHandler ",gid,msg,{});
     }
+
+    if(extMgr.hasCmd(msg.data.item)) {
+      (async () => {
+        let result = null;
+        let err = null;
+        try {
+          result = await extMgr.cmd(msg.data.item, msg, msg.data.value);
+        } catch(e) {
+          err = e;
+        } finally {
+          this.simpleTxData(msg, result, err, callback)
+        }
+      })();
+      return;
+    }
+
     if(msg.data.item === "dhcpCheck") {
       (async() => {
         let mode = require('../net2/Mode.js');
