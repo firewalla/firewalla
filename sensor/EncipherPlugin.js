@@ -43,9 +43,26 @@ class EncipherPlugin extends Sensor {
 
     const gid = await encipherTool.getGID();
     await this.eptcloud.deleteEidFromGroup(gid, eid);
+    await this.deleteEidEntryFromLocalRedis(eid);
     await rclient.hdelAsync("sys:ept:memberNames", eid);
     await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
     return;
+  }
+
+  async deleteEidEntryFromLocalRedis(eid) {
+    const members = await rclient.smembersAsync("sys:ept:members");
+    for(const member of members) {
+      try {
+        const m = JSON.parse(member);
+        if(m.eid === eid) {
+          await rclient.sremAsync("sys:ept:members", member);
+          return;
+        }
+      } catch(err) {
+        log.error("Failed to parse member info, err:", err);
+        continue;
+      }
+    }
   }
 }
 

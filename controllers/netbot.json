@@ -2,7 +2,6 @@
    "type":"generic",
    "name":"Net Bot",
    "main":"netbot.js",
-   "intercomm":"true",
    "dialog": {
        "api":"https://api.projectoxford.ai/luis/v1/application?id=f435a7ae-1726-43fa-bc7c-c56ce463a5f2&subscription-key=cb88156359b940fd81fd2cb491f4a405"
    }
