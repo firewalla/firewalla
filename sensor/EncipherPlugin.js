@@ -25,6 +25,8 @@ const extensionManager = require('./ExtensionManager.js')
 const EncipherTool = require('../net2/EncipherTool.js')
 const encipherTool = new EncipherTool()
 
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 class EncipherPlugin extends Sensor {
 
   apiRun() {
@@ -40,7 +42,10 @@ class EncipherPlugin extends Sensor {
     }
 
     const gid = await encipherTool.getGID();
-    return this.eptcloud.deleteEidFromGroup(gid, eid);
+    await this.eptcloud.deleteEidFromGroup(gid, eid);
+    await rclient.hdelAsync("sys:ept:memberNames", eid);
+    await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+    return;
   }
 }
 
