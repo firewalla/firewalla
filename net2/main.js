@@ -275,7 +275,7 @@ function run() {
         // when mode is changed by anyone else, reapply automatically
         ModeManager.listenOnChange();        
         await (portforward.start());
-      })()     
+      })()
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();
