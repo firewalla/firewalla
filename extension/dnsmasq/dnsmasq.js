@@ -36,6 +36,7 @@ const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
 const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
@@ -137,7 +138,27 @@ module.exports = class DNSMASQ {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
 
+      sclient.on("message", (channel, message) => {
+        switch (channel) {
+          case "System:IPChange":
+            (async () => {
+              if (process.title === "FireMain") {
+                const started = await this.checkStatus();
+                if (started)
+                  await this.rawRestart(); // restart firemasq service to bind new ip addresses
+                await this._update_local_interface_iptables_rules();
+                if (this.vpnSubnet) {
+                  await this.updateVpnIptablesRules(this.vpnSubnet, true);
+                }
+              }
+            })();
+            break;
+          default:
+            //log.warn("Unknown message channel: ", channel, message);
+        }
+      });
 
+      sclient.subscribe("System:IPChange");
     }
 
     return instance;
@@ -172,7 +193,7 @@ module.exports = class DNSMASQ {
     
     if(enabled) {
       try {
-        await this.start(false);
+        await this.start(true); // only need to change firemasq service unit file and restart firemasq, no need to update iptables
         log.info("dnsmasq is restarted to apply new upstream dns");
       } catch (err) {
         log.error("Failed to restart dnsmasq to apply new upstream dns");
@@ -486,22 +507,40 @@ module.exports = class DNSMASQ {
     });
   }
 
-  async updateVpnIptablesRules(newVpnSubnet) {
+  async updateVpnIptablesRules(newVpnSubnet, force) {
     const oldVpnSubnet = this.vpnSubnet;
     const localIP = sysManager.myIp();
     const dns = `${localIP}:8853`;
-    if (oldVpnSubnet != newVpnSubnet) {
-      if (oldVpnSubnet != null) {
+    const started = await this.checkStatus();
+    if (!started)
+      return;
+    const oldDns = this._targetDns;
+    if (oldVpnSubnet != newVpnSubnet || force === true) {
+      if (oldVpnSubnet != null && oldDns != null) {
         // remove iptables rule for old vpn subnet
-        await iptables.dnsChangeAsync(oldVpnSubnet, dns, false);
+        await iptables.dnsChangeAsync(oldVpnSubnet, oldDns, false);
       }
-      // then add new iptables rule for new vpn subnet
-      await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
+      // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
+      if (newVpnSubnet) {
+        await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
+      }
     }
     this.vpnSubnet = newVpnSubnet
   }
 
+  async _update_local_interface_iptables_rules() {
+    // if dnsmasq is stopped, no need to update iptables rules
+    const started = await this.checkStatus();
+    if (started) {
+      await this._remove_iptables_rules();
+      await this._add_iptables_rules();
+    }
+  }
+
   async _add_all_iptables_rules() {
+    if (this.vpnSubnet) {
+      await this.updateVpnIptablesRules(this.vpnSubnet, true);
+    }
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
   }
@@ -511,8 +550,11 @@ module.exports = class DNSMASQ {
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
 
+    this._redirectedLocalSubnets = subnets;
+    this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
+      log.info("Add dns rule: ", subnet, dns);
       await iptables.dnsChangeAsync(subnet, dns, true);
     }
 
@@ -569,6 +611,9 @@ module.exports = class DNSMASQ {
   }
 
   async _remove_all_iptables_rules() {
+    if (this.vpnSubnet) {
+      await this.updateVpnIptablesRules(null, true);
+    }
     await this._remove_iptables_rules()
     await this._remove_ip6tables_rules();
   }
@@ -576,12 +621,20 @@ module.exports = class DNSMASQ {
   async _remove_iptables_rules() {
     try {
       let subnets = await networkTool.getLocalNetworkSubnets();
+      // remove rules corresponding to local subnets that are previous added
+      if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
+        subnets = this._redirectedLocalSubnets;
       let localIP = sysManager.myIp();
       let dns = `${localIP}:8853`;
+      if (this._targetDns)
+        dns = this._targetDns;
 
       subnets.forEach(async subnet => {
+        log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
       })
+      this._redirectedLocalSubnets = [];
+      this._targetDns = null;
 
       await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {
@@ -716,7 +769,7 @@ module.exports = class DNSMASQ {
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
-    let cidrSec = ip.cidrSubnet(sysManager.secondarySubnet);
+    let cidrSec = ip.cidrSubnet(sysManager.mySubnet2());
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
@@ -806,8 +859,8 @@ module.exports = class DNSMASQ {
     if(this.dhcpMode && sysManager.secondaryIpnet && sysManager.secondaryMask) {
       log.info("DHCP feature is enabled");
 
-      cmd = this.prepareDnsmasqCmd(cmd);
-      cmdAlt = this.prepareAltDnsmasqCmd();
+      cmd = await this.prepareDnsmasqCmd(cmd);
+      cmdAlt = await this.prepareAltDnsmasqCmd();
     }
 
     if(upstreamDNS) {
@@ -877,7 +930,7 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
-  prepareDnsmasqCmd(cmd) {
+  async prepareDnsmasqCmd(cmd) {
     let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
     let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
     let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
@@ -890,6 +943,16 @@ module.exports = class DNSMASQ {
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
 
+    // reserve ip address which was used by Firewalla in simple mode if secondary ip subnet is same as that in previous simple mode
+    const simpleIpFile = f.getHiddenFolder() + "/run/simple_ip";
+    const simpleIpFileExists = fs.existsSync(simpleIpFile);
+    if (simpleIpFileExists) {
+      const simpleIpSubnet = await fs.readFileAsync(simpleIpFile, "utf8");
+      const simpleIp = simpleIpSubnet.split('/')[0];
+      if (simpleIp.startsWith(sysManager.secondaryIpnet)) // secondaryIpnet is like 192.168.218
+        cmd = util.format("%s --dhcp-host=%s,%s", cmd, sysManager.myMAC(), simpleIp);
+    }
+
     // By default, dnsmasq sends some standard options to DHCP clients,
     // the netmask and broadcast address are set to the same as the host running dnsmasq
     // and the DNS server and default route are set to the address of the machine running dnsmasq.
@@ -901,7 +964,7 @@ module.exports = class DNSMASQ {
     return cmd;
   }
 
-  prepareAltDnsmasqCmd() {
+  async prepareAltDnsmasqCmd() {
     let cmdAlt = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
@@ -967,7 +1030,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async start(force) {
+  async start(skipIptablesUpdate) {
     // 0. update resolv.conf
     // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
@@ -987,14 +1050,16 @@ module.exports = class DNSMASQ {
       return;
     }
 
-    try {
-      await this._add_all_iptables_rules();
-    } catch (err) {
-      log.error('Error when add iptables rules', err);
-      await this.rawStop();
-      await this._remove_all_iptables_rules();
-      log.error("Dnsmasq start is aborted due to failed to add iptables rules");
-      return;
+    if (!skipIptablesUpdate) {
+      try {
+        await this._add_all_iptables_rules();
+      } catch (err) {
+        log.error('Error when add iptables rules', err);
+        await this.rawStop();
+        await this._remove_all_iptables_rules();
+        log.error("Dnsmasq start is aborted due to failed to add iptables rules");
+        return;
+      }
     }
 
     log.info("DNSMASQ is started successfully");
@@ -1024,7 +1089,7 @@ module.exports = class DNSMASQ {
     this.dhcpMode = true;
     try {
       log.info("Enabling DHCP mode");
-      await this.start(false);
+      await this.start(true); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
       log.info("DHCP mode is enabled");
     } catch (err) {
       log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
@@ -1035,7 +1100,7 @@ module.exports = class DNSMASQ {
     this.dhcpMode = false;
     try {
       log.info("Disabling DHCP mode");
-      await (this.start(false));
+      await (this.start(true)); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
       log.info("DHCP mode is disabled");
     } catch (err) {
       log.error("Failed to restart dnsmasq when disabling DHCP: " + err);
