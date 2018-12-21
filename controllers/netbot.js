@@ -773,9 +773,9 @@ class netBot extends ControllerBot {
             if(msg["premiumAction"] && f.isDevelopmentVersion()) {
               const pa = msg["premiumAction"];
               if(pa === 'ignore') {
-                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium.`;
+                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Premium Service.`;
               } else if(pa === 'block') {
-                notifMsg.body = `${notifMsg.body} - This can be auto blocked with Firewalla Premium.`;
+                notifMsg.body = `${notifMsg.body} - This can be auto blocked with Premium Service.`;
               }
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            

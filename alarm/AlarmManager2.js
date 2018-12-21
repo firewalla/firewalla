@@ -606,9 +606,9 @@ module.exports = class {
   }
 
   shouldAutoBlock(alarm) {
-    // if(alarm["p.cloud.decision"] === "block") {
-    //   return true;
-    // } else 
+    if(alarm["p.cloud.decision"] === "block" && !f.isDevelopmentVersion()) {
+      return true;
+    } else 
     if((alarm["p.action.block"] === "true") ||
       (alarm["p.action.block"] === true)) {
       return true
