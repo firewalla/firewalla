@@ -69,7 +69,7 @@ fi
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 ethernet_ip() {
-    eth_ip=$(ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/ | grep -v '^169\.254\.' | grep -v '^192\.168\.218\.1$')
+    eth_ip=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.') # only check ip assigned to eth0, should not check eth0:0
     if [[ -n "$eth_ip" ]]; then
         return 0
     else
