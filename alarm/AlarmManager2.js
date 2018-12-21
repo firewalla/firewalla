@@ -1078,6 +1078,8 @@ module.exports = class {
               alarm["p.upnp.protocol"]
             )
 
+            p.flowDescription = alarm.message;
+
             break;
 
           default:

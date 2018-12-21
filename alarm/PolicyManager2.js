@@ -823,7 +823,8 @@ class PolicyManager2 {
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
            // compare mac, ignoring case
-           target.substring(0,17).localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) ||
+           target.substring(0,17) // devicePort policies have target like mac:protocol:prot
+             .localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) === 0 ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -959,7 +960,7 @@ class PolicyManager2 {
       await (this._refreshActivatedTime(policy))
 
       if(this.isFirewallaOrCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
   
       switch(type) {
@@ -998,7 +999,7 @@ class PolicyManager2 {
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
       if(this.isFirewallaOrCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
 
       let scope = policy.scope
