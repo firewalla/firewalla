@@ -109,6 +109,16 @@ function isDevelopmentVersion() {
   }
 }
 
+function isPreBeta() {
+  // TODO: PreBeta is a subset of beta currently. Need to figure out what additional features can be applied on this branch.
+  let branch = getBranch();
+  if (branch.match(/^beta_7.*/)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 function isBeta() {
   let branch = getBranch()
   if(branch.match(/^beta_.*/)) {
@@ -332,6 +342,7 @@ module.exports = {
   isProduction: isProduction,
   isBeta:isBeta,
   isAlpha: isAlpha,
+  isPreBeta:isPreBeta,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
 
