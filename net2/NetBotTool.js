@@ -300,7 +300,7 @@ class NetBotTool {
   }
 
   // Top Download/Upload in the entire network
-  _prepareTopFlows(json, trafficDirection, options) {
+  async _prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -310,17 +310,16 @@ class NetBotTool {
 
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
 
-    return async(() => {
-      let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
+    let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
 
-      traffic.map((f) => {
-        f.begin = begin;
-        f.end = end;
-      })
+    traffic.forEach((f) => {
+      f.begin = begin;
+      f.end = end;
+    })
 
-      let promises = Promise.all(traffic.map((f) => {
-        return intelTool.getIntel(f.ip)
-        .then((intel) => {
+    traffic = await Promise.all(traffic.map((f) => {
+      return intelTool.getIntel(f.ip)
+        .then(async (intel) => {
           if(intel) {
             f.country = intel.country;
             f.host = intel.host;
@@ -332,39 +331,36 @@ class NetBotTool {
             }
             return f;
           } else {
-            return f;
+            
             // intel not exists in redis, create a new one
-            return async(() => {
-              try {
-                intel = await (destIPFoundHook.processIP(f.ip));
-                if (intel) {
-                  f.country = intel.country;
-                  f.host = intel.host;
-                  if(intel.category) {
-                    f.category = intel.category
-                  }
-                  if(intel.app) {
-                    f.app = intel.app
-                  }
+            try {
+              intel = await (destIPFoundHook.processIP(f.ip));
+              if (intel) {
+                f.country = intel.country;
+                f.host = intel.host;
+                if(intel.category) {
+                  f.category = intel.category
                 }
-              } catch(err) {
-                log.error(`Failed to post-enrich intel ${f.ip}:`, err);
+                if(intel.app) {
+                  f.app = intel.app
+                }
               }
-              return f;
-            })();
+            } catch(err) {
+              console.log(err)
+              log.error(`Failed to post-enrich intel ${f.ip}:`, err);
+            }
+            return f;
           }
-          return f;
         });
-      })).then(() => {
-        return traffic.sort((a, b) => {
-          return b.count - a.count;
-        });
+    })).then(t => {
+      return t.sort((a, b) => {
+        return b.count - a.count;
       });
+    });
 
-      await (promises);
+    json.flows[trafficDirection] = traffic;
 
-      json.flows[trafficDirection] = traffic
-    })();
+    return traffic
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
@@ -448,7 +444,6 @@ class NetBotTool {
                 return f;
               })();
             }
-            return f;
           });
         })).then(() => {
           return traffic.sort((a, b) => {
