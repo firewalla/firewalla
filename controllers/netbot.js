@@ -769,6 +769,14 @@ class netBot extends ControllerBot {
             }
             if(msg["testing"] && msg["testing"] == 1) {
               notifMsg.title = `[Monkey] ${notifMsg.title}`;
+            }            
+            if(msg["premiumAction"] && f.isDevelopmentVersion()) {
+              const pa = msg["premiumAction"];
+              if(pa === 'ignore') {
+                notifMsg.title = `${notifMsg.title} - Premium Suppress Available`;
+              } else if(pa === 'block') {
+                notifMsg.title = `${notifMsg.title} - Premium Auto Block Available`;
+              }
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
@@ -3231,7 +3239,7 @@ class netBot extends ControllerBot {
                   datamodel.code = 500;
                 }
                 log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
+                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
 
               });
             } else {
