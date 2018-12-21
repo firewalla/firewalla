@@ -25,6 +25,8 @@ const hostTool = new HostTool();
 const Config = require('../../net2/config.js');
 let fConfig = Config.getConfig();
 
+const firewalla = require('../../net2/Firewalla.js');
+
 const minimatch = require('minimatch')
 
 const execAsync = util.promisify(cp.exec);
@@ -39,7 +41,7 @@ class VPNClientEnforcer {
       instance = this;
     }
     this.enabledHosts = {};
-    if (process.title === "FireMain") {
+    if (firewalla.isMain()) {
       setInterval(() => {
         try {
           log.info("Check and refresh routing rule for VPN client...");

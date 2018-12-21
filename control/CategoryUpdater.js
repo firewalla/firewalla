@@ -47,6 +47,8 @@ const blackHoleHttpsPort = 8884;
 const blockHttpPort = 8882;
 const blockHttpsPort = 8885;
 
+const firewalla = require('../net2/Firewalla.js');
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -68,7 +70,7 @@ class CategoryUpdater {
       }
 
       // only run refresh category records for fire main process
-      if(process.title === 'FireMain') {
+      if(firewalla.isMain()) {
         setInterval(() => {
           this.refreshAllCategoryRecords()
         }, 60 * 60 * 1000) // update records every hour

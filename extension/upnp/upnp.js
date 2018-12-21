@@ -60,7 +60,7 @@ module.exports = class {
             instance = this;
             this.refreshTimers = {};
             
-            if (process.title === "FireMain") {
+            if (f.isMain()) {
                 upnpIntervalHandler = setInterval(
                   () => {
                       log.info("UPnP periodical check starts")
