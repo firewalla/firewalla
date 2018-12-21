@@ -21,6 +21,8 @@ const extend = require('util')._extend
 
 const minimatch = require("minimatch")
 
+const _ = require('lodash');
+
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -91,6 +93,16 @@ module.exports = class {
 
     if(this.isExpired()) {
       return false // always return unmatched if policy is already expired
+    }
+
+    if (
+      this.scope &&
+      _.isArray(this.scope) &&
+      !_.isEmpty(this.scope) &&
+      alarm['p.device.mac'] &&
+      !this.scope.includes(alarm['p.device.mac'])
+    ) {
+      return false; // scope not match
     }
 
     // for each policy type

@@ -34,17 +34,16 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
 
-let HostManager = require('../net2/HostManager.js');
-let SysManager = require('../net2/SysManager.js');
-let FlowManager = require('../net2/FlowManager.js');
-let flowManager = new FlowManager('info');
 let AlarmManager = require('../net2/AlarmManager.js');
 let alarmManager = new AlarmManager('info');
-let sysManager = new SysManager();
-let VpnManager = require("../vpn/VpnManager.js");
-let vpnManager = new VpnManager('info');
-let IntelManager = require('../net2/IntelManager.js');
-let intelManager = new IntelManager('debug');
+const HostManager = require('../net2/HostManager.js');
+const SysManager = require('../net2/SysManager.js');
+const FlowManager = require('../net2/FlowManager.js');
+const flowManager = new FlowManager('info');
+const sysManager = new SysManager();
+const VpnManager = require("../vpn/VpnManager.js");
+const IntelManager = require('../net2/IntelManager.js');
+const intelManager = new IntelManager('debug');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -1515,6 +1514,7 @@ class netBot extends ControllerBot {
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
             // this should set local port of VpnManager, which will be used in getOvpnFile
+            const vpnManager = new VpnManager('info'); // VpnManager is a singleton
             vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
               if (err != null) {
                 log.error("Failed to configure VPN", err);
