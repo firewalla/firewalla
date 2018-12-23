@@ -95,8 +95,11 @@ class PolicyManager2 {
     }
     return instance;
   }
-
-  shouldFilter(policy) {
+  
+  shouldFilter(rule) {
+    // this is to filter legacy schedule rules that is not compatible with current system any more
+    // all legacy rules should already been migrated in OldDataCleanSensor, any leftovers should be bug
+    // and here is a protection for that
     if(rule.cronTime && rule.cronTime.startsWith("* *")) {
       return true;
     }   
