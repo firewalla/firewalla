@@ -23,8 +23,6 @@ const fs = require('fs');
 
 const moment = require('moment')
 
-const firewalla = require('./Firewalla.js');
-
 String.prototype.capitalizeFirstLetter = function () {
   return this.charAt(0).toUpperCase() + this.slice(1);
 }
@@ -63,7 +61,7 @@ function getFileTransport() {
   return new(winston.transports.File)({
     level: loglevel,
     name: 'log-file',
-    filename: firewalla.getProcessName() + ".log",
+    filename: process.title + ".log",
     json: false,
     dirname: "/home/pi/logs",
     maxsize: 1000000,
