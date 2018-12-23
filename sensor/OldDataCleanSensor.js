@@ -405,11 +405,11 @@ class OldDataCleanSensor extends Sensor {
 
     const policyRules = await pm2.loadActivePoliciesAsync();
     for(const rule of policyRules) {
-      if(rule.cronTime === "* * * * 1" && cron.duration === "432000") {
+      if(rule.cronTime === "* * * * 1" && rule.duration === "432000") {
         rule.cronTime = "0 0 * * 1,2,3,4,5";
         rule.duration = "86390";
         await pm2.updatePolicyAsync(rule);
-      } else if(rule.cronTime === "* * * * 6" && cron.duration === "172800") {
+      } else if(rule.cronTime === "* * * * 6" && rule.duration === "172800") {
         rule.cronTime = "0 0 * * 0,6";
         rule.duration = "86390";
         await pm2.updatePolicyAsync(rule);
