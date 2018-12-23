@@ -40,6 +40,8 @@ let Promise = require('bluebird');
 let async = require('asyncawait/async');
 let await = require('asyncawait/await');
 
+const migrationPrefix = "oldDataMigration";
+
 let fConfig = require('../net2/config.js').getConfig();
 
 function arrayDiff(a, b) {
@@ -394,12 +396,38 @@ class OldDataCleanSensor extends Sensor {
     })
   }
 
+  async legacySchedulerMigration() {
+    const key = `${migrationPrefix}:legacySchedulerMigration`;
+    const result = await rclient.typeAsync(key);
+    if(result !== "none") {
+      return;
+    }
+
+    const policyRules = await pm2.loadActivePoliciesAsync();
+    for(const rule of policyRules) {
+      if(rule.cronTime === "* * * * 1" && cron.duration === "432000") {
+        rule.cronTime = "0 0 * * 1,2,3,4,5";
+        rule.duration = "86390";
+        await pm2.updatePolicyAsync(rule);
+      } else if(rule.cronTime === "* * * * 6" && cron.duration === "172800") {
+        rule.cronTime = "0 0 * * 0,6";
+        rule.duration = "86390";
+        await pm2.updatePolicyAsync(rule);
+      }
+    }
+
+    await rclient.setAsync(key, "1");
+    return;
+  }
+
   run() {
     super.run();
 
     this.listen();
 
     this.hostPolicyMigration()
+
+    this.legacySchedulerMigration();
 
     setTimeout(() => {
       this.scheduledJob();

@@ -96,6 +96,13 @@ class PolicyManager2 {
     return instance;
   }
 
+  shouldFilter(policy) {
+    if(rule.cronTime && rule.cronTime.startsWith("* *")) {
+      return true;
+    }   
+    return false;   
+  }
+
   setupPolicyQueue() {
     this.queue = new Queue('policy', {
       removeOnFailure: true,
@@ -120,6 +127,11 @@ class PolicyManager2 {
       const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
       
+      if(this.shouldFilter(policy)) {
+        done();
+        return;
+      }
+
       switch(action) {
       case "enforce": {
         return async(() => {
