@@ -154,7 +154,8 @@ function getReleaseType() {
   if(isProduction()) {
     return "prod"
   } else if(isAlpha()) {
-    return "alpha";
+    return "beta"; // TODO: will change to alpha when all app side codes are ready for alpha release
+    //return "alpha";
   } else if(isBeta()) {
     return "beta"
   } else if (isDevelopmentVersion()) {
