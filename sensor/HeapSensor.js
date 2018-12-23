@@ -28,8 +28,6 @@ const Promise = require('bluebird');
 
 let heapdump = require('heapdump');
 
-const firewalla = require('../net2/Firewalla.js');
-
 
 class HeapSensor extends Sensor {
   constructor() {
@@ -45,13 +43,13 @@ class HeapSensor extends Sensor {
         try {
           let m = JSON.parse(message);
 
-          if ( m.title === firewalla.getProcessName()) {
+          if ( m.title === process.title) {
             heapdump.writeSnapshot(m.file, this.onComplete);
           }
         } catch (err) {
           log.error("Failed to parse JSON message: ", message, {});
         }
-      } else if(channel === "gc" && message === firewalla.getProcessName())  {
+      } else if(channel === "gc" && message === process.title)  {
         global.gc()
         log.info("GC complete!")
       }
@@ -74,7 +72,7 @@ class HeapSensor extends Sensor {
     
     let payload = JSON.stringify({
       file: file,
-      title: firewalla.getProcessName()
+      title: process.title
     });
     
     pclient.publish("heapdump_done", payload);

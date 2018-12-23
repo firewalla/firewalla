@@ -52,11 +52,7 @@ const EventEmitter = require('events');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const firewalla = require('../net2/Firewalla.js');
-
 let instance = null;
-
-
 
 class SensorEventManager extends EventEmitter {
   constructor() {
@@ -71,14 +67,14 @@ class SensorEventManager extends EventEmitter {
 
   subscribeEvent() {
     sclient.on("message", (channel, message) => {      
-      if(channel === this.getRemoteChannel(firewalla.getProcessName()) || channel === "TO.*") {
+      if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
           let m = JSON.parse(message)
 
           // only process redis events not originated from this process
           // local event will be processed by EventEmitter
-          if(m.fromProcess !== firewalla.getProcessName()) {
+          if(m.fromProcess !== process.title) {
             this.emitLocalEvent(m); // never send remote pubsub event back to remote 
           }
         } catch (err) {
@@ -89,7 +85,7 @@ class SensorEventManager extends EventEmitter {
       }
     });
 
-    sclient.subscribe(this.getRemoteChannel(firewalla.getProcessName()));
+    sclient.subscribe(this.getRemoteChannel(process.title));
     sclient.subscribe(this.getRemoteChannel("*")); // subscribe events for all components
   }
 
@@ -138,7 +134,7 @@ class SensorEventManager extends EventEmitter {
   }
 
   emitEvent(event) {
-    if(event.toProcess && event.toProcess !== firewalla.getProcessName()) {
+    if(event.toProcess && event.toProcess !== process.title) {
       if(!event.suppressEventLogging) {
         log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
       }
@@ -146,7 +142,7 @@ class SensorEventManager extends EventEmitter {
       // this event is meant to send to another process
       let channel = this.getRemoteChannel(event.toProcess);
       const eventCopy = JSON.parse(JSON.stringify(event));
-      eventCopy.fromProcess = firewalla.getProcessName();
+      eventCopy.fromProcess = process.title;
       pclient.publish(channel, JSON.stringify(eventCopy));
       return; // local will also be processed in .on(channel, event)..
     }
