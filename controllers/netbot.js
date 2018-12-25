@@ -769,6 +769,14 @@ class netBot extends ControllerBot {
             }
             if(msg["testing"] && msg["testing"] == 1) {
               notifMsg.title = `[Monkey] ${notifMsg.title}`;
+            }            
+            if(msg["premiumAction"] && f.isDevelopmentVersion()) {
+              const pa = msg["premiumAction"];
+              if(pa === 'ignore') {
+                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
+              } else if(pa === 'block') {
+                notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
+              }
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
@@ -798,7 +806,9 @@ class netBot extends ControllerBot {
           }
         }
         else if (upgradeInfo.upgraded) {
-          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", upgradeInfo);
+          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
+            version: f.isProductionOrBeta() ? fc.getConfig().version : upgradeInfo.to
+          });
           this.tx(this.primarygid, "200", msg);
           upgradeManager.updateVersionTag();
         }
@@ -3231,7 +3241,7 @@ class netBot extends ControllerBot {
                   datamodel.code = 500;
                 }
                 log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
+                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
 
               });
             } else {

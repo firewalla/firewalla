@@ -110,7 +110,7 @@ module.exports = class {
         let defaultTable = config['iptables']['defaults'];
         let myip = sysManager.myIp();
         let mysubnet = sysManager.mySubnet();
-        let secondarySubnet = sysManager.secondarySubnet;
+        let secondarySubnet = sysManager.mySubnet2();
         for (let i in defaultTable) {
           defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
         }

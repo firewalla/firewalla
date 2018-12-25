@@ -88,7 +88,8 @@
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {
-      "interval": 600000
+      "interval": 600,
+      "expireInterval": 3600
     },
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},

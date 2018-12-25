@@ -48,6 +48,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const _ = require('lodash');
+
 function compareUpnp(a, b) {
   return a.public && b.public &&
          a.private && b.private &&
@@ -60,8 +62,26 @@ function compareUpnp(a, b) {
 class UPNPSensor extends Sensor {
   constructor() {
     super();
-    this.config = cfg.getConfig().sensors.UPNPSensor;
     this.upnpClient = natUpnp.createClient();
+  }
+
+  isExpired(mapping) {
+    const expireInterval = this.config.expireInterval || 3600; // one hour by default
+    return mapping.expire && mapping.expire < (Math.floor(new Date() / 1000) - expireInterval);
+  }
+
+  mergeResults(curMappings, preMappings) {
+    
+    curMappings.forEach((mapping) => {
+      mapping.expire = Math.floor(new Date() / 1000);
+    });
+
+    const fullMappings = [...curMappings, ...preMappings];
+
+    const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
+
+    return uniqMappings          
+      .filter((mapping) => !this.isExpired(mapping));
   }
 
   run() {
@@ -69,13 +89,15 @@ class UPNPSensor extends Sensor {
       this.upnpClient.getMappings(async (err, results) => {
         if (results && results.length >= 0) {
           const key = "sys:scan:nat";
-
+          
           let preMappings = await (rclient.hmgetAsync(key, 'upnp')
             .then(entries => { return JSON.parse(entries) })
             .catch(err => log.error("Failed to update upnp mapping in database: " + err))
           );
 
-          results.forEach(current => {
+          const mergedResults = this.mergeResults(results, preMappings);
+
+          mergedResults.forEach(current => {
             if (!preMappings.some(pre => compareUpnp(current, pre))) {
               let alarm = new Alarm.UpnpAlarm(
                 new Date() / 1000,
@@ -101,15 +123,15 @@ class UPNPSensor extends Sensor {
             }
           })
 
-          rclient.hmsetAsync(key, {upnp: JSON.stringify(results)} )
+          rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} )
             .catch(err => log.error("Failed to update upnp mapping in database: " + err))
-            .then(writes => writes && log.info("UPNP mapping is updated,", results.length, "entries"));
+            .then(writes => writes && log.info("UPNP mapping is updated,", mergedResults.length, "entries"));
 
         } else {
           log.info("No upnp mapping found in network");
         }
       });
-    }, this.config.interval || 60 * 10 * 1000); // default to 10 minutes
+    }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes
   }
 }
 
