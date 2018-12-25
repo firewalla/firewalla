@@ -271,6 +271,9 @@ class FlowTool {
       f.download = flow.ob;
     }
 
+    f.dp = flow.dp;
+    f.sp = flow.sp;
+
     return f;
   }
 
@@ -487,12 +490,12 @@ class FlowTool {
       }
       
       let simpleFlows = mergedFlow
-            .map((f) => this.toSimpleFlow(f))
             .map((f) => {
+              let s = this.toSimpleFlow(f)
               if(options.mac) {
-                f.device = options.mac; // record the mac address here
+                s.device = options.mac; // record the mac address here
               }
-              return f;
+              return s;
             });
 
       let promises = Promise.all(simpleFlows.map((f) => {
@@ -523,10 +526,10 @@ class FlowTool {
                   if(intel.app) {
                     f.app = intel.app
                   }
-                }             
+                }
               } catch(err) {
                 log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-              }              
+              }
               
               return f;
             })();

@@ -15,14 +15,14 @@
 
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var Tail = require('always-tail');
+const Tail = require('always-tail');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var iptool = require("ip");
-var useragent = require('useragent');
+const iptool = require("ip");
+const useragent = require('useragent');
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
@@ -51,14 +51,15 @@ const await = require('asyncawait/await');
 
 const mode = require('../net2/Mode.js')
 
-var linux = require('../util/linux.js');
+const linux = require('../util/linux.js');
 
-let l2 = require('../util/Layer2.js');
+const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
+let FLOWSTASH_EXPIRES;
 
 /*
  *
@@ -231,7 +232,7 @@ module.exports = class {
       return instances[name];
     } else {
       this.config = config;
-      log = require("./logger.js")("BroDetect", loglevel);
+      FLOWSTASH_EXPIRES = this.config.bro.conn.flowstashExpires;
       this.appmap = {};
       this.apparray = [];
       this.connmap = {};
@@ -242,11 +243,8 @@ module.exports = class {
       let c = require('./MessageBus.js');
       this.publisher = new c(loglevel);
       this.flowstash = {};
-      this.flowstashExpires = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
-      this.flowstashStart = Date.now() / 1000 + this.config.bro.conn.flowstashExpires;
+      this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
-      this.recordCache = []
-      this.recording = false
       this.enableRecording = true
       this.cc = 0
       this.ipMacMapping = {};
@@ -329,22 +327,22 @@ module.exports = class {
     log.debug("APPMAP_ARRAY",this.apparray.length,key,value.host,"length:", this.apparray.length);
     this.apparray.push(value);
     this.appmap[key] = value;
-    if (this.apparray.length>appmapsize) {
-      let removed = this.apparray.splice(0,this.apparray.length-appmapsize);
+    if (this.apparray.length > appmapsize) {
+      let removed = this.apparray.splice(0, this.apparray.length - appmapsize);
       for (let i in removed) {
         delete this.appmap[removed[i]['uid']];
       }
     }
   }
 
-  lookupAppMap(key) {
-    let obj = this.appmap[key];
+  lookupAppMap(flowUid) {
+    let obj = this.appmap[flowUid];
     if (obj) {
       delete obj['uid'];
-      delete this.appmap[key];
+      delete this.appmap[flowUid];
       let index = this.apparray.indexOf(obj);
-      if (index>-1) {
-        this.apparray.splice(index,1);
+      if (index > -1) {
+        this.apparray.splice(index, 1);
       }
     }
     return obj;
@@ -516,9 +514,10 @@ module.exports = class {
     }
     if (sysManager.ipLearned(ip)==false && this.pingedIp[ip]==null) {
       //log.info("Conn:Learned:Ip",ip,flowspec);
+      // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
         log.info("Conn:Learned:Ip","ping ",ip,flowspec);
-        linux.ping6(sysManager.monitoringInterface().name,ip)
+        linux.ping6(ip)
         this.pingedIp[ip]=true;
       }
     }
@@ -528,8 +527,7 @@ module.exports = class {
    * {"ts":1464303791.790091,"uid":"CosE7p2gSFbxvdRig2","id.orig_h":"fe80::6a5b:35ff:fec9:b9cb","id.orig_p":143,"id.resp_h":"ff02::16","id.resp_p":0,"proto":"icmp","conn_state":"OTH","local_orig":false,"local_resp":false,"missed_bytes":0,"orig_pkts":1,"orig_ip_bytes":196,"resp_pkts":0,"resp_ip_bytes":0,"tunnel_parents":[]}
 
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
-
-*/
+  */
 
   isMonitoring(ip) {
     const hostObject = hostManager.getHostFast(ip)
@@ -851,9 +849,16 @@ module.exports = class {
       //    log.error("Conn:192.168.2.164:",JSON.stringify(obj),null);
       // }
 
+      // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Math.ceil(Date.now() / 1000);
-      let flowspecKey = host + ":" + dst + ":" + flowdir;
+      let flowspecKey = `${host}:${dst}:${obj['id.resp_p'] || ""}:${flowdir}`;
       let flowspec = this.flowstash[flowspecKey];
+      let flowDescriptor = [
+            Math.ceil(obj.ts),
+            Math.ceil(obj.ts + obj.duration),
+            Number(obj.orig_bytes),
+            Number(obj.resp_bytes)
+          ];
       if (flowspec == null) {
         flowspec = {
           ts: obj.ts,
@@ -867,14 +872,16 @@ module.exports = class {
           fd: flowdir, // flow direction
           lh: lhost, // this is local ip address
           du: obj.duration,
-          bl: this.config.bro.conn.flowstashExpires,
+          bl: FLOWSTASH_EXPIRES,
           pf: {}, //port flow
           af: {}, //application flows
           pr: obj.proto,
           f: flag,
-          flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
+          flows: [ flowDescriptor ],
           _afmap: {}
         }
+        if (obj['id.orig_p'] != null) flowspec.sp = [ obj['id.orig_p'] ];
+        if (obj['id.resp_p'] != null) flowspec.dp = obj['id.resp_p'];
         this.flowstash[flowspecKey] = flowspec;
         log.debug("Conn:FlowSpec:Create:", flowspec);
         this.indicateNewFlowSpec(flowspec);
@@ -887,7 +894,7 @@ module.exports = class {
         }
         flowspec._ts = now;
         flowspec.du += obj.duration;
-        flowspec.flows.push([Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]);
+        flowspec.flows.push(flowDescriptor);
 
         if (flag) {
           flowspec.f = flag;
@@ -910,7 +917,7 @@ module.exports = class {
         af: {},
         pr: obj.proto,
         f: flag,
-        flows: [[Math.ceil(obj.ts),Math.ceil(obj.ts+obj.duration),Number(obj.orig_bytes),Number(obj.resp_bytes)]],
+        flows: [ flowDescriptor ],
       };
 
       let afobj = this.lookupAppMap(obj.uid);
@@ -918,8 +925,8 @@ module.exports = class {
         tmpspec.af[afobj.host] = afobj;
         let flow_afobj = flowspec.af[afobj.host];
         if (flow_afobj) {
-          flow_afobj.rqbl += afobj.rqbl;
-          flow_afobj.rsbl += afobj.rsbl;
+          flow_afobj.rqbl += afobj.rqbl;  // request_body_len
+          flow_afobj.rsbl += afobj.rsbl;  // response_body_len
         } else {
           flowspec.af[afobj.host] = afobj;
           delete afobj['host'];
@@ -943,9 +950,16 @@ module.exports = class {
         }
       }
 
+      if (obj['id.orig_p'] != null) {
+        if (!flowspec.sp.includes(obj['id.orig_p'])) {
+          flowspec.sp.push(obj['id.orig_p']);
+        }
+        tmpspec.sp = [ obj['id.orig_p'] ];
+      }
+      if (obj['id.resp_p'] != null) tmpspec.dp = obj['id.resp_p'];
+
+      // TODO: obsolete flow.pf and the following aggregation as flowstash now use port as part of its key
       if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
-        tmpspec.sp = obj['id.orig_p'];
-        tmpspec.dp = obj['id.resp_p'];
 
         let portflowkey = obj.proto+"."+obj['id.resp_p'];
         let port_flow = flowspec.pf[portflowkey];
@@ -972,6 +986,7 @@ module.exports = class {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
+      // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
         this._getMacByIP(tmpspec.lh).then((mac) => {
           if (!mac) {
@@ -1002,8 +1017,6 @@ module.exports = class {
 
               let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
-
-
               setTimeout(() => {
                 sem.emitEvent({
                   type: 'DestIPFound',
@@ -1015,10 +1028,6 @@ module.exports = class {
                 });
               }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-
-              if (this.config.bro.conn.expires) {
-                //rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.flowstashExpires);
-              }
             } else { }
           });
         }).catch((err) => {
@@ -1030,6 +1039,7 @@ module.exports = class {
       // TODO: Need to write code take care to ensure orig host is us ...
       let hostsChanged = {}; // record and update host lastActive
 
+      // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       if (now > this.flowstashExpires) {
         let stashed={};
         log.info("Processing Flow Stash");
@@ -1062,14 +1072,14 @@ module.exports = class {
               let key = "flow:conn:" + spec.fd + ":" + mac;
               let strdata = JSON.stringify(spec);
               let ts = spec._ts;
-              if (spec.ts>this.flowstashExpires-this.config.bro.conn.flowstashExpires) {
+              if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
                 ts = spec.ts;
               }
               let redisObj = [key, ts, strdata];
               if (stashed[key]) {
                 stashed[key].push(redisObj);
               } else {
-                stashed[key]=[redisObj];
+                stashed[key] = [ redisObj ];
               }
 
               try {
@@ -1092,13 +1102,14 @@ module.exports = class {
           });
         }
 
-        let sstart = this.flowstashExpires-this.config.bro.conn.flowstashExpires;
+        let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
         let send = this.flowstashExpires;
+
         setTimeout(()=>{
-          log.info("Conn:Save:Summary", sstart,send,this.flowstashExpires);
+          log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
           for (let key in stashed) {
             let stash = stashed[key];
-            log.info("Conn:Save:Summary:Wipe",key, "Resoved To: ", stash.length);
+            log.info("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
             rclient.zremrangebyscore(key,sstart,send, (err, data) => {
               log.info("Conn:Info:Removed",key,err,data);
               for (let i in stash) {
@@ -1114,9 +1125,9 @@ module.exports = class {
               }
             });
           }
-        },this.config.bro.conn.flowstashExpires*1000);
+        }, FLOWSTASH_EXPIRES * 1000);
 
-        this.flowstashExpires = now + this.config.bro.conn.flowstashExpires;
+        this.flowstashExpires = now + FLOWSTASH_EXPIRES;
         this.flowstash = {};
 
         // record lastActive
@@ -1156,7 +1167,7 @@ module.exports = class {
 
   }
 
-  /*
+/*
 {"ts":1506304095.747873,"uid":"CgTsJH3vHBNpMIREU9","id.orig_h":"192.168.2.227","id.orig_p":47292,"id.resp_h":"103.224.182.240","id.resp_p":80,"trans_depth":1,"method":"GET","host":"goooogleadsence.biz","uri":"/","user_agent":"Wget/1.16 (linux-gnueabihf)","request_body_len":0,"response_body_len":0,"status_code":302,"status_msg":"Found","tags":[]}
 */
   processHttpData(data) {
@@ -1173,10 +1184,10 @@ module.exports = class {
       let flowdir = "in";
 
       /*
-            if (!iptool.isV4Format(host)) {
-                 return;
-            }
-            */
+      if (!iptool.isV4Format(host)) {
+           return;
+      }
+      */
 
       if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
         let flowdir = 'local';
@@ -1293,7 +1304,6 @@ module.exports = class {
             } else {
               log.error("HTTP:Dns:Error", "unable to update count", err, {});
             }
-            //  });
           });
         });
       }
@@ -1315,7 +1325,7 @@ module.exports = class {
     }
   }
 
-  /*
+/*
 {"ts":1506313273.469781,"uid":"CX5UTb3cZi0zJdeQqe","id.orig_h":"192.168.2.191","id.orig_p":57334,"id.resp_h":"45.57.26.133","id.resp_p":443,"version":"TLSv12","cipher":"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256","server_name":"ipv4_1-lagg0-c004.1.sjc005.ix.nflxvideo.net","resumed":true,"established":true}
 */
   processSslData(data) {
@@ -1433,7 +1443,6 @@ module.exports = class {
             } else {
               log.error("SSL:Dns:Error", "unable to update count", err, {});
             }
-            //  });
           });
         });
       }
@@ -1527,11 +1536,11 @@ module.exports = class {
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
-        //                log.error("Notice:Drop", obj);
+        // log.error("Notice:Drop", obj);
         return;
       }
       if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-        //                log.error("Notice:Drop My IP", obj);
+        // log.error("Notice:Drop My IP", obj);
         return;
       }
       log.debug("Notice:Processing",obj);
@@ -1582,7 +1591,7 @@ module.exports = class {
           log.error("Failed to generate alarm:", err, {})
         })
       } else {
-        //              log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+        // log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
       }
     } catch (e) {
       log.error("Notice:Error Unable to save", e,data, e.stack, {});
@@ -1646,7 +1655,7 @@ module.exports = class {
   //   }
 
   recordTraffic(ts, inBytes, outBytes) {
-    if(this.recordCache && this.enableRecording) {
+    if(this.enableRecording) {
 
       let normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 

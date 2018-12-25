@@ -189,7 +189,7 @@ class Host {
   keepalive() {
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
-      linux.ping6(null,this.ipv6Addr[i]);
+      linux.ping6(this.ipv6Addr[i]);
     }
     setTimeout(()=>{
       this.cleanV6();
