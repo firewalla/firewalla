@@ -1003,6 +1003,11 @@ module.exports = class {
                   let redisObj = [key, now, strdata];
                   log.debug("Conn:Save:Temp", redisObj);
 
+                  sem.sendEventToFireMain({
+                      type: "NewGlobalFlow",
+                      flow: tmpspec,
+                      suppressEventLogging: true
+                  });
 
                   rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {

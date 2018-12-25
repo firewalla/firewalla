@@ -68,7 +68,8 @@
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
-    "EncipherPlugin": {}
+    "EncipherPlugin": {},
+    "RecentFlowPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -113,6 +114,7 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {},
+    "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
