@@ -263,6 +263,34 @@ class FlowTool {
     f.fd = flow.fd;
     f.duration = flow.du
 
+    if(flow.mac) {
+      f.device = flow.mac;
+    }
+
+    if(flow.pf) {
+      if(flow.lh === flow.sh) {
+        try {
+          const protocol = Object.keys(flow.pf)[0].split(".")[0];
+          const destinationPort = Number(Object.keys(flow.pf)[0].split(".")[1]);
+          const sourcePort = Object.values(flow.pf)[0].sp[0];
+          f.devicePort = sourcePort;
+          f.port = destinationPort
+          f.protocol = protocol;
+        } catch(err) {          
+        }
+      } else {
+        try {
+          const protocol = Object.keys(flow.pf)[0].split(".")[0];
+          const sourcePort = Number(Object.keys(flow.pf)[0].split(".")[1]);
+          const destinationPort = Object.values(flow.pf)[0].sp[0];
+          f.devicePort = sourcePort;
+          f.port = destinationPort
+          f.protocol = protocol;
+        } catch(err) {          
+        }
+      }
+    }
+
     if(flow.lh === flow.sh) {
       f.ip = flow.dh;
       f.deviceIP = flow.sh;
@@ -467,7 +495,7 @@ class FlowTool {
     const limit = -51; // only keep the latest 50 entries
     let flowCopy = JSON.parse(JSON.stringify(flow));
 
-    if(!this._isFlowValid(flow)) {
+    if(!this._isFlowValid(flowCopy)) {
       return;
     }
 
@@ -475,10 +503,10 @@ class FlowTool {
     this.trimFlow(flowCopy);
     flowCopy = this.toSimpleFlow(flowCopy);
 
-    if(flowCopy.deviceIP && !flowCopy.device) {
-      const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
-      flowCopy.device = mac;
-    }
+    // if(flowCopy.deviceIP && !flowCopy.device) {
+    //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
+    //   flowCopy.device = mac;
+    // }
     
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);

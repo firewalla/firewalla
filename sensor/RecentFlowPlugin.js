@@ -22,7 +22,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance()
 
 const extensionManager = require('./ExtensionManager.js')
 
-const flowTool = require('../net2/FlowTool.js');
+const FlowTool = require('../net2/FlowTool');
+const flowTool = new FlowTool();
 
 class RecentFlowPlugin extends Sensor {
 
@@ -33,7 +34,7 @@ class RecentFlowPlugin extends Sensor {
         return;
       }
 
-      await flowTool.saveRecentFlow(flow);
+      await flowTool.saveGlobalRecentConns(flow);
     });
   }
 

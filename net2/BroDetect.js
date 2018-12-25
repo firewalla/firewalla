@@ -978,6 +978,7 @@ module.exports = class {
                     log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
                     return;
                   }
+                  tmpspec.mac = mac;
                   let key = "flow:conn:" + tmpspec.fd + ":" + mac;
                   let strdata = JSON.stringify(tmpspec);
 
