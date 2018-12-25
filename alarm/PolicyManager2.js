@@ -114,10 +114,8 @@ class PolicyManager2 {
 
     this.queue.process((job, done) => {
       const event = job.data;
-      const policy = event.policy instanceof Policy ? event.policy : new Policy(event.policy);
-      const oldPolicy = event.oldPolicy
-        ? (event.oldPolicy instanceof Policy ? event.oldPolicy : new Policy(event.oldPolicy))
-        : null;
+      const policy = new Policy(event.policy);
+      const oldPolicy = event.oldPolicy ? new Policy(event.oldPolicy) : null;
       const action = event.action
       
       switch(action) {
