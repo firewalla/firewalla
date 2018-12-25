@@ -500,7 +500,6 @@ class FlowTool {
     }
 
     // TODO: might need to cut small traffics
-    this.trimFlow(flowCopy);
     flowCopy = this.toSimpleFlow(flowCopy);
 
     // if(flowCopy.deviceIP && !flowCopy.device) {
