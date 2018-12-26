@@ -80,7 +80,14 @@ module.exports = class {
 
         log.info("[Boot] Setting up communication channel with cloud");
         this.tryingInit();
+
+        // setup API sensors
+        this.sl = require('../../sensor/APISensorLoader.js');
+        this.sl.initSensors(eptcloud);
+        this.sl.run();
       })();
+
+
     }
     return instance;
   }

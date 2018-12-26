@@ -103,6 +103,9 @@ const tokenManager = require('../util/FWTokenManager.js');
 const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
 
+const FlowTool = require('./FlowTool.js');
+const flowTool = new FlowTool();
+
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
 const defaultOvpnProfileId = "ovpn_client";
@@ -1971,6 +1974,11 @@ module.exports = class HostManager {
     json.nicSpeed = speed;
   }
 
+  async getRecentFlows(json) {
+    const recentFlows = await flowTool.getGlobalRecentConns();
+    json.recentFlows = recentFlows;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2037,7 +2045,8 @@ module.exports = class HostManager {
           this.encipherMembersForInit(json),
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
-          this.asyncBasicDataForInit(json)          
+          this.asyncBasicDataForInit(json),
+          this.getRecentFlows(json)
         ]
 
         this.basicDataForInit(json, options);

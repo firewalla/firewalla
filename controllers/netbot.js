@@ -769,6 +769,14 @@ class netBot extends ControllerBot {
             }
             if(msg["testing"] && msg["testing"] == 1) {
               notifMsg.title = `[Monkey] ${notifMsg.title}`;
+            }            
+            if(msg["premiumAction"] && f.isDevelopmentVersion()) {
+              const pa = msg["premiumAction"];
+              if(pa === 'ignore') {
+                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
+              } else if(pa === 'block') {
+                notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
+              }
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
@@ -2124,6 +2132,22 @@ class netBot extends ControllerBot {
     } else {
       log.info("API: CmdHandler ",gid,msg,{});
     }
+
+    if(extMgr.hasCmd(msg.data.item)) {
+      (async () => {
+        let result = null;
+        let err = null;
+        try {
+          result = await extMgr.cmd(msg.data.item, msg, msg.data.value);
+        } catch(e) {
+          err = e;
+        } finally {
+          this.simpleTxData(msg, result, err, callback)
+        }
+      })();
+      return;
+    }
+
     if(msg.data.item === "dhcpCheck") {
       (async() => {
         let mode = require('../net2/Mode.js');
@@ -3217,7 +3241,7 @@ class netBot extends ControllerBot {
                   datamodel.code = 500;
                 }
                 log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
+                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
 
               });
             } else {
