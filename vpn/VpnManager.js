@@ -30,6 +30,8 @@ var fs = require('fs');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 var util = require('util');
 
+const pclient = require('../util/redis_manager.js').getPublishClient();
+
 var linux = require('../util/linux');
 var UPNP = require('../extension/upnp/upnp.js');
 
@@ -216,12 +218,15 @@ module.exports = class {
                     } else {
                         this.upnp.addPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
                             log.info("VpnManager:UPNP:SetDone", err);
+                            pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/24");
+                            /*
                             sem.emitEvent({
                                 type: "VPNSubnetChanged",
                                 message: "VPN subnet is updated",
                                 vpnSubnet: this.serverNetwork + "/24",
                                 toProcess: "FireMain"
                             });
+                            */
                             if (err) {
                                 if (callback) {
                                     callback(null, null, null, this.serverNetwork, this.localPort);

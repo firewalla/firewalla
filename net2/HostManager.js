@@ -44,6 +44,9 @@ var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 
+const ShieldManager = require('./ShieldManager.js');
+const shieldManager = new ShieldManager();
+
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
@@ -2537,6 +2540,16 @@ module.exports = class HostManager {
         // do nothing if state is true
       }
     })()
+  }
+
+  async shield(policy) {
+    const state = policy.state;
+    if (state === true) {
+      // Raise global shield to block incoming connections
+      await shieldManager.activateShield();
+    } else {
+      await shieldManager.deactivateShield();
+    }
   }
 
   async vpnClient(policy) {

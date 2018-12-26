@@ -33,6 +33,9 @@ const await = require('asyncawait/await')
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
 
+const ShieldManager = require('../../net2/ShieldManager.js');
+const shieldManager = new ShieldManager();
+
 const rp = require('request-promise')
 
 const exec = require('child-process-promise').exec
@@ -159,6 +162,7 @@ class PortForward {
       }
       
       log.info("PORTMAP: Add",map);
+      await (shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport));
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
@@ -178,6 +182,7 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
+      await (shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport));
 
       // we call remove anyway ... even there is no entry
       dupMap.destIP = sysManager.myIp()
