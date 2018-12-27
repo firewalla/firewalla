@@ -15,17 +15,17 @@
 
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
-let Alarm = require('./Alarm.js');
+const log = require('../net2/logger.js')(__filename, 'info');
+const Alarm = require('./Alarm.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 
-let flat = require('flat');
+const flat = require('flat');
 
-let audit = require('../util/audit.js');
-let util = require('util');
+const audit = require('../util/audit.js');
+const util = require('util');
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -48,10 +48,10 @@ const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const delay = require('../util/util.js').delay;
 
-let Policy = require('./Policy.js');
+const Policy = require('./Policy.js');
 
-let PolicyManager2 = require('./PolicyManager2.js');
-let pm2 = new PolicyManager2();
+const PolicyManager2 = require('./PolicyManager2.js');
+const pm2 = new PolicyManager2();
 
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
@@ -60,22 +60,22 @@ let instance = null;
 
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
-let ExceptionManager = require('./ExceptionManager.js');
-let exceptionManager = new ExceptionManager();
+const ExceptionManager = require('./ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
-let Exception = require('./Exception.js');
+const Exception = require('./Exception.js');
 
 const FWError = require('../util/FWError.js')
 
-let alarmIDKey = "alarm:id";
-let alarmPrefix = "_alarm:";
-let initID = 1;
+const alarmIDKey = "alarm:id";
+const alarmPrefix = "_alarm:";
+const initID = 1;
 
-let c = require('../net2/MessageBus.js');
+const c = require('../net2/MessageBus.js');
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
-let fConfig = require('../net2/config.js').getConfig();
+const fConfig = require('../net2/config.js').getConfig();
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -85,6 +85,8 @@ const Queue = require('bee-queue')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail";
+
+const _ = require('lodash');
 
 function formatBytes(bytes,decimals) {
   if(bytes == 0) return '0 Bytes';
@@ -652,23 +654,23 @@ module.exports = class {
       });
     });
   }
-    idsToAlarms(ids, callback) {
-      let multi = rclient.multi();
 
-      ids.forEach((aid) => {
-        multi.hgetall(alarmPrefix + aid);
-      });
+  idsToAlarms(ids, callback) {
+    let multi = rclient.multi();
 
-      multi.exec((err, results) => {
-        if(err) {
-          log.error("Failed to load active alarms (hgetall): " + err);
-          callback(err);
-          return;
-        }
-        callback(null, results.map((r) => this.jsonToAlarm(r)));
-      });
-    }
+    ids.forEach((aid) => {
+      multi.hgetall(alarmPrefix + aid);
+    });
 
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active alarms (hgetall): " + err);
+        callback(err);
+        return;
+      }
+      callback(null, results.map((r) => this.jsonToAlarm(r)));
+    });
+  }
   
   idsToAlarmsAsync(ids) {
     return new Promise((resolve, reject) => {
@@ -768,7 +770,6 @@ module.exports = class {
     });
   }
 
-
   loadArchivedAlarms(options) {
     options = options || {}
     
@@ -842,47 +843,52 @@ module.exports = class {
     return count;
   }
 
-  // top 50 only by default
-  loadActiveAlarms(number, callback) {
-
-    if(typeof(number) == 'function') {
-      callback = number;
-      number = 50;
-    }
-
-    callback = callback || function() {}
-
-    rclient.zrevrange(alarmActiveKey, 0, number -1 , (err, results) => {
-      if(err) {
-        log.error("Failed to load active alarms: " + err);
-        callback(err);
-        return;
-      }
-
-      this.idsToAlarms(results, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
-
-        results = results.filter((a) => a != null);
-        callback(err, results);
-      });
-    });
+  async getActiveAlarmCount() {
+    return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
   }
 
-  loadActiveAlarmsAsync(number) {
-    number = number || 50
-    return new Promise((resolve, reject) => {
-      this.loadActiveAlarms(number, (err, results) => {
-        if(err) {
-          reject(err)
-          return
-        }
+  // ** lagacy prototype loadActiveAlarms(count, callback)
+  //
+  // options:
+  //  count: number of alarms returned, default 50
+  //  ts: timestamp used to query alarms, default to now
+  //  asc: return results in ascending order, default to false
+  loadActiveAlarms(options, callback) {
+    if (_.isFunction(options)) {
+      callback = options;
+    } 
+    callback = callback || function() {}
 
-        resolve(results)
+    this.loadActiveAlarmsAsync(options)
+      .then(res => callback(null, res))
+      .catch(err => {
+        log.error("Failed to load active alarms: " + err);
+        callback(err)
       })
-    })
+  }
+
+  async loadActiveAlarmsAsync(options) {
+    let count, ts, asc;
+
+    if (_.isNumber(options)) {
+      count = options;
+    } else if (options) {
+      ({count, ts, asc} = options);
+    }
+
+    count = count || 50;
+    ts    = ts    || Date.now() / 1000;
+    asc   = asc   || false;
+
+    let query = asc ?
+      rclient.zrangebyscoreAsync(alarmActiveKey, ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(alarmActiveKey, ts, '-inf', 'limit', 0, count);
+
+    let ids = await query;
+
+    let alarms = await this.idsToAlarmsAsync(ids)
+
+    return alarms.filter(a => a != null);
   }
   
   async getAlarmDetail(aid) {
@@ -1006,6 +1012,7 @@ module.exports = class {
       }
       
       log.info(`Alarm ${alarm.aid} is allowed successfully`)
+
     })()
   }
   

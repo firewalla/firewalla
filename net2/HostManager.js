@@ -1643,19 +1643,9 @@ module.exports = class HostManager {
     });    
   }
 
-  newAlarmDataForInit(json) {
-    log.debug("Reading new alarms");
-
-    return new Promise((resolve, reject) => {
-      alarmManager2.loadActiveAlarms((err, list) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.newAlarms = list;
-        resolve(json);
-      });
-    });
+  async newAlarmDataForInit(json) {
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
+    json.newAlarms = await alarmManager2.loadActiveAlarms();
   }
 
   async archivedAlarmNumberForInit(json) {

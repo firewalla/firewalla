@@ -1034,87 +1034,89 @@ class netBot extends ControllerBot {
       return
     }
 
+    let value = msg.data.value;
+
     switch (msg.data.item) {
       case "policy":
-        async2.eachLimit(Object.keys(msg.data.value), 1, (o, cb) => {
+        async2.eachLimit(Object.keys(value), 1, (o, cb) => {
           switch (o) {
             case "monitor":
-              this._block(msg.target, "monitor", msg.data.value.monitor, (err, obj) => {
+              this._block(msg.target, "monitor", value.monitor, (err, obj) => {
                 cb(err);
               });
               break;
             case "devicePresence":
-              this._devicePresence(msg.target, msg.data.value.devicePresence, (err, obj) => {
+              this._devicePresence(msg.target, value.devicePresence, (err, obj) => {
                 cb(err);
               });
               break;
             case "deviceOffline":
-              this._deviceOffline(msg.target, msg.data.value.deviceOffline, (err, obj) => {
+              this._deviceOffline(msg.target, value.deviceOffline, (err, obj) => {
                 cb(err);
               });
               break;
             case "blockin":
-              this._block(msg.target, "blockin", msg.data.value.blockin, (err, obj) => {
+              this._block(msg.target, "blockin", value.blockin, (err, obj) => {
                 cb(err);
               });
               break;
             case "acl":
-              this._block(msg.target, "acl", msg.data.value.acl, (err, obj) => {
+              this._block(msg.target, "acl", value.acl, (err, obj) => {
                 cb(err);
               });
               break;
             case "family":
-              this._family(msg.target, msg.data.value.family, (err, obj) => {
+              this._family(msg.target, value.family, (err, obj) => {
                 cb(err);
               });
               break;
             case "adblock":
-              this._adblock(msg.target, msg.data.value.adblock, (err, obj) => {
+              this._adblock(msg.target, value.adblock, (err, obj) => {
                 cb(err);
               });
               break;
             case "vpnClient":
-              this._vpnClient(msg.target, msg.data.value.vpnClient, (err, obj) => {
+              this._vpnClient(msg.target, value.vpnClient, (err, obj) => {
                 cb(err);
               });
               break;
             case "vpn":
-              this._vpn(msg.target, msg.data.value.vpn, (err, obj) => {
+              this._vpn(msg.target, value.vpn, (err, obj) => {
                 cb(err);
               });
               break;
             case "shadowsocks":
-              this._shadowsocks(msg.target, msg.data.value.shadowsocks, (err, obj) => {
+              this._shadowsocks(msg.target, value.shadowsocks, (err, obj) => {
                 cb(err);
               });
               break;
             case "scisurf":
-              this._scisurf(msg.target, msg.data.value.scisurf, (err, obj) => {
+              this._scisurf(msg.target, value.scisurf, (err, obj) => {
                 cb(err);
               });
               break;
             case "vulScan":
-              this._vulScan(msg.target, msg.data.value.vulScan, (err, obj) => {
+              this._vulScan(msg.target, value.vulScan, (err, obj) => {
                 cb(err);
               });
               break;
             case "dnsmasq":
-              this._dnsmasq(msg.target, msg.data.value.dnsmasq, (err, obj) => {
+              this._dnsmasq(msg.target, value.dnsmasq, (err, obj) => {
                 cb(err);
               });
               break;
             case "externalAccess":
-              this._externalAccess(msg.target, msg.data.value.externalAccess, (err, obj) => {
+              this._externalAccess(msg.target, value.externalAccess, (err, obj) => {
                 cb(err);
               });
               break;
             case "ssh":
-              this._ssh(msg.target, msg.data.value.ssh, (err, obj) => {
+              this._ssh(msg.target, value.ssh, (err, obj) => {
                 cb(err);
               });
               break;
             case "ignore":
-              this._ignore(msg.target, msg.data.value.ignore.reason, (err, obj) => {
+              this._ignore(msg.target, value.ignore.reason, (err, obj) => {
                 cb(err);
               });
               break;
@@ -1124,23 +1126,23 @@ class netBot extends ControllerBot {
               });
               break;
             case "notify":
-              this._notify(msg.target, msg.data.value.notify, (err, obj) => {
+              this._notify(msg.target, value.notify, (err, obj) => {
                 cb(err);
               });
               break;
             case "portforward":
-              this._portforward(msg.data.value.portforward, (err, obj) => {
+              this._portforward(value.portforward, (err, obj) => {
                 cb(err);
               });
               break;
             case "upstreamDns":
-              this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
+              this._setUpstreamDns(msg.target, value.upstreamDns, (err, obj) => {
                 cb(err);
               });
               break;
           default:
             let target = msg.target
-            let policyData = msg.data.value[o]
+            let policyData = value[o]
 
             //            if(extMgr.hasExtension(o)) {
               this.hostManager.loadPolicy((err, data) => {
@@ -1164,7 +1166,7 @@ class netBot extends ControllerBot {
             replyid: msg.id,
           };
           reply.code = 200;
-          reply.data = msg.data.value;
+          reply.data = value;
           log.info("Repling ", reply.code, reply.data);
           this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
 
@@ -1243,7 +1245,7 @@ class netBot extends ControllerBot {
         //   - ignore / unignore
         //   - report
         //   - block / unblockj
-        intelManager.action(msg.target, msg.data.value.action, (err) => {
+        intelManager.action(msg.target, value.action, (err) => {
           let reply = {
             type: 'jsonmsg',
             mtype: 'init',
@@ -1256,7 +1258,7 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let v = msg.data.value;
+        let v = value;
         
         if (v.from && v.from === "firewalla") {
           const mssc = require('../extension/ss_client/multi_ss_client.js');
@@ -1269,7 +1271,7 @@ class netBot extends ControllerBot {
 
         break;
       case "language":
-        let v2 = msg.data.value;
+        let v2 = value;
 
         // TODO validate input?
         if (v2.language) {
@@ -1279,7 +1281,7 @@ class netBot extends ControllerBot {
         }
         break;
       case "timezone":
-        let v3 = msg.data.value;
+        let v3 = value;
 
         if (v3.timezone) {
           sysManager.setTimezone(v3.timezone, (err) => {
@@ -1288,7 +1290,7 @@ class netBot extends ControllerBot {
         }
       break;
     case "includeNameInNotification":
-      let v33 = msg.data.value;
+      let v33 = value;
 
       let flag = "0";
 
@@ -1305,7 +1307,7 @@ class netBot extends ControllerBot {
 
       break;
     case "mode":
-      let v4 = msg.data.value;
+      let v4 = value;
       let err = null;
       
       if (v4.mode) {
@@ -1351,7 +1353,7 @@ class netBot extends ControllerBot {
       break;
     case "userConfig":
       (async () => {
-        const updatedPart = msg.data.value || {};
+        const updatedPart = value || {};
         await fc.updateUserConfig(updatedPart);
         this.simpleTxData(msg, {}, null, callback);
       })().catch((err) => {
@@ -1425,6 +1427,8 @@ class netBot extends ControllerBot {
       return
     }
 
+    let value = msg.data.value;
+
     switch (msg.data.item) {
       case "host":
         if (msg.target) {
@@ -1446,8 +1450,8 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
         let compAlg = "";
-        if (msg.data.value) {
-          compAlg = compAlg || msg.data.value.compress;
+        if (value) {
+          compAlg = compAlg || value.compress;
         }
         this.hostManager.loadPolicy((err, data) => {
           let datamodel = {
@@ -1509,9 +1513,9 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
       case "generateRSAPublicKey": {
-        const identity = msg.data.value.identity;
+        const identity = value.identity;
         (async () => {
-          const regenerate = msg.data.value.regenerate;
+          const regenerate = value.regenerate;
           const prevKey = await ssh.getRSAPublicKey(identity);
           if (prevKey === null || regenerate) {
             await ssh.generateRSAKeyPair(identity);
@@ -1582,14 +1586,14 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, {timezone: sysManager.timezone}, null, callback);
         break;
       case "alarms":
-        am2.loadActiveAlarms((err, alarms) => {
+        am2.loadActiveAlarms(value, (err, alarms) => {
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, err, callback);
         });
         break;
       case "fetchNewAlarms":
         (async () => {
-          const sinceTS = msg.data.value.sinceTS;
-          const timeout = msg.data.value.timeout || 60;
+          const sinceTS = value.sinceTS;
+          const timeout = value.timeout || 60;
           const alarms = await am2.fetchNewAlarms(sinceTS, {timeout});
           this.simpleTxData(msg, {alarms: alarms, count: alarms.length}, null, callback);
         })().catch((err) => {
@@ -1597,13 +1601,13 @@ class netBot extends ControllerBot {
         });
         break;
       case "alarm":
-        let alarmID = msg.data.value.alarmID;
+        let alarmID = value.alarmID;
         am2.getAlarm(alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       case "alarmDetail": {
-        const alarmID = msg.data.value.alarmID;
+        const alarmID = value.alarmID;
         (async () => {
           if(alarmID) {
             let detail = await am2.getAlarmDetail(alarmID); 
@@ -1627,7 +1631,7 @@ class netBot extends ControllerBot {
         break;
       }
       case "blockCheck": {
-        const ipOrDomain = msg.data.value.ipOrDomain;
+        const ipOrDomain = value.ipOrDomain;
         (async () => {
           const rc = require("../diagnostic/rulecheck.js");
           const result = await rc.checkIpOrDomain(ipOrDomain);
@@ -1638,8 +1642,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "transferTrend": {
-        const deviceMac = msg.data.value.deviceMac;
-        const destIP = msg.data.value.destIP;
+        const deviceMac = value.deviceMac;
+        const destIP = value.destIP;
         (async () => {
           if(destIP && deviceMac) {
             const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
@@ -1653,8 +1657,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "archivedAlarms":
-        const offset = msg.data.value && msg.data.value.offset
-        const limit = msg.data.value && msg.data.value.limit
+        const offset = value && value.offset
+        const limit = value && value.limit
 
         async(() => {
           const archivedAlarms = await(am2.loadArchivedAlarms({
@@ -1717,7 +1721,7 @@ class netBot extends ControllerBot {
         break;
       case "liveCategoryDomains":
         (async () => {
-          const category = msg.data.value.category
+          const category = value.category
           const domains = await categoryUpdater.getDomainsWithExpireTime(category)
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
@@ -1726,7 +1730,7 @@ class netBot extends ControllerBot {
         break
       case "liveCategoryDomainsWithoutExcluded":
         (async () => {
-          const category = msg.data.value.category
+          const category = value.category
           const domains = await categoryUpdater.getDomainsWithExpireTime(category)
           const excludedDomains = await categoryUpdater.getExcludedDomains(category)
           const defaultDomains = await categoryUpdater.getDefaultDomains(category)
@@ -1791,7 +1795,7 @@ class netBot extends ControllerBot {
         break
       case "includedDomains":
         (async () => {
-          const category = msg.data.value.category
+          const category = value.category
           const domains = await (categoryUpdater.getIncludedDomains(category))
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
@@ -1800,7 +1804,7 @@ class netBot extends ControllerBot {
         break
       case "excludedDomains":
         (async () => {
-          const category = msg.data.value.category
+          const category = value.category
           const domains = await (categoryUpdater.getExcludedDomains(category))
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
@@ -1809,7 +1813,7 @@ class netBot extends ControllerBot {
         break
       case "whois":
         (async () => {
-          const target = msg.data.value.target;
+          const target = value.target;
           let whois = await intelManager.whois(target);
           this.simpleTxData(msg, {target, whois}, null, callback);
         })().catch((err) => {
@@ -1818,7 +1822,7 @@ class netBot extends ControllerBot {
         break;
       case "ipinfo":
         (async () => {
-          const ip = msg.data.value.ip;
+          const ip = value.ip;
           let ipinfo = intelManager.ipinfo(ip);
           this.simpleTxData(msg, {ip, ipinfo}, null, callback);
         })().catch((err) => {
@@ -2172,6 +2176,8 @@ class netBot extends ControllerBot {
       return;
     }
 
+    let value = msg.data.value;
+
     switch (msg.data.item) {
       case "upgrade":
         async(() => {
@@ -2270,8 +2276,8 @@ class netBot extends ControllerBot {
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
       case "alarm:block":
-        am2.blockFromAlarm(msg.data.value.alarmID, msg.data.value, (err, policy, otherBlockedAlarms, alreadyExists) => {
-          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+        am2.blockFromAlarm(value.alarmID, value, (err, policy, otherBlockedAlarms, alreadyExists) => {
+          if(value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
             this.simpleTxData(msg, {
               policy: policy,
               otherAlarms: otherBlockedAlarms,
@@ -2284,8 +2290,8 @@ class netBot extends ControllerBot {
         });
         break;
       case "alarm:allow":
-        am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err, exception, otherAlarms, alreadyExists) => {
-          if(msg.data.value && msg.data.value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+        am2.allowFromAlarm(value.alarmID, value, (err, exception, otherAlarms, alreadyExists) => {
+          if(value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
             this.simpleTxData(msg, {
               exception: exception,
               otherAlarms: otherAlarms,
@@ -2297,27 +2303,27 @@ class netBot extends ControllerBot {
         });
         break;
       case "alarm:unblock":
-        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        am2.unblockFromAlarm(value.alarmID, value, (err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "alarm:unallow":
-        am2.unallowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        am2.unallowFromAlarm(value.alarmID, value, (err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
 
       case "alarm:unblock_and_allow":
-        am2.unblockFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+        am2.unblockFromAlarm(value.alarmID, value, (err) => {
           if (err) {
-            log.error("Failed to unblock", msg.data.value.alarmID, ", err:", err, {});
+            log.error("Failed to unblock", value.alarmID, ", err:", err, {});
             this.simpleTxData(msg, {}, err, callback);
             return;
           }
 
-          am2.allowFromAlarm(msg.data.value.alarmID, msg.data.value, (err) => {
+          am2.allowFromAlarm(value.alarmID, value, (err) => {
             if (err) {
-              log.error("Failed to allow", msg.data.value.alarmID, ", err:", err, {});
+              log.error("Failed to allow", value.alarmID, ", err:", err, {});
             }
             this.simpleTxData(msg, {}, err, callback);
           });
@@ -2325,7 +2331,7 @@ class netBot extends ControllerBot {
 
       case "alarm:ignore":
         async(() => {
-          await (am2.ignoreAlarm(msg.data.value.alarmID))
+          await (am2.ignoreAlarm(value.alarmID))
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignore alarm:", err, {})
@@ -2335,7 +2341,7 @@ class netBot extends ControllerBot {
 
       case "alarm:report":
         async(() => {
-          await (am2.reportBug(msg.data.value.alarmID, msg.data.value.feedback))
+          await (am2.reportBug(value.alarmID, value.feedback))
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to report bug on alarm:", err, {})
@@ -2344,7 +2350,7 @@ class netBot extends ControllerBot {
         break
 
       case "policy:create":
-        pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
+        pm2.createPolicyFromJson(value, (err, policy) => {
           if (err) {
             this.simpleTxData(msg, null, err, callback);
             return;
@@ -2367,7 +2373,7 @@ class netBot extends ControllerBot {
 
       case "policy:update":
         async(() => {
-          const policy = msg.data.value
+          const policy = value
           const pid = policy.pid
           const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))
@@ -2381,9 +2387,9 @@ class netBot extends ControllerBot {
         break;    
       case "policy:delete":
         async(() => {
-          let policy = await (pm2.getPolicy(msg.data.value.policyID))
+          let policy = await (pm2.getPolicy(value.policyID))
           if(policy) {
-            await (pm2.disableAndDeletePolicy(msg.data.value.policyID))
+            await (pm2.disableAndDeletePolicy(value.policyID))
             policy.deleted = true // policy is marked ask deleted
             this.simpleTxData(msg, policy, null, callback);          
           } else {
@@ -2395,9 +2401,9 @@ class netBot extends ControllerBot {
         break;
       case "policy:enable":
         async(() => {
-          const policyID = msg.data.value.policyID
+          const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            let policy = await (pm2.getPolicy(value.policyID))
             if(policy) {
               await (pm2.enablePolicy(policy))
               this.simpleTxData(msg, policy, null, callback);
@@ -2411,9 +2417,9 @@ class netBot extends ControllerBot {
         break;
       case "policy:disable":
         async(() => {
-          const policyID = msg.data.value.policyID
+          const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(msg.data.value.policyID))
+            let policy = await (pm2.getPolicy(value.policyID))
             if(policy) {
               await (pm2.disablePolicy(policy))
               this.simpleTxData(msg, policy, null, callback);
@@ -2427,7 +2433,7 @@ class netBot extends ControllerBot {
         break;
       case "intel:finger":
         (async () => {
-          const target = msg.data.value.target;
+          const target = value.target;
           if (target) {
             let result;
             try {
@@ -2446,7 +2452,7 @@ class netBot extends ControllerBot {
         })();
         break;
       case "exception:create":
-        em.createException(msg.data.value)
+        em.createException(value)
           .then((result) => {
             this.simpleTxData(msg, result, null, callback);
           })
@@ -2455,7 +2461,7 @@ class netBot extends ControllerBot {
           });
         break;
       case "exception:update":
-        em.updateException(msg.data.value)
+        em.updateException(value)
           .then((result) => {
             this.simpleTxData(msg, result, null, callback);
           })
@@ -2464,7 +2470,7 @@ class netBot extends ControllerBot {
           });
         break;
       case "exception:delete":
-        em.deleteException(msg.data.value.exceptionID)
+        em.deleteException(value.exceptionID)
           .then(() => {
             this.simpleTxData(msg, null, null, callback);
           }).catch((err) => {
@@ -2497,8 +2503,8 @@ class netBot extends ControllerBot {
         break;
       case "setManualSpoof":
         async(() => {
-          let mac = msg.data.value.mac
-          let manualSpoof = msg.data.value.manualSpoof ? "1" : "0"
+          let mac = value.mac
+          let manualSpoof = value.manualSpoof ? "1" : "0"
 
           if(!mac) {
             this.simpleTxData(msg, null, new Error("invalid request"), callback)
@@ -2531,7 +2537,7 @@ class netBot extends ControllerBot {
         break
       case "isSpoofRunning":
         async(() => {
-          let timeout = msg.data.value.timeout
+          let timeout = value.timeout
 
           let running = false
 
@@ -2565,7 +2571,7 @@ class netBot extends ControllerBot {
         break
       case "spoofMe":
         async(() => {
-          let value = msg.data.value
+          let value = value
           let ip = value.ip
           let name = value.name
 
@@ -2593,8 +2599,8 @@ class netBot extends ControllerBot {
         break
       case "validateSpoof": {
         async(() => {
-          let ip = msg.data.value.ip
-          let timeout = msg.data.value.timeout || 60 // by default, wait for 60 seconds
+          let ip = value.ip
+          let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
           await (spooferManager.directSpoof(ip))
@@ -2629,7 +2635,7 @@ class netBot extends ControllerBot {
       }
       case "spoof": {
         async(() => {
-          let ip = msg.data.value.ip
+          let ip = value.ip
 
 
         })()
@@ -2666,7 +2672,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
       case "switchBranch":
-        let target = msg.data.value.target
+        let target = value.target
 
         async(() => {
           await (this.switchBranch(target))
@@ -2695,7 +2701,7 @@ class netBot extends ControllerBot {
           })
         break
       case "enableFeature": {
-        const featureName = msg.data.value.featureName
+        const featureName = value.featureName
         async(() => {
           if(featureName) {
             await (fc.enableDynamicFeature(featureName))
@@ -2709,7 +2715,7 @@ class netBot extends ControllerBot {
         break
       }      
       case "disableFeature": {
-        const featureName = msg.data.value.featureName
+        const featureName = value.featureName
         async(() => {
           if(featureName) {
             await (fc.disableDynamicFeature(featureName))
@@ -2723,7 +2729,7 @@ class netBot extends ControllerBot {
         break
       }      
       case "clearFeatureDynamicFlag": {
-        const featureName = msg.data.value.featureName
+        const featureName = value.featureName
         async(() => {
           if(featureName) {
             await (fc.clearDynamicFeature(featureName))
@@ -2742,7 +2748,7 @@ class netBot extends ControllerBot {
             type: "ReleaseMonkey",
             message: "Release a monkey to test system",
             toProcess: 'FireMain',
-            monkeyType: msg.data.value && msg.data.value.monkeyType
+            monkeyType: value && value.monkeyType
           })
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -2752,8 +2758,8 @@ class netBot extends ControllerBot {
       }
       case "addIncludeDomain": {
         (async () => {
-          const category = msg.data.value.category
-          const domain = msg.data.value.domain
+          const category = value.category
+          const domain = value.domain
           await (categoryUpdater.addIncludedDomain(category,domain))
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
@@ -2768,8 +2774,8 @@ class netBot extends ControllerBot {
       }
       case "removeIncludeDomain": {
         (async () => {
-          const category = msg.data.value.category
-          const domain = msg.data.value.domain
+          const category = value.category
+          const domain = value.domain
           await (categoryUpdater.removeIncludedDomain(category,domain))
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
@@ -2784,8 +2790,8 @@ class netBot extends ControllerBot {
       }
       case "addExcludeDomain": {
         (async () => {
-          const category = msg.data.value.category
-          const domain = msg.data.value.domain
+          const category = value.category
+          const domain = value.domain
           await (categoryUpdater.addExcludedDomain(category,domain))
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
@@ -2800,8 +2806,8 @@ class netBot extends ControllerBot {
       }
       case "removeExcludeDomain": {
         (async () => {
-          const category = msg.data.value.category
-          const domain = msg.data.value.domain
+          const category = value.category
+          const domain = value.domain
           await (categoryUpdater.removeExcludedDomain(category,domain))
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
@@ -2831,10 +2837,10 @@ class netBot extends ControllerBot {
         break;
       }
       case "saveOvpnProfile": {
-        const content = msg.data.value.content;
-        let profileId = msg.data.value.profileId;
+        const content = value.content;
+        let profileId = value.profileId;
         // at least create dummy password file anyway
-        const password = msg.data.value.password || "dummy_ovpn_password";
+        const password = value.password || "dummy_ovpn_password";
         if (!profileId || profileId === "") {
           // use default profile id
           profileId = "ovpn_client";
@@ -2854,7 +2860,7 @@ class netBot extends ControllerBot {
         break;
       }
       case "deleteOvpnProfile": {
-        const profileId = msg.data.value.profileId;
+        const profileId = value.profileId;
         (async () => {
           if (!profileId || profileId === "") {
             this.simpleTxData(msg, {}, "profile id is not specified", callback);
@@ -2878,8 +2884,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "saveRSAPublicKey": {
-        const content = msg.data.value.pubKey;
-        const identity = msg.data.value.identity;
+        const content = value.pubKey;
+        const identity = value.identity;
         (async () => {
           await ssh.saveRSAPublicKey(content, identity);
           this.simpleTxData(msg, {}, null, callback);
@@ -2889,8 +2895,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "migration:export": {
-        const partition = msg.data.value.partition;
-        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        const partition = value.partition;
+        const encryptionIdentity = value.encryptionIdentity;
         (async () => {
           await migration.exportDataPartition(partition, encryptionIdentity);
           this.simpleTxData(msg, {}, null, callback);
@@ -2900,8 +2906,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "migration:import": {
-        const partition = msg.data.value.partition;
-        const encryptionIdentity = msg.data.value.encryptionIdentity;
+        const partition = value.partition;
+        const encryptionIdentity = value.encryptionIdentity;
         (async () => {
           await migration.importDataPartition(partition, encryptionIdentity);
           this.simpleTxData(msg, {}, null, callback);
@@ -2911,9 +2917,9 @@ class netBot extends ControllerBot {
         break;
       }
       case "migration:transfer": {
-        const host = msg.data.value.host;
-        const partition = msg.data.value.partition;
-        const transferIdentity = msg.data.value.transferIdentity;
+        const host = value.host;
+        const partition = value.partition;
+        const transferIdentity = value.transferIdentity;
         (async () => {
           await migration.transferDataPartition(host, partition, transferIdentity);
           this.simpleTxData(msg, {}, null, callback);
@@ -2923,8 +2929,8 @@ class netBot extends ControllerBot {
         break;
       }
       case "migration:transferHiddenFolder": {
-        const host = msg.data.value.host;
-        const transferIdentity = msg.data.value.transferIdentity;
+        const host = value.host;
+        const transferIdentity = value.transferIdentity;
         (async () => {
           await migration.transferHiddenFolder(host, transferIdentity);
           this.simpleTxData(msg, {}, null, callback);
@@ -2946,7 +2952,7 @@ class netBot extends ControllerBot {
 
       case "host:delete": {
         (async () => {
-          const hostMac = msg.data.value.mac;
+          const hostMac = value.mac;
           log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
@@ -3077,15 +3083,13 @@ class netBot extends ControllerBot {
   }
 
   loadInitCache(callback) {
-    callback = callback || function () {
-      }
+    callback = callback || function () { }
 
     rclient.get("init.cache", callback);
   }
 
   cacheInitData(json, callback) {
-    callback = callback || function () {
-      }
+    callback = callback || function () { }
 
     let jsonString = JSON.stringify(json);
     let expireTime = 60; // cache for 1 min
