@@ -78,6 +78,7 @@ const am2 = new AM2();
 const EM = require('../alarm/ExceptionManager.js');
 const em = new EM();
 
+const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 
@@ -2370,24 +2371,26 @@ class netBot extends ControllerBot {
         break
 
       case "policy:create":
-        pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
-          if (err) {
-            this.simpleTxData(msg, null, err, callback);
-            return;
-          }
+        let policy
+        try {
+          policy = new Policy(msg.data.value)
+        } catch (err) {
+          log.error('Error creating policy', err);
+          this.simpleTxData(msg, null, err, callback);
+          return;
+        }
 
-          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists == "duplicated") {
-              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
-              return
-            } else if(alreadyExists == "duplicated_and_updated") {
-              const p = JSON.parse(JSON.stringify(policy2))
-              p.updated = true // a kind hacky, but works
-              this.simpleTxData(msg, p, err, callback)
-            } else {
-              this.simpleTxData(msg, policy2, err, callback)
-            }
-          });
+        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+          if(alreadyExists == "duplicated") {
+            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            return
+          } else if(alreadyExists == "duplicated_and_updated") {
+            const p = JSON.parse(JSON.stringify(policy2))
+            p.updated = true // a kind hacky, but works
+            this.simpleTxData(msg, p, err, callback)
+          } else {
+            this.simpleTxData(msg, policy2, err, callback)
+          }
         });
         break;
 

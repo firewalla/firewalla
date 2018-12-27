@@ -53,6 +53,7 @@ const frp = fm.getSupportFRP()
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
+const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const policyManager2 = new PolicyManager2();
 const pm2 = policyManager2
@@ -1198,7 +1199,7 @@ class Host {
               callback(null, {blockin: true});
             } else {
               // need to create one
-              let rule = pm2.createPolicy({
+              let rule = new Policy({
                 target: this.o.mac,
                 type: "mac"
               })
