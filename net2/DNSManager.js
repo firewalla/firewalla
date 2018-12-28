@@ -54,93 +54,93 @@ let firewalla = require('./Firewalla.js');
 const dns = require('dns');
 
 function parseX509Subject(subject) {
-    let array = subject.split(',');
-    let result = {};
-    for (let i in array) {
-        let obj = array[i].split("=");
-        if (obj.length == 2) {
-            result[obj[0]] = obj[1];
-        }
+  let array = subject.split(',');
+  let result = {};
+  for (let i in array) {
+    let obj = array[i].split("=");
+    if (obj.length == 2) {
+      result[obj[0]] = obj[1];
     }
+  }
 
-    return result;
+  return result;
 }
 
 module.exports = class DNSManager {
-    constructor(loglevel) {
-        if (instance == null) {
-            instance = this;
-        }
-        return instance;
+  constructor(loglevel) {
+    if (instance == null) {
+      instance = this;
     }
+    return instance;
+  }
 
-    resolveMac(mac,callback) {
-        if (mac == null) {
-            callback(null,null)
+  resolveMac(mac,callback) {
+    if (mac == null) {
+      callback(null,null)
+    } else {
+      rclient.hgetall("host:mac:" + mac, (err, data) => {
+        if (err == null && data != null) {
+          callback(err, data);
         } else {
-            rclient.hgetall("host:mac:" + mac, (err, data) => {
-                if (err == null && data != null) {
-                     callback(err, data);
-                } else {
-                     callback(err, null);
-                }
-            });
+          callback(err, null);
         }
+      });
     }
+  }
 
-    // Reslve v6 or v4 address into a local host
-    resolveLocalHost(ip, callback) {
-        if (iptool.isV4Format(ip)) {
-            rclient.hgetall("host:ip4:" + ip, (err, data) => {
-                if (data && data.mac) {
-                    rclient.hgetall("host:mac:" + data.mac, (err, data) => {
-                        if (err == null && data != null) {
-                            callback(err, data);
-                        } else {
-                            callback(err, null);
-                        }
-                    });
+  // Reslve v6 or v4 address into a local host
+  resolveLocalHost(ip, callback) {
+    if (iptool.isV4Format(ip)) {
+      rclient.hgetall("host:ip4:" + ip, (err, data) => {
+        if (data && data.mac) {
+          rclient.hgetall("host:mac:" + data.mac, (err, data) => {
+            if (err == null && data != null) {
+              callback(err, data);
+            } else {
+              callback(err, null);
+            }
+          });
 
-                } else {
-                    callback("404", null);
-                }
-            });
-        } else if (iptool.isV6Format(ip)) {
-            rclient.hgetall("host:ip6:" + ip, (err, data) => {
-                if (err == null && data != null) {
-                    if (data.mac) {
-                        rclient.hgetall("host:mac:" + data.mac, (err, data) => {
-                            if (err == null && data != null) {
-                                callback(err, data);
-                            } else {
-                                callback(err, null);
-                            }
-                        });
-                    } else {
-                        callback(null, null);
-                    }
-                } else {
-                    callback(err, null);
-                }
-            });
         } else {
-            log.error("DNSManager:ResolveHost:Error", ip);
-            callback("bad ip", null);
+          callback("404", null);
         }
-    }
-
-    findHostWithIP(ip, callback) {
-        let key = "host:ip4:" + ip;
-        log.debug("DNS:FindHostWithIP", key, ip);
-        rclient.hgetall(key, (err, data) => {
-            let mackey = "host:mac:" + data.mac;
-            rclient.hgetall(mackey, (err, data) => {
-                callback(mackey, err, data);
+      });
+    } else if (iptool.isV6Format(ip)) {
+      rclient.hgetall("host:ip6:" + ip, (err, data) => {
+        if (err == null && data != null) {
+          if (data.mac) {
+            rclient.hgetall("host:mac:" + data.mac, (err, data) => {
+              if (err == null && data != null) {
+                callback(err, data);
+              } else {
+                callback(err, null);
+              }
             });
-        });
+          } else {
+            callback(null, null);
+          }
+        } else {
+          callback(err, null);
+        }
+      });
+    } else {
+      log.error("DNSManager:ResolveHost:Error", ip);
+      callback("bad ip", null);
     }
+  }
 
-/*
+  findHostWithIP(ip, callback) {
+    let key = "host:ip4:" + ip;
+    log.debug("DNS:FindHostWithIP", key, ip);
+    rclient.hgetall(key, (err, data) => {
+      let mackey = "host:mac:" + data.mac;
+      rclient.hgetall(mackey, (err, data) => {
+        callback(mackey, err, data);
+      });
+    });
+  }
+
+  /*
 > [ { address: '104.20.23.46', family: 4 },
   { address: '104.20.22.46', family: 4 },
   { address: '2400:cb00:2048:1::6814:162e', family: 6 },
@@ -149,105 +149,105 @@ module.exports = class DNSManager {
 */
 
 
-    dnsLookup(host,callback) {
-        if (host == null) {
-            callback(null,null);
-        } else {
-            dns.lookup(host, {all:true},(err, addresses, family) => {
-                let v4=[];
-                let v6=[];
-                let all = [];
-                for (let i in addresses) {
-                    if (addresses[i].family==4) {
-                        v4.push(addresses[i].address);
-                    }
-                    if (addresses[i].family==6) {
-                        v6.push(addresses[i].address);
-                    }
-                    all.push(addresses[i].address);
-                }
-                callback(err, all,v4,v6);
-            });
+  dnsLookup(host,callback) {
+    if (host == null) {
+      callback(null,null);
+    } else {
+      dns.lookup(host, {all:true},(err, addresses, family) => {
+        let v4=[];
+        let v6=[];
+        let all = [];
+        for (let i in addresses) {
+          if (addresses[i].family==4) {
+            v4.push(addresses[i].address);
+          }
+          if (addresses[i].family==6) {
+            v6.push(addresses[i].address);
+          }
+          all.push(addresses[i].address);
         }
+        callback(err, all,v4,v6);
+      });
     }
+  }
 
-    queryAcl(list, callback) {
-        if (list == null || list.length == 0) {
-            callback(null,list);
-            return;
-        }
-        let ipchanged = false;
-        _async.eachLimit(list,10, (o, cb) => {
+  queryAcl(list, callback) {
+    if (list == null || list.length == 0) {
+      callback(null,list);
+      return;
+    }
+    let ipchanged = false;
+    _async.eachLimit(list,10, (o, cb) => {
+      o.srcs = [];
+      o.dsts = [];
+      if (sysManager.isLocalIP(o.src)) {
+        this.resolveMac(o.mac,(err,data)=> {
+          if (data!=null) {
             o.srcs = [];
-            o.dsts = [];
-            if (sysManager.isLocalIP(o.src)) {
-                 this.resolveMac(o.mac,(err,data)=> {
-                     if (data!=null) {
-                         o.srcs = [];
-                         o.srcs.push(data.ipv4);
-                         if (data.ipv6Addr!=null) {
-                            let ipv6 = JSON.parse(data.ipv6Addr);
-                            ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
-                            o.srcs = o.srcs.concat(ipv6); 
-                         }  
-                         if (o.src != data.ipv4) {
-                             o._src = data.ipv4;
-                             ipchanged = true;
-                         }
-                     } else {
-                         o.srcs = [o.src];
-                     }
-                     if (o.dhname) {
-                          this.dnsLookup(o.dhname,(err, list)=> {
-                              if (list && list.length>0) {
-                                  o.dsts = o.dsts.concat(list);
-                              } else {
-                                  o.dsts = [o.dst];
-                              }
-                              cb();
-                          });
-                     } else {
-                          o.dsts = [o.dst];
-                          cb();
-                      }
-                 });
+            o.srcs.push(data.ipv4);
+            if (data.ipv6Addr!=null) {
+              let ipv6 = JSON.parse(data.ipv6Addr);
+              ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
+              o.srcs = o.srcs.concat(ipv6); 
+            }  
+            if (o.src != data.ipv4) {
+              o._src = data.ipv4;
+              ipchanged = true;
+            }
+          } else {
+            o.srcs = [o.src];
+          }
+          if (o.dhname) {
+            this.dnsLookup(o.dhname,(err, list)=> {
+              if (list && list.length>0) {
+                o.dsts = o.dsts.concat(list);
+              } else {
+                o.dsts = [o.dst];
+              }
+              cb();
+            });
+          } else {
+            o.dsts = [o.dst];
+            cb();
+          }
+        });
+      } else {
+        this.dnsLookup(o.shname,(err, list)=> {
+          if (list && list.length>0) {
+            o.srcs = o.srcs.concat(list);
+          } else {
+            o.srcs = [o.src];
+          }
+          this.resolveMac(o.mac,(err,data)=> {
+            if (data!=null) {
+              o.dsts = [];
+              o.dsts.push(data.ipv4);
+              if (data.ipv6Addr!=null) {
+                let ipv6 = JSON.parse(data.ipv6Addr);
+                ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
+                o.dsts = o.dsts.concat(ipv6); 
+              }  
+              if (o.dst != data.ipv4) {
+                o._dst = data.ipv4;
+                ipchanged = true;
+              }
+              cb();
             } else {
-                 this.dnsLookup(o.shname,(err, list)=> {
-                     if (list && list.length>0) {
-                         o.srcs = o.srcs.concat(list);
-                     } else {
-                         o.srcs = [o.src];
-                     }
-                     this.resolveMac(o.mac,(err,data)=> {
-                         if (data!=null) {
-                             o.dsts = [];
-                             o.dsts.push(data.ipv4);
-                             if (data.ipv6Addr!=null) {
-                                let ipv6 = JSON.parse(data.ipv6Addr);
-                                ipv6 = ipv6.slice(Math.max(ipv6.length - 3)) 
-                                o.dsts = o.dsts.concat(ipv6); 
-                             }  
-                             if (o.dst != data.ipv4) {
-                                o._dst = data.ipv4;
-                                ipchanged = true;
-                             }
-                             cb();
-                         } else {
-                             o.dsts = [o.dst];
-                             cb();
-                         }
-                     });
-                 });
-            } 
-        },(err)=> {
-            log.info("DNS:QueryACL:",list,{});
-            callback(err,list,ipchanged);
-        });    
-     
-    }
+              o.dsts = [o.dst];
+              cb();
+            }
+          });
+        });
+      } 
+    },(err)=> {
+      log.info("DNS:QueryACL:",list,{});
+      callback(err,list,ipchanged);
+    });    
 
-    // Need to write code to drop the noise before calling this function.
-    // this is a bit expensive due to the lookup part
+  }
+
+  // Need to write code to drop the noise before calling this function.
+  // this is a bit expensive due to the lookup part
 
   // will place an x over flag or f if the flow is not really valid ...
   // such as half tcp session
