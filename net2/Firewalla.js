@@ -112,10 +112,23 @@ function isDevelopmentVersion() {
 function isBeta() {
   let branch = getBranch()
   if(branch.match(/^beta_.*/)) {
-    return true
+    if(branch === 'beta_7_0') {
+      return false;
+    } else {
+      return true;
+    }
   } else {
     return false
   }  
+}
+
+function isAlpha() {
+  let branch = getBranch()
+  if(branch === 'beta_7_0') {
+    return true
+  } else {
+    return false
+  } 
 }
 
 function isProduction() {
@@ -140,6 +153,8 @@ function isProductionOrBeta() {
 function getReleaseType() {
   if(isProduction()) {
     return "prod"
+  } else if(isAlpha()) {
+    return "alpha";
   } else if(isBeta()) {
     return "beta"
   } else if (isDevelopmentVersion()) {

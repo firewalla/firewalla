@@ -78,6 +78,7 @@ const am2 = new AM2();
 const EM = require('../alarm/ExceptionManager.js');
 const em = new EM();
 
+const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 
@@ -769,6 +770,14 @@ class netBot extends ControllerBot {
             }
             if(msg["testing"] && msg["testing"] == 1) {
               notifMsg.title = `[Monkey] ${notifMsg.title}`;
+            }            
+            if(msg["premiumAction"] && f.isDevelopmentVersion()) {
+              const pa = msg["premiumAction"];
+              if(pa === 'ignore') {
+                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
+              } else if(pa === 'block') {
+                notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
+              }
             }
             this.tx2(this.primarygid, "test", notifMsg, data);            
           })()
@@ -798,7 +807,9 @@ class netBot extends ControllerBot {
           }
         }
         else if (upgradeInfo.upgraded) {
-          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", upgradeInfo);
+          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
+            version: f.isProductionOrBeta() ? fc.getConfig().version : upgradeInfo.to
+          });
           this.tx(this.primarygid, "200", msg);
           upgradeManager.updateVersionTag();
         }
@@ -2126,6 +2137,22 @@ class netBot extends ControllerBot {
     } else {
       log.info("API: CmdHandler ",gid,msg,{});
     }
+
+    if(extMgr.hasCmd(msg.data.item)) {
+      (async () => {
+        let result = null;
+        let err = null;
+        try {
+          result = await extMgr.cmd(msg.data.item, msg, msg.data.value);
+        } catch(e) {
+          err = e;
+        } finally {
+          this.simpleTxData(msg, result, err, callback)
+        }
+      })();
+      return;
+    }
+
     if(msg.data.item === "dhcpCheck") {
       (async() => {
         let mode = require('../net2/Mode.js');
@@ -2350,24 +2377,26 @@ class netBot extends ControllerBot {
         break
 
       case "policy:create":
-        pm2.createPolicyFromJson(value, (err, policy) => {
-          if (err) {
-            this.simpleTxData(msg, null, err, callback);
-            return;
-          }
+        let policy
+        try {
+          policy = new Policy(value)
+        } catch (err) {
+          log.error('Error creating policy', err);
+          this.simpleTxData(msg, null, err, callback);
+          return;
+        }
 
-          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists == "duplicated") {
-              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
-              return
-            } else if(alreadyExists == "duplicated_and_updated") {
-              const p = JSON.parse(JSON.stringify(policy2))
-              p.updated = true // a kind hacky, but works
-              this.simpleTxData(msg, p, err, callback)
-            } else {
-              this.simpleTxData(msg, policy2, err, callback)
-            }
-          });
+        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+          if(alreadyExists == "duplicated") {
+            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            return
+          } else if(alreadyExists == "duplicated_and_updated") {
+            const p = JSON.parse(JSON.stringify(policy2))
+            p.updated = true // a kind hacky, but works
+            this.simpleTxData(msg, p, err, callback)
+          } else {
+            this.simpleTxData(msg, policy2, err, callback)
+          }
         });
         break;
 
@@ -3219,7 +3248,7 @@ class netBot extends ControllerBot {
                   datamodel.code = 500;
                 }
                 log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
+                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
 
               });
             } else {
