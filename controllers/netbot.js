@@ -2600,7 +2600,6 @@ class netBot extends ControllerBot {
         break
       case "spoofMe":
         async(() => {
-          let value = value
           let ip = value.ip
           let name = value.name
 

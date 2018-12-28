@@ -267,28 +267,17 @@ class FlowTool {
       f.device = flow.mac;
     }
 
-    if(flow.pf) {
+    f.ptocotol = flow.pr;
+
+    try {
       if(flow.lh === flow.sh) {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const destinationPort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const sourcePort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.dp);
+        f.devicePort = Number(flow.sp[0]);
       } else {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const sourcePort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const destinationPort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.sp[0]);
+        f.devicePort = Number(flow.dp);
       }
+    } catch(err) {
     }
 
     if(flow.lh === flow.sh) {
@@ -302,9 +291,6 @@ class FlowTool {
       f.upload = flow.rb;
       f.download = flow.ob;
     }
-
-    f.dp = flow.dp;
-    f.sp = flow.sp;
 
     return f;
   }
