@@ -2060,6 +2060,9 @@ class netBot extends ControllerBot {
       let jsonobj = {};
       if (host) {
         jsonobj = host.toJson();
+        const dhcpReservation = await (hostTool.getDHCPReservation(mac));
+        if (dhcpReservation)
+          jsonobj.dhcpReservation = dhcpReservation;
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
