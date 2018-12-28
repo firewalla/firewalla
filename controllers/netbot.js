@@ -2060,6 +2060,9 @@ class netBot extends ControllerBot {
       let jsonobj = {};
       if (host) {
         jsonobj = host.toJson();
+        const dhcpReservation = await (hostTool.getDHCPReservation(mac));
+        if (dhcpReservation)
+          jsonobj.dhcpReservation = dhcpReservation;
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
@@ -3030,6 +3033,56 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "dhcpReservation:upsert": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          const ip = msg.data.value.ip;
+          if (!mac || !ip) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac or static ip is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("set dhcp reservation for " + mac + ": " + ip);
+              await dhcp.upsertDhcpReservation(mac, ip);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:list": {
+        (async () => {
+          const reservations = await dhcp.listDhcpReservations();
+          this.simpleTxData(msg, reservations, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:delete": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          if (!mac) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("delete dhcp reservation for " + mac);
+              await dhcp.deleteDhcpReservation(mac);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -3083,6 +3136,9 @@ class netBot extends ControllerBot {
         code = err.code;
       }
       message = err + "";
+      if (err && err.msg) {
+        message = err.msg;
+      }
     }
 
     let datamodel = {
