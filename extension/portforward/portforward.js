@@ -182,11 +182,11 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
-      await (shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport));
+      await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
 
       // we call remove anyway ... even there is no entry
       dupMap.destIP = sysManager.myIp()
-      let state = await (iptable.portforwardAsync(dupMap));
+      let state = await iptable.portforwardAsync(dupMap);
 
       old = this.find(map);
     }
