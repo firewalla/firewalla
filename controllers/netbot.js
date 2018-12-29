@@ -44,6 +44,7 @@ const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
+
 const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')

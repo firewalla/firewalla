@@ -1979,6 +1979,18 @@ module.exports = class HostManager {
     json.recentFlows = recentFlows;
   }
 
+  async groupNameForInit(json) {
+    const groupName = await rclient.getAsync("groupName");
+    if(groupName) {
+      json.groupName = groupName;
+    }
+  }
+
+  async asyncBasicDataForInit(json) {
+    const speed = await platform.getNetworkSpeed();
+    json.nicSpeed = speed;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
