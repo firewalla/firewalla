@@ -41,3 +41,5 @@ alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scr
 alias less='less -r'
 
 export PS1='\[\e]0;\u@\h: \w\a\]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\] ($(redis-cli get groupName)) \$ '
+
+alias powerup='source <(curl -s https://raw.githubusercontent.com/MelvinTo/firewalla/master/scripts/powerup.sh)'
