@@ -19,6 +19,7 @@ const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
+const dhcp = require('../dhcp/dhcp.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -138,28 +139,28 @@ module.exports = class DNSMASQ {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
 
-      sclient.on("message", (channel, message) => {
-        switch (channel) {
-          case "System:IPChange":
-            (async () => {
-              const started = await this.checkStatus();
-              if (started)
-                await this.rawRestart(); // restart firemasq service to bind new ip addresses
-              await this._update_local_interface_iptables_rules();
-              if (this.vpnSubnet) {
-                await this.updateVpnIptablesRules(this.vpnSubnet, true);
-              }
-            })();
-            break;
-          case "DHCPReservationChanged":
-            this.onDHCPReservationChanged();
-            break;
-          default:
-            //log.warn("Unknown message channel: ", channel, message);
-        }
-      });
-
       if (f.isMain()) {
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "System:IPChange":
+              (async () => {
+                const started = await this.checkStatus();
+                if (started)
+                  await this.rawRestart(); // restart firemasq service to bind new ip addresses
+                await this._update_local_interface_iptables_rules();
+                if (this.vpnSubnet) {
+                  await this.updateVpnIptablesRules(this.vpnSubnet, true);
+                }
+              })();
+              break;
+            case "DHCPReservationChanged":
+              this.onDHCPReservationChanged();
+              break;
+            default:
+            //log.warn("Unknown message channel: ", channel, message);
+          }
+        });
+
         sclient.subscribe("System:IPChange");
         sclient.subscribe("DHCPReservationChanged");
       }
@@ -947,6 +948,12 @@ module.exports = class DNSMASQ {
     let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
     let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
 
+    const dhcpRange = await dhcp.getDhcpRange("secondary");
+    if (dhcpRange) {
+      rangeBegin = dhcpRange.begin;
+      rangeEnd = dhcpRange.end;
+    }
+
     cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmd,
       rangeBegin,
@@ -986,10 +993,19 @@ module.exports = class DNSMASQ {
     let lastAddr = ip.toLong(cidr.lastAddress);
     let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
 
+    let rangeBegin = ip.fromLong(midAddr);
+    let rangeEnd = ip.fromLong(lastAddr - 3);
+
+    const dhcpRange = await dhcp.getDhcpRange("alternative");
+    if (dhcpRange) {
+      rangeBegin = dhcpRange.begin;
+      rangeEnd = dhcpRange.end;
+    }
+
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,
-      ip.fromLong(midAddr),
-      ip.fromLong(lastAddr - 3),
+      rangeBegin,
+      rangeEnd,
       mask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
