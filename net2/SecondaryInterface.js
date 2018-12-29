@@ -89,15 +89,17 @@ exports.create = function(config, callback) {
           ) {
             // same ip and subnet mask
             log.info('Already Created Secondary Interface', list[i]);
-            callback(
-              null,
-              _secondaryIp,
-              _secondaryIpSubnet,
-              _secondaryIpNet,
-              _secondaryMask,
-              legacyIp,
-              legacySubnet
-            );
+            if (callback) {
+              callback(
+                null,
+                _secondaryIp,
+                _secondaryIpSubnet,
+                _secondaryIpNet,
+                _secondaryMask,
+                legacyIp,
+                legacySubnet
+              );
+            }
             return;
           } else {
             log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
@@ -105,15 +107,16 @@ exports.create = function(config, callback) {
               list[i].ip_address,
               list[i].netmask.substring(5)
             );
-            // should be like 192.168.218.1/24
-            legacyIp = legacyIpSubnet.firstAddress + '/' + legacyIpSubnet.subnetMaskLength;
+            // should be like 192.168.218.1
+            legacyIp = list[i].ip_address; 
             // should be like 192.168.218.0/24
             legacySubnet = legacyIpSubnet.networkAddress + '/' + legacyIpSubnet.subnetMaskLength;
           }
         } else {
           // other interface already occupies ip1, use alternative ip
-          let subnet = getSubnet(list[i].name, 'IPv4');
-          if (subnet == _secondaryIpSubnet) {
+          let subnets = getSubnet(list[i].name, 'IPv4');
+          // one interface may have multiple ip addresses assigned
+          if (subnets.includes(_secondaryIpSubnet)) {
             _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
             _secondaryIp = config.secondaryInterface.ip2;
             _secondaryIpNet = config.secondaryInterface.ipnet2;

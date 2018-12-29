@@ -301,7 +301,8 @@ module.exports = class {
           alarmNotifType: alarm.notifType,
           alarmType: alarm.type,
           testing: alarm["p.monkey"],
-          managementType: alarm.getManagementType()
+          managementType: alarm.getManagementType(),
+          premiumAction: alarm.premiumAction()
         };
 
         if(alarm.result_method === "auto") {
@@ -492,13 +493,16 @@ module.exports = class {
 
       if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
         log.info(`Alarm is ignored by cloud: ${alarm}`);
-        callback(null, 0);
+        if(!f.isDevelopmentVersion()) {
+          callback(null, 0);
+          return;
+        }
       } else {
         if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
           log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
         }
-        this._checkAndSave(alarm, callback);
       }
+      this._checkAndSave(alarm, callback);
     })();
   }
 
@@ -605,7 +609,8 @@ module.exports = class {
   shouldAutoBlock(alarm) {
     if(alarm["p.cloud.decision"] === "block") {
       return true;
-    } else if((alarm["p.action.block"] === "true") ||
+    } else 
+    if((alarm["p.action.block"] === "true") ||
       (alarm["p.action.block"] === true)) {
       return true
     }

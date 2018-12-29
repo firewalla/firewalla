@@ -952,8 +952,8 @@ module.exports = class {
                 if (port_flow == null) {
                     port_flow = {
                         sp: [obj['id.orig_p']],
-                        ob: Number(flowspec.ob),
-                        rb: Number(flowspec.rb),
+                        ob: Number(obj.orig_bytes),
+                        rb: Number(obj.resp_bytes),
                         ct: 1
                     };
                     flowspec.pf[portflowkey] = port_flow;
@@ -978,6 +978,7 @@ module.exports = class {
                     log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
                     return;
                   }
+                  tmpspec.mac = mac;
                   let key = "flow:conn:" + tmpspec.fd + ":" + mac;
                   let strdata = JSON.stringify(tmpspec);
 
@@ -1003,6 +1004,11 @@ module.exports = class {
                   let redisObj = [key, now, strdata];
                   log.debug("Conn:Save:Temp", redisObj);
 
+                  sem.sendEventToFireMain({
+                      type: "NewGlobalFlow",
+                      flow: tmpspec,
+                      suppressEventLogging: true
+                  });
 
                   rclient.zadd(redisObj, (err, response) => {
                     if (err == null) {

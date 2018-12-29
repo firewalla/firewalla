@@ -43,16 +43,16 @@ class FirewallaDiscoverSensor extends Sensor {
       socket.setBroadcast(true);
       setInterval(() => {
         const broadcastAddr = this.cidr.broadcastAddress;
-        log.info("Ping " + broadcastAddr);
+        log.debug("Ping " + broadcastAddr);
         socket.send("ping", port, broadcastAddr);
       }, 60 * 1000);
     });
 
     socket.on('message', (message, info) => {
       if (message.toString() === "ping") {
-        log.info(util.format("Received ping request from %s:%d", info.address, info.port));
+        log.debug(util.format("Received ping request from %s:%d", info.address, info.port));
         if (info.address === this.ip) {
-          log.info("Ignore ping request from localhost");
+          log.debug("Ignore ping request from localhost");
         } else {
           const response = this._getPongResponse();
           socket.send(response, info.port, info.address);

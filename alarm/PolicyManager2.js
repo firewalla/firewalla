@@ -20,11 +20,9 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let flat = require('flat');
-
-let audit = require('../util/audit.js');
-let util = require('util');
-let Bone = require('../lib/Bone.js');
+const audit = require('../util/audit.js');
+const util = require('util');
+const Bone = require('../lib/Bone.js');
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -38,19 +36,19 @@ const sysManager = new SysManager('info');
 
 let instance = null;
 
-let policyActiveKey = "policy_active";
+const policyActiveKey = "policy_active";
 
-let policyIDKey = "policy:id";
-let policyPrefix = "policy:";
-let initID = 1;
+const policyIDKey = "policy:id";
+const policyPrefix = "policy:";
+const initID = 1;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
-let Block = require('../control/Block.js');
+const Block = require('../control/Block.js');
 
-let Policy = require('./Policy.js');
+const Policy = require('./Policy.js');
 
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
@@ -95,6 +93,16 @@ class PolicyManager2 {
     }
     return instance;
   }
+  
+  shouldFilter(rule) {
+    // this is to filter legacy schedule rules that is not compatible with current system any more
+    // all legacy rules should already been migrated in OldDataCleanSensor, any leftovers should be bug
+    // and here is a protection for that
+    if(rule.cronTime && rule.cronTime.startsWith("* *")) {
+      return true;
+    }   
+    return false;   
+  }
 
   setupPolicyQueue() {
     this.queue = new Queue('policy', {
@@ -115,20 +123,25 @@ class PolicyManager2 {
     })
 
     this.queue.process((job, done) => {
-      const event = job.data
-      const policy = this.jsonToPolicy(event.policy)
-      const oldPolicy = this.jsonToPolicy(event.oldPolicy)
+      const event = job.data;
+      const policy = new Policy(event.policy);
+      const oldPolicy = event.oldPolicy ? new Policy(event.oldPolicy) : null;
       const action = event.action
       
+      if(this.shouldFilter(policy)) {
+        done();
+        return;
+      }
+
       switch(action) {
       case "enforce": {
         return async(() => {
-          log.info("START ENFORCING POLICY", policy.pid, action, {})
+          log.info("START ENFORCING POLICY", policy.pid, action);
           await(this.enforce(policy))
         })().catch((err) => {
           log.error("enforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -136,12 +149,12 @@ class PolicyManager2 {
 
       case "unenforce": {
         return async(() => {
-          log.info("START UNENFORCING POLICY", policy.pid, action, {})
+          log.info("START UNENFORCING POLICY", policy.pid, action);
           await(this.unenforce(policy))
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -152,7 +165,7 @@ class PolicyManager2 {
           if(!oldPolicy) {
             // do nothing
           } else {
-            log.info("START REENFORCING POLICY", policy.pid, action, {})
+            log.info("START REENFORCING POLICY", policy.pid, action);
 
             await(this.unenforce(oldPolicy))
             await(this.enforce(policy))
@@ -160,7 +173,7 @@ class PolicyManager2 {
         })().catch((err) => {
           log.error("reenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -200,9 +213,9 @@ class PolicyManager2 {
             }
           })
         })().catch((err) => {
-          log.error("incremental update policy failed:", err, {})
+          log.error("incremental update policy failed:", err);
         }).finally(() => {
-          log.info("COMPLETE incremental update policy", {})
+          log.info("COMPLETE incremental update policy");
           done()
         })
       }
@@ -216,7 +229,7 @@ class PolicyManager2 {
 
     setInterval(() => {
       this.queue.checkHealth((error, counts) => {
-        log.debug("Policy queue status:", counts, {})
+        log.debug("Policy queue status:", counts);
       })
       
     }, 60 * 1000)
@@ -301,71 +314,29 @@ class PolicyManager2 {
     });
   }
 
-  createPolicyFromJson(json, callback) {
-    callback = callback || function() {}    
-
-    callback(null, this.jsonToPolicy(json));
-  }
-
-  createPolicy(json) {
-    return this.jsonToPolicy(json)
-  }
-
-  normalizePoilcy(policy) {
-    // convert array to string so that redis can store it as value
-    if(policy.scope) {
-      if (policy.scope.constructor.name === 'Array') {
-        if (policy.scope.length > 0)
-          policy.scope = JSON.stringify(policy.scope);
-        else
-          delete policy.scope;
-      }
-      else {
-        // TODO: delete scope is not proper here, while throwing Error will
-        // crash the process. We need to throw Error once it could properly
-        // handled
-        log.error('normalizePolicy: Invalid scope', policy.scope);
-      }
-    }
-    
-    if(policy.expire && policy.expire === "") {
-      delete policy.expire;
-    }
-
-    if(policy.cronTime && policy.cronTime === "") {
-      delete policy.cronTime;
-    }
-
-    if(policy.activatedTime && policy.activatedTime === "") {
-      delete policy.activatedTime;
-    }
-  }
-
+  // TODO: need a better solution to compromise code base and Policy object creation
   updatePolicyAsync(policy) {
     const pid = policy.pid
+    policy = policy instanceof Policy ? policy : new Policy(policy);
+
     if(pid) {
       const policyKey = policyPrefix + pid;
       return async(() => {
-        const policyCopy = JSON.parse(JSON.stringify(policy))
+        let redisfied = policy.redisfy();
 
-        this.normalizePoilcy(policyCopy);
+        await (rclient.hmsetAsync(policyKey, redisfied));
 
-        await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
-
-        if(policyCopy.expire === "" || ! "expire" in policyCopy) {
+        if (!redisfied.expire) {
           await (rclient.hdelAsync(policyKey, "expire"))
         }
-        if(policyCopy.cronTime === "" || ! "cronTime" in policyCopy) {
+        if (!redisfied.cronTime) {
           await (rclient.hdelAsync(policyKey, "cronTime"))
           await (rclient.hdelAsync(policyKey, "duration"))
         }
-        if(policyCopy.activatedTime === "" || ! "activatedTime" in policyCopy) {
+        if (!redisfied.activatedTime) {
           await (rclient.hdelAsync(policyKey, "activatedTime"))
         }
-        
-        if(policyCopy.scope === "" || 
-        ! "scope" in policyCopy || 
-        (policyCopy.constructor.name === 'Array' && policy.length === 0)) {
+        if (!redisfied.scope) {
           await (rclient.hdelAsync(policyKey, "scope"))
         }
       })()
@@ -401,18 +372,14 @@ class PolicyManager2 {
 
       let policyKey = policyPrefix + id;
 
-      const policyCopy = JSON.parse(JSON.stringify(policy))
-
-      this.normalizePoilcy(policyCopy);
-    
-      rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
+      rclient.hmset(policyKey, policy.redisfy(), (err) => {
         if(err) {
           log.error("Failed to set policy: " + err);
           callback(err);
           return;
         }
 
-        this.addToActiveQueue(policyCopy, (err) => {
+        this.addToActiveQueue(policy, (err) => {
           if(!err) {
             audit.trace("Created policy", policy.pid);
           }
@@ -427,6 +394,7 @@ class PolicyManager2 {
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
+    if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
@@ -625,23 +593,6 @@ class PolicyManager2 {
       })
   }
 
-  jsonToPolicy(json) {
-    if(!json) {
-      return null;
-    }
-
-    let proto = Policy.prototype;
-    if(proto) {
-      let obj = Object.assign(Object.create(proto), json);
-      if(!obj.timestamp)
-        obj.timestamp = new Date() / 1000;
-      return obj;
-    } else {
-      log.error("Unsupported policy type: " + json.type);
-      return null;
-    }
-  }
-
   idsToPolicies(ids, callback) {
     let multi = rclient.multi();
 
@@ -656,17 +607,20 @@ class PolicyManager2 {
         return;
       }
 
-      let rr = results.map((r) => {
-        if(r && r.scope && r.scope.constructor.name === 'String') {
+      let rr = results
+        .map(r => {
+          if (!r) return null;
+
+          let p = null;
           try {
-            r.scope = JSON.parse(r.scope)
-          } catch(err) {
-            log.error("Failed to parse policy scope string:", r.scope, {})
-            r.scope = []
+            p = new Policy(r)
+          } catch(e) {
+            log.error(e, r);
+          } finally {
+            return p;
           }
-        }
-        return this.jsonToPolicy(r)
-      }).filter((r) => r != null)
+        })
+        .filter(r => r != null)
 
       // recent first
       rr.sort((a, b) => {
@@ -864,7 +818,7 @@ class PolicyManager2 {
               }
 
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
-              await (this.unenforce(policy))
+              await (this.unenforce(policy));
               await (this._disablePolicy(policy))
               if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
                 await (this.deletePolicy(pid))
@@ -947,8 +901,8 @@ class PolicyManager2 {
   }
 
   _enforce(policy) {
-    log.debug("Enforce policy: ", policy, {});
-    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, {});
+    log.debug("Enforce policy: ", policy);
+    log.info("Enforce policy: ", policy.pid, policy.type, policy.target);
 
     let type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -994,7 +948,7 @@ class PolicyManager2 {
 
   _advancedEnforce(policy) {
     return async(() => {
-      log.info("Advance enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
+      log.info("Advance enforce policy: ", policy.pid, policy.type, policy.target, policy.scope);
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1007,7 +961,7 @@ class PolicyManager2 {
         try {
           scope = JSON.parse(scope)
         } catch(err) {
-          log.error("Failed to parse scope:", err, {})
+          log.error("Failed to parse scope:", err);
           return Promise.reject(new Error(`Failed to parse scope: ${err}`))
         }        
       }
@@ -1074,7 +1028,7 @@ class PolicyManager2 {
   invalidateExpireTimer(policy) {
     const pid = policy.pid
     if(this.enabledTimers[pid]) {
-      log.info("Invalidate expire timer for policy", pid, {})
+      log.info("Invalidate expire timer for policy", pid);
       clearTimeout(this.enabledTimers[pid])
       delete this.enabledTimers[pid]
     }    
@@ -1091,7 +1045,7 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
+    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target);
 
     await this._removeActivatedTime(policy)
 
@@ -1128,7 +1082,7 @@ class PolicyManager2 {
 
   _advancedUnenforce(policy) {
     return async(() => {
-      log.info("Advance unenforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
+      log.info("Advance unenforce policy: ", policy.pid, policy.type, policy.target, policy.scope);
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1137,7 +1091,7 @@ class PolicyManager2 {
         try {
           scope = JSON.parse(scope)
         } catch(err) {
-          log.error("Failed to parse scope:", err, {})
+          log.error("Failed to parse scope:", err);
           return Promise.reject(new Error(`Failed to parse scope: ${err}`))
         }        
       }

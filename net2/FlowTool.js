@@ -45,6 +45,8 @@ const QUERY_MAX_FLOW = 10000;
 const MAX_RECENT_FLOW = 150;
 const MAX_CONCURRENT_ACTIVITY = 10;
 
+const _ = require('lodash');
+
 let instance = null;
 class FlowTool {
   constructor() {
@@ -261,12 +263,42 @@ class FlowTool {
     f.fd = flow.fd;
     f.duration = flow.du
 
+    if(flow.mac) {
+      f.device = flow.mac;
+    }
+
+    if(flow.pf) {
+      if(flow.lh === flow.sh) {
+        try {
+          const protocol = Object.keys(flow.pf)[0].split(".")[0];
+          const destinationPort = Number(Object.keys(flow.pf)[0].split(".")[1]);
+          const sourcePort = Object.values(flow.pf)[0].sp[0];
+          f.devicePort = sourcePort;
+          f.port = destinationPort
+          f.protocol = protocol;
+        } catch(err) {          
+        }
+      } else {
+        try {
+          const protocol = Object.keys(flow.pf)[0].split(".")[0];
+          const sourcePort = Number(Object.keys(flow.pf)[0].split(".")[1]);
+          const destinationPort = Object.values(flow.pf)[0].sp[0];
+          f.devicePort = sourcePort;
+          f.port = destinationPort
+          f.protocol = protocol;
+        } catch(err) {          
+        }
+      }
+    }
+
     if(flow.lh === flow.sh) {
       f.ip = flow.dh;
+      f.deviceIP = flow.sh;
       f.upload = flow.ob;
       f.download = flow.rb;
     } else {
       f.ip = flow.sh;
+      f.deviceIP = flow.dh;
       f.upload = flow.rb;
       f.download = flow.ob;
     }
@@ -455,6 +487,70 @@ class FlowTool {
       transfers.push.apply(transfers, t_out);
     }
     return this._aggregateTransferBy10Min(transfers);
+  }
+
+  async saveGlobalRecentConns(flow) {
+    const key = "flow:global:recent";
+    const now = Math.ceil(new Date() / 1000);
+    const limit = -51; // only keep the latest 50 entries
+    let flowCopy = JSON.parse(JSON.stringify(flow));
+
+    if(!this._isFlowValid(flowCopy)) {
+      return;
+    }
+
+    // TODO: might need to cut small traffics
+    flowCopy = this.toSimpleFlow(flowCopy);
+
+    // if(flowCopy.deviceIP && !flowCopy.device) {
+    //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
+    //   flowCopy.device = mac;
+    // }
+    
+    await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
+    await rclient.zremrangebyrankAsync(key, 0, limit);
+    return;
+  }
+
+  async enrichIntel(f) {
+    const intel = await intelTool.getIntel(f.ip);
+    if(intel) {
+      f.country = intel.country;
+      f.host = intel.host;
+      if(intel.category) {
+        f.category = intel.category
+      }
+      if(intel.app) {
+        f.app = intel.app
+      }
+    }
+    return f;
+  }
+
+  async getGlobalRecentConns() {
+    const key = "flow:global:recent";
+    const limit = 50;
+
+    const results = await rclient.zrevrangebyscoreAsync([key, "+inf", "-inf", "LIMIT", 0 , limit]);
+
+    if(_.isEmpty(results)) {
+      return [];
+    }
+
+    let flowObjects = results
+        .map((x) => this._flowStringToJSON(x));
+
+    flowObjects = await Promise.all(
+      flowObjects.map(async (f) => {
+        return this.enrichIntel(f);
+      })
+    );
+
+    flowObjects.sort((a, b) => {
+      return b.ts - a.ts;
+    });
+
+    return flowObjects;
   }
 
   getRecentConnections(target, direction, options) {

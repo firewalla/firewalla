@@ -53,6 +53,7 @@ const frp = fm.getSupportFRP()
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
+const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const policyManager2 = new PolicyManager2();
 const pm2 = policyManager2
@@ -102,6 +103,9 @@ const tokenManager = require('../util/FWTokenManager.js');
 
 const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
+
+const FlowTool = require('./FlowTool.js');
+const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const ovpnClient = new OpenVPNClient();
@@ -1195,7 +1199,7 @@ class Host {
               callback(null, {blockin: true});
             } else {
               // need to create one
-              let rule = pm2.createPolicy({
+              let rule = new Policy({
                 target: this.o.mac,
                 type: "mac"
               })
@@ -1971,6 +1975,11 @@ module.exports = class HostManager {
     json.nicSpeed = speed;
   }
 
+  async getRecentFlows(json) {
+    const recentFlows = await flowTool.getGlobalRecentConns();
+    json.recentFlows = recentFlows;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2037,7 +2046,8 @@ module.exports = class HostManager {
           this.encipherMembersForInit(json),
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
-          this.asyncBasicDataForInit(json)          
+          this.asyncBasicDataForInit(json),
+          this.getRecentFlows(json)
         ]
 
         this.basicDataForInit(json, options);

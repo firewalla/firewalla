@@ -3,7 +3,7 @@
   "SECURITY_REPORT": "Security Daily Report",
   "ACTIVITY_ALERT": "Activity Alarm",
   "NOTIF_BRANCH_CHANGE": "Device {deviceName} has switched {branchChanged, select, 1 {back to stable} 2 {to beta} 3 {to development} other {to unofficial}} release {version} successfully",
-  "NOTIF_UPGRADE_COMPLETE": "Firewalla has upgraded to {{{to}}}",
+  "NOTIF_UPGRADE_COMPLETE": "Firewalla has upgraded to {{{version}}}",
   "NOTIF_REBOOT_COMPLETE": "Firewalla reboot completed",
   "NOTIF_AWAKES": "🔥 Firewalla Device {{{deviceName}}} Awakes!",
   "NOTIF_TITLE_ALARM_VIDEO": "Video Alarm",

@@ -15,13 +15,13 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
-
 const minimatch = require("minimatch");
 
 const _ = require('lodash');
+const flat = require('flat');
 
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
@@ -39,24 +39,67 @@ function arraysEqual(a, b) {
   return true;
 }
 
-module.exports = class {
-  constructor(info) {
-    this.timestamp = new Date() / 1000;
-    if(info)
-      Object.assign(this, info);
+class Policy {
+  constructor(raw) {
+    if (!raw) throw new Error("Empty policy payload");
+
+    Object.assign(this, raw);
+
+    if (raw.scope)
+      if (_.isString(raw.scope)) {
+        try {
+          this.scope = JSON.parse(raw.scope)
+        } catch(e) {
+          log.error("Failed to parse policy scope string:", raw.scope, e)
+          this.scope = []
+        }
+      } else if (_.isArray(raw.scope)) {
+        this.scope = raw.scope.slice(0) // clone array to avoide side effects
+      } else {
+        log.error("Unsupported scope", raw.scope)
+        this.scope = []
+      }
+
+    if (raw.expire && _.isString(raw.expire)) {
+      try {
+        this.expire = parseInt(raw.expire)
+      } catch(e) {
+        log.error("Failed to parse policy expire time:", raw.expire, e);
+        delete this.expire;
+      }
+    }
+
+    // backward compatibilities
+    if (this.activatedTime) {
+      this.timestamp = this.activatedTime;
+      delete this.activatedTime;
+    }
+    if (this['i.type']) {
+      this.type = this['i.type'];
+      delete this['i.type'];
+    }
+    if (this['i.target']) {
+      this.target = this['i.target'];
+      delete this['i.target'];
+    }
+
+    this.timestamp = this.timestamp || new Date() / 1000;
+
   }
 
   isEqualToPolicy(policy) {
     if(!policy) {
       return false
     }
+    if (!policy instanceof Policy)
+      policy = new Policy(policy) // leverage the constructor for compatibilities conversion
     
-    const thisType = this["i.type"] || this["type"]
-    const thatType = policy["i.type"] || policy["type"]
-    const thisTarget = this["i.target"] || this["target"]
-    const thatTarget = policy["i.target"] || policy["target"]
-
-    if(thisType === thatType && thisTarget === thatTarget && this.expire === policy.expire && this.cronTime === policy.cronTime) {
+    if (
+      this.type === policy.type &&
+      this.target === policy.target &&
+      this.expire === policy.expire &&
+      this.cronTime === policy.cronTime
+    ) {
       return arraysEqual(this.scope, policy.scope)
     } else {
       return false
@@ -157,5 +200,29 @@ module.exports = class {
       break
     }
   }
+
+  // return a new object ready for redis writing
+  redisfy() {
+    let p = JSON.parse(JSON.stringify(this))
+
+    // convert array to string so that redis can store it as value
+    if(p.scope) {
+      if (p.scope.length > 0)
+        p.scope = JSON.stringify(p.scope);
+      else
+        delete p.scope;
+    }
+
+    if (p.expire === "") {
+      delete p.expire;
+    }
+
+    if (p.cronTime === "") {
+      delete p.cronTime;
+    }
+
+    return flat.flatten(p);
+  }
 }
 
+module.exports = Policy

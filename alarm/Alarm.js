@@ -63,6 +63,27 @@ class Alarm {
     return i18n.__(this.getNotificationCategory(), this);
   }
 
+  premiumAction() {
+    const decision = this["p.cloud.decision"];
+    switch(decision) {
+      case "block": {
+        if(!this["p.action.block"]) {
+          return decision;
+        } else {
+          return null;
+        }
+      }
+      case "ignore": {
+        return decision;
+      }
+      case "alarm": {
+        return null;
+      }
+      default:
+        return decision;
+    }
+  }
+
   localizedInfo() {
     if(this.timestamp)
       //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
