@@ -13,19 +13,19 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var iptool = require('ip');
-var os = require('os');
-var network = require('network');
+const iptool = require('ip');
+const os = require('os');
+const network = require('network');
 var instances = {};
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
-var _async = require('async');
+const _async = require('async');
 var instance = null;
 
 const Promise = require('bluebird');
@@ -39,8 +39,8 @@ const intelTool = new IntelTool()
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 
-var bone = require('../lib/Bone.js');
-var flowUtil = require('../net2/FlowUtil.js');
+const bone = require('../lib/Bone.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
@@ -49,7 +49,7 @@ const DNSQUERYBATCHSIZE=5;
 
 var hostManager = null;
 
-let firewalla = require('./Firewalla.js');
+const firewalla = require('./Firewalla.js');
 
 const dns = require('dns');
 
@@ -90,43 +90,38 @@ module.exports = class DNSManager {
 
   // Reslve v6 or v4 address into a local host
   resolveLocalHost(ip, callback) {
-    if (iptool.isV4Format(ip)) {
-      rclient.hgetall("host:ip4:" + ip, (err, data) => {
-        if (data && data.mac) {
-          rclient.hgetall("host:mac:" + data.mac, (err, data) => {
-            if (err == null && data != null) {
-              callback(err, data);
-            } else {
-              callback(err, null);
-            }
-          });
+    callback = callback || function() {}
 
-        } else {
-          callback("404", null);
-        }
-      });
+    this.resolveLocalHostAsync(ip)
+       .then(res => callback(null, res))
+       .catch(err => {
+         callback(err);
+       })
+  }
+
+  async resolveLocalHostAsync(ip, callback) {
+    let mac;
+
+    if (iptool.isV4Format(ip)) {
+      let data = await rclient.hgetallAsync("host:ip4:" + ip)
+      if (data && data.mac) {
+        mac = data.mac
+      } else {
+        throw new Error('IP Not Found: ' + ip);
+      }
     } else if (iptool.isV6Format(ip)) {
-      rclient.hgetall("host:ip6:" + ip, (err, data) => {
-        if (err == null && data != null) {
-          if (data.mac) {
-            rclient.hgetall("host:mac:" + data.mac, (err, data) => {
-              if (err == null && data != null) {
-                callback(err, data);
-              } else {
-                callback(err, null);
-              }
-            });
-          } else {
-            callback(null, null);
-          }
-        } else {
-          callback(err, null);
-        }
-      });
+      let data = await rclient.hgetallAsync("host:ip6:" + ip)
+      if (data && data.mac) {
+        mac = data.mac
+      } else {
+        throw new Error('IP Not Found: ' + ip);
+      }
     } else {
-      log.error("DNSManager:ResolveHost:Error", ip);
-      callback("bad ip", null);
+      log.error("ResolveHost:BadIP", ip);
+      throw new Error('bad ip');
     }
+
+    return rclient.hgetallAsync("host:mac:" + mac)
   }
 
   findHostWithIP(ip, callback) {

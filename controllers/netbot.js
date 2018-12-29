@@ -2007,11 +2007,11 @@ class netBot extends ControllerBot {
     })();
   }
   
-  deviceHandler(msg, ip) { // WARNING: ip could be ip address or mac address, name it ip is just for backward compatible
-    log.info("Getting info on device", ip, {});
+  deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
+    log.info("Getting info on device", target, {});
 
     return async(() => {
-      if(ip === '0.0.0.0') {
+      if(target === '0.0.0.0') {
         return this.systemFlowHandler(msg);
       }
 
@@ -2035,21 +2035,21 @@ class netBot extends ControllerBot {
         options.queryall = true
       }
       
-      if(hostTool.isMacAddress(ip)) {
-        log.info("Loading host info by mac address", ip, {})
-        const macAddress = ip
-        const hostObject = await (hostTool.getMACEntry(macAddress))
-        
-        if(hostObject && hostObject.ipv4Addr) {
-          ip = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
-        } else {
-          let error = new Error("Invalid Mac");
-          error.code = 404;
-          return Promise.reject(error);
-        }
-      }
+      // if(hostTool.isMacAddress(target)) {
+      //   log.info("Loading host info by mac address", target, {})
+      //   const macAddress = target
+      //   const hostObject = await (hostTool.getMACEntry(macAddress))
 
-      let host = await (this.hostManager.getHostAsync(ip));
+      //   if(hostObject && hostObject.ipv4Addr) {
+      //     target = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+      //   } else {
+      //     let error = new Error("Invalid Mac");
+      //     error.code = 404;
+      //     return Promise.reject(error);
+      //   }
+      // }
+
+      let host = await (this.hostManager.getHostAsync(target));
       if(!host || !host.o.mac) {
         let error = new Error("Invalid Host");
         error.code = 404;
@@ -2408,7 +2408,7 @@ class netBot extends ControllerBot {
           await (pm2.updatePolicyAsync(policy))
           const newPolicy = await (pm2.getPolicy(pid))
           await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
-          this.simpleTxData(msg,newPolicy, null, callback)
+          this.simpleTxData(msg, newPolicy, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
