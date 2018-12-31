@@ -270,7 +270,6 @@ async function _changeToAlternativeIpSubnet() {
     // rescan all interfaces to reflect network changes
     d.discoverInterfaces(() => {
       sysManager.update(() => {
-        pclient.publishAsync("System:IPChange", "");
         resolve();
       });
     });

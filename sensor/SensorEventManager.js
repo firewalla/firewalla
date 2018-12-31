@@ -38,7 +38,6 @@
  * StopDNS
  * UPDATE_CATEGORY_DYNAMIC_DOMAIN
  * VPNConnectionAccepted
- * VPNSubnetChanged
  * Alarm:NewAlarm
  */
 

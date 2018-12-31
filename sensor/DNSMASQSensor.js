@@ -128,6 +128,7 @@ class DNSMASQSensor extends Sensor {
             }
           });
 
+          /*
           sem.on("VPNSubnetChanged", (event) => {
             if (!this.started) {
               this._bufferEvent(event);
@@ -138,6 +139,7 @@ class DNSMASQSensor extends Sensor {
               }
             }
           });
+          */
 
           this.registered = true;
         }
