@@ -156,6 +156,13 @@ module.exports = class DNSMASQ {
             case "DHCPReservationChanged":
               this.onDHCPReservationChanged();
               break;
+            case "System:VPNSubnetChanged":
+              (async () => {
+                const newVpnSubnet = message;
+                if (newVpnSubnet)
+                  await this.updateVpnIptablesRules(newVpnSubnet, true);
+              })();
+              break;
             default:
             //log.warn("Unknown message channel: ", channel, message);
           }
@@ -163,8 +170,8 @@ module.exports = class DNSMASQ {
 
         sclient.subscribe("System:IPChange");
         sclient.subscribe("DHCPReservationChanged");
+        sclient.subscribe("System:VPNSubnetChanged");
       }
-      
     }
 
     return instance;

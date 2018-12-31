@@ -443,6 +443,26 @@ class netBot extends ControllerBot {
     });
   }
 
+  _shield(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      // per-device shield policy rule is not supported currently
+      callback(null);
+      return;
+    }
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("shield", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+          callback(err, "Unable to apply config on shield: " + value);
+        }
+      })
+    })
+  }
+
+
   _shadowsocks(ip, value, callback) {
     if(ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
@@ -1146,6 +1166,11 @@ class netBot extends ControllerBot {
               break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "shield":
+              this._shield(msg.target, msg.data.value.shield, (err, obj) => {
                 cb(err);
               });
               break;

@@ -461,6 +461,14 @@ module.exports = class {
     });
   }
 
+  shield(host, config) {
+    if (host.constructor.name !== 'HostManager') {
+      log.error("shield doesn't support per device policy currently", host);
+      return;
+    }
+    host.shield(config);
+  }
+
   scisurf(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("scisurf doesn't support per device policy", host);
@@ -656,6 +664,8 @@ module.exports = class {
         this.shadowsocks(host, policy[p]);
       } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
+      } else if (p === "shield") {
+        this.shield(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
       } else if (p === "dnsmasq") {
