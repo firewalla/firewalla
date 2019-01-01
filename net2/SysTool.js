@@ -64,7 +64,7 @@ class SysTool {
 
   async isFireKickRunning() {
     try {
-      exec("systemctl is-active --quiet firekick");
+      await exec("systemctl is-active --quiet firekick");
       return true;
     } catch(err) {
       return false;
