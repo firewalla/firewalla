@@ -26,8 +26,11 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const Promise = require('bluebird');
 
+const license = require('../util/license.js')
+
 const key = "firekick:pairing:message";
 const totalTimeout = 60 * 1000;
+
 
 function delay(t) {
   return new Promise(function (resolve) {
@@ -54,6 +57,10 @@ class AdditionalPairPlugin extends Sensor {
     for (let i = 0; i < ttl; i++) {
       const result = await rclient.getAsync(key);
       if(result) {
+        const licenseData = await license.getLicenseAsync();
+        if(licenseData && licenseData.DATA && licenseData.DATA.UUID) {
+          result.license = licenseData.DATA.UUID;
+        }
         return result;
       } else {
         await delay(3000);
