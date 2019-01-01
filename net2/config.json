@@ -115,6 +115,7 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {},
+    "AdditionalPairPlugin": {},
     "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,

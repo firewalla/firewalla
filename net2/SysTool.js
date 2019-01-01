@@ -55,7 +55,7 @@ class SysTool {
   }
 
   restartFireKickService() {
-    return exec("sudo systemctl restart firekick")
+    return exec("redis-cli del firekick:pairing:message; sudo systemctl restart firekick")
   }
 
   stopFireKickService() {
