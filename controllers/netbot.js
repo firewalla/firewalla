@@ -79,6 +79,7 @@ const am2 = new AM2();
 const EM = require('../alarm/ExceptionManager.js');
 const em = new EM();
 
+const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 
@@ -442,6 +443,26 @@ class netBot extends ControllerBot {
       });
     });
   }
+
+  _shield(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      // per-device shield policy rule is not supported currently
+      callback(null);
+      return;
+    }
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("shield", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+          callback(err, "Unable to apply config on shield: " + value);
+        }
+      })
+    })
+  }
+
 
   _shadowsocks(ip, value, callback) {
     if(ip !== "0.0.0.0") {
@@ -1146,6 +1167,11 @@ class netBot extends ControllerBot {
               break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "shield":
+              this._shield(msg.target, msg.data.value.shield, (err, obj) => {
                 cb(err);
               });
               break;
@@ -2060,6 +2086,9 @@ class netBot extends ControllerBot {
       let jsonobj = {};
       if (host) {
         jsonobj = host.toJson();
+        const dhcpReservation = await (hostTool.getDHCPReservation(mac));
+        if (dhcpReservation)
+          jsonobj.dhcpReservation = dhcpReservation;
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
@@ -2371,24 +2400,26 @@ class netBot extends ControllerBot {
         break
 
       case "policy:create":
-        pm2.createPolicyFromJson(msg.data.value, (err, policy) => {
-          if (err) {
-            this.simpleTxData(msg, null, err, callback);
-            return;
-          }
+        let policy
+        try {
+          policy = new Policy(msg.data.value)
+        } catch (err) {
+          log.error('Error creating policy', err);
+          this.simpleTxData(msg, null, err, callback);
+          return;
+        }
 
-          pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-            if(alreadyExists == "duplicated") {
-              this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
-              return
-            } else if(alreadyExists == "duplicated_and_updated") {
-              const p = JSON.parse(JSON.stringify(policy2))
-              p.updated = true // a kind hacky, but works
-              this.simpleTxData(msg, p, err, callback)
-            } else {
-              this.simpleTxData(msg, policy2, err, callback)
-            }
-          });
+        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
+          if(alreadyExists == "duplicated") {
+            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            return
+          } else if(alreadyExists == "duplicated_and_updated") {
+            const p = JSON.parse(JSON.stringify(policy2))
+            p.updated = true // a kind hacky, but works
+            this.simpleTxData(msg, p, err, callback)
+          } else {
+            this.simpleTxData(msg, policy2, err, callback)
+          }
         });
         break;
 
@@ -3028,6 +3059,56 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "dhcpReservation:upsert": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          const ip = msg.data.value.ip;
+          if (!mac || !ip) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac or static ip is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("set dhcp reservation for " + mac + ": " + ip);
+              await dhcp.upsertDhcpReservation(mac, ip);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:list": {
+        (async () => {
+          const reservations = await dhcp.listDhcpReservations();
+          this.simpleTxData(msg, reservations, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:delete": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          if (!mac) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("delete dhcp reservation for " + mac);
+              await dhcp.deleteDhcpReservation(mac);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -3081,6 +3162,9 @@ class netBot extends ControllerBot {
         code = err.code;
       }
       message = err + "";
+      if (err && err.msg) {
+        message = err.msg;
+      }
     }
 
     let datamodel = {

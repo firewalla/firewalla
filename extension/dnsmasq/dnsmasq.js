@@ -142,15 +142,23 @@ module.exports = class DNSMASQ {
         switch (channel) {
           case "System:IPChange":
             (async () => {
-              if (process.title === "FireMain") {
-                const started = await this.checkStatus();
-                if (started)
-                  await this.rawRestart(); // restart firemasq service to bind new ip addresses
-                await this._update_local_interface_iptables_rules();
-                if (this.vpnSubnet) {
-                  await this.updateVpnIptablesRules(this.vpnSubnet, true);
-                }
+              const started = await this.checkStatus();
+              if (started)
+                await this.rawRestart(); // restart firemasq service to bind new ip addresses
+              await this._update_local_interface_iptables_rules();
+              if (this.vpnSubnet) {
+                await this.updateVpnIptablesRules(this.vpnSubnet, true);
               }
+            })();
+            break;
+          case "DHCPReservationChanged":
+            this.onDHCPReservationChanged();
+            break;
+          case "System:VPNSubnetChanged":
+            (async () => {
+              const newVpnSubnet = message;
+              if (newVpnSubnet)
+                await this.updateVpnIptablesRules(newVpnSubnet, true);
             })();
             break;
           default:
@@ -158,7 +166,11 @@ module.exports = class DNSMASQ {
         }
       });
 
-      sclient.subscribe("System:IPChange");
+      if (f.isMain()) {
+        sclient.subscribe("System:IPChange");
+        sclient.subscribe("DHCPReservationChanged");
+        sclient.subscribe("System:VPNSubnetChanged");
+      }
     }
 
     return instance;
@@ -741,10 +753,17 @@ module.exports = class DNSMASQ {
     }
   }
 
+  onDHCPReservationChanged() {
+    if (this.dhcpMode) {
+      this.needWriteHostsFile = true;
+      log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
+    }
+  }
+
   onSpoofChanged() {
     if (this.dhcpMode) {
       this.needWriteHostsFile = true;
-      log.debug("Spoof status changed, set need write hosts file to be true");
+      log.debug("Spoof status changed, set needWriteHostsFile to true");
     }
   }
 
