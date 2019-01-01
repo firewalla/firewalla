@@ -44,7 +44,10 @@ class AdditionalPairPlugin extends Sensor {
   }
 
   async getPayload() {
-    return Promise.any(delay(totalTimeout), this.waitingForPayload(20));
+    return Promise.any([
+      delay(totalTimeout), 
+      this.waitingForPayload(20)
+    ]);
   }
 
   async waitingForPayload(ttl) {
