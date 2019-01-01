@@ -119,6 +119,11 @@ class FWInvitation {
     await rclient.expireAsync(key, this.totalTimeout);
   }
 
+  async unsetBonjourMessage() {
+    const key = "firekick:pairing:message";
+    return rclient.delAsync(key);
+  }
+
   validateLicense(license) {
 
   }
@@ -329,6 +334,7 @@ class FWInvitation {
     this.service && intercomm.stop(this.service);
     intercomm.bcapable() && intercomm.bstop();
     intercomm.bye();
+    this.unsetBonjourMessage();
   }
 }
 
