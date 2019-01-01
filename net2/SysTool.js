@@ -62,6 +62,15 @@ class SysTool {
     return exec("sudo systemctl stop firekick")
   }
 
+  async isFireKickRunning() {
+    try {
+      exec("systemctl is-active --quiet firekick");
+      return true;
+    } catch(err) {
+      return false;
+    }
+  }
+
   upgradeToLatest() {
     return exec("NO_FIREKICK_RESTART=1 /home/pi/firewalla/scripts/fireupgrade.sh soft")
   }

@@ -2752,6 +2752,17 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback)
           })
         break
+      case "isBindingActive": {
+        (async () => {
+          try {
+            const active = sysTool.isFireKickRunning();          
+            this.simpleTxData(msg, {active}, null, callback);
+          } catch(err) {
+            this.simpleTxData(msg, {}, err, callback)
+          }
+        })();
+        break;
+      }        
       case "enableFeature": {
         const featureName = msg.data.value.featureName
         async(() => {
