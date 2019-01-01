@@ -49,7 +49,7 @@ class AdditionalPairPlugin extends Sensor {
 
   async waitingForPayload(ttl) {
     for (let i = 0; i < ttl; i++) {
-      const result = await rcient.getAsync(key);
+      const result = await rclient.getAsync(key);
       if(result) {
         return result;
       } else {
