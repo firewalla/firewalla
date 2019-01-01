@@ -57,11 +57,16 @@ class AdditionalPairPlugin extends Sensor {
     for (let i = 0; i < ttl; i++) {
       const result = await rclient.getAsync(key);
       if(result) {
-        const licenseData = await license.getLicenseAsync();
-        if(licenseData && licenseData.DATA && licenseData.DATA.UUID) {
-          result.license = licenseData.DATA.UUID;
-        }
-        return result;
+        try {
+          const payload = JSON.parse(result);
+          const licenseData = await license.getLicenseAsync();
+          if(licenseData && licenseData.DATA && licenseData.DATA.UUID) {
+            payload.license = licenseData.DATA.UUID;
+          }
+          return payload;
+        } catch(err) {
+          return null;
+        }        
       } else {
         await delay(3000);
       }
