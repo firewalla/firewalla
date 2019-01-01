@@ -2755,7 +2755,7 @@ class netBot extends ControllerBot {
       case "isBindingActive": {
         (async () => {
           try {
-            const active = sysTool.isFireKickRunning();          
+            const active = await sysTool.isFireKickRunning();
             this.simpleTxData(msg, {active}, null, callback);
           } catch(err) {
             this.simpleTxData(msg, {}, err, callback)
