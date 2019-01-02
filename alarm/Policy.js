@@ -157,6 +157,7 @@ class Policy {
         return false
       }
       break
+
     case "dns":
     case "domain":
       if(alarm['p.dest.name']) {
@@ -166,6 +167,7 @@ class Policy {
         return false
       }
       break
+
     case "mac":
       if(alarm['p.device.mac']) {
         return alarm['p.device.mac'] === this.target
@@ -173,6 +175,7 @@ class Policy {
         return false
       }
       break
+
     case "category":
       if (alarm['p.dest.category']) {
         return alarm['p.dest.category'] === this.target;
@@ -180,9 +183,22 @@ class Policy {
         return false;
       }
       break
+
     case "devicePort":
-      if (alarm['p.device.mac'] &&
-          alarm["p.upnp.private.port"] &&
+      if (!alarm['p.device.mac']) return false;
+
+      if (alarm["p.device.port"] &&
+          alarm["p.protocol"]
+      ) {
+        let alarmTarget = util.format("%s:%s:%s",
+          alarm["p.device.mac"],
+          alarm["p.device.port"],
+          alarm["p.protocol"]
+        )
+        return alarmTarget === this.target;
+      }
+
+      if (alarm["p.upnp.private.port"] &&
           alarm["p.upnp.protocol"]
       ) {
         let alarmTarget = util.format("%s:%s:%s",
@@ -191,9 +207,9 @@ class Policy {
           alarm["p.upnp.protocol"]
         )
         return alarmTarget === this.target;
-      } else {
-        return false;
-      }
+      } 
+
+      return false;
       break
     default:
       return false

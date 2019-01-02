@@ -33,7 +33,7 @@ const Alarm = require('../alarm/Alarm');
 const AlarmManager2 = require('../alarm/AlarmManager2');
 const am2 = new AlarmManager2();
 
-const checkInterval = 3*60*1000// 4 * 60 * 60 * 1000; //4 hours
+const checkInterval = 4 * 60 * 60 * 1000; //4 hours
 
 class SubnetSensor extends Sensor {
   async scheduledJob() {
