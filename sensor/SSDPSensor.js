@@ -29,32 +29,47 @@ const request = require('request')
 
 const parseString = require('xml2js').parseString;
 
-const CACHE_INTERVAL = 3600 // one hour
-const ERROR_CACHE_INTERVAL = 300 // five minutes
-
 const l2 = require('../util/Layer2.js');
+
+const URL = require('url').URL;
+const SM = require('../net2/SysManager.js');
+const sm = new SM();
 
 class SSDPSensor extends Sensor {
 
   onResponse(headers, statusCode, rinfo) {
     // only support ipv4 yet
     if(rinfo.family === 'IPv4' && statusCode === 200) {
-      let ip = rinfo.address
-      let location = headers.LOCATION
+      let ip = rinfo.address;
+      let location = headers.LOCATION;
 
-      let lastFoundTimestamp = this.locationCache[ip]
-      if(!lastFoundTimestamp || lastFoundTimestamp < new Date() / 1000 - CACHE_INTERVAL) {
-        this.locationCache[ip] = new Date() / 1000
+      try {
+        let url = new URL(location);
+
+        if (!sm.inMySubnets4(url.hostname)) {
+          log.warn(`SSDP Location outside of v4 subnets: ${location} via ${ip}:${rinfo.port}`);
+          this.locationCache[ip] = 0;
+          return;
+        }
+      } catch(e) {
+        log.error("Invalid SSDP location", headers, statusCode, rinfo);
+        return;
+      }
+
+
+      let lastFoundTimestamp = this.locationCache[ip];
+      if(!lastFoundTimestamp || lastFoundTimestamp < new Date() / 1000 - this.CACHE_INTERVAL) {
+        this.locationCache[ip] = new Date() / 1000;
         this.parseURL(ip, location, (err) => {
           if(err) {
-            this.locationCache[ip] = new Date() / 1000 - (CACHE_INTERVAL - ERROR_CACHE_INTERVAL)
+            this.locationCache[ip] = 0;
           }
         })
       }
     } else if (statusCode !== 200) {
-      log.debug("Got an error ssdp response: ", headers, statusCode, rinfo, {})
+      log.debug("Got an error ssdp response: ", headers, statusCode, rinfo)
     } else {
-      log.warn("Unsupported ssdp response: ", headers, statusCode, rinfo, {})
+      log.warn("Unsupported ssdp response: ", headers, statusCode, rinfo)
     }
   }
 
@@ -63,7 +78,7 @@ class SSDPSensor extends Sensor {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ip, mac, {});
+        log.error("Not able to found mac address for host:", ip, mac);
         return;
       }
 
@@ -95,7 +110,7 @@ class SSDPSensor extends Sensor {
     }
     request(options, (err, response, body) => {
       if(err) {
-        log.error("Failed to GET", location, "err:", err, {})
+        log.error("Failed to GET", location, "err:", err)
         callback(err)
         return
       }
@@ -150,18 +165,19 @@ class SSDPSensor extends Sensor {
   }
   
   run() {
-    this.ssdpClient = new SSDPClient()
-    this.locationCache = {}
+    this.ssdpClient = new SSDPClient();
+    this.locationCache = {};
+    this.CACHE_INTERVAL = this.config.cacheTTL || 3600; // one hour
     this.ssdpClient.on('response', (header, statusCode, rinfo) => {
       this.onResponse(header, statusCode, rinfo)
-    })
+    });
     process.nextTick(() => {
       this.ssdpClient.search('ssdp:all')
     })
 
     setInterval(() => {
       this.ssdpClient.search('ssdp:all')
-    }, 10 * 60 * 1000)          // every 10 minutes
+    }, this.config.interval * 1000 || 10 * 60 * 1000) // every 10 minutes
   }
 }
 
