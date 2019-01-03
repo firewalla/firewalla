@@ -2300,6 +2300,11 @@ module.exports = class HostManager {
       let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       rclient.multi(multiarray).exec((err, replies) => {
         _async.eachLimit(replies,2, (o, cb) => {
+          if (!o) {
+            // defensive programming
+            cb();
+            return;
+          }
           if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp > inactiveTimeline) {
             //log.info("Processing GetHosts ",o);
             if (o.ipv4) {
