@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# if the box is in dhcp mode, we will want to keep DNAT rules alive as much as possible
-# or the user's internet connection will go dead
+# if the box is in dhcp mode, we want to keep DNAT/MASQUERADE rules alive as much as possible
+# or user's internet connection will go dead
 
 MODE=$(redis-cli get mode)
 if [ "$MODE" = "dhcp" ]
