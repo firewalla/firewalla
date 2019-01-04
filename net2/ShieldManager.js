@@ -97,7 +97,9 @@ class ShieldManager {
         const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ipv4Addr);
         await exec(cmd);
       }
-      const ipv6Addrs = macEntry.ipv6Addr;
+      let ipv6Addrs = [];
+      if (macEntry.ipv6Addr)
+        ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
       if (ipv6Addrs && ipv6Addrs.length > 0) {
         for (let j in ipv6Addrs) {
           const ipv6Addr = ipv6Addrs[j];
