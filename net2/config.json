@@ -167,6 +167,10 @@
       "syssumflow": {
         "expires": -1,
         "count": 200
+      },
+      "categoryflow": {
+        "expires": 86400,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
