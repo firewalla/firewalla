@@ -45,7 +45,6 @@ var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 
 const ShieldManager = require('./ShieldManager.js');
-const shieldManager = new ShieldManager();
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
@@ -2548,6 +2547,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
+    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
     const state = policy.state;
     if (state === true) {
       // Raise global shield to block incoming connections
