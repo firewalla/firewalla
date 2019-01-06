@@ -1,5 +1,5 @@
 {
-  "version": 1.960,
+  "version": 1.961,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -167,6 +167,10 @@
       "syssumflow": {
         "expires": -1,
         "count": 200
+      },
+      "categoryflow": {
+        "expires": 86400,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {

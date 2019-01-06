@@ -74,10 +74,11 @@ set_value() {
     saved_value=$2
     case ${kind} in
         ip)
+            /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
             /sbin/ip addr replace ${saved_value} dev eth0
             ;;
         gw)
-            /sbin/route add default gw ${saved_value} eth0
+            /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
             ;;
     esac
 }
