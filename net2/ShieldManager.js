@@ -97,13 +97,15 @@ class ShieldManager {
         const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ipv4Addr);
         await exec(cmd);
       }
-      const ipv6Addrs = macEntry.ipv6Addr;
+      let ipv6Addrs = [];
+      if (macEntry.ipv6Addr)
+        ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
       if (ipv6Addrs && ipv6Addrs.length > 0) {
         for (let j in ipv6Addrs) {
           const ipv6Addr = ipv6Addrs[j];
           if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
-            log.info("Add ip to trusted_ip_set6: " + ipAddr);
-            const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipAddr);
+            log.info("Add ip to trusted_ip_set6: " + ipv6Addr);
+            const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipv6Addr);
             await exec(cmd);
           }
         }  

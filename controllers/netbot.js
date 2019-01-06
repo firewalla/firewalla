@@ -3070,6 +3070,80 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "networkInterface:update": {
+        // secondary interface settings includes those in config files and dhcp address pool range
+        (async () => {
+          const network = msg.data.value.network;
+          const intf = msg.data.value.interface;
+          const dhcpRange = msg.data.value.dhcpRange;
+          if (!network || !intf || !dhcpRange || !dhcpRange.begin || !dhcpRange.end) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface and dhcpRange.start/end should be specified."}, callback);
+          } else {
+            const currentConfig = fc.getConfig(true);
+            switch (network) {
+              case "secondary":
+                const currentSecondaryInterface = currentConfig.secondaryInterface;
+                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, intf); // if ip2 is not defined, it will be inherited from previous settings
+                await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              case "alternative":
+                const currentAlternativeInterface = currentConfig.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, intf);
+                await fc.updateUserConfig({alternativeIpSubnet: mergedAlternativeInterface});
+                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              default:
+                log.error("Unknwon network type in networkInterface:update, " + network);
+                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "networkInterface:get": {
+        (async () => {
+          const network = msg.data.value.network;
+          if (!network) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network should be specified."}, callback);
+          } else {
+            const config = fc.getConfig(true);
+            let dhcpRange = await dhcp.getDhcpRange(network);
+            switch (network) {
+              case "secondary":
+                const secondaryInterface = config.secondaryInterface;
+                if (!dhcpRange) { // default range is from .50 to .250
+                  const prefix = secondaryInterface.ipsubnet.substring(0, secondaryInterface.ipsubnet.lastIndexOf("."));
+                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
+                }
+                this.simpleTxData(msg, {interface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+                break;
+              case "alternative":
+                const alternativeIpSubnet = config.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                if (!dhcpRange) {
+                  const prefix = alternativeIpSubnet.ipsubnet.substring(0, alternativeIpSubnet.ipsubnet.lastIndexOf("."));
+                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
+                }
+                this.simpleTxData(msg, {interface: alternativeIpSubnet, dhcpRange: dhcpRange}, null, callback);
+                break;
+              default:
+                log.error("Unknwon network type in networkInterface:update, " + network);
+                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network});
+            }
+          }
+          const secondaryInterface = config.secondaryInterface;
+          const secondarySubnet = secondaryInterface.ip;
+          const dhcpRange = await dhcp.getDhcpRange(secondarySubnet);
+          this.simpleTxData(msg, {secondaryInterface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       case "dhcpReservation:upsert": {
         (async () => {
           const mac = msg.data.value.mac;
