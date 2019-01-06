@@ -100,6 +100,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   }
   
   (async() => {
+    await rclient.delAsync("firekick:pairing:message");
     await sysManager.setConfig(firewallaConfig)
     await interfaceDiscoverSensor.run()
     // await (nmapSensor.checkAndRunOnce(true));
