@@ -126,20 +126,20 @@ module.exports = class DNSMASQ {
         restart: 0
       }
 
-      process.on('exit', () => {
-        this.shouldStart = false;
-        this.stop();
-      });
-
-      setInterval(() => {
-        this.checkIfRestartNeeded()
-      }, 10 * 1000) // every 10 seconds
-
-      setInterval(() => {
-        this.checkIfWriteHostsFile();
-      }, 10 * 1000);
-
       if (f.isMain()) {
+        setInterval(() => {
+          this.checkIfRestartNeeded()
+        }, 10 * 1000) // every 10 seconds
+  
+        setInterval(() => {
+          this.checkIfWriteHostsFile();
+        }, 10 * 1000);
+
+        process.on('exit', () => {
+          this.shouldStart = false;
+          this.stop();
+        });
+
         sclient.on("message", (channel, message) => {
           switch (channel) {
             case "System:IPChange":
@@ -950,21 +950,50 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
-  async prepareDnsmasqCmd(cmd) {
-    let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
-    let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
-    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+  async getDhcpRange(network) {
+    if (network === "alternative") {
+      let cidr = ip.cidrSubnet(sysManager.mySubnet());
+      let firstAddr = ip.toLong(cidr.firstAddress);
+      let lastAddr = ip.toLong(cidr.lastAddress);
+      let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
 
-    const dhcpRange = await dhcp.getDhcpRange("secondary");
-    if (dhcpRange) {
-      rangeBegin = dhcpRange.begin;
-      rangeEnd = dhcpRange.end;
+      let rangeBegin = ip.fromLong(midAddr);
+      let rangeEnd = ip.fromLong(lastAddr - 3);
+
+      const dhcpRange = await dhcp.getDhcpRange("alternative");
+      if (dhcpRange) {
+        rangeBegin = dhcpRange.begin;
+        rangeEnd = dhcpRange.end;
+      }
+      return {
+        begin: rangeBegin,
+        end: rangeEnd
+      };
     }
+    if (network === "secondary") {
+      let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
+      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+      const dhcpRange = await dhcp.getDhcpRange("secondary");
+      if (dhcpRange) {
+        rangeBegin = dhcpRange.begin;
+        rangeEnd = dhcpRange.end;
+      }
+      return {
+        begin: rangeBegin,
+        end: rangeEnd
+      };
+    }
+    return null;
+  }
 
+  async prepareDnsmasqCmd(cmd) {
+    let {begin, end} = await this.getDhcpRange("secondary");
+    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+    
     cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmd,
-      rangeBegin,
-      rangeEnd,
+      begin,
+      end,
       sysManager.secondaryMask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
@@ -995,24 +1024,12 @@ module.exports = class DNSMASQ {
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
-    let cidr = ip.cidrSubnet(sysManager.mySubnet());
-    let firstAddr = ip.toLong(cidr.firstAddress);
-    let lastAddr = ip.toLong(cidr.lastAddress);
-    let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
-
-    let rangeBegin = ip.fromLong(midAddr);
-    let rangeEnd = ip.fromLong(lastAddr - 3);
-
-    const dhcpRange = await dhcp.getDhcpRange("alternative");
-    if (dhcpRange) {
-      rangeBegin = dhcpRange.begin;
-      rangeEnd = dhcpRange.end;
-    }
+    let {begin, end} = await this.getDhcpRange("alternative");
 
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,
-      rangeBegin,
-      rangeEnd,
+      begin,
+      end,
       mask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
