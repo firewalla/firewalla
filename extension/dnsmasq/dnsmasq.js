@@ -971,8 +971,10 @@ module.exports = class DNSMASQ {
       };
     }
     if (network === "secondary") {
-      let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
-      let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
+      const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
+      const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
+      let rangeBegin = util.format("%s.50", prefix);
+      let rangeEnd = util.format("%s.250", prefix);
       const dhcpRange = await dhcp.getDhcpRange("secondary");
       if (dhcpRange) {
         rangeBegin = dhcpRange.begin;
@@ -989,7 +991,7 @@ module.exports = class DNSMASQ {
   async prepareDnsmasqCmd(cmd) {
     let {begin, end} = await this.getDhcpRange("secondary");
     let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
-    
+
     cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmd,
       begin,
