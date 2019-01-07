@@ -99,7 +99,10 @@
     "APISensor": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
-    "SSDPSensor": {},
+    "SSDPSensor": {
+      "interval": 600,
+      "cacheTTL": 3600
+    },
     "OvpnConnSensor": {
       "logPath": "/var/log/openvpn-server.log"
     },

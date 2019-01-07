@@ -28,6 +28,8 @@ let FWEvent = class {
 }
 
 let Sensor = class {
+  // this.config is set in SensorLoader.js AFTER specific sensor is initialized
+  // so this.config won't be available in the constructor
   constructor() {
     this.config = {};
   }
