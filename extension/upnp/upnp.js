@@ -52,38 +52,42 @@ module.exports = class {
       instance = this;
       this.refreshTimers = {};
 
-      upnpIntervalHandler = setInterval(
-        () => {
-          log.info("UPnP periodical check starts")
-          if (upnpMappings.isEmpty) {
-            log.info("No mapping registered.")
-            return;
-          }
-          upnpClient.getMappings((err, results) => {
-            if (err) {
-              log.error("Failed to get current mappings", err);
+      // TODO: move this to UPNPSensor
+      // periodical checks whether all upnp mappings registered are alive
+      // if not, adds back
+      if (process.title === "FireMain") {
+        upnpIntervalHandler = setInterval(
+          () => {
+            log.info("UPnP periodical check starts")
+            if (upnpMappings.isEmpty) {
+              log.info("No mapping registered.")
               return;
             }
-            log.info("Current mappings: ", results);
-
-            upnpMappings.forEach((check) => {
-              log.info("Checking registered mapping:", check);
-              if (_.isEmpty(
-                results.find((m) => this.mappingCompare(m, check))
-              )) {
-                log.info("Mapping no longer exists, adding back to router...")
-                let { protocol, localPort, externalPort, description } = check;
-                this.addPortMappingUPNP(protocol, localPort, externalPort, description)
-              } else {
-                log.info("Mapping still exists")
+            upnpClient.getMappings((err, results) => {
+              if (err) {
+                log.error("Failed to get current mappings", err);
+                return;
               }
-            })
-          })
-        },
-        upnpCheckInterval
-      )
-    }
+              log.info("Current mappings: ", results);
 
+              upnpMappings.forEach((check) => {
+                log.info("Checking registered mapping:", check);
+                if (_.isEmpty(
+                  results.find((m) => this.mappingCompare(m, check))
+                )) {
+                  log.info("Mapping no longer exists, adding back to router...")
+                  let { protocol, localPort, externalPort, description } = check;
+                  this.addPortMappingUPNP(protocol, localPort, externalPort, description)
+                } else {
+                  log.info("Mapping still exists")
+                }
+              })
+            })
+          },
+          upnpCheckInterval
+        )
+      }
+    }
     return instance;
   }
 

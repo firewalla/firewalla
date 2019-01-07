@@ -44,6 +44,7 @@ const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
+
 const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
@@ -442,6 +443,26 @@ class netBot extends ControllerBot {
       });
     });
   }
+
+  _shield(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      // per-device shield policy rule is not supported currently
+      callback(null);
+      return;
+    }
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("shield", value, (err, data) => {
+        if (err == null) {
+          if (callback != null)
+            callback(null, "Success");
+        } else {
+          if (callback != null)
+          callback(err, "Unable to apply config on shield: " + value);
+        }
+      })
+    })
+  }
+
 
   _shadowsocks(ip, value, callback) {
     if(ip !== "0.0.0.0") {
@@ -1146,6 +1167,11 @@ class netBot extends ControllerBot {
               break;
             case "upstreamDns":
               this._setUpstreamDns(msg.target, msg.data.value.upstreamDns, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "shield":
+              this._shield(msg.target, msg.data.value.shield, (err, obj) => {
                 cb(err);
               });
               break;
@@ -2060,6 +2086,9 @@ class netBot extends ControllerBot {
       let jsonobj = {};
       if (host) {
         jsonobj = host.toJson();
+        const dhcpReservation = await (hostTool.getDHCPReservation(mac));
+        if (dhcpReservation)
+          jsonobj.dhcpReservation = dhcpReservation;
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
@@ -2723,6 +2752,17 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback)
           })
         break
+      case "isBindingActive": {
+        (async () => {
+          try {
+            const active = await sysTool.isFireKickRunning();
+            this.simpleTxData(msg, {active}, null, callback);
+          } catch(err) {
+            this.simpleTxData(msg, {}, err, callback)
+          }
+        })();
+        break;
+      }        
       case "enableFeature": {
         const featureName = msg.data.value.featureName
         async(() => {
@@ -3030,6 +3070,130 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "networkInterface:update": {
+        // secondary interface settings includes those in config files and dhcp address pool range
+        (async () => {
+          const network = msg.data.value.network;
+          const intf = msg.data.value.interface;
+          const dhcpRange = msg.data.value.dhcpRange;
+          if (!network || !intf || !dhcpRange || !dhcpRange.begin || !dhcpRange.end) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface and dhcpRange.start/end should be specified."}, callback);
+          } else {
+            const currentConfig = fc.getConfig(true);
+            switch (network) {
+              case "secondary":
+                const currentSecondaryInterface = currentConfig.secondaryInterface;
+                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, intf); // if ip2 is not defined, it will be inherited from previous settings
+                await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              case "alternative":
+                const currentAlternativeInterface = currentConfig.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, intf);
+                await fc.updateUserConfig({alternativeIpSubnet: mergedAlternativeInterface});
+                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              default:
+                log.error("Unknwon network type in networkInterface:update, " + network);
+                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "networkInterface:get": {
+        (async () => {
+          const network = msg.data.value.network;
+          if (!network) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network should be specified."}, callback);
+          } else {
+            const config = fc.getConfig(true);
+            let dhcpRange = await dhcp.getDhcpRange(network);
+            switch (network) {
+              case "secondary":
+                const secondaryInterface = config.secondaryInterface;
+                if (!dhcpRange) { // default range is from .50 to .250
+                  const prefix = secondaryInterface.ipsubnet.substring(0, secondaryInterface.ipsubnet.lastIndexOf("."));
+                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
+                }
+                this.simpleTxData(msg, {interface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+                break;
+              case "alternative":
+                const alternativeIpSubnet = config.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                if (!dhcpRange) {
+                  const prefix = alternativeIpSubnet.ipsubnet.substring(0, alternativeIpSubnet.ipsubnet.lastIndexOf("."));
+                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
+                }
+                this.simpleTxData(msg, {interface: alternativeIpSubnet, dhcpRange: dhcpRange}, null, callback);
+                break;
+              default:
+                log.error("Unknwon network type in networkInterface:update, " + network);
+                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network});
+            }
+          }
+          const secondaryInterface = config.secondaryInterface;
+          const secondarySubnet = secondaryInterface.ip;
+          const dhcpRange = await dhcp.getDhcpRange(secondarySubnet);
+          this.simpleTxData(msg, {secondaryInterface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "dhcpReservation:upsert": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          const ip = msg.data.value.ip;
+          if (!mac || !ip) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac or static ip is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("set dhcp reservation for " + mac + ": " + ip);
+              await dhcp.upsertDhcpReservation(mac, ip);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:list": {
+        (async () => {
+          const reservations = await dhcp.listDhcpReservations();
+          this.simpleTxData(msg, reservations, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "dhcpReservation:delete": {
+        (async () => {
+          const mac = msg.data.value.mac;
+          if (!mac) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac is not specified"}, callback);
+          } else {
+            const macExists = await hostTool.macExists(mac);
+            if (macExists) {
+              log.info("delete dhcp reservation for " + mac);
+              await dhcp.deleteDhcpReservation(mac);
+              this.simpleTxData(msg, {}, null, callback);
+            } else {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -3083,6 +3247,9 @@ class netBot extends ControllerBot {
         code = err.code;
       }
       message = err + "";
+      if (err && err.msg) {
+        message = err.msg;
+      }
     }
 
     let datamodel = {
