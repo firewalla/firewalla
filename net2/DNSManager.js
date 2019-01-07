@@ -121,7 +121,7 @@ module.exports = class DNSManager {
       throw new Error('bad ip');
     }
 
-    return rclient.hgetallAsync("host:mac:" + mac)
+    return hostTool.getMACEntry(mac);
   }
 
   findHostWithIP(ip, callback) {

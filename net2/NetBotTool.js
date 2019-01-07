@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird');
-
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
@@ -334,7 +332,7 @@ class NetBotTool {
             
             // intel not exists in redis, create a new one
             try {
-              intel = await (destIPFoundHook.processIP(f.ip));
+              intel = await destIPFoundHook.processIP(f.ip);
               if (intel) {
                 f.country = intel.country;
                 f.host = intel.host;

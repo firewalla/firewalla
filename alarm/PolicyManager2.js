@@ -335,17 +335,17 @@ class PolicyManager2 {
     await rclient.hmsetAsync(policyKey, existing.redisfy());
 
     if (policy.expire === '') {
-      await (rclient.hdelAsync(policyKey, "expire"))
+      await rclient.hdelAsync(policyKey, "expire");
     }
     if (policy.cronTime === '') {
-      await (rclient.hdelAsync(policyKey, "cronTime"))
-      await (rclient.hdelAsync(policyKey, "duration"))
+      await rclient.hdelAsync(policyKey, "cronTime");
+      await rclient.hdelAsync(policyKey, "duration");
     }
     if (policy.activatedTime === '') {
-      await (rclient.hdelAsync(policyKey, "activatedTime"))
+      await rclient.hdelAsync(policyKey, "activatedTime");
     }
     if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope) ) {
-      await (rclient.hdelAsync(policyKey, "scope"))
+      await rclient.hdelAsync(policyKey, "scope");
     }
   }
 

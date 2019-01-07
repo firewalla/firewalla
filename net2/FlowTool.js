@@ -267,7 +267,7 @@ class FlowTool {
       f.device = flow.mac;
     }
 
-    f.ptocotol = flow.pr;
+    f.protocol = flow.pr;
 
     try {
       if(flow.lh === flow.sh) {
