@@ -1,5 +1,5 @@
 {
-  "version": 1.959,
+  "version": 1.962,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -68,6 +68,7 @@
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
+    "AdditionalPairPlugin": {},
     "EncipherPlugin": {},
     "RecentFlowPlugin": {}
   },
@@ -185,6 +186,10 @@
       "syssumflow": {
         "expires": -1,
         "count": 200
+      },
+      "categoryflow": {
+        "expires": 86400,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {

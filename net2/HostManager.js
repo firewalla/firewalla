@@ -44,6 +44,8 @@ var dnsManager = new DNSManager('error');
 var FlowManager = require('./FlowManager.js');
 var flowManager = new FlowManager('debug');
 
+const ShieldManager = require('./ShieldManager.js');
+
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
@@ -1969,6 +1971,18 @@ module.exports = class HostManager {
     json.recentFlows = recentFlows;
   }
 
+  async groupNameForInit(json) {
+    const groupName = await rclient.getAsync("groupName");
+    if(groupName) {
+      json.groupName = groupName;
+    }
+  }
+
+  async asyncBasicDataForInit(json) {
+    const speed = await platform.getNetworkSpeed();
+    json.nicSpeed = speed;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2287,6 +2301,11 @@ module.exports = class HostManager {
       let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       rclient.multi(multiarray).exec((err, replies) => {
         _async.eachLimit(replies,2, (o, cb) => {
+          if (!o) {
+            // defensive programming
+            cb();
+            return;
+          }
           if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp > inactiveTimeline) {
             //log.info("Processing GetHosts ",o);
             if (o.ipv4) {
@@ -2527,6 +2546,17 @@ module.exports = class HostManager {
         // do nothing if state is true
       }
     })()
+  }
+
+  async shield(policy) {
+    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
+    const state = policy.state;
+    if (state === true) {
+      // Raise global shield to block incoming connections
+      await shieldManager.activateShield();
+    } else {
+      await shieldManager.deactivateShield();
+    }
   }
 
   async vpnClient(policy) {
