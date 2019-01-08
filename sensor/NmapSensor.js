@@ -172,7 +172,7 @@ class NmapSensor extends Sensor {
     return networkTool.getLocalNetworkInterface()
       .then((results) => {
         return results &&
-          results.map((x) => networkTool.reduceSubnetTo24(x.subnet))
+          results.map((x) => networkTool.capSubnet(x.subnet))
       });
   }
 
@@ -211,7 +211,7 @@ class NmapSensor extends Sensor {
       log.info("Scanning network", range, "to detect new devices...");
 
       try {
-        range = networkTool.reduceSubnetTo24(range)
+        range = networkTool.capSubnet(range)
       } catch (e) {
         log.error('Error reducing scan range:', range, fastMode, e);
         return Promise.resolve(); // Skipping this scan
