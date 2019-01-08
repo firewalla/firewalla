@@ -134,6 +134,8 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+
 const _ = require('lodash')
 
 class netBot extends ControllerBot {
@@ -3112,22 +3114,15 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, {code: 400, msg: "network should be specified."}, callback);
           } else {
             const config = fc.getConfig(true);
-            let dhcpRange = await dhcp.getDhcpRange(network);
+            const dnsmasq = new Dnsmasq();
+            const dhcpRange = await dnsmasq.getDhcpRange(network);
             switch (network) {
               case "secondary":
                 const secondaryInterface = config.secondaryInterface;
-                if (!dhcpRange) { // default range is from .50 to .250
-                  const prefix = secondaryInterface.ipsubnet.substring(0, secondaryInterface.ipsubnet.lastIndexOf("."));
-                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
-                }
                 this.simpleTxData(msg, {interface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
                 break;
               case "alternative":
                 const alternativeIpSubnet = config.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                if (!dhcpRange) {
-                  const prefix = alternativeIpSubnet.ipsubnet.substring(0, alternativeIpSubnet.ipsubnet.lastIndexOf("."));
-                  dhcpRange = {begin: prefix + ".50", end: prefix + ".250"};
-                }
                 this.simpleTxData(msg, {interface: alternativeIpSubnet, dhcpRange: dhcpRange}, null, callback);
                 break;
               default:
@@ -3135,10 +3130,6 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network});
             }
           }
-          const secondaryInterface = config.secondaryInterface;
-          const secondarySubnet = secondaryInterface.ip;
-          const dhcpRange = await dhcp.getDhcpRange(secondarySubnet);
-          this.simpleTxData(msg, {secondaryInterface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })

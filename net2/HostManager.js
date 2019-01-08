@@ -1746,6 +1746,14 @@ module.exports = class HostManager {
       });
   }
 
+  async dhcpRangeForInit(network, json) {
+    const key = network + "DhcpRange";
+    const dnsmasq = new DNSMASQ();
+    const dhcpRange = await dnsmasq.getDhcpRange(network);
+    if (dhcpRange) 
+      json[key] = dhcpRange;
+  }
+
   modeForInit(json) {
     log.debug("Reading mode");
     return modeManager.mode()
@@ -2067,6 +2075,12 @@ module.exports = class HostManager {
         this.basicDataForInit(json, options);
 
         await (requiredPromises);
+
+        // mode should already be set in json
+        if (json.mode === "dhcp") {
+          await (this.dhcpRangeForInit("alternative", json));
+          await (this.dhcpRangeForInit("secondary", json));
+        }
 
         await (this.loadDDNSForInit(json));
 
