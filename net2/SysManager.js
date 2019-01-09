@@ -436,6 +436,14 @@ module.exports = class {
     }
   }
 
+  monitoringInterface2() {
+    if (this.config) {
+      return this.sysinfo && this.sysinfo[this.config.monitoringInterface2];
+    } else {
+      return undefined;
+    }
+  }
+
   myIp() {
     if(this.monitoringInterface()) {
       return this.monitoringInterface().ip_address;
@@ -457,14 +465,10 @@ module.exports = class {
   }
 
   myIp2() {
-    let secondInterface = this.sysinfo &&
-      this.config.monitoringInterface2 &&
-      this.sysinfo[this.config.monitoringInterface2]
-
-    if(secondInterface) {
-      return secondInterface.ip_address
+    if(this.monitoringInterface2()) {
+      return this.monitoringInterface2().ip_address;
     } else {
-      return null
+      return undefined;
     }
   }
 
@@ -480,6 +484,18 @@ module.exports = class {
   myIpMask() {
     if(this.monitoringInterface()) {
       let mask =  this.monitoringInterface().netmask;
+      if (mask.startsWith("Mask:")) {
+        mask = mask.substr(5);
+      }
+      return mask;
+    } else {
+      return undefined;
+    }
+  }
+
+  myIpMask2() {
+    if(this.monitoringInterface2()) {
+      let mask =  this.monitoringInterface2().netmask;
       if (mask.startsWith("Mask:")) {
         mask = mask.substr(5);
       }
@@ -530,14 +546,10 @@ module.exports = class {
   }
 
   mySubnet2() {
-    let secondInterface = this.sysinfo &&
-      this.config.monitoringInterface2 &&
-      this.sysinfo[this.config.monitoringInterface2]
-
-    if(secondInterface) {
-      return secondInterface.subnet;
+    if(this.monitoringInterface2()) {
+      return this.monitoringInterface2().subnet;
     } else {
-      return null;
+      return undefined;
     }
   }
 

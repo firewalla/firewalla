@@ -180,7 +180,7 @@ class App {
       if(eth0s) {
         for (let index = 0; index < eth0s.length; index++) {
           const eth0 = eth0s[index]
-          const secondaryIntfIP = config.getConfig().secondaryInterface.ipOnly;
+          const secondaryIntfIP = (config.getConfig().secondaryInterface.ip).split('/')[0];
           if(eth0.family == "IPv4" && eth0.address != secondaryIntfIP) {
             return eth0.address
           }

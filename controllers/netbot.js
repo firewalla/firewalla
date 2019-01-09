@@ -525,12 +525,15 @@ class netBot extends ControllerBot {
 
   _dnsmasq(ip, value, callback) {
     if(ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
+      if (callback != null)
+        callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("dnsmasq", value, (err, data) => {
+      const oldValue = JSON.parse(data["dnsmasq"]) || {};
+      const newValue = Object.assign({}, oldValue, value);
+      this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
             callback(null, "Success");
@@ -3083,23 +3086,44 @@ class netBot extends ControllerBot {
           const network = msg.data.value.network;
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
-          if (!network || !intf || !dhcpRange || !dhcpRange.begin || !dhcpRange.end) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface and dhcpRange.start/end should be specified."}, callback);
+          const dnsServers = msg.data.value.dnsServers || []; // default value is empty
+          if (!network || !intf || !intf.ipAddress || !intf.subnetMask || !dhcpRange || !dhcpRange.begin || !dhcpRange.end ) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask and dhcpRange.start/end should be specified."}, callback);
           } else {
             const currentConfig = fc.getConfig(true);
             switch (network) {
               case "secondary":
                 const currentSecondaryInterface = currentConfig.secondaryInterface;
-                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, intf); // if ip2 is not defined, it will be inherited from previous settings
+                const updatedConfig = {intf: "eth0:0"};
+                const ipAddress = intf.ipAddress;
+                const subnetMask = intf.subnetMask;
+                const ipSubnet = iptool.subnet(ipAddress, subnetMask);
+                updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers});
+                setTimeout(() => {
+                  let modeManager = require('../net2/ModeManager.js');
+                  modeManager.publishNetworkInterfaceUpdate();
+                }, 5000); // update interface in 5 seconds.
                 this.simpleTxData(msg, {}, null, callback);
                 break;
               case "alternative":
-                const currentAlternativeInterface = currentConfig.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, intf);
-                await fc.updateUserConfig({alternativeIpSubnet: mergedAlternativeInterface});
+                const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const updatedAltConfig = {gateway: intf.gateway};
+                const altIpAddress = intf.ipAddress;
+                const altSubnetMask = intf.subnetMask;
+                const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+                updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
+                await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
+                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers});
+                setTimeout(() => {
+                  let modeManager = require('../net2/ModeManager.js');
+                  modeManager.publishNetworkInterfaceUpdate();
+                }, 5000); // update interface in 5 seconds.
                 this.simpleTxData(msg, {}, null, callback);
                 break;
               default:
@@ -3123,12 +3147,51 @@ class netBot extends ControllerBot {
             const dhcpRange = await dnsmasq.getDhcpRange(network);
             switch (network) {
               case "secondary":
+                // convert ip/subnet to ip address and subnet mask
                 const secondaryInterface = config.secondaryInterface;
-                this.simpleTxData(msg, {interface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+                const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
+                this.hostManager.loadPolicy((err, data) => {
+                  let secondaryDnsServers = sysManager.myDNS();
+                  if (data.dnsmasq) {
+                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
+                      secondaryDnsServers = dnsmasq.secondaryDnsServers;
+                    }
+                  }
+                  this.simpleTxData(msg, 
+                    {
+                      interface: {
+                        ipAddress: secondaryInterface.ip.split('/')[0],
+                        subnetMask: secondaryIpSubnet.subnetMask
+                      },
+                      dhcpRange: dhcpRange,
+                      dnsServers: secondaryDnsServers
+                    }, null, callback);
+                });
                 break;
               case "alternative":
-                const alternativeIpSubnet = config.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                this.simpleTxData(msg, {interface: alternativeIpSubnet, dhcpRange: dhcpRange}, null, callback);
+                // convert ip/subnet to ip address and subnet mask
+                const alternativeInterface = config.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
+                this.hostManager.loadPolicy((err, data) => {
+                  let alternativeDnsServers = sysManager.myDNS();
+                  if (data.dnsmasq) {
+                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
+                      alternativeDnsServers = dnsmasq.alternativeDnsServers;
+                    }
+                  }
+                  this.simpleTxData(msg, 
+                    {
+                      interface: {
+                        ipAddress: alternativeInterface.ip.split('/')[0],
+                        subnetMask: alternativeIpSubnet.subnetMask,
+                        gateway: alternativeInterface.gateway
+                      },
+                      dhcpRange: dhcpRange,
+                      dnsServers: alternativeDnsServers
+                    }, null, callback);
+                });
                 break;
               default:
                 log.error("Unknwon network type in networkInterface:update, " + network);
