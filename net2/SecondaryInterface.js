@@ -49,7 +49,7 @@ function getSubnet(networkInterface, family) {
         interfaceData[i].address,
         interfaceData[i].netmask
       );
-      let subnetmask = subnet.networkAddress + '/' + subnet.subnetMaskLength;
+      let subnetmask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
       ipSubnets.push(subnetmask);
     }
   }
@@ -101,7 +101,7 @@ exports.create = function(config, callback) {
             log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
             // should be like 192.168.218.1
             const legacyCidrSubnet = ip.subnet(list[i].ip_address, list[i].netmask.substring(5));
-            legacyIpSubnet = legacyCidrSubnet.networkAddress + "/" + legacyCidrSubnet.subnetMaskLength;
+            legacyIpSubnet = list[i].ip_address + "/" + legacyCidrSubnet.subnetMaskLength;
           }
         } else {
           let subnets = getSubnet(list[i].name, 'IPv4');

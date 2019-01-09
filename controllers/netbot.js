@@ -3094,7 +3094,7 @@ class netBot extends ControllerBot {
                 const ipAddress = intf.ipAddress;
                 const subnetMask = intf.subnetMask;
                 const ipSubnet = iptool.subnet(ipAddress, subnetMask);
-                updatedConfig.ip = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
@@ -3106,7 +3106,7 @@ class netBot extends ControllerBot {
                 const altIpAddress = intf.ipAddress;
                 const altSubnetMask = intf.subnetMask;
                 const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
-                updatedAltConfig.ip = altIpSubnet.networkAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
                 await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
@@ -3137,7 +3137,7 @@ class netBot extends ControllerBot {
                 const secondaryInterface = config.secondaryInterface;
                 const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
                 this.simpleTxData(msg, {interface: {
-                  ipAddress: secondaryIpSubnet.networkAddress,
+                  ipAddress: secondaryInterface.ip.split('/')[0],
                   subnetMask: secondaryIpSubnet.subnetMask
                 }, dhcpRange: dhcpRange}, null, callback);
                 break;
@@ -3146,7 +3146,7 @@ class netBot extends ControllerBot {
                 const alternativeInterface = config.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.simpleTxData(msg, {interface: {
-                  ipAddress: alternativeIpSubnet.networkAddress,
+                  ipAddress: alternativeInterface.ip.split('/')[0],
                   subnetMask: alternativeIpSubnet.subnetMask,
                   gateway: alternativeInterface.gateway
                 }, dhcpRange: dhcpRange}, null, callback);

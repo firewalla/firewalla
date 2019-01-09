@@ -937,6 +937,7 @@ module.exports = class DNSMASQ {
 
   writeStartScript(cmd, cmdAlt) {
     log.info("Command to start dnsmasq: ", cmd);
+    log.info("Command to start alternative dnsmasq: ", cmd);
 
     let content = [
       '#!/bin/bash',
