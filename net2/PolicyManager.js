@@ -540,16 +540,21 @@ module.exports = class {
       log.error("dnsmasq doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
-
-    if (config.state == true) {
-      sem.emitEvent({
-        type: "StartDNS"
-      })
-    } else {
-      sem.emitEvent({
-        type: "StopDNS"
-      })
+    let needUpdate = false;
+    let needRestart = false;
+    if (config.secondaryDnsServers && Array.isArray(config.secondaryDnsServers)) {
+      dnsmasq.setInterfaceNameServers("secondary", config.secondaryDnsServers);
+      needUpdate = true;
     }
+    if (config.alternativeDnsServers && Array.isArray(config.alternativeDnsServers)) {
+      dnsmasq.setInterfaceNameServers("alternative", config.alternativeDnsServers);
+      needUpdate = true;
+      needRestart = true;
+    }
+    if (needUpdate)
+      dnsmasq.updateResolvConf();
+    if (needRestart)
+      dnsmasq.start(true);
   }
 
   addAPIPortMapping(time) {

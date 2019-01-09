@@ -471,10 +471,17 @@ function listenOnChange() {
       let hostManager = new HostManager('cli', 'server', 'info')
       let sm = require('./SpooferManager.js')
       sm.loadManualSpoofs(hostManager)
+    } else if (channel === "NetworkInterface:Update") {
+      (async () => {
+        await (_changeToAlternativeIpSubnet());
+        await (_enableSecondaryInterface());
+        pclient.publishAsync("System:IPChange", "");
+      })()
     }
   });
   sclient.subscribe("Mode:Change");
   sclient.subscribe("ManualSpoof:Update");
+  sclient.subscribe("NetworkInterface:Update");
 }
 
 // this function can only used by non-main.js process
@@ -485,6 +492,10 @@ function publish(mode) {
 
 function publishManualSpoofUpdate() {
   return pclient.publishAsync("ManualSpoof:Update", "1")
+}
+
+function publishNetworkInterfaceUpdate() {
+  return pclient.publishAsync("NetworkInterface:Update", "");
 }
 
 function setSpoofAndPublish() {
@@ -535,5 +546,6 @@ module.exports = {
   setManualSpoofAndPublish: setManualSpoofAndPublish,
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,
+  publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
   enableSecondaryInterface:_enableSecondaryInterface
 }

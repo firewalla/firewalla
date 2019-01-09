@@ -63,8 +63,10 @@ const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+const altResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.resolv.conf";
 
 let defaultNameServers = {};
+let interfaceNameServers = {};
 let upstreamDNS = null;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
@@ -147,10 +149,10 @@ module.exports = class DNSMASQ {
                 const started = await this.checkStatus();
                 if (started)
                   await this.rawRestart(); // restart firemasq service to bind new ip addresses
-                await this._update_local_interface_iptables_rules();
                 if (this.vpnSubnet) {
                   await this.updateVpnIptablesRules(this.vpnSubnet, true);
                 }
+                await this._update_local_interface_iptables_rules();
               })();
               break;
             case "DHCPReservationChanged":
@@ -217,23 +219,46 @@ module.exports = class DNSMASQ {
   }
 
   async updateResolvConf() {
-    let nameservers = this.getAllDefaultNameServers()
-    if (!nameservers || nameservers.length === 0) {
-      nameservers = sysManager.myDNS();
+    let nameservers = this.getAllDefaultNameServers() || [];
+    let secondaryIntfNameServers = interfaceNameServers.secondary || [];
+    let alternativeIntfNameServers = interfaceNameServers.alternative || [];
+
+    let effectiveNameServers = nameservers;
+    let alternativeNameServers = [];
+    // different interface specific nameservers take effect in different mode
+    if (this.dhcpMode) {
+      effectiveNameServers = effectiveNameServers.concat(secondaryIntfNameServers); // specified interface dns servers are listed after default name servers, e.g., OpenDNS, upstream DNS
+      alternativeNameServers = alternativeIntfNameServers;
+    } else {
+      effectiveNameServers = effectiveNameServers.concat(alternativeIntfNameServers);
+      alternativeNameServers = secondaryIntfNameServers;
+    }
+    
+    if (!effectiveNameServers || effectiveNameServers.length === 0) {
+      effectiveNameServers = sysManager.myDNS();
+    }
+    if (!alternativeNameServers || alternativeNameServers.length === 0) {
+      alternativeNameServers = sysManager.myDNS();
     }
 
-    if (!nameservers || nameservers.length === 0) {
-      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
+    if (!effectiveNameServers || effectiveNameServers.length === 0) {
+      effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
+    }
+    if (!alternativeNameServers || alternativeNameServers.length === 0) {
+      alternativeNameServers = [DEFAULT_DNS_SERVER];
     }
 
-    let entries = nameservers.map(ip => "nameserver " + ip);
-    let config = entries.join('\n');
-    config += "\n";
+    let effectiveEntries = effectiveNameServers.map(ip => "nameserver " + ip);
+    let effectiveConfig = effectiveEntries.join('\n') + "\n";
+
+    let alternativeEntries = alternativeNameServers.map(ip => "nameserver " + ip);
+    let alternativeConfig = alternativeEntries.join('\n') + "\n";
 
     try {
-      await fs.writeFileAsync(resolvFile, config);
+      await fs.writeFileAsync(resolvFile, effectiveConfig);
+      await fs.writeFileAsync(altResolvFile, alternativeConfig);
     } catch (err) {
-      log.error("Error when updating resolv.conf:", resolveFile, "error msg:", err.message, {});
+      log.error("Error when updating resolv.conf:", resolveFile, altResolvFile, "error msg:", err.message, {});
       throw err;
     }
 
@@ -394,6 +419,19 @@ module.exports = class DNSMASQ {
       _ips = [ips.toString()];
     }
     defaultNameServers[key] = _ips;
+  }
+
+  setInterfaceNameServers(intf, ips) {
+    let _ips;
+    if (Array.isArray(ips)) {
+      _ips = ips.filter(x => validator.isIP(x));
+    } else {
+      if (!validator.isIP(ips.toString())) {
+        return;
+      }
+      _ips = [ips.toString()];
+    }
+    interfaceNameServers[intf] = _ips;
   }
 
   unsetDefaultNameServers(key) {
@@ -1041,9 +1079,16 @@ module.exports = class DNSMASQ {
 
     cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
 
-    sysManager.myDNS().forEach(dns => {
-      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-    });
+    if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
+      // if alternative dns server is set, use specified dns servers in dhcp response
+      interfaceNameServers.alternative.forEach(dns => {
+        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
+      });
+    } else {
+      sysManager.myDNS().forEach(dns => {
+        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
+      });
+    }
     return cmdAlt;
   }
 
@@ -1109,6 +1154,7 @@ module.exports = class DNSMASQ {
 
     if (!skipIptablesUpdate) {
       try {
+        await this._remove_all_iptables_rules();
         await this._add_all_iptables_rules();
       } catch (err) {
         log.error('Error when add iptables rules', err);
