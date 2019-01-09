@@ -267,28 +267,17 @@ class FlowTool {
       f.device = flow.mac;
     }
 
-    if(flow.pf) {
+    f.protocol = flow.pr;
+
+    try {
       if(flow.lh === flow.sh) {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const destinationPort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const sourcePort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.dp);
+        f.devicePort = Number(flow.sp[0]);
       } else {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const sourcePort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const destinationPort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.sp[0]);
+        f.devicePort = Number(flow.dp);
       }
+    } catch(err) {
     }
 
     if(flow.lh === flow.sh) {
@@ -583,12 +572,12 @@ class FlowTool {
       }
       
       let simpleFlows = mergedFlow
-            .map((f) => this.toSimpleFlow(f))
             .map((f) => {
+              let s = this.toSimpleFlow(f)
               if(options.mac) {
-                f.device = options.mac; // record the mac address here
+                s.device = options.mac; // record the mac address here
               }
-              return f;
+              return s;
             });
 
       let promises = Promise.all(simpleFlows.map((f) => {
@@ -619,10 +608,10 @@ class FlowTool {
                   if(intel.app) {
                     f.app = intel.app
                   }
-                }             
+                }
               } catch(err) {
                 log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-              }              
+              }
               
               return f;
             })();

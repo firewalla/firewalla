@@ -15,7 +15,7 @@ function trim_exec(cmd, cb) {
   })
 }
 
-exports.ping6= function(intf, ipv6addr,cb) {
+exports.ping6= function(ipv6addr,cb) {
   let pcmd = "ping6 -c 3 "+ipv6addr;
   require('child_process').exec(pcmd,(err)=>{
       if (cb)

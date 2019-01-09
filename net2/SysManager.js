@@ -554,6 +554,14 @@ module.exports = class {
     return host === "firewalla.encipher.io";
   }
 
+  inMySubnets4(ip4) {
+    if (!iptool.isV4Format(ip4)) return false;
+    else return (
+      iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
+      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4)
+    )
+  }
+
   inMySubnet6(ip6) {
     let ip6_masks = this.monitoringInterface().ip6_masks;
     let ip6_addresses = this.monitoringInterface().ip6_addresses;

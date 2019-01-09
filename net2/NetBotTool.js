@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird');
-
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
@@ -299,8 +297,33 @@ class NetBotTool {
     })();
   }
 
+  async _enrichWithIntel(traffic) {
+    let enriched = await Promise.all(traffic.map(async (f) => {
+      // get intel from redis. if failed, create a new one
+      const intel = await intelTool.getIntel(f.ip) || await destIPFoundHook.processIP(f.ip);
+
+      if (intel) {
+        f.country = intel.country;
+        f.host = intel.host;
+        if(intel.category) {
+          f.category = intel.category
+        }
+        if(intel.app) {
+          f.app = intel.app
+        }
+      }
+      return f;
+    }));
+
+    enriched.sort((a, b) => {
+      return b.count - a.count;
+    });
+
+    return enriched;
+  }
+
   // Top Download/Upload in the entire network
-  _prepareTopFlows(json, trafficDirection, options) {
+  async _prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -310,61 +333,16 @@ class NetBotTool {
 
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
 
-    return async(() => {
-      let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
+    let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
 
-      traffic.map((f) => {
-        f.begin = begin;
-        f.end = end;
-      })
+    traffic.forEach((f) => {
+      f.begin = begin;
+      f.end = end;
+    })
 
-      let promises = Promise.all(traffic.map((f) => {
-        return intelTool.getIntel(f.ip)
-        .then((intel) => {
-          if(intel) {
-            f.country = intel.country;
-            f.host = intel.host;
-            if(intel.category) {
-              f.category = intel.category
-            }
-            if(intel.app) {
-              f.app = intel.app
-            }
-            return f;
-          } else {
-            return f;
-            // intel not exists in redis, create a new one
-            return async(() => {
-              try {
-                intel = await (destIPFoundHook.processIP(f.ip));
-                if (intel) {
-                  f.country = intel.country;
-                  f.host = intel.host;
-                  if(intel.category) {
-                    f.category = intel.category
-                  }
-                  if(intel.app) {
-                    f.app = intel.app
-                  }
-                }
-              } catch(err) {
-                log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-              }
-              return f;
-            })();
-          }
-          return f;
-        });
-      })).then(() => {
-        return traffic.sort((a, b) => {
-          return b.count - a.count;
-        });
-      });
+    json.flows[trafficDirection] = await this._enrichWithIntel(traffic);
 
-      await (promises);
-
-      json.flows[trafficDirection] = traffic
-    })();
+    return traffic
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
@@ -381,86 +359,35 @@ class NetBotTool {
     }
   }
 
-  _prepareTopFlowsForHost(json, mac, trafficDirection, options) {
+  async _prepareTopFlowsForHost(json, mac, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
 
     json.flows[trafficDirection] = []
 
-    return async(() => {
+    let flowKey = null
 
-      let flowKey = null
-      
-      if(options.queryall) {
-        flowKey = await (flowAggrTool.getLastSumFlow(mac, trafficDirection));
-      } else {
-        flowKey = await (flowAggrTool.getSumFlowKey(mac, trafficDirection, options.begin, options.end))
+    if(options.queryall) {
+      flowKey = await flowAggrTool.getLastSumFlow(mac, trafficDirection);
+    } else {
+      flowKey = await flowAggrTool.getSumFlowKey(mac, trafficDirection, options.begin, options.end);
+    }
+
+    if (flowKey) {
+      let traffic = await flowAggrTool.getTopSumFlowByKey(flowKey, 20); // get top 20
+
+      let ts = this._getTimestamps(flowKey);
+
+      if (ts) {
+        traffic.map((f) => {
+          f.begin = ts.begin
+          f.end = ts.end
+        })
       }
-      
-      if (flowKey) {
-        let traffic = await (flowAggrTool.getTopSumFlowByKey(flowKey,20)) // get top 20
 
-        let ts = this._getTimestamps(flowKey)
-
-        if(ts) {
-          traffic.map((f) => {
-            f.begin = ts.begin
-            f.end = ts.end
-          })
-        }
-
-
-        let promises = Promise.all(traffic.map((f) => {
-          return intelTool.getIntel(f.ip)
-          .then((intel) => {
-            if(intel) {
-              f.country = intel.country;
-              f.host = intel.host;
-              if(intel.category) {
-                f.category = intel.category
-              }
-              if(intel.app) {
-                f.app = intel.app
-              }
-              return f;
-            } else {
-              return f;
-
-              // intel not exists in redis, create a new one
-              return async(() => {
-                try {
-                  intel = await (destIPFoundHook.processIP(f.ip));
-                  if(intel) {
-                    f.country = intel.country;
-                    f.host = intel.host;
-                    if(intel.category) {
-                      f.category = intel.category
-                    }
-                    if(intel.app) {
-                      f.app = intel.app
-                    }
-                  }        
-                } catch(err) {
-                  log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-                }
-                
-                return f;
-              })();
-            }
-            return f;
-          });
-        })).then(() => {
-          return traffic.sort((a, b) => {
-            return b.count - a.count;
-          });
-        });
-
-        await (promises);
-
-        json.flows[trafficDirection] = traffic
-      }
-    })();
+      json.flows[trafficDirection] = await this._enrichWithIntel(traffic);
+    }
   }
 
   prepareTopDownloadFlowsForHost(json, mac, options) {

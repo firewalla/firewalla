@@ -314,34 +314,38 @@ class PolicyManager2 {
     });
   }
 
-  // TODO: need a better solution to compromise code base and Policy object creation
-  updatePolicyAsync(policy) {
-    const pid = policy.pid
-    policy = policy instanceof Policy ? policy : new Policy(policy);
-
-    if(pid) {
-      const policyKey = policyPrefix + pid;
-      return async(() => {
-        let redisfied = policy.redisfy();
-
-        await (rclient.hmsetAsync(policyKey, redisfied));
-
-        if (!redisfied.expire) {
-          await (rclient.hdelAsync(policyKey, "expire"))
-        }
-        if (!redisfied.cronTime) {
-          await (rclient.hdelAsync(policyKey, "cronTime"))
-          await (rclient.hdelAsync(policyKey, "duration"))
-        }
-        if (!redisfied.activatedTime) {
-          await (rclient.hdelAsync(policyKey, "activatedTime"))
-        }
-        if (!redisfied.scope) {
-          await (rclient.hdelAsync(policyKey, "scope"))
-        }
-      })()
-    } else {
+  // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
+  // it's hard to keep sanity dealing with partial update and redis in the same time
+  async updatePolicyAsync(policy) {
+    if (!policy.pid)
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+
+    const policyKey = policyPrefix + policy.pid;
+
+    if (policy instanceof Policy) {
+      let redisfied = policy.redisfy();
+      await rclient.hmsetAsync(policyKey, policy.redisfy());
+      return;
+    }
+
+    let existing = await this.getPolicy(policy.pid);
+
+    Object.assign(existing, policy);
+
+    await rclient.hmsetAsync(policyKey, existing.redisfy());
+
+    if (policy.expire === '') {
+      await rclient.hdelAsync(policyKey, "expire");
+    }
+    if (policy.cronTime === '') {
+      await rclient.hdelAsync(policyKey, "cronTime");
+      await rclient.hdelAsync(policyKey, "duration");
+    }
+    if (policy.activatedTime === '') {
+      await rclient.hdelAsync(policyKey, "activatedTime");
+    }
+    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope) ) {
+      await rclient.hdelAsync(policyKey, "scope");
     }
   }
 
