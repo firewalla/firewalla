@@ -402,7 +402,7 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        if(this.isFirewallaCloud(policy)) {
+        if(this.isFirewallaOrCloud(policy)) {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
@@ -774,12 +774,15 @@ class PolicyManager2 {
     })()
   }
     
-  isFirewallaCloud(policy) {
+  isFirewallaOrCloud(policy) {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
+           // compare mac, ignoring case
+           target.substring(0,17) // devicePort policies have target like mac:protocol:prot
+             .localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) === 0 ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -914,8 +917,8 @@ class PolicyManager2 {
     return async(() => {
       await (this._refreshActivatedTime(policy))
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      if(this.isFirewallaOrCloud(policy)) {
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
   
       switch(type) {
@@ -953,8 +956,8 @@ class PolicyManager2 {
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      if(this.isFirewallaOrCloud(policy)) {
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
 
       let scope = policy.scope
@@ -1067,10 +1070,10 @@ class PolicyManager2 {
       return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
     case "devicePort":
       return async(() => {
-      let data = await (this.parseDevicePortRule(policy.target))
-      if(data) {
-        Block.unblockPublicPort(data.ip, data.port, data.protocol)
-      }
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        }
       })()
       break;
     case "category":

@@ -73,8 +73,6 @@ const initID = 1;
 
 const c = require('../net2/MessageBus.js');
 
-const extend = require('util')._extend;
-
 const fConfig = require('../net2/config.js').getConfig();
 
 const DNSTool = require('../net2/DNSTool.js')
@@ -956,7 +954,7 @@ module.exports = class {
       alarm.result_policy = policy.pid;
       alarm.result = "block";
 
-      if(info.method === "auto") {
+      if(info && info.method === "auto") {
         alarm.result_method = "auto";
       }
 
@@ -1021,14 +1019,11 @@ module.exports = class {
     })()
   }
   
-  blockFromAlarm(alarmID, info, callback) {
+  blockFromAlarm(alarmID, value, callback) {
     log.info("Going to block alarm " + alarmID);
-    log.info("info: ", info, {});
+    log.info("value: ", value);
 
-    let intelFeedback = info.info;
-
-    let i_target = null;
-    let i_type = null;
+    let info = value.info;
 
     this.getAlarm(alarmID)
       .then((alarm) => {
@@ -1041,51 +1036,88 @@ module.exports = class {
           return;
         }
 
+        let p = {
+          alarm_type: alarm.type,
+          aid: alarmID,
+          reason: alarm.type,
+        };
+
         //BLOCK
         switch (alarm.type) {
           case "ALARM_NEW_DEVICE":
-            i_type = "mac";
-            i_target = alarm["p.device.mac"];
+            p.type = "mac";
+            p.target = alarm["p.device.mac"];
             break;
+
           case "ALARM_BRO_NOTICE":
             const {type, target} = require('../extension/bro/BroNotice.js').getBlockTarget(alarm);
 
             if(type && target) {
-              i_type = type;
-              i_target = target;
+              p.type = type;
+              p.target = target;
             } else {
-              log.error("Unsupported alarm type for blocking: ", alarm, {})
+              log.error("Unsupported alarm type for blocking: ", alarm)
               callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
               return
             }
+            break;
+
+          case "ALARM_UPNP":
+            p.type = "devicePort"
+
+            let targetMac = alarm["p.device.mac"];
+
+            // policy should be created with mac
+            if (!targetMac) {
+              let targetIp = alarm["p.device.ip"];
+
+              dnsManager.resolveLocalHost(targetIp, (err, result) => {
+                if(err || result == null) {
+                  log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+                  callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
+                  return;
+                }
+
+                targetMac = result.mac;
+              })
+            }
+
+            p.scope = [ targetMac ];
+
+            p.target = util.format("%s:%s:%s",
+              targetMac,
+              alarm["p.upnp.private.port"],
+              alarm["p.upnp.protocol"]
+            )
+
+            p.flowDescription = alarm.message;
 
             break;
+
           default:
 
-          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
-            i_type = "ip";
-            i_target = alarm["p.dest.ip"];
-          } else {
-            i_type = "dns";
-            i_target = alarm["p.dest.name"];
-          }
+            if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+              p.type = "ip";
+              p.target = alarm["p.dest.ip"];
+            } else {
+              p.type = "dns";
+              p.target = alarm["p.dest.name"];
+            }
 
-
-            if(intelFeedback) {
-
-              switch(intelFeedback.type) {
+            if(info) {
+              switch(info.type) {
                 case "dns":
                 case "domain":
-                  i_type = "dns"
-                  i_target = intelFeedback.target
+                  p.type = "dns"
+                  p.target = info.target
                   break
                 case "ip":
-                  i_type = "ip"
-                  i_target = intelFeedback.target
+                  p.type = "ip"
+                  p.target = info.target
                   break
                 case "category":
-                  i_type = "category";
-                  i_target = intelFeedback.target;
+                  p.type = "category";
+                  p.target = info.target;
                   break;
                 default:
                   break
@@ -1094,34 +1126,42 @@ module.exports = class {
             break;
         }
 
-        if(!i_type || !i_target) {
-          callback(new Error("invalid block: type:" + i_type + ", target: " + i_target));
+        if(!p.type || !p.target) {
+          callback(new Error("invalid block: type:" + p.type + ", target: " + p.target));
           return;
         }
 
-        let p = new Policy({
-          type: i_type,
-          alarm_type: alarm.type,
-          target: i_target,
-          aid: alarmID,
-          reason: alarm.type,
-          "if.type": i_type,
-          "if.target": i_target,
-          category: (intelFeedback && intelFeedback.category) || ""
-        });
+        p["if.type"] = p.type;
+        p["if.target"] = p.target;
 
-        if(intelFeedback) {
-          if(intelFeedback.type === 'dns' && intelFeedback.exactMatch == true) {
+        if(info) {
+          if(info.type === 'dns' && info.exactMatch == true) {
             p.domainExactMatch = "1";
           }
+
+          if(info.method) {
+            p.method = info.method;
+          }
+
+          if(info.device) {
+            p.scope = [info.device];
+          }
+
+          if (info.category) {
+            p.category = info.category
+          } else {
+            p.category = ""
+          }
+
         } else {
-          if(i_type === 'dns') {
+          if(p.type === 'dns') {
             p.domainExactMatch = "1"; // by default enable domain exact match
           }
         }
         
         // add additional info
-        switch(i_type) {
+        // TODO: we will want to obsolete target_name & target_ip on android app
+        switch(p.type) {
         case "mac":
           p.target_name = alarm["p.device.name"] || alarm["p.device.ip"];
           p.target_ip = alarm["p.device.ip"];
@@ -1142,15 +1182,9 @@ module.exports = class {
           break;
         }
 
-        if(info.method) {
-          p.method = info.method;
-        }
+        p = new Policy(p);
 
-        if(intelFeedback && intelFeedback.device) {
-          p.scope = [intelFeedback.device];
-        }
-
-        log.info("Policy object:", p, {});
+        log.info("Policy object:", p);
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -1161,7 +1195,7 @@ module.exports = class {
             alarm.result_policy = policy.pid;
             alarm.result = "block";
 
-            if(info.method === "auto") {
+            if(value.method === "auto") {
               alarm.result_method = "auto";
             }
 
@@ -1228,44 +1262,74 @@ module.exports = class {
 
         //IGNORE
         switch(alarm.type) {
-        case "ALARM_NEW_DEVICE":
-          i_type = "mac"; // place holder, not going to be matched by any alarm/policy
-          i_target = alarm["p.device.ip"];
-          break;
-        case "ALARM_BRO_NOTICE":
-          i_type = "ip";
-          i_target = alarm["p.dest.ip"];
-          break;
-        default:
+          case "ALARM_NEW_DEVICE":
+            i_type = "mac"; // place holder, not going to be matched by any alarm/policy
+            i_target = alarm["p.device.mac"];
+            break;
 
-          if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+          case "ALARM_BRO_NOTICE":
             i_type = "ip";
             i_target = alarm["p.dest.ip"];
-          } else {
-            i_type = "dns";
-            i_target = alarm["p.dest.name"];
-          }        
+            break;
 
-          if(userFeedback) {
-            switch(userFeedback.type) {
-            case "domain":
-            case "dns":
-              i_type = "dns"
-              i_target = userFeedback.target
-              break
-            case "ip":
-              i_type = "ip"
-              i_target = userFeedback.target
-              break
-            case "category":
-              i_type = "category";
-              i_target = userFeedback.target;
-              break;
-            default:
-              break
+          case "ALARM_UPNP":
+            i_type = "devicePort"
+
+            // policy should be created with mac
+            if (alarm["p.device.mac"]) {
+              i_target = util.format("%s:%s:%s",
+                alarm["p.device.mac"],
+                alarm["p.upnp.private.port"],
+                alarm["p.upnp.protocol"]
+              )
+            } else {
+              let targetIp = alarm["p.device.ip"];
+              dnsManager.resolveLocalHost(targetIp, (err, result) => {
+                if(err || result == null) {
+                  log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+                  callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
+                  return;
+                }
+
+                i_target = util.format("%s:%s:%s",
+                  result.mac,
+                  alarm["p.upnp.private.port"],
+                  alarm["p.upnp.protocol"]
+                )
+              })
             }
-          }
-          break;
+            break;
+
+          default:
+
+            if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+              i_type = "ip";
+              i_target = alarm["p.dest.ip"];
+            } else {
+              i_type = "dns";
+              i_target = alarm["p.dest.name"];
+            }
+
+            if(userFeedback) {
+              switch(userFeedback.type) {
+                case "domain":
+                case "dns":
+                  i_type = "dns"
+                  i_target = userFeedback.target
+                  break
+                case "ip":
+                  i_type = "ip"
+                  i_target = userFeedback.target
+                  break
+                case "category":
+                  i_type = "category";
+                  i_target = userFeedback.target;
+                  break;
+                default:
+                  break
+              }
+            }
+            break;
         }
 
         if(!i_type || !i_target) {
@@ -1476,7 +1540,7 @@ module.exports = class {
 
       if(deviceIP === "0.0.0.0") {
         // do nothing for 0.0.0.0
-        extend(alarm, {
+        Object.assign(alarm, {
           "p.device.name": "0.0.0.0",
           "p.device.id": "0.0.0.0",
           "p.device.mac": "00:00:00:00:00:00",
@@ -1500,7 +1564,7 @@ module.exports = class {
           let deviceName = getPreferredBName(result);
           let deviceID = result.mac;
 
-          extend(alarm, {
+          Object.assign(alarm, {
             "p.device.name": deviceName,
             "p.device.id": deviceID,
             "p.device.mac": deviceID,

@@ -36,7 +36,7 @@ const am2 = new AlarmManager2();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-const checkInterval = 3*60*1000// 4 * 60 * 60 * 1000; //4 hours
+const checkInterval = 4 * 60 * 60 * 1000; //4 hours
 
 class SubnetSensor extends Sensor {
   async scheduledJob() {
