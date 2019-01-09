@@ -3083,22 +3083,32 @@ class netBot extends ControllerBot {
           const network = msg.data.value.network;
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
-          if (!network || !intf || !dhcpRange || !dhcpRange.begin || !dhcpRange.end) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface and dhcpRange.start/end should be specified."}, callback);
+          if (!network || !intf || !intf.ipAddress || !intf.subnetMask || !dhcpRange || !dhcpRange.begin || !dhcpRange.end) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask and dhcpRange.start/end should be specified."}, callback);
           } else {
             const currentConfig = fc.getConfig(true);
             switch (network) {
               case "secondary":
                 const currentSecondaryInterface = currentConfig.secondaryInterface;
-                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, intf); // if ip2 is not defined, it will be inherited from previous settings
+                const updatedConfig = {intf: "eth0:0"};
+                const ipAddress = intf.ipAddress;
+                const subnetMask = intf.subnetMask;
+                const ipSubnet = iptool.subnet(ipAddress, subnetMask);
+                updatedConfig.ip = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
                 this.simpleTxData(msg, {}, null, callback);
                 break;
               case "alternative":
-                const currentAlternativeInterface = currentConfig.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, intf);
-                await fc.updateUserConfig({alternativeIpSubnet: mergedAlternativeInterface});
+                const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const updatedAltConfig = {gateway: intf.gateway};
+                const altIpAddress = intf.ipAddress;
+                const altSubnetMask = intf.subnetMask;
+                const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+                updatedAltConfig.ip = altIpSubnet.networkAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
+                await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
                 await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
                 this.simpleTxData(msg, {}, null, callback);
                 break;
@@ -3123,12 +3133,23 @@ class netBot extends ControllerBot {
             const dhcpRange = await dnsmasq.getDhcpRange(network);
             switch (network) {
               case "secondary":
+                // convert ip/subnet to ip address and subnet mask
                 const secondaryInterface = config.secondaryInterface;
-                this.simpleTxData(msg, {interface: secondaryInterface, dhcpRange: dhcpRange}, null, callback);
+                const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
+                this.simpleTxData(msg, {interface: {
+                  ipAddress: secondaryIpSubnet.networkAddress,
+                  subnetMask: secondaryIpSubnet.subnetMask
+                }, dhcpRange: dhcpRange}, null, callback);
                 break;
               case "alternative":
-                const alternativeIpSubnet = config.alternativeIpSubnet || {ipsubnet: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                this.simpleTxData(msg, {interface: alternativeIpSubnet, dhcpRange: dhcpRange}, null, callback);
+                // convert ip/subnet to ip address and subnet mask
+                const alternativeInterface = config.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+                const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
+                this.simpleTxData(msg, {interface: {
+                  ipAddress: alternativeIpSubnet.networkAddress,
+                  subnetMask: alternativeIpSubnet.subnetMask,
+                  gateway: alternativeInterface.gateway
+                }, dhcpRange: dhcpRange}, null, callback);
                 break;
               default:
                 log.error("Unknwon network type in networkInterface:update, " + network);

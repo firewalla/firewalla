@@ -216,11 +216,11 @@ async function _restoreSimpleModeNetworkSettings() {
 
 async function _changeToAlternativeIpSubnet() {
   fConfig = Config.getConfig(true);
-  // backward compatibility if alternativeIpSubnet is not set
-  if (!fConfig.alternativeIpSubnet)
+  // backward compatibility if alternativeInterface is not set
+  if (!fConfig.alternativeInterface)
     return;
-  const altIpSubnet = fConfig.alternativeIpSubnet.ipsubnet;
-  const altGateway = fConfig.alternativeIpSubnet.gateway;
+  const altIpSubnet = fConfig.alternativeInterface.ip;
+  const altGateway = fConfig.alternativeInterface.gateway;
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";

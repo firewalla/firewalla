@@ -108,7 +108,7 @@ exports.create = function(config, callback) {
           // one interface may have multiple ip addresses assigned
           if (subnets.includes(_secondaryIpSubnet)) {
             // other interface already occupies ip1, use alternative ip
-            _secondaryIpSubnet = config.secondaryInterface.ip2Only;
+            _secondaryIpSubnet = config.secondaryInterface.ip2;
             _secondaryIp = _secondaryIpSubnet.split('/')[0];
             _secondaryMask = ip.cidrSubnet(_secondaryIp).subnetMask;
           }
