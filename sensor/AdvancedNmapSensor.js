@@ -55,7 +55,7 @@ class AdvancedNmapSensor extends Sensor {
     return networkTool.getLocalNetworkInterface().then(results => {
       this.networkRanges =
         results &&
-        results.map(x => networkTool.reduceSubnetTo24(x.subnet));
+        results.map(x => networkTool.capSubnet(x.subnet));
       return this.networkRanges;
     });
   }

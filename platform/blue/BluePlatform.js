@@ -111,6 +111,10 @@ class BluePlatform extends Platform {
     await exec(cmd);
     return this.reload();
   }
+
+  getSubnetCapacity() {
+    return 19;
+  }
 }
 
 module.exports = BluePlatform;

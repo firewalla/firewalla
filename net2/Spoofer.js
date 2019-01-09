@@ -406,7 +406,6 @@ module.exports = class {
   }
 
     clean(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge4';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
@@ -424,7 +423,6 @@ module.exports = class {
     }
 
     clean7() {
-      //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
       let cmdline = 'sudo pkill -f bitbridge7';
 
       log.info("Spoof:Clean:Running commandline: ", cmdline);
@@ -457,7 +455,6 @@ module.exports = class {
     }
 
     clean6(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge6a';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";

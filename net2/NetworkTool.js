@@ -16,8 +16,6 @@
 
 const log = require('./logger.js')(__filename);
 
-const Promise = require('bluebird');
-
 const linux = require('../util/linux.js');
 
 const fConfig = require('./config.js').getConfig();
@@ -26,8 +24,8 @@ const os = require('os');
 const ip = require('ip');
 const dns = require('dns');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 let instance = null;
 
@@ -140,18 +138,21 @@ class NetworkTool {
   }
 
   // same as getSubnet() but filters non-local interfaces
-  getLocalNetworkSubnets() {
-    return async(() => {
-      let interfaces = await(this.getLocalNetworkInterface());
-      // a very hard code for 16 subnet
-      return interfaces && interfaces.map(x => this.reduceSubnetTo24(x.subnet));
-    })();
+  async getLocalNetworkSubnets() {
+    let interfaces = await this.getLocalNetworkInterface();
+    // a very hard code for 16 subnet
+    return interfaces && interfaces.map(x => this.capSubnet(x.subnet));
   }
 
-  reduceSubnetTo24(cidrAddr) {
+  capSubnet(cidrAddr) {
+    let subnetCap = platform.getSubnetCapacity();
     let subnet = ip.cidrSubnet(cidrAddr);
-    if (subnet.subnetMaskLength < 24) return subnet.networkAddress + '/24';
-    else return cidrAddr;
+    if (subnet.subnetMaskLength < subnetCap) {
+      log.info('Subnet capped to ' + subnet.networkAddress + '/' + subnetCap);
+      return subnet.networkAddress + '/' + subnetCap;
+    }
+    else
+      return cidrAddr;
   }
 }
 

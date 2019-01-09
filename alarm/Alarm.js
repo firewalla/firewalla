@@ -136,6 +136,7 @@ class Alarm {
 
     for(var i in keysToCompare) {
       let k = keysToCompare[i];
+      // using == to compromise numbers comparison
       if(alarm[k] && alarm2[k] && alarm[k] == alarm2[k]) {
 
       } else {
@@ -531,7 +532,7 @@ class SubnetAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac"];
+    return ["p.device.mac", "p.device.ip", "p.subnet.length"];
   }
 
   getExpirationTime() {
