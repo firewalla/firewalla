@@ -872,11 +872,11 @@ module.exports = class DNSMASQ {
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
     let cmdAlt = null;
 
-    if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
+    if (this.dhcpMode && (!sysManager.myIp2() || !sysManager.myIpMask2())) {
       log.warn("DHCPFeature is enabled but secondary network interface is not setup");
     }
 
-    if(this.dhcpMode && sysManager.secondaryIpnet && sysManager.secondaryMask) {
+    if(this.dhcpMode && sysManager.myIp2() && sysManager.myIpMask2()) {
       log.info("DHCP feature is enabled");
 
       cmd = await this.prepareDnsmasqCmd(cmd);
@@ -990,13 +990,14 @@ module.exports = class DNSMASQ {
 
   async prepareDnsmasqCmd(cmd) {
     let {begin, end} = await this.getDhcpRange("secondary");
-    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+    let routerIP = sysManager.myIp2();
+    const mask = sysManager.myIpMask2();
 
     cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmd,
       begin,
       end,
-      sysManager.secondaryMask,
+      mask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
 
@@ -1006,7 +1007,8 @@ module.exports = class DNSMASQ {
     if (simpleIpFileExists) {
       const simpleIpSubnet = await fs.readFileAsync(simpleIpFile, "utf8");
       const simpleIp = simpleIpSubnet.split('/')[0];
-      if (simpleIp.startsWith(sysManager.secondaryIpnet)) // secondaryIpnet is like 192.168.218
+      const secondarySubnet = ip.subnet(sysManager.myIp2(), sysManager.myIpMask2());
+      if (secondarySubnet.contains(simpleIp)) // previous simple ip is contained in current secondary ip subnet, need to reserve this ip address
         cmd = util.format("%s --dhcp-host=%s,%s", cmd, sysManager.myMAC(), simpleIp);
     }
 

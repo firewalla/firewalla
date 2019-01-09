@@ -20,6 +20,7 @@ var os = require('os');
 var dns = require('dns');
 var network = require('network');
 var log = require('./logger.js')(__filename, 'info');
+const util = require('util');
 
 function is_interface_valid(netif) {
   return (
@@ -71,12 +72,11 @@ exports.create = function(config, callback) {
   },
 */
   if (config.secondaryInterface && config.secondaryInterface.intf) {
-    let _secondaryIp = config.secondaryInterface.ip;
-    let _secondaryIpSubnet = config.secondaryInterface.ipsubnet;
-    let _secondaryIpNet = config.secondaryInterface.ipnet;
-    let _secondaryMask = config.secondaryInterface.ipmask;
-    let legacyIp = null;
-    let legacySubnet = null;
+    // ip can sufficiently identify a network configuration, all other configurations are redundant
+    let _secondaryIpSubnet = config.secondaryInterface.ip;
+    let _secondaryIp = _secondaryIpSubnet.split('/')[0];
+    let _secondaryMask = ip.cidrSubnet(_secondaryIpSubnet).subnetMask;
+    let legacyIpSubnet = null;
     linux.get_network_interfaces_list((err, list) => {
       list = list.filter(function(x) {
         return is_interface_valid(x);
@@ -85,65 +85,51 @@ exports.create = function(config, callback) {
         if (list[i].name == config.secondaryInterface.intf) {
           if (
             list[i].netmask === 'Mask:' + _secondaryMask &&
-            list[i].ip_address === _secondaryIp.split('/')[0]
+            list[i].ip_address === _secondaryIp
           ) {
             // same ip and subnet mask
             log.info('Already Created Secondary Interface', list[i]);
             if (callback) {
               callback(
                 null,
-                _secondaryIp,
                 _secondaryIpSubnet,
-                _secondaryIpNet,
-                _secondaryMask,
-                legacyIp,
-                legacySubnet
+                legacyIpSubnet
               );
             }
             return;
           } else {
             log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
-            const legacyIpSubnet = ip.subnet(
-              list[i].ip_address,
-              list[i].netmask.substring(5)
-            );
             // should be like 192.168.218.1
-            legacyIp = list[i].ip_address; 
-            // should be like 192.168.218.0/24
-            legacySubnet = legacyIpSubnet.networkAddress + '/' + legacyIpSubnet.subnetMaskLength;
+            const legacyCidrSubnet = ip.subnet(list[i].ip_address, list[i].netmask.substring(5));
+            legacyIpSubnet = legacyCidrSubnet.networkAddress + "/" + legacyCidrSubnet.subnetMaskLength;
           }
         } else {
-          // other interface already occupies ip1, use alternative ip
           let subnets = getSubnet(list[i].name, 'IPv4');
           // one interface may have multiple ip addresses assigned
           if (subnets.includes(_secondaryIpSubnet)) {
-            _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
-            _secondaryIp = config.secondaryInterface.ip2;
-            _secondaryIpNet = config.secondaryInterface.ipnet2;
-            _secondaryMask = config.secondaryInterface.ipmask2;
+            // other interface already occupies ip1, use alternative ip
+            _secondaryIpSubnet = config.secondaryInterface.ip2Only;
+            _secondaryIp = _secondaryIpSubnet.split('/')[0];
+            _secondaryMask = ip.cidrSubnet(_secondaryIp).subnetMask;
           }
         }
       }
       // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
       require('child_process').exec(
-        'sudo ifconfig ' + config.secondaryInterface.intf + ' ' + _secondaryIp,
-        (err, out, code) => {
+        util.format("sudo ifconfig %s %s", config.secondaryInterface.intf, _secondaryIpSubnet),
+        (err, stdout, stderr) => {
           if (err != null) {
-            log.error('SecondaryInterface: Error Creating Secondary Interface', _secondaryIp, out);
+            log.error('SecondaryInterface: Error Creating Secondary Interface', _secondaryIpSubnet, err);
           }
           require('child_process').exec(
-            'sudo /home/pi/firewalla/scripts/config_secondary_interface.sh ' + _secondaryIp,
-            (err, out, code) => {}
+            util.format("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh %s", _secondaryIpSubnet),
+            (err, stdout, stderr) => {}
           );
           if (callback) {
             callback(
               err,
-              _secondaryIp,
               _secondaryIpSubnet,
-              _secondaryIpNet,
-              _secondaryMask,
-              legacyIp,
-              legacySubnet
+              legacyIpSubnet
             );
           }
         }

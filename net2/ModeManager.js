@@ -279,34 +279,27 @@ async function _changeToAlternativeIpSubnet() {
 function _enableSecondaryInterface() {
   return new Promise((resolve, reject) => {  
     fConfig = Config.getConfig(true);
-    secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask, legacyIp, legacySubnet)=>{
+    secondaryInterface.create(fConfig,(err, ipSubnet, legacyIpSubnet)=>{
       if (err == null) {
         log.info("Successfully created secondary interface");
-        // register the secondary interface info to sysManager
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet;
-        sysManager.secondaryIpnet = ipnet;
-        sysManager.secondaryMask = mask;
-        if (legacySubnet) { // secondary ip is changed
+        if (legacyIpSubnet) { // secondary ip is changed
           d.discoverInterfaces(() => {
             sysManager.update(() => {
               // secondary interface ip changed, reload sysManager in all Fire* processes
               (async () => {
-                // legacySubnet should be like 192.168.218.0/24
+                // legacyIpSubnet should be like 192.168.218.0/24
                 // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
-                if (legacyIp) { // legacyIp should be exact address like 192.168.218.1
-                  await iptables.diagHttpChangeAsync(legacyIp, false);
-                }
+                await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
+                const legacyIp = legacyIpSubnet.split('/')[0];
+                // legacyIp should be exact address like 192.168.218.1
+                await iptables.diagHttpChangeAsync(legacyIp, false);
                 // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(subnet, true); // add new DHCP MASQUERADE rule
-                const newIpAddr = ip.split('/')[0]; // newIpAddr should be like 192.168.220.1
-                if (newIpAddr) {
-                  await iptables.diagHttpChangeAsync(newIpAddr, true);
-                }
+                await iptables.dhcpSubnetChangeAsync(ipSubnet, true); // add new DHCP MASQUERADE rule
+                const ip = ipSubnet.split('/')[0];
+                await iptables.diagHttpChangeAsync(ip, true);
                 resolve();
               })().catch((err) => {
-                log.error("Failed to update nat for legacy IP subnet: " + legacySubnet, err);
+                log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
                 reject(err);
               });
             });
