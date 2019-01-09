@@ -76,7 +76,7 @@ module.exports = class {
     }
 
     try {
-      range = networkTool.reduceSubnetTo24(range)
+      range = networkTool.capSubnet(range)
     } catch (e) {
       log.error('Nmap:Scan:Error', range, fast, e, {});
       callback(e);

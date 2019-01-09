@@ -33,6 +33,9 @@ const Alarm = require('../alarm/Alarm');
 const AlarmManager2 = require('../alarm/AlarmManager2');
 const am2 = new AlarmManager2();
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 const checkInterval = 3*60*1000// 4 * 60 * 60 * 1000; //4 hours
 
 class SubnetSensor extends Sensor {
@@ -46,11 +49,15 @@ class SubnetSensor extends Sensor {
         let intf = JSON.parse(detectedInterfaces[interfaceName]);
         if (intf && intf.subnet) {
           let subnet = ip.cidrSubnet(intf.subnet);
-          if (subnet.subnetMaskLength < 24) {
+          let subnetCap = platform.getSubnetCapacity();
+          if (subnet.subnetMaskLength < subnetCap) {
             let alarm = new Alarm.SubnetAlarm(
               new Date() / 1000,
               intf.gateway,
-              { 'p.device.ip': intf.gateway }
+              {
+                'p.device.ip': intf.gateway,
+                'p.subnet.length': subnet.subnetMaskLength
+              }
             );
 
             am2
