@@ -1065,9 +1065,14 @@ module.exports = class DNSMASQ {
     // and the DNS server and default route are set to the address of the machine running dnsmasq.
     cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
 
-    sysManager.myDNS().forEach(dns => {
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
-    });
+    if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
+      // if secondary dns server is set, use specified dns servers in dhcp response
+      const dnsServers = interfaceNameServers.secondary.join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    } else {
+      const dnsServers = sysManager.myDNS().join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    }
     return cmd;
   }
 
@@ -1090,13 +1095,11 @@ module.exports = class DNSMASQ {
 
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
       // if alternative dns server is set, use specified dns servers in dhcp response
-      interfaceNameServers.alternative.forEach(dns => {
-        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-      });
+      const dnsServers = interfaceNameServers.alternative.join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
     } else {
-      sysManager.myDNS().forEach(dns => {
-        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-      });
+      const dnsServers = sysManager.myDNS().join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
     }
     return cmdAlt;
   }
