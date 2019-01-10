@@ -415,6 +415,14 @@ module.exports = class {
     }
   }
 
+  async ipAllocation(host, policy) {
+    if (host.constructor.name !== 'Host') {
+      log.error("ipAllocation only supports per device policy", host);
+      return;
+    }
+    await host.ipAllocation(policy);
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -681,6 +689,8 @@ module.exports = class {
         this.shield(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
+      } else if (p === "ipAllocation") {
+        this.ipAllocation(host, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       } else if (p === "block") {

@@ -833,6 +833,8 @@ module.exports = class DNSMASQ {
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
+    // static ip reservation is set in host:mac:*
+    /*
     let static_hosts = await redis.hgetallAsync('dhcp:static');
 
     log.debug("static hosts:", util.inspect(static_hosts));
@@ -861,17 +863,18 @@ module.exports = class DNSMASQ {
 
       hosts = hosts.concat(_hosts);
     }
+    */
 
     hosts = hosts.filter((x) => x.mac != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = hosts.map(h => (h.spoofing === 'false') ?
       `${h.mac},set:unmonitor,ignore` :
-      `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
+      `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
     );
 
     let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-      `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
+      `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
       `${h.mac},set:monitor,ignore`
     );
 

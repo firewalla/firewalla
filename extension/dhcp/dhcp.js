@@ -30,21 +30,6 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 
 
-async function upsertDhcpReservation(mac, ip) {
-  await rclient.hsetAsync("dhcp:static", mac, ip);
-  pclient.publish("DHCPReservationChanged", "");
-}
-
-async function listDhcpReservations() {
-  const result = rclient.hgetallAsync("dhcp:static") || {};
-  return result;
-}
-
-async function deleteDhcpReservation(mac) {
-  await rclient.hdelAsync("dhcp:static", mac);
-  pclient.publish("DHCPReservationChanged", "");
-}
-
 async function dhcpDiscover(intf) {
   intf = intf || "eth0";
   log.info("Broadcasting DHCP discover on ", intf);
@@ -105,10 +90,7 @@ async function dhcpDiscover(intf) {
 }
 
 module.exports = {
-  dhcpDiscover: dhcpDiscover,
-  upsertDhcpReservation: upsertDhcpReservation,
-  listDhcpReservations: listDhcpReservations,
-  deleteDhcpReservation: deleteDhcpReservation
+  dhcpDiscover: dhcpDiscover
 }
 
 /*
