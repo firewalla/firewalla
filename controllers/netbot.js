@@ -2377,14 +2377,14 @@ class netBot extends ControllerBot {
       case "alarm:unblock_and_allow":
         am2.unblockFromAlarm(value.alarmID, value, (err) => {
           if (err) {
-            log.error("Failed to unblock", value.alarmID, ", err:", err, {});
+            log.error("Failed to unblock", value.alarmID, ", err:", err);
             this.simpleTxData(msg, {}, err, callback);
             return;
           }
 
           am2.allowFromAlarm(value.alarmID, value, (err) => {
             if (err) {
-              log.error("Failed to allow", value.alarmID, ", err:", err, {});
+              log.error("Failed to allow", value.alarmID, ", err:", err);
             }
             this.simpleTxData(msg, {}, err, callback);
           });
@@ -2395,7 +2395,7 @@ class netBot extends ControllerBot {
           await (am2.ignoreAlarm(value.alarmID))
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
-          log.error("Failed to ignore alarm:", err, {})
+          log.error("Failed to ignore alarm:", err)
           this.simpleTxData(msg, {}, err, callback)
         })
         break
@@ -2405,10 +2405,22 @@ class netBot extends ControllerBot {
           await (am2.reportBug(value.alarmID, value.feedback))
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
-          log.error("Failed to report bug on alarm:", err, {})
+          log.error("Failed to report bug on alarm:", err)
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+
+      case "alarm:delete":
+        try {
+          (async () => {
+            await am2.removeAlarmAsync(value.alarmID);
+            this.simpleTxData(msg, {}, null, callback)
+          })()
+        } catch(err) {
+          log.error("Failed to delete alarm:", err)
+          this.simpleTxData(msg, null, err, callback)
+        }
+        break;
 
       case "policy:create":
         let policy
