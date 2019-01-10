@@ -551,6 +551,14 @@ module.exports = class {
       needUpdate = true;
       needRestart = true;
     }
+    if (config.secondaryDhcpRange) {
+      dnsmasq.setDhcpRange("secondary", config.secondaryDhcpRange.begin, config.secondaryDhcpRange.end);
+      needRestart = true;
+    }
+    if (config.alternativeDhcpRange) {
+      dnsmasq.setDhcpRange("alternative", config.alternativeDhcpRange.begin, config.alternativeDhcpRange.end);
+      needRestart = true;
+    }
     if (needUpdate)
       dnsmasq.updateResolvConf();
     if (needRestart)

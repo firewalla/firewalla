@@ -65,6 +65,8 @@ const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 const altResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.resolv.conf";
 
+const interfaceDhcpRange = {};
+
 let defaultNameServers = {};
 let interfaceNameServers = {};
 let upstreamDNS = null;
@@ -989,7 +991,14 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
-  async getDhcpRange(network) {
+  setDhcpRange(network, begin, end) {
+    interfaceDhcpRange[network] = {
+      begin: begin,
+      end: end
+    };
+  }
+  
+  getDefaultDhcpRange(network) {
     if (network === "alternative") {
       let cidr = ip.cidrSubnet(sysManager.mySubnet());
       let firstAddr = ip.toLong(cidr.firstAddress);
@@ -998,12 +1007,6 @@ module.exports = class DNSMASQ {
 
       let rangeBegin = ip.fromLong(midAddr);
       let rangeEnd = ip.fromLong(lastAddr - 3);
-
-      const dhcpRange = await dhcp.getDhcpRange("alternative");
-      if (dhcpRange) {
-        rangeBegin = dhcpRange.begin;
-        rangeEnd = dhcpRange.end;
-      }
       return {
         begin: rangeBegin,
         end: rangeEnd
@@ -1014,11 +1017,6 @@ module.exports = class DNSMASQ {
       const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
       let rangeBegin = util.format("%s.50", prefix);
       let rangeEnd = util.format("%s.250", prefix);
-      const dhcpRange = await dhcp.getDhcpRange("secondary");
-      if (dhcpRange) {
-        rangeBegin = dhcpRange.begin;
-        rangeEnd = dhcpRange.end;
-      }
       return {
         begin: rangeBegin,
         end: rangeEnd
@@ -1027,8 +1025,16 @@ module.exports = class DNSMASQ {
     return null;
   }
 
+  getDhcpRange(network) {
+    let range = interfaceDhcpRange[network];
+    if (!range) {
+      range = this.getDefaultDhcpRange(network);
+    }
+    return range;
+  }
+
   async prepareDnsmasqCmd(cmd) {
-    let {begin, end} = await this.getDhcpRange("secondary");
+    let {begin, end} = this.getDhcpRange("secondary");
     let routerIP = sysManager.myIp2();
     const mask = sysManager.myIpMask2();
 
@@ -1067,7 +1073,7 @@ module.exports = class DNSMASQ {
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
-    let {begin, end} = await this.getDhcpRange("alternative");
+    let {begin, end} = this.getDhcpRange("alternative");
 
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,

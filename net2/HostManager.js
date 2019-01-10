@@ -1738,9 +1738,20 @@ module.exports = class HostManager {
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
     const dnsmasq = new DNSMASQ();
-    const dhcpRange = await dnsmasq.getDhcpRange(network);
-    if (dhcpRange) 
-      json[key] = dhcpRange;
+    let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
+    return new Promise((resolve, reject) => {
+      this.loadPolicy((err, data) => {
+        if (data.dnsmasq) {
+          const dnsmasqConfig = JSON.parse(data.dnsmasq);
+          if (dnsmasqConfig[network + "DhcpRange"]) {
+            dhcpRange = dnsmasqConfig[network + "DhcpRange"];
+          }
+        }
+        if (dhcpRange)
+          json[key] = dhcpRange;
+        resolve();
+      })
+    });
   }
 
   modeForInit(json) {

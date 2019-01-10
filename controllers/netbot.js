@@ -3101,8 +3101,7 @@ class netBot extends ControllerBot {
                 updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
-                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
-                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers});
+                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
                 setTimeout(() => {
                   let modeManager = require('../net2/ModeManager.js');
                   modeManager.publishNetworkInterfaceUpdate();
@@ -3118,8 +3117,7 @@ class netBot extends ControllerBot {
                 updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
                 await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
-                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
-                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers});
+                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
                 setTimeout(() => {
                   let modeManager = require('../net2/ModeManager.js');
                   modeManager.publishNetworkInterfaceUpdate();
@@ -3144,7 +3142,7 @@ class netBot extends ControllerBot {
           } else {
             const config = fc.getConfig(true);
             const dnsmasq = new Dnsmasq();
-            const dhcpRange = await dnsmasq.getDhcpRange(network);
+            let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary":
                 // convert ip/subnet to ip address and subnet mask
@@ -3156,6 +3154,9 @@ class netBot extends ControllerBot {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
                       secondaryDnsServers = dnsmasq.secondaryDnsServers;
+                    }
+                    if (dnsmasq.secondaryDhcpRange) {
+                      dhcpRange = dnsmasq.secondaryDhcpRange;
                     }
                   }
                   this.simpleTxData(msg, 
@@ -3179,6 +3180,9 @@ class netBot extends ControllerBot {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
                       alternativeDnsServers = dnsmasq.alternativeDnsServers;
+                    }
+                    if (dnsmasq.alternativeDhcpRange) {
+                      dhcpRange = dnsmasq.alternativeDhcpRange;
                     }
                   }
                   this.simpleTxData(msg, 
