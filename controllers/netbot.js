@@ -446,6 +446,35 @@ class netBot extends ControllerBot {
     });
   }
 
+  _ipAllocation(ip, value, callback) {
+    if (ip === "0.0.0.0") {
+      // ip allocation is only applied on device
+      callback(null)
+      return;
+    }
+    this.hostManager.getHost(ip, (err, host) => {
+      if (host != null) {
+        host.loadPolicy((err, data) => {
+          if (err == null) {
+            host.setPolicy("ipAllocation", value, (err, data) => {
+              if (err == null) {
+                if (callback != null)
+                  callback(null, "Success: " + ip);
+              } else {
+                if (callback != null)
+                  callback(err, "Failed to set ip allocation to policy of " + ip);
+              }
+            });
+          } else {
+            log.error("Failed to load policy of " + ip, err);
+            if (callback != null)
+                callback(err, "Failed to load policy");
+          }
+        })
+      }
+    })
+  }
+
   _shield(ip, value, callback) {
     if (ip !== "0.0.0.0") {
       // per-device shield policy rule is not supported currently
@@ -1099,6 +1128,11 @@ class netBot extends ControllerBot {
               break;
             case "acl":
               this._block(msg.target, "acl", value.acl, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "ipAllocation":
+              this._ipAllocation(msg.target, value.ipAllocation, (err, obj) => {
                 cb(err);
               });
               break;
@@ -2095,9 +2129,6 @@ class netBot extends ControllerBot {
       let jsonobj = {};
       if (host) {
         jsonobj = host.toJson();
-        const dhcpReservation = await (hostTool.getDHCPReservation(mac));
-        if (dhcpReservation)
-          jsonobj.dhcpReservation = dhcpReservation;
 
         await ([
           flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
@@ -3113,8 +3144,7 @@ class netBot extends ControllerBot {
                 updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
-                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
-                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers});
+                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
                 setTimeout(() => {
                   let modeManager = require('../net2/ModeManager.js');
                   modeManager.publishNetworkInterfaceUpdate();
@@ -3130,8 +3160,7 @@ class netBot extends ControllerBot {
                 updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
                 await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
-                await dhcp.upsertDhcpRange(network, dhcpRange.begin, dhcpRange.end);
-                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers});
+                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
                 setTimeout(() => {
                   let modeManager = require('../net2/ModeManager.js');
                   modeManager.publishNetworkInterfaceUpdate();
@@ -3156,7 +3185,7 @@ class netBot extends ControllerBot {
           } else {
             const config = fc.getConfig(true);
             const dnsmasq = new Dnsmasq();
-            const dhcpRange = await dnsmasq.getDhcpRange(network);
+            let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary":
                 // convert ip/subnet to ip address and subnet mask
@@ -3168,6 +3197,9 @@ class netBot extends ControllerBot {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
                       secondaryDnsServers = dnsmasq.secondaryDnsServers;
+                    }
+                    if (dnsmasq.secondaryDhcpRange) {
+                      dhcpRange = dnsmasq.secondaryDhcpRange;
                     }
                   }
                   this.simpleTxData(msg, 
@@ -3192,6 +3224,9 @@ class netBot extends ControllerBot {
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
                       alternativeDnsServers = dnsmasq.alternativeDnsServers;
                     }
+                    if (dnsmasq.alternativeDhcpRange) {
+                      dhcpRange = dnsmasq.alternativeDhcpRange;
+                    }
                   }
                   this.simpleTxData(msg, 
                     {
@@ -3215,56 +3250,7 @@ class netBot extends ControllerBot {
         })
         break;
       }
-      case "dhcpReservation:upsert": {
-        (async () => {
-          const mac = msg.data.value.mac;
-          const ip = msg.data.value.ip;
-          if (!mac || !ip) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac or static ip is not specified"}, callback);
-          } else {
-            const macExists = await hostTool.macExists(mac);
-            if (macExists) {
-              log.info("set dhcp reservation for " + mac + ": " + ip);
-              await dhcp.upsertDhcpReservation(mac, ip);
-              this.simpleTxData(msg, {}, null, callback);
-            } else {
-              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
-            }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "dhcpReservation:list": {
-        (async () => {
-          const reservations = await dhcp.listDhcpReservations();
-          this.simpleTxData(msg, reservations, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "dhcpReservation:delete": {
-        (async () => {
-          const mac = msg.data.value.mac;
-          if (!mac) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "Device mac is not specified"}, callback);
-          } else {
-            const macExists = await hostTool.macExists(mac);
-            if (macExists) {
-              log.info("delete dhcp reservation for " + mac);
-              await dhcp.deleteDhcpReservation(mac);
-              this.simpleTxData(msg, {}, null, callback);
-            } else {
-              this.simpleTxData(msg, {}, {code: 404, msg: "Device does not exist"}, callback);
-            }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
+
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);

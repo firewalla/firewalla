@@ -89,17 +89,6 @@ class HostTool {
     return hostEntry.ipv4;
   }
 
-  async getDHCPReservation(mac) {
-    const key = "dhcp:static";
-    const keyExists = await rclient.existsAsync(key);
-    if (keyExists) {
-      const result = await rclient.hgetAsync(key, mac);
-      return result;
-    } else {
-      return null;
-    }
-  }
-
   updateDHCPInfo(mac, type, info) {
     let key = "dhcp:" + mac + ":" + type;
     return rclient.hmsetAsync(key, info)
