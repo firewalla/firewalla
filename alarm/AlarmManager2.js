@@ -393,15 +393,11 @@ module.exports = class {
     });
   }  
 
-  removeAlarmAsync(alarmID, callback) {
-    callback = callback || function() {}
-
-    return async(() => {
-      await (this.removeFromActiveQueueAsync(alarmID))
-
-      let alarmKey = alarmPrefix + alarmID
-      await (rclient.delAsync(alarmKey))
-    })()
+  async removeAlarmAsync(alarmID) {
+    await rclient.zremAsync(alarmArchiveKey, alarmID);
+    await this.removeFromActiveQueueAsync(alarmID);
+    await this.deleteExtendedAlarm(alarmID);
+    await rclient.delAsync(alarmPrefix + alarmID);
   }
 
   dedup(alarm) {
@@ -798,13 +794,11 @@ module.exports = class {
     
   }
 
-  archiveAlarm(alarmID) {
-    return async(() => {
-      await (rclient.multi()
-             .zrem(alarmActiveKey, alarmID)
-             .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
-             .execAsync())      
-    })()
+  async archiveAlarm(alarmID) {
+    return rclient.multi()
+            .zrem(alarmActiveKey, alarmID)
+            .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
+            .execAsync();
   }
 
   async listExtendedAlarms() {
