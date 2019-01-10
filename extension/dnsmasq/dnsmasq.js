@@ -65,6 +65,8 @@ const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 const altResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.resolv.conf";
 
+const interfaceDhcpRange = {};
+
 let defaultNameServers = {};
 let interfaceNameServers = {};
 let upstreamDNS = null;
@@ -831,6 +833,8 @@ module.exports = class DNSMASQ {
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
+    // static ip reservation is set in host:mac:*
+    /*
     let static_hosts = await redis.hgetallAsync('dhcp:static');
 
     log.debug("static hosts:", util.inspect(static_hosts));
@@ -859,17 +863,18 @@ module.exports = class DNSMASQ {
 
       hosts = hosts.concat(_hosts);
     }
+    */
 
     hosts = hosts.filter((x) => x.mac != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = hosts.map(h => (h.spoofing === 'false') ?
       `${h.mac},set:unmonitor,ignore` :
-      `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
+      `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
     );
 
     let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-      `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
+      `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
       `${h.mac},set:monitor,ignore`
     );
 
@@ -989,7 +994,14 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
-  async getDhcpRange(network) {
+  setDhcpRange(network, begin, end) {
+    interfaceDhcpRange[network] = {
+      begin: begin,
+      end: end
+    };
+  }
+  
+  getDefaultDhcpRange(network) {
     if (network === "alternative") {
       let cidr = ip.cidrSubnet(sysManager.mySubnet());
       let firstAddr = ip.toLong(cidr.firstAddress);
@@ -998,12 +1010,6 @@ module.exports = class DNSMASQ {
 
       let rangeBegin = ip.fromLong(midAddr);
       let rangeEnd = ip.fromLong(lastAddr - 3);
-
-      const dhcpRange = await dhcp.getDhcpRange("alternative");
-      if (dhcpRange) {
-        rangeBegin = dhcpRange.begin;
-        rangeEnd = dhcpRange.end;
-      }
       return {
         begin: rangeBegin,
         end: rangeEnd
@@ -1014,11 +1020,6 @@ module.exports = class DNSMASQ {
       const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
       let rangeBegin = util.format("%s.50", prefix);
       let rangeEnd = util.format("%s.250", prefix);
-      const dhcpRange = await dhcp.getDhcpRange("secondary");
-      if (dhcpRange) {
-        rangeBegin = dhcpRange.begin;
-        rangeEnd = dhcpRange.end;
-      }
       return {
         begin: rangeBegin,
         end: rangeEnd
@@ -1027,8 +1028,16 @@ module.exports = class DNSMASQ {
     return null;
   }
 
+  getDhcpRange(network) {
+    let range = interfaceDhcpRange[network];
+    if (!range) {
+      range = this.getDefaultDhcpRange(network);
+    }
+    return range;
+  }
+
   async prepareDnsmasqCmd(cmd) {
-    let {begin, end} = await this.getDhcpRange("secondary");
+    let {begin, end} = this.getDhcpRange("secondary");
     let routerIP = sysManager.myIp2();
     const mask = sysManager.myIpMask2();
 
@@ -1056,9 +1065,14 @@ module.exports = class DNSMASQ {
     // and the DNS server and default route are set to the address of the machine running dnsmasq.
     cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
 
-    sysManager.myDNS().forEach(dns => {
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
-    });
+    if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
+      // if secondary dns server is set, use specified dns servers in dhcp response
+      const dnsServers = interfaceNameServers.secondary.join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    } else {
+      const dnsServers = sysManager.myDNS().join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    }
     return cmd;
   }
 
@@ -1067,7 +1081,7 @@ module.exports = class DNSMASQ {
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
-    let {begin, end} = await this.getDhcpRange("alternative");
+    let {begin, end} = this.getDhcpRange("alternative");
 
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,
@@ -1081,13 +1095,11 @@ module.exports = class DNSMASQ {
 
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
       // if alternative dns server is set, use specified dns servers in dhcp response
-      interfaceNameServers.alternative.forEach(dns => {
-        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-      });
+      const dnsServers = interfaceNameServers.alternative.join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
     } else {
-      sysManager.myDNS().forEach(dns => {
-        cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-      });
+      const dnsServers = sysManager.myDNS().join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
     }
     return cmdAlt;
   }

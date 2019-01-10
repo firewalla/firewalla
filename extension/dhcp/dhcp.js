@@ -30,50 +30,6 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 
 
-async function upsertDhcpReservation(mac, ip) {
-  await rclient.hsetAsync("dhcp:static", mac, ip);
-  pclient.publish("DHCPReservationChanged", "");
-}
-
-async function listDhcpReservations() {
-  const result = rclient.hgetallAsync("dhcp:static") || {};
-  return result;
-}
-
-async function deleteDhcpReservation(mac) {
-  await rclient.hdelAsync("dhcp:static", mac);
-  pclient.publish("DHCPReservationChanged", "");
-}
-
-async function upsertDhcpRange(network, begin, end) {
-  const key = util.format("dhcp:range:%s", network);
-  await rclient.hsetAsync(key, "begin", begin);
-  await rclient.hsetAsync(key, "end", end);
-}
-
-async function getDhcpRange(network) {
-  const key = util.format("dhcp:range:%s", network);
-  const exists = await rclient.existsAsync(key);
-  if (exists) {
-    const begin = await rclient.hgetAsync(key, "begin");
-    const end = await rclient.hgetAsync(key, "end");
-    return {
-      begin: begin,
-      end: end
-    };
-  } else {
-    return null;
-  }
-}
-
-async function deleteDhcpRange(subnet) {
-  const key = util.format("dhcp:range:%s", subnet);
-  const exists = await rclient.existsAsync(key);
-  if (exists) {
-    await rclient.delAsync(key);
-  }
-}
-
 async function dhcpDiscover(intf) {
   intf = intf || "eth0";
   log.info("Broadcasting DHCP discover on ", intf);
@@ -134,13 +90,7 @@ async function dhcpDiscover(intf) {
 }
 
 module.exports = {
-  dhcpDiscover: dhcpDiscover,
-  upsertDhcpRange: upsertDhcpRange,
-  getDhcpRange: getDhcpRange,
-  deleteDhcpRange: deleteDhcpRange,
-  upsertDhcpReservation: upsertDhcpReservation,
-  listDhcpReservations: listDhcpReservations,
-  deleteDhcpReservation: deleteDhcpReservation
+  dhcpDiscover: dhcpDiscover
 }
 
 /*

@@ -532,6 +532,24 @@ class Host {
     }
   }
 
+  async ipAllocation(policy) {
+    const type = policy.type;
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    if (type === "dynamic") {  
+      this.dnsmasq.onDHCPReservationChanged();
+    }
+    if (type === "static") {
+      const alternativeIp = policy.alternativeIp;
+      const secondaryIp = policy.secondaryIp;
+      if (alternativeIp)
+        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
+      if (secondaryIp)
+        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
+      this.dnsmasq.onDHCPReservationChanged();
+    }
+  }
+
 
   spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
@@ -1738,9 +1756,20 @@ module.exports = class HostManager {
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
     const dnsmasq = new DNSMASQ();
-    const dhcpRange = await dnsmasq.getDhcpRange(network);
-    if (dhcpRange) 
-      json[key] = dhcpRange;
+    let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
+    return new Promise((resolve, reject) => {
+      this.loadPolicy((err, data) => {
+        if (data.dnsmasq) {
+          const dnsmasqConfig = JSON.parse(data.dnsmasq);
+          if (dnsmasqConfig[network + "DhcpRange"]) {
+            dhcpRange = dnsmasqConfig[network + "DhcpRange"];
+          }
+        }
+        if (dhcpRange)
+          json[key] = dhcpRange;
+        resolve();
+      })
+    });
   }
 
   modeForInit(json) {
