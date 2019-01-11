@@ -86,8 +86,6 @@ const pm2 = new PM2();
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
-const country = require('../extension/country/country.js');
-
 const builder = require('botbuilder');
 const uuid = require('uuid');
 
@@ -2124,35 +2122,6 @@ class netBot extends ControllerBot {
 
       return jsonobj;
     })();
-  }
-
-  enrichCountryInfo(flows) {
-    // support time flow first
-    let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
-
-    flowsSet.forEach((eachFlows) => {
-      if(!eachFlows)
-        return;
-
-      eachFlows.forEach((flow) => {
-
-        if(flow.ip) {
-          flow.country = country.getCountry(flow.ip);
-          return;
-        }
-
-        let sh = flow.sh;
-        let dh = flow.dh;
-        let lh = flow.lh;
-
-        if (sh === lh) {
-          flow.country = country.getCountry(dh);
-        } else {
-          flow.country = country.getCountry(sh);
-        }
-      });
-
-    });
   }
 
   /*

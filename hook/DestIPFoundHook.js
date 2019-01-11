@@ -114,6 +114,10 @@ class DestIPFoundHook extends Hook {
     // app
     cloudIntelInfos.forEach((info) => {
 
+      if (info.failed) {
+        intel.cloudFailed = true;
+      }
+
 /*
       let hashes = [intel.ip, intel.host].map(
         x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
@@ -226,7 +230,7 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  processIP(flow, options) {
+  async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
 
@@ -247,19 +251,15 @@ class DestIPFoundHook extends Hook {
     } 
     options = options || {};
 
-    let skipRedisUpdate = options.skipUpdate;
-    let forceRedisUpdate = options.forceUpdate;
+    let skipLocalCache = options.skipLocalCache;
 
-    return (async() => {
+    try {
+      let intel;
+      if (!skipLocalCache) {
+        intel = await intelTool.getIntel(ip);
 
-      if(!skipRedisUpdate && !forceRedisUpdate) {
-        let result = await intelTool.intelExists(ip);
-
-        if(result) {
-          const intel = await intelTool.getIntel(ip)
-
-          await this.updateCategoryDomain(intel)
-
+        if (intel && !intel.cloudFailed) {
+          await this.updateCategoryDomain(intel);
           return;
         }
       }
@@ -276,7 +276,12 @@ class DestIPFoundHook extends Hook {
 
       // ignore if domain contain firewalla domain
       if(domains.filter(d => this.isFirewalla(d)).length === 0) {
-        cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
+        try {
+          cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
+        } catch(err) {
+          // marks failure while not blocking local enrichement, e.g. country
+          cloudIntelInfo.push({failed: true});
+        }
       }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
@@ -286,51 +291,51 @@ class DestIPFoundHook extends Hook {
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
       // update category pool if necessary
-      await this.updateCategoryDomain(aggrIntelInfo)
+      await this.updateCategoryDomain(aggrIntelInfo);
 
-      if(!skipRedisUpdate) {
+      if(!skipLocalCache) {
+        if (intel && intel.cloudFailed) {
+          await intelTool.removeIntel(ip);
+        }
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
 
       return aggrIntelInfo;
 
-    })().catch((err) => {
+    } catch(err) {
       log.error(`Failed to process IP ${ip}, error: ${err}`);
       return null;
-    })
+    }
   }
 
-  job() {
-    (async() => {
-      log.debug("Checking if any IP Addresses pending for intel analysis...")
+  async job() {
+    log.debug("Checking if any IP Addresses pending for intel analysis...")
 
-      try {
-        let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+    try {
+      let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-        if(ips.length > 0) {
+      if(ips.length > 0) {
+        let promises = ips.map((ip) => this.processIP(ip));
 
-          let promises = ips.map((ip) => this.processIP(ip));
+        await Promise.all(promises)
 
-          await Promise.all(promises)
+        let args = [IP_SET_TO_BE_PROCESSED];
+        args.push.apply(args, ips);
 
-          let args = [IP_SET_TO_BE_PROCESSED];
-          args.push.apply(args, ips);
+        await rclient.zremAsync(args)
 
-          await rclient.zremAsync(args)
+        log.debug(ips.length + "IP Addresses are analyzed with intels");
 
-          log.debug(ips.length + "IP Addresses are analyzed with intels");
-
-        } else {
-          // log.info("No IP Addresses are pending for intels");
-        }
-      } catch(err) {
-        log.error("Got error when handling new dest IP addresses, err:", err)
+      } else {
+        // log.info("No IP Addresses are pending for intels");
       }
+    } catch(err) {
+      log.error("Got error when handling new dest IP addresses, err:", err)
+    }
 
-      setTimeout(() => {
-        this.job(); // sleep for only 100 mill-seconds
-      }, 500);
-    })();
+    setTimeout(() => {
+      this.job(); // sleep for only 100 mill-seconds
+    }, 500);
   }
 
   run() {
@@ -357,12 +362,8 @@ class DestIPFoundHook extends Hook {
         return; // reserved black hole and blue hole...
       }
       
-      this.appendNewFlow(ip,fd);
+      this.appendNewFlow(ip, fd);
     });
-
-    sem.on('DestIP', (event) => {
-      this.processIP(event.ip)
-    })
 
     this.job();
 
@@ -371,16 +372,14 @@ class DestIPFoundHook extends Hook {
     }, MONITOR_QUEUE_SIZE_INTERVAL)
   }
 
-  monitorQueue() {
-    return (async () => {
-      let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
-      if(count > QUEUE_SIZE_PAUSE) {
-        this.paused = true;
-      }
-      if(count < QUEUE_SIZE_RESUME) {
-        this.paused = false;
-      }
-    })();
+  async monitorQueue() {
+    let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
+    if(count > QUEUE_SIZE_PAUSE) {
+      this.paused = true;
+    }
+    if(count < QUEUE_SIZE_RESUME) {
+      this.paused = false;
+    }
   }
 }
 
