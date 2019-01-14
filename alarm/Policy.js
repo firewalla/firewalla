@@ -58,7 +58,8 @@ class Policy {
         log.error("Unsupported scope", raw.scope)
       }
 
-      if (this.scope.length == 0) delete this.scope
+      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+        delete this.scope;
     }
 
     if (raw.expire === "") {
