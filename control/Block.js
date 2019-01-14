@@ -298,55 +298,51 @@ function blockImmediate(destination, ipset) {
 }
 
 
-function advancedBlock(tag, macAddresses, destinations) {
-  return async(() => {
-    await(setupBlockingEnv(tag))
-    
-    macAddresses.forEach((mac) => {
-      await (advancedBlockMAC(mac, getMacSet(tag)))
-    })
-    destinations.forEach((addr) => {
-      await (block(addr, getDstSet(tag)))
-    })
-  })()
+async function advancedBlock(tag, macAddresses, destinations) {
+  await setupBlockingEnv(tag);
+
+  await Promise.all(macAddresses.map(mac => {
+    return advancedBlockMAC(mac, getMacSet(tag))
+  }))
+  await Promise.all(destinations.map(addr => {
+    return block(addr, getDstSet(tag))
+  }))
 }
 
-function advancedUnblock(tag, macAddresses, destinations) {
-  return async(() => {
-    // macAddresses.forEach((mac) => {
-    //   await (advancedUnblockMAC(mac, getMacSet(tag)))
-    // })
-    // destinations.forEach((addr) => {
-    //   await (unblock(addr, getDstSet(tag)))
-    // })
-    await (destroyBlockingEnv(tag))
-  })()
+async function advancedUnblock(tag, macAddresses, destinations) {
+  // macAddresses.forEach((mac) => {
+  //   await (advancedUnblockMAC(mac, getMacSet(tag)))
+  // })
+  // destinations.forEach((addr) => {
+  //   await (unblock(addr, getDstSet(tag)))
+  // })
+  await destroyBlockingEnv(tag)
 }
 
-function advancedBlockMAC(macAddress, setName) {
-  return async(() => {
-    if(macAddress && setName) {
+async function advancedBlockMAC(macAddress, setName) {
+  try {
+    if (macAddress && setName) {
       const cmd = `sudo ipset add -! ${setName} ${macAddress}`
       return exec(cmd)
     } else {
-      return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
+      throw new Error(`Mac ${macAddress} or Set ${setName} not exists`)
     }
-  })().catch(err => {
+  } catch(err) {
     log.error('Error when advancedBlockMAC', err);
-  })
+  }
 }
 
-function advancedUnblockMAC(macAddress, setName) {
-  return async(() => {
-    if(macAddress && setName) {
+async function advancedUnblockMAC(macAddress, setName) {
+  try {
+    if (macAddress && setName) {
       const cmd = `sudo ipset del ${setName} ${macAddress}`
       return exec(cmd)
     } else {
-      return Promise.reject(new Error(`Mac ${macAddress} or Set ${setName} not exists`))
+      throw new Error(`Mac ${macAddress} or Set ${setName} not exists`)
     }
-  })().catch(err => {
+  } catch(err) {
     log.error('Error when advancedUnblockMAC', err);
-  })
+  }
 }
 
 function unblock(destination, ipset) {
