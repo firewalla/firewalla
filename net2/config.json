@@ -283,6 +283,8 @@
     "new_device": true,
     "device_online": true,
     "device_offline": true,
+    "alarm_upnp": true,
+    "alarm_subnet": true,
     "spoofing_device": false,
     "vpn_client_connection": true,
     "cyber_security": true,

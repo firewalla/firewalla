@@ -15,12 +15,11 @@
 
 'use strict';
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-const Promise = require('bluebird');
 const ip = require('ip');
 
 const log = require('../net2/logger.js')(__filename);
+
+const fc = require('../net2/config.js')
 const fConfig = require('../net2/config.js').getConfig();
 const Bone = require('../lib/Bone');
 const Sensor = require('./Sensor.js').Sensor;
@@ -38,9 +37,11 @@ const platform = platformLoader.getPlatform();
 
 const checkInterval = 4 * 60 * 60 * 1000; //4 hours
 
+const ALARM_SUBNET = 'alarm_subnet';
+
 class SubnetSensor extends Sensor {
   async scheduledJob() {
-    let detectedInterfaces = await(rclient.hgetallAsync('sys:network:info'));
+    let detectedInterfaces = await rclient.hgetallAsync('sys:network:info');
 
     if (fConfig.discovery && fConfig.discovery.networkInterfaces) {
       fConfig.discovery.networkInterfaces.forEach(interfaceName => {
@@ -78,7 +79,9 @@ class SubnetSensor extends Sensor {
 
   run() {
     setInterval(() => {
-      this.scheduledJob();
+      if (fc.isFeatureOn(ALARM_SUBNET)) {
+        this.scheduledJob();
+      }
     }, checkInterval);
   }
 }
