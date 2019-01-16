@@ -53,7 +53,7 @@ else if (production) {
 }
 
 function getFileTransport() {
-  let loglevel = globalLogLevel;
+  let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
   // }   
@@ -82,7 +82,7 @@ function getFileTransport() {
 }
 
 function getConsoleTransport() {
-  let loglevel = globalLogLevel;
+  let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
   // }    
@@ -106,7 +106,7 @@ function getConsoleTransport() {
 
 function getTestTransport() {
   return new(winston.transports.File) ({
-    level: globalLogLevel,
+    level: 'debug',
     name: 'log-file-test',
     filename: "test.log",
     dirname: "/home/pi/.forever",
