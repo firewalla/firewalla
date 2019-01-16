@@ -273,44 +273,41 @@ module.exports = class {
   }
 
   // Emmit ALARM:CREATED event, effectively create application notifications
-  notifAlarm(alarmID) {
-    return this.getAlarm(alarmID)
-      .then((alarm) => {
-        if(!alarm) {
-          log.error(`Invalid Alarm (id: ${alarmID})`)
-          return
-        }
-        
-        // publish to others
-        sem.sendEventToAll({
-          type: "Alarm:NewAlarm",
-          message: "A new alarm is generated",
-          alarm: alarm
-        });
-        
-        
-        // TODO: eventually this legacy mode should be replaced
-        let data = {
-          notif: alarm.localizedNotification(),
-          alarmID: alarm.aid,
-          aid: alarm.aid,
-          alarmNotifType: alarm.notifType,
-          alarmType: alarm.type,
-          testing: alarm["p.monkey"],
-          managementType: alarm.getManagementType(),
-          premiumAction: alarm.premiumAction()
-        };
+  async notifAlarm(alarmID) {
+    let alarm = await this.getAlarm(alarmID);
+    if(!alarm) {
+      log.error(`Invalid Alarm (id: ${alarmID})`)
+      return
+    }
 
-        if(alarm.result_method === "auto") {
-          data.autoblock = true;
-        }
+    // publish to others
+    sem.sendEventToAll({
+      type: "Alarm:NewAlarm",
+      message: "A new alarm is generated",
+      alarm: alarm
+    });
 
-        this.publisher.publish("ALARM",
-                               "ALARM:CREATED",
-                               alarm.device,
-                               data);
 
-      }).catch((err) => Promise.reject(err));
+    // TODO: eventually this legacy mode should be replaced
+    let data = {
+      notif: alarm.localizedNotification(),
+      alarmID: alarm.aid,
+      aid: alarm.aid,
+      alarmNotifType: alarm.notifType,
+      alarmType: alarm.type,
+      testing: alarm["p.monkey"],
+      managementType: alarm.getManagementType(),
+      premiumAction: alarm.premiumAction()
+    };
+
+    if (alarm.result_method === "auto") {
+      data.autoblock = true;
+    }
+
+    this.publisher.publish("ALARM",
+      "ALARM:CREATED",
+      alarm.device,
+      data);
   }
   
   // exclude extended info from basic info, these two info will be stored separately 
