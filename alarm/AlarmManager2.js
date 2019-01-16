@@ -211,12 +211,6 @@ module.exports = class {
     return rclient.zremAsync(alarmActiveKey, alarmID)
   }
 
-  isAlarmTypeEnabled(alarm) {
-    const alarmType = alarm.type
-    const featureKey = `alarm:${alarmType}`
-    return fc.isFeatureOn(featureKey)
-  }
-
   // chekc if required attributes present
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
@@ -507,13 +501,6 @@ module.exports = class {
   _checkAndSave(alarm, callback) {
     callback = callback || function() {}
     
-    // disable this check for now, since we use new way to check feature enable/disable
-    // let enabled = this.isAlarmTypeEnabled(alarm)
-    // if(!enabled) {
-    //   callback(new Error(`alarm type ${alarm.type} is disabled`))
-    //   return
-    // }
-
     // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
     const destName = alarm["p.dest.name"]
     const destIP = alarm["p.dest.ip"]
