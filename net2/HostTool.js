@@ -335,7 +335,8 @@ class HostTool {
       });
   }
 
-  updateIPv6Host(host,ipv6Addr) {
+  updateIPv6Host(host,ipv6Addr, skipTimeUpdate) {
+    skipTimeUpdate = skipTimeUpdate || false;
     return async(() => {
       if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
         ipv6Addr.forEach((addr) => {
@@ -346,20 +347,25 @@ class HostTool {
           
           if(existingData && existingData.mac === host.mac) {
             // just update last timestamp for existing device
-            data = {
-              lastActiveTimestamp: Date.now() / 1000
+            if (!skipTimeUpdate) {
+              data = {
+                lastActiveTimestamp: Date.now() / 1000
+              }
             }
           } else {
             data = {
-              mac: host.mac,
-              firstFoundTimestamp: Date.now() / 1000,
-              lastActiveTimestamp: Date.now() / 1000
+              mac: host.mac
+            };
+            if (!skipTimeUpdate) {
+              data.firstFoundTimestamp = Date.now() / 1000;
+              data.lastActiveTimestamp = Date.now() / 1000;
             }
           }
 
-          await (rclient.hmsetAsync(key, data))
-          await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4))
-          
+          if (data) {
+            await (rclient.hmsetAsync(key, data))
+            await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4))
+          }
         })
       }
     })()   
