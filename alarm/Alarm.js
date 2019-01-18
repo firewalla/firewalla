@@ -498,6 +498,10 @@ class LargeTransferAlarm extends OutboundAlarm {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
   }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.dest.ip"];
+  }
 }
 
 class VideoAlarm extends OutboundAlarm {
