@@ -185,6 +185,10 @@
       "categoryflow": {
         "expires": 86400,
         "count": 1000
+      },
+      "appflow": {
+        "expires": 86400,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
