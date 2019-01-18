@@ -139,7 +139,7 @@ class OldDataCleanSensor extends Sensor {
   async cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
     let keys = await rclient.keysAsync("stats:hour*");
-    let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 30 * 6;
+    let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 2;
     for (let j in keys) {
       rclient.zscan(keys[j],0,(err,data)=>{
         if (data && data.length==2) {
