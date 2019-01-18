@@ -164,7 +164,7 @@ class IPv6DiscoverySensor extends Sensor {
 
           // FIXME
           // This is a very workaround activity to send scan done out in 5 seconds
-          // several seconds is necesary to ensure new ip addresses are added
+          // several seconds is necessary to ensure new ip addresses are added
           setTimeout(() => {
             log.info("IPv6 Scan:Done");
             this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});

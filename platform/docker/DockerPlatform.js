@@ -48,6 +48,10 @@ class DockerPlatform extends Platform {
   async applyCPUBoostProfile() {
     return; // do nothing for red
   }
+
+  getSubnetCapacity() {
+    return 24;
+  }
 }
 
 module.exports = DockerPlatform;

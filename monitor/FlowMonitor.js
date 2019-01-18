@@ -261,6 +261,7 @@ module.exports = class FlowMonitor {
                         "p.device.id" : actionobj.shname,
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
+                        "p.protocol": flow.pr,
                         "p.dest.name": actionobj.dhname,
                         "p.dest.ip": actionobj.dst,
                         "p.dest.port": flow.dp
@@ -298,6 +299,7 @@ module.exports = class FlowMonitor {
                       "p.device.id" : actionobj.shname,
                       "p.device.name" : actionobj.shname,
                       "p.device.ip": flow.sh,
+                      "p.protocol": flow.pr,
                       "p.dest.name": actionobj.dhname,
                       "p.dest.ip": actionobj.dst,
                       "p.dest.port": flow.dp
@@ -412,6 +414,7 @@ module.exports = class FlowMonitor {
                         "p.device.id" : actionobj.shname,
                         "p.device.name" : actionobj.shname,
                         "p.device.ip": flow.sh,
+                        "p.protocol": flow.pr,
                         "p.dest.name": actionobj.dhname,
                         "p.dest.ip": actionobj.dst,
                         "p.dest.port": flow.dp
@@ -747,6 +750,7 @@ module.exports = class FlowMonitor {
                           "p.dest.name": flow.shname || flow.sh,
                           "p.dest.ip": flow.sh,
                           "p.dest.port": flow.sp,
+                          "p.protocol": flow.pr,
                           "p.transfer.outbound.size": flow.rb,
                           "p.transfer.inbound.size": flow.ob,
                           "p.transfer.duration": flow.du,
@@ -804,6 +808,7 @@ module.exports = class FlowMonitor {
                           "p.dest.name": flow.dhname || flow.dh,
                           "p.dest.ip": flow.dh,
                           "p.dest.port": flow.dp,
+                          "p.protocol": flow.pr,
                           "p.transfer.outbound.size": flow.ob,
                           "p.transfer.inbound.size": flow.rb,
                           "p.transfer.duration": flow.du,
@@ -1008,6 +1013,7 @@ module.exports = class FlowMonitor {
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
+      "p.protocol": flow.pr,
       "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
@@ -1078,6 +1084,7 @@ module.exports = class FlowMonitor {
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
+      "p.protocol": flow.pr,
       "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain || remoteIP,

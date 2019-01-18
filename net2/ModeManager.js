@@ -216,11 +216,11 @@ async function _restoreSimpleModeNetworkSettings() {
 
 async function _changeToAlternativeIpSubnet() {
   fConfig = Config.getConfig(true);
-  // backward compatibility if alternativeIpSubnet is not set
-  if (!fConfig.alternativeIpSubnet)
+  // backward compatibility if alternativeInterface is not set
+  if (!fConfig.alternativeInterface)
     return;
-  const altIpSubnet = fConfig.alternativeIpSubnet.ipsubnet;
-  const altGateway = fConfig.alternativeIpSubnet.gateway;
+  const altIpSubnet = fConfig.alternativeInterface.ip;
+  const altGateway = fConfig.alternativeInterface.gateway;
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";
@@ -279,34 +279,27 @@ async function _changeToAlternativeIpSubnet() {
 function _enableSecondaryInterface() {
   return new Promise((resolve, reject) => {  
     fConfig = Config.getConfig(true);
-    secondaryInterface.create(fConfig,(err,ip,subnet,ipnet,mask, legacyIp, legacySubnet)=>{
+    secondaryInterface.create(fConfig,(err, ipSubnet, legacyIpSubnet)=>{
       if (err == null) {
         log.info("Successfully created secondary interface");
-        // register the secondary interface info to sysManager
-        sysManager.secondaryIp = ip;
-        sysManager.secondarySubnet = subnet;
-        sysManager.secondaryIpnet = ipnet;
-        sysManager.secondaryMask = mask;
-        if (legacySubnet) { // secondary ip is changed
+        if (legacyIpSubnet) { // secondary ip is changed
           d.discoverInterfaces(() => {
             sysManager.update(() => {
               // secondary interface ip changed, reload sysManager in all Fire* processes
               (async () => {
-                // legacySubnet should be like 192.168.218.0/24
+                // legacyIpSubnet should be like 192.168.218.0/24
                 // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(legacySubnet, false); // remove old DHCP MASQUERADE rule
-                if (legacyIp) { // legacyIp should be exact address like 192.168.218.1
-                  await iptables.diagHttpChangeAsync(legacyIp, false);
-                }
+                await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
+                const legacyIp = legacyIpSubnet.split('/')[0];
+                // legacyIp should be exact address like 192.168.218.1
+                await iptables.diagHttpChangeAsync(legacyIp, false);
                 // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(subnet, true); // add new DHCP MASQUERADE rule
-                const newIpAddr = ip.split('/')[0]; // newIpAddr should be like 192.168.220.1
-                if (newIpAddr) {
-                  await iptables.diagHttpChangeAsync(newIpAddr, true);
-                }
+                await iptables.dhcpSubnetChangeAsync(ipSubnet, true); // add new DHCP MASQUERADE rule
+                const ip = ipSubnet.split('/')[0];
+                await iptables.diagHttpChangeAsync(ip, true);
                 resolve();
               })().catch((err) => {
-                log.error("Failed to update nat for legacy IP subnet: " + legacySubnet, err);
+                log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
                 reject(err);
               });
             });
@@ -478,10 +471,17 @@ function listenOnChange() {
       let hostManager = new HostManager('cli', 'server', 'info')
       let sm = require('./SpooferManager.js')
       sm.loadManualSpoofs(hostManager)
+    } else if (channel === "NetworkInterface:Update") {
+      (async () => {
+        await (_changeToAlternativeIpSubnet());
+        await (_enableSecondaryInterface());
+        pclient.publishAsync("System:IPChange", "");
+      })()
     }
   });
   sclient.subscribe("Mode:Change");
   sclient.subscribe("ManualSpoof:Update");
+  sclient.subscribe("NetworkInterface:Update");
 }
 
 // this function can only used by non-main.js process
@@ -492,6 +492,10 @@ function publish(mode) {
 
 function publishManualSpoofUpdate() {
   return pclient.publishAsync("ManualSpoof:Update", "1")
+}
+
+function publishNetworkInterfaceUpdate() {
+  return pclient.publishAsync("NetworkInterface:Update", "");
 }
 
 function setSpoofAndPublish() {
@@ -542,5 +546,6 @@ module.exports = {
   setManualSpoofAndPublish: setManualSpoofAndPublish,
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,
+  publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
   enableSecondaryInterface:_enableSecondaryInterface
 }

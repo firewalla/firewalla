@@ -117,7 +117,7 @@ check_each_system_config() {
     if [[ $VALUE == "" ]]; then
         VALUE="false"
     fi
-    printf "%15s %10s\n" "$1" "$VALUE"
+    printf "%15s %20s\n" "$1" "$VALUE"
 }
 
 check_system_config() {
@@ -128,6 +128,7 @@ check_system_config() {
     check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
     check_each_system_config "vpnAvailable" $(redis-cli hget policy:system vpnAvaliable)
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
+    check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
 
     echo ""
     echo ""

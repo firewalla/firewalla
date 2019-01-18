@@ -314,34 +314,38 @@ class PolicyManager2 {
     });
   }
 
-  // TODO: need a better solution to compromise code base and Policy object creation
-  updatePolicyAsync(policy) {
-    const pid = policy.pid
-    policy = policy instanceof Policy ? policy : new Policy(policy);
-
-    if(pid) {
-      const policyKey = policyPrefix + pid;
-      return async(() => {
-        let redisfied = policy.redisfy();
-
-        await (rclient.hmsetAsync(policyKey, redisfied));
-
-        if (!redisfied.expire) {
-          await (rclient.hdelAsync(policyKey, "expire"))
-        }
-        if (!redisfied.cronTime) {
-          await (rclient.hdelAsync(policyKey, "cronTime"))
-          await (rclient.hdelAsync(policyKey, "duration"))
-        }
-        if (!redisfied.activatedTime) {
-          await (rclient.hdelAsync(policyKey, "activatedTime"))
-        }
-        if (!redisfied.scope) {
-          await (rclient.hdelAsync(policyKey, "scope"))
-        }
-      })()
-    } else {
+  // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
+  // it's hard to keep sanity dealing with partial update and redis in the same time
+  async updatePolicyAsync(policy) {
+    if (!policy.pid)
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+
+    const policyKey = policyPrefix + policy.pid;
+
+    if (policy instanceof Policy) {
+      let redisfied = policy.redisfy();
+      await rclient.hmsetAsync(policyKey, policy.redisfy());
+      return;
+    }
+
+    let existing = await this.getPolicy(policy.pid);
+
+    Object.assign(existing, policy);
+
+    await rclient.hmsetAsync(policyKey, existing.redisfy());
+
+    if (policy.expire === '') {
+      await rclient.hdelAsync(policyKey, "expire");
+    }
+    if (policy.cronTime === '') {
+      await rclient.hdelAsync(policyKey, "cronTime");
+      await rclient.hdelAsync(policyKey, "duration");
+    }
+    if (policy.activatedTime === '') {
+      await rclient.hdelAsync(policyKey, "activatedTime");
+    }
+    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope) ) {
+      await rclient.hdelAsync(policyKey, "scope");
     }
   }
 
@@ -398,7 +402,7 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        if(this.isFirewallaCloud(policy)) {
+        if(this.isFirewallaOrCloud(policy)) {
           callback(new Error("Firewalla cloud can't be blocked"))
           return
         }
@@ -770,12 +774,15 @@ class PolicyManager2 {
     })()
   }
     
-  isFirewallaCloud(policy) {
+  isFirewallaOrCloud(policy) {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
+           // compare mac, ignoring case
+           target.substring(0,17) // devicePort policies have target like mac:protocol:prot
+             .localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) === 0 ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -910,8 +917,8 @@ class PolicyManager2 {
     return async(() => {
       await (this._refreshActivatedTime(policy))
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      if(this.isFirewallaOrCloud(policy)) {
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
   
       switch(type) {
@@ -949,8 +956,8 @@ class PolicyManager2 {
 
       const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
+      if(this.isFirewallaOrCloud(policy)) {
+        return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
       }
 
       let scope = policy.scope
@@ -1063,10 +1070,10 @@ class PolicyManager2 {
       return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
     case "devicePort":
       return async(() => {
-      let data = await (this.parseDevicePortRule(policy.target))
-      if(data) {
-        Block.unblockPublicPort(data.ip, data.port, data.protocol)
-      }
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        }
       })()
       break;
     case "category":
