@@ -142,7 +142,7 @@ class OldDataCleanSensor extends Sensor {
     let keys = await rclient.keysAsync("stats:hour*");
     let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 2;
     for (let j in keys) {
-      rclient.zscan(keys[j],0,(err,data)=>{
+      rclient.zscan(keys[j],0,"count", 48, (err,data)=>{
         if (data && data.length==2) {
           let array = data[1];
           for (let i=0;i<array.length;i++) {
