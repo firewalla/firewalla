@@ -139,21 +139,18 @@ class OldDataCleanSensor extends Sensor {
 
   async cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
-    let keys = await rclient.keysAsync("stats:hour*");
-    let expireDate = Date.now() / 1000 - 60 * 60 * 24 * 2;
-    for (let j in keys) {
-      rclient.zscan(keys[j],0,"count", 48, (err,data)=>{
-        if (data && data.length==2) {
-          let array = data[1];
-          for (let i=0;i<array.length;i++) {
-            if (array[i]<expireDate) {
-              rclient.zrem(keys[j],array[i]);
-            }
-            i += Number(1);
-          }
-        }
+    let keys = await rclient.keysAsync("stats:hour:*");
+    const expireDate = Date.now() / 1000 - 60 * 60 * 24 * 2;
+    for (const key of keys) {
+      const timestamps = await rclient.zrangeAsync(key, 0, -1);
+      const expiredTimestamps = timestamps.filter((timestamp) => {
+        return Number(timestamp) < expireDate;
       });
+      if(expiredTimestamps.length > 0) {
+        await rclient.zremAsync([key, ...expiredTimestamps]);
+      }
     }
+
     // expire legacy stats:last24 keys if its expiration is not set
     keys = await rclient.keysAsync("stats:last24:*");
     for (let j in keys) {
@@ -333,8 +330,8 @@ class OldDataCleanSensor extends Sensor {
       await (this.regularClean("software", "software:*"));
       await (this.regularClean("monitor", "monitor:flow:*"));
       await (this.regularClean("alarm", "alarm:ip4:*"));
-      await (this.regularClean("sumflow", "sumflow:*"));
-      await (this.regularClean("aggrflow", "aggrflow:*"));
+//      await (this.regularClean("sumflow", "sumflow:*"));
+//      await (this.regularClean("aggrflow", "aggrflow:*"));
       await (this.regularClean("syssumflow", "syssumflow:*"));
       await (this.regularClean("categoryflow", "categoryflow:*"));
       await (this.regularClean("appflow", "appflow:*"));
