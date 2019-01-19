@@ -191,7 +191,7 @@ class OldDataCleanSensor extends Sensor {
     const flows = await rclient.keysAsync("flow:x509:*");
     for(const flow of flows) {
       const ttl = await rclient.ttlAsync(flow);
-      if(ttl === '-1') {
+      if(ttl === -1) {
         await rclient.expireAsync(flow, 600); // 600 is default expire time if expire is not set
       }
     }
