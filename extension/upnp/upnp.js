@@ -122,7 +122,6 @@ module.exports = class {
               } else {
                 this.natpmpEnabled = false;
               }
-              timeout = false
               callback(null, this.upnpEnabled, this.natpmpEnabled);
             });
           }

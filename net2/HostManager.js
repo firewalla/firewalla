@@ -2189,7 +2189,9 @@ module.exports = class HostManager {
     host = new Host(o, this);
     host.type = this.type;
 
-    this.hostsdb[`host:mac:${o.mac}`] = host
+    //this.hostsdb[`host:mac:${o.mac}`] = host
+    // do not update host:mac entry in this.hostsdb intentionally, 
+    // since host:mac entry in this.hostsdb should be strictly consistent with things in this.hosts.all and should only be updated in getHosts() by design
     this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
 
     let ipv6Addrs = host.ipv6Addr
@@ -2476,7 +2478,7 @@ module.exports = class HostManager {
             spoofer.validateV6Spoofs(allIPv6Addrs);
             spoofer.validateV4Spoofs(allIPv4Addrs);
           }
-          log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
+          log.info("hostmanager:gethosts:done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
           callback(err, this.hosts.all);
         });
       });

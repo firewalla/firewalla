@@ -160,6 +160,10 @@ class FlowTool {
       // ignore zero length flows
       return false;
     }
+    if (o.f === "s") {
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+      return false;
+    }
 
     return true;
   }
@@ -674,7 +678,7 @@ class FlowTool {
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
       .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString));
+        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this._isFlowValid(x));
       })
   }
 
