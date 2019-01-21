@@ -187,6 +187,16 @@ class OldDataCleanSensor extends Sensor {
       return Promise.resolve();
   }
 
+  async cleanFlowX509() {
+    const flows = await rclient.keysAsync("flow:x509:*");
+    for(const flow of flows) {
+      const ttl = await rclient.ttlAsync(flow);
+      if(ttl === -1) {
+        await rclient.expireAsync(flow, 600); // 600 is default expire time if expire is not set
+      }
+    }
+  }
+
   cleanHostData(type, keyPattern, defaultExpireInterval) {
     let expireInterval = (this.config[type] && this.config[type].expires) ||
       defaultExpireInterval;
@@ -340,6 +350,7 @@ class OldDataCleanSensor extends Sensor {
       await (this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30));
       await (this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30));
       await (this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365));
+      await (this.cleanFlowX509());
 
       await (this.cleanupAlarmExtendedKeys());
 
