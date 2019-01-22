@@ -20,9 +20,6 @@ let router = express.Router();
 
 let Mode = require('../../net2/Mode.js');
 
-const redis = require('redis');
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-
 let modeManager = require('../../net2/ModeManager.js');
 
 // this is only for debugging purpose

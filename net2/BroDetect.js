@@ -745,9 +745,10 @@ module.exports = class {
        */
       let flag;
       if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
+        // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
           obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+          obj.conn_state == "SH" || obj.conn_state == "SHR" || 
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
           flag = 's';
@@ -807,9 +808,10 @@ module.exports = class {
       //
       //  flag == s 
       if (obj.proto == "tcp") {
+        // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
           obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" || obj.conn_state == "OTH" ||
+          obj.conn_state == "SH" || obj.conn_state == "SHR" || 
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
           flag = 's';
