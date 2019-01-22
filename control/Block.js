@@ -301,12 +301,12 @@ function blockImmediate(destination, ipset) {
 async function advancedBlock(tag, macAddresses, destinations) {
   await setupBlockingEnv(tag);
 
-  await Promise.all(macAddresses.map(mac => {
-    return advancedBlockMAC(mac, getMacSet(tag))
-  }))
-  await Promise.all(destinations.map(addr => {
-    return block(addr, getDstSet(tag))
-  }))
+  for (const mac of macAddresses) {
+    await advancedBlockMAC(mac, getMacSet(tag));
+  }
+  for (const addr of destinations) {
+    await block(addr, getDstSet(tag))
+  }
 }
 
 async function advancedUnblock(tag, macAddresses, destinations) {
