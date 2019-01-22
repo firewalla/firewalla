@@ -78,11 +78,14 @@ router.post('/create',
             (req, res, next) => {
               let policy = new Policy(req.body);
 
-              pm2.checkAndSave(policy, (err, policyID) => {
+              pm2.checkAndSave(policy, (err, policyGen, alreadyExists) => {
                 if(err) {
                   res.status(500).send('Failed to create json: ' + err);
                 } else {
-                  res.status(201).json({policyID:policyID});
+                  res.status(200).json({
+                    exists: alreadyExists,
+                    policy: policyGen
+                  });
                 }
               });
             });
