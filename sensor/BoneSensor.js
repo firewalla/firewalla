@@ -40,7 +40,7 @@ const CLOUD_URL_KEY = "sys:bone:url";
 
 class BoneSensor extends Sensor {
   scheduledJob() {
-    Bone.waitUtilCloudReady(() => {
+    Bone.waitUntilCloudReady(() => {
       this.checkIn()
         .then(() => {})
         .catch((err) => {
