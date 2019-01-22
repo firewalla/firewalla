@@ -3,7 +3,6 @@ const fs = require("fs");
 
 const log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
