@@ -15,9 +15,8 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
-const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const audit = require('../util/audit.js');
@@ -486,7 +485,7 @@ class PolicyManager2 {
             } else {
               resolve([])
             }
-          }    
+          }
         })
       })
     })();
@@ -502,7 +501,7 @@ class PolicyManager2 {
       }
       await (this._enablePolicy(policy))
       this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      Bone.submitIntelFeedback('enable', policy, 'policy')
       return policy
     })()
   }
@@ -929,7 +928,7 @@ class PolicyManager2 {
         return Block.blockMac(policy.target);
         break;
       case "domain":
-      case "dns":    
+      case "dns":
         return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
         break;
       case "devicePort":
@@ -947,7 +946,7 @@ class PolicyManager2 {
       default:
         return Promise.reject("Unsupported policy");
       }
-    })()    
+    })()
   }
 
   _advancedEnforce(policy) {
@@ -967,7 +966,7 @@ class PolicyManager2 {
         } catch(err) {
           log.error("Failed to parse scope:", err);
           return Promise.reject(new Error(`Failed to parse scope: ${err}`))
-        }        
+        }
       }
 
       switch(type) {
@@ -982,7 +981,7 @@ class PolicyManager2 {
         return Block.blockMac(policy.target);
         break;
       case "domain":
-      case "dns":    
+      case "dns":
         return async(() => {
           if(scope) {
             await (Block.advancedBlock(policy.pid, scope, []))
