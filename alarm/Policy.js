@@ -45,28 +45,36 @@ class Policy {
 
     Object.assign(this, raw);
 
-    if (raw.scope)
+    if (raw.scope) {
       if (_.isString(raw.scope)) {
         try {
           this.scope = JSON.parse(raw.scope)
         } catch(e) {
           log.error("Failed to parse policy scope string:", raw.scope, e)
-          this.scope = []
         }
       } else if (_.isArray(raw.scope)) {
         this.scope = raw.scope.slice(0) // clone array to avoide side effects
       } else {
         log.error("Unsupported scope", raw.scope)
-        this.scope = []
       }
 
-    if (raw.expire && _.isString(raw.expire)) {
+      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+        delete this.scope;
+    }
+
+    if (raw.expire === "") {
+      delete this.expire;
+    } else if (raw.expire && _.isString(raw.expire)) {
       try {
         this.expire = parseInt(raw.expire)
       } catch(e) {
         log.error("Failed to parse policy expire time:", raw.expire, e);
         delete this.expire;
       }
+    }
+
+    if (raw.cronTime === "") {
+      delete this.cronTime;
     }
 
     // backward compatibilities
