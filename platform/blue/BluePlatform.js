@@ -21,6 +21,8 @@ const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 
+const fs = require('fs');
+
 const ledPaths = [
 //  "/sys/devices/platform/leds/leds/nanopi:green:status",
   "/sys/devices/platform/leds/leds/nanopi:red:pwr"
@@ -114,6 +116,12 @@ class BluePlatform extends Platform {
 
   getSubnetCapacity() {
     return 19;
+  }
+
+  // via /etc/update-motd.d/30-armbian-sysinfo
+  getCpuTemperature() {
+    const source = '/etc/armbianmonitor/datasources/soctemp';
+    return Number(fs.readFileSync(source)) / 1000;
   }
 }
 
