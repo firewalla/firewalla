@@ -1113,25 +1113,25 @@ module.exports = class {
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
         let send = this.flowstashExpires;
 
-        setTimeout(()=>{
+        setTimeout(async ()=>{
           log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
           for (let key in stashed) {
             let stash = stashed[key];
             log.info("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
-            rclient.zremrangebyscore(key,sstart,send, (err, data) => {
-              log.info("Conn:Info:Removed",key,err,data);
-              for (let i in stash) {
-                rclient.zadd(stash[i], (err, response) => {
-                  if (err == null) {
-                    if (this.config.bro.conn.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires);
-                    }
-                  } else {
-                    log.error("Conn:Save:Error", err);
-                  }
-                });
-              }
-            });
+
+            let transaction = [];
+            transaction.push(['zremrangebyscore', key, sstart, send]);
+            stash.forEach(robj => transaction.push(['zadd', robj]));
+            if (this.config.bro.conn.expires) {
+              transaction.push(['expireat', key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires])
+            }
+
+            try {
+              await rclient.multi(transaction).execAsync();
+              log.info("Conn:Save:Removed", key);
+            } catch(err) {
+              log.error("Conn:Save:Error", err);
+            }
           }
         }, FLOWSTASH_EXPIRES * 1000);
 
