@@ -77,7 +77,7 @@ module.exports = class {
             if (callback) {
                 callback(new Error("Timeout"));
             }
-        }, 5000);
+        }, 10000);
         this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
             clearTimeout(timeout);
             if (callback) {
@@ -93,7 +93,7 @@ module.exports = class {
             if (callback) {
                 callback(new Error("Timeout"));
             }
-        }, 5000);
+        }, 10000);
         this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
             clearTimeout(timeout);
             if (callback) {
