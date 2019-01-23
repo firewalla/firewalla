@@ -1348,6 +1348,13 @@ module.exports = class {
           e["target_name"] = i_target;
           e["target_ip"] = alarm["p.dest.ip"];
           break;
+        case "devicePort":
+          e["p.device.mac"] = alarm["p.device.mac"];
+          if(alarm.type === 'ALARM_UPNP') {
+            e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
+            e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
+          }
+          break;
         default:
           // not supported
           break;
