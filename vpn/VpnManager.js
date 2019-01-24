@@ -72,7 +72,9 @@ module.exports = class {
 
     removeUpnpPortMapping(opts, callback) {
         log.info("VpnManager:RemoveUpnpPortMapping", opts);
+        let timeoutExecuted = false;
         const timeout = setTimeout(() => {
+            timeoutExecuted = true;
             log.error("Failed to remove upnp port mapping due to timeout");
             if (callback) {
                 callback(new Error("Timeout"));
@@ -80,7 +82,7 @@ module.exports = class {
         }, 10000);
         this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
             clearTimeout(timeout);
-            if (callback) {
+            if (callback && !timeoutExecuted) {
                 callback(err);
             }
         });
@@ -88,7 +90,9 @@ module.exports = class {
 
     addUpnpPortMapping(protocol, localPort, externalPort, description, callback) {
         log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
+        let timeoutExecuted = false;
         const timeout = setTimeout(() => {
+            timeoutExecuted = true;
             log.error("Failed to add upnp port mapping due to timeout");
             if (callback) {
                 callback(new Error("Timeout"));
@@ -96,7 +100,7 @@ module.exports = class {
         }, 10000);
         this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
             clearTimeout(timeout);
-            if (callback) {
+            if (callback && !timeoutExecuted) {
                 callback(err);
             }
         });
