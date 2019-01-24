@@ -110,7 +110,11 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
-    "CPUSensor": {},
+    "CPUSensor": {
+      "interval": 60,
+      "reportInterval": 7200,
+      "temperatureThreshold": 95
+    },
     "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
@@ -183,6 +187,10 @@
         "count": 200
       },
       "categoryflow": {
+        "expires": 86400,
+        "count": 1000
+      },
+      "appflow": {
         "expires": 86400,
         "count": 1000
       }
@@ -283,6 +291,8 @@
     "new_device": true,
     "device_online": true,
     "device_offline": true,
+    "alarm_upnp": true,
+    "alarm_subnet": true,
     "spoofing_device": false,
     "vpn_client_connection": true,
     "cyber_security": true,
@@ -299,7 +309,8 @@
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,
-    "insane_mode": false
+    "insane_mode": false,
+    "cpu_monitor": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

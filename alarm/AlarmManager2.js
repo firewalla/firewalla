@@ -211,12 +211,6 @@ module.exports = class {
     return rclient.zremAsync(alarmActiveKey, alarmID)
   }
 
-  isAlarmTypeEnabled(alarm) {
-    const alarmType = alarm.type
-    const featureKey = `alarm:${alarmType}`
-    return fc.isFeatureOn(featureKey)
-  }
-
   // chekc if required attributes present
   validateAlarm(alarm) {
     let keys = alarm.requiredKeys();
@@ -279,44 +273,41 @@ module.exports = class {
   }
 
   // Emmit ALARM:CREATED event, effectively create application notifications
-  notifAlarm(alarmID) {
-    return this.getAlarm(alarmID)
-      .then((alarm) => {
-        if(!alarm) {
-          log.error(`Invalid Alarm (id: ${alarmID})`)
-          return
-        }
-        
-        // publish to others
-        sem.sendEventToAll({
-          type: "Alarm:NewAlarm",
-          message: "A new alarm is generated",
-          alarm: alarm
-        });
-        
-        
-        // TODO: eventually this legacy mode should be replaced
-        let data = {
-          notif: alarm.localizedNotification(),
-          alarmID: alarm.aid,
-          aid: alarm.aid,
-          alarmNotifType: alarm.notifType,
-          alarmType: alarm.type,
-          testing: alarm["p.monkey"],
-          managementType: alarm.getManagementType(),
-          premiumAction: alarm.premiumAction()
-        };
+  async notifAlarm(alarmID) {
+    let alarm = await this.getAlarm(alarmID);
+    if(!alarm) {
+      log.error(`Invalid Alarm (id: ${alarmID})`)
+      return
+    }
 
-        if(alarm.result_method === "auto") {
-          data.autoblock = true;
-        }
+    // publish to others
+    sem.sendEventToAll({
+      type: "Alarm:NewAlarm",
+      message: "A new alarm is generated",
+      alarm: alarm
+    });
 
-        this.publisher.publish("ALARM",
-                               "ALARM:CREATED",
-                               alarm.device,
-                               data);
 
-      }).catch((err) => Promise.reject(err));
+    // TODO: eventually this legacy mode should be replaced
+    let data = {
+      notif: alarm.localizedNotification(),
+      alarmID: alarm.aid,
+      aid: alarm.aid,
+      alarmNotifType: alarm.notifType,
+      alarmType: alarm.type,
+      testing: alarm["p.monkey"],
+      managementType: alarm.getManagementType(),
+      premiumAction: alarm.premiumAction()
+    };
+
+    if (alarm.result_method === "auto") {
+      data.autoblock = true;
+    }
+
+    this.publisher.publish("ALARM",
+      "ALARM:CREATED",
+      alarm.device,
+      data);
   }
   
   // exclude extended info from basic info, these two info will be stored separately 
@@ -507,13 +498,6 @@ module.exports = class {
   _checkAndSave(alarm, callback) {
     callback = callback || function() {}
     
-    // disable this check for now, since we use new way to check feature enable/disable
-    // let enabled = this.isAlarmTypeEnabled(alarm)
-    // if(!enabled) {
-    //   callback(new Error(`alarm type ${alarm.type} is disabled`))
-    //   return
-    // }
-
     // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
     const destName = alarm["p.dest.name"]
     const destIP = alarm["p.dest.ip"]
