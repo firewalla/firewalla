@@ -560,7 +560,10 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      const oldValue = JSON.parse(data["dnsmasq"]) || {};
+      let oldValue = {};
+      if (data["dnsmasq"]) {
+        oldValue = JSON.parse(data["dnsmasq"]);
+      }
       const newValue = Object.assign({}, oldValue, value);
       this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
         if (err == null) {
