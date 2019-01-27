@@ -412,7 +412,8 @@ module.exports = class {
         })()
 
         for (let i in obj['answers']) {
-          const entry = obj['answers'][i];
+          // answer can be an alias or ip address
+          const answer = obj['answers'][i];
 
           let key = "dns:ip:" + obj['answers'][i];
           let value = {
@@ -434,10 +435,10 @@ module.exports = class {
               //   rclient.hincrby(key, "count", 1, (err, value) => {
               if (err == null) {
 
-                if(iptool.isV4Format(entry) || iptool.isV6Format(entry)) {
+                if(iptool.isV4Format(answer) || iptool.isV6Format(answer)) {
                   sem.emitEvent({
                     type: 'DestIPFound',
-                    ip: entry,
+                    ip: answer,
                     suppressEventLogging: true
                   });
                 }
