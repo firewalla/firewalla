@@ -73,8 +73,15 @@ sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 53 -j MARK --set-
 sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0
 sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0
 sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0
+# clear mark on dhcp packet in mangle table
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0
 # clear mark on local subnet traffic in mangle table
 sudo iptables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j MARK --set-mark 0
+# clear mark on established connections in mangle table
+sudo iptables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0
 
 sudo iptables -w -N FW_WHITELIST &> /dev/null
 sudo iptables -w -F FW_WHITELIST
@@ -209,8 +216,15 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0
   sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0
   sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0
+  # clear mark on dhcp packet in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0
   # clear mark on local subnet packet in mangle table
   sudo ip6tables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j MARK --set-mark 0
+  # clear mark on established connections in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0
 
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
   sudo ip6tables -w -F FW_WHITELIST
