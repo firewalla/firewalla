@@ -17,9 +17,11 @@ mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep POSTROUTING | grep S
 sudo iptables -w -F
 sudo iptables -w -F -t nat
 sudo iptables -w -F -t raw
+sudo iptables -w -F -t mangle
 sudo ip6tables -w -F
 sudo ip6tables -w -F -t nat
 sudo ip6tables -w -F -t raw
+sudo ip6tables -w -F -t mangle
 
 
 for RULE in "${VPN_RULES[@]}";

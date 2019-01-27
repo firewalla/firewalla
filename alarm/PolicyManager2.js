@@ -892,7 +892,7 @@ class PolicyManager2 {
 
   async _enforce(policy) {
     log.debug("Enforce policy: ", policy);
-    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, policy.scope);
+    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -907,18 +907,28 @@ class PolicyManager2 {
     switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedBlock(policy.pid, scope, [policy.target])
+          return Block.advancedBlock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist)
         } else {
-          return Block.block(policy.target)
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.block(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.block(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.blockMac(policy.target);
+        if (policy.whitelist) {
+          await Block.enableGlobalWhitelist();
+          return Block.blockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.blockMac(policy.target);
+        }
         break;
       case "domain":
       case "dns":
         if(scope) {
-          await Block.advancedBlock(policy.pid, scope, []);
+          await Block.advancedBlock(policy.pid, policy.pid, scope, [], policy.whitelist);
           return domainBlock.blockDomain(policy.target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(policy.pid),
@@ -926,27 +936,40 @@ class PolicyManager2 {
             no_dnsmasq_reload: true
           })
         } else {
-          return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            // whitelist rule should not add dnsmasq filter rule
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.enableGlobalWhitelist();
+          }
+          return domainBlock.blockDomain(policy.target, options);
         }
 
         break;
       case "devicePort":
         let data = await this.parseDevicePortRule(policy.target);
         if(data) {
-          Block.blockPublicPort(data.ip, data.port, data.protocol)
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.blockPublicPort(data.ip, data.port, data.protocol)
+          }
         }
         break;
       case "category":
         if(scope) {
-          await Block.advancedBlock(policy.pid, scope, []);
-          return categoryBlock.blockCategory(policy.target, {
-            blockSet: Block.getDstSet(policy.pid),
-            macSet: Block.getMacSet(policy.pid),
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
-          })
+          // same category shares same dst tag
+          return Block.advancedBlock(policy.pid, policy.target, scope, [], policy.whitelist);
         } else {
-          return categoryBlock.blockCategory(policy.target)
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.enableGlobalWhitelist();
+          }
+          return categoryBlock.blockCategory(policy.target, options);
         }
         break;
 
@@ -987,13 +1010,23 @@ class PolicyManager2 {
     switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedUnblock(policy.pid, scope, [policy.target])
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist, true)
         } else {
-          return Block.unblock(policy.target)
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return block.unblock(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.unblock(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.unblockMac(policy.target)
+        if (policy.whitelist) {
+          await Block.disableGlobalWhitelist();
+          return Block.unblockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.unblockMac(policy.target)
+        }
         break;
       case "domain":
       case "dns":
@@ -1004,30 +1037,42 @@ class PolicyManager2 {
             no_dnsmasq_entry: true,
             no_dnsmasq_reload: true
           }))
-          return Block.advancedUnblock(policy.pid, scope, [])
+          // destroy domain dst cache, since there may be various domain dst cache in different policies
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [], policy.whitelist, true)
         } else {
-          return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.disableGlobalWhitelist();
+          }
+          return domainBlock.unblockDomain(policy.target, options);
         }
 
         break;
       case "devicePort":
         let data = await (this.parseDevicePortRule(policy.target))
         if(data) {
-          Block.unblockPublicPort(data.ip, data.port, data.protocol)
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol);
+          }
         }
         break;
       case "category":
         if(scope) {
-          await (categoryBlock.unblockCategory(policy.target, {
-            blockSet: Block.getDstSet(policy.pid),
-            macSet: Block.getMacSet(policy.pid),
-            ignoreUnapplyBlock: true,
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
-          }))
-          return Block.advancedUnblock(policy.pid, scope, [])
+          // keep category dst cache since the number of predefined categories is limited
+          return Block.advancedUnblock(policy.pid, policy.target, scope, [], policy.whitelist, false);
         } else {
-          return categoryBlock.unblockCategory(policy.target)
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.disableGlobalWhitelist();
+          }
+          return categoryBlock.unblockCategory(policy.target, options);
         }
 
       default:
