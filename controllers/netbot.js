@@ -269,24 +269,20 @@ class netBot extends ControllerBot {
               host.setPolicy(blocktype, value, (err, data) => {
                 if (err == null) {
                   if (callback != null)
-                  //   this.tx(this.primarygid, "Success:"+ip,"hosts summary");
                     callback(null, "Success:" + ip);
                 } else {
                   if (callback != null)
-                  // this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                     callback(err, "Unable to block ip " + ip)
 
                 }
               });
             } else {
               if (callback != null)
-              //this.tx(this.primarygid, "Unable to block ip "+ip,"hosts summary");
                 callback("error", "Unable to block ip " + ip);
             }
           });
         } else {
           if (callback != null)
-          //this.tx(this.primarygid, "host not found","hosts summary");
             callback("error", "Host not found");
         }
       });
@@ -735,9 +731,6 @@ class netBot extends ControllerBot {
     let c = require('../net2/MessageBus.js');
     this.subscriber = new c('debug');
 
-    this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
-      //this.tx(this.primarygid, "Discovery started","message");
-    });
     this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
       let m = null;
       let n = null;
@@ -821,71 +814,61 @@ class netBot extends ControllerBot {
           }
 
           // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
-          async(() => {
-            let flag = await (rclient.hgetAsync("sys:config", "includeNameInNotification"))
-            if(flag == "1") {
-              notifMsg.title = `[${this.getDeviceName()}] ${notifMsg.title}`
+          if(msg["testing"] && msg["testing"] == 1) {
+            notifMsg.title = `[Monkey] ${notifMsg.title}`;
+          }
+          if(msg["premiumAction"] && f.isDevelopmentVersion()) {
+            const pa = msg["premiumAction"];
+            if(pa === 'ignore') {
+              notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
+            } else if(pa === 'block') {
+              notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
             }
-            if(msg["testing"] && msg["testing"] == 1) {
-              notifMsg.title = `[Monkey] ${notifMsg.title}`;
-            }            
-            if(msg["premiumAction"] && f.isDevelopmentVersion()) {
-              const pa = msg["premiumAction"];
-              if(pa === 'ignore') {
-                notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
-              } else if(pa === 'block') {
-                notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
-              }
-            }
-            this.tx2(this.primarygid, "test", notifMsg, data);            
-          })()
-
+          }
+          this.tx2(this.primarygid, "test", notifMsg, data);
 
         }
       }
     });
 
-    setTimeout(() => {
+    setTimeout(async () => {
       this.scanStart();
-      async(() => {
-        let branchChanged = await (sysManager.isBranchJustChanged());
-        let upgradeInfo = await (upgradeManager.getUpgradeInfo())
-        if(branchChanged) {
-          let branch = null
 
-          if(branch) {
-            let msg = i18n.__mf("NOTIF_BRANCH_CHANGE", {
-              deviceName: this.getDeviceName(),
-              branchChanged: branchChanged,
-              version: sysManager.version()
-            })
-            log.info(msg)
-            this.tx(this.primarygid, "200", msg)
-            sysManager.clearBranchChangeFlag()            
+      let branchChanged = await sysManager.isBranchJustChanged();
+      let upgradeInfo = await upgradeManager.getUpgradeInfo();
+      if(branchChanged) {
+        let branch = null
+
+        if(branch) {
+          let msg = i18n.__mf("NOTIF_BRANCH_CHANGE", {
+            deviceName: this.getDeviceName(),
+            branchChanged: branchChanged,
+            version: sysManager.version()
+          })
+          log.info(msg)
+          this.tx(this.primarygid, "200", msg)
+          sysManager.clearBranchChangeFlag()
+        }
+      }
+      else if (upgradeInfo.upgraded) {
+        let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
+          version: f.isProductionOrBeta() ? fc.getConfig().version : upgradeInfo.to
+        });
+        this.tx(this.primarygid, "200", msg);
+        upgradeManager.updateVersionTag();
+      }
+      else {
+        if (sysManager.systemRebootedByUser(true)) {
+          if (nm.canNotify() == true) {
+            this.tx(this.primarygid, "200", i18n.__("NOTIF_REBOOT_COMPLETE"));
+          }
+        } else if (sysManager.systemRebootedDueToIssue(true) == false) {
+          if (nm.canNotify() == true) {
+            this.tx(this.primarygid, "200", i18n.__("NOTIF_AWAKES"));
           }
         }
-        else if (upgradeInfo.upgraded) {
-          let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-            version: f.isProductionOrBeta() ? fc.getConfig().version : upgradeInfo.to
-          });
-          this.tx(this.primarygid, "200", msg);
-          upgradeManager.updateVersionTag();
-        }
-        else {
-          if (sysManager.systemRebootedByUser(true)) {
-            if (nm.canNotify() == true) {
-              this.tx(this.primarygid, "200", i18n.__("NOTIF_REBOOT_COMPLETE"));
-            }
-          } else if (sysManager.systemRebootedDueToIssue(true) == false) {
-            if (nm.canNotify() == true) {
-              this.tx(this.primarygid, "200",
-                i18n.__("NOTIF_AWAKES", {deviceName: this.getDeviceName()})
-              );
-            }
-          }
-        }
+      }
         
-      })()
       this.setupDialog();
     }, 20 * 1000);
 
