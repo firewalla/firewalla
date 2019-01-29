@@ -382,6 +382,7 @@ class NetBotTool {
     return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
+  // looks like this is no longer used
   prepareDetailedAppFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
@@ -441,6 +442,7 @@ class NetBotTool {
     })();
   }
 
+  // looks like this is no longer used
   prepareDetailedCategoryFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");

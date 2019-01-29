@@ -582,6 +582,7 @@ class FlowAggregationSensor extends Sensor {
     })()
   }
   
+  // TODO: Why call it cleanup? This looks confusing. It actually summarize different category flows, i.e., categoryflow:(mac:)?
   cleanupCategoryActivity(options) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);

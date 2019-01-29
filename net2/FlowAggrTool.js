@@ -231,7 +231,7 @@ class FlowAggrTool {
     let end = options.end;
 
     // if working properly, sumflow should be refreshed in every 10 minutes
-    let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
+    let expire = options.expireTime || 24 * 60 * 60; // by default expire in 24 hours
     let interval = options.interval || 600; // by default 10 mins
 
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines

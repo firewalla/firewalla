@@ -389,7 +389,7 @@ module.exports = class DNSManager {
 
         if(intel.app) {
           flowObject.app = intel.app
-          flowObject.appr = intel.app         
+          flowObject.appr = intel.app        // ??? 
         }
 
         if(intel.category) {
