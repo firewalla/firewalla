@@ -141,7 +141,8 @@ class FlowAggregationSensor extends Sensor {
         }
 
         // FIXME: Should have more accurate calculation here
-        t.duration = Math.max(flow.du, t.duration || 0)
+        t.duration = Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts);
+        // ts stands for the earliest start timestamp of this kind of activity
         t.ts = Math.min(flow.ts, t.ts || new Date() / 1000)
         t.download += flow.rb || 0
         t.upload += flow.ob || 0

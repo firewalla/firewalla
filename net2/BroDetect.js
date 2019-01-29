@@ -897,15 +897,13 @@ module.exports = class {
           // update start timestamp
           flowspec.ts = obj.ts;
         }
-        if (flowspec.ets && flowspec.ets < obj.ts + obj.duration) {
+        if (flowspec.ets < obj.ts + obj.duration) {
           // update end timestamp 
           flowspec.ets = obj.ts + obj.duration;
         }
         // update last time updated
         flowspec._ts = now;
-        // beware that flowspec.ets is not strictly equivalent to flowspec.ts + flowspec.du
-        // there may be some gaps during the period
-        flowspec.du += obj.duration;
+        flowspec.du = flowspec.ets - flowspec.ts;
         flowspec.flows.push(flowDescriptor);
 
         if (flag) {
