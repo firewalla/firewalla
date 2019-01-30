@@ -174,6 +174,7 @@ module.exports = class FlowManager {
       return Promise.resolve();
     }
 
+    let hourOfDay = (timestamp / 3600) % 24;
     let downloadValue = JSON.stringify({bytes: downloadBytes, ts: timestamp});
     let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
 

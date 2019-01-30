@@ -903,9 +903,14 @@ module.exports = class {
         }
         // update last time updated
         flowspec._ts = now;
-        flowspec.du = flowspec.ets - flowspec.ts;
+        // TBD: How to define and calculate the duration of flow?
+        //      The total time of network transfer?
+        //      Or the length of period from the beginning of the first to the end of last flow?
+        // flowspec.du = flowspec.ets - flowspec.ts;
+        // For now, we use total time of network transfer, since the rate calculation is based on this logic.
+        // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
+        flowspec.du += obj.duration;
         flowspec.flows.push(flowDescriptor);
-
         if (flag) {
           flowspec.f = flag;
         }

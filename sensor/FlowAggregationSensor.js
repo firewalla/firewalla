@@ -124,28 +124,32 @@ class FlowAggregationSensor extends Sensor {
       appInfos.forEach((app) => {
 
         // no need to group traffic for these two types in particular, FIXME
-        if(app === "technology" || app === "search-portal") {
+        if (app === "technology" || app === "search-portal") {
           return
         }
 
         let t = traffic[app];
 
-        if(typeof t === 'undefined') {
+        if (typeof t === 'undefined') {
           traffic[app] = {
-            duration: 0,
-            ts: new Date() / 100,
-            download: 0,
-            upload: 0
+            duration: flow.du,
+            ts: flow.ts,
+            ets: flow.ets || Date.now() / 1000,
+            download: flowTool.getDownloadTraffic(flow),
+            upload: flowTool.getUploadTraffic(flow)
           };
-          t = traffic[app];
+        } else {
+          // FIXME: Should have more accurate calculation here
+          // TBD: this duration calculation also needs to be discussed as the one in BroDetect.processConnData
+          // However we use total time from the beginning of first flow to the end of last flow here, since this data is supposed to be shown on app and more user friendly.
+          // t.duration += flow.du;
+          t.duration = Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts);
+          // ts stands for the earliest start timestamp of this kind of activity
+          t.ts = Math.min(flow.ts, t.ts);
+          t.ets = Math.max(flow.ets, t.ets);
+          t.download += flowTool.getDownloadTraffic(flow) || 0;
+          t.upload += flowTool.getUploadTraffic(flow) || 0;
         }
-
-        // FIXME: Should have more accurate calculation here
-        t.duration = Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts);
-        // ts stands for the earliest start timestamp of this kind of activity
-        t.ts = Math.min(flow.ts, t.ts || new Date() / 1000)
-        t.download += flow.rb || 0
-        t.upload += flow.ob || 0
       })
     }));
 
