@@ -51,7 +51,7 @@ function getConfig(reload) {
         userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
       }
     } catch(err) {
-      log.error("Error paring user config");
+      log.error("Error parsing user config");
     }
 
     let testConfig = {};
