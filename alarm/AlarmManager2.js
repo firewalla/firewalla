@@ -1251,7 +1251,21 @@ module.exports = class {
             break;
 
           case "ALARM_UPNP":
-            i_type = "devicePort"
+            i_type = "devicePort";
+
+            if(userFeedback) {
+              switch(userFeedback.type) {
+                case "deviceAllPorts":
+                  i_type = "deviceAllPorts";
+                  break;
+                case "deviceAppPort":
+                i_type = "deviceAppPort";
+                  break;
+                default:
+                // do nothing
+                  break;
+              }
+            }
 
             // policy should be created with mac
             if (alarm["p.device.mac"]) {
@@ -1348,6 +1362,22 @@ module.exports = class {
           e["target_name"] = i_target;
           e["target_ip"] = alarm["p.dest.ip"];
           break;
+        case "devicePort":
+          e["p.device.mac"] = alarm["p.device.mac"];
+          if(alarm.type === 'ALARM_UPNP') {
+            e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
+            e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
+          }
+          break
+        case "deviceAllPorts":
+          e["p.device.mac"] = alarm["p.device.mac"];
+          break;   
+        case "deviceAppPort":
+          e["p.device.mac"] = alarm["p.device.mac"];
+          if(alarm.type === 'ALARM_UPNP') {
+            e["p.upnp.description"] = alarm["p.upnp.description"];
+          }
+          break;                 
         default:
           // not supported
           break;

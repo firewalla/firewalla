@@ -56,12 +56,33 @@ class BoneSensor extends Sensor {
       return this.getCloudInstanceURL();
     })
 
+    extensionManager.onGet("boneJWToken", async (msg) => {
+      const jwt = await rclient.getAsync("sys:bone:jwt");
+      return {jwt};
+    })
+
     extensionManager.onSet("cloudInstance", async (msg, data) => {
       if(data.instance) {
         const url = `https://firewalla.encipher.io/bone/api/${data.instance}`;
         return this.setCloudInstanceURL(url);
       }
     })
+
+    extensionManager.onCmd("recheckin", async (msg, data) => {
+
+      return new Promise((resolve, reject) => {
+
+        sem.once("CloudReCheckinComplete", async (event) => {
+          const jwt = await rclient.getAsync("sys:bone:jwt");
+          resolve({jwt});
+        });
+
+        sem.sendEventToFireMain({
+          type: 'CloudReCheckin',
+          message: "",
+        });
+      });      
+    });
   }
 
   async getCloudInstanceURL() {
@@ -191,6 +212,15 @@ class BoneSensor extends Sensor {
     sem.on("CloudURLUpdate", async (event) => {
       return this.applyNewCloudInstanceURL()
     })
+
+    sem.on("CloudReCheckin", async (event) => {
+      await this.checkIn();
+
+      sem.sendEventToFireApi({
+        type: 'CloudReCheckinComplete',
+        message: ""
+      });
+    });
   }
 
   // make config redis-friendly..

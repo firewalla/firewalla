@@ -402,7 +402,7 @@ class PolicyManager2 {
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
         if(this.isFirewallaOrCloud(policy)) {
-          callback(new Error("Firewalla cloud can't be blocked"))
+          callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
           return
         }
         let policies = await(this.getSamePolicies(policy))

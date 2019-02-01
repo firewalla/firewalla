@@ -70,10 +70,37 @@ module.exports = class {
         iptable.run(commands, null, callback);
     }
 
-    unpunchNat(opts, callback) {
-        log.info("VpnManager:UnpunchNat", opts);
-        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
+    removeUpnpPortMapping(opts, callback) {
+        log.info("VpnManager:RemoveUpnpPortMapping", opts);
+        let timeoutExecuted = false;
+        const timeout = setTimeout(() => {
+            timeoutExecuted = true;
+            log.error("Failed to remove upnp port mapping due to timeout");
             if (callback) {
+                callback(new Error("Timeout"));
+            }
+        }, 10000);
+        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
+            clearTimeout(timeout);
+            if (callback && !timeoutExecuted) {
+                callback(err);
+            }
+        });
+    }
+
+    addUpnpPortMapping(protocol, localPort, externalPort, description, callback) {
+        log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
+        let timeoutExecuted = false;
+        const timeout = setTimeout(() => {
+            timeoutExecuted = true;
+            log.error("Failed to add upnp port mapping due to timeout");
+            if (callback) {
+                callback(new Error("Timeout"));
+            }
+        }, 10000);
+        this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
+            clearTimeout(timeout);
+            if (callback && !timeoutExecuted) {
                 callback(err);
             }
         });
@@ -155,7 +182,7 @@ module.exports = class {
 
     stop(callback) {
         this.started = false;
-        this.unpunchNat({
+        this.removeUpnpPortMapping({
             protocol: 'udp',
             private: this.localPort,
             public: this.localPort
@@ -189,7 +216,7 @@ module.exports = class {
 
         this.upnp.gw = sysManager.myGateway();
 
-        this.unpunchNat({
+        this.removeUpnpPortMapping({
             protocol: 'udp',
             private: this.localPort,
             public: this.localPort
@@ -216,7 +243,7 @@ module.exports = class {
                             callback(err);
                         }
                     } else {
-                        this.upnp.addPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
+                        this.addUpnpPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
                             log.info("VpnManager:UPNP:SetDone", err);
                             pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/24");
                             /*
