@@ -123,7 +123,7 @@ class FlowGraph {
                 removed++;
                 continue;
             } else if (e[1] >= flowEnd) {
-                if (e[0] <= flowStart) {
+                if (e[0] <= flowEnd) {
                     // [flowStart, flowEnd] has overlap with [e[0], e[1]]
                     ob += e[2];
                     rb += e[3];
