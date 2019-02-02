@@ -26,6 +26,7 @@ const extensionManager = require('./ExtensionManager.js')
 const fc = require('../net2/config.js')
 
 const configServerKey = "ext.guardian.socketio.server";
+const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -36,8 +37,8 @@ const et = new EncipherTool();
 
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage);
-const encryptMessageAsync = Promise.promisify(cloudWrapper.getCloud().encryptMessage);
+const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
@@ -47,7 +48,7 @@ class GuardianSensor extends Sensor {
     super();
   }
 
-  apiRun() {
+  async apiRun() {
     extensionManager.onGet("guardianSocketioServer", (msg) => {
       return this.getServer();
     })
@@ -63,6 +64,11 @@ class GuardianSensor extends Sensor {
     extensionManager.onCmd("stopGuardianSocketioServer", (msg, data) => {
       return this.stop();
     });
+
+    const adminStatusOn = await this.isAdminStatusOn();
+    if(adminStatusOn) {
+      await this.start();
+    }
   }
 
   async setServer(server) {
@@ -74,8 +80,21 @@ class GuardianSensor extends Sensor {
   }
 
   async getServer() {
-    const value = await rclient.getAsync(configServerKey, server);
+    const value = await rclient.getAsync(configServerKey);
     return value || "";
+  }
+
+  async isAdminStatusOn() {
+    const status = await rclient.getAsync(configAdminStatusKey);
+    return status === '1';
+  }
+
+  async adminStatusOn() {
+    return rclient.setAsync(configAdminStatusKey, '1');
+  }
+
+  async adminStatusOff() {
+    return rclient.setAsync(configAdminStatusKey, '0');
   }
 
   async start() {
@@ -83,6 +102,8 @@ class GuardianSensor extends Sensor {
     if(!server) {
       throw new Error("socketio server not set");
     }
+
+    await this.adminStatusOn();
 
     this.socket = io.connect(server);
     if(!this.socket) {
@@ -99,12 +120,13 @@ class GuardianSensor extends Sensor {
   }
 
   async stop() {
+    await this.adminStatusOff();
     this.socket.disconnect();
     this.socket = null;
   }
 
   async onMessage(gid, message) {
-    const controller = cw.getNetBotController(gid);
+    const controller = await cw.getNetBotController(gid);
 
     if(controller && this.socket) {
       const encryptedMessage = message.message;
@@ -112,18 +134,19 @@ class GuardianSensor extends Sensor {
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       const response = await controller.msgHandlerAsync(gid, decryptedMessage);
 
-      const input = new Buffer(response, 'utf8');
-      const output = deflateAsync(input);
+      const input = new Buffer(JSON.stringify(response), 'utf8');
+      const output = await deflateAsync(input);
 
       const compressedResponse = JSON.stringify({
         compressed: 1,
-        payload: output.toString('base64')
+        compressMode: 1,
+        data: output.toString('base64')
       });
 
-      const encryptedResponse = encryptMessageAsync(compressedResponse);
+      const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
 
       this.socket.emit("send_from_box", {
-        message: encryptedMessage,
+        message: encryptedResponse,
         gid: gid
       });
     }
