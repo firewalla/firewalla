@@ -579,7 +579,7 @@ module.exports = class DNSMASQ {
         await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
       }
     }
-    if (!newVpnSubnet) {
+    if (newVpnSubnet) {
       // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of reloading
       this.vpnSubnet = newVpnSubnet;
     }
