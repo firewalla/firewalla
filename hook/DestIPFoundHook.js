@@ -252,6 +252,9 @@ class DestIPFoundHook extends Hook {
     options = options || {};
 
     let skipLocalCache = options.skipLocalCache;
+    let sslInfo = await intelTool.getSSLCertificate(ip);
+    let dnsInfo = await intelTool.getDNS(ip);
+    let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
 
     try {
       let intel;
@@ -259,17 +262,15 @@ class DestIPFoundHook extends Hook {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          await this.updateCategoryDomain(intel);
-          return;
+          if (domains.length == 0 || (intel.host && domains[0] === intel.host)) {
+            await this.updateCategoryDomain(intel);
+            return;
+          }
         }
       }
 
-      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+", checking intels...");
+      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
 
-      let sslInfo = await intelTool.getSSLCertificate(ip);
-      let dnsInfo = await intelTool.getDNS(ip);
-
-      let domains = this.getDomains(sslInfo, dnsInfo);
       let ips = [ip];
 
       let cloudIntelInfo = [];
