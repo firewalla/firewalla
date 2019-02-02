@@ -276,7 +276,8 @@ class DestIPFoundHook extends Hook {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          if (domains.length == 0 || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
+          // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
+          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
             await this.updateCategoryDomain(intel);
             return;
           }
