@@ -194,7 +194,7 @@ class BonjourSensor extends Sensor {
       if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
         ipv4addr = addr;
       } else if (ip.isV4Format(addr)) {
-        log.info("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
+        log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
         continue;
       } else if (ip.isV6Format(addr)) {
         ipv6addr.push(addr);

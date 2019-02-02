@@ -30,11 +30,14 @@ const slack = require('../extension/slack/slack.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 
+const i18n = require('../util/i18n');
+
 let callback = async (event) => {
   const alarm = am2.jsonToAlarm(event.alarm);
   const alarmMessage = alarm.localizedNotification();
   const groupName = await rclient.getAsync("groupName");
-  const message = `[${groupName}] ${alarmMessage}`;
+  const title = i18n.__(alarm.alarmNotifType);
+  const message = `[${groupName} - ${title}] ${alarmMessage}`;
   await slack.postMessage(message);
 };
 
@@ -71,6 +74,7 @@ class SlackSensor extends Sensor {
   unsub() {
     sem.off('Alarm:NewAlarm', callback);
   }
+  
 }
 
 module.exports = SlackSensor;
