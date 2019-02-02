@@ -865,6 +865,10 @@ module.exports = class FlowManager {
         // ignore zero length flows
         return false;
       }
+      if (o.f === "s") {
+        // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+        return false;
+      }
       
       return true;
     }

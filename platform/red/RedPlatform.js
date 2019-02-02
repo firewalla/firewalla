@@ -16,9 +16,11 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const utils = require('../../lib/utils.js');
 const led = require('../../util/Led.js');
+
+const fs = require('fs');
 
 class RedPlatform extends Platform {
 
@@ -68,6 +70,12 @@ class RedPlatform extends Platform {
 
   getSubnetCapacity() {
     return 24;
+  }
+
+  // via /etc/update-motd.d/30-sysinfo
+  getCpuTemperature() {
+    const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
+    return Number(fs.readFileSync(source)) / 1000;
   }
 }
 

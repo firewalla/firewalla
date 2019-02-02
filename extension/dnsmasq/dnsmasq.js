@@ -236,12 +236,13 @@ module.exports = class DNSMASQ {
       alternativeNameServers = secondaryIntfNameServers;
     }
     
-    if (!effectiveNameServers || effectiveNameServers.length === 0) {
-      effectiveNameServers = sysManager.myDNS();
-    }
-    if (!alternativeNameServers || alternativeNameServers.length === 0) {
-      alternativeNameServers = sysManager.myDNS();
-    }
+    // add local dns as a fallback in dnsmasq's resolv.conf
+    sysManager.myDNS().forEach((dns) => {
+      if (effectiveNameServers && !effectiveNameServers.includes(dns))
+        effectiveNameServers.push(dns);
+      if (alternativeNameServers && !alternativeNameServers.includes(dns))
+        alternativeNameServers.push(dns);
+    })
 
     if (!effectiveNameServers || effectiveNameServers.length === 0) {
       effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code

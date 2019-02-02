@@ -383,6 +383,10 @@ module.exports = class FlowMonitor {
                         }
                     }
 
+                    if (flow.pr) {
+                      intelobj.pr = flow.pr;
+                    }
+
                     log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj),{});
 
                     this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
@@ -1013,7 +1017,7 @@ module.exports = class FlowMonitor {
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
-      "p.protocol": flow.pr,
+      "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
       "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
@@ -1084,7 +1088,7 @@ module.exports = class FlowMonitor {
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
-      "p.protocol": flow.pr,
+      "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given
       "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain || remoteIP,

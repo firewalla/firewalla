@@ -143,6 +143,14 @@ class FWDiag {
     }
   }
 
+  async getCpuTemperature() {
+    try {
+      return platform.getCpuTemperature()
+    } catch(err) {
+      return -1;
+    }
+  }
+
   async prepareHelloData() {
     const inter = await this.getNetworkInfo();
     
@@ -152,17 +160,19 @@ class FWDiag {
 
     const version = this.getVersion();
 
-    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed] = await require('bluebird').all([
-      this.getGatewayMac(gateway),
-      this.getBranchInfo(),
-      this.getLongVersion(),
-      this.getTotalMemory(),
-      this.getGID(),
-      this.hasLicenseFile(),
-      platform.getNetworkSpeed()
-    ]);
+    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed, cpuTemp] =
+      await Promise.all([
+        this.getGatewayMac(gateway),
+        this.getBranchInfo(),
+        this.getLongVersion(),
+        this.getTotalMemory(),
+        this.getGID(),
+        this.hasLicenseFile(),
+        platform.getNetworkSpeed(),
+        this.getCpuTemperature()
+      ]);
 
-    return {      
+    return {
       mac,
       firewallaIP,
       gatewayMac,
@@ -174,7 +184,8 @@ class FWDiag {
       serial,
       gid,
       hasLicense,
-      nicSpeed
+      nicSpeed,
+      cpuTemp
     };
   }
 
