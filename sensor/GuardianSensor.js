@@ -65,6 +65,17 @@ class GuardianSensor extends Sensor {
       return this.stop();
     });
 
+    extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      const socketioServer = data.server;
+      if(!socketioServer) {
+        throw new Error("invalid guardian relay server");
+      }
+
+      await guardianSensor.setServer(socketioServer);
+      
+      await guardianSensor.start();
+    });
+
     const adminStatusOn = await this.isAdminStatusOn();
     if(adminStatusOn) {
       await this.start();
@@ -103,6 +114,8 @@ class GuardianSensor extends Sensor {
       throw new Error("socketio server not set");
     }
 
+    await this._stop();
+
     await this.adminStatusOn();
 
     this.socket = io.connect(server);
@@ -119,10 +132,14 @@ class GuardianSensor extends Sensor {
     })
   }
 
-  async stop() {
-    await this.adminStatusOff();
+  async _stop() {
     this.socket.disconnect();
     this.socket = null;
+  }
+
+  async stop() {
+    await this.adminStatusOff();
+    return this._stop();
   }
 
   async onMessage(gid, message) {
