@@ -2303,6 +2303,12 @@ module.exports = class HostManager {
             let since = Date.now()/1000-60*60*24*7; // one week
             rclient.multi(multiarray).exec((err, replies) => {
                 _async.eachLimit(replies,2, (o, cb) => {
+                    if (!o) {
+                        // defensive programming
+                        cb();
+                        return;
+                    }
+
                     if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp>since) {
                         //log.info("Processing GetHosts ",o);
                         if (o.ipv4) {
