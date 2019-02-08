@@ -45,18 +45,20 @@ class DeviceOfflineSensor extends Sensor {
     log.debug("Start to check device activity...");
     const hostEntries = await hostTool.getAllMACEntries();
     hostEntries.forEach((host) => {
-      const lastActiveTimestamp = Number(host.lastActiveTimestamp);
-      const now = new Date() / 1000;
-      const idleTime = now - lastActiveTimestamp;
-      if (idleTime > this.idle && idleTime < this.idle + 2 * this.interval) {
-        // ensure that device offline message will be emitted at most twice
-        log.info(`Device ${host.mac} is offline, last seen at ${lastActiveTimestamp}.`);
-        sem.emitEvent({
-          type: "DeviceOffline",
-          message: "A deivce was offline",
-          host: host,
-          lastSeen: lastActiveTimestamp
-        });
+      if (host) {
+        const lastActiveTimestamp = Number(host.lastActiveTimestamp);
+        const now = new Date() / 1000;
+        const idleTime = now - lastActiveTimestamp;
+        if (idleTime > this.idle && idleTime < this.idle + 2 * this.interval) {
+          // ensure that device offline message will be emitted at most twice
+          log.info(`Device ${host.mac} is offline, last seen at ${lastActiveTimestamp}.`);
+          sem.emitEvent({
+            type: "DeviceOffline",
+            message: "A deivce was offline",
+            host: host,
+            lastSeen: lastActiveTimestamp
+          });
+        }
       }
     });
   }

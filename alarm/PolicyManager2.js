@@ -93,6 +93,16 @@ class PolicyManager2 {
     }
     return instance;
   }
+  
+  shouldFilter(rule) {
+    // this is to filter legacy schedule rules that is not compatible with current system any more
+    // all legacy rules should already been migrated in OldDataCleanSensor, any leftovers should be bug
+    // and here is a protection for that
+    if(rule.cronTime && rule.cronTime.startsWith("* *")) {
+      return true;
+    }   
+    return false;   
+  }
 
   setupPolicyQueue() {
     this.queue = new Queue('policy', {
@@ -118,6 +128,11 @@ class PolicyManager2 {
       const oldPolicy = this.jsonToPolicy(event.oldPolicy)
       const action = event.action
       
+      if(this.shouldFilter(policy)) {
+        done();
+        return;
+      }
+
       switch(action) {
       case "enforce": {
         return async(() => {
@@ -875,10 +890,17 @@ class PolicyManager2 {
   }
 
   async _removeActivatedTime(policy) {
-    await (this.updatePolicyAsync({
+
+    const p = await this.getPolicy(policy.pid);
+
+    if(!p) { // no need to update policy if policy is already deleted
+      return;
+    }
+
+    await this.updatePolicyAsync({
       pid: policy.pid,
       activatedTime: ""
-    }))
+    })
 
     delete policy.activatedTime;
     return policy;

@@ -1099,11 +1099,15 @@ module.exports = class DNSMASQ {
       bone.log("error", {
         version: sysManager.version(),
         type: 'DNSMASQ CRASH',
-        msg: "dnsmasq failed to restart after 5 retries",
+        msg: `dnsmasq failed to restart after ${this.failCount} retries`,
       }, null);
     } else {
-      let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
-      log.info("dnsmasq running status: \n", stdout, {})
+      try {
+        let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
+        log.info("dnsmasq running status: \n", stdout, stderr)
+      } catch(e) {
+        log.error("Failed to query process list of dnsmasq", e)
+      }
 
       // restart this service, something is wrong
       try {
