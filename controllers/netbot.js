@@ -3129,6 +3129,18 @@ class netBot extends ControllerBot {
                 const ipSubnet = iptool.subnet(ipAddress, subnetMask);
                 updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+                // redundant entries for backward compatitibility
+                mergedSecondaryInterface.ipOnly = ipAddress;
+                mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+                mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+                mergedSecondaryInterface.ipmask = subnetMask;
+                if (mergedSecondaryInterface.ip2) {
+                  const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+                  mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+                  mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+                  mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+                  mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
+                }
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
                 setTimeout(() => {
