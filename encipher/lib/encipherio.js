@@ -1186,7 +1186,7 @@ let legoEptCloud = class {
         });
     }
 
-    sendTextToGroup(gid, _msg, beepmsg, from, callback) {
+    sendTextToGroup2(gid, _msg, beepmsg, beepdata, from, callback) {
         let msg = {
             msg: _msg,
             type: 'msg',
@@ -1198,29 +1198,8 @@ let legoEptCloud = class {
                 cmd: 'apn',
                 msg: beepmsg
             };
-        }
-        this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            log.debug("sending logs ", e, r);
-            if (callback) {
-                callback(e);
-            }
-        });
-    }
-
-    sendTextToGroup2(gid, _msg, beepmsg, beepdata,from, callback) {
-        let msg = {
-            msg: _msg,
-            type: 'msg',
-            from: from
-        };
-        let beep = null;
-        if (beepmsg != null) {
-            beep = {
-                cmd: 'apn',
-                msg: beepmsg,
-                data: beepdata
-            };
-          log.info("APN notification payload: ", beep, {});
+            if (beepdata) beep.data = beepdata
+            log.info("APN notification payload: ", beep);
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
             log.debug("sending logs ", e, r);

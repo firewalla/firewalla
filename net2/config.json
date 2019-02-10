@@ -62,7 +62,8 @@
     "BoneSensor": {},
     "AdditionalPairPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {}
+    "RecentFlowPlugin": {},
+    "GuardianSensor": {}
   },
   "intels": [
     "DedupAlarm",
