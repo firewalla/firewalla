@@ -36,6 +36,13 @@ const rclient = require('../util/redis_manager.js').getConfig();
 
 const domainBlock = require('../control/DomainBlock.js');
 
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 const domainMapping = {
   youtube_strict: {
     "restrict.youtube.com": [
@@ -82,19 +89,20 @@ class SafeSearchPlugin extends Sensor {
     extensionManager.registerExtension("safeSearch", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
-      stop: this.stop,
-      setConfig: this.setConfig,
-      getConfig: this.loadConfig
+      stop: this.stop
     })
   }
 
-  applyPolicy(policy) {
-    log.info("Applying policy:", policy, {})
-    if(policy === true) {
-      return this.start()
+  async applyPolicy(policy) {
+    log.info("Applying policy:", policy)
+
+    const state = policy && policy.state;
+
+    if(state === true) {
+      return this.start(policy.config)
     } else {
-      return this.stop()
-    }
+      return this.stop();
+    }  
   }
   
   // {
@@ -102,23 +110,6 @@ class SafeSearchPlugin extends Sensor {
   //   youtube: "strict", // "strict", "moderate", "off"
   //   bing: "on" // "on", "off"
   // }
-
-  async loadConfig() {
-    const configString = await rclient.getAsync(configKey);
-    if(configString) {
-      return JSON.parse(configString);
-    } else {
-      return null;
-    }    
-  }
-
-  async saveConfig(config) {
-    return rclient.setAsync(configKey, JSON.stringify(config));
-  }
-
-  async resolveDNS() {
-
-  }
 
   getMappingKey(type, value) {
     switch(type) {
@@ -166,34 +157,60 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async processMappingResult(mappingEntry) {
-    
+    const safeDomains = Object.keys(mappingEntry);
+
+    const entries = await Promise.all(safeDomains.map(async (safeDomain) => {
+      const ips = await domainBlock.resolveDomain(safeDomain);
+
+      if(ips.length > 0) {
+        const ip = ips[0];
+        const domainsToBeRedirect = mappingEntry[safeDomain];
+        await Promise.all(domainsToBeRedirect.map(async (domain) => {
+          return this.getDNSMasqEntry(domain, ip);
+        }));
+      }      
+    }));
+
+    const concat = (x,y) => x.concat(y)
+    const flatMap = (f,xs) => xs.map(f).reduce(concat, [])
+
+    const flattedEntries = flatMap(x => x, entries);
+
+    return flattedEntries;
   }
 
-  async generateConfigFile() {
-    const config = await this.loadConfig();
-
-    const entries = [];
+  async generateConfigFile(config) {
+    let entries = [];
 
     for(const type in config) {
       const value = config[type];
+      if(value === 'off') {
+        continue;
+      }
+      
       const key = this.getMappingKey(type, value);
       const result = this.getMappingResult(key);
       if(result) {
-
+        entries = entries.concat(this.processMappingResult(result));
       }
     }
 
-  }
-  async start() {
-    
+    await fs.writeFileAsync(safeSearchConfigFile, JSON.stringify(entries.join("\n")));
   }
 
-  stop() {
-    return async(() => {
-      await (ipv6.stop())
-      clearTimeout(this.timer)
-      this.timer = null
-    })()
+  async deleteConfigFile() {
+    return fs.unlinkAsync(safeSearchConfigFile).catch(() => undefined);
+  }
+
+  async start(config) {
+    await this.generateConfigFile(config);
+    await dnsmasq.start(true);
+    return;
+  }
+
+  async stop() {
+    await this.deleteConfigFile();
+    await dnsmasq.start(true);
   }
 }
 
