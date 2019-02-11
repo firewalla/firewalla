@@ -109,6 +109,7 @@
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
+    "SafeSearchPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {

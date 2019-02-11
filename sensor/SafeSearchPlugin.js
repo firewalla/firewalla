@@ -32,9 +32,9 @@ const configKey = "ext.safeSearch.config";
 
 const updateInterval = 3600 * 1000 // once per hour
 
-const rclient = require('../util/redis_manager.js').getConfig();
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
-const domainBlock = require('../control/DomainBlock.js');
+const domainBlock = require('../control/DomainBlock.js')();
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -165,10 +165,12 @@ class SafeSearchPlugin extends Sensor {
       if(ips.length > 0) {
         const ip = ips[0];
         const domainsToBeRedirect = mappingEntry[safeDomain];
-        await Promise.all(domainsToBeRedirect.map(async (domain) => {
+        return Promise.all(domainsToBeRedirect.map(async (domain) => {
           return this.getDNSMasqEntry(domain, ip);
         }));
-      }      
+      } else {
+        return [];
+      }
     }));
 
     const concat = (x,y) => x.concat(y)
@@ -187,15 +189,18 @@ class SafeSearchPlugin extends Sensor {
       if(value === 'off') {
         continue;
       }
-      
+
       const key = this.getMappingKey(type, value);
       const result = this.getMappingResult(key);
       if(result) {
-        entries = entries.concat(this.processMappingResult(result));
-      }
-    }
+        const thisEntries = await this.processMappingResult(result);
+        entries = entries.concat(thisEntries);
+      }      
+    }  
 
-    await fs.writeFileAsync(safeSearchConfigFile, JSON.stringify(entries.join("\n")));
+    entries.push("");
+
+    await fs.writeFileAsync(safeSearchConfigFile, entries.join("\n"));
   }
 
   async deleteConfigFile() {
