@@ -75,13 +75,6 @@ const domainMapping = {
 }
 
 class SafeSearchPlugin extends Sensor {
-
-  scheduledJob() {
-    if(ipv6.hasConfig() &&
-       ipv6.config.updatePublicIP) {
-      ipv6.updatePublicIP()
-    }
-  }
   
   run() {
     this.cachedDomainResult = {};
