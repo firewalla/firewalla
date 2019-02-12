@@ -15,9 +15,8 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
-const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const audit = require('../util/audit.js');
@@ -488,7 +487,7 @@ class PolicyManager2 {
       }
       await (this._enablePolicy(policy))
       this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      Bone.submitIntelFeedback('enable', policy, 'policy')
       return policy
     })()
   }
