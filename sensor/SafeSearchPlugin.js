@@ -71,6 +71,11 @@ const domainMapping = {
     "strict.bing.com": [
       "www.bing.com"
     ]
+  },
+  duckduckgo: {
+    "safe.duckduckgo.com": [
+      "duckduckgo.com"
+    ]
   }
 }
 
@@ -106,10 +111,6 @@ class SafeSearchPlugin extends Sensor {
 
   getMappingKey(type, value) {
     switch(type) {
-    case "google":
-      return "google";
-    case "bing":
-      return "bing";
     case "youtube":
       switch(value) {
         case "strict":
@@ -120,7 +121,7 @@ class SafeSearchPlugin extends Sensor {
           return null;
       }
     default:
-      return null;
+      return type;
     }
   }
 
