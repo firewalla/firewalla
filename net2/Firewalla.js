@@ -331,6 +331,7 @@ module.exports = {
 
   isProduction: isProduction,
   isBeta:isBeta,
+  isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
 

@@ -649,9 +649,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(policy[p])
+            hook(host, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
           }
         }
       }
