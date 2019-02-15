@@ -612,8 +612,8 @@ module.exports = class DNSMASQ {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
       for(const protocol of ["tcp", "udp"]) {
-        const deviceDNS = `sudo iptables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-        const cmd = iptables.wrapIptables(deviceDNS);
+        const deviceDNSRule = `sudo iptables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+        const cmd = iptables.wrapIptables(deviceDNSRule);
         await exec(cmd);
       }
 
@@ -629,6 +629,7 @@ module.exports = class DNSMASQ {
 
   async _add_ip6tables_rules() {
     let ipv6s = sysManager.myIp6();
+    const deviceDNS = `${localIP}:8863`;
 
     for (let index in ipv6s) {
       let ip6 = ipv6s[index]
@@ -636,8 +637,8 @@ module.exports = class DNSMASQ {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
         for(const protocol of ["tcp", "udp"]) {
-          const deviceDNS = `sudo ip6tables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-          const cmd = iptables.wrapIptables(deviceDNS);
+          const deviceDNSRule = `sudo ip6tables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
           await exec(cmd);
         }
 
@@ -649,6 +650,7 @@ module.exports = class DNSMASQ {
   async _remove_ip6tables_rules() {
     try {
       let ipv6s = sysManager.myIp6();
+      const deviceDNS = `${localIP}:8863`;
 
       for (let index in ipv6s) {
         let ip6 = ipv6s[index]
@@ -656,8 +658,8 @@ module.exports = class DNSMASQ {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
           for(const protocol of ["tcp", "udp"]) {
-            const deviceDNS = `sudo ip6tables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-            const cmd = iptables.wrapIptables(deviceDNS);
+            const deviceDNSRule = `sudo ip6tables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+            const cmd = iptables.wrapIptables(deviceDNSRule);
             await exec(cmd);
           }
 
@@ -702,6 +704,7 @@ module.exports = class DNSMASQ {
         subnets = this._redirectedLocalSubnets;
       let localIP = sysManager.myIp();
       let dns = `${localIP}:8853`;
+      const deviceDNS = `${localIP}:8863`;
       if (this._targetDns)
         dns = this._targetDns;
 
@@ -710,8 +713,8 @@ module.exports = class DNSMASQ {
         await iptables.dnsChangeAsync(subnet, dns, false, true);
 
         for(const protocol of ["tcp", "udp"]) {
-          const deviceDNS = `sudo iptables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-          const cmd = iptables.wrapIptables(deviceDNS);
+          const deviceDNSRule = `sudo iptables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
           await exec(cmd);
         }
       })

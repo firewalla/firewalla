@@ -28,7 +28,7 @@ const userConfigFolder = f.getUserConfigFolder();
 const dnsConfigFolder = `${userConfigFolder}/dns`;
 const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch.conf`;
 
-const devicemasqConfigFolder = `${userConfigFolder/devicemasq}`;
+const devicemasqConfigFolder = `${userConfigFolder}/devicemasq`;
 
 const pidFile = `${f.getRuntimeInfoFolder()}/safeSearch.dnsmasq.pid`;
 
@@ -53,17 +53,19 @@ const safeSearchDNSPort = 8863;
 
 class SafeSearchPlugin extends Sensor {
   
-  run() {
+  async run() {
     this.cachedDomainResult = {};
 
     extensionManager.registerExtension("safeSearch", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
       stop: this.stop
-    })
+    });
+
+    await exec(`mkdir -p ${devicemasqConfigFolder}`);
   }
 
-  apiRun() {
+  async apiRun() {
     extensionManager.onSet("safeSearchConfig", async (msg, data) => {
       return rclient.setAsync(configKey, JSON.stringify(data));
     });
