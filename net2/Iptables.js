@@ -419,10 +419,10 @@ function _dnsChange(ip, dns, state, callback) {
 
 function flush(callback) {
   this.process = require('child_process').exec(
-    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw",
-    (err, out, code) => {
+    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+    (err, stdout, stderr) => {
       if (err) {
-        log.error("IPTABLE:FLUSH:Unable to flush", err, out);
+        log.error("IPTABLE:FLUSH:Unable to flush", err, stdout);
       }
       if (callback) {
         callback(err, null);
