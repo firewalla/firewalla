@@ -207,7 +207,7 @@ class MultiSSClient {
     const cmd = "sudo ipset destroy chnroute";
     log.info("Running cmd:", cmd);
     return exec(cmd).catch((err) => {
-      log.error("Failed to destroy chnroute:", err);
+      log.debug("Failed to destroy chnroute:", err);
     });
   }
   
