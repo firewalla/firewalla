@@ -15,6 +15,7 @@ const ip = require('ip');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
+const exec = require('child-process-promise').exec;
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -603,12 +604,19 @@ module.exports = class DNSMASQ {
     let subnets = await networkTool.getLocalNetworkSubnets();
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
+    const deviceDNS = `${localIP}:8863`;
 
     this._redirectedLocalSubnets = subnets;
     this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
+      for(const protocol of ["tcp", "udp"]) {
+        const deviceDNS = `sudo iptables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+        const cmd = iptables.wrapIptables(deviceDNS);
+        await exec(cmd);
+      }
+
       await iptables.dnsChangeAsync(subnet, dns, true);
     }
 
@@ -626,6 +634,13 @@ module.exports = class DNSMASQ {
       let ip6 = ipv6s[index]
       if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+        for(const protocol of ["tcp", "udp"]) {
+          const deviceDNS = `sudo ip6tables -w -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNS);
+          await exec(cmd);
+        }
+
         await ip6tables.dnsRedirectAsync(ip6, 8853)
       }
     }
@@ -639,6 +654,13 @@ module.exports = class DNSMASQ {
         let ip6 = ipv6s[index]
         if (ip6.startsWith("fe80:")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+          for(const protocol of ["tcp", "udp"]) {
+            const deviceDNS = `sudo ip6tables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+            const cmd = iptables.wrapIptables(deviceDNS);
+            await exec(cmd);
+          }
+
           await ip6tables.dnsUnredirectAsync(ip6, 8853)
         }
       }
@@ -686,6 +708,12 @@ module.exports = class DNSMASQ {
       subnets.forEach(async subnet => {
         log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
+
+        for(const protocol of ["tcp", "udp"]) {
+          const deviceDNS = `sudo iptables -w -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNS);
+          await exec(cmd);
+        }
       })
       this._redirectedLocalSubnets = [];
       this._targetDns = null;
@@ -749,7 +777,7 @@ module.exports = class DNSMASQ {
       writer.end();
     });
   }
-  
+
   async checkStatus() {
     let cmd = `pgrep -f ${dnsmasqBinary}`;
     log.info("Command to check dnsmasq: ", cmd);

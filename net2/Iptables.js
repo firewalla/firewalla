@@ -21,6 +21,32 @@ var spawn = require('child_process').spawn;
 
 let Promise = require('bluebird');
 
+exports.wrapIptables= function (rule) {
+  let command = " -I ";
+  let checkRule = null;
+
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+  }
+
+  command = " -A ";
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+  }
+
+  command = " -D ";
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
+  }
+
+  if(checkRule) {
+    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+  } else {
+    return rule;
+  }
+}
+
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
     if (!rule.action) rule.action = '-A';

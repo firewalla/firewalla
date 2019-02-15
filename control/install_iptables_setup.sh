@@ -16,6 +16,7 @@ sudo ipset create blocked_domain_set hash:ip family inet hashsize 128 maxelem 65
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
 sudo ipset create trusted_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create devicedns_mac_set hash:mac &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush blocked_ip_set
@@ -23,6 +24,7 @@ sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
 sudo ipset flush trusted_ip_set
+sudo ipset flush devicedns_mac_set
 
 sudo ipset add -! blocked_ip_set $BLACK_HOLE_IP
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
