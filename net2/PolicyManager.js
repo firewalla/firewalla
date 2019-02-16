@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -649,9 +649,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(policy[p])
+            hook(host, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
           }
         }
       }

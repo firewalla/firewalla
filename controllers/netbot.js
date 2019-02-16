@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -766,7 +766,7 @@ class netBot extends ControllerBot {
                }
                if (msg.alarmType) {
                    let alarmType = msg.alarmType;
-                   if (msg.alarmType  === "ALARM_LARGE_UPDATE") {
+                   if (msg.alarmType  === "ALARM_LARGE_UPLOAD") {
                        alarmType = "ALARM_BEHAVIOR";
                    }
                    if (this.hostManager.policy["notify"][alarmType] === false || 

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -71,9 +71,9 @@ class GuardianSensor extends Sensor {
         throw new Error("invalid guardian relay server");
       }
 
-      await guardianSensor.setServer(socketioServer);
+      await this.setServer(socketioServer);
       
-      await guardianSensor.start();
+      await this.start();
     });
 
     const adminStatusOn = await this.isAdminStatusOn();
@@ -133,8 +133,10 @@ class GuardianSensor extends Sensor {
   }
 
   async _stop() {
-    this.socket.disconnect();
-    this.socket = null;
+    if(this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
   }
 
   async stop() {

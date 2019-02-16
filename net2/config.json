@@ -109,6 +109,43 @@
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
+    "SafeSearchPlugin": {
+      "mapping": {
+        "youtube_strict": {
+          "restrict.youtube.com": [
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtubei.googleapis.com",
+            "youtube.googleapis.com",
+            "www.youtube-nocookie.com"
+          ]
+        },
+        "youtube_moderate": {
+          "restrictmoderate.youtube.com": [
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtubei.googleapis.com",
+            "youtube.googleapis.com",
+            "www.youtube-nocookie.com"
+          ]
+        },
+        "google": {
+          "forcesafesearch.google.com": [
+            "www.google.com"
+          ]
+        },
+        "bing": {
+          "strict.bing.com": [
+            "www.bing.com"
+          ]
+        },
+        "duckduckgo": {
+          "safe.duckduckgo.com": [
+            "duckduckgo.com"
+          ]
+        }
+      }
+    },
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {
