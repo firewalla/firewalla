@@ -66,6 +66,9 @@ const scheduler = require('../extension/scheduler/scheduler.js')()
 
 const Queue = require('bee-queue')
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const policyCapacity = platform.getPolicyCapacity();
+
 const _ = require('lodash')
 
 function delay(t) {
@@ -470,7 +473,7 @@ class PolicyManager2 {
   }
 
   async getSamePolicies(policy) {
-    let policies = await this.loadActivePoliciesAsync(1000, { includingDisabled: true });
+    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true });
 
     if (policies) {
       return policies.filter((p) => policy.isEqualToPolicy(p))
@@ -546,7 +549,7 @@ class PolicyManager2 {
   }
 
   deleteMacRelatedPolicies(mac) {
-    this.loadActivePoliciesAsync(1000, {includingDisabled: 1})
+    this.loadActivePoliciesAsync({includingDisabled: 1})
       .then(rules => {
         // device specified policy
         rclient.del('policy:mac:' + mac);
@@ -656,10 +659,9 @@ class PolicyManager2 {
     });
   }
 
-  loadActivePoliciesAsync(number, options) {
-    number = number || 1000 // default 1000
+  loadActivePoliciesAsync(options) {
     return new Promise((resolve, reject) => {
-      this.loadActivePolicies(number, options, (err, policies) => {
+      this.loadActivePolicies(options, (err, policies) => {
         if(err) {
           reject(err)
         } else {
@@ -669,15 +671,8 @@ class PolicyManager2 {
     })
   }
   
-  // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
-  loadActivePolicies(number, options, callback) {
-
-    if(typeof(number) == 'function') {
-      callback = number;
-      number = 1000; // by default load last 1000 policy rules, for self-protection
-      options = {};
-    }
+  loadActivePolicies(options, callback) {
 
     if(typeof options === 'function') {
       callback = options;
@@ -685,6 +680,7 @@ class PolicyManager2 {
     }
 
     options = options || {};
+    let number = options.number || policyCapacity;
     callback = callback || function() {};
 
     rclient.zrevrange(policyActiveKey, 0, number -1 , (err, results) => {
@@ -711,52 +707,45 @@ class PolicyManager2 {
     })() 
   }
 
-  enforceAllPolicies() {
-    return new Promise((resolve, reject) => {
-      this.loadActivePolicies((err, rules) => {
-        
-        return async(() => {
-          rules.forEach((rule) => {
-            try {
-              if(this.queue) {
-                const job = this.queue.createJob({
-                  policy: rule,
-                  action: "enforce",
-                  booting: true
-                })
-                job.timeout(60000).save(function() {})
-              }
-            } catch(err) {
-              log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
-            }            
+  async enforceAllPolicies() {
+    let rules = await this.loadActivePoliciesAsync();
+
+    rules.forEach((rule) => {
+      try {
+        if(this.queue) {
+          const job = this.queue.createJob({
+            policy: rule,
+            action: "enforce",
+            booting: true
           })
-          log.info("All policy rules are enforced")
-        })()
-      });
-    });
+          job.timeout(60000).save(function() {})
+        }
+      } catch(err) {
+        log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
+      }
+    })
+    log.info("All policy rules are enforced")
   }
 
 
-  parseDevicePortRule(target) {
-    return async(() => {
-      let matches = target.match(/(.*):(\d+):(tcp|udp)/)
-      if(matches) {
-        let mac = matches[1]
-        let host = await (ht.getMACEntry(mac))
-        if(host) {
-          return {
-            ip: host.ipv4Addr,
-            port: matches[2],
-            protocol: matches[3]
-          }
-        } else {
-          return null
+  async parseDevicePortRule(target) {
+    let matches = target.match(/(.*):(\d+):(tcp|udp)/)
+    if(matches) {
+      let mac = matches[1];
+      let host = await ht.getMACEntry(mac);
+      if(host) {
+        return {
+          ip: host.ipv4Addr,
+          port: matches[2],
+          protocol: matches[3]
         }
       } else {
         return null
       }
+    } else {
+      return null
+    }
 
-    })()
   }
     
   isFirewallaOrCloud(policy) {
@@ -1101,19 +1090,17 @@ class PolicyManager2 {
 
 
   // utility functions
-  findPolicy(target, type) {
-    return async(() => {
-      let rules = await (this.loadActivePoliciesAsync())
+  async findPolicy(target, type) {
+    let rules = await this.loadActivePoliciesAsync();
 
-      for (const index in rules) {
-        const rule = rules[index]
-        if(rule.target === target && type === rule.type) {
-          return rule 
-        }
+    for (const index in rules) {
+      const rule = rules[index]
+      if(rule.target === target && type === rule.type) {
+        return rule
       }
+    }
 
-      return null
-    })()
+    return null
   }
 }
 
