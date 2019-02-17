@@ -195,7 +195,7 @@ class Host {
   keepalive() {
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
-      linux.ping6(null,this.ipv6Addr[i]);
+      linux.ping6(this.ipv6Addr[i]);
     }
     setTimeout(()=>{
       this.cleanV6();
@@ -529,6 +529,24 @@ class Host {
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);
       return false;
+    }
+  }
+
+  async ipAllocation(policy) {
+    const type = policy.type;
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    if (type === "dynamic") {  
+      this.dnsmasq.onDHCPReservationChanged();
+    }
+    if (type === "static") {
+      const alternativeIp = policy.alternativeIp;
+      const secondaryIp = policy.secondaryIp;
+      if (alternativeIp)
+        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
+      if (secondaryIp)
+        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
+      this.dnsmasq.onDHCPReservationChanged();
     }
   }
 
@@ -1410,7 +1428,6 @@ module.exports = class HostManager {
     return instances[name];
   }
 
-
   keepalive() {
     log.info("HostManager:Keepalive");
     for (let i in this.hostsdb) {
@@ -1649,19 +1666,9 @@ module.exports = class HostManager {
     });    
   }
 
-  newAlarmDataForInit(json) {
-    log.debug("Reading new alarms");
-
-    return new Promise((resolve, reject) => {
-      alarmManager2.loadActiveAlarms((err, list) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.newAlarms = list;
-        resolve(json);
-      });
-    });
+  async newAlarmDataForInit(json) {
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
+    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
   }
 
   async archivedAlarmNumberForInit(json) {
@@ -1744,6 +1751,25 @@ module.exports = class HostManager {
             return json;
           })
       });
+  }
+
+  async dhcpRangeForInit(network, json) {
+    const key = network + "DhcpRange";
+    const dnsmasq = new DNSMASQ();
+    let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
+    return new Promise((resolve, reject) => {
+      this.loadPolicy((err, data) => {
+        if (data.dnsmasq) {
+          const dnsmasqConfig = JSON.parse(data.dnsmasq);
+          if (dnsmasqConfig[network + "DhcpRange"]) {
+            dhcpRange = dnsmasqConfig[network + "DhcpRange"];
+          }
+        }
+        if (dhcpRange)
+          json[key] = dhcpRange;
+        resolve();
+      })
+    });
   }
 
   modeForInit(json) {
@@ -1982,6 +2008,18 @@ module.exports = class HostManager {
     json.recentFlows = recentFlows;
   }
 
+  async groupNameForInit(json) {
+    const groupName = await rclient.getAsync("groupName");
+    if(groupName) {
+      json.groupName = groupName;
+    }
+  }
+
+  async asyncBasicDataForInit(json) {
+    const speed = await platform.getNetworkSpeed();
+    json.nicSpeed = speed;
+  }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -2056,6 +2094,12 @@ module.exports = class HostManager {
 
         await (requiredPromises);
 
+        // mode should already be set in json
+        if (json.mode === "dhcp") {
+          await (this.dhcpRangeForInit("alternative", json));
+          await (this.dhcpRangeForInit("secondary", json));
+        }
+
         await (this.loadDDNSForInit(json));
 
         await (this.legacyHostFlag(json))
@@ -2108,55 +2152,58 @@ module.exports = class HostManager {
     return null
   }
 
-  getHostAsync(ip) {
-    return new Promise((resolve, reject) => {
-      this.getHost(ip, (err, host) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(host);
-        }
-      })
-    })
-  }
-
-  getHost(ip, callback) {
+  getHost(target, callback) {
     callback = callback || function() {}
 
-    dnsManager.resolveLocalHost(ip, (err, o) => {
-      if (o == null) {
-        callback(err, null);
-        return;
+    this.getHostAsync(target)
+       .then(res => callback(null, res))
+       .catch(err => {
+         callback(err);
+       })
+  }
+
+  async getHostAsync(target) {
+
+    let host, o;
+    if (hostTool.isMacAddress(target)) {
+      host = this.hostsdb[`host:mac:${target}`];
+
+      if (host) {
+        return host;
       }
-      let host = this.hostsdb["host:ip4:" + o.ipv4Addr];
+
+      o = await hostTool.getMACEntry(target)
+    } else {
+      o = await dnsManager.resolveLocalHostAsync(target)
+
+      host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
+
       if (host) {
         host.update(o);
-        callback(err, host);
-        return;
+        return host
       }
-      if (err == null && o != null) {
-        host = new Host(o,this);
-        host.type = this.type;
-        //this.hosts.all.push(host);
-        this.hostsdb['host:ip4:' + o.ipv4Addr] = host;
+    }
 
-        let ipv6Addrs = host.ipv6Addr
-        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for(let i in ipv6Addrs) {
-            let ip6 = ipv6Addrs[i]
-            let key = `host:ip6:${ip6}`
-            this.hostsdb[key] = host
-          }
-        }
+    if (o == null) return null;
 
-        if (this.hostsdb['host:mac:' + o.mac]) {
-          // up date if needed
-        }
-        callback(null, host);
-      } else {
-        callback(err, null);
+    host = new Host(o, this);
+    host.type = this.type;
+
+    //this.hostsdb[`host:mac:${o.mac}`] = host
+    // do not update host:mac entry in this.hostsdb intentionally, 
+    // since host:mac entry in this.hostsdb should be strictly consistent with things in this.hosts.all and should only be updated in getHosts() by design
+    this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
+
+    let ipv6Addrs = host.ipv6Addr
+    if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+      for(let i in ipv6Addrs) {
+        let ip6 = ipv6Addrs[i]
+        let key = `host:ip6:${ip6}`
+        this.hostsdb[key] = host
       }
-    });
+    }
+    
+    return host
   }
 
   // take hosts list, get mac address, look up mac table, and see if
@@ -2431,7 +2478,7 @@ module.exports = class HostManager {
             spoofer.validateV6Spoofs(allIPv6Addrs);
             spoofer.validateV4Spoofs(allIPv4Addrs);
           }
-          log.info("hostmanager:gethosts:done Devices: ",Object.keys(this.hostsdb).length," ipv6 addresses ",allIPv6Addrs.length );
+          log.info("hostmanager:gethosts:done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
           callback(err, this.hosts.all);
         });
       });

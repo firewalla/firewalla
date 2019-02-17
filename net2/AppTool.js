@@ -16,8 +16,6 @@
 
 let log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
 let Promise = require('bluebird');
 
 

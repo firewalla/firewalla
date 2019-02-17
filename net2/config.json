@@ -1,5 +1,5 @@
 {
-  "version": 1.959,
+  "version": 1.963,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -33,16 +33,8 @@
   },
   "secondaryInterface": {
     "intf": "eth0:0",
-    "ipOnly": "192.168.218.1",
     "ip": "192.168.218.1/24",
-    "ipsubnet": "192.168.218.0/24",
-    "ipnet": "192.168.218",
-    "ipmask": "255.255.255.0",
-    "ip2Only": "192.168.168.1",
-    "ip2": "192.168.168.1/24",
-    "ipsubnet2": "192.168.168.0/24",
-    "ipnet2": "192.168.168",
-    "ipmask2": "255.255.255.0"
+    "ip2": "192.168.168.1/24"
   },
   "vpnInterface": {
     "subnet": "10.8.0.0/24"
@@ -68,8 +60,10 @@
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
+    "AdditionalPairPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {}
+    "RecentFlowPlugin": {},
+    "GuardianSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -98,7 +92,10 @@
     "APISensor": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
-    "SSDPSensor": {},
+    "SSDPSensor": {
+      "interval": 600,
+      "cacheTTL": 3600
+    },
     "OvpnConnSensor": {
       "logPath": "/var/log/openvpn-server.log"
     },
@@ -114,7 +111,11 @@
     "FlowAggregationSensor": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
-    "CPUSensor": {},
+    "CPUSensor": {
+      "interval": 60,
+      "reportInterval": 7200,
+      "temperatureThreshold": 95
+    },
     "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
@@ -187,6 +188,10 @@
         "count": 200
       },
       "categoryflow": {
+        "expires": 86400,
+        "count": 1000
+      },
+      "appflow": {
         "expires": 86400,
         "count": 1000
       }
@@ -287,6 +292,8 @@
     "new_device": true,
     "device_online": true,
     "device_offline": true,
+    "alarm_upnp": true,
+    "alarm_subnet": true,
     "spoofing_device": false,
     "vpn_client_connection": true,
     "cyber_security": true,
@@ -303,7 +310,8 @@
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,
-    "insane_mode": false
+    "insane_mode": false,
+    "cpu_monitor": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

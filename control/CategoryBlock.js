@@ -60,14 +60,11 @@ class CategoryBlock {
   async blockCategory(category, options) {
     options = options || {}
     
-    // this policy has scope
-    if(options.macSet) {
-      // block in filter
-      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
-      // block in nat
-      await categoryUpdater.iptablesBlockCategoryPerDeviceNew(category, options.macSet);
+    if(options.whitelist) {
+      // whitelist policy
+      await categoryUpdater.iptablesWhitelistCategory(category)
     } else {
-      // global policy
+      // block policy
       await categoryUpdater.iptablesBlockCategory(category)
 
       if(category === 'default_c') {
@@ -81,14 +78,11 @@ class CategoryBlock {
   async unblockCategory(category, options) {
     options = options || {}
 
-    // this policy has scope
-    if(options.macSet) {
-      // filter table
-      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
-      // nat table
-      await categoryUpdater.iptablesUnblockCategoryPerDeviceNew(category, options.macSet);
+    if(options.whitelist) {
+      // whitelist policy
+      await categoryUpdater.iptablesUnWhitelistCategory(category)
     } else {
-      // global policy
+      // block policy
       await categoryUpdater.iptablesUnblockCategory(category)
 
       if(category === 'default_c') {

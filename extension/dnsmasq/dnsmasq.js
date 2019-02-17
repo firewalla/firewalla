@@ -63,8 +63,12 @@ const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
+const altResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.resolv.conf";
+
+const interfaceDhcpRange = {};
 
 let defaultNameServers = {};
+let interfaceNameServers = {};
 let upstreamDNS = null;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
@@ -126,20 +130,20 @@ module.exports = class DNSMASQ {
         restart: 0
       }
 
-      process.on('exit', () => {
-        this.shouldStart = false;
-        this.stop();
-      });
-
-      setInterval(() => {
-        this.checkIfRestartNeeded()
-      }, 10 * 1000) // every 10 seconds
-
-      setInterval(() => {
-        this.checkIfWriteHostsFile();
-      }, 10 * 1000);
-
       if (f.isMain()) {
+        setInterval(() => {
+          this.checkIfRestartNeeded()
+        }, 10 * 1000) // every 10 seconds
+  
+        setInterval(() => {
+          this.checkIfWriteHostsFile();
+        }, 10 * 1000);
+
+        process.on('exit', () => {
+          this.shouldStart = false;
+          this.stop();
+        });
+
         sclient.on("message", (channel, message) => {
           switch (channel) {
             case "System:IPChange":
@@ -147,10 +151,10 @@ module.exports = class DNSMASQ {
                 const started = await this.checkStatus();
                 if (started)
                   await this.rawRestart(); // restart firemasq service to bind new ip addresses
-                await this._update_local_interface_iptables_rules();
                 if (this.vpnSubnet) {
                   await this.updateVpnIptablesRules(this.vpnSubnet, true);
                 }
+                await this._update_local_interface_iptables_rules();
               })();
               break;
             case "DHCPReservationChanged":
@@ -217,23 +221,47 @@ module.exports = class DNSMASQ {
   }
 
   async updateResolvConf() {
-    let nameservers = this.getAllDefaultNameServers()
-    if (!nameservers || nameservers.length === 0) {
-      nameservers = sysManager.myDNS();
+    let nameservers = this.getAllDefaultNameServers() || [];
+    let secondaryIntfNameServers = interfaceNameServers.secondary || [];
+    let alternativeIntfNameServers = interfaceNameServers.alternative || [];
+
+    let effectiveNameServers = nameservers;
+    let alternativeNameServers = [];
+    // different interface specific nameservers take effect in different mode
+    if (this.dhcpMode) {
+      effectiveNameServers = effectiveNameServers.concat(secondaryIntfNameServers); // specified interface dns servers are listed after default name servers, e.g., OpenDNS, upstream DNS
+      alternativeNameServers = alternativeIntfNameServers;
+    } else {
+      effectiveNameServers = effectiveNameServers.concat(alternativeIntfNameServers);
+      alternativeNameServers = secondaryIntfNameServers;
+    }
+    
+    // add local dns as a fallback in dnsmasq's resolv.conf
+    sysManager.myDNS().forEach((dns) => {
+      if (effectiveNameServers && !effectiveNameServers.includes(dns))
+        effectiveNameServers.push(dns);
+      if (alternativeNameServers && !alternativeNameServers.includes(dns))
+        alternativeNameServers.push(dns);
+    })
+
+    if (!effectiveNameServers || effectiveNameServers.length === 0) {
+      effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
+    }
+    if (!alternativeNameServers || alternativeNameServers.length === 0) {
+      alternativeNameServers = [DEFAULT_DNS_SERVER];
     }
 
-    if (!nameservers || nameservers.length === 0) {
-      nameservers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
-    }
+    let effectiveEntries = effectiveNameServers.map(ip => "nameserver " + ip);
+    let effectiveConfig = effectiveEntries.join('\n') + "\n";
 
-    let entries = nameservers.map(ip => "nameserver " + ip);
-    let config = entries.join('\n');
-    config += "\n";
+    let alternativeEntries = alternativeNameServers.map(ip => "nameserver " + ip);
+    let alternativeConfig = alternativeEntries.join('\n') + "\n";
 
     try {
-      await fs.writeFileAsync(resolvFile, config);
+      await fs.writeFileAsync(resolvFile, effectiveConfig);
+      await fs.writeFileAsync(altResolvFile, alternativeConfig);
     } catch (err) {
-      log.error("Error when updating resolv.conf:", resolveFile, "error msg:", err.message, {});
+      log.error("Error when updating resolv.conf:", resolveFile, altResolvFile, "error msg:", err.message, {});
       throw err;
     }
 
@@ -394,6 +422,19 @@ module.exports = class DNSMASQ {
       _ips = [ips.toString()];
     }
     defaultNameServers[key] = _ips;
+  }
+
+  setInterfaceNameServers(intf, ips) {
+    let _ips;
+    if (Array.isArray(ips)) {
+      _ips = ips.filter(x => validator.isIP(x));
+    } else {
+      if (!validator.isIP(ips.toString())) {
+        return;
+      }
+      _ips = [ips.toString()];
+    }
+    interfaceNameServers[intf] = _ips;
   }
 
   unsetDefaultNameServers(key) {
@@ -793,6 +834,8 @@ module.exports = class DNSMASQ {
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
+    // static ip reservation is set in host:mac:*
+    /*
     let static_hosts = await redis.hgetallAsync('dhcp:static');
 
     log.debug("static hosts:", util.inspect(static_hosts));
@@ -821,17 +864,18 @@ module.exports = class DNSMASQ {
 
       hosts = hosts.concat(_hosts);
     }
+    */
 
     hosts = hosts.filter((x) => x.mac != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = hosts.map(h => (h.spoofing === 'false') ?
       `${h.mac},set:unmonitor,ignore` :
-      `${h.mac},set:monitor,${h.ip ? h.ip + ',' : ''}${lease_time}`
+      `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
     );
 
     let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-      `${h.mac},set:unmonitor,${h.ip ? h.ip + ',' : ''}${lease_time}` :
+      `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
       `${h.mac},set:monitor,ignore`
     );
 
@@ -872,11 +916,11 @@ module.exports = class DNSMASQ {
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
     let cmdAlt = null;
 
-    if (this.dhcpMode && (!sysManager.secondaryIpnet || !sysManager.secondaryMask)) {
+    if (this.dhcpMode && (!sysManager.myIp2() || !sysManager.myIpMask2())) {
       log.warn("DHCPFeature is enabled but secondary network interface is not setup");
     }
 
-    if(this.dhcpMode && sysManager.secondaryIpnet && sysManager.secondaryMask) {
+    if(this.dhcpMode && sysManager.myIp2() && sysManager.myIpMask2()) {
       log.info("DHCP feature is enabled");
 
       cmd = await this.prepareDnsmasqCmd(cmd);
@@ -937,6 +981,7 @@ module.exports = class DNSMASQ {
 
   writeStartScript(cmd, cmdAlt) {
     log.info("Command to start dnsmasq: ", cmd);
+    log.info("Command to start alternative dnsmasq: ", cmd);
 
     let content = [
       '#!/bin/bash',
@@ -950,22 +995,58 @@ module.exports = class DNSMASQ {
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
 
-  async prepareDnsmasqCmd(cmd) {
-    let rangeBegin = util.format("%s.50", sysManager.secondaryIpnet);
-    let rangeEnd = util.format("%s.250", sysManager.secondaryIpnet);
-    let routerIP = util.format("%s.1", sysManager.secondaryIpnet);
+  setDhcpRange(network, begin, end) {
+    interfaceDhcpRange[network] = {
+      begin: begin,
+      end: end
+    };
+  }
+  
+  getDefaultDhcpRange(network) {
+    if (network === "alternative") {
+      let cidr = ip.cidrSubnet(sysManager.mySubnet());
+      let firstAddr = ip.toLong(cidr.firstAddress);
+      let lastAddr = ip.toLong(cidr.lastAddress);
+      let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
 
-    const dhcpRange = await dhcp.getDhcpRange("secondary");
-    if (dhcpRange) {
-      rangeBegin = dhcpRange.begin;
-      rangeEnd = dhcpRange.end;
+      let rangeBegin = ip.fromLong(midAddr);
+      let rangeEnd = ip.fromLong(lastAddr - 3);
+      return {
+        begin: rangeBegin,
+        end: rangeEnd
+      };
     }
+    if (network === "secondary") {
+      const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
+      const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
+      let rangeBegin = util.format("%s.50", prefix);
+      let rangeEnd = util.format("%s.250", prefix);
+      return {
+        begin: rangeBegin,
+        end: rangeEnd
+      };
+    }
+    return null;
+  }
+
+  getDhcpRange(network) {
+    let range = interfaceDhcpRange[network];
+    if (!range) {
+      range = this.getDefaultDhcpRange(network);
+    }
+    return range;
+  }
+
+  async prepareDnsmasqCmd(cmd) {
+    let {begin, end} = this.getDhcpRange("secondary");
+    let routerIP = sysManager.myIp2();
+    const mask = sysManager.myIpMask2();
 
     cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmd,
-      rangeBegin,
-      rangeEnd,
-      sysManager.secondaryMask,
+      begin,
+      end,
+      mask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
 
@@ -975,7 +1056,8 @@ module.exports = class DNSMASQ {
     if (simpleIpFileExists) {
       const simpleIpSubnet = await fs.readFileAsync(simpleIpFile, "utf8");
       const simpleIp = simpleIpSubnet.split('/')[0];
-      if (simpleIp.startsWith(sysManager.secondaryIpnet)) // secondaryIpnet is like 192.168.218
+      const secondarySubnet = ip.subnet(sysManager.myIp2(), sysManager.myIpMask2());
+      if (secondarySubnet.contains(simpleIp)) // previous simple ip is contained in current secondary ip subnet, need to reserve this ip address
         cmd = util.format("%s --dhcp-host=%s,%s", cmd, sysManager.myMAC(), simpleIp);
     }
 
@@ -984,9 +1066,14 @@ module.exports = class DNSMASQ {
     // and the DNS server and default route are set to the address of the machine running dnsmasq.
     cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
 
-    sysManager.myDNS().forEach(dns => {
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, dns);
-    });
+    if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
+      // if secondary dns server is set, use specified dns servers in dhcp response
+      const dnsServers = interfaceNameServers.secondary.join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    } else {
+      const dnsServers = sysManager.myDNS().join(',');
+      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+    }
     return cmd;
   }
 
@@ -995,33 +1082,26 @@ module.exports = class DNSMASQ {
     let gw = sysManager.myGateway();
     let mask = sysManager.myIpMask();
 
-    let cidr = ip.cidrSubnet(sysManager.mySubnet());
-    let firstAddr = ip.toLong(cidr.firstAddress);
-    let lastAddr = ip.toLong(cidr.lastAddress);
-    let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
-
-    let rangeBegin = ip.fromLong(midAddr);
-    let rangeEnd = ip.fromLong(lastAddr - 3);
-
-    const dhcpRange = await dhcp.getDhcpRange("alternative");
-    if (dhcpRange) {
-      rangeBegin = dhcpRange.begin;
-      rangeEnd = dhcpRange.end;
-    }
+    let {begin, end} = this.getDhcpRange("alternative");
 
     cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
       cmdAlt,
-      rangeBegin,
-      rangeEnd,
+      begin,
+      end,
       mask,
       fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
     );
 
     cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
 
-    sysManager.myDNS().forEach(dns => {
-      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dns);
-    });
+    if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
+      // if alternative dns server is set, use specified dns servers in dhcp response
+      const dnsServers = interfaceNameServers.alternative.join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
+    } else {
+      const dnsServers = sysManager.myDNS().join(',');
+      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
+    }
     return cmdAlt;
   }
 
@@ -1087,6 +1167,7 @@ module.exports = class DNSMASQ {
 
     if (!skipIptablesUpdate) {
       try {
+        await this._remove_all_iptables_rules();
         await this._add_all_iptables_rules();
       } catch (err) {
         log.error('Error when add iptables rules', err);

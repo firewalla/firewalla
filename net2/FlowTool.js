@@ -160,6 +160,10 @@ class FlowTool {
       // ignore zero length flows
       return false;
     }
+    if (o.f === "s") {
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+      return false;
+    }
 
     return true;
   }
@@ -267,28 +271,17 @@ class FlowTool {
       f.device = flow.mac;
     }
 
-    if(flow.pf) {
+    f.protocol = flow.pr;
+
+    try {
       if(flow.lh === flow.sh) {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const destinationPort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const sourcePort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.dp);
+        f.devicePort = Number(flow.sp[0]);
       } else {
-        try {
-          const protocol = Object.keys(flow.pf)[0].split(".")[0];
-          const sourcePort = Number(Object.keys(flow.pf)[0].split(".")[1]);
-          const destinationPort = Object.values(flow.pf)[0].sp[0];
-          f.devicePort = sourcePort;
-          f.port = destinationPort
-          f.protocol = protocol;
-        } catch(err) {          
-        }
+        f.port = Number(flow.sp[0]);
+        f.devicePort = Number(flow.dp);
       }
+    } catch(err) {
     }
 
     if(flow.lh === flow.sh) {
@@ -512,19 +505,30 @@ class FlowTool {
     return;
   }
 
-  async enrichIntel(f) {
-    const intel = await intelTool.getIntel(f.ip);
-    if(intel) {
-      f.country = intel.country;
-      f.host = intel.host;
-      if(intel.category) {
-        f.category = intel.category
+  async enrichWithIntel(flows) {
+    return await Promise.all(flows.map(async f => {
+      // get intel from redis. if failed, create a new one
+      const intel = await intelTool.getIntel(f.ip);
+
+      if (intel) {
+        f.country = intel.country;
+        f.host = intel.host;
+        if(intel.category) {
+          f.category = intel.category
+        }
+        if(intel.app) {
+          f.app = intel.app
+        }
       }
-      if(intel.app) {
-        f.app = intel.app
+
+      // failed on previous cloud request, try again
+      if (intel && intel.cloudFailed || !intel) {
+        // not waiting as that will be too slow for API call
+        destIPFoundHook.processIP(f.ip);
       }
-    }
-    return f;
+
+      return f;
+    }));
   }
 
   async getGlobalRecentConns() {
@@ -540,20 +544,16 @@ class FlowTool {
     let flowObjects = results
         .map((x) => this._flowStringToJSON(x));
 
-    flowObjects = await Promise.all(
-      flowObjects.map(async (f) => {
-        return this.enrichIntel(f);
-      })
-    );
+    let enrichedFlows = await this.enrichWithIntel(flowObjects);
 
-    flowObjects.sort((a, b) => {
+    enrichedFlows.sort((a, b) => {
       return b.ts - a.ts;
     });
 
-    return flowObjects;
+    return enrichedFlows;
   }
 
-  getRecentConnections(target, direction, options) {
+  async getRecentConnections(target, direction, options) {
     options = options || {};
 
     let max_recent_flow = options.maxRecentFlow || MAX_RECENT_FLOW;
@@ -562,86 +562,47 @@ class FlowTool {
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
-    return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
+    let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
 
-      if(results === null || results.length === 0)
-        return [];
+    if(results === null || results.length === 0)
+      return [];
 
-      let flowObjects = results
-        .map((x) => this._flowStringToJSON(x))
-        .filter((x) => this._isFlowValid(x));
+    let flowObjects = results
+      .map((x) => this._flowStringToJSON(x))
+      .filter((x) => this._isFlowValid(x));
 
-      flowObjects.forEach((x) => this.trimFlow(x));
+    flowObjects.forEach((x) => this.trimFlow(x));
 
-      let mergedFlow = null
+    let mergedFlow = null
 
-      if(!options.no_merge) {
-        mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
-      } else {
-        mergedFlow = flowObjects
-      }
-      
-      let simpleFlows = mergedFlow
-            .map((f) => this.toSimpleFlow(f))
-            .map((f) => {
-              if(options.mac) {
-                f.device = options.mac; // record the mac address here
-              }
-              return f;
-            });
+    if(!options.no_merge) {
+      mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
+    } else {
+      mergedFlow = flowObjects
+    }
 
-      let promises = Promise.all(simpleFlows.map((f) => {
-        return intelTool.getIntel(f.ip)
-        .then((intel) => {
-          if(intel) {
-            f.country = intel.country;
-            f.host = intel.host;
-            if(intel.category) {
-              f.category = intel.category
-            }
-            if(intel.app) {
-              f.app = intel.app
-            }
-            return f;
-          } else {
-            return f;
-            // intel not exists in redis, create a new one
-            return async(() => {
-              try {
-                intel = await (destIPFoundHook.processIP(f.ip));
-                if(intel) {
-                  f.country = intel.country;
-                  f.host = intel.host;
-                  if(intel.category) {
-                    f.category = intel.category
-                  }
-                  if(intel.app) {
-                    f.app = intel.app
-                  }
-                }             
-              } catch(err) {
-                log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-              }              
-              
-              return f;
-            })();
-          }
-          return f;
-        });
-      })).then(() => {
-        return simpleFlows.sort((a, b) => {
-          return b.ts - a.ts;
-        })
+    let simpleFlows = mergedFlow
+      .map((f) => {
+        let s = this.toSimpleFlow(f)
+        if(options.mac) {
+          s.device = options.mac; // record the mac address here
+        }
+        return s;
       });
 
-      return promises;
-    })();
+    let enrichedFlows = await this.enrichWithIntel(simpleFlows);
+
+    enrichedFlows.sort((a, b) => {
+      return b.ts - a.ts;
+    });
+
+    return enrichedFlows;
   }
 
   getFlowKey(mac, type) {
     return util.format("flow:conn:%s:%s", type, mac);
   }
+
   addFlow(mac, type, flow) {
     let key = this.getFlowKey(mac, type);
 
@@ -685,7 +646,7 @@ class FlowTool {
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
       .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString));
+        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this._isFlowValid(x));
       })
   }
 

@@ -865,6 +865,10 @@ module.exports = class FlowManager {
         // ignore zero length flows
         return false;
       }
+      if (o.f === "s") {
+        // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+        return false;
+      }
       
       return true;
     }
@@ -918,7 +922,7 @@ module.exports = class FlowManager {
       //     let key = o.sh+":"+o.dh+":"+o.fd;
       let flow = conndb[key];
       if (flow == null) {
-        conndb[key] = o;
+        conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other.
       } else {
         this.mergeFlow(flow, o);
       }

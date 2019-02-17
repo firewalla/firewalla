@@ -113,6 +113,17 @@ class FWInvitation {
     qrcode.generate(JSON.stringify(msg))
   }
   
+  async storeBonjourMessage(msg) {
+    const key = "firekick:pairing:message";
+    await rclient.setAsync(key, JSON.stringify(msg));
+    await rclient.expireAsync(key, this.totalTimeout);
+  }
+
+  async unsetBonjourMessage() {
+    const key = "firekick:pairing:message";
+    return rclient.delAsync(key);
+  }
+
   validateLicense(license) {
 
   }
@@ -271,7 +282,8 @@ class FWInvitation {
         log.info("TXT:", txtfield, {});
         const serial = platform.getBoardSerial();
         this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
-        this.displayBonjourMessage(txtfield)
+        this.displayBonjourMessage(txtfield);
+        this.storeBonjourMessage(txtfield);
     });
 
     if (intercomm.bcapable() != false) {
@@ -322,6 +334,7 @@ class FWInvitation {
     this.service && intercomm.stop(this.service);
     intercomm.bcapable() && intercomm.bstop();
     intercomm.bye();
+    this.unsetBonjourMessage();
   }
 }
 

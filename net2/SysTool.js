@@ -16,8 +16,6 @@
 
 const log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
 const Promise = require('bluebird');
 
 const async = require('asyncawait/async');
@@ -55,11 +53,20 @@ class SysTool {
   }
 
   restartFireKickService() {
-    return exec("sudo systemctl restart firekick")
+    return exec("redis-cli del firekick:pairing:message; sudo systemctl restart firekick")
   }
 
   stopFireKickService() {
     return exec("sudo systemctl stop firekick")
+  }
+
+  async isFireKickRunning() {
+    try {
+      await exec("systemctl is-active --quiet firekick");
+      return true;
+    } catch(err) {
+      return false;
+    }
   }
 
   upgradeToLatest() {

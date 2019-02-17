@@ -15,9 +15,8 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
-const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const audit = require('../util/audit.js');
@@ -314,34 +313,38 @@ class PolicyManager2 {
     });
   }
 
-  // TODO: need a better solution to compromise code base and Policy object creation
-  updatePolicyAsync(policy) {
-    const pid = policy.pid
-    policy = policy instanceof Policy ? policy : new Policy(policy);
-
-    if(pid) {
-      const policyKey = policyPrefix + pid;
-      return async(() => {
-        let redisfied = policy.redisfy();
-
-        await (rclient.hmsetAsync(policyKey, redisfied));
-
-        if (!redisfied.expire) {
-          await (rclient.hdelAsync(policyKey, "expire"))
-        }
-        if (!redisfied.cronTime) {
-          await (rclient.hdelAsync(policyKey, "cronTime"))
-          await (rclient.hdelAsync(policyKey, "duration"))
-        }
-        if (!redisfied.activatedTime) {
-          await (rclient.hdelAsync(policyKey, "activatedTime"))
-        }
-        if (!redisfied.scope) {
-          await (rclient.hdelAsync(policyKey, "scope"))
-        }
-      })()
-    } else {
+  // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
+  // it's hard to keep sanity dealing with partial update and redis in the same time
+  async updatePolicyAsync(policy) {
+    if (!policy.pid)
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+
+    const policyKey = policyPrefix + policy.pid;
+
+    if (policy instanceof Policy) {
+      let redisfied = policy.redisfy();
+      await rclient.hmsetAsync(policyKey, policy.redisfy());
+      return;
+    }
+
+    let existing = await this.getPolicy(policy.pid);
+
+    Object.assign(existing, policy);
+
+    await rclient.hmsetAsync(policyKey, existing.redisfy());
+
+    if (policy.expire === '') {
+      await rclient.hdelAsync(policyKey, "expire");
+    }
+    if (policy.cronTime === '') {
+      await rclient.hdelAsync(policyKey, "cronTime");
+      await rclient.hdelAsync(policyKey, "duration");
+    }
+    if (policy.activatedTime === '') {
+      await rclient.hdelAsync(policyKey, "activatedTime");
+    }
+    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope) ) {
+      await rclient.hdelAsync(policyKey, "scope");
     }
   }
 
@@ -398,8 +401,8 @@ class PolicyManager2 {
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        if(this.isFirewallaCloud(policy)) {
-          callback(new Error("Firewalla cloud can't be blocked"))
+        if(this.isFirewallaOrCloud(policy)) {
+          callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
           return
         }
         let policies = await(this.getSamePolicies(policy))
@@ -466,26 +469,12 @@ class PolicyManager2 {
     });
   }
 
-  getSamePolicies(policy) {
-    let pm2 = this
-    return async(() => {
-      return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicies(1000, {
-          includingDisabled: true
-        }, (err, policies)=>{
-          if (err) {
-            log.error("failed to load active policies:" + err)
-            reject(err)
-          } else {
-            if (policies) {
-              resolve(policies.filter((p) => policy.isEqualToPolicy(p)))
-            } else {
-              resolve([])
-            }
-          }    
-        })
-      })
-    })();
+  async getSamePolicies(policy) {
+    let policies = await this.loadActivePoliciesAsync(1000, { includingDisabled: true });
+
+    if (policies) {
+      return policies.filter((p) => policy.isEqualToPolicy(p))
+    }
   }
 
   // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
@@ -498,7 +487,7 @@ class PolicyManager2 {
       }
       await (this._enablePolicy(policy))
       this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      Bone.submitIntelFeedback('enable', policy, 'policy')
       return policy
     })()
   }
@@ -770,12 +759,15 @@ class PolicyManager2 {
     })()
   }
     
-  isFirewallaCloud(policy) {
+  isFirewallaOrCloud(policy) {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
+           // compare mac, ignoring case
+           target.substring(0,17) // devicePort policies have target like mac:protocol:prot
+             .localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) === 0 ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -897,129 +889,93 @@ class PolicyManager2 {
     return policy;
   }
 
-  _enforce(policy) {
+  async _enforce(policy) {
     log.debug("Enforce policy: ", policy);
-    log.info("Enforce policy: ", policy.pid, policy.type, policy.target);
+    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
-    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    if(policy.scope) {
-      return this._advancedEnforce(policy)
+    await this._refreshActivatedTime(policy)
+
+    if (this.isFirewallaOrCloud(policy)) {
+      return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
     }
 
-    return async(() => {
-      await (this._refreshActivatedTime(policy))
+    const scope = policy.scope
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
-      }
-  
-      switch(type) {
-      case "ip":
-        return Block.block(policy.target);
-        break;
-      case "mac":
-        return Block.blockMac(policy.target);
-        break;
-      case "domain":
-      case "dns":    
-        return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
-        break;
-      case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.blockPublicPort(data.ip, data.port, data.protocol)
-          }
-        })()
-        break;
-      case "category":
-        return categoryBlock.blockCategory(policy.target)
-      case "timer":
-        // just send notification, purely testing purpose only
-      default:
-        return Promise.reject("Unsupported policy");
-      }
-    })()    
-  }
-
-  _advancedEnforce(policy) {
-    return async(() => {
-      log.info("Advance enforce policy: ", policy.pid, policy.type, policy.target, policy.scope);
-
-      const type = policy["i.type"] || policy["type"]; //backward compatibility
-
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
-      }
-
-      let scope = policy.scope
-      if(typeof scope === 'string') {
-        try {
-          scope = JSON.parse(scope)
-        } catch(err) {
-          log.error("Failed to parse scope:", err);
-          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
-        }        
-      }
-
-      switch(type) {
+    switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedBlock(policy.pid, scope, [policy.target])
+          return Block.advancedBlock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist)
         } else {
-          return Block.block(policy.target)
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.block(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.block(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.blockMac(policy.target);
+        if (policy.whitelist) {
+          await Block.enableGlobalWhitelist();
+          return Block.blockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.blockMac(policy.target);
+        }
         break;
       case "domain":
-      case "dns":    
-        return async(() => {
-          if(scope) {
-            await (Block.advancedBlock(policy.pid, scope, []))
-            return domainBlock.blockDomain(policy.target, {
-              exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            })
-          } else {
-            return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+      case "dns":
+        if(scope) {
+          await Block.advancedBlock(policy.pid, policy.pid, scope, [], policy.whitelist);
+          return domainBlock.blockDomain(policy.target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(policy.pid),
+            no_dnsmasq_entry: true,
+            no_dnsmasq_reload: true
+          })
+        } else {
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            // whitelist rule should not add dnsmasq filter rule
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.enableGlobalWhitelist();
           }
-        })()        
-        
+          return domainBlock.blockDomain(policy.target, options);
+        }
+
         break;
       case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.blockPublicPort(data.ip, data.port, data.protocol)
+        let data = await this.parseDevicePortRule(policy.target);
+        if(data) {
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.blockPublicPort(data.ip, data.port, data.protocol)
           }
-        })()
+        }
         break;
       case "category":
-        return async(() => {
-          if(scope) {
-            await (Block.advancedBlock(policy.pid, scope, []))
-            return categoryBlock.blockCategory(policy.target, {
-              blockSet: Block.getDstSet(policy.pid),
-              macSet: Block.getMacSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            })
-          } else {
-            return categoryBlock.blockCategory(policy.target)
+        if(scope) {
+          // same category shares same dst tag
+          return Block.advancedBlock(policy.pid, policy.target, scope, [], policy.whitelist);
+        } else {
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.enableGlobalWhitelist();
           }
-        })()
+          return categoryBlock.blockCategory(policy.target, options);
+        }
         break;
 
       default:
         return Promise.reject("Unsupported policy");
-      }
+    }
 
-    })()
   }
 
   invalidateExpireTimer(policy) {
@@ -1046,110 +1002,81 @@ class PolicyManager2 {
 
     await this._removeActivatedTime(policy)
 
-    if(policy.scope) {
-      return this._advancedUnenforce(policy)
-    }
+    const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    const scope = policy.scope
+
     switch(type) {
-    case "ip":
-      return Block.unblock(policy.target);
-      break;
-    case "mac":
-      return Block.unblockMac(policy.target);
-      break;
-    case "domain":
-    case "dns":
-      return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
-    case "devicePort":
-      return async(() => {
-      let data = await (this.parseDevicePortRule(policy.target))
-      if(data) {
-        Block.unblockPublicPort(data.ip, data.port, data.protocol)
-      }
-      })()
-      break;
-    case "category":
-      return categoryBlock.unblockCategory(policy.target)
-      break
-    default:
-      return Promise.reject("Unsupported policy");
-    }
-  }
-
-  _advancedUnenforce(policy) {
-    return async(() => {
-      log.info("Advance unenforce policy: ", policy.pid, policy.type, policy.target, policy.scope);
-
-      const type = policy["i.type"] || policy["type"]; //backward compatibility
-
-      let scope = policy.scope
-      if(typeof scope === 'string') {
-        try {
-          scope = JSON.parse(scope)
-        } catch(err) {
-          log.error("Failed to parse scope:", err);
-          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
-        }        
-      }
-
-      switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedUnblock(policy.pid, scope, [policy.target])
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist, true)
         } else {
-          return Block.unblock(policy.target)
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return block.unblock(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.unblock(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.unblockMac(policy.target)
+        if (policy.whitelist) {
+          await Block.disableGlobalWhitelist();
+          return Block.unblockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.unblockMac(policy.target)
+        }
         break;
       case "domain":
-      case "dns":    
-        return async(() => {
-          if(scope) {
-            await (domainBlock.unblockDomain(policy.target, {
-              exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            }))
-            return Block.advancedUnblock(policy.pid, scope, [])
-          } else {
-            return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+      case "dns":
+        if(scope) {
+          await (domainBlock.unblockDomain(policy.target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(policy.pid),
+            no_dnsmasq_entry: true,
+            no_dnsmasq_reload: true
+          }))
+          // destroy domain dst cache, since there may be various domain dst cache in different policies
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [], policy.whitelist, true)
+        } else {
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.disableGlobalWhitelist();
           }
-        })()        
-        
+          return domainBlock.unblockDomain(policy.target, options);
+        }
+
         break;
       case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol);
           }
-        })()
+        }
         break;
       case "category":
-        return async(() => {
-          if(scope) {
-            await (categoryBlock.unblockCategory(policy.target, {
-              blockSet: Block.getDstSet(policy.pid),
-              macSet: Block.getMacSet(policy.pid),
-              ignoreUnapplyBlock: true,
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            }))
-            return Block.advancedUnblock(policy.pid, scope, [])
-          } else {
-            return categoryBlock.unblockCategory(policy.target)
+        if(scope) {
+          // keep category dst cache since the number of predefined categories is limited
+          return Block.advancedUnblock(policy.pid, policy.target, scope, [], policy.whitelist, false);
+        } else {
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.disableGlobalWhitelist();
           }
-        })()
-      
+          return categoryBlock.unblockCategory(policy.target, options);
+        }
+
       default:
         return Promise.reject("Unsupported policy");
-      }
-
-    })()
+    }
   }
 
   match(alarm, callback) {

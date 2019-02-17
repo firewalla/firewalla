@@ -15,12 +15,11 @@
 
 'use strict';
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-const Promise = require('bluebird');
 const ip = require('ip');
 
 const log = require('../net2/logger.js')(__filename);
+
+const fc = require('../net2/config.js')
 const fConfig = require('../net2/config.js').getConfig();
 const Bone = require('../lib/Bone');
 const Sensor = require('./Sensor.js').Sensor;
@@ -33,11 +32,16 @@ const Alarm = require('../alarm/Alarm');
 const AlarmManager2 = require('../alarm/AlarmManager2');
 const am2 = new AlarmManager2();
 
-const checkInterval = 3*60*1000// 4 * 60 * 60 * 1000; //4 hours
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const checkInterval = 4 * 60 * 60 * 1000; //4 hours
+
+const ALARM_SUBNET = 'alarm_subnet';
 
 class SubnetSensor extends Sensor {
   async scheduledJob() {
-    let detectedInterfaces = await(rclient.hgetallAsync('sys:network:info'));
+    let detectedInterfaces = await rclient.hgetallAsync('sys:network:info');
 
     if (fConfig.discovery && fConfig.discovery.networkInterfaces) {
       fConfig.discovery.networkInterfaces.forEach(interfaceName => {
@@ -46,11 +50,15 @@ class SubnetSensor extends Sensor {
         let intf = JSON.parse(detectedInterfaces[interfaceName]);
         if (intf && intf.subnet) {
           let subnet = ip.cidrSubnet(intf.subnet);
-          if (subnet.subnetMaskLength < 24) {
+          let subnetCap = platform.getSubnetCapacity();
+          if (subnet.subnetMaskLength < subnetCap) {
             let alarm = new Alarm.SubnetAlarm(
               new Date() / 1000,
               intf.gateway,
-              { 'p.device.ip': intf.gateway }
+              {
+                'p.device.ip': intf.gateway,
+                'p.subnet.length': subnet.subnetMaskLength
+              }
             );
 
             am2
@@ -71,7 +79,9 @@ class SubnetSensor extends Sensor {
 
   run() {
     setInterval(() => {
-      this.scheduledJob();
+      if (fc.isFeatureOn(ALARM_SUBNET)) {
+        this.scheduledJob();
+      }
     }, checkInterval);
   }
 }

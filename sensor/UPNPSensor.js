@@ -37,7 +37,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const natUpnp = require('../extension/upnp/nat-upnp');
+const UPNP = require('../extension/upnp/upnp.js');
+const upnp = new UPNP();
 
 const cfg = require('../net2/config.js');
 
@@ -49,6 +50,8 @@ const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
 const _ = require('lodash');
+
+const ALARM_UPNP = 'alarm_upnp';
 
 function compareUpnp(a, b) {
   return a.public && b.public &&
@@ -62,7 +65,6 @@ function compareUpnp(a, b) {
 class UPNPSensor extends Sensor {
   constructor() {
     super();
-    this.upnpClient = natUpnp.createClient();
   }
 
   isExpired(mapping) {
@@ -86,10 +88,10 @@ class UPNPSensor extends Sensor {
 
   run() {
     setInterval(() => {
-      this.upnpClient.getMappings(async (err, results) => {
+      upnp.getPortMappingsUPNP(async (err, results) => {
         if (results && results.length >= 0) {
           const key = "sys:scan:nat";
-          
+
           let preMappings = await (rclient.hmgetAsync(key, 'upnp')
             .then(entries => { return JSON.parse(entries) })
             .catch(err => log.error("Failed to update upnp mapping in database: " + err))
@@ -97,31 +99,44 @@ class UPNPSensor extends Sensor {
 
           const mergedResults = this.mergeResults(results, preMappings);
 
-          mergedResults.forEach(current => {
-            if (!preMappings.some(pre => compareUpnp(current, pre))) {
-              let alarm = new Alarm.UpnpAlarm(
-                new Date() / 1000,
-                current.private.host,
-                {
-                  'p.source': 'UPNPSensor',
-                  'p.device.ip': current.private.host,
-                  'p.upnp.public.host'  : current.public.host,
-                  'p.upnp.public.port'  : current.public.port,
-                  'p.upnp.private.host' : current.private.host,
-                  'p.upnp.private.port' : current.private.port,
-                  'p.upnp.protocol'     : current.protocol.toUpperCase(),
-                  'p.upnp.enabled'      : current.enabled,
-                  'p.upnp.description'  : current.description,
-                  'p.upnp.ttl'          : current.ttl,
-                  'p.upnp.local'        : current.local
-                }
-              );
-              am2.enrichDeviceInfo(alarm)
-                .then(enriched => {
-                  am2.enqueueAlarm(enriched)
-                })
-            }
-          })
+          if (cfg.isFeatureOn(ALARM_UPNP)) {
+            mergedResults.forEach(current => {
+              let firewallaRegistered =
+                current.private.host == sysManager.myIp() &&
+                upnp.getRegisteredUpnpMappings().some( m => upnp.mappingCompare(current, m) );
+
+              if (
+                !firewallaRegistered &&
+                !preMappings.some(pre => compareUpnp(current, pre))
+              ) {
+                let alarm = new Alarm.UpnpAlarm(
+                  new Date() / 1000,
+                  current.private.host,
+                  {
+                    'p.source': 'UPNPSensor',
+                    'p.device.ip': current.private.host,
+                    'p.upnp.public.host'  : current.public.host,
+                    'p.upnp.public.port'  : current.public.port,
+                    'p.upnp.private.host' : current.private.host,
+                    'p.upnp.private.port' : current.private.port,
+                    'p.upnp.protocol'     : current.protocol,
+                    'p.upnp.enabled'      : current.enabled,
+                    'p.upnp.description'  : current.description,
+                    'p.upnp.ttl'          : current.ttl,
+                    'p.upnp.local'        : current.local
+                  }
+                );
+                am2.enrichDeviceInfo(alarm)
+                  .catch(e => {
+                    log.error('Failed to enrich device info for Alarm:', alarm.aid)
+                    return alarm;
+                  })
+                  .then(enriched => {
+                    am2.enqueueAlarm(enriched)
+                  })
+              }
+            })
+          }
 
           rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} )
             .catch(err => log.error("Failed to update upnp mapping in database: " + err))

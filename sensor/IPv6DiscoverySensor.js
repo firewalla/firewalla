@@ -143,16 +143,14 @@ class IPv6DiscoverySensor extends Sensor {
                  cb();
                  });
               */
-              if (parts.length >= 6 && parts[5].toUpperCase() !== "STALE") {
-                let _host = macHostMap[mac];
-                if (_host) {
-                  _host.push(v6addr);
-                } else {
-                  _host = [v6addr];
-                  macHostMap[mac]=_host;
-                }
-                cb()
+              let _host = macHostMap[mac];
+              if (_host) {
+                _host.push(v6addr);
+              } else {
+                _host = [v6addr];
+                macHostMap[mac]=_host;
               }
+              cb()
             }
           } else {
             cb();
@@ -164,7 +162,7 @@ class IPv6DiscoverySensor extends Sensor {
 
           // FIXME
           // This is a very workaround activity to send scan done out in 5 seconds
-          // several seconds is necesary to ensure new ip addresses are added
+          // several seconds is necessary to ensure new ip addresses are added
           setTimeout(() => {
             log.info("IPv6 Scan:Done");
             this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});

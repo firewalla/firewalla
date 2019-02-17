@@ -17,15 +17,14 @@
 
 const log = require('../../net2/logger.js')(__filename);
 const cp = require('child_process');
+const ipTool = require('ip');
 const util = require('util');
 const routing = require('../routing/routing.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
-const Config = require('../../net2/config.js');
-let fConfig = Config.getConfig();
 
-const minimatch = require('minimatch')
+const SysManager = require('../../net2/SysManager.js');
 
 const execAsync = util.promisify(cp.exec);
 var instance = null;
@@ -142,11 +141,13 @@ class VPNClientEnforcer {
   }
 
   _isSecondaryInterfaceIP(ip) {
-    fConfig = Config.getConfig(true);
-    const prefix = fConfig.secondaryInterface && fConfig.secondaryInterface.ipnet
+    const sysManager = new SysManager();
+    const ip2 = sysManager.myIp2();
+    const ipMask2 = sysManager.myIpMask2();
+    const prefix = ip2 && ip2.substring(0, ip2.lastIndexOf("."));
     
-    if(prefix) {
-      return minimatch(ip, `${prefix}.*`);
+    if(ip && ip2 && ipMask2) {
+      return ipTool.subnet(ip2, ipMask2).contains(ip);
     }
     return false;
   }

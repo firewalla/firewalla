@@ -16,7 +16,7 @@
 
 var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
-var ip = require('ip');
+var ipTool = require('ip');
 
 let l2 = require('../util/Layer2.js');
 
@@ -37,7 +37,7 @@ const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
 
-let fConfig = require('./config.js').getConfig();
+const SysManager = require('./SysManager.js');
 
 let Promise = require('bluebird');
 
@@ -50,15 +50,16 @@ let mode = require('./Mode.js')
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-const minimatch = require('minimatch')
 
 module.exports = class {
 
   isSecondaryInterfaceIP(ip) {
-    const prefix = fConfig.secondaryInterface && fConfig.secondaryInterface.ipnet
+    const sysManager = new SysManager();
+    const ip2 = sysManager.myIp2();
+    const ipMask2 = sysManager.myIpMask2();
     
-    if(prefix) {
-      return minimatch(ip, `${prefix}.*`)
+    if(ip && ip2 && ipMask2) {
+      return ipTool.subnet(ip2, ipMask2).contains(ip);
     }
 
     return false
@@ -406,7 +407,6 @@ module.exports = class {
   }
 
     clean(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge4';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
@@ -424,7 +424,6 @@ module.exports = class {
     }
 
     clean7() {
-      //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
       let cmdline = 'sudo pkill -f bitbridge7';
 
       log.info("Spoof:Clean:Running commandline: ", cmdline);
@@ -457,7 +456,6 @@ module.exports = class {
     }
 
     clean6(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge6a';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";
