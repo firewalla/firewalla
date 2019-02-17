@@ -1784,7 +1784,7 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
+      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
