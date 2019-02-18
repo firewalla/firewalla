@@ -3251,8 +3251,11 @@ class netBot extends ControllerBot {
       
       switch(target) {
       case "dev":
-        targetBranch = "master"
-        break
+        targetBranch = "master";
+        break;
+      case "alpha":
+        targetBranch = "beta_7_0";
+        break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
         break
