@@ -864,9 +864,10 @@ module.exports = class {
           ];
       if (flowspec == null) {
         flowspec = {
-          ts: obj.ts,
-          _ts: now,
-          __ts: obj.ts,  // this is the first time found
+          ts: obj.ts, // ts stands for start timestamp
+          ets: obj.ts + obj.duration, // ets stands for end timestamp
+          _ts: now, // _ts is the last time updated 
+          __ts: obj.ts,  // __ts is the first time found
           sh: host, // source
           dh: dst, // dstination
           ob: Number(obj.orig_bytes), // transfer bytes
@@ -892,22 +893,34 @@ module.exports = class {
         flowspec.ob += Number(obj.orig_bytes);
         flowspec.rb += Number(obj.resp_bytes);
         flowspec.ct += 1;
-        if (flowspec.ts < obj.ts) {
+        if (flowspec.ts > obj.ts) {
+          // update start timestamp
           flowspec.ts = obj.ts;
         }
+        if (flowspec.ets < obj.ts + obj.duration) {
+          // update end timestamp 
+          flowspec.ets = obj.ts + obj.duration;
+        }
+        // update last time updated
         flowspec._ts = now;
+        // TBD: How to define and calculate the duration of flow?
+        //      The total time of network transfer?
+        //      Or the length of period from the beginning of the first to the end of last flow?
+        // flowspec.du = flowspec.ets - flowspec.ts;
+        // For now, we use total time of network transfer, since the rate calculation is based on this logic.
+        // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
         flowspec.du += obj.duration;
         flowspec.flows.push(flowDescriptor);
-
         if (flag) {
           flowspec.f = flag;
         }
       }
 
       let tmpspec = {
-        ts: obj.ts,
+        ts: obj.ts, // ts stands for start timestamp
+        ets: obj.ts + obj.duration, // ets stands for end timestamp
         sh: host, // source
-        _ts: now,
+        _ts: now, // _ts is the last time updated 
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
         rb: Number(obj.resp_bytes),
@@ -1012,6 +1025,7 @@ module.exports = class {
 
 
           //let redisObj = [key, tmpspec.ts, strdata];
+          // beware that 'now' is used as score in flow:conn:* zset, since now is always monitonically increasing
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
 
@@ -1080,7 +1094,7 @@ module.exports = class {
             } else {
               let key = "flow:conn:" + spec.fd + ":" + mac;
               let strdata = JSON.stringify(spec);
-              let ts = spec._ts;
+              let ts = spec._ts; // this is the last time when this flowspec is updated
               if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
                 ts = spec.ts;
               }

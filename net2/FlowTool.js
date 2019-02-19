@@ -576,7 +576,13 @@ class FlowTool {
     let mergedFlow = null
 
     if(!options.no_merge) {
-      mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
+      mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
+        if (a.ets && b.ets) {
+          return b.ets - a.ets;
+        } else {
+          return b.ts - a.ts;
+        }
+      })); 
     } else {
       mergedFlow = flowObjects
     }

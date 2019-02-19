@@ -230,6 +230,20 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  _isSimilarHost(h1, h2) {
+    if (!h1 || !h2)
+      return false;
+    const h1Sections = h1.split('.').reverse();
+    const h2Sections = h2.split('.').reverse();
+    // compare at most last three sections
+    const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 3);
+    for (let i = 0; i != limit; i++) {
+      if (h1Sections[i] !== h2Sections[i])
+        return false;
+    }
+    return true;
+  }
+
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -252,6 +266,9 @@ class DestIPFoundHook extends Hook {
     options = options || {};
 
     let skipLocalCache = options.skipLocalCache;
+    let sslInfo = await intelTool.getSSLCertificate(ip);
+    let dnsInfo = await intelTool.getDNS(ip);
+    let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
 
     try {
       let intel;
@@ -259,17 +276,16 @@ class DestIPFoundHook extends Hook {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          await this.updateCategoryDomain(intel);
-          return;
+          // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
+          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
+            await this.updateCategoryDomain(intel);
+            return;
+          }
         }
       }
 
-      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+", checking intels...");
+      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
 
-      let sslInfo = await intelTool.getSSLCertificate(ip);
-      let dnsInfo = await intelTool.getDNS(ip);
-
-      let domains = this.getDomains(sslInfo, dnsInfo);
       let ips = [ip];
 
       let cloudIntelInfo = [];
