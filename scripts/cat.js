@@ -98,6 +98,15 @@ async function print_flow(key1, key2) {
     await _print_flow(`flow:conn:in:${key2}`)
 
     console.log("\n------------ Recent Incoming Flows -------------");
+
+    console.log("Timestamp".padding(25),
+        "Remote IP Address".padding(20),
+        "Port".padding(8),
+        "Upload".padding(10),
+        "Download".padding(10),
+        "Duration".padding(10)
+    )
+
     await _print_flow(`flow:conn:out:${key1}`);
     await _print_flow(`flow:conn:out:${key2}`)
 }
