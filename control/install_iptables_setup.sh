@@ -16,6 +16,7 @@ sudo ipset create blocked_domain_set hash:ip family inet hashsize 128 maxelem 65
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
 sudo ipset create trusted_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create devicedns_mac_set hash:mac &>/dev/null
 sudo ipset create whitelist_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65535 &>/dev/null
@@ -27,6 +28,7 @@ sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
 sudo ipset flush trusted_ip_set
+sudo ipset flush devicedns_mac_set
 sudo ipset flush whitelist_ip_set
 sudo ipset flush whitelist_domain_set
 sudo ipset flush whitelist_ip_port_set

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -3232,8 +3232,11 @@ class netBot extends ControllerBot {
       
       switch(target) {
       case "dev":
-        targetBranch = "master"
-        break
+        targetBranch = "master";
+        break;
+      case "alpha":
+        targetBranch = "beta_7_0";
+        break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
         break
