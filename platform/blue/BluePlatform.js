@@ -123,6 +123,10 @@ class BluePlatform extends Platform {
     const source = '/etc/armbianmonitor/datasources/soctemp';
     return Number(fs.readFileSync(source)) / 1000;
   }
+
+  getPolicyCapacity() {
+    return 3000;
+  }
 }
 
 module.exports = BluePlatform;

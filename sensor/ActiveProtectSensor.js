@@ -58,7 +58,7 @@ class ActiveProtectSensor extends Sensor {
       return;
     }
     
-    const policies = await pm2.loadActivePoliciesAsync(1000);
+    const policies = await pm2.loadActivePoliciesAsync();
 
     let alreadySet = false;
 

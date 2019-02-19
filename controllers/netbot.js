@@ -86,8 +86,6 @@ const pm2 = new PM2();
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
-const country = require('../extension/country/country.js');
-
 const builder = require('botbuilder');
 const uuid = require('uuid');
 
@@ -2143,35 +2141,6 @@ class netBot extends ControllerBot {
     })();
   }
 
-  enrichCountryInfo(flows) {
-    // support time flow first
-    let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
-
-    flowsSet.forEach((eachFlows) => {
-      if(!eachFlows)
-        return;
-
-      eachFlows.forEach((flow) => {
-
-        if(flow.ip) {
-          flow.country = country.getCountry(flow.ip);
-          return;
-        }
-
-        let sh = flow.sh;
-        let dh = flow.dh;
-        let lh = flow.lh;
-
-        if (sh === lh) {
-          flow.country = country.getCountry(dh);
-        } else {
-          flow.country = country.getCountry(sh);
-        }
-      });
-
-    });
-  }
-
   /*
    Received jsondata { mtype: 'cmd',
    id: '6C998946-ECC6-4535-90C5-E9525D4BB5B6',
@@ -3129,6 +3098,18 @@ class netBot extends ControllerBot {
                 const ipSubnet = iptool.subnet(ipAddress, subnetMask);
                 updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+                // redundant entries for backward compatitibility
+                mergedSecondaryInterface.ipOnly = ipAddress;
+                mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+                mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+                mergedSecondaryInterface.ipmask = subnetMask;
+                if (mergedSecondaryInterface.ip2) {
+                  const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+                  mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+                  mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+                  mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+                  mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
+                }
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
                 setTimeout(() => {

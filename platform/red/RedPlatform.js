@@ -77,6 +77,10 @@ class RedPlatform extends Platform {
     const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
     return Number(fs.readFileSync(source)) / 1000;
   }
+
+  getPolicyCapacity() {
+    return 1000;
+  }
 }
 
 module.exports = RedPlatform;

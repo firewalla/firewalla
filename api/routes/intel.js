@@ -29,15 +29,9 @@ const _ = require('lodash');
 router.get('/:ip',
   (req, res, next) => {
     let ip = req.params.ip
-    let force = req.query.force
+    let useLocal = req.query.useLocal
 
-    let options = {skipUpdate: true};
-
-    if (force) {
-      options = {
-        forceUpdate: true
-      };
-    }
+    let options = {skipLocalCache: useLocal ? false : true };
 
     let DestIPFoundHook = require('../../hook/DestIPFoundHook');
     let destIPFoundHook = new DestIPFoundHook();
