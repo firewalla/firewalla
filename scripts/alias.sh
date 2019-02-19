@@ -46,6 +46,11 @@ alias powerup='source <(curl -s https://raw.githubusercontent.com/MelvinTo/firew
 
 
 function mycat () {
-  curl https://raw.githubusercontent.com/MelvinTo/firewalla/master/scripts/cat.js > /tmp/cat.js
+  curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js
   node /tmp/cat.js --device "$1"
+}
+
+function mycatip () {
+  curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js
+  node /tmp/cat.js --ip "$1"
 }
