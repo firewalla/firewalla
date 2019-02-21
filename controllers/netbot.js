@@ -1088,7 +1088,7 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "policy":
-        async2.eachLimit(Object.keys(value), 1, (o, cb) => {
+        async2.eachLimit(Object.keys(value), 1, async2.ensureAsync((o, cb) => {
           switch (o) {
             case "monitor":
               this._block(msg.target, "monitor", value.monitor, (err, obj) => {
@@ -1217,7 +1217,7 @@ class netBot extends ControllerBot {
             // }
             break
           }
-        }, (err) => {
+        }), (err) => {
           let reply = {
             type: 'jsonmsg',
             mtype: 'policy',
