@@ -79,6 +79,8 @@ const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
+const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
+
 let VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
@@ -244,6 +246,16 @@ module.exports = class DNSMASQ {
       if (alternativeNameServers && !alternativeNameServers.includes(dns))
         alternativeNameServers.push(dns);
     })
+
+    // add fallback dns servers in case every previous dns server is broken
+    if(FALLBACK_DNS_SERVERS) {
+      FALLBACK_DNS_SERVERS.forEach((dns) => {
+        if (effectiveNameServers && !effectiveNameServers.includes(dns))
+          effectiveNameServers.push(dns);
+        if (alternativeNameServers && !alternativeNameServers.includes(dns))
+          alternativeNameServers.push(dns);
+      })
+    }
 
     if (!effectiveNameServers || effectiveNameServers.length === 0) {
       effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
