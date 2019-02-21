@@ -63,6 +63,8 @@ function setupBlockChain() {
     setupCategoryEnv("porn");
     setupCategoryEnv("social");
     setupCategoryEnv("shopping");
+    setupCategoryEnv("p2p");
+    setupCategoryEnv("gamble");
     setupCategoryEnv("av");
     setupCategoryEnv("default_c");
   })()
