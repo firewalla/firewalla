@@ -136,7 +136,7 @@ class IPv6DiscoverySensor extends Sensor {
             let v6addr = parts[0];
             let mac = parts[4].toUpperCase();
             if (mac == "FAILED" || mac.length < 16) {
-              cb();
+              async.setImmediate(cb);
             } else {
               /* 
                  hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
@@ -150,10 +150,10 @@ class IPv6DiscoverySensor extends Sensor {
                 _host = [v6addr];
                 macHostMap[mac]=_host;
               }
-              cb()
+              async.setImmediate(cb);
             }
           } else {
-            cb();
+            async.setImmediate(cb);
           }
         }, (err) => {
           for (let mac in macHostMap) {
