@@ -616,7 +616,7 @@ module.exports = class DNSMASQ {
   }
   
   async _add_iptables_rules() {
-    let subnets = await networkTool.getLocalNetworkSubnets();
+    let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
     const deviceDNS = `${localIP}:8863`;
@@ -715,7 +715,7 @@ module.exports = class DNSMASQ {
   
   async _remove_iptables_rules() {
     try {
-      let subnets = await networkTool.getLocalNetworkSubnets();
+      let subnets = await networkTool.getLocalNetworkSubnets() || [];
       // remove rules corresponding to local subnets that are previous added
       if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
         subnets = this._redirectedLocalSubnets;
