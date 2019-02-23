@@ -36,7 +36,7 @@ const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
 
-const WHITELIST_MARK = 1;
+const WHITELIST_MARK = "0x1/0x1";
 
 // =============== block @ connection level ==============
 
@@ -86,8 +86,8 @@ async function enableGlobalWhitelist() {
   try {
     // mark all packets to divert to whitelist chain
     // Beware that _wrapIptables is not used here in purpose. Each global whitelist rule will create a MARK policy rule
-    const cmdCreateMarkRule = `sudo iptables -w -t mangle -I PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`;
-    const cmdCreateMarkRule6 = `sudo ip6tables -w -t mangle -I PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`;
+    const cmdCreateMarkRule = `sudo iptables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`;
+    const cmdCreateMarkRule6 = `sudo ip6tables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`;
     
     await exec(cmdCreateMarkRule);
     await exec(cmdCreateMarkRule6);
@@ -99,8 +99,8 @@ async function enableGlobalWhitelist() {
 async function disableGlobalWhitelist() {
   try {
     // delete MARK policy rule in mangle table
-    const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
-    const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
     
     await exec(cmdDeleteMarkRule);
     await exec(cmdDeleteMarkRule6);
@@ -125,8 +125,8 @@ async function setupWhitelistEnv(macTag, dstTag) {
 
     // mark packet in mangle table which indicates the packets need to go through the whitelist chain. 
     // Use insert(-I) here since there is a clear mark rule at the end of the PREROUTING chain in mangle to allow all dns packets
-    const cmdCreateMarkRule = _wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j MARK --set-mark ${WHITELIST_MARK}`);
-    const cmdCreateMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdCreateMarkRule = _wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdCreateMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
 
     // add RETURN policy rule into whitelist chain
     const cmdCreateOutgoingRule = _wrapIptables(`sudo iptables -w -I FW_WHITELIST -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j RETURN`);
@@ -252,9 +252,9 @@ async function destroyWhitelistEnv(macTag, dstTag, destroyDstCache) {
     const dstSet6 = getDstSet6(dstTag);
 
     // delete MARK policy rule in mangle table
-    const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
     
-    const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
 
     // delete RETURN policy rule in whitelist chain
     const cmdDeleteOutgoingRule = _wrapIptables(`sudo iptables -w -D FW_WHITELIST -p all -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j RETURN`);

@@ -16,6 +16,7 @@ sudo ipset create blocked_domain_set hash:ip family inet hashsize 128 maxelem 65
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
 sudo ipset create trusted_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create protected_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65535 &>/dev/null
@@ -27,6 +28,7 @@ sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
 sudo ipset flush trusted_ip_set
+sudo ipset flush protected_ip_set
 sudo ipset flush whitelist_ip_set
 sudo ipset flush whitelist_domain_set
 sudo ipset flush whitelist_ip_port_set
@@ -68,20 +70,20 @@ sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set blocked_mac_set src -j RE
 # forward to fw_block
 sudo iptables -w -C FORWARD -p all -j FW_BLOCK &>/dev/null || sudo iptables -w -A FORWARD -p all -j FW_BLOCK
 
-# clear mark on dns packet in mangle table
-sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 53 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0
-# clear mark on dhcp packet in mangle table
-sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0
-sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0
-# clear mark on local subnet traffic in mangle table
-sudo iptables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j MARK --set-mark 0
-# clear mark on established connections in mangle table
-sudo iptables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0
+# clear whitelist mark on dns packet in mangle table
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 53 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j CONNMARK --set-xmark 0x0/0x1
+# clear whitelist mark on dhcp packet in mangle table
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j CONNMARK --set-xmark 0x0/0x1
+sudo iptables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j CONNMARK --set-xmark 0x0/0x1
+# clear whitelist mark on local subnet traffic in mangle table
+sudo iptables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j CONNMARK --set-xmark 0x0/0x1
+# clear whitelist mark on established connections in mangle table
+sudo iptables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j CONNMARK --set-xmark 0x0/0x1
 
 sudo iptables -w -N FW_WHITELIST &> /dev/null
 sudo iptables -w -F FW_WHITELIST
@@ -100,8 +102,8 @@ sudo iptables -w -C FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0
 # drop everything
 sudo iptables -w -C FW_WHITELIST -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo iptables -w -A FW_WHITELIST -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
 
-# divert to whitelist chain if packet is marked as 1
-sudo iptables -w -C FORWARD -m mark --mark 1 -j FW_WHITELIST &>/dev/null || sudo iptables -w -I FORWARD -m mark --mark 1 -j FW_WHITELIST
+# divert to whitelist chain if whitelist bit is marked
+sudo iptables -w -C FORWARD -m connmark --mark 0x1/0x1 -j FW_WHITELIST &>/dev/null || sudo iptables -w -I FORWARD -m connmark --mark 0x1/0x1 -j FW_WHITELIST
 
 sudo iptables -w -N FW_SHIELD &> /dev/null
 sudo iptables -w -F FW_SHIELD
@@ -114,6 +116,9 @@ sudo iptables -w -C FW_SHIELD -m conntrack --ctstate RELATED,ESTABLISHED -j RETU
 
 # return if source ip is in trusted_ip_set
 sudo iptables -w -C FW_SHIELD -m set --match-set trusted_ip_set src -j RETURN &>/dev/null || sudo iptables -w -I FW_SHIELD -m set --match-set trusted_ip_set src -j RETURN &>/dev/null
+
+# divert to shield chain if dst ip is in protected_ip_set
+sudo iptables -w -C FORWARD -m set --match-set protected_ip_set dst -j FW_SHIELD &>/dev/null || sudo iptables -w -A FORWARD -m set --match-set protected_ip_set dst -j FW_SHIELD
 
 # Special block chain for NAT table
 sudo iptables -w -t nat -N FW_NAT_BLOCK &>/dev/null
@@ -156,8 +161,8 @@ sudo iptables -w -t nat -C FW_NAT_WHITELIST -p all -m set --match-set whitelist_
 sudo iptables -w -t nat -C FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
 
-# divert to whitelist chain if packet is marked as 1
-sudo iptables -w -t nat -C PREROUTING -m mark --mark 1 -j FW_NAT_WHITELIST &>/dev/null || sudo iptables -w -t nat -I PREROUTING -m mark --mark 1 -j FW_NAT_WHITELIST
+# divert to whitelist chain if whitelist bit is marked
+sudo iptables -w -t nat -C PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST &>/dev/null || sudo iptables -w -t nat -I PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST
 
 
 if [[ -e /.dockerenv ]]; then
@@ -170,6 +175,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create blocked_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create blocked_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create trusted_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create protected_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
@@ -179,6 +185,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush blocked_domain_set6
   sudo ipset flush blocked_ip_port_set6
   sudo ipset flush trusted_ip_set6
+  sudo ipset flush protected_ip_set6
   sudo ipset flush whitelist_ip_set6
   sudo ipset flush whitelist_domain_set6
   sudo ipset flush whitelist_ip_port_set6
@@ -211,20 +218,20 @@ if [[ -e /sbin/ip6tables ]]; then
   # forward to fw_block
   sudo ip6tables -w -C FORWARD -p all -j FW_BLOCK &>/dev/null ||   sudo ip6tables -w -A FORWARD -p all -j FW_BLOCK
 
-  # clear mark on dns packet in mangle table
-  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 53 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j MARK --set-mark 0
-  # clear mark on dhcp packet in mangle table
-  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j MARK --set-mark 0
-  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j MARK --set-mark 0
-  # clear mark on local subnet packet in mangle table
-  sudo ip6tables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j MARK --set-mark 0
-  # clear mark on established connections in mangle table
-  sudo ip6tables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j MARK --set-mark 0
+  # clear whitelist mark on dns packet in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 53 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 53 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 53 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 53 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 53 -j CONNMARK --set-xmark 0x0/0x1
+  # clear whitelist mark on dhcp packet in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --dport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --dport 67 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p tcp -m tcp --sport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p tcp -m tcp --sport 67 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --dport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --dport 67 -j CONNMARK --set-xmark 0x0/0x1
+  sudo ip6tables -w -t mangle -C PREROUTING -p udp -m udp --sport 67 -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -p udp -m udp --sport 67 -j CONNMARK --set-xmark 0x0/0x1
+  # clear whitelist mark on local subnet packet in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m set --match-set trusted_ip_set6 src -m set --match-set trusted_ip_set6 dst -j CONNMARK --set-xmark 0x0/0x1
+  # clear whitelist mark on established connections in mangle table
+  sudo ip6tables -w -t mangle -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j CONNMARK --set-xmark 0x0/0x1 &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j CONNMARK --set-xmark 0x0/0x1
 
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
   sudo ip6tables -w -F FW_WHITELIST
@@ -243,8 +250,8 @@ if [[ -e /sbin/ip6tables ]]; then
   # drop everything
   sudo ip6tables -w -C FW_WHITELIST -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -p all --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
 
-  # divert to white list chain if packet is marked as 1
-  sudo ip6tables -w -C FORWARD -m mark --mark 1 -j FW_WHITELIST &>/dev/null || sudo ip6tables -w -I FORWARD -m mark --mark 1 -j FW_WHITELIST
+  # divert to white list chain if whitelist bit is marked
+  sudo ip6tables -w -C FORWARD -m connmark --mark 0x1/0x1 -j FW_WHITELIST &>/dev/null || sudo ip6tables -w -I FORWARD -m connmark --mark 0x1/0x1 -j FW_WHITELIST
 
 
   sudo ip6tables -w -N FW_SHIELD &> /dev/null
@@ -258,6 +265,9 @@ if [[ -e /sbin/ip6tables ]]; then
 
   # return if source mac is in trusted_ip_set6
   sudo ip6tables -w -C FW_SHIELD -m set -match-set trusted_ip_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_SHIELD -m set --match-set trusted_ip_set6 src -j RETURN &>/dev/null
+
+  # divert to shield chain if dst ip is in protected_ip_set6
+  sudo ip6tables -w -C FORWARD -m set --match-set protected_ip_set6 dst -j FW_SHIELD &>/dev/null || sudo ip6tables -w -A FORWARD -m set --match-set protected_ip_set6 dst -j FW_SHIELD
 
   # Special block chain for NAT table
   sudo ip6tables -w -t nat -N FW_NAT_BLOCK &>/dev/null
@@ -299,8 +309,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
 
-  # divert to whitelist chain if packet is marked as 1
-  sudo ip6tables -w -t nat -C PREROUTING -m mark --mark 1 -j FW_NAT_WHITELIST &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -m mark --mark 1 -j FW_NAT_WHITELIST
+  # divert to whitelist chain if whitelist chain is marked
+  sudo ip6tables -w -t nat -C PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST
 fi
 
 # redirect blue hole ip 80/443 port to localhost

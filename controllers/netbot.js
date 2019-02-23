@@ -465,27 +465,53 @@ class netBot extends ControllerBot {
                 callback(err, "Failed to load policy");
           }
         })
+      } else {
+        if (callback != null)
+          callback("error", "host not found: " + ip);
       }
     })
   }
 
   _shield(ip, value, callback) {
-    if (ip !== "0.0.0.0") {
-      // per-device shield policy rule is not supported currently
-      callback(null);
-      return;
-    }
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("shield", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy("shield", value, (err, data) => {
+          if (err == null) {
+            if (callback != null)
+              callback(null, "Success");
+          } else {
+            if (callback != null)
+            callback(err, "Unable to apply config on shield: " + value);
+          }
+        })
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy("shield", value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success");
+                } else {
+                  if (callback != null)
+                  callback(err, "Unable to apply config on shield: " + value);
+                }
+              })
+            } else {
+              log.error("Failed to load policy of " + ip, err);
+              if (callback != null)
+                callback(err, "Failed to load policy");
+            }
+          })
         } else {
           if (callback != null)
-          callback(err, "Unable to apply config on shield: " + value);
+            callback("error", "host not found: " + ip);
         }
       })
-    })
+    }
+    
   }
 
 
