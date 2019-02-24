@@ -44,6 +44,10 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
+    "fallbackDNSServers" : [
+      "8.8.8.8",
+      "1.1.1.1"
+    ],
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",

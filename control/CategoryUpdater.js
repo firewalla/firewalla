@@ -66,7 +66,9 @@ class CategoryUpdater {
         "porn": 1,
         "shopping": 1,
         "av": 1,
-        "default_c": 1
+        "default_c": 1,
+        "p2p": 1,
+        "gamble": 1
       }
 
       // only run refresh category records for fire main process
