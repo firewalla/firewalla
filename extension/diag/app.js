@@ -212,7 +212,7 @@ class App {
 
       await writeFileAsync(jsonPath, pairingInfo);
 
-      const cmd = `cat ${jsonPath} | qrencode -l H -o ${imagePath}`;
+      const cmd = `cat ${jsonPath} | qrencode -o ${imagePath}`;
 
       await exec(cmd);
       return imagePath;
@@ -284,11 +284,13 @@ class App {
 
         if(!this.broadcastInfo) {
           values.err_binding = true
-          success = false
+          success = false;
         }
 
         if(qrImagePath) {
           values.qrImage = true;
+        } else {
+          success = false;
         }
 
         if(ip == "") {
