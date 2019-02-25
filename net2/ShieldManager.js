@@ -130,13 +130,13 @@ class ShieldManager {
   async _updateVPNOutgoingRules(vpnSubnet) {
     if (this.vpnSubnet) {
       // remove old vpn subnet
-      const cmd = util.format("sudo iptables -w -C FW_SHIELD -p all -s %s -j RETURN && sudo iptables -w -D FW_SHIELD -p all -s %s -j RETURN", this.vpnSubnet, this.vpnSubnet);
+      const cmd = util.format("sudo ipset del trusted_ip_set %s", this.vpnSubnet);
       await exec(cmd);
       this.vpnSubnet = null;
     }
     if (vpnSubnet) {
-      // add new vpn rule
-      const cmd = util.format("sudo iptables -w -C FW_SHIELD -p all -s %s -j RETURN || sudo iptables -w -I FW_SHIELD -p all -s %s -j RETURN", vpnSubnet, vpnSubnet);
+      // add new vpn subnet
+      const cmd = util.format("sudo ipset add trusted_ip_set %s", vpnSubnet);
       await exec(cmd);
       this.vpnSubnet = vpnSubnet;
     }
