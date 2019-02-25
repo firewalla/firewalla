@@ -205,6 +205,10 @@ class App {
 
       const pairingInfo = JSON.parse(JSON.stringify(this.broadcastInfo));
       pairingInfo.type = "pairing";
+      delete pairingInfo.keyhint;
+      delete pairingInfo.service;
+      delete pairingInfo.mid;
+      delete pairingInfo.verifymode;
 
       await writeFileAsync(jsonPath, pairingInfo);
 
