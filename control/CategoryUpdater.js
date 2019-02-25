@@ -683,8 +683,8 @@ class CategoryUpdater {
     const ipset6Name = this.getIPSetNameForIPV6(category);
 
     // mark all packets in mangle table which indicates the packets need to go through the whitelist chain
-    const cmdCreateMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
-    const cmdCreateMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdCreateMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdCreateMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
 
     // add RETURN policy to white list chain in filter table
     const cmdCreateOutgoingRule = this.wrapIptables(`sudo iptables -w -I FW_WHITELIST -p all -m set --match-set ${ipsetName} dst -j RETURN`);
@@ -742,8 +742,8 @@ class CategoryUpdater {
     const ipset6Name = this.getIPSetNameForIPV6(category);
 
     // delete MARK policy rule in mangle table
-    const cmdDeleteMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
-    const cmdDeleteMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j MARK --set-mark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
 
     // delete RETURN policy to white list chain in filter table
     const cmdDeleteOutgoingRule = this.wrapIptables(`sudo iptables -w -D FW_WHITELIST -p all -m set --match-set ${ipsetName} dst -j RETURN`);

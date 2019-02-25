@@ -48,7 +48,7 @@ class ShieldManager {
         sclient.subscribe("System:VPNSubnetChanged");
 
         sem.on("DeviceUpdate", (event) => {
-          // add/update device ip address to trusted_ip_set/trusted_ip_set_6
+          // add/update device ip address to trusted_ip_set/trusted_ip_set6
           const host = event.host;
           if (host.ipv4Addr) {
             log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
@@ -57,17 +57,24 @@ class ShieldManager {
           }
           if (host.ipv6Addr && host.ipv6Addr.length > 0) {
             host.ipv6Addr.forEach(ipv6Addr => {
-              log.info("New device found add to trusted_ip_set6: " + ipv6Addr);
+              log.info("Update device ip in trusted_ip_set6: " + ipv6Addr);
               const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipv6Addr);
               exec(cmd);
             });
           }
+          // update ip address to protected_ip_set/protected_ip_set6
+          if (host.mac && this.protected_macs[host.mac]) {
+            this.activateShield(host.mac);
+          }
         });
 
-        this._updateProtectedIPSet();
+        this.protected_macs = {};
+
+        this._updateTrustedIPSet();
         setInterval(() => {
+          this._updateTrustedIPSet();
           this._updateProtectedIPSet();
-        }, 300000); // update protected_mac_set once every 5 minutes
+        }, 300000); // update trusted_ip_set and protected_ip_set once every 5 minutes
       }
     }
     return instance;
@@ -88,6 +95,13 @@ class ShieldManager {
   }
 
   async _updateProtectedIPSet() {
+    const macs = Object.keys(this.protected_macs);
+    for (let i in macs) {
+      await this.activateShield(macs[i]);
+    }
+  }
+
+  async _updateTrustedIPSet() {
     const macEntries = await hostTool.getAllMACEntries();
     for (let i in macEntries) {
       const macEntry = macEntries[i];
@@ -128,22 +142,111 @@ class ShieldManager {
     }
   }
 
-  async activateShield() {
-    // append FW_SHIELD chain to FORWARD chain
-    let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD || sudo iptables -w -A FORWARD -j FW_SHIELD";
-    await exec(cmd);
-
-    cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD || sudo ip6tables -w -A FORWARD -j FW_SHIELD";
-    await exec(cmd);
+  async activateShield(mac) {
+    if (!mac) {
+      // enable shield globally
+      let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD || sudo iptables -w -A FORWARD -j FW_SHIELD";
+      await exec(cmd).catch((err) => {
+        log.error("Failed to activate global shield in iptables", err);
+      });
+  
+      cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD || sudo ip6tables -w -A FORWARD -j FW_SHIELD";
+      await exec(cmd).catch((err) => {
+        log.error("Failed to activate global shield in ip6tables", err);
+      });
+    } else {
+      // per-device shield
+      const macEntry = await hostTool.getMACEntry(mac);
+      if (!macEntry) {
+        log.error("Cannot find host info of " + mac);
+        return;
+      }
+      
+      if (this.protected_macs[mac]) {
+        const legacyMacEntry = this.protected_macs[mac];
+        const legacyIpv6Addrs = (legacyMacEntry.ipv6Addrs || []).sort();
+        const ipv6Addrs = (macEntry.ipv6Addrs || []).sort();
+        if (macEntry.ipv4Addr !== legacyMacEntry.ipv4Addr || ipv6Addrs.length !== legacyIpv6Addrs.length || !ipv6Addrs.every((value, index) => {return value === legacyIpv6Addrs[index]})) {
+          // ip addresses may be changed
+          log.info("IP addresses of " + mac + " have been changed.")
+          await this.deactivateShield(mac);
+        } else {
+          log.info("IP addresses of " + mac + " are not changed.");
+        }
+      }
+      
+      this.protected_macs[mac] = macEntry;
+      const ipv4Addr = macEntry.ipv4Addr;
+      if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
+        log.info("Add ip to protected_ip_set: " + ipv4Addr);
+        const cmd = util.format("sudo ipset add -! protected_ip_set %s", ipv4Addr);
+        await exec(cmd).catch((err) => {
+          log.error("Failed to add " + ipv4Addr + " to protected_ip_set", err);
+        });
+      }
+      let ipv6Addrs = [];
+      if (macEntry.ipv6Addr)
+        ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
+      if (ipv6Addrs && ipv6Addrs.length > 0) {
+        for (let j in ipv6Addrs) {
+          const ipv6Addr = ipv6Addrs[j];
+          if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
+            log.info("Add ip to protected_ip_set6: " + ipv6Addr);
+            const cmd = util.format("sudo ipset add -! protected_ip_set6 %s", ipv6Addr);
+            await exec(cmd).catch((err) => {
+              log.error("Failed to add " + ipv4Addr + " to protected_ip_set6", err);
+            });
+          }
+        }  
+      }
+    }
   }
 
-  async deactivateShield() {
-    // remove FW_SHIELD chain from FORWARD chain
-    let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD && sudo iptables -w -D FORWARD -j FW_SHIELD";
-    await exec(cmd);
-
-    cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD && sudo ip6tables -w -D FORWARD -j FW_SHIELD";
-    await exec(cmd);
+  async deactivateShield(mac) {
+    if (!mac) {
+      // disable shield globally
+      let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD && sudo iptables -w -D FORWARD -j FW_SHIELD";
+      await exec(cmd).catch((err) => {
+        log.error("Failed to deactivate global shield in iptables", err);
+      });
+  
+      cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD && sudo ip6tables -w -D FORWARD -j FW_SHIELD";
+      await exec(cmd).catch((err) => {
+        log.error("Failed to deactivate global shield in ip6tables", err);
+      });
+    } else {
+      if (this.protected_macs[mac]) {
+        const macEntry = this.protected_macs[mac];
+        if (!macEntry)
+          return;
+        const ipv4Addr = macEntry.ipv4Addr;
+        if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
+          log.info("Remove ip from protected_ip_set: " + ipv4Addr);
+          const cmd = util.format("sudo ipset del -! protected_ip_set %s", ipv4Addr);
+          await exec(cmd).catch((err) => {
+            log.error("Failed to remove " + ipv4Addr + " from protected_ip_set", err);
+          });
+        }
+        let ipv6Addrs = [];
+        if (macEntry.ipv6Addr)
+          ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
+        if (ipv6Addrs && ipv6Addrs.length > 0) {
+          for (let j in ipv6Addrs) {
+            const ipv6Addr = ipv6Addrs[j];
+            if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
+              log.info("Remove ip from protected_ip_set6: " + ipv6Addr);
+              const cmd = util.format("sudo ipset add -! protected_ip_set6 %s", ipv6Addr);
+              await exec(cmd).catch((err) => {
+                log.error("Failed to remove " + ipv6Addr + " from protected_ip_set6", err);
+              });
+            }
+          }
+        }
+        delete this.protected_macs[mac];
+      } else {
+        log.warn("Device " + mac + " is not protected, no need to deactivate shield.");
+      }      
+    }
   }
 }
 
