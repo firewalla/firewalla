@@ -661,6 +661,17 @@ class Host {
     }
   }
 
+  async shield(policy) {
+    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
+    const state = policy.state;
+    if (state === true) {
+      // Raise shield to block incoming connections
+      await shieldManager.activateShield(this.o.mac);
+    } else {
+      await shieldManager.deactivateShield(this.o.mac);
+    }
+  }
+
   // Notice
   processNotifications(channel, message) {
     log.debug("RX Notifcaitons", channel, message);
