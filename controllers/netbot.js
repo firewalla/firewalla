@@ -1230,18 +1230,38 @@ class netBot extends ControllerBot {
             let target = msg.target
             let policyData = value[o]
 
-            //            if(extMgr.hasExtension(o)) {
+            if (target === "0.0.0.0") {
               this.hostManager.loadPolicy((err, data) => {
-                this.hostManager.setPolicy(o,
-                                           policyData,
-                                           (err, data) => {
-                  cb(err)
-                })
-              })
-            // } else {
-            //   cb(null)
-            // }
-            break
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                this.hostManager.setPolicy(o, policyData,(err, data) => {
+                  cb(err);
+                });
+              });
+            } else {
+              this.hostManager.getHost(target, (err, host) => {
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                host.loadPolicy((err, data) => {
+                  if(err) {
+                    cb(err);
+                    return;
+                  }
+
+                  host.setPolicy(o, policyData, (err, data) => {
+                    cb(err);
+                  });
+                });
+              });
+            }
+
+            break;
           }
         }), (err) => {
           let reply = {
