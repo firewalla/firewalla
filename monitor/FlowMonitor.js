@@ -104,11 +104,12 @@ module.exports = class FlowMonitor {
       //     }
       //   });
     }
-    return instance;
-
+    
     // largeTransferGuard stores the latest flow time for each device/dest.ip/dest.port
     // combination, aim to elimates duplicate LargeTransferAlarm
     if (!this.largeTransferGuard) this.largeTransferGuard = {};
+
+    return instance;
   }
 
   // flow record is a very simple way to look back past n seconds,
@@ -528,6 +529,7 @@ module.exports = class FlowMonitor {
     let stddev_limit = default_stddev_limit;
 
     if (fc.isFeatureOn("insane_mode")) {
+      log.warn("INSANE MODE ON");
       inbound_min_length = 1000;
       outbound_min_length = 1000;
       stddev_limit = 1;
@@ -595,13 +597,13 @@ module.exports = class FlowMonitor {
       try {
         await this.saveSpecFlow(direction, ip, flow);
       } catch (err) {
-        log.error('Failed to save flow', fullKey, err);
+        log.error('Failed to save flow', fullkey, err);
       }
 
       try {
-        await this.genLargeTransferAlarm(flow);
+        await this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
-        log.error('Failed to generate alarm', fullKey, err);
+        log.error('Failed to generate alarm', fullkey, err);
       }
     }
   }
@@ -666,7 +668,7 @@ module.exports = class FlowMonitor {
         }
       }
     } catch(e) {
-      log.error('Error in run', service, period, runid);
+      log.error('Error in run', service, period, runid, e);
     } finally {
       const endTime = new Date() / 1000
       log.info(`Run ends with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
@@ -709,11 +711,20 @@ module.exports = class FlowMonitor {
       // flow in means connection initiated from inside
       // flow out means connection initiated from outside (more dangerous)
 
+      // clear obsoleted data in largeTransferGuard
+      for (let k in this.largeTransferGuard) {
+        if (this.largeTransferGuard[k] < Date.now() / 1000 - this.monitorTime)
+          delete this.largeTransferGuard[k];
+      }
+
       // prevent alarm generation if summed flow starts before last alarm flow ends
       let guardKey = `${flow.sh}:${flow.dh}:${flow.dp}`;
-      if (largeTransferGuard[guardKey] > flow.ts) return;
+      if (this.largeTransferGuard[guardKey] > flow.ts) {
+        log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${flow.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
+        return;
+      }
 
-      largeTransferGuard[guardKey] = flow.ts + flow.du;
+      this.largeTransferGuard[guardKey] = flow.ts + flow.du;
 
       let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
         "p.device.id": flow.shname,
@@ -734,7 +745,7 @@ module.exports = class FlowMonitor {
       // ideally each destination should have a unique ID, now just use hostname as a workaround
       // so destionationName, destionationHostname, destionationID are the same for now
 
-      await alarmManager2.checkAndSaveAsync(alarm);
+      await alarmManager2.enqueueAlarm(alarm);
     }
   }
 
@@ -991,14 +1002,6 @@ module.exports = class FlowMonitor {
 
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
-    alarmManager2.checkAndSaveAsync(alarm)
-      .then(() => {
-        log.info(`Alarm ${alarm.aid} is created successfully`);
-      }).catch((err) => {
-        if(err) {
-          log.error("Failed to create alarm: ", err);
-        }
-      });
+    alarmManager2.enqueueAlarm(alarm)
   };
-
 }
