@@ -87,11 +87,16 @@ class SafeSearchPlugin extends Sensor {
   async applyPolicy(host, ip, policy) {
     log.info("Applying policy:", policy)
 
-    if(ip === '0.0.0.0') {
-      return this.systemApplyPolicy(host, ip, policy);
-    } else {
-      return this.perDeviceApplyPolicy(host, ip, policy);
+    try {
+      if(ip === '0.0.0.0') {
+        return this.systemApplyPolicy(host, ip, policy);
+      } else {
+        return this.perDeviceApplyPolicy(host, ip, policy);
+      }
+    } catch(err) {
+      log.error("Got error when applying safesearch policy", err);
     }
+
   }
   
   async systemApplyPolicy(host, ip, policy) {
