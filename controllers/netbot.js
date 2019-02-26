@@ -1034,6 +1034,10 @@ class netBot extends ControllerBot {
               log.error("FIREWALLA REMOTE UPGRADE ");
               require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
               });
+          } else if (msg.control && msg.control === "clean_intel") {
+            log.error("FIREWALLA CLEAN INTEL ");
+            require('child_process').exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del", (err, out, code) => {
+            });
           } else if (msg.control && msg.control === "ping") {
               log.error("FIREWALLA CLOUD PING ");
           } else if (msg.control && msg.control === "v6on") {
