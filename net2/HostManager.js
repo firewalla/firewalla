@@ -620,6 +620,9 @@ class Host {
           if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
             continue;
           }
+          if (dns && dns.indexOf(this.ipv6Addr[i]) > -1) {
+            continue;
+          }
           if (state == true) {
             spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
               log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
