@@ -29,7 +29,7 @@ const rp = require('request-promise');
 const config = require('../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
 
-const rp = require('request-promise');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
 
@@ -37,7 +37,7 @@ class VPNCheckPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onCmd("vpn_port_forwarding_check", async (msg, data) => {
-      const checkResult  = this.check();
+      const checkResult = await this.check();
 
       if(checkResult === null) {
         return {result: "unknown"};
@@ -68,11 +68,19 @@ class VPNCheckPlugin extends Sensor {
       return null;
     }
 
+    const token = await rclient.hgetAsync("sys:ept", "token");
+    if(!token) {
+      return null;
+    }
+
     const option = {
       method: "POST",
       uri: api,
       json: {
         tls_auth: taKey
+      },
+      auth: {
+        bearer: token
       }
     }
 
