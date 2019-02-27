@@ -2326,6 +2326,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
+      case "cleanIntel":
+        (async () => {
+          await sysTool.cleanIntel();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
