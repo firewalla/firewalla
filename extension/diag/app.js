@@ -34,6 +34,9 @@ const fs = require('fs')
 const config = require('../../net2/config.js');
 Promise.promisifyAll(fs)
 
+const jsonfile = require('jsonfile');
+const writeFileAsync = Promise.promisify(jsonfile.writeFile);
+
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
 
@@ -190,6 +193,33 @@ class App {
       return ''
     })()
   }
+
+  async getQRImage() {
+    if(!this.broadcastInfo) {
+      return null;
+    }
+
+    try {
+      const imagePath = `${__dirname}/static/firewalla_pairing_info.png`;
+      const jsonPath = "/tmp/pairing.info.json";
+
+      const pairingInfo = JSON.parse(JSON.stringify(this.broadcastInfo));
+      pairingInfo.type = "pairing";
+      delete pairingInfo.keyhint;
+      delete pairingInfo.service;
+      delete pairingInfo.mid;
+      delete pairingInfo.verifymode;
+
+      await writeFileAsync(jsonPath, pairingInfo);
+
+      const cmd = `cat ${jsonPath} | qrencode -o ${imagePath}`;
+
+      await exec(cmd);
+      return imagePath;
+    } catch(err) {
+      return null;
+    }
+  }
   
   routes() {
     this.router = express.Router();    
@@ -244,7 +274,8 @@ class App {
         const memory = await(this.getSystemMemory())
         const connected = this.getCloudConnectivity()
         const systemServices = await(this.getSystemServices())
-        const expireDate = this.expireDate
+        const expireDate = this.expireDate;
+        const qrImagePath = await (this.getQRImage());
         
         let success = true
         let values = {
@@ -253,7 +284,13 @@ class App {
 
         if(!this.broadcastInfo) {
           values.err_binding = true
-          success = false
+          success = false;
+        }
+
+        if(qrImagePath) {
+          values.qrImage = true;
+        } else {
+          success = false;
         }
 
         if(ip == "") {

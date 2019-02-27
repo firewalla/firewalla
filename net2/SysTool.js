@@ -76,6 +76,11 @@ class SysTool {
   resetPolicy() {
     return exec("/home/pi/firewalla/scripts/reset-policy")
   }
+
+  async cleanIntel() {
+    await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("redis-cli keys 'dns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+  }
 }
 
 module.exports = SysTool

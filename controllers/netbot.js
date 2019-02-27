@@ -1034,6 +1034,10 @@ class netBot extends ControllerBot {
               log.error("FIREWALLA REMOTE UPGRADE ");
               require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
               });
+          } else if (msg.control && msg.control === "clean_intel") {
+            log.error("FIREWALLA CLEAN INTEL ");
+            require('child_process').exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del", (err, out, code) => {
+            });
           } else if (msg.control && msg.control === "ping") {
               log.error("FIREWALLA CLOUD PING ");
           } else if (msg.control && msg.control === "v6on") {
@@ -1230,18 +1234,38 @@ class netBot extends ControllerBot {
             let target = msg.target
             let policyData = value[o]
 
-            //            if(extMgr.hasExtension(o)) {
+            if (target === "0.0.0.0") {
               this.hostManager.loadPolicy((err, data) => {
-                this.hostManager.setPolicy(o,
-                                           policyData,
-                                           (err, data) => {
-                  cb(err)
-                })
-              })
-            // } else {
-            //   cb(null)
-            // }
-            break
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                this.hostManager.setPolicy(o, policyData,(err, data) => {
+                  cb(err);
+                });
+              });
+            } else {
+              this.hostManager.getHost(target, (err, host) => {
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                host.loadPolicy((err, data) => {
+                  if(err) {
+                    cb(err);
+                    return;
+                  }
+
+                  host.setPolicy(o, policyData, (err, data) => {
+                    cb(err);
+                  });
+                });
+              });
+            }
+
+            break;
           }
         }), (err) => {
           let reply = {
@@ -2297,6 +2321,14 @@ class netBot extends ControllerBot {
           // no need to await, otherwise fireapi will also be restarted
           sysTool.restartServices();
           sysTool.restartFireKickService();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      case "cleanIntel":
+        (async () => {
+          await sysTool.cleanIntel();
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
