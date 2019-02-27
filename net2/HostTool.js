@@ -244,11 +244,9 @@ class HostTool {
     })()
   }
 
-  getAllMACs() {
-    return async(() => {
-      let keys = await (rclient.keysAsync("host:mac:*"));
-      return keys.map((key) => key.replace("host:mac:", ""));
-    })();
+  async getAllMACs() {
+    let keys = await rclient.keysAsync("host:mac:*");
+    return keys.map((key) => key.replace("host:mac:", ""));
   }
 
   getAllMACEntries() {
