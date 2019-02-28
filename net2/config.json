@@ -112,6 +112,7 @@
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
+    "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},

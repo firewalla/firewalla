@@ -37,6 +37,8 @@ const f = require('../../net2/Firewalla.js');
 const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
 
+const Promise = require('bluebird');
+
 const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
 const natpmpTimeout = 86400;  // 1 day = 24 * 60 * 60 seconds
@@ -315,6 +317,18 @@ module.exports = class {
     return  natUpnpMapping.public.port   ==  localMapping.externalPort &&
       natUpnpMapping.private.port  ==  localMapping.localPort &&
       natUpnpMapping.protocol      === localMapping.protocol;
+  }
+
+  async getExternalIP() {
+    return new Promise((resolve, reject) => {
+      upnpClient.externalIp((err, ip) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve(ip);
+        }
+      })
+    });
   }
 }
 
