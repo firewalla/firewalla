@@ -307,7 +307,7 @@ module.exports = class FlowMonitor {
 
               alarmManager2.enqueueAlarm(alarm);
             }
-          } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
+          } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'phishing', 'spam'])) {
             // Intel object
             //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
             //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
