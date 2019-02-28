@@ -64,8 +64,8 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -1591,8 +1591,17 @@ class netBot extends ControllerBot {
                       password: password,
                       portmapped: this.hostManager.policy['vpnPortmapped']
                     }
+
+                    (async () => {
+                      const doublenat = await rclient.getAsync("ext.doublenat");
+                      if(doublenat !== null) {
+                        datamodel.data.doublenat = doublenat;
+                      }
+                      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                    })();
+                  } else {
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                   }
-                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
               }
             }); 

@@ -51,11 +51,13 @@ class DoubleNatPlugin extends Sensor {
     const ip = await upnp.getExternalIP();
     if(ip) {
       const key = "ext.external.ip";
+      log.info("External IP is", ip);
       await rclient.setAsync(key, ip);
       await rclient.expireAsync(key, expireTime);
 
       const key2 = "ext.doublenat";
       if(iptool.isPrivate(ip)) {
+        log.info("This network has double nat");
         await rclient.setAsync(key2, 1);
       } else {
         await rclient.setAsync(key2, 0);
