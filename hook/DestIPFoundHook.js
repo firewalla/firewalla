@@ -70,10 +70,11 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip,fd) {
+  appendNewFlow(ip, fd, retryCount) {
     let flow = {
        ip:ip,
-       fd:fd
+       fd:fd,
+       retryCount: retryCount || 0
     };
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
@@ -247,6 +248,7 @@ class DestIPFoundHook extends Hook {
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let retryCount = 0;
 
     if (flow) {
       let parsed = null;
@@ -255,6 +257,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          retryCount = parsed.retryCount || 0;
         } else {
           ip = flow;
           fd = 'in';
@@ -269,6 +272,10 @@ class DestIPFoundHook extends Hook {
     let sslInfo = await intelTool.getSSLCertificate(ip);
     let dnsInfo = await intelTool.getDNS(ip);
     let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
+    if (domains.length == 0 && retryCount < 5) {
+      // domain is not fetched from either dns or ssl entries, retry in next job() schedule
+      this.appendNewFlow(ip, fd, retryCount + 1);
+    }
 
     try {
       let intel;
@@ -350,7 +357,7 @@ class DestIPFoundHook extends Hook {
     }
 
     setTimeout(() => {
-      this.job(); // sleep for only 100 mill-seconds
+      this.job(); // sleep for only 500 mill-seconds
     }, 500);
   }
 
