@@ -1590,7 +1590,7 @@ class netBot extends ControllerBot {
                       ovpnfile: ovpnfile,
                       password: password,
                       portmapped: this.hostManager.policy['vpnPortmapped']
-                    }
+                    };
 
                     (async () => {
                       const doublenat = await rclient.getAsync("ext.doublenat");
@@ -1599,6 +1599,7 @@ class netBot extends ControllerBot {
                       }
                       this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                     })();
+
                   } else {
                     this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                   }
