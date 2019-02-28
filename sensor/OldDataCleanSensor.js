@@ -275,9 +275,9 @@ class OldDataCleanSensor extends Sensor {
     const invalidMACs = macs.filter((m) => {
       return m.match(/[a-f]+/) != null
     })
-    return Promise.all(invalidMACs.map((m) => {
-      hostTool.deleteMac(m);
-    }))
+    return Promise.all(
+      invalidMACs.map(m => hostTool.deleteMac(m))
+    )
   }
 
   async cleanupAlarmExtendedKeys() {
@@ -377,8 +377,7 @@ class OldDataCleanSensor extends Sensor {
   async hostPolicyMigration() {
     try {
       const keys = await rclient.keysAsync("policy:mac:*");
-      for (let i in keys) {
-        let key = keys[i];
+      for (let key of keys) {
         const blockin = await rclient.hgetAsync(key, "blockin");
         if (blockin && blockin == "true") {
           const mac = key.replace("policy:mac:", "")
