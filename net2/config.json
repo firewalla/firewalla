@@ -7,6 +7,7 @@
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
+  "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
@@ -67,7 +68,8 @@
     "AdditionalPairPlugin": {},
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
-    "GuardianSensor": {}
+    "GuardianSensor": {},
+    "VPNCheckPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -110,6 +112,7 @@
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
+    "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
