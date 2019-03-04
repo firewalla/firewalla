@@ -91,6 +91,10 @@ class Policy {
       delete this['i.target'];
     }
 
+    if(this.target) {
+      this.target = this.target.toLowerCase(); // always lower case for policy target
+    }
+
     this.timestamp = this.timestamp || new Date() / 1000;
 
   }
