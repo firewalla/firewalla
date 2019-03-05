@@ -174,7 +174,7 @@ class SafeSearchPlugin extends Sensor {
 
   async getDNSMasqEntry(domainToBeRedirect, ipAddress, macAddress) {
     if(macAddress) {
-      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress}`;
+      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress.toUpperCase()}`;
     } else {
       return `address=/${domainToBeRedirect}/${ipAddress}`;
     }
