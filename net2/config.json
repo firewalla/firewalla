@@ -151,6 +151,12 @@
             "duckduckgo.com"
           ]
         }
+      },
+      "defaultConfig": {
+        "youtube": "strict",
+        "google": "on",
+        "bing": "on",
+        "duckduckgo": "on"
       }
     },
     "DeviceNameUpdateSensor": {},

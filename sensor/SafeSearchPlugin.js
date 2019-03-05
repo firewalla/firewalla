@@ -63,6 +63,10 @@ class SafeSearchPlugin extends Sensor {
     });
 
     await exec(`mkdir -p ${devicemasqConfigFolder}`);
+
+    if(!(await this.configExists())) {
+      await this.setDefaultSafeSearchConfig();
+    }
   }
 
   async apiRun() {
@@ -82,6 +86,17 @@ class SafeSearchPlugin extends Sensor {
     } catch(err) {
       return {};
     }
+  }
+
+  async setDefaultSafeSearchConfig() {
+    if(this.config && this.config.defaultConfig) {
+      return rclient.setAsync(configKey, this.config.defaultConfig);
+    }
+  }
+
+  async configExists() {
+    const check = rclient.typeAsync(configKey);
+    return check !== 'none';
   }
 
   async applyPolicy(host, ip, policy) {
