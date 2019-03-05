@@ -2503,6 +2503,7 @@ class netBot extends ControllerBot {
       case "policy:update":
         async(() => {
           const policy = value
+
           const pid = policy.pid
           const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))

@@ -334,6 +334,20 @@ class PolicyManager2 {
 
     Object.assign(existing, policy);
 
+    if(existing.target && existing.type) {
+      switch(existing.type) {
+        case "mac":
+          existing.target = existing.target.toUpperCase(); // always upper case for mac address
+          break;
+        case "dns":
+        case "domain":
+          existing.target = existing.target.toLowerCase(); // always lower case for domain block
+          break;
+        default:
+          // do nothing;
+      }
+    }
+
     await rclient.hmsetAsync(policyKey, existing.redisfy());
 
     if (policy.expire === '') {
