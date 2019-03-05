@@ -91,8 +91,12 @@ class Policy {
       delete this['i.target'];
     }
 
-    if(this.target) {
-      this.target = this.target.toLowerCase(); // always lower case for policy target
+    if(this.target && this.type) {
+      if(this.type !== 'mac') {
+        this.target = this.target.toLowerCase(); // always lower case for policy target except mac
+      } else {
+        this.target = this.target.toUpperCase(); // always upper case for mac address
+      }
     }
 
     this.timestamp = this.timestamp || new Date() / 1000;

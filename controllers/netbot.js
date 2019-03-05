@@ -2504,10 +2504,6 @@ class netBot extends ControllerBot {
         async(() => {
           const policy = value
 
-          if(policy.target) {
-            policy.target = policy.target.toLowerCase(); // always lower case for policy target
-          }
-
           const pid = policy.pid
           const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))
