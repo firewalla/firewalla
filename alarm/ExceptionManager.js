@@ -333,8 +333,12 @@ module.exports = class {
   }
 
   async deleteExceptions(idList) {
-    await rclient.delAsync(idList.map(id => exceptionPrefix + id));
-    await rclient.sremAsync(idList);
+    if (!idList) throw new Error("deleteException: null argument");
+
+    if (idList.length) {
+      await rclient.delAsync(idList.map(id => exceptionPrefix + id));
+      await rclient.sremAsync(exceptionQueue, idList);
+    }
   }
 
   async deleteMacRelatedExceptions(mac) {

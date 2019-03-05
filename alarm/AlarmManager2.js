@@ -398,9 +398,11 @@ module.exports = class {
                     alarm['p.device.mac'].toUpperCase() === mac.toUpperCase())
       .map(alarm => alarm.aid);
 
-    await rclient.zremAsync(alarmActiveKey, related);
-    await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
-    await rclient.delAsync(related.map(id => alarmPrefix + id));
+    if (related.length) {
+      await rclient.zremAsync(alarmActiveKey, related);
+      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.delAsync(related.map(id => alarmPrefix + id));
+    }
   }
 
   dedup(alarm) {

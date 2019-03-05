@@ -554,7 +554,7 @@ class PolicyManager2 {
   // await all async opertions here to ensure errors are caught
   async deleteMacRelatedPolicies(mac) {
     // device specified policy
-    await rclient.del('policy:mac:' + mac);
+    await rclient.delAsync('policy:mac:' + mac);
 
     let rules = await this.loadActivePoliciesAsync({includingDisabled: 1})
     let policyIds = [];
@@ -574,7 +574,7 @@ class PolicyManager2 {
         // rule targets NOT only deleted device
         else {
           let reducedScope = _.without(rule.scope, mac);
-          await rclient.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
           const newRule = await this.getPolicy(rule.pid)
 
           this.tryPolicyEnforcement(newRule, 'reenforce', rule);
@@ -585,8 +585,8 @@ class PolicyManager2 {
     }
 
     if (policyIds.length) { // policyIds & policyKeys should have same length
-      await rclient.del(policyKeys);
-      await rclient.zrem('policy_active', policyIds);
+      await rclient.delAsync(policyKeys);
+      await rclient.zremAsync('policy_active', policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
   }
