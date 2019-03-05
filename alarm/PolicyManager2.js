@@ -335,10 +335,16 @@ class PolicyManager2 {
     Object.assign(existing, policy);
 
     if(existing.target && existing.type) {
-      if(existing.type !== 'mac') {
-        existing.target = existing.target.toLowerCase(); // always lower case for policy target except mac
-      } else {
-        existing.target = existing.target.toUpperCase(); // always upper case for mac address
+      switch(existing.type) {
+        case "mac":
+          existing.target = existing.target.toUpperCase(); // always upper case for mac address
+          break;
+        case "dns":
+        case "domain":
+          existing.target = existing.target.toLowerCase(); // always lower case for policy target except mac
+          break;
+        default:
+          // do nothing;
       }
     }
 

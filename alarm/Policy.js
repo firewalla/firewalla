@@ -92,10 +92,16 @@ class Policy {
     }
 
     if(this.target && this.type) {
-      if(this.type !== 'mac') {
-        this.target = this.target.toLowerCase(); // always lower case for policy target except mac
-      } else {
-        this.target = this.target.toUpperCase(); // always upper case for mac address
+      switch(this.type) {
+        case "mac":
+          this.target = this.target.toUpperCase(); // always upper case for mac address
+          break;
+        case "dns":
+        case "domain":
+          this.target = this.target.toLowerCase(); // always lower case for policy target except mac
+          break;
+        default:
+        // do nothing;
       }
     }
 
