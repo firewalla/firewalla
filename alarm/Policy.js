@@ -78,10 +78,6 @@ class Policy {
     }
 
     // backward compatibilities
-    if (this.activatedTime) {
-      this.timestamp = this.activatedTime;
-      delete this.activatedTime;
-    }
     if (this['i.type']) {
       this.type = this['i.type'];
       delete this['i.type'];
