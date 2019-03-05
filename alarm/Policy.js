@@ -98,7 +98,7 @@ class Policy {
           break;
         case "dns":
         case "domain":
-          this.target = this.target.toLowerCase(); // always lower case for policy target except mac
+          this.target = this.target.toLowerCase(); // always lower case for domain block
           break;
         default:
         // do nothing;

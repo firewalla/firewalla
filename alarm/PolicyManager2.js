@@ -341,7 +341,7 @@ class PolicyManager2 {
           break;
         case "dns":
         case "domain":
-          existing.target = existing.target.toLowerCase(); // always lower case for policy target except mac
+          existing.target = existing.target.toLowerCase(); // always lower case for domain block
           break;
         default:
           // do nothing;
