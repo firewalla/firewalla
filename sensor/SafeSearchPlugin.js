@@ -56,6 +56,12 @@ class SafeSearchPlugin extends Sensor {
   async run() {
     this.cachedDomainResult = {};
 
+    const exists = await this.configExists();
+
+    if(!exists) {
+      await this.setDefaultSafeSearchConfig();
+    }
+
     extensionManager.registerExtension("safeSearch", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
@@ -63,10 +69,6 @@ class SafeSearchPlugin extends Sensor {
     });
 
     await exec(`mkdir -p ${devicemasqConfigFolder}`);
-
-    if(!(await this.configExists())) {
-      await this.setDefaultSafeSearchConfig();
-    }
   }
 
   async apiRun() {
@@ -90,17 +92,18 @@ class SafeSearchPlugin extends Sensor {
 
   async setDefaultSafeSearchConfig() {
     if(this.config && this.config.defaultConfig) {
-      return rclient.setAsync(configKey, this.config.defaultConfig);
+      log.info("Setting default safe search config...");
+      return rclient.setAsync(configKey, JSON.stringify(this.config.defaultConfig));
     }
   }
 
   async configExists() {
-    const check = rclient.typeAsync(configKey);
+    const check = await rclient.typeAsync(configKey);
     return check !== 'none';
   }
 
   async applyPolicy(host, ip, policy) {
-    log.info("Applying policy:", policy)
+    log.info("Applying policy:", ip, policy)
 
     try {
       if(ip === '0.0.0.0') {
