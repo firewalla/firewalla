@@ -3098,6 +3098,8 @@ class netBot extends ControllerBot {
           if (macExists) {
 
             await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
 
             await categoryFlowTool.delAllCategories(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);

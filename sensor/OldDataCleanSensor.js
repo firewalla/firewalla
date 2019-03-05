@@ -118,8 +118,24 @@ class OldDataCleanSensor extends Sensor {
     // TODO
   }
 
-  cleanException() {
-    // TODO
+  async cleanExceptions() {
+    const queueKey = "exception_queue";
+
+    try {
+      // remove non-existing exception from queue
+      let exQueue = await rclient.smembersAsync(queueKey)
+      let invalidQueue = []
+
+      for (let id of exQueue) {
+        let exist = await em.exceptionExists(id);
+        if (!exist) invalidQueue.push(id)
+      }
+
+      await rclient.sremAsync(queueKey, invalidQueue);
+    }
+    catch(err) {
+      log.error("Error cleaning exceptions", err);
+    }
   }
 
   cleanSumFlow() {
@@ -354,6 +370,7 @@ class OldDataCleanSensor extends Sensor {
 
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
+      await this.cleanExceptions();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");

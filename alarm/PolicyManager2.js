@@ -69,6 +69,9 @@ const Queue = require('bee-queue')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
 
+const EM = require('./ExceptionManager.js');
+const em = new EM();
+
 const _ = require('lodash')
 
 function delay(t) {
@@ -562,41 +565,44 @@ class PolicyManager2 {
       });
   }
 
-  deleteMacRelatedPolicies(mac) {
-    this.loadActivePoliciesAsync({includingDisabled: 1})
-      .then(rules => {
-        // device specified policy
-        rclient.del('policy:mac:' + mac);
-        let policyIds = [];
-        let policyKeys = [];
+  // await all async opertions here to ensure errors are caught
+  async deleteMacRelatedPolicies(mac) {
+    // device specified policy
+    await rclient.delAsync('policy:mac:' + mac);
 
-        rules.forEach(rule => {
-          if (_.isEmpty(rule.scope)) return;
+    let rules = await this.loadActivePoliciesAsync({includingDisabled: 1})
+    let policyIds = [];
+    let policyKeys = [];
 
-          if (rule.scope.some(m => m == mac)) {
-            // rule targets only deleted device
-            if (rule.scope.length <= 1) {
-              policyIds.push(rule.pid);
-              policyKeys.push('policy:' + rule.pid);
-            }
-            // rule targets NOT only deleted device
-            else {
-              let reducedScope = _.without(rule.scope, mac);
-              rclient.hset('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
-              log.info('remove scope from policy:' + rule.pid, mac);
-            }
-          }
-        })
+    for (let rule of rules) {
+      if (_.isEmpty(rule.scope)) continue;
 
-        if (policyIds.length) { // policyIds & policyKeys should have same length
-          rclient.del(policyKeys);
-          rclient.zrem('policy_active', policyIds);
+      if (rule.scope.some(m => m == mac)) {
+        // rule targets only deleted device
+        if (rule.scope.length <= 1) {
+          policyIds.push(rule.pid);
+          policyKeys.push('policy:' + rule.pid);
+
+          this.tryPolicyEnforcement(rule, 'unenforce');
         }
-        log.info('Deleted', mac, 'related policies:', policyKeys);
-      })
-      .catch(e => {
-        log.error('Error removing', mac, 'related policy & rules', e);
-      })
+        // rule targets NOT only deleted device
+        else {
+          let reducedScope = _.without(rule.scope, mac);
+          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          const newRule = await this.getPolicy(rule.pid)
+
+          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+
+          log.info('remove scope from policy:' + rule.pid, mac);
+        }
+      }
+    }
+
+    if (policyIds.length) { // policyIds & policyKeys should have same length
+      await rclient.delAsync(policyKeys);
+      await rclient.zremAsync('policy_active', policyIds);
+    }
+    log.info('Deleted', mac, 'related policies:', policyKeys);
   }
 
   idsToPolicies(ids, callback) {

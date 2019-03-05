@@ -1,6 +1,6 @@
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -9,8 +9,8 @@ const Promise = require('bluebird');
 
 const minimatch = require('minimatch')
 
-let Exception = require('./Exception.js');
-let Bone = require('../lib/Bone.js');
+const Exception = require('./Exception.js');
+const Bone = require('../lib/Bone.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -19,11 +19,13 @@ let instance = null;
 const exceptionQueue = "exception_queue";
 
 const exceptionIDKey = "exception:id";
-let initID = 1;
+const initID = 1;
 const exceptionPrefix = "exception:";
 
 const flat = require('flat');
-let audit = require('../util/audit.js');
+const audit = require('../util/audit.js');
+
+const _ = require('lodash');
 
 module.exports = class {
   constructor() {
@@ -284,16 +286,7 @@ module.exports = class {
   }
 
   exceptionExists(exceptionID) {
-    return new Promise((resolve, reject) => {
-      rclient.keys(exceptionPrefix + exceptionID, (err, result) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-
-        resolve(result !== null);
-      });
-    });
+    return rclient.keysAsync(exceptionPrefix + exceptionID);
   }
 
   deleteException(exceptionID) {
@@ -337,6 +330,26 @@ module.exports = class {
         });
 
       });
+  }
+
+  async deleteExceptions(idList) {
+    if (!idList) throw new Error("deleteException: null argument");
+
+    if (idList.length) {
+      await rclient.delAsync(idList.map(id => exceptionPrefix + id));
+      await rclient.sremAsync(exceptionQueue, idList);
+    }
+  }
+
+  async deleteMacRelatedExceptions(mac) {
+    // remove exceptions
+    let exceptions = await this.loadExceptionsAsync();
+    let relatedEx = exceptions
+      .filter(ex => _.isString(ex['p.device.mac']) &&
+                    ex['p.device.mac'].toUpperCase() === mac.toUpperCase())
+      .map(ex => ex.eid);
+
+    await this.deleteExceptions(relatedEx);
   }
 
   async createException(json) {
