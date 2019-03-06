@@ -56,6 +56,12 @@ class SafeSearchPlugin extends Sensor {
   async run() {
     this.cachedDomainResult = {};
 
+    const exists = await this.configExists();
+
+    if(!exists) {
+      await this.setDefaultSafeSearchConfig();
+    }
+
     extensionManager.registerExtension("safeSearch", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
@@ -84,8 +90,20 @@ class SafeSearchPlugin extends Sensor {
     }
   }
 
+  async setDefaultSafeSearchConfig() {
+    if(this.config && this.config.defaultConfig) {
+      log.info("Setting default safe search config...");
+      return rclient.setAsync(configKey, JSON.stringify(this.config.defaultConfig));
+    }
+  }
+
+  async configExists() {
+    const check = await rclient.typeAsync(configKey);
+    return check !== 'none';
+  }
+
   async applyPolicy(host, ip, policy) {
-    log.info("Applying policy:", policy)
+    log.info("Applying policy:", ip, policy)
 
     try {
       if(ip === '0.0.0.0') {
@@ -174,7 +192,7 @@ class SafeSearchPlugin extends Sensor {
 
   async getDNSMasqEntry(domainToBeRedirect, ipAddress, macAddress) {
     if(macAddress) {
-      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress}`;
+      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress.toUpperCase()}`;
     } else {
       return `address=/${domainToBeRedirect}/${ipAddress}`;
     }

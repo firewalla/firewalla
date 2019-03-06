@@ -365,33 +365,31 @@ class FlowTool {
 
   // this is to get all recent connections in the network
   // regardless which device it belongs to
-  getAllRecentConnections(direction, options) {
+  async getAllRecentConnections(direction, options) {
     options = options || {}
 
-    options = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
+    const allMacs = await hostTool.getAllMACs();
 
-    let to = options.end || new Date() / 1000;
-    let from = options.begin || (to - MAX_RECENT_INTERVAL);
+    const allFlows = [];
 
-    return async(() => {
-      const allMacs = await (hostTool.getAllMACs());
-      let allFlows = [];
-      allMacs.forEach((mac) => {        
-        options.mac = mac; // Why is options.mac set here? This function get recent connections of the entire network. It seems that a specific mac address doesn't make any sense.
-        let flows = await (this.getRecentConnections(mac, direction, options));
-        flows.map((flow) => {
-          flow.device = mac
-        })
+    await Promise.all(allMacs.map(async mac => {
+      const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
 
-        allFlows.push.apply(allFlows, flows);
+      optionsCopy.mac = mac; // Why is options.mac set here? This function get recent connections of the entire network. It seems that a specific mac address doesn't make any sense.
+      let flows = await this.getRecentConnections(mac, direction, optionsCopy);
+
+      flows.map((flow) => {
+        flow.device = mac
       });
 
-      allFlows.sort((a, b) => {
-        return b.ts - a.ts;
-      })
+      allFlows.push.apply(allFlows, flows);
+    }));
 
-      return allFlows;
-    })();
+    allFlows.sort((a, b) => {
+      return b.ts - a.ts;
+    })
+
+    return allFlows;
   }
 
   _aggregateTransferBy10Min(results) {

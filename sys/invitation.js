@@ -43,6 +43,8 @@ const platform = platformLoader.getPlatform();
 
 const clientMgmt = require('../mgmt/ClientMgmt.js');
 
+const config = require('../net2/config.js').getConfig();
+
 let FW_SERVICE = "Firewalla";
 let FW_SERVICE_TYPE = "fb";
 let FW_ENDPOINT_NAME = "netbot";
@@ -252,6 +254,7 @@ class FWInvitation {
         'mid': uuid.v4(),
         'exp': Date.now() / 1000 + this.totalTimeout,
         'licensemode': '1',
+      version: config.version
     };
 
     if(this.diag) {
