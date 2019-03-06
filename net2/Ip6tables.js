@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -156,10 +156,10 @@ function deleteRule(rule, callback) {
 
 function flush(callback) {
   this.process = cp.exec(
-    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw",
-    (err, out, code) => {
+    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
+    (err, stdout, stderr) => {
       if (err) {
-        log.error("IP6TABLE:FLUSH:Unable to flush", err, out);
+        log.error("IP6TABLE:FLUSH:Unable to flush", err, stdout);
       }
       if (callback) {
         callback(err, null);

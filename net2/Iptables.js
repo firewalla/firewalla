@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,32 @@ var ip = require('ip');
 var spawn = require('child_process').spawn;
 
 let Promise = require('bluebird');
+
+exports.wrapIptables= function (rule) {
+  let command = " -I ";
+  let checkRule = null;
+
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+  }
+
+  command = " -A ";
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+  }
+
+  command = " -D ";
+  if(rule.indexOf(command) > -1) {
+    checkRule = rule.replace(command, " -C ");
+    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
+  }
+
+  if(checkRule) {
+    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+  } else {
+    return rule;
+  }
+}
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -419,10 +445,10 @@ function _dnsChange(ip, dns, state, callback) {
 
 function flush(callback) {
   this.process = require('child_process').exec(
-    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw",
-    (err, out, code) => {
+    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+    (err, stdout, stderr) => {
       if (err) {
-        log.error("IPTABLE:FLUSH:Unable to flush", err, out);
+        log.error("IPTABLE:FLUSH:Unable to flush", err, stdout);
       }
       if (callback) {
         callback(err, null);

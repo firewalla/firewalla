@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,8 +64,8 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -85,8 +85,6 @@ const pm2 = new PM2();
 
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
-
-const country = require('../extension/country/country.js');
 
 const builder = require('botbuilder');
 const uuid = require('uuid');
@@ -467,27 +465,53 @@ class netBot extends ControllerBot {
                 callback(err, "Failed to load policy");
           }
         })
+      } else {
+        if (callback != null)
+          callback("error", "host not found: " + ip);
       }
     })
   }
 
   _shield(ip, value, callback) {
-    if (ip !== "0.0.0.0") {
-      // per-device shield policy rule is not supported currently
-      callback(null);
-      return;
-    }
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("shield", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
+    if (ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        this.hostManager.setPolicy("shield", value, (err, data) => {
+          if (err == null) {
+            if (callback != null)
+              callback(null, "Success");
+          } else {
+            if (callback != null)
+            callback(err, "Unable to apply config on shield: " + value);
+          }
+        })
+      })
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy("shield", value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success");
+                } else {
+                  if (callback != null)
+                  callback(err, "Unable to apply config on shield: " + value);
+                }
+              })
+            } else {
+              log.error("Failed to load policy of " + ip, err);
+              if (callback != null)
+                callback(err, "Failed to load policy");
+            }
+          })
         } else {
           if (callback != null)
-          callback(err, "Unable to apply config on shield: " + value);
+            callback("error", "host not found: " + ip);
         }
       })
-    })
+    }
+    
   }
 
 
@@ -766,7 +790,7 @@ class netBot extends ControllerBot {
                }
                if (msg.alarmType) {
                    let alarmType = msg.alarmType;
-                   if (msg.alarmType  === "ALARM_LARGE_UPDATE") {
+                   if (msg.alarmType  === "ALARM_LARGE_UPLOAD") {
                        alarmType = "ALARM_BEHAVIOR";
                    }
                    if (this.hostManager.policy["notify"][alarmType] === false || 
@@ -1010,6 +1034,10 @@ class netBot extends ControllerBot {
               log.error("FIREWALLA REMOTE UPGRADE ");
               require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
               });
+          } else if (msg.control && msg.control === "clean_intel") {
+            log.error("FIREWALLA CLEAN INTEL ");
+            require('child_process').exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del", (err, out, code) => {
+            });
           } else if (msg.control && msg.control === "ping") {
               log.error("FIREWALLA CLOUD PING ");
           } else if (msg.control && msg.control === "v6on") {
@@ -1090,7 +1118,7 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "policy":
-        async2.eachLimit(Object.keys(value), 1, (o, cb) => {
+        async2.eachLimit(Object.keys(value), 1, async2.ensureAsync((o, cb) => {
           switch (o) {
             case "monitor":
               this._block(msg.target, "monitor", value.monitor, (err, obj) => {
@@ -1206,20 +1234,40 @@ class netBot extends ControllerBot {
             let target = msg.target
             let policyData = value[o]
 
-            //            if(extMgr.hasExtension(o)) {
+            if (target === "0.0.0.0") {
               this.hostManager.loadPolicy((err, data) => {
-                this.hostManager.setPolicy(o,
-                                           policyData,
-                                           (err, data) => {
-                  cb(err)
-                })
-              })
-            // } else {
-            //   cb(null)
-            // }
-            break
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                this.hostManager.setPolicy(o, policyData,(err, data) => {
+                  cb(err);
+                });
+              });
+            } else {
+              this.hostManager.getHost(target, (err, host) => {
+                if(err) {
+                  cb(err);
+                  return;
+                }
+
+                host.loadPolicy((err, data) => {
+                  if(err) {
+                    cb(err);
+                    return;
+                  }
+
+                  host.setPolicy(o, policyData, (err, data) => {
+                    cb(err);
+                  });
+                });
+              });
+            }
+
+            break;
           }
-        }, (err) => {
+        }), (err) => {
           let reply = {
             type: 'jsonmsg',
             mtype: 'policy',
@@ -1542,9 +1590,19 @@ class netBot extends ControllerBot {
                       ovpnfile: ovpnfile,
                       password: password,
                       portmapped: this.hostManager.policy['vpnPortmapped']
-                    }
+                    };
+
+                    (async () => {
+                      const doublenat = await rclient.getAsync("ext.doublenat");
+                      if(doublenat !== null) {
+                        datamodel.data.doublenat = doublenat;
+                      }
+                      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                    })();
+
+                  } else {
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                   }
-                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
               }
             }); 
@@ -2143,35 +2201,6 @@ class netBot extends ControllerBot {
     })();
   }
 
-  enrichCountryInfo(flows) {
-    // support time flow first
-    let flowsSet = [flows.time, flows.rx, flows.tx, flows.download, flows.upload];
-
-    flowsSet.forEach((eachFlows) => {
-      if(!eachFlows)
-        return;
-
-      eachFlows.forEach((flow) => {
-
-        if(flow.ip) {
-          flow.country = country.getCountry(flow.ip);
-          return;
-        }
-
-        let sh = flow.sh;
-        let dh = flow.dh;
-        let lh = flow.lh;
-
-        if (sh === lh) {
-          flow.country = country.getCountry(dh);
-        } else {
-          flow.country = country.getCountry(sh);
-        }
-      });
-
-    });
-  }
-
   /*
    Received jsondata { mtype: 'cmd',
    id: '6C998946-ECC6-4535-90C5-E9525D4BB5B6',
@@ -2302,6 +2331,14 @@ class netBot extends ControllerBot {
           // no need to await, otherwise fireapi will also be restarted
           sysTool.restartServices();
           sysTool.restartFireKickService();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      case "cleanIntel":
+        (async () => {
+          await sysTool.cleanIntel();
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2466,6 +2503,7 @@ class netBot extends ControllerBot {
       case "policy:update":
         async(() => {
           const policy = value
+
           const pid = policy.pid
           const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))
@@ -3060,6 +3098,8 @@ class netBot extends ControllerBot {
           if (macExists) {
 
             await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
 
             await categoryFlowTool.delAllCategories(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
@@ -3129,6 +3169,18 @@ class netBot extends ControllerBot {
                 const ipSubnet = iptool.subnet(ipAddress, subnetMask);
                 updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
                 const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+                // redundant entries for backward compatitibility
+                mergedSecondaryInterface.ipOnly = ipAddress;
+                mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+                mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+                mergedSecondaryInterface.ipmask = subnetMask;
+                if (mergedSecondaryInterface.ip2) {
+                  const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+                  mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+                  mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+                  mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+                  mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
+                }
                 await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
                 this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
                 setTimeout(() => {
@@ -3251,8 +3303,11 @@ class netBot extends ControllerBot {
       
       switch(target) {
       case "dev":
-        targetBranch = "master"
-        break
+        targetBranch = "master";
+        break;
+      case "alpha":
+        targetBranch = "beta_7_0";
+        break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
         break

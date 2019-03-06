@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -135,36 +135,12 @@ module.exports = class DNSManager {
     });
   }
 
-  /*
+/*
 > [ { address: '104.20.23.46', family: 4 },
   { address: '104.20.22.46', family: 4 },
   { address: '2400:cb00:2048:1::6814:162e', family: 6 },
   { address: '2400:cb00:2048:1::6814:172e', family: 6 } ]
-
 */
-
-
-  dnsLookup(host,callback) {
-    if (host == null) {
-      callback(null,null);
-    } else {
-      dns.lookup(host, {all:true},(err, addresses, family) => {
-        let v4=[];
-        let v6=[];
-        let all = [];
-        for (let i in addresses) {
-          if (addresses[i].family==4) {
-            v4.push(addresses[i].address);
-          }
-          if (addresses[i].family==6) {
-            v6.push(addresses[i].address);
-          }
-          all.push(addresses[i].address);
-        }
-        callback(err, all,v4,v6);
-      });
-    }
-  }
 
   queryAcl(list, callback) {
     if (list == null || list.length == 0) {
@@ -172,7 +148,7 @@ module.exports = class DNSManager {
       return;
     }
     let ipchanged = false;
-    _async.eachLimit(list,10, (o, cb) => {
+    _async.eachLimit(list, 10, (o, cb) => {
       o.srcs = [];
       o.dsts = [];
       if (sysManager.isLocalIP(o.src)) {
@@ -193,7 +169,7 @@ module.exports = class DNSManager {
             o.srcs = [o.src];
           }
           if (o.dhname) {
-            this.dnsLookup(o.dhname,(err, list)=> {
+            dns.lookup(o.dhname, {all:true}, (err, list)=> {
               if (list && list.length>0) {
                 o.dsts = o.dsts.concat(list);
               } else {
@@ -203,11 +179,11 @@ module.exports = class DNSManager {
             });
           } else {
             o.dsts = [o.dst];
-            cb();
+            _async.setImmediate(cb);
           }
         });
       } else {
-        this.dnsLookup(o.shname,(err, list)=> {
+        dns.lookup(o.shname, {all:true}, (err, list)=> {
           if (list && list.length>0) {
             o.srcs = o.srcs.concat(list);
           } else {
@@ -291,32 +267,32 @@ module.exports = class DNSManager {
         if (o.du && o.du < 0.0001) {
           //log.info("### NOT LOOKUP 1:",o);
           flowUtil.addFlag(o, 'x');
-          cb();
+          _async.setImmediate(cb);
           return;
         }
         if (o.ob && o.ob == 0 && o.rb && o.rb < 1000) {
           //log.info("### NOT LOOKUP 2:",o);
           flowUtil.addFlag(o, 'x');
-          cb();
+          _async.setImmediate(cb);
           return;
         }
         if (o.rb && o.rb < 1500) { // used to be 2500
           //log.info("### NOT LOOKUP 3:",o);
           flowUtil.addFlag(o, 'x');
-          cb();
+          _async.setImmediate(cb);
           return;
         }
         if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0) && o.ct && o.ct <= 1) {
           flowUtil.addFlag(o, 'x');
           log.debug("### NOT LOOKUP 4:", o);
-          cb();
+          _async.setImmediate(cb);
           return;
         }
       } else {
         if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0)) {
           flowUtil.addFlag(o, 'x');
           log.debug("### NOT LOOKUP 5:", o);
-          cb();
+          _async.setImmediate(cb);
           return;
         }
       }
@@ -389,7 +365,7 @@ module.exports = class DNSManager {
 
         if(intel.app) {
           flowObject.app = intel.app
-          flowObject.appr = intel.app         
+          flowObject.appr = intel.app        // ??? 
         }
 
         if(intel.category) {

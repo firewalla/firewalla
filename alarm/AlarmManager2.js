@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -391,6 +391,20 @@ module.exports = class {
     await rclient.delAsync(alarmPrefix + alarmID);
   }
 
+  async deleteMacRelatedAlarms(mac) {
+    let alarms = await this.loadRecentAlarmsAsync(60 * 60 * 24 * 7);
+    let related = alarms
+      .filter(alarm => _.isString(alarm['p.device.mac']) &&
+                    alarm['p.device.mac'].toUpperCase() === mac.toUpperCase())
+      .map(alarm => alarm.aid);
+
+    if (related.length) {
+      await rclient.zremAsync(alarmActiveKey, related);
+      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.delAsync(related.map(id => alarmPrefix + id));
+    }
+  }
+
   dedup(alarm) {
     return new Promise((resolve, reject) => {
       // expirationTime managed within Alarm sub classes
@@ -562,6 +576,7 @@ module.exports = class {
                 }
               }, callback)
 
+              // if = intel feedback
               if (alarm['p.dest.ip']) {
                 alarm["if.target"] = alarm['p.dest.ip'];
                 alarm["if.type"] = "ip";
@@ -1209,7 +1224,7 @@ module.exports = class {
 
   allowFromAlarm(alarmID, info, callback) {
     log.info("Going to allow alarm " + alarmID);
-    log.info("info: ", info, {});
+    log.info("info: ", info);
 
     let userFeedback = info.info;
 
@@ -1219,7 +1234,7 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
-        log.info("Alarm to allow: ", alarm, {});
+        log.info("Alarm to allow: ", alarm);
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
@@ -1376,7 +1391,7 @@ module.exports = class {
           e["p.device.mac"] = userFeedback.device; // limit exception to a single device
         }
 
-        log.info("Exception object:", e, {});
+        log.info("Exception object:", e);
 
         // FIXME: make it transactional
         // set alarm handle result + add policy

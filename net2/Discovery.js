@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -103,11 +103,11 @@ module.exports = class {
       async.eachLimit(this.config.discovery.networkInterfaces, 1, (name, cb) => {
         let intf = this.interfaces[name];
         if (intf == null) {
-          cb();
+          async.setImmediate(cb);
           return;
         }
         if (found) {
-          cb();
+          async.setImmediate(cb);
           return;
         }
         if (intf != null) {
@@ -528,14 +528,14 @@ module.exports = class {
             let v6addr = parts[0];
             let mac = parts[4].toUpperCase();
             if (mac == "FAILED" || mac.length < 16) {
-              cb();
+              async.setImmediate(cb);
             } else {
               this.addV6Host(v6addr, mac, (err) => {
                 cb();
               });
             }
           } else {
-            cb();
+            async.setImmediate(cb);
           }
         }, (err) => { });
       });

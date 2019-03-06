@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -122,6 +122,10 @@ class BluePlatform extends Platform {
   getCpuTemperature() {
     const source = '/etc/armbianmonitor/datasources/soctemp';
     return Number(fs.readFileSync(source)) / 1000;
+  }
+
+  getPolicyCapacity() {
+    return 3000;
   }
 }
 

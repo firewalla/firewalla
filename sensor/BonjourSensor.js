@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -194,7 +194,7 @@ class BonjourSensor extends Sensor {
       if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
         ipv4addr = addr;
       } else if (ip.isV4Format(addr)) {
-        log.info("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
+        log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
         continue;
       } else if (ip.isV6Format(addr)) {
         ipv6addr.push(addr);

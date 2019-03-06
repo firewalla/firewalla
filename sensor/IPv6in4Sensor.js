@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -49,7 +49,11 @@ class IPv6in4Sensor extends Sensor {
     })      
   }
 
-  applyPolicy(policy) {
+  applyPolicy(host, ip, policy) {
+    if(ip !== "0.0.0.0") {
+      return;
+    }
+
     log.info("Applying policy:", policy, {})
     if(policy === true) {
       return this.start()

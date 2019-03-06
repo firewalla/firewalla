@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -505,19 +505,30 @@ class FlowTool {
     return;
   }
 
-  async enrichIntel(f) {
-    const intel = await intelTool.getIntel(f.ip);
-    if(intel) {
-      f.country = intel.country;
-      f.host = intel.host;
-      if(intel.category) {
-        f.category = intel.category
+  async enrichWithIntel(flows) {
+    return await Promise.all(flows.map(async f => {
+      // get intel from redis. if failed, create a new one
+      const intel = await intelTool.getIntel(f.ip);
+
+      if (intel) {
+        f.country = intel.country;
+        f.host = intel.host;
+        if(intel.category) {
+          f.category = intel.category
+        }
+        if(intel.app) {
+          f.app = intel.app
+        }
       }
-      if(intel.app) {
-        f.app = intel.app
+
+      // failed on previous cloud request, try again
+      if (intel && intel.cloudFailed || !intel) {
+        // not waiting as that will be too slow for API call
+        destIPFoundHook.processIP(f.ip);
       }
-    }
-    return f;
+
+      return f;
+    }));
   }
 
   async getGlobalRecentConns() {
@@ -533,20 +544,16 @@ class FlowTool {
     let flowObjects = results
         .map((x) => this._flowStringToJSON(x));
 
-    flowObjects = await Promise.all(
-      flowObjects.map(async (f) => {
-        return this.enrichIntel(f);
-      })
-    );
+    let enrichedFlows = await this.enrichWithIntel(flowObjects);
 
-    flowObjects.sort((a, b) => {
+    enrichedFlows.sort((a, b) => {
       return b.ts - a.ts;
     });
 
-    return flowObjects;
+    return enrichedFlows;
   }
 
-  getRecentConnections(target, direction, options) {
+  async getRecentConnections(target, direction, options) {
     options = options || {};
 
     let max_recent_flow = options.maxRecentFlow || MAX_RECENT_FLOW;
@@ -555,86 +562,53 @@ class FlowTool {
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
-    return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
+    let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
 
-      if(results === null || results.length === 0)
-        return [];
+    if(results === null || results.length === 0)
+      return [];
 
-      let flowObjects = results
-        .map((x) => this._flowStringToJSON(x))
-        .filter((x) => this._isFlowValid(x));
+    let flowObjects = results
+      .map((x) => this._flowStringToJSON(x))
+      .filter((x) => this._isFlowValid(x));
 
-      flowObjects.forEach((x) => this.trimFlow(x));
+    flowObjects.forEach((x) => this.trimFlow(x));
 
-      let mergedFlow = null
+    let mergedFlow = null
 
-      if(!options.no_merge) {
-        mergedFlow = this._mergeFlows(flowObjects.sort((a, b) => b.ts - a.ts)); 
-      } else {
-        mergedFlow = flowObjects
-      }
-      
-      let simpleFlows = mergedFlow
-            .map((f) => {
-              let s = this.toSimpleFlow(f)
-              if(options.mac) {
-                s.device = options.mac; // record the mac address here
-              }
-              return s;
-            });
-
-      let promises = Promise.all(simpleFlows.map((f) => {
-        return intelTool.getIntel(f.ip)
-        .then((intel) => {
-          if(intel) {
-            f.country = intel.country;
-            f.host = intel.host;
-            if(intel.category) {
-              f.category = intel.category
-            }
-            if(intel.app) {
-              f.app = intel.app
-            }
-            return f;
-          } else {
-            return f;
-            // intel not exists in redis, create a new one
-            return async(() => {
-              try {
-                intel = await (destIPFoundHook.processIP(f.ip));
-                if(intel) {
-                  f.country = intel.country;
-                  f.host = intel.host;
-                  if(intel.category) {
-                    f.category = intel.category
-                  }
-                  if(intel.app) {
-                    f.app = intel.app
-                  }
-                }
-              } catch(err) {
-                log.error(`Failed to post-enrich intel ${f.ip}:`, err);
-              }
-              
-              return f;
-            })();
-          }
-          return f;
-        });
-      })).then(() => {
-        return simpleFlows.sort((a, b) => {
+    if(!options.no_merge) {
+      mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
+        if (a.ets && b.ets) {
+          return b.ets - a.ets;
+        } else {
           return b.ts - a.ts;
-        })
+        }
+      })); 
+    } else {
+      mergedFlow = flowObjects
+    }
+
+    let simpleFlows = mergedFlow
+      .map((f) => {
+        let s = this.toSimpleFlow(f)
+        if(options.mac) {
+          s.device = options.mac; // record the mac address here
+        }
+        return s;
       });
 
-      return promises;
-    })();
+    let enrichedFlows = await this.enrichWithIntel(simpleFlows);
+
+    enrichedFlows.sort((a, b) => {
+      return b.ts - a.ts;
+    });
+
+    return enrichedFlows;
   }
 
   getFlowKey(mac, type) {
     return util.format("flow:conn:%s:%s", type, mac);
   }
+
   addFlow(mac, type, flow) {
     let key = this.getFlowKey(mac, type);
 

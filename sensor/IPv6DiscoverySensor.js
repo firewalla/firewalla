@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -136,7 +136,7 @@ class IPv6DiscoverySensor extends Sensor {
             let v6addr = parts[0];
             let mac = parts[4].toUpperCase();
             if (mac == "FAILED" || mac.length < 16) {
-              cb();
+              async.setImmediate(cb);
             } else {
               /* 
                  hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
@@ -150,10 +150,10 @@ class IPv6DiscoverySensor extends Sensor {
                 _host = [v6addr];
                 macHostMap[mac]=_host;
               }
-              cb()
+              async.setImmediate(cb);
             }
           } else {
-            cb();
+            async.setImmediate(cb);
           }
         }, (err) => {
           for (let mac in macHostMap) {

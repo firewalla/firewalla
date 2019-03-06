@@ -1,4 +1,4 @@
-/*    Copyright 2017 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,6 +36,8 @@ const f = require('../../net2/Firewalla.js');
 
 const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
+
+const Promise = require('bluebird');
 
 const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
@@ -315,6 +317,18 @@ module.exports = class {
     return  natUpnpMapping.public.port   ==  localMapping.externalPort &&
       natUpnpMapping.private.port  ==  localMapping.localPort &&
       natUpnpMapping.protocol      === localMapping.protocol;
+  }
+
+  async getExternalIP() {
+    return new Promise((resolve, reject) => {
+      upnpClient.externalIp((err, ip) => {
+        if(err) {
+          reject(err);
+        } else {
+          resolve(ip);
+        }
+      })
+    });
   }
 }
 

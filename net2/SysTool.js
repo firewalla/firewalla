@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -75,6 +75,11 @@ class SysTool {
 
   resetPolicy() {
     return exec("/home/pi/firewalla/scripts/reset-policy")
+  }
+
+  async cleanIntel() {
+    await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("redis-cli keys 'dns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
   }
 }
 

@@ -15,6 +15,7 @@ const ip = require('ip');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
+const exec = require('child-process-promise').exec;
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -77,6 +78,8 @@ const BLACK_HOLE_IP = "198.51.100.99"
 const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
+
+const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
 
 let VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 
@@ -243,6 +246,16 @@ module.exports = class DNSMASQ {
       if (alternativeNameServers && !alternativeNameServers.includes(dns))
         alternativeNameServers.push(dns);
     })
+
+    // add fallback dns servers in case every previous dns server is broken
+    if(FALLBACK_DNS_SERVERS) {
+      FALLBACK_DNS_SERVERS.forEach((dns) => {
+        if (effectiveNameServers && !effectiveNameServers.includes(dns))
+          effectiveNameServers.push(dns);
+        if (alternativeNameServers && !alternativeNameServers.includes(dns))
+          alternativeNameServers.push(dns);
+      })
+    }
 
     if (!effectiveNameServers || effectiveNameServers.length === 0) {
       effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
@@ -579,7 +592,10 @@ module.exports = class DNSMASQ {
         await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
       }
     }
-    this.vpnSubnet = newVpnSubnet
+    if (newVpnSubnet) {
+      // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of reloading
+      this.vpnSubnet = newVpnSubnet;
+    }
   }
 
   async _update_local_interface_iptables_rules() {
@@ -600,15 +616,22 @@ module.exports = class DNSMASQ {
   }
   
   async _add_iptables_rules() {
-    let subnets = await networkTool.getLocalNetworkSubnets();
+    let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
     let dns = `${localIP}:8853`;
+    const deviceDNS = `${localIP}:8863`;
 
     this._redirectedLocalSubnets = subnets;
     this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
+      for(const protocol of ["tcp", "udp"]) {
+        const deviceDNSRule = `sudo iptables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+        const cmd = iptables.wrapIptables(deviceDNSRule);
+        await exec(cmd).catch(() => undefined);
+      }
+
       await iptables.dnsChangeAsync(subnet, dns, true);
     }
 
@@ -626,6 +649,15 @@ module.exports = class DNSMASQ {
       let ip6 = ipv6s[index]
       if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+        const deviceDNS = `${ip6}:8863`;
+
+        for(const protocol of ["tcp", "udp"]) {
+          const deviceDNSRule = `sudo ip6tables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
+          await exec(cmd).catch(() => undefined);
+        }
+
         await ip6tables.dnsRedirectAsync(ip6, 8853)
       }
     }
@@ -639,6 +671,15 @@ module.exports = class DNSMASQ {
         let ip6 = ipv6s[index]
         if (ip6.startsWith("fe80:")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+          const deviceDNS = `${ip6}:8863`;
+
+          for(const protocol of ["tcp", "udp"]) {
+            const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+            const cmd = iptables.wrapIptables(deviceDNSRule);
+            await exec(cmd).catch(() => undefined);
+          }
+
           await ip6tables.dnsUnredirectAsync(ip6, 8853)
         }
       }
@@ -674,18 +715,25 @@ module.exports = class DNSMASQ {
   
   async _remove_iptables_rules() {
     try {
-      let subnets = await networkTool.getLocalNetworkSubnets();
+      let subnets = await networkTool.getLocalNetworkSubnets() || [];
       // remove rules corresponding to local subnets that are previous added
       if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
         subnets = this._redirectedLocalSubnets;
       let localIP = sysManager.myIp();
       let dns = `${localIP}:8853`;
+      const deviceDNS = `${localIP}:8863`;
       if (this._targetDns)
         dns = this._targetDns;
 
       subnets.forEach(async subnet => {
         log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
+
+        for(const protocol of ["tcp", "udp"]) {
+          const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
+          await exec(cmd).catch(() => undefined);
+        }
       })
       this._redirectedLocalSubnets = [];
       this._targetDns = null;
@@ -749,7 +797,7 @@ module.exports = class DNSMASQ {
       writer.end();
     });
   }
-  
+
   async checkStatus() {
     let cmd = `pgrep -f ${dnsmasqBinary}`;
     log.info("Command to check dnsmasq: ", cmd);

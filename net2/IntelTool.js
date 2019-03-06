@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,27 +53,16 @@ class IntelTool {
     return util.format("intel:ip:%s", ip);
   }
 
-
-  intelExists(ip) {
+  async intelExists(ip) {
     let key = this.getIntelKey(ip);
-
-    return rclient.existsAsync(key)
-      .then((exists) => {
-        return exists == 1
-      })
+    let exists = await rclient.existsAsync(key);
+    return exists == 1;
   }
 
-  appExists(ip) {
+  async appExists(ip) {
     let key = this.getIntelKey(ip);
-
-    return rclient.hgetAsync(key, "app")
-      .then((result) => {
-        if (result == null) {
-          return false;
-        } else {
-          return true;
-        }
-      });
+    let result = await rclient.hgetAsync(key, "app");
+    return result != null;
   }
 
   getIntel(ip) {

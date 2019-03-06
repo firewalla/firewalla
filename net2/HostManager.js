@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -620,6 +620,9 @@ class Host {
           if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
             continue;
           }
+          if (dns && dns.indexOf(this.ipv6Addr[i]) > -1) {
+            continue;
+          }
           if (state == true) {
             spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
               log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
@@ -658,6 +661,17 @@ class Host {
           this.spoofing = false;
         }
         */
+    }
+  }
+
+  async shield(policy) {
+    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
+    const state = policy.state;
+    if (state === true) {
+      // Raise shield to block incoming connections
+      await shieldManager.activateShield(this.o.mac);
+    } else {
+      await shieldManager.deactivateShield(this.o.mac);
     }
   }
 
@@ -1784,7 +1798,7 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies(1000, {includingDisabled: 1}, (err, rules) => {
+      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
         if(err) {
           reject(err);
           return;
@@ -1842,6 +1856,19 @@ module.exports = class HostManager {
 
           rules = rules.filter((r) => {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
+          })
+
+          // filters out rules with inactive devices
+          rules = rules.filter(rule => {
+            if(!rule) {
+              return false;
+            }
+
+            const mac = rule["p.device.mac"];
+
+            if (!mac) return true;
+
+            return this.hosts.all.some(host => host.o.mac === mac);
           })
 
           let alarmIDs = rules.map((p) => p.aid);
@@ -2345,10 +2372,10 @@ module.exports = class HostManager {
       }
       let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       rclient.multi(multiarray).exec((err, replies) => {
-        _async.eachLimit(replies,2, (o, cb) => {
+        _async.eachLimit(replies, 2, (o, cb) => {
           if (!o) {
             // defensive programming
-            cb();
+            _async.setImmediate(cb);
             return;
           }
           if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp > inactiveTimeline) {
@@ -2358,7 +2385,7 @@ module.exports = class HostManager {
             }
             if (o.ipv4Addr == null) {
               log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac,{});
-              cb();
+              _async.setImmediate(cb);
               return;
             }
             let hostbymac = this.hostsdb["host:mac:" + o.mac];

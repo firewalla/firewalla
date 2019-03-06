@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -61,15 +61,16 @@ class FlowGraph {
 
     flowarraySorted(recent) {
         if (recent == true) {
-             this.flowarray.sort(function (a, b) {
-                 return Number(b[1]) - Number(a[1]);
-             })
-             return this.flowarray;
+            // sort by end timestamp in descending order
+            this.flowarray.sort(function (a, b) {
+                return Number(b[1]) - Number(a[1]);
+            })
+            return this.flowarray;
         } else {
-             this.flowarray.sort(function (a, b) {
-                 return Number(a[1]) - Number(b[1]);
-             })
-             return this.flowarray;
+            this.flowarray.sort(function (a, b) {
+                return Number(a[1]) - Number(b[1]);
+            })
+            return this.flowarray;
         }
     }
 
@@ -97,42 +98,44 @@ class FlowGraph {
     }
 
     addRawFlow(flowStart, flowEnd, ob,rb,ct) {
-         let insertindex = 0;
+        let insertindex = 0;
 
-         for (let i in this.flowarray) {
-             let e = this.flowarray[i];
-             if (flowStart < e[0]) {
-                 break;
-             }
-             if (flowStart<e[1]) {
-                 flowStart = e[0];
-                 break;
-             }
-             insertindex = Number(i)+Number(1);
-         }
+        for (let i in this.flowarray) {
+            let e = this.flowarray[i];
+            if (flowStart < e[0]) {
+                break;
+            }
+            if (flowStart<e[1]) {
+                flowStart = e[0];
+                break;
+            }
+            insertindex = Number(i)+Number(1);
+        }
 
-         let removed = Number(0);
-         for (let i = insertindex; i < this.flowarray.length; i++) {
-             let e = this.flowarray[Number(i)];
-             if (e[1] < flowEnd) {
-                 ob += e[2];
-                 rb += e[3];
-                 ct += e[4];
-                 removed++;
-                 continue;
-             } else if (e[1] >= flowEnd) {
-                 ob += e[2];
-                 rb += e[3];
-                 ct += e[4];
-                 flowEnd = e[1];
-                 removed++;
-                 break;
-             }
-         }
+        let removed = Number(0);
+        for (let i = insertindex; i < this.flowarray.length; i++) {
+            let e = this.flowarray[Number(i)];
+            if (e[1] < flowEnd) {
+                ob += e[2];
+                rb += e[3];
+                ct += e[4];
+                removed++;
+                continue;
+            } else if (e[1] >= flowEnd) {
+                if (e[0] <= flowEnd) {
+                    // [flowStart, flowEnd] has overlap with [e[0], e[1]]
+                    ob += e[2];
+                    rb += e[3];
+                    ct += e[4];
+                    flowEnd = e[1];
+                    removed++;
+                }
+                break;
+            }
+        }
 
-         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
+        this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
     //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
-
     }
 
 }
@@ -163,8 +166,14 @@ module.exports = class FlowManager {
     let uploadKey = key + ":upload";
     
     timestamp = timestamp - timestamp % 3600; // trim minutes and seconds...
-    let hourOfDay = (timestamp / 3600) % 24;
+    const now = Date.now() / 1000;
+    const currentHour = ((now - now % 3600) / 3600);
+    if (currentHour - timestamp / 3600 > 23) {
+      // rounded timestamp is more than 23 hours ago, which is out of range
+      return Promise.resolve();
+    }
 
+    let hourOfDay = (timestamp / 3600) % 24;
     let downloadValue = JSON.stringify({bytes: downloadBytes, ts: timestamp});
     let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
 
@@ -314,6 +323,7 @@ module.exports = class FlowManager {
         }
         let inkey = "stats:"+type+":in:"+target;
         let outkey = "stats:"+type+":out:"+target;
+        // round down according to period
         let subkey = ts-ts%period;
 
         if (inBytes == null || outBytes == null) {
@@ -737,6 +747,7 @@ module.exports = class FlowManager {
                 f.addFlow(appdb[i][j]);
                 hasFlows = true;
             }
+            // f.name is i, which is the name of app
             flowobj.app[f.name]= f.flowarraySorted(true);
             for (let k in flowobj.app[f.name]) {
                 let _f = flowobj.app[f.name][k];
@@ -908,11 +919,12 @@ module.exports = class FlowManager {
           if (direction == 'in') {
             totalInBytes += Number(o.rb);
             totalOutBytes += Number(o.ob);
-            this.recordStats(mac, "hour", o.ts, Number(o.rb), Number(o.ob), null);
+            // use end timestamp to record stats, so that connection which lasts more than 24 hours will still be recorded 
+            this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
           } else {
             totalInBytes += Number(o.ob);
             totalOutBytes += Number(o.rb);
-            this.recordStats(mac, "hour", o.ts, Number(o.ob), Number(o.rb), null);
+            this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.ob), Number(o.rb), null);
           }
         }
         let ts = o.ts;
@@ -976,6 +988,7 @@ module.exports = class FlowManager {
 
       if (saveStats) {
         let _ts = Math.ceil(Date.now() / 1000);
+        // Date.now() is used here, which looks inconsistent with per device recordStats, nevertheless the traffic end timestamp and Date.now() should be close
         this.recordStats("0.0.0.0", "hour", _ts, totalInBytes, totalOutBytes, null);
       }
 

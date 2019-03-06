@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -469,14 +469,6 @@ module.exports = class {
     });
   }
 
-  shield(host, config) {
-    if (host.constructor.name !== 'HostManager') {
-      log.error("shield doesn't support per device policy currently", host);
-      return;
-    }
-    host.shield(config);
-  }
-
   scisurf(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("scisurf doesn't support per device policy", host);
@@ -649,9 +641,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(policy[p])
+            hook(host, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
           }
         }
       }
@@ -686,7 +678,7 @@ module.exports = class {
       } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
       } else if (p === "shield") {
-        this.shield(host, policy[p]);
+        host.shield(policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
       } else if (p === "ipAllocation") {
@@ -786,14 +778,6 @@ module.exports = class {
       host.appliedAcl = {};
     }
 
-    // FIXME: Will got rangeError: Maximum call stack size exceeded when number of acl is huge
-
-    if (policy.length > 1000) {
-      log.warn("Too many policy rules for host", host.shname);
-      callback(null, null); // self protection
-      return;
-    }
-
     /* iterate policies and see if anything need to be modified */
     for (let p in policy) {
       let block = policy[p];
@@ -815,26 +799,27 @@ module.exports = class {
       }
     }
 
-    async.eachLimit(policy, 10, (block, cb) => {
+    async.eachLimit(policy, 10, async.ensureAsync((block, cb) => {
       if (policy.done != null && policy.done == true) {
         cb();
       } else {
-        if (block['dst'] != null && block['src'] != null) {
-          let aclkey = block['dst'] + "," + block['src'];
-          if (block['protocol'] != null) {
-            aclkey = block['dst'] + "," + block['src'] + "," + block['protocol'] + "," + block['sport'] + "," + block['dport'];
+        let {mac, protocol, src, dst, sport, dport, state} = block;
+        if (dst != null && src != null) {
+          let aclkey = dst + "," + src;
+          if (protocol != null) {
+            aclkey = dst + "," + src + "," + protocol + "," + sport + "," + dport;
           }
-          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
+          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == state) {
             cb();
           } else {
-            this.block(block.mac, block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
+            this.block(mac, protocol, src, dst, sport, dport, state, (err) => {
               if (err == null) {
-                if (block['state'] == false) {
-                  block['done'] = true;
+                if (state == false) {
+                  block.done = true;
                 }
               }
               if (block.duplex && block.duplex == true) {
-                this.block(block.mac, block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                this.block(mac, protocol, dst, src, dport, sport, state, (err) => {
                   cb();
                 });
               } else {
@@ -847,7 +832,7 @@ module.exports = class {
           cb();
         }
       }
-    }, (err) => {
+    }), (err) => {
       let changed = false;
       for (var i = policy.length - 1; i >= 0; i--) {
         if (policy[i].done && policy[i].done == true) {

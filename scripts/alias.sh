@@ -1,5 +1,7 @@
 #!/bin/bash
 
+alias apt='/home/pi/firewalla/scripts/apt.sh'
+alias apt-get='/home/pi/firewalla/scripts/apt.sh'
 alias t0='tail -F ~/.forever/main.log'
 alias t00='tail -F ~/.forever/*.log'
 alias t1='tail -F ~/.forever/kickui.log'
@@ -42,4 +44,15 @@ alias less='less -r'
 
 export PS1='\[\e]0;\u@\h: \w\a\]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\] ($(redis-cli get groupName)) \$ '
 
-alias powerup='source <(curl -s https://raw.githubusercontent.com/MelvinTo/firewalla/master/scripts/powerup.sh)'
+alias powerup='source <(curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/powerup.sh)'
+
+
+function mycat () {
+  curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
+  node /tmp/cat.js --device "$1"
+}
+
+function mycatip () {
+  curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
+  node /tmp/cat.js --ip "$1"
+}

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -207,7 +207,7 @@ class MultiSSClient {
     const cmd = "sudo ipset destroy chnroute";
     log.info("Running cmd:", cmd);
     return exec(cmd).catch((err) => {
-      log.error("Failed to destroy chnroute:", err);
+      log.debug("Failed to destroy chnroute:", err);
     });
   }
   

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,20 +23,16 @@ const async2 = require('async');
 
 const util = require('util');
 
-const FlowAggrTool = require('../net2/FlowAggrTool');
+const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
-const IntelTool = require('../net2/IntelTool');
-const intelTool = new IntelTool();
-
-const DestIPFoundHook = require('../hook/DestIPFoundHook');
-const destIPFoundHook = new DestIPFoundHook();
-
-const HostTool = require('../net2/HostTool');
+const HostTool = require('./HostTool');
 const hostTool = new HostTool();
 
 const AppFlowTool = require('../flow/AppFlowTool.js')
 const appFlowTool = new AppFlowTool()
+
+const flowTool = require('./FlowTool.js')();
 
 const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
@@ -295,31 +291,6 @@ class NetBotTool {
     })();
   }
 
-  async _enrichWithIntel(traffic) {
-    let enriched = await Promise.all(traffic.map(async (f) => {
-      // get intel from redis. if failed, create a new one
-      const intel = await intelTool.getIntel(f.ip) || await destIPFoundHook.processIP(f.ip);
-
-      if (intel) {
-        f.country = intel.country;
-        f.host = intel.host;
-        if(intel.category) {
-          f.category = intel.category
-        }
-        if(intel.app) {
-          f.app = intel.app
-        }
-      }
-      return f;
-    }));
-
-    enriched.sort((a, b) => {
-      return b.count - a.count;
-    });
-
-    return enriched;
-  }
-
   // Top Download/Upload in the entire network
   async _prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
@@ -331,14 +302,18 @@ class NetBotTool {
 
     let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
 
-    let traffic = await (flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50));
+    let traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50);
 
     traffic.forEach((f) => {
       f.begin = begin;
       f.end = end;
     })
 
-    json.flows[trafficDirection] = await this._enrichWithIntel(traffic);
+    let enriched = await flowTool.enrichWithIntel(traffic);
+
+    json.flows[trafficDirection] = enriched.sort((a, b) => {
+      return b.count - a.count;
+    });
 
     return traffic
   }
@@ -384,7 +359,11 @@ class NetBotTool {
         })
       }
 
-      json.flows[trafficDirection] = await this._enrichWithIntel(traffic);
+      let enriched = await flowTool.enrichWithIntel(traffic);
+
+      json.flows[trafficDirection] = enriched.sort((a, b) => {
+        return b.count - a.count;
+      });
     }
   }
 
@@ -403,6 +382,7 @@ class NetBotTool {
     return this._prepareTopFlowsForHost(json, mac, "upload", options);
   }
 
+  // looks like this is no longer used
   prepareDetailedAppFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");
@@ -462,6 +442,7 @@ class NetBotTool {
     })();
   }
 
+  // looks like this is no longer used
   prepareDetailedCategoryFlowsForHost(json, mac, options) {
     if(!mac) {
       return Promise.reject("Invalid MAC Address");

@@ -7,6 +7,7 @@
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
+  "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
@@ -44,6 +45,10 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
+    "fallbackDNSServers" : [
+      "8.8.8.8",
+      "1.1.1.1"
+    ],
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",
@@ -62,7 +67,9 @@
     "BoneSensor": {},
     "AdditionalPairPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {}
+    "RecentFlowPlugin": {},
+    "GuardianSensor": {},
+    "VPNCheckPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -105,9 +112,47 @@
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
+    "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
+    "SafeSearchPlugin": {
+      "mapping": {
+        "youtube_strict": {
+          "restrict.youtube.com": [
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtubei.googleapis.com",
+            "youtube.googleapis.com",
+            "www.youtube-nocookie.com"
+          ]
+        },
+        "youtube_moderate": {
+          "restrictmoderate.youtube.com": [
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtubei.googleapis.com",
+            "youtube.googleapis.com",
+            "www.youtube-nocookie.com"
+          ]
+        },
+        "google": {
+          "forcesafesearch.google.com": [
+            "www.google.com"
+          ]
+        },
+        "bing": {
+          "strict.bing.com": [
+            "www.bing.com"
+          ]
+        },
+        "duckduckgo": {
+          "safe.duckduckgo.com": [
+            "duckduckgo.com"
+          ]
+        }
+      }
+    },
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "CPUSensor": {

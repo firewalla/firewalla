@@ -330,6 +330,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/devicemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
