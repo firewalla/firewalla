@@ -82,10 +82,11 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async getSafeSearchConfig() {
-    const json = rclient.getAsync(configKey);
+    const json = await rclient.getAsync(configKey);
     try {
       return JSON.parse(json);
     } catch(err) {
+      log.error(`Got error when loading config from ${configKey}`);
       return {};
     }
   }
@@ -192,7 +193,7 @@ class SafeSearchPlugin extends Sensor {
 
   async getDNSMasqEntry(domainToBeRedirect, ipAddress, macAddress) {
     if(macAddress) {
-      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress.toUpperCase()}`;
+      return `address=/${domainToBeRedirect}/${ipAddress}%${macAddress.toUpperCase()}`;
     } else {
       return `address=/${domainToBeRedirect}/${ipAddress}`;
     }
@@ -293,26 +294,30 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async perDeviceStart(host, config) {
-    if(!host.mac) {
+    if(!host.o || !host.o.mac) {
       // do nothing
       return;
     }
 
-    const file = this.getPerDeviceConfigFile(host.mac);
-    await this.generateConfigFile(host.mac, config, file);
-    await exec(`sudo ipset add devicedns_mac_set ${host.mac}`);
+    const mac = host.o.mac;
+
+    const file = this.getPerDeviceConfigFile(mac);
+    await this.generateConfigFile(mac, config, file);
+    await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 
   async perDeviceStop(host) {
-    if(!host.mac) {
+    if(!host.o || !host.o.mac) {
       // do nothing
       return;
     }
 
-    const file = this.getPerDeviceConfigFile(host.mac);
+    const mac = host.o.mac;
+
+    const file = this.getPerDeviceConfigFile(mac);
     await this.deleteConfigFile(file);
-    await exec(`sudo ipset del devicedns_mac_set ${host.mac}`);
+    await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 }

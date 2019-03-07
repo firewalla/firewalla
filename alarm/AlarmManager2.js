@@ -130,6 +130,12 @@ module.exports = class {
     this.queue.process((job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+
+      if(alarm["p.local.decision"] === "ignore") {
+        log.info("Alarm ignored by p.local.decision:", alarm);
+        return;
+      }
+
       const action = event.action;
       
       switch(action) {
