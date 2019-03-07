@@ -627,7 +627,7 @@ module.exports = class DNSMASQ {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
       for(const protocol of ["tcp", "udp"]) {
-        const deviceDNSRule = `sudo iptables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+        const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
         const cmd = iptables.wrapIptables(deviceDNSRule);
         await exec(cmd).catch(() => undefined);
       }
@@ -653,7 +653,7 @@ module.exports = class DNSMASQ {
         const deviceDNS = `${ip6}:8863`;
 
         for(const protocol of ["tcp", "udp"]) {
-          const deviceDNSRule = `sudo ip6tables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
           const cmd = iptables.wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
