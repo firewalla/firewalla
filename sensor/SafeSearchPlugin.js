@@ -82,10 +82,11 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async getSafeSearchConfig() {
-    const json = rclient.getAsync(configKey);
+    const json = await rclient.getAsync(configKey);
     try {
       return JSON.parse(json);
     } catch(err) {
+      log.error(`Got error when loading config from ${configKey}`);
       return {};
     }
   }
