@@ -303,7 +303,7 @@ class SafeSearchPlugin extends Sensor {
 
     const file = this.getPerDeviceConfigFile(mac);
     await this.generateConfigFile(mac, config, file);
-    await exec(`sudo ipset add devicedns_mac_set ${mac}`);
+    await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 
@@ -317,7 +317,7 @@ class SafeSearchPlugin extends Sensor {
 
     const file = this.getPerDeviceConfigFile(mac);
     await this.deleteConfigFile(file);
-    await exec(`sudo ipset del devicedns_mac_set ${mac}`);
+    await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 }
