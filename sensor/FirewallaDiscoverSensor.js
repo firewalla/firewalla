@@ -64,6 +64,10 @@ class FirewallaDiscoverSensor extends Sensor {
       }
     });
 
+    socket.on('error', (err) => {
+      log.error("Got error when discover sensor socket:", err);
+    });
+
     socket.bind(port, "0.0.0.0");
   }
 }
