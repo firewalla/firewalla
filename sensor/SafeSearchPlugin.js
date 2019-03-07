@@ -294,14 +294,16 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async perDeviceStart(host, config) {
-    if(!host.mac) {
+    if(!host.o || !host.o.mac) {
       // do nothing
       return;
     }
 
-    const file = this.getPerDeviceConfigFile(host.mac);
-    await this.generateConfigFile(host.mac, config, file);
-    await exec(`sudo ipset add devicedns_mac_set ${host.mac}`);
+    const mac = host.o.mac;
+
+    const file = this.getPerDeviceConfigFile(mac);
+    await this.generateConfigFile(mac, config, file);
+    await exec(`sudo ipset add devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 
