@@ -361,7 +361,8 @@
     "vpn_relay": false,
     "upstream_dns": false,
     "insane_mode": false,
-    "cpu_monitor": true
+    "cpu_monitor": true,
+    "safe_search": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -47,14 +47,26 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const SysManager = require('../net2/SysManager');
+const sysManager = new SysManager();
+
 const exec = require('child-process-promise').exec;
 
+const networkTool = require('../net2/NetworkTool')();
+
 const safeSearchDNSPort = 8863;
+
+const fc = require('../net2/config.js');
 
 class SafeSearchPlugin extends Sensor {
   
   async run() {
-    this.cachedDomainResult = {};
+
+    this.systemSwitch = false;
+    this.adminSystemSwitch = false;
+    this.enabledMacAddresses = new Set();
+
+    this.domainCaches = {};
 
     const exists = await this.configExists();
 
@@ -69,17 +81,38 @@ class SafeSearchPlugin extends Sensor {
     });
 
     await exec(`mkdir -p ${devicemasqConfigFolder}`);
+
+    if(fc.isFeatureOn("safe_search")) {
+      await this.globalOn();
+    } else {
+      await this.globalOff();
+    }
+
+    fc.onFeature("safe_search", async (feature, status) => {
+      if(feature !== "safe_search") {
+        return;
+      }
+
+      if(status) {
+        await this.globalOn();
+      } else {
+        await this.globalOff();
+      }
+    })
   }
 
   async apiRun() {
     extensionManager.onSet("safeSearchConfig", async (msg, data) => {
-      return rclient.setAsync(configKey, JSON.stringify(data));
+      await rclient.setAsync(configKey, JSON.stringify(data));
+      await this.applySafeSearch();
     });
 
     extensionManager.onGet("safeSearchConfig", async (msg, data) => {
       return this.getSafeSearchConfig();
     });
   }
+
+
 
   async getSafeSearchConfig() {
     const json = await rclient.getAsync(configKey);
@@ -108,36 +141,27 @@ class SafeSearchPlugin extends Sensor {
 
     try {
       if(ip === '0.0.0.0') {
-        return this.systemApplyPolicy(host, ip, policy);
+        if(policy && policy.state) {
+          this.systemSwitch = true;
+        } else {
+          this.systemSwitch = false;
+        }
+        return this.applySystemSafeSearch();
       } else {
-        return this.perDeviceApplyPolicy(host, ip, policy);
+        const macAddress = host && host.o && host.o.mac;
+        if(macAddress) {
+          if(policy && policy.state) {
+            this.enabledMacAddresses.add(macAddress);
+          } else {
+            this.enabledMacAddresses.delete(macAddress);
+          }
+          return this.applyDeviceSafeSearch(macAddress);
+        }
       }
     } catch(err) {
       log.error("Got error when applying safesearch policy", err);
     }
 
-  }
-  
-  async systemApplyPolicy(host, ip, policy) {
-    const state = policy && policy.state;
-    const config = await this.getSafeSearchConfig();
-
-    if(state === true) {
-      return this.systemStart(config)
-    } else {
-      return this.systemStop();
-    }  
-  }
-
-  async perDeviceApplyPolicy(host, ip, policy) {
-    const state = policy && policy.state;
-    const config = await this.getSafeSearchConfig();
-
-    if(state === true) {
-      return this.perDeviceStart(host, config)
-    } else {
-      return this.perDeviceStop(host);
-    }
   }
   
   // {
@@ -178,20 +202,7 @@ class SafeSearchPlugin extends Sensor {
     return this.config && this.config.mapping;
   }
 
-  addToCache(domain ,result) {
-    if(this.cachedDomainResult[domain]) {
-      // do nothing
-      return;
-    }
-
-    this.cachedDomainResult[domain] = result;
-
-    setTimeout(() => {
-      delete this.cachedDomainResult[domain];
-    }, updateInterval);
-  }
-
-  async getDNSMasqEntry(domainToBeRedirect, ipAddress, macAddress) {
+  getDNSMasqEntry(macAddress, ipAddress, domainToBeRedirect) {
     if(macAddress) {
       return `address=/${domainToBeRedirect}/${ipAddress}%${macAddress.toUpperCase()}`;
     } else {
@@ -200,32 +211,80 @@ class SafeSearchPlugin extends Sensor {
 
   }
 
-  async processMappingResult(mappingEntry, macAddress) {
-    const safeDomains = Object.keys(mappingEntry);
+  async loadDomainCache(domain) {
+    const key = `rdns:domain:${domain}`;
+    const results = await rclient.zrevrangebyscoreAsync(key, -1, -1);
+    if(results.length > 0) {
+      log.info(`Domain ${domain} ======> ${results[0]}`);
+      return results[0];
+    }
 
-    const entries = await Promise.all(safeDomains.map(async (safeDomain) => {
-      const ips = await domainBlock.resolveDomain(safeDomain);
-
-      if(ips.length > 0) {
-        const ip = ips[0];
-        const domainsToBeRedirect = mappingEntry[safeDomain];
-        return Promise.all(domainsToBeRedirect.map(async (domain) => {
-          return this.getDNSMasqEntry(domain, ip, macAddress);
-        }));
-      } else {
-        return [];
-      }
-    }));
-
-    const concat = (x,y) => x.concat(y)
-    const flatMap = (f,xs) => xs.map(f).reduce(concat, [])
-
-    const flattedEntries = flatMap(x => x, entries);
-
-    return flattedEntries;
+    return null;
   }
 
-  async generateConfigFile(macAddress, config, destinationFile) {
+  async updateDomainCache(domain) {
+    return domainBlock.resolveDomain(safeDomain);
+  }
+
+  getAllDomains() {
+    const mappings = this.getDomainMapping();
+    if(mappings) {
+      const values = Object.values(mappings);
+      const domains = [];
+      values.forEach((value) => {
+        if(value) {
+          domains.push(...Object.keys(value));
+        }
+      });
+    } else {
+      return [];
+    }
+  }
+
+  async updateAllDomains() {
+    return Promise.all(this.getAllDomains().map(async domain => this.updateDomain(domain)));
+  }
+
+  // redirect targetDomain to the ip address of safe domain
+  async generateConfig(macAddress, safeDomain, targetDomains) {
+    const ip = await this.loadDomainCache(safeDomain);
+    if(ip) {
+      return targetDomains.map((targetDomain) => {
+        return this.getDNSMasqEntry(macAddress, ip, targetDomain);
+      });
+    } else {
+      return [];
+    }
+  }
+
+  async applySafeSearch() {
+    await this.applySystemSafeSearch();
+
+    for(const macAddress of this.enabledMacAddresses.entries()) {
+      await this.applyDeviceSafeSearch(macAddress)
+    }
+  }
+
+  async applySystemSafeSearch() {
+    if(this.systemSwitch && this.adminSystemSwitch) {
+      const config = await this.getSafeSearchConfig();
+      return this.systemStart(config);
+    } else {
+      return this.systemStop();
+    }
+  }
+
+  async applyDeviceSafeSearch(macAddress) {
+    if(this.enabledMacAddresses.has(macAddress)) {
+      const config = await this.getSafeSearchConfig();
+      return this.perDeviceStart(macAddress, config)
+    } else {
+      return this.perDeviceStop(mac);
+    }
+  }
+
+  async generateConfigFile(macAddress, config) {
+    const destinationFile = this.getConfigFile(macAddress);
     let entries = [];
 
     for(const type in config) {
@@ -237,9 +296,13 @@ class SafeSearchPlugin extends Sensor {
       const key = this.getMappingKey(type, value);
       const result = this.getMappingResult(key);
       if(result) {
-        const thisEntries = await this.processMappingResult(result, macAddress);
-        entries = entries.concat(thisEntries);
-      }      
+        const safeDomains = Object.keys(result);
+        await Promise.all(safeDomains.map(async (safeDomain) => {
+          const targetDomains = result[safeDomain];
+          const configs = await this.generateConfig(macAddress, safeDomain, targetDomains);
+          entries.push(...configs);
+        }));
+      }
     }  
 
     entries.push("");
@@ -252,6 +315,14 @@ class SafeSearchPlugin extends Sensor {
   }
 
   // system level
+
+  getConfigFile(macAddress) {
+    if(macAddress) {
+      return `${devicemasqConfigFolder}/safeSearch_${macAddress}.conf`;
+    } else {
+      return safeSearchConfigFile;
+    }
+  }
 
   async systemStart(config) {
     await this.generateConfigFile(undefined, config, safeSearchConfigFile);
@@ -285,22 +356,7 @@ class SafeSearchPlugin extends Sensor {
     return true;
   }
 
-  /*
-   * Iptables setup per device, safe search is on when 
-   */
-
-  getPerDeviceConfigFile(macAddress) {
-    return `${devicemasqConfigFolder}/safeSearch_${macAddress}.conf`;
-  }
-
-  async perDeviceStart(host, config) {
-    if(!host.o || !host.o.mac) {
-      // do nothing
-      return;
-    }
-
-    const mac = host.o.mac;
-
+  async perDeviceStart(mac, config) {
     const file = this.getPerDeviceConfigFile(mac);
     await this.generateConfigFile(mac, config, file);
     await this.startDeviceMasq();
@@ -308,18 +364,74 @@ class SafeSearchPlugin extends Sensor {
     await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
   }
 
-  async perDeviceStop(host) {
-    if(!host.o || !host.o.mac) {
-      // do nothing
-      return;
-    }
-
-    const mac = host.o.mac;
-
+  async perDeviceStop(mac) {
     await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     const file = this.getPerDeviceConfigFile(mac);
     await this.deleteConfigFile(file);
     await this.startDeviceMasq();
+  }
+
+  // global on/off
+  async globalOn() {
+    await this.addIptablesRules();
+    this.adminSystemSwitch = true;
+    await this.applySystemSafeSearch();
+  }
+
+  async globalOff() {
+    await this.removeIptablesRules();
+    this.adminSystemSwitch = false;
+    await this.applySystemSafeSearch();
+  }
+
+  async addIptablesRules() {
+    const localIP = sysManager.myIp();
+    const deviceDNS = `${localIP}:8863`;
+
+    const ipv6s = sysManager.myIp6();
+
+    for(const protocol of ["tcp", "udp"]) {
+      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const cmd = iptables.wrapIptables(deviceDNSRule);
+      await exec(cmd).catch(() => undefined);
+
+      for(const ip6 of ipv6s) {
+        if (ip6.startsWith("fe80::")) {
+          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+          const deviceDNS6 = `${ip6}:8863`;
+
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
+          await exec(cmd).catch(() => undefined);
+        }
+      }
+    }
+  }
+
+  async removeIptablesRules() {
+    const localIP = sysManager.myIp();
+    const deviceDNS = `${localIP}:8863`;
+
+    const ipv6s = sysManager.myIp6();
+
+    for(const protocol of ["tcp", "udp"]) {
+      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const cmd = iptables.wrapIptables(deviceDNSRule);
+      await exec(cmd).catch(() => undefined);
+
+      for(const ip6 of ipv6s) {
+        if (ip6.startsWith("fe80::")) {
+          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
+
+          const deviceDNS6 = `${ip6}:8863`;
+
+          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const cmd = iptables.wrapIptables(deviceDNSRule);
+          await exec(cmd).catch(() => undefined);
+        }
+      }
+    }
   }
 }
 
