@@ -228,7 +228,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async updateDomainCache(domain) {
-    return domainBlock.resolveDomain(safeDomain);
+    return domainBlock.resolveDomain(domain);
   }
 
   getAllDomains() {
@@ -241,6 +241,7 @@ class SafeSearchPlugin extends Sensor {
           domains.push(...Object.keys(value));
         }
       });
+      return domains;
     } else {
       return [];
     }
@@ -248,7 +249,7 @@ class SafeSearchPlugin extends Sensor {
 
   async updateAllDomains() {
     log.info("Updating all domains...");
-    return Promise.all(this.getAllDomains().map(async domain => this.updateDomain(domain)));
+    return Promise.all(this.getAllDomains().map(async domain => this.updateDomainCache(domain)));
   }
 
   // redirect targetDomain to the ip address of safe domain

@@ -36,7 +36,9 @@ const hostTool = new HostTool();
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
+
+const _ = require('lodash');
 
 const migrationPrefix = "oldDataMigration";
 
@@ -131,7 +133,9 @@ class OldDataCleanSensor extends Sensor {
         if (!exist) invalidQueue.push(id)
       }
 
-      await rclient.sremAsync(queueKey, invalidQueue);
+      if(!_.isEmpty(invalidQueue)) {
+        await rclient.sremAsync(queueKey, invalidQueue);
+      }
     }
     catch(err) {
       log.error("Error cleaning exceptions", err);
