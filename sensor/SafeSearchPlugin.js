@@ -56,6 +56,9 @@ const networkTool = require('../net2/NetworkTool')();
 
 const safeSearchDNSPort = 8863;
 
+
+const iptables = require('../net2/Iptables');
+
 const fc = require('../net2/config.js');
 
 class SafeSearchPlugin extends Sensor {
@@ -99,6 +102,8 @@ class SafeSearchPlugin extends Sensor {
         await this.globalOff();
       }
     })
+
+    await this.updateAllDomains();
   }
 
   async apiRun() {
@@ -242,6 +247,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async updateAllDomains() {
+    log.info("Updating all domains...");
     return Promise.all(this.getAllDomains().map(async domain => this.updateDomain(domain)));
   }
 
@@ -279,7 +285,7 @@ class SafeSearchPlugin extends Sensor {
       const config = await this.getSafeSearchConfig();
       return this.perDeviceStart(macAddress, config)
     } else {
-      return this.perDeviceStop(mac);
+      return this.perDeviceStop(macAddress);
     }
   }
 
@@ -325,7 +331,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async systemStart(config) {
-    await this.generateConfigFile(undefined, config, safeSearchConfigFile);
+    await this.generateConfigFile(undefined, config);
     await dnsmasq.start(true);
     return;
   }
@@ -357,7 +363,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async perDeviceStart(mac, config) {
-    const file = this.getPerDeviceConfigFile(mac);
+    const file = this.getConfigFile(mac);
     await this.generateConfigFile(mac, config, file);
     await this.startDeviceMasq();
     await this.delay(8 * 1000); // wait for a while before activating the dns redirect
@@ -366,7 +372,7 @@ class SafeSearchPlugin extends Sensor {
 
   async perDeviceStop(mac) {
     await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
-    const file = this.getPerDeviceConfigFile(mac);
+    const file = this.getConfigFile(mac);
     await this.deleteConfigFile(file);
     await this.startDeviceMasq();
   }
