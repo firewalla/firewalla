@@ -271,8 +271,10 @@ class NaughtyMonkeySensor extends Sensor {
         'p.upnp.ttl'          : parseInt(Math.random() * 9999),
         'p.upnp.local'        : this.randomBoolean(),
         'p.monkey'            : 1
-      }
     );
+
+    alarm["p.device.port"] = alarm["p.upnp.private.port"];
+    alarm["p.protocol"] = alarm["p.upnp.protocol"];
 
     try {
       let enriched = await am2.enrichDeviceInfo(alarm);
