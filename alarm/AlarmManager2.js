@@ -1118,6 +1118,10 @@ module.exports = class {
                   p.type = "category";
                   p.target = info.target;
                   break;
+                case "devicePort":
+                  p.type = info.type;
+                  p.target = info.target;
+                  break;
                 default:
                   break
               }
