@@ -59,18 +59,7 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    const from = broObj["src"];
-    const to = broObj["dst"];
-
-    let localIP = null;
-    // initiated from myself
-    if(sysManager.isLocalIP(from)) {
-      alarm["p.local_is_client"] = "1";
-    } else {
-      // initiated from outside
-      alarm["p.local_is_client"] = "0";
-      alarm["p.action.block"] = true; // block automatically if initiated from outside in
-    }
+    this.checkDirectionAndAutoBlock(alarm, broObj);
   }
 
   async processSSHInterestingLogin(alarm, broObj) {
@@ -79,7 +68,19 @@ class BroNotice {
     if(sub) {
       alarm["p.dest.name"] = sub;
     }
+  }
 
+  async processTeamCymru(alarm, broObj) {
+    this.checkDirectionAndAutoBlock(alarm, broObj);
+
+    alarm['p.file.url'] = broObj.file_desc;
+    alarm['p.file.mime'] = broObj.file_mime_type;
+    alarm['e.detail'] = broObj.sub;
+    alarm["p.action.block"] = true; // block automatically if initiated from outside in
+  }
+
+  async processSQLInjection(alarm, broObj) {
+    this.checkDirectionAndAutoBlock(alarm, broObj);
   }
 
   async processNotice(alarm, broObj) {
@@ -93,24 +94,33 @@ class BroNotice {
 
     switch(noticeType) {
       case "SSH::Password_Guessing":
-      await this.processSSHScan(alarm, broObj);
-      break;
+        await this.processSSHScan(alarm, broObj);
+        break;
 
       case "Heartbleed::SSL_Heartbeat_Attack":
-      await this.processHeartbleed(alarm, broObj);
-      break;
+        await this.processHeartbleed(alarm, broObj);
+        break;
 
       case "Scan::Port_Scan":
-      await this.processPortScan(alarm, broObj);
-      break;
+        await this.processPortScan(alarm, broObj);
+        break;
 
       case "SSH::Interesting_Hostname_Login":
-      await this.processSSHInterestingLogin(alarm, broObj);
-      break;
+        await this.processSSHInterestingLogin(alarm, broObj);
+        break;
+
+      case "TeamCymruMalwareHashRegistry::Match":
+        await this.processTeamCymru(alarm, broObj);
+        break;
+
+      case 'HTTP::SQL_Injection_Attacker':
+      case 'HTTP::SQL_Injection_Victim':
+        await this.processSQLInjection(alarm, broObj);
+        break
 
       default:
-      // do nothing
-      break;
+        // do nothing
+        break;
     }
 
   }
@@ -121,6 +131,18 @@ class BroNotice {
       target: alarm["p.dest.ip"]
     }
   }  
+
+  checkDirectionAndAutoBlock(alarm, broObj) {
+    const src = broObj["src"];
+
+    if(sysManager.isLocalIP(src)) {
+      alarm["p.local_is_client"] = "1";
+    } else {
+      // initiated from outside
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true; // block automatically if initiated from outside in
+    }
+  }
 };
 
 module.exports = new BroNotice();

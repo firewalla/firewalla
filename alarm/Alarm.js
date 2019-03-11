@@ -260,22 +260,14 @@ class BroNoticeAlarm extends Alarm {
   getI18NCategory() {
     let category = this.type;
 
-    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
+    const supportedNoticeTypes = [
+      "Heartbleed::SSL_Heartbeat_Attack",
+      "TeamCymruMalwareHashRegistry::Match",
+      'HTTP::SQL_Injection_Attacker',
+      'HTTP::SQL_Injection_Victim',
+    ];
     if(supportedNoticeTypes.includes(this["p.noticeType"])) {
       category = `${category}_${this["p.noticeType"]}`;
-    }
-
-    if("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
-        category = `${category}_OUTBOUND`;
-      } else {
-        category = `${category}_INBOUND`;
-      }
-    }
-
-    if(this.result === "block" &&
-    this.result_method === "auto") {
-      category = `${category}_AUTOBLOCK`;
     }
     
     return category;
@@ -301,6 +293,7 @@ class IntelReportAlarm extends Alarm {
     return [];
   }
 }
+
 class IntelAlarm extends Alarm {
   constructor(timestamp, device, severity, info) {
     super("ALARM_INTEL", timestamp, device, info);

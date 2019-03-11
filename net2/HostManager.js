@@ -697,7 +697,7 @@ class Host {
           this.callbacks[e](channel, ip2, type, obj);
         }
       } else if (type === "Intel:Detected") {
-        // no need to handle intel here.                
+        // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && this.type === "server") {
         this.applyPolicy((err)=>{
         });

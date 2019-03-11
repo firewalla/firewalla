@@ -506,19 +506,19 @@ class PolicyManager2 {
     })()
   }
 
-  disableAndDeletePolicy(policyID) {
-    return async(() => {
-      let policy = await (this.getPolicy(policyID))
+  async disableAndDeletePolicy(policyID) {
+    if (!policyID) return;
 
-      if(!policy) {
-        return Promise.resolve()
-      }
+    let policy = await this.getPolicy(policyID);
 
-      await (this.deletePolicy(policyID)) // delete before broadcast
+    if(!policy) {
+      return;
+    }
 
-      this.tryPolicyEnforcement(policy, "unenforce")
-      Bone.submitIntelFeedback('unblock', policy, 'policy');
-    })()
+    await this.deletePolicy(policyID); // delete before broadcast
+
+    this.tryPolicyEnforcement(policy, "unenforce")
+    Bone.submitIntelFeedback('unblock', policy, 'policy');
   }
 
   deletePolicy(policyID) {
