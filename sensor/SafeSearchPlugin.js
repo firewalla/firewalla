@@ -85,22 +85,24 @@ class SafeSearchPlugin extends Sensor {
 
     await exec(`mkdir -p ${devicemasqConfigFolder}`);
 
-    if(fc.isFeatureOn("safe_search")) {
-      await this.globalOn();
-    } else {
-      await this.globalOff();
-    }
-
-    fc.onFeature("safe_search", async (feature, status) => {
-      if(feature !== "safe_search") {
-        return;
-      }
-
-      if(status) {
+    sem.once('IPTABLES_READY', async () => {
+      if(fc.isFeatureOn("safe_search")) {
         await this.globalOn();
       } else {
         await this.globalOff();
       }
+
+      fc.onFeature("safe_search", async (feature, status) => {
+        if(feature !== "safe_search") {
+          return;
+        }
+
+        if(status) {
+          await this.globalOn();
+        } else {
+          await this.globalOff();
+        }
+      })
     })
 
     await this.updateAllDomains();
@@ -116,8 +118,6 @@ class SafeSearchPlugin extends Sensor {
       return this.getSafeSearchConfig();
     });
   }
-
-
 
   async getSafeSearchConfig() {
     const json = await rclient.getAsync(configKey);
@@ -218,7 +218,7 @@ class SafeSearchPlugin extends Sensor {
 
   async loadDomainCache(domain) {
     const key = `rdns:domain:${domain}`;
-    const results = await rclient.zrevrangebyscoreAsync(key, -1, -1);
+    const results = await rclient.zrevrangeAsync(key, -1, -1);
     if(results.length > 0) {
       log.info(`Domain ${domain} ======> ${results[0]}`);
       return results[0];
@@ -314,7 +314,16 @@ class SafeSearchPlugin extends Sensor {
 
     entries.push("");
 
-    await fs.writeFileAsync(destinationFile, entries.join("\n"));
+    //await fs.writeFileAsync(destinationFile, entries.join("\n"));
+    return entries.join("\n");
+  }
+
+  async saveConfigFile(file, content) {
+    return fs.writeFileAsync(destinationFile, entries.join("\n"));
+  }
+
+  async loadConfigFile(file) {
+    return fs.readFileAsync(file, {encoding: 'utf8'});
   }
 
   async deleteConfigFile(destinationFile) {
@@ -332,8 +341,12 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async systemStart(config) {
-    await this.generateConfigFile(undefined, config);
-    await dnsmasq.start(true);
+    const configString = await this.generateConfigFile(undefined, config);
+    const existingString = await this.loadConfigFile(this.getConfigFile());
+    if(configString !== existingString) {
+      await this.saveConfigFile(this.getConfigFile());
+      await dnsmasq.start(true);
+    }
     return;
   }
 
