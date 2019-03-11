@@ -68,7 +68,7 @@ function iptables(rule, callback) {
       cmd = `${checkCmd} || ${cmd}`
       break
     case "-D":
-      cmd = `${checkCmd} && ${cmd}`
+      cmd = `(${checkCmd} && ${cmd}); true`
       break
     default:
       break
