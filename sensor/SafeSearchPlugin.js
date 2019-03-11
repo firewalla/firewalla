@@ -291,7 +291,6 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async generateConfigFile(macAddress, config) {
-    const destinationFile = this.getConfigFile(macAddress);
     let entries = [];
 
     for(const type in config) {
@@ -319,7 +318,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async saveConfigFile(file, content) {
-    return fs.writeFileAsync(destinationFile, entries.join("\n"));
+    return fs.writeFileAsync(file, content);
   }
 
   async loadConfigFile(file) {
@@ -342,9 +341,9 @@ class SafeSearchPlugin extends Sensor {
 
   async systemStart(config) {
     const configString = await this.generateConfigFile(undefined, config);
-    const existingString = await this.loadConfigFile(this.getConfigFile());
-    if(configString !== existingString) {
-      await this.saveConfigFile(this.getConfigFile());
+    const existingString = await this.loadConfigFile(this.getConfigFile()).catch((err) => null);
+    if(configString !== existingString || existingString === null) {
+      await this.saveConfigFile(this.getConfigFile(), configString);
       await dnsmasq.start(true);
     }
     return;
@@ -377,9 +376,12 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async perDeviceStart(mac, config) {
-    const file = this.getConfigFile(mac);
-    await this.generateConfigFile(mac, config, file);
-    await this.startDeviceMasq();
+    const configString = await this.generateConfigFile(mac, config);
+    const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch((err) => null);
+    if(configString !== existingString || existingString === null) {
+      await this.saveConfigFile(this.getConfigFile(mac), configString);
+      await this.startDeviceMasq();
+    }
     await this.delay(8 * 1000); // wait for a while before activating the dns redirect
     await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
   }
