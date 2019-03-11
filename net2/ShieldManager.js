@@ -103,13 +103,13 @@ class ShieldManager {
 
   async _updateTrustedIPSet() {
     const macEntries = await hostTool.getAllMACEntries();
+    const allIpv4Addrs = {};
+    const allIpv6Addrs = {};
     for (let i in macEntries) {
       const macEntry = macEntries[i];
       const ipv4Addr = macEntry.ipv4Addr;
       if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
-        log.info("Add ip to trusted_ip_set: " + ipv4Addr);
-        const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ipv4Addr);
-        await exec(cmd);
+        allIpv4Addrs[ipv4Addr] = 1;
       }
       let ipv6Addrs = [];
       if (macEntry.ipv6Addr)
@@ -118,12 +118,20 @@ class ShieldManager {
         for (let j in ipv6Addrs) {
           const ipv6Addr = ipv6Addrs[j];
           if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
-            log.info("Add ip to trusted_ip_set6: " + ipv6Addr);
-            const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipv6Addr);
-            await exec(cmd);
+            allIpv6Addrs[ipv6Addr] = 1;
           }
         }  
       }
+    }
+    for (let ip in allIpv4Addrs) {
+      log.info("Add ip to trusted_ip_set: " + ip);
+      const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ip);
+      await exec(cmd);
+    }
+    for (let ip in allIpv6Addrs) {
+      log.info("Add ip to trusted_ip_set6: " + ip);
+      const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ip);
+      await exec(cmd);
     }
   }
 
@@ -136,7 +144,7 @@ class ShieldManager {
     }
     if (vpnSubnet) {
       // add new vpn subnet
-      const cmd = util.format("sudo ipset add trusted_ip_set %s", vpnSubnet);
+      const cmd = util.format("sudo ipset add -! trusted_ip_set %s", vpnSubnet);
       await exec(cmd);
       this.vpnSubnet = vpnSubnet;
     }
