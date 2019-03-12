@@ -115,6 +115,7 @@
     "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
+    "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
