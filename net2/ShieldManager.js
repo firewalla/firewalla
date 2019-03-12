@@ -76,6 +76,7 @@ class ShieldManager {
           this._updateProtectedIPSet();
         }, 300000); // update trusted_ip_set and protected_ip_set once every 5 minutes
       }
+      instance = this;
     }
     return instance;
   }
