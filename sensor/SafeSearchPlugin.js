@@ -67,7 +67,7 @@ class SafeSearchPlugin extends Sensor {
 
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
-    this.enabledMacAddresses = new Set();
+    this.enabledMacAddresses = {};
 
     this.domainCaches = {};
 
@@ -164,9 +164,9 @@ class SafeSearchPlugin extends Sensor {
         const macAddress = host && host.o && host.o.mac;
         if(macAddress) {
           if(policy && policy.state) {
-            this.enabledMacAddresses.add(macAddress);
+            this.enabledMacAddresses[macAddress] = 1;
           } else {
-            this.enabledMacAddresses.delete(macAddress);
+            delete this.enabledMacAddresses[macAddress];
           }
           return this.applyDeviceSafeSearch(macAddress);
         }
@@ -275,7 +275,7 @@ class SafeSearchPlugin extends Sensor {
   async applySafeSearch() {
     await this.applySystemSafeSearch();
 
-    for(const macAddress of this.enabledMacAddresses.entries()) {
+    for(const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceSafeSearch(macAddress)
     }
   }
@@ -291,7 +291,7 @@ class SafeSearchPlugin extends Sensor {
 
   async applyDeviceSafeSearch(macAddress) {
     try {
-      if(this.enabledMacAddresses.has(macAddress)) {
+      if(this.enabledMacAddresses[macAddress]) {
         const config = await this.getSafeSearchConfig();
         return this.perDeviceStart(macAddress, config)
       } else {

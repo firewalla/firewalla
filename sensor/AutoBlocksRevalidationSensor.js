@@ -121,7 +121,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
           //
           // should user be aware of this change??
 
-          await pm2.disableAndDeletePolicy(autoBlockRule.policyID);
+          await pm2.disableAndDeletePolicy(autoBlockRule.pid);
         } else {
           // need to keep all relevant keys for this ip
 
