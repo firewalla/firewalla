@@ -290,11 +290,15 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async applyDeviceSafeSearch(macAddress) {
-    if(this.enabledMacAddresses.has(macAddress)) {
-      const config = await this.getSafeSearchConfig();
-      return this.perDeviceStart(macAddress, config)
-    } else {
-      return this.perDeviceStop(macAddress);
+    try {
+      if(this.enabledMacAddresses.has(macAddress)) {
+        const config = await this.getSafeSearchConfig();
+        return this.perDeviceStart(macAddress, config)
+      } else {
+        return this.perDeviceStop(macAddress);
+      }
+    } catch(err) {
+      log.error(`Failed to apply safe search on device ${macAddress}, err: ${err}`);
     }
   }
 

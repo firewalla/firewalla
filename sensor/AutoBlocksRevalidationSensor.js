@@ -84,55 +84,63 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
     for(const autoBlockRule of autoBlockRules) {
 
-      if(autoBlockRule["p.dest.ip"]) {
-        const ip = autoBlockRule["p.dest.ip"];
-        if(!ip) {
-          continue;
-        }
+      let ip = null;
+      let domain = null;
 
-        const domain = autoBlockRule["p.dest.name"];
+      if(["dns", "domain"].includes(autoBlockRule.type)) {
+        ip = autoBlockRule.target_ip;
+        domain = autoBlockRule.target;
+      } else if("ip" === autoBlockRule.type) {
+        ip = autoBlockRule.target;
+        domain = ip;
+      }
 
-        const intel = await intelTool.getIntel(ip);
-        if(!intel) { // missing intel
+      if(!ip) {
+        continue;
+      }
 
-          log.info(`Missing intel for ip ${ip}, creating...`); // next round it will be picked by this sensor again
-          sem.emitEvent({
-            type: 'DestIP',
-            ip: ip
-          });
+      log.info(`Revalidating ip ${ip}...`);
 
+      const intel = await intelTool.getIntel(ip);
+      if(!intel) { // missing intel
+
+        log.info(`Missing intel for ip ${ip}, creating...`); // next round it will be picked by this sensor again
+        sem.emitEvent({
+          type: 'DestIP',
+          ip: ip
+        });
+
+      } else {
+
+        if(intel.action !== 'block') { // not auto block any more
+          log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
+
+          // TODO
+          // if severity is reduced to from auto block to alarm, then does user need to manually take action on this ip address when auto block is reverted.
+          // It may still be dangerous, just not risky enough to be auto block
+          //
+          // should user be aware of this change??
+
+          await pm2.disableAndDeletePolicy(autoBlockRule.policyID);
         } else {
+          // need to keep all relevant keys for this ip
 
-          if(intel.action !== 'block') { // not auto block any more
-            log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
+          // intel
+          await intelTool.updateExpire(ip, this.config.intelExpireTime);
 
-            // TODO
-            // if severity is reduced to from auto block to alarm, then does user need to manually take action on this ip address when auto block is reverted.
-            // It may still be dangerous, just not risky enough to be auto block
-            //
-            // should user be aware of this change??
-
-            await pm2.disableAndDeletePolicy(autoBlockRule.policyID);
-          } else {
-            // need to keep all relevant keys for this ip
-
-            // intel
-            await intelTool.updateExpire(ip, this.config.intelExpireTime);
-
-            // dns
-            const dnsEntry = await intelTool.getDNS(ip);
-            if(dnsEntry) {
-              await intelTool.updateDNSExpire(ip, this.config.intelExpireTime);
-            }
-
-            // ssl
-            const sslEntry = await intelTool.getSSLCertificate(ip);
-            if(sslEntry) {
-              await intelTool.updateSSLExpire(ip, this.config.intelExpireTime);
-            }
+          // dns
+          const dnsEntry = await intelTool.getDNS(ip);
+          if(dnsEntry) {
+            await intelTool.updateDNSExpire(ip, this.config.intelExpireTime);
           }
 
+          // ssl
+          const sslEntry = await intelTool.getSSLCertificate(ip);
+          if(sslEntry) {
+            await intelTool.updateSSLExpire(ip, this.config.intelExpireTime);
+          }
         }
+
       }
     }
 
