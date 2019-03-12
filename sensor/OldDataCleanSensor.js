@@ -341,9 +341,10 @@ class OldDataCleanSensor extends Sensor {
     const intelKeys = await rclient.zrangeAsync(key, 0, -1);
 
     for(const intelKey of intelKeys) {
-      if(intelKey === '_') {
+      if(!intelKey.startsWith("intel:ip:")) {
         continue;
       }
+
       const exists = await rclient.existsAsync(intelKey);
       if(exists !== 1) { // not existing any more
         await rclient.zremAsync(key, intelKey);

@@ -31,6 +31,8 @@ class IntelRevalidationSensor extends Sensor {
 
   async run() {
     setTimeout(() => {
+      this.frequentJob();
+
       setInterval(() => {
         this.frequentJob();
       }, this.config.frequentJobInterval || 15 * 60 * 1000); // by default every 15 minutes
@@ -38,6 +40,7 @@ class IntelRevalidationSensor extends Sensor {
   }
 
   async frequentJob() {
+    await intelTool.updateSecurityIntelTracking("_");
     return this.revalidateSecurityIntels();
   }
 
@@ -54,6 +57,10 @@ class IntelRevalidationSensor extends Sensor {
       }
 
       cursor = result[0];
+      if(cursor === 0) {
+        stop = true;
+      }
+
       const keys = result[1];
 
       await Promise.all(keys.map(async key => {
@@ -74,6 +81,10 @@ class IntelRevalidationSensor extends Sensor {
     const intelKeys = await rclient.zrangeAsync(trackingKey, 0, -1);
 
     for(const intelKey of intelKeys) {
+      if(!intelKey.startsWith("intel:ip:")) {
+        continue;
+      }
+
       const exists = await rclient.existsAsync(intelKey);
       const ip = intelKey.replace("intel:ip:", "");
       log.info(`Revalidating intel for IP ${ip} ...`);
