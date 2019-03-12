@@ -317,6 +317,10 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
 
+      if(!aggrIntelInfo.action) {
+        aggrIntelInfo.action = "none";
+      }
+
       if(!skipWriteLocalCache) {
         if (intel && intel.cloudFailed) {
           await intelTool.removeIntel(ip);
