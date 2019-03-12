@@ -116,6 +116,7 @@
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "FlowAggregationSensor": {},
+    "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
       "mapping": {
         "youtube_strict": {

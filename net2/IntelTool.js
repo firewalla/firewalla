@@ -69,7 +69,24 @@ class IntelTool {
     let key = this.getIntelKey(ip);
 
     return rclient.hgetallAsync(key);
-  }  
+  }
+
+  getSecurityIntelTrackingKey() {
+    return "intel:security:tracking"
+  }
+
+  async securityIntelTrackingExists() {
+    const exists = await rclient.existsAsync(this.getSecurityIntelTrackingKey());
+    return exists === 1;
+  }
+
+  async updateSecurityIntelTracking(intelKey) {
+    return rclient.zaddAsync(this.getSecurityIntelTrackingKey(), new Date() / 1000, intelKey);
+  }
+
+  async removeFromSecurityIntelTracking(intelKey) {
+    return rclient.zremAsync(this.getSecurityIntelTrackingKey(), intelKey);
+  }
 
   async addIntel(ip, intel, expire) {
     intel = intel || {}
@@ -85,6 +102,12 @@ class IntelTool {
     if(intel.host && intel.ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
+    }
+
+    if(intel.category === 'intel') {
+      await this.updateSecurityIntelTracking(key);
+    } else {
+      await this.removeFromSecurityIntelTracking(key);
     }
     return rclient.expireAsync(key, expire);
   }

@@ -389,7 +389,11 @@ class DestIPFoundHook extends Hook {
     });
 
     sem.on('DestIP', (event) => {
-      this.processIP(event.ip)
+      if(event.skipLocalCache) {
+        this.processIP(event.ip, {skipLocalCache: event.skipLocalCache});
+      } else {
+        this.processIP(event.ip);
+      }
     })
 
     this.job();

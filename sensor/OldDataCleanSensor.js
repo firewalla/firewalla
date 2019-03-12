@@ -40,6 +40,9 @@ const Promise = require('bluebird');
 
 const _ = require('lodash');
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 const migrationPrefix = "oldDataMigration";
 
 let fConfig = require('../net2/config.js').getConfig();
@@ -333,6 +336,21 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanSecurityIntelTracking() {
+    const key = intelTool.getSecurityIntelTrackingKey();
+    const intelKeys = await rclient.zrangeAsync(key, 0, -1);
+
+    for(const intelKey of intelKeys) {
+      if(intelKey === '_') {
+        continue;
+      }
+      const exists = await rclient.existsAsync(intelKey);
+      if(exists !== 1) { // not existing any more
+        await rclient.zremAsync(key, intelKey);
+      }
+    }
+  }
+
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
   //   const keys = await rclient.keysAsync(keyPattern);
@@ -375,6 +393,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
+      await this.cleanSecurityIntelTracking();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");

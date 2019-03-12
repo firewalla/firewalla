@@ -105,7 +105,15 @@ class SafeSearchPlugin extends Sensor {
       })
     })
 
+    await this.job();
+    this.timer = setInterval(async () => {
+      return this.job();
+    }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+  }
+
+  async job() {
     await this.updateAllDomains();
+    await this.applySafeSearch();
   }
 
   async apiRun() {
