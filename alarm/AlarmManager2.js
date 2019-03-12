@@ -585,9 +585,9 @@ module.exports = class {
               // auto block if num is greater than the threshold
               this.blockFromAlarm(alarm.aid, {
                 method: "auto",
-                smartBlock: true,
                 info: {
-                  category: alarm["p.dest.category"] || ""
+                  category: alarm["p.dest.category"] || "",
+                  method: "auto"
                 }
               }, callback)
 
@@ -1042,9 +1042,7 @@ module.exports = class {
           reason: alarm.type,
         };
 
-        if(value && value.smartBlock) {
-          p.smartBlock = true;
-        }
+
 
         //BLOCK
         switch (alarm.type) {
@@ -1141,6 +1139,10 @@ module.exports = class {
 
         p["if.type"] = p.type;
         p["if.target"] = p.target;
+
+        if(value.method) {
+          p.method = value.method;
+        }
 
         if(info) {
           if(info.type === 'dns' && info.exactMatch == true) {
