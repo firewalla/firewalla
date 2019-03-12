@@ -112,6 +112,13 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
+  async updateExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getIntelKey(ip);
+    return rclient.expireAsync(key, expire);
+  }
+
   removeIntel(ip) {
     let key = this.getIntelKey(ip);
 
@@ -247,6 +254,13 @@ class IntelTool {
     })();
   }
 
+  updateSSLExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getSSLCertKey(ip);
+    return rclient.expireAsync(key, expire);
+  }
+
   _parseX509Subject(subject) {
     let array = subject.split(',');
     let result = {};
@@ -268,6 +282,13 @@ class IntelTool {
     let key = this.getDNSKey(ip);
 
     return rclient.hgetallAsync(key);
+  }
+
+  async updateDNSExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getDNSKey(ip);
+    return rclient.expireAsync(key, expire);
   }
 
   updateIntelKeyInDNS(ip, intel, expireTime) {

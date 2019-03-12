@@ -349,6 +349,7 @@
     "vpn_client_connection": true,
     "cyber_security": true,
     "cyber_security.autoBlock": true,
+    "cyber_security.autoUnblock": true,
     "vulnerability": false,
     "ipv6": false,
     "shadowsocks_server": false,
