@@ -268,7 +268,8 @@ class DestIPFoundHook extends Hook {
     } 
     options = options || {};
 
-    let skipLocalCache = options.skipLocalCache;
+    const skipReadLocalCache = options.skipReadLocalCache;
+    const skipWriteLocalCache = options.skipWriteLocalCache;
     let sslInfo = await intelTool.getSSLCertificate(ip);
     let dnsInfo = await intelTool.getDNS(ip);
     let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
@@ -279,7 +280,7 @@ class DestIPFoundHook extends Hook {
 
     try {
       let intel;
-      if (!skipLocalCache) {
+      if (!skipReadLocalCache) {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
@@ -316,7 +317,7 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
 
-      if(!skipLocalCache) {
+      if(!skipWriteLocalCache) {
         if (intel && intel.cloudFailed) {
           await intelTool.removeIntel(ip);
         }
@@ -389,8 +390,8 @@ class DestIPFoundHook extends Hook {
     });
 
     sem.on('DestIP', (event) => {
-      if(event.skipLocalCache) {
-        this.processIP(event.ip, {skipLocalCache: event.skipLocalCache});
+      if(event.skipReadLocalCache) {
+        this.processIP(event.ip, {skipReadLocalCache: event.skipReadLocalCache});
       } else {
         this.processIP(event.ip);
       }

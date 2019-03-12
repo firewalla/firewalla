@@ -90,7 +90,7 @@ class IntelRevalidationSensor extends Sensor {
       log.info(`Revalidating intel for IP ${ip} ...`);
       sem.emitEvent({
         type: 'DestIP',
-        skipLocalCache: true,
+        skipReadLocalCache: true,
         ip: ip
       });
     }
