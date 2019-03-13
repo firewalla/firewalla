@@ -82,7 +82,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
     log.info("Iterating auto blocks...");
     const rules = await pm2.loadActivePoliciesAsync();
 
-    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto');
+    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto' && ! rule.shouldDelete);
 
     if(autoBlockRules.length === 0) {
       log.info("No active auto blocks");
@@ -156,7 +156,12 @@ class AutoBlocksRevalidationSensor extends Sensor {
             }
           }
 
-          await pm2.disableAndDeletePolicy(autoBlockRule.pid);
+          if(this.config.dryrun) {
+            await pm2.markAsShouldDelete(autoBlockRule.pid);
+          } else {
+            await pm2.disableAndDeletePolicy(autoBlockRule.pid);
+          }
+
         } else {
           // need to keep all relevant keys for this ip
           log.info(`Extending ttl for intel on ip ${ip}...`);
