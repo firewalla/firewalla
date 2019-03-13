@@ -187,6 +187,7 @@ class SafeSearchPlugin extends Sensor {
     switch(type) {
     case "youtube":
       switch(value) {
+        case "on":
         case "strict":
           return "youtube_strict";
         case "moderate":
