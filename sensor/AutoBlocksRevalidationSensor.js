@@ -136,7 +136,8 @@ class AutoBlocksRevalidationSensor extends Sensor {
                   titleKey: 'NOTIF_REVERT_AUTOBLOCK_IP_TITLE',
                   bodyKey: 'NOTIF_REVERT_AUTOBLOCK_IP_BODY',
                   payload: {
-                    ip: ip
+                    ip: ip,
+                    pid: autoBlockRule.pid
                   }
                 });
                 break;
@@ -147,7 +148,8 @@ class AutoBlocksRevalidationSensor extends Sensor {
                   titleKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE',
                   bodyKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY',
                   payload: {
-                    domain: autoBlockRule.target
+                    domain: autoBlockRule.target,
+                    pid: autoBlockRule.pid
                   }
                 });
                 break;

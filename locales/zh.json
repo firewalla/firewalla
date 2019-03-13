@@ -77,7 +77,7 @@
   "INFO_ALARM_UPNP": "{{{p.upnp.description}}}：{{{p.device.name}}}上的{{{p.upnp.protocol}}}端口{{{p.upnp.private.port}}}被打开，映射于路由器的{{{p.upnp.public.port}}}端口",
 
   "NOTIF_REVERT_AUTOBLOCK_IP_TITLE": "Active Protect - Unblock IP",
-  "NOTIF_REVERT_AUTOBLOCK_IP_BODY": "IP {{{ip}}} is unblocked because it's no longer suspicious.",
+  "NOTIF_REVERT_AUTOBLOCK_IP_BODY": "IP {{{ip}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE": "Active Protect - Unblock domain",
-  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious."
+  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}"
 }
