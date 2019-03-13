@@ -550,7 +550,7 @@ class PolicyManager2 {
       return;
     }
 
-    return rclient.hsetAsync(this.getPolicyKey(policyID), shouldDelete, "1");
+    return rclient.hsetAsync(this.getPolicyKey(policyID), "shouldDelete", "1");
   }
 
   deletePolicy(policyID) {
