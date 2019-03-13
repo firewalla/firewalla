@@ -31,6 +31,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 var util = require('util');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 var linux = require('../util/linux');
 var UPNP = require('../extension/upnp/upnp.js');
@@ -41,6 +42,27 @@ module.exports = class {
     constructor() {
         if (instance == null) {
             this.upnp = new UPNP("info", sysManager.myGateway());
+            if (firewalla.isMain()) {
+              sclient.on("message", (channel, message) => {
+                switch (channel) {
+                  case "System:IPChange":
+                    // update SNAT rule in iptables
+                    this.unsetIptables((err, result) => {
+                      if (err) {
+                        log.error("Failed to unset iptables", err);
+                      }
+                      this.setIptables((err, result) => {
+                        if (err) {
+                          log.error("Failed to set iptables", err);
+                        }
+                      })
+                    })
+                  default:
+                }
+              });
+
+              sclient.subscribe("System:IPChange");
+            }
             instance = this;
         }
         return instance;
@@ -49,6 +71,7 @@ module.exports = class {
     setIptables(callback) {
         const serverNetwork = this.serverNetwork;
         const localIp = sysManager.myIp();
+        this._currentLocalIp = localIp;
         log.info("VpnManager:SetIptables", serverNetwork, localIp);
       
         const commands =[
@@ -62,12 +85,15 @@ module.exports = class {
 
     unsetIptables(callback) {
         const serverNetwork = this.serverNetwork;
-        const localIp = sysManager.myIp();
+        let localIp = sysManager.myIp();
+        if (this._currentLocalIp)
+          localIp = this._currentLocalIp;
         log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
         const commands = [
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
         ];
         iptable.run(commands, null, callback);
+        this._currentLocalIp = null;
     }
 
     removeUpnpPortMapping(opts, callback) {

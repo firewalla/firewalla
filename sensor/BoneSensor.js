@@ -37,6 +37,8 @@ const fConfig = require('../net2/config.js').getConfig();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const CLOUD_URL_KEY = "sys:bone:url";
+const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
+
 
 class BoneSensor extends Sensor {
   scheduledJob() {
@@ -89,6 +91,10 @@ class BoneSensor extends Sensor {
     return rclient.getAsync(CLOUD_URL_KEY);
   }
 
+  async getForcedCloudInstanceURL() {
+    return rclient.getAsync(FORCED_CLOUD_URL_KEY);
+  }
+
   async setCloudInstanceURL(url) {
     const curUrl = await this.getCloudInstanceURL();
     if(curUrl === url) {
@@ -106,6 +112,19 @@ class BoneSensor extends Sensor {
     });
   }
 
+  async setForcedCloudInstanceURL(url) {
+    const curUrl = await this.getCloudInstanceURL();
+    if(curUrl === url) {
+      return;
+    }
+
+    log.info(`Applying new forced cloud url: ${url}`);
+
+    await rclient.setAsync(FORCED_CLOUD_URL_KEY, url);
+
+    return this.setCloudInstanceURL(url);
+  }
+
   async applyNewCloudInstanceURL() {
     const curUrl = await this.getCloudInstanceURL();
 
@@ -115,7 +134,7 @@ class BoneSensor extends Sensor {
   }
 
   async checkIn() {
-    const url = await this.getCloudInstanceURL();
+    const url = await this.getForcedCloudInstanceURL();
 
     if(url) {
       Bone.setEndpoint(url);

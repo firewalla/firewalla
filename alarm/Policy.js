@@ -78,10 +78,6 @@ class Policy {
     }
 
     // backward compatibilities
-    if (this.activatedTime) {
-      this.timestamp = this.activatedTime;
-      delete this.activatedTime;
-    }
     if (this['i.type']) {
       this.type = this['i.type'];
       delete this['i.type'];
@@ -89,6 +85,20 @@ class Policy {
     if (this['i.target']) {
       this.target = this['i.target'];
       delete this['i.target'];
+    }
+
+    if(this.target && this.type) {
+      switch(this.type) {
+        case "mac":
+          this.target = this.target.toUpperCase(); // always upper case for mac address
+          break;
+        case "dns":
+        case "domain":
+          this.target = this.target.toLowerCase(); // always lower case for domain block
+          break;
+        default:
+        // do nothing;
+      }
     }
 
     this.timestamp = this.timestamp || new Date() / 1000;

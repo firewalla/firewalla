@@ -64,8 +64,8 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip')
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -1593,9 +1593,19 @@ class netBot extends ControllerBot {
                       ovpnfile: ovpnfile,
                       password: password,
                       portmapped: this.hostManager.policy['vpnPortmapped']
-                    }
+                    };
+
+                    (async () => {
+                      const doublenat = await rclient.getAsync("ext.doublenat");
+                      if(doublenat !== null) {
+                        datamodel.data.doublenat = doublenat;
+                      }
+                      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                    })();
+
+                  } else {
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                   }
-                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
                 });
               }
             }); 
@@ -2496,6 +2506,7 @@ class netBot extends ControllerBot {
       case "policy:update":
         async(() => {
           const policy = value
+
           const pid = policy.pid
           const oldPolicy = await (pm2.getPolicy(pid))
           await (pm2.updatePolicyAsync(policy))
@@ -3090,6 +3101,8 @@ class netBot extends ControllerBot {
           if (macExists) {
 
             await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
 
             await categoryFlowTool.delAllCategories(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);

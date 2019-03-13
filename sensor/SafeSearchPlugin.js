@@ -56,6 +56,12 @@ class SafeSearchPlugin extends Sensor {
   async run() {
     this.cachedDomainResult = {};
 
+    const exists = await this.configExists();
+
+    if(!exists) {
+      await this.setDefaultSafeSearchConfig();
+    }
+
     extensionManager.registerExtension("safeSearch", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
@@ -76,16 +82,29 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async getSafeSearchConfig() {
-    const json = rclient.getAsync(configKey);
+    const json = await rclient.getAsync(configKey);
     try {
       return JSON.parse(json);
     } catch(err) {
+      log.error(`Got error when loading config from ${configKey}`);
       return {};
     }
   }
 
+  async setDefaultSafeSearchConfig() {
+    if(this.config && this.config.defaultConfig) {
+      log.info("Setting default safe search config...");
+      return rclient.setAsync(configKey, JSON.stringify(this.config.defaultConfig));
+    }
+  }
+
+  async configExists() {
+    const check = await rclient.typeAsync(configKey);
+    return check !== 'none';
+  }
+
   async applyPolicy(host, ip, policy) {
-    log.info("Applying policy:", policy)
+    log.info("Applying policy:", ip, policy)
 
     try {
       if(ip === '0.0.0.0') {
@@ -174,7 +193,7 @@ class SafeSearchPlugin extends Sensor {
 
   async getDNSMasqEntry(domainToBeRedirect, ipAddress, macAddress) {
     if(macAddress) {
-      return `address=/${domainToBeRedirect}/${ipAddress}$${macAddress}`;
+      return `address=/${domainToBeRedirect}/${ipAddress}%${macAddress.toUpperCase()}`;
     } else {
       return `address=/${domainToBeRedirect}/${ipAddress}`;
     }
@@ -275,26 +294,30 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async perDeviceStart(host, config) {
-    if(!host.mac) {
+    if(!host.o || !host.o.mac) {
       // do nothing
       return;
     }
 
-    const file = this.getPerDeviceConfigFile(host.mac);
-    await this.generateConfigFile(host.mac, config, file);
-    await exec(`sudo ipset add devicedns_mac_set ${host.mac}`);
+    const mac = host.o.mac;
+
+    const file = this.getPerDeviceConfigFile(mac);
+    await this.generateConfigFile(mac, config, file);
+    await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 
   async perDeviceStop(host) {
-    if(!host.mac) {
+    if(!host.o || !host.o.mac) {
       // do nothing
       return;
     }
 
-    const file = this.getPerDeviceConfigFile(host.mac);
+    const mac = host.o.mac;
+
+    const file = this.getPerDeviceConfigFile(mac);
     await this.deleteConfigFile(file);
-    await exec(`sudo ipset del devicedns_mac_set ${host.mac}`);
+    await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     await this.startDeviceMasq();
   }
 }

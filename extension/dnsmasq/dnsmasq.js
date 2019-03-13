@@ -581,7 +581,7 @@ module.exports = class DNSMASQ {
     const started = await this.checkStatus();
     if (!started)
       return;
-    const oldDns = this._targetDns;
+    const oldDns = `${this._currentLocalIP}:8853`;
     if (oldVpnSubnet != newVpnSubnet || force === true) {
       if (oldVpnSubnet != null && oldDns != null) {
         // remove iptables rule for old vpn subnet
@@ -618,16 +618,16 @@ module.exports = class DNSMASQ {
   async _add_iptables_rules() {
     let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
+    this._currentLocalIP = localIP;
     let dns = `${localIP}:8853`;
     const deviceDNS = `${localIP}:8863`;
 
     this._redirectedLocalSubnets = subnets;
-    this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
       for(const protocol of ["tcp", "udp"]) {
-        const deviceDNSRule = `sudo iptables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+        const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
         const cmd = iptables.wrapIptables(deviceDNSRule);
         await exec(cmd).catch(() => undefined);
       }
@@ -653,7 +653,7 @@ module.exports = class DNSMASQ {
         const deviceDNS = `${ip6}:8863`;
 
         for(const protocol of ["tcp", "udp"]) {
-          const deviceDNSRule = `sudo ip6tables -w -t nat -A PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
           const cmd = iptables.wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
@@ -720,11 +720,11 @@ module.exports = class DNSMASQ {
       if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
         subnets = this._redirectedLocalSubnets;
       let localIP = sysManager.myIp();
+      if (this._currentLocalIP)
+        localIP = this._currentLocalIP;
       let dns = `${localIP}:8853`;
       const deviceDNS = `${localIP}:8863`;
-      if (this._targetDns)
-        dns = this._targetDns;
-
+      
       subnets.forEach(async subnet => {
         log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
@@ -736,7 +736,7 @@ module.exports = class DNSMASQ {
         }
       })
       this._redirectedLocalSubnets = [];
-      this._targetDns = null;
+      this._currentLocalIP = null;
 
       await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {

@@ -274,14 +274,16 @@ class FlowAggregationSensor extends Sensor {
         return
       }
 
-      options.mac = mac
-      options.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
-      await flowAggrTool.addSumFlow("download", options);
-      await flowAggrTool.addSumFlow("upload", options);
-      await flowAggrTool.addSumFlow("app", options);
-      await this.cleanupAppActivity(options); // to filter idle activities if updated
-      await flowAggrTool.addSumFlow("category", options);
-      await this.cleanupCategoryActivity(options);
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.mac = mac
+      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy); // to filter idle activities if updated
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy);
     }));
   }
 
@@ -310,15 +312,17 @@ class FlowAggregationSensor extends Sensor {
     let macs = hostManager.getActiveMACs();
 
     await Promise.all(macs.map(async mac => {
-      options.mac = mac;
-      await flowAggrTool.addSumFlow("download", options);
-      await flowAggrTool.addSumFlow("upload", options);
+      const optionsCopy = JSON.parse(JSON.stringify(options));
 
-      await flowAggrTool.addSumFlow("app", options);
-      await this.cleanupAppActivity(options);
+      optionsCopy.mac = mac;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
 
-      await flowAggrTool.addSumFlow("category", options);
-      await this.cleanupCategoryActivity(options);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy);
+
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy);
     }))
   }
 

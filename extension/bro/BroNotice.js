@@ -41,15 +41,36 @@ class BroNotice {
       return array.indexOf(v) === i
     })
 
-    if(addresses.length > 0) {
-      const ip = addresses[0];
-      alarm["p.device.ip"] = ip;
-      alarm["p.device.name"] = ip;
-      const mac = await hostTool.getMacByIP(ip);
-      if(mac) {
-        alarm["p.device.mac"] = mac;
-      }
+    if(addresses.length == 0) {
+      alarm["p.local.decision"] == "ignore";
+      return;
     }
+
+    const scanSrc = broObj.src;
+    const scanTarget = addresses[0];
+
+    let deviceIP = null;
+    let destIP = null;
+
+    if(sysManager.isLocalIP(scanTarget)) {
+      deviceIP = scanTarget;
+      destIP = scanSrc;
+      alarm["p.local_is_client"] = 0;
+    } else {
+      deviceIP = scanSrc;
+      destIP = scanTarget;
+      alarm["p.local_is_client"] = 1;
+    }
+
+    alarm["p.device.ip"] = deviceIP;
+    alarm["p.device.name"] = deviceIP;
+
+    const mac = await hostTool.getMacByIP(deviceIP);
+    if(mac) {
+      alarm["p.device.mac"] = mac;
+    }
+
+    alarm["p.dest.ip"] = destIP;
 
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }

@@ -1858,6 +1858,19 @@ module.exports = class HostManager {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
           })
 
+          // filters out rules with inactive devices
+          rules = rules.filter(rule => {
+            if(!rule) {
+              return false;
+            }
+
+            const mac = rule["p.device.mac"];
+
+            if (!mac) return true;
+
+            return this.hosts.all.some(host => host.o.mac === mac);
+          })
+
           let alarmIDs = rules.map((p) => p.aid);
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {

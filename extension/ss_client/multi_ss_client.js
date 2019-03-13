@@ -112,6 +112,8 @@ class MultiSSClient {
     await exec(cmd2);
     const cmd3 = "sudo systemctl stop haproxy";
     await exec(cmd3);
+    const cmd4 = "sudo systemctl disable haproxy";
+    await exec(cmd4);
   }
 
   async prepareHAProxyConfigFile() {
