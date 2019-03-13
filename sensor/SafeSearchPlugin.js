@@ -103,6 +103,10 @@ class SafeSearchPlugin extends Sensor {
           await this.globalOff();
         }
       })
+
+      sem.on('SAFESEARCH_REFRESH', (event) => {
+        this.applySafeSearch();
+      })
     })
 
     await this.job();
@@ -119,7 +123,9 @@ class SafeSearchPlugin extends Sensor {
   async apiRun() {
     extensionManager.onSet("safeSearchConfig", async (msg, data) => {
       await rclient.setAsync(configKey, JSON.stringify(data));
-      await this.applySafeSearch();
+      sem.sendEventToFireMain({
+        type: 'SAFESEARCH_REFRESH'
+      });
     });
 
     extensionManager.onGet("safeSearchConfig", async (msg, data) => {
