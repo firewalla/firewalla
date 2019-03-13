@@ -69,7 +69,8 @@
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
-    "VPNCheckPlugin": {}
+    "VPNCheckPlugin": {},
+    "SafeSearchPlugin": {}
   },
   "intels": [
     "DedupAlarm",
