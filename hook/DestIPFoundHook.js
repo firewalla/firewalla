@@ -305,6 +305,10 @@ class DestIPFoundHook extends Hook {
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           cloudIntelInfo.push({failed: true});
+
+          if(options.noUpdateOnError) {
+            return null;
+          }
         }
       }
 
@@ -317,7 +321,8 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
 
-      if(!aggrIntelInfo.action) {
+      // only set default action when cloud succeeded
+      if(!aggrIntelInfo.action && !aggrIntelInfo.cloudFailed) {
         aggrIntelInfo.action = "none";
       }
 
@@ -394,11 +399,9 @@ class DestIPFoundHook extends Hook {
     });
 
     sem.on('DestIP', (event) => {
-      if(event.skipReadLocalCache) {
-        this.processIP(event.ip, {skipReadLocalCache: event.skipReadLocalCache});
-      } else {
-        this.processIP(event.ip);
-      }
+      const skipReadLocalCache = event.skipReadLocalCache;
+      const noUpdateOnError = event.noUpdateOnError;
+      this.processIP(event.ip, {skipReadLocalCache, noUpdateOnError});
     })
 
     this.job();
