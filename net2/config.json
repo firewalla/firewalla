@@ -258,6 +258,7 @@
       "listenPort": 4096
     },
     "SubnetSensor": {},
+    "IPChangeSensor": {},
     "DataMigrationSensor": {
       "migrationCodeNames": ["clairvoyant"]
     }

@@ -581,7 +581,7 @@ module.exports = class DNSMASQ {
     const started = await this.checkStatus();
     if (!started)
       return;
-    const oldDns = this._targetDns;
+    const oldDns = `${this._currentLocalIP}:8853`;
     if (oldVpnSubnet != newVpnSubnet || force === true) {
       if (oldVpnSubnet != null && oldDns != null) {
         // remove iptables rule for old vpn subnet
@@ -618,10 +618,10 @@ module.exports = class DNSMASQ {
   async _add_iptables_rules() {
     let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
+    this._currentLocalIP = localIP;
     let dns = `${localIP}:8853`;
 
     this._redirectedLocalSubnets = subnets;
-    this._targetDns = dns;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
@@ -696,16 +696,16 @@ module.exports = class DNSMASQ {
       if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
         subnets = this._redirectedLocalSubnets;
       let localIP = sysManager.myIp();
+      if (this._currentLocalIP)
+        localIP = this._currentLocalIP;
       let dns = `${localIP}:8853`;
-      if (this._targetDns)
-        dns = this._targetDns;
 
       subnets.forEach(async subnet => {
         log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
       })
       this._redirectedLocalSubnets = [];
-      this._targetDns = null;
+      this._currentLocalIP = null;
 
       await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {
