@@ -48,7 +48,8 @@ class PublicIPSensor extends Sensor {
         if(this.publicIPAPI) {
           try {
             const result = await rp({
-              uri: this.publicIPAPI
+              uri: this.publicIPAPI,
+              json: true
             });
             if(result && result.ip) {
               publicIP = result.ip;
