@@ -370,7 +370,11 @@ class SafeSearchPlugin extends Sensor {
    * Safe Search DNS server will use local primary dns server as upstream server
    */
   async startDeviceMasq() {
-    return exec("sudo systemctl restart devicemasq");
+    try {
+      return exec("sudo systemctl restart devicemasq");
+    } catch(err) {
+      log.error(`Failed to restart devicemasq, err: ${err}`);
+    }
   }
 
   async stopDeviceMasq() {
@@ -433,7 +437,7 @@ class SafeSearchPlugin extends Sensor {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
-          const deviceDNS6 = `${ip6}:8863`;
+          const deviceDNS6 = `[${ip6}]:8863`;
 
           const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
           const cmd = iptables.wrapIptables(deviceDNSRule);
@@ -458,7 +462,7 @@ class SafeSearchPlugin extends Sensor {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
-          const deviceDNS6 = `${ip6}:8863`;
+          const deviceDNS6 = `[${ip6}]:8863`;
 
           const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
           const cmd = iptables.wrapIptables(deviceDNSRule);
