@@ -82,6 +82,11 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
     const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto');
 
+    if(autoBlockRules.length === 0) {
+      log.info("No active auto blocks");
+      return;
+    }
+
     for(const autoBlockRule of autoBlockRules) {
 
       let ip = null;
@@ -124,6 +129,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
           await pm2.disableAndDeletePolicy(autoBlockRule.pid);
         } else {
           // need to keep all relevant keys for this ip
+          log.info(`Extending ttl for intel on ip ${ip}...`);
 
           // intel
           await intelTool.updateExpire(ip, this.config.intelExpireTime);
