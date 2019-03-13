@@ -29,6 +29,8 @@ const pm2 = new PolicyManager2();
 const fc = require('../net2/config.js');
 const featureName = "cyber_security.autoUnblock";
 
+const f = require('../net2/Firewalla.js');
+
 class AutoBlocksRevalidationSensor extends Sensor {
 
   constructor() {
@@ -125,6 +127,34 @@ class AutoBlocksRevalidationSensor extends Sensor {
           // It may still be dangerous, just not risky enough to be auto block
           //
           // should user be aware of this change??
+
+          if(f.isDevelopmentVersion()) {
+            switch(autoBlockRule.type) {
+              case "ip":
+                sem.sendEventToFireApi({
+                  type: 'FW_NOTIFICATION',
+                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_IP_TITLE',
+                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_IP_BODY',
+                  payload: {
+                    ip: ip
+                  }
+                });
+                break;
+              case "dns":
+              case "domain":
+                sem.sendEventToFireApi({
+                  type: 'FW_NOTIFICATION',
+                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE',
+                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY',
+                  payload: {
+                    domain: autoBlockRule.target
+                  }
+                });
+                break;
+              default:
+              // do nothing
+            }
+          }
 
           await pm2.disableAndDeletePolicy(autoBlockRule.pid);
         } else {
