@@ -104,5 +104,7 @@
   "NOTIF_REVERT_AUTOBLOCK_IP_TITLE": "Active Protect - Unblock IP",
   "NOTIF_REVERT_AUTOBLOCK_IP_BODY": "IP {{{ip}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE": "Active Protect - Unblock domain",
-  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}"
+  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
+  "NOTIF_REVERT_AUTOBLOCK_TITLE": "Active Protect Revalidation",
+  "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed."
 }

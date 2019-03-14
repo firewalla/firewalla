@@ -103,6 +103,20 @@ class BroNotice {
 
   }
 
+  async processMalwareHash(alarm, broObj) {
+    if(broObj["file_mime_type"]) {
+      alarm["p.file.type"] = broObj["file_mime_type"];
+    }
+
+    if(broObj["file_desc"]) {
+      alarm["p.file.desc"] = broObj["file_desc"];
+    }
+
+    if(broObj.sub) {
+      alarm["p.malware.reference"] = broObj.sub;
+    }
+  }
+
   async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
@@ -128,6 +142,9 @@ class BroNotice {
       case "SSH::Interesting_Hostname_Login":
       await this.processSSHInterestingLogin(alarm, broObj);
       break;
+
+      case "TeamCymruMalwareHashRegistry::Match":
+      await this.processMalwareHash(alarm, BroObj);
 
       default:
       // do nothing

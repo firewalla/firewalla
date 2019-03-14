@@ -89,6 +89,8 @@ class AutoBlocksRevalidationSensor extends Sensor {
       return;
     }
 
+    let revertCount = 0;
+
     for(const autoBlockRule of autoBlockRules) {
 
       let ip = null;
@@ -128,35 +130,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
           //
           // should user be aware of this change??
 
-          if(f.isDevelopmentVersion()) {
-            switch(autoBlockRule.type) {
-              case "ip":
-                sem.sendEventToFireApi({
-                  type: 'FW_NOTIFICATION',
-                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_IP_TITLE',
-                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_IP_BODY',
-                  payload: {
-                    ip: ip,
-                    pid: autoBlockRule.pid
-                  }
-                });
-                break;
-              case "dns":
-              case "domain":
-                sem.sendEventToFireApi({
-                  type: 'FW_NOTIFICATION',
-                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE',
-                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY',
-                  payload: {
-                    domain: autoBlockRule.target,
-                    pid: autoBlockRule.pid
-                  }
-                });
-                break;
-              default:
-              // do nothing
-            }
-          }
+          revertCount++;
 
           if(this.config.dryrun) {
             await pm2.markAsShouldDelete(autoBlockRule.pid);
@@ -187,6 +161,17 @@ class AutoBlocksRevalidationSensor extends Sensor {
       }
     }
 
+    if(f.isDevelopmentVersion() && revertCount > 0) {
+        sem.sendEventToFireApi({
+          type: 'FW_NOTIFICATION',
+          titleKey: 'NOTIF_REVERT_AUTOBLOCK_TITLE',
+          bodyKey: 'NOTIF_REVERT_AUTOBLOCK_BODY',
+          payload: {
+            count: revertCount
+          }
+        });
+      }
+    }
   }
 
 }

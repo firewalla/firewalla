@@ -117,7 +117,6 @@
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "AutoBlocksRevalidationSensor": {
-      "dryrun": true
     },
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
@@ -369,7 +368,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
-    "safe_search": true
+    "safe_search": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
