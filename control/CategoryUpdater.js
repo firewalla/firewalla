@@ -652,10 +652,10 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = this.wrapIptables(`sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
-    const cmdRedirectHTTPSRule = this.wrapIptables(`sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
-    const cmdRedirectHTTPRule6 = this.wrapIptables(`sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
-    const cmdRedirectHTTPSRule6 = this.wrapIptables(`sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
+    const cmdRedirectHTTPRule = this.wrapIptables(`sudo iptables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule = this.wrapIptables(`sudo iptables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
+    const cmdRedirectHTTPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)

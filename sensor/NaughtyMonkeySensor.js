@@ -255,24 +255,31 @@ class NaughtyMonkeySensor extends Sensor {
   async upnp() {
     const ip = await this.randomFindDevice();
 
+    const payload = {
+      'p.source': 'NaughtyMonkeySensor',
+      'p.device.ip': ip,
+      'p.upnp.public.host': '',
+      'p.upnp.public.port': parseInt(Math.random() * 65535),
+      'p.upnp.private.host': ip,
+      'p.upnp.private.port': parseInt(Math.random() * 65535),
+      'p.upnp.protocol': this.randomBoolean() ? 'tcp' : 'udp',
+      'p.upnp.enabled': this.randomBoolean(),
+      'p.upnp.description': 'A naughty monkey master piece',
+      'p.upnp.ttl': parseInt(Math.random() * 9999),
+      'p.upnp.local': this.randomBoolean(),
+      'p.monkey': 1
+    };
+
+    payload["p.device.port"] = payload["p.upnp.private.port"];
+    payload["p.protocol"] = payload["p.upnp.protocol"];
+
     let alarm = new Alarm.UpnpAlarm(
       new Date() / 1000,
       ip,
-      {
-        'p.source': 'NaughtyMonkeySensor',
-        'p.device.ip': ip,
-        'p.upnp.public.host'  : '',
-        'p.upnp.public.port'  : parseInt(Math.random() * 65535),
-        'p.upnp.private.host' : ip,
-        'p.upnp.private.port' : parseInt(Math.random() * 65535),
-        'p.upnp.protocol'     : this.randomBoolean() ? 'tcp' : 'udp',
-        'p.upnp.enabled'      : this.randomBoolean(),
-        'p.upnp.description'  : 'A naughty monkey master piece',
-        'p.upnp.ttl'          : parseInt(Math.random() * 9999),
-        'p.upnp.local'        : this.randomBoolean(),
-        'p.monkey'            : 1
-      }
+      payload
     );
+
+
 
     try {
       let enriched = await am2.enrichDeviceInfo(alarm);

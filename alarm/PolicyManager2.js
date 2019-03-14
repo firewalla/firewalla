@@ -538,6 +538,21 @@ class PolicyManager2 {
     Bone.submitIntelFeedback('unblock', policy, 'policy');
   }
 
+  getPolicyKey(pid) {
+    return policyPrefix + pid;
+  }
+
+  // for autoblock revalidation dry run only
+  async markAsShouldDelete(policyID) {
+    const policy = await this.getPolicy(policyID);
+
+    if(!policy) {
+      return;
+    }
+
+    return rclient.hsetAsync(this.getPolicyKey(policyID), "shouldDelete", "1");
+  }
+
   deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
     return this.policyExists(policyID)

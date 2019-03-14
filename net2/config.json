@@ -69,7 +69,8 @@
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
-    "VPNCheckPlugin": {}
+    "VPNCheckPlugin": {},
+    "SafeSearchPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -115,7 +116,11 @@
     "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
+    "AutoBlocksRevalidationSensor": {
+      "dryrun": true
+    },
     "FlowAggregationSensor": {},
+    "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
       "mapping": {
         "youtube_strict": {
@@ -349,6 +354,7 @@
     "vpn_client_connection": true,
     "cyber_security": true,
     "cyber_security.autoBlock": true,
+    "cyber_security.autoUnblock": true,
     "vulnerability": false,
     "ipv6": false,
     "shadowsocks_server": false,
@@ -362,7 +368,8 @@
     "vpn_relay": false,
     "upstream_dns": false,
     "insane_mode": false,
-    "cpu_monitor": true
+    "cpu_monitor": true,
+    "safe_search": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

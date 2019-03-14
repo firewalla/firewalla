@@ -858,6 +858,27 @@ class netBot extends ControllerBot {
 
     });
 
+    sem.on("FW_NOTIFICATION", (event) => {
+      const titleKey = event.titleKey;
+      const bodyKey = event.bodyKey;
+      const payload = event.payload;
+
+      if(!titleKey || !bodyKey || !payload) {
+        return;
+      }
+
+      const notifyMsg = {
+        title: i18n.__(titleKey, payload),
+        body: i18n.__(bodyKey, payload),
+      };
+
+      const data = {
+        gid: this.primarygid,
+      };
+
+      this.tx2(this.primarygid, "", notifyMsg, data);
+    });
+
     setTimeout(async () => {
       this.scanStart();
 

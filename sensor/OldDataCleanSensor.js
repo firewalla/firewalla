@@ -36,7 +36,12 @@ const hostTool = new HostTool();
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
+
+const _ = require('lodash');
+
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
 const migrationPrefix = "oldDataMigration";
 
@@ -131,7 +136,9 @@ class OldDataCleanSensor extends Sensor {
         if (!exist) invalidQueue.push(id)
       }
 
-      await rclient.sremAsync(queueKey, invalidQueue);
+      if(!_.isEmpty(invalidQueue)) {
+        await rclient.sremAsync(queueKey, invalidQueue);
+      }
     }
     catch(err) {
       log.error("Error cleaning exceptions", err);
@@ -329,6 +336,22 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanSecurityIntelTracking() {
+    const key = intelTool.getSecurityIntelTrackingKey();
+    const intelKeys = await rclient.zrangeAsync(key, 0, -1);
+
+    for(const intelKey of intelKeys) {
+      if(!intelKey.startsWith("intel:ip:")) {
+        continue;
+      }
+
+      const exists = await rclient.existsAsync(intelKey);
+      if(exists !== 1) { // not existing any more
+        await rclient.zremAsync(key, intelKey);
+      }
+    }
+  }
+
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
   //   const keys = await rclient.keysAsync(keyPattern);
@@ -371,6 +394,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
+      await this.cleanSecurityIntelTracking();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");

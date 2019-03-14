@@ -100,5 +100,9 @@
   "INFO_NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday.",
   "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
   "INFO_ALARM_SUBNET": "Subnet is larger than /{{{p.subnet.length}}}, which limits Firewalla's functionalities",
-  "INFO_ALARM_UPNP": "{{{p.upnp.description}}}: {{{p.upnp.protocol}}} port {{{p.upnp.private.port}}} on {{{p.device.name}}} opened as external port {{{p.upnp.public.port}}}"
+  "INFO_ALARM_UPNP": "{{{p.upnp.description}}}: {{{p.upnp.protocol}}} port {{{p.upnp.private.port}}} on {{{p.device.name}}} opened as external port {{{p.upnp.public.port}}}",
+  "NOTIF_REVERT_AUTOBLOCK_IP_TITLE": "Active Protect - Unblock IP",
+  "NOTIF_REVERT_AUTOBLOCK_IP_BODY": "IP {{{ip}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
+  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE": "Active Protect - Unblock domain",
+  "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}"
 }

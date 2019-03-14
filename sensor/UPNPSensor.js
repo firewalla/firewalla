@@ -123,7 +123,9 @@ class UPNPSensor extends Sensor {
                     'p.upnp.enabled'      : current.enabled,
                     'p.upnp.description'  : current.description,
                     'p.upnp.ttl'          : current.ttl,
-                    'p.upnp.local'        : current.local
+                    'p.upnp.local'        : current.local,
+                    'p.device.port': current.private.port,
+                    'p.protocol': current.protocol
                   }
                 );
                 am2.enrichDeviceInfo(alarm)
