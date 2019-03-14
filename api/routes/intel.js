@@ -31,7 +31,7 @@ router.get('/:ip',
     let ip = req.params.ip
     let useLocal = req.query.useLocal
 
-    let options = {skipLocalCache: useLocal ? false : true };
+    let options = {skipReadLocalCache: useLocal ? false : true };
 
     let DestIPFoundHook = require('../../hook/DestIPFoundHook');
     let destIPFoundHook = new DestIPFoundHook();

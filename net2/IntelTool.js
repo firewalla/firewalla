@@ -69,7 +69,24 @@ class IntelTool {
     let key = this.getIntelKey(ip);
 
     return rclient.hgetallAsync(key);
-  }  
+  }
+
+  getSecurityIntelTrackingKey() {
+    return "intel:security:tracking"
+  }
+
+  async securityIntelTrackingExists() {
+    const exists = await rclient.existsAsync(this.getSecurityIntelTrackingKey());
+    return exists === 1;
+  }
+
+  async updateSecurityIntelTracking(intelKey) {
+    return rclient.zaddAsync(this.getSecurityIntelTrackingKey(), new Date() / 1000, intelKey);
+  }
+
+  async removeFromSecurityIntelTracking(intelKey) {
+    return rclient.zremAsync(this.getSecurityIntelTrackingKey(), intelKey);
+  }
 
   async addIntel(ip, intel, expire) {
     intel = intel || {}
@@ -86,6 +103,19 @@ class IntelTool {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
     }
+
+    if(intel.category === 'intel') {
+      await this.updateSecurityIntelTracking(key);
+    } else {
+      await this.removeFromSecurityIntelTracking(key);
+    }
+    return rclient.expireAsync(key, expire);
+  }
+
+  async updateExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getIntelKey(ip);
     return rclient.expireAsync(key, expire);
   }
 
@@ -224,6 +254,13 @@ class IntelTool {
     })();
   }
 
+  updateSSLExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getSSLCertKey(ip);
+    return rclient.expireAsync(key, expire);
+  }
+
   _parseX509Subject(subject) {
     let array = subject.split(',');
     let result = {};
@@ -245,6 +282,13 @@ class IntelTool {
     let key = this.getDNSKey(ip);
 
     return rclient.hgetallAsync(key);
+  }
+
+  async updateDNSExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    const key = this.getDNSKey(ip);
+    return rclient.expireAsync(key, expire);
   }
 
   updateIntelKeyInDNS(ip, intel, expireTime) {

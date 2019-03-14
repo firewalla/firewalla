@@ -505,7 +505,7 @@ async function advancedBlockMAC(macAddress, setName) {
 async function advancedUnblockMAC(macAddress, setName) {
   try {
     if (macAddress && setName) {
-      const cmd = `sudo ipset del ${setName} ${macAddress}`
+      const cmd = `sudo ipset -! del ${setName} ${macAddress}`
       return exec(cmd)
     } else {
       throw new Error(`Mac ${macAddress} or Set ${setName} not exists`)
