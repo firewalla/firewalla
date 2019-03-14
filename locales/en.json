@@ -61,7 +61,7 @@
   "NOTIF_ALARM_BRO_NOTICE_Heartbleed::SSL_Heartbeat_Attack_OUTBOUND_AUTOBLOCK": "Auto blocked an TLS Heartbleed attack to device {{{p.dest.name}}}, initiated from {{{p.device.name}}}.",
   "NOTIF_ALARM_BRO_NOTICE_Heartbleed::SSL_Heartbeat_Attack_OUTBOUND": "Detected an TLS Heartbleed attack to device {{{p.dest.name}}}, initiated from {{{p.device.name}}}.",
   "NOTIF_ALARM_BRO_NOTICE_Heartbleed::SSL_Heartbeat_Attack": "An TLS heartbleed attack was detected from {{{p.dest.name}}} to {{{p.device.name}}}.",
-  "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "Device {{{p.device.name}}} downloaded a {{{p.file.type}}} file from {{{p.dest.name}}} which may contains malware.",
+  "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "Device {{{p.device.name}}} downloaded a {{{p.file.type}}} file from {{{p.dest.name}}} which may contain malware.",
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{{p.dest.name}}} is accessing device {{{p.device.name}}}'s port {{{p.device.port}}}. {{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources.",
   "NOTIF_ALARM_INTEL_FROM_INSIDE": "{{{p.device.name}}} is accessing {{{p.dest.readableName}}}, which is marked as suspicious by {{{p.security.numOfReportSources}}} sources.",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Blocked {{{p.dest.name}}} from accessing device {{{p.device.name}}}. (Reported by {{{p.security.numOfReportSources}}} sources)",

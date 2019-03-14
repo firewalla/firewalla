@@ -81,5 +81,7 @@
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE": "Active Protect - Unblock domain",
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Active Protect Revalidation",
-  "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed."
+  "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed.",
+
+  "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "设备{{{p.device.name}}}从{{{p.dest.name}}}下载了一个文件{{{p.file.type}}}文件，该文件可能包含可疑蠕虫代码。"
 }
