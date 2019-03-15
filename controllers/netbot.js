@@ -1751,10 +1751,9 @@ class netBot extends ControllerBot {
         const alarmID = value.alarmID;
         (async () => {
           if(alarmID) {
-            let detail = await am2.getAlarmDetail(alarmID); 
-            detail = detail || {}; // return empty {} if no extended alarm detail;
-            
-            this.simpleTxData(msg, detail, null, callback);  
+            const basic = am2.getAlarm(alarmID);
+            const detail = (await am2.getAlarmDetail(alarmID)) || {};
+            this.simpleTxData(msg, Object.assign({}, basic, detail), null, callback);
           } else {
             this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
           }
