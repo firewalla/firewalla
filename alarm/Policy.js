@@ -42,7 +42,7 @@ function arraysEqual(a, b) {
 class Policy {
   constructor(raw) {
     if (!raw) throw new Error("Empty policy payload");
-    if (!raw.type) throw new Error("invalid policy payload");
+    if (!raw.type && !raw['i.type']) throw new Error("Invalid policy payload");
 
     Object.assign(this, raw);
 
