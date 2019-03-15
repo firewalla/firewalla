@@ -1051,18 +1051,18 @@ module.exports = class {
             p.target = alarm["p.device.mac"];
             break;
 
-          case "ALARM_BRO_NOTICE":
-            const {type, target} = require('../extension/bro/BroNotice.js').getBlockTarget(alarm);
-
-            if(type && target) {
-              p.type = type;
-              p.target = target;
-            } else {
-              log.error("Unsupported alarm type for blocking: ", alarm)
-              callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
-              return
-            }
-            break;
+          // case "ALARM_BRO_NOTICE":
+          //   const {type, target} = require('../extension/bro/BroNotice.js').getBlockTarget(alarm);
+          //
+          //   if(type && target) {
+          //     p.type = type;
+          //     p.target = target;
+          //   } else {
+          //     log.error("Unsupported alarm type for blocking: ", alarm)
+          //     callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
+          //     return
+          //   }
+          //   break;
 
           case "ALARM_UPNP":
             p.type = "devicePort"
