@@ -127,7 +127,7 @@ module.exports = class {
       log.info("alarm queue is cleaned up")
     })
 
-    this.queue.process((job, done) => {
+    this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
 
@@ -139,27 +139,24 @@ module.exports = class {
       const action = event.action;
       
       switch(action) {
-      case "create": {
-        (async () => {
+        case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            await this.checkAndSaveAsync(alarm);
-            log.info(`Alarm ${alarm.aid} is created successfully`);
+            let aid = await this.checkAndSaveAsync(alarm);
+            log.info(`Alarm ${aid} is created successfully`);
           } catch(err) {
             log.error("failed to create alarm:" + err);
           }
 
-          log.info("complete alarm creation process", alarm.aid, {});
           done();          
-        })();
 
-        break
-      }
+          break
+        }
 
-      default:
-        log.error("unrecoganized policy enforcement action:" + action)
-        done()
-        break
+        default:
+          log.error("unrecoganized policy enforcement action:" + action)
+          done()
+          break
       }
     })
   }

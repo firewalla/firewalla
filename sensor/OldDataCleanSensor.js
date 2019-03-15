@@ -139,6 +139,7 @@ class OldDataCleanSensor extends Sensor {
       if(!_.isEmpty(invalidQueue)) {
         await rclient.sremAsync(queueKey, invalidQueue);
       }
+      }
     }
     catch(err) {
       log.error("Error cleaning exceptions", err);

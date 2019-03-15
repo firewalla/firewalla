@@ -811,7 +811,7 @@ class netBot extends ControllerBot {
         log.info("ALARM_NOTIFY_PASSED");
 
         notifMsg = {
-          title: i18n.__mf("SECURITY_ALERT"),
+          title: i18n.__(alarm.getNotifType()),
           body: notifMsg
         }
 
@@ -823,10 +823,6 @@ class netBot extends ControllerBot {
         if (alarm.aid) {
           data.aid = alarm.aid;
           data.alarmID = alarm.alarmID;
-        }
-
-        if(alarm.notifType) {
-          notifMsg.title = i18n.__mf(alarm.notifType);
         }
 
         if (alarm.autoblock) {

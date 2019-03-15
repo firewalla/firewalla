@@ -1561,6 +1561,8 @@ module.exports = class {
       if (obj.note == null) {
         return;
       }
+      // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
+      // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && obj.src == sysManager.myIp() ||
           obj.dst != null && obj.dst == sysManager.myIp())
       {
@@ -1578,25 +1580,33 @@ module.exports = class {
         }
         let lh = null;
         let dh = null;
-        if (sysManager.isLocalIP(obj.src)) {
-          lh = obj.src || "0.0.0.0";
-          dh = obj.dst || "0.0.0.0";
-        } else if (sysManager.isLocalIP(obj.dst)) {
-          lh = obj.dst || "0.0.0.0";
-          dh = obj.src || "0.0.0.0";
+
+        // using src & dst by default, or id.orig_h & id.resp_h
+        if (obj.src) {
+          lh = obj.src;
+          dh = obj.dst || (obj['id.orig_h'] == obj.src ? obj['id.resp_h'] : obj['id.orig_h']);
         } else {
-          lh = "0.0.0.0";
-          dh = "0.0.0.0";
+          lh = obj['id.orig_h'];
+          dh = obj['id.resp_h'];
         }
 
-        let localIP = lh;
+        lh = lh || "0.0.0.0";
+        dh = dh || "0.0.0.0";
+
+        // make sure lh points to local device
+        if (lh && !sysManager.isLocalIP(lh)) {
+          let tmp = lh;
+          lh = dh;
+          dh = tmp;
+        }
+
         let message = obj.msg;
         let noticeType = obj.note;
         let timestamp = parseFloat(obj.ts);
 
         // TODO: create dedicate alarm type for each notice type
-        let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-          "p.device.ip": localIP,
+        let alarm = new Alarm.BroNoticeAlarm(timestamp, lh, noticeType, message, {
+          "p.device.ip": lh,
           "p.dest.ip": dh
         });
 

@@ -767,8 +767,8 @@ module.exports = class {
       }
       return this.inMySubnet6(ip);
     } else {
-      log.debug("SysManager:ERROR:isLocalIP", ip);
-      return true;
+      log.error("SysManager:ERROR:isLocalIP", ip);
+      return false;
     }
   }
 

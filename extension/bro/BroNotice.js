@@ -30,7 +30,10 @@ class BroNotice {
       instance = this;
     }
   }
-
+  
+  //  src: guesser
+  //  sub: target
+  //  dst: no presence
   async processSSHScan(alarm, broObj) {
     const subMessage = broObj.sub
     // sub message:
@@ -41,46 +44,49 @@ class BroNotice {
       return array.indexOf(v) === i
     })
 
-    if(addresses.length == 0) {
+    if (addresses.length == 0) {
       alarm["p.local.decision"] == "ignore";
       return;
     }
 
-    const scanSrc = broObj.src;
-    const scanTarget = addresses[0];
+    let target = addresses[0];
 
-    let deviceIP = null;
-    let destIP = null;
-
-    if(sysManager.isLocalIP(scanTarget)) {
-      deviceIP = scanTarget;
-      destIP = scanSrc;
-      alarm["p.local_is_client"] = 0;
-    } else {
-      deviceIP = scanSrc;
-      destIP = scanTarget;
+    if (alarm["p.device.ip"] == broObj.src) {
+      // attacker is internal device
       alarm["p.local_is_client"] = 1;
+      alarm["p.dest.ip"] = target;
+    } else {
+      // attacker is external device
+      alarm["p.local_is_client"] = 0;
+      alarm["p.device.ip"] = target;
+      alarm["device"] = target;
     }
-
-    alarm["p.device.ip"] = deviceIP;
-    alarm["p.device.name"] = deviceIP;
-
-    const mac = await hostTool.getMacByIP(deviceIP);
-    if(mac) {
-      alarm["p.device.mac"] = mac;
-    }
-
-    alarm["p.dest.ip"] = destIP;
 
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
+  //  src: scanner
+  //  dst: target
+  //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
-
+    if (alarm["p.device.ip"] == broObj.src) {
+      alarm["p.local_is_client"] = 1;
+    } else {
+      alarm["p.local_is_client"] = 0;
+    }
   }
 
   async processHeartbleed(alarm, broObj) {
-    this.checkDirectionAndAutoBlock(alarm, broObj);
+    if(sysManager.isLocalIP(broObj["src"])) {
+      alarm["p.local_is_client"] = "1";
+    } else {
+      // initiated from outside
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true; // block automatically if initiated from outside in
+    }
+
+    if (alarm['p.noticeType'] == 'Heartbleed::SSL_Heartbeat_Attack_Success')
+      alarm['p.action.block'] = true; // block automatically if attack succeed
   }
 
   async processSSHInterestingLogin(alarm, broObj) {
@@ -91,17 +97,31 @@ class BroNotice {
     }
   }
 
+  // on HTTP src/dst compiles with HTTP connection
+  // sub: match description link
   async processTeamCymru(alarm, broObj) {
-    this.checkDirectionAndAutoBlock(alarm, broObj);
+    if (sysManager.isLocalIP(broObj.src)) {
+      alarm["p.local_is_client"] = "1";
+    } else {
+      // initiated from outside
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true; // block automatically if initiated from outside in
+    }
 
     alarm['p.file.url'] = broObj.file_desc;
     alarm['p.file.mime'] = broObj.file_mime_type;
-    alarm['e.detail'] = broObj.sub;
-    alarm["p.action.block"] = true; // block automatically if initiated from outside in
+    alarm['e.file.detail'] = broObj.sub;
   }
 
+  //  src: victim
+  //  dst: no presence
   async processSQLInjection(alarm, broObj) {
-    this.checkDirectionAndAutoBlock(alarm, broObj);
+    if (alarm["p.device.ip"] == broObj.src) {
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true;
+    } else {
+      alarm["p.local_is_client"] = "1";
+    }
   }
 
   async processNotice(alarm, broObj) {
@@ -118,7 +138,8 @@ class BroNotice {
         await this.processSSHScan(alarm, broObj);
         break;
 
-      case "Heartbleed::SSL_Heartbeat_Attack":
+      case "Heartbleed::SSL_Heartbeat_Attack":  
+      case "Heartbleed::SSL_Heartbeat_Attack_Success":
         await this.processHeartbleed(alarm, broObj);
         break;
 
@@ -134,7 +155,6 @@ class BroNotice {
         await this.processTeamCymru(alarm, broObj);
         break;
 
-      case 'HTTP::SQL_Injection_Attacker':
       case 'HTTP::SQL_Injection_Victim':
         await this.processSQLInjection(alarm, broObj);
         break
@@ -152,18 +172,6 @@ class BroNotice {
       target: alarm["p.dest.ip"]
     }
   }  
-
-  checkDirectionAndAutoBlock(alarm, broObj) {
-    const src = broObj["src"];
-
-    if(sysManager.isLocalIP(src)) {
-      alarm["p.local_is_client"] = "1";
-    } else {
-      // initiated from outside
-      alarm["p.local_is_client"] = "0";
-      alarm["p.action.block"] = true; // block automatically if initiated from outside in
-    }
-  }
 };
 
 module.exports = new BroNotice();
