@@ -257,6 +257,10 @@ class BroNoticeAlarm extends Alarm {
     return [];
   }
 
+  localizedMessage() {
+    return this["p.message"]; // use bro content as basic localized message, usually app side should use it's own messaging template
+  }
+
   getI18NCategory() {
     let category = this.type;
 

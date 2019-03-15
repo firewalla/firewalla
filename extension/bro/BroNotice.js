@@ -145,6 +145,7 @@ class BroNotice {
 
       case "TeamCymruMalwareHashRegistry::Match":
       await this.processMalwareHash(alarm, broObj);
+      break;
 
       default:
       // do nothing
