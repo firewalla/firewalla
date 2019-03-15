@@ -63,7 +63,7 @@ class Alarm {
     return i18n.__(this.getNotificationCategory(), this);
   }
 
-  premiumAction() {
+  cloudAction() {
     const decision = this["p.cloud.decision"];
     switch(decision) {
       case "block": {
@@ -257,13 +257,14 @@ class BroNoticeAlarm extends Alarm {
     return [];
   }
 
+  localizedMessage() {
+    return this["p.message"]; // use bro content as basic localized message, usually app side should use it's own messaging template
+  }
+
   getI18NCategory() {
     let category = this.type;
 
-    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
-    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
-      category = `${category}_${this["p.noticeType"]}`;
-    }
+    category = `${category}_${this["p.noticeType"]}`;
 
     if("p.local_is_client" in this) {
       if(this["p.local_is_client"] === "1") {
@@ -276,6 +277,11 @@ class BroNoticeAlarm extends Alarm {
     if(this.result === "block" &&
     this.result_method === "auto") {
       category = `${category}_AUTOBLOCK`;
+    }
+
+    // fallback if localization for this special bro type does not exist
+    if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
+      category = this.type;
     }
     
     return category;

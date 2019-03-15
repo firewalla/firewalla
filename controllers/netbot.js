@@ -841,13 +841,9 @@ class netBot extends ControllerBot {
           if(msg["testing"] && msg["testing"] == 1) {
             notifMsg.title = `[Monkey] ${notifMsg.title}`;
           }
-          if(msg["premiumAction"] && f.isDevelopmentVersion()) {
-            const pa = msg["premiumAction"];
-            if(pa === 'ignore') {
-              notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
-            } else if(pa === 'block') {
-              notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
-            }
+          if(msg["cloudAction"] && f.isDevelopmentVersion()) {
+            const pa = msg["cloudAction"];
+            notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
           }
           this.tx2(this.primarygid, "test", notifMsg, data);
 
@@ -1751,10 +1747,9 @@ class netBot extends ControllerBot {
         const alarmID = value.alarmID;
         (async () => {
           if(alarmID) {
-            let detail = await am2.getAlarmDetail(alarmID); 
-            detail = detail || {}; // return empty {} if no extended alarm detail;
-            
-            this.simpleTxData(msg, detail, null, callback);  
+            const basic = await am2.getAlarm(alarmID);
+            const detail = (await am2.getAlarmDetail(alarmID)) || {};
+            this.simpleTxData(msg, Object.assign({}, basic, detail), null, callback);
           } else {
             this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
           }

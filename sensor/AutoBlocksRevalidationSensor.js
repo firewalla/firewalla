@@ -82,34 +82,36 @@ class AutoBlocksRevalidationSensor extends Sensor {
     log.info("Iterating auto blocks...");
     const rules = await pm2.loadActivePoliciesAsync();
 
-    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto' && ! rule.shouldDelete);
+    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto' && !rule.shouldDelete);
 
-    if(autoBlockRules.length === 0) {
+    if (autoBlockRules.length === 0) {
       log.info("No active auto blocks");
       return;
     }
 
-    for(const autoBlockRule of autoBlockRules) {
+    let revertCount = 0;
+
+    for (const autoBlockRule of autoBlockRules) {
 
       let ip = null;
       let domain = null;
 
-      if(["dns", "domain"].includes(autoBlockRule.type)) {
+      if (["dns", "domain"].includes(autoBlockRule.type)) {
         ip = autoBlockRule.target_ip;
         domain = autoBlockRule.target;
-      } else if("ip" === autoBlockRule.type) {
+      } else if ("ip" === autoBlockRule.type) {
         ip = autoBlockRule.target;
         domain = ip;
       }
 
-      if(!ip) {
+      if (!ip) {
         continue;
       }
 
       log.info(`Revalidating ip ${ip}...`);
 
       const intel = await intelTool.getIntel(ip);
-      if(!intel) { // missing intel
+      if (!intel) { // missing intel
 
         log.info(`Missing intel for ip ${ip}, creating...`); // next round it will be picked by this sensor again
         sem.emitEvent({
@@ -119,7 +121,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
       } else {
 
-        if(intel.action !== 'block') { // not auto block any more
+        if (intel.action !== 'block') { // not auto block any more
           log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
 
           // TODO
@@ -128,37 +130,9 @@ class AutoBlocksRevalidationSensor extends Sensor {
           //
           // should user be aware of this change??
 
-          if(f.isDevelopmentVersion()) {
-            switch(autoBlockRule.type) {
-              case "ip":
-                sem.sendEventToFireApi({
-                  type: 'FW_NOTIFICATION',
-                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_IP_TITLE',
-                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_IP_BODY',
-                  payload: {
-                    ip: ip,
-                    pid: autoBlockRule.pid
-                  }
-                });
-                break;
-              case "dns":
-              case "domain":
-                sem.sendEventToFireApi({
-                  type: 'FW_NOTIFICATION',
-                  titleKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE',
-                  bodyKey: 'NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY',
-                  payload: {
-                    domain: autoBlockRule.target,
-                    pid: autoBlockRule.pid
-                  }
-                });
-                break;
-              default:
-              // do nothing
-            }
-          }
+          revertCount++;
 
-          if(this.config.dryrun) {
+          if (this.config.dryrun) {
             await pm2.markAsShouldDelete(autoBlockRule.pid);
           } else {
             await pm2.disableAndDeletePolicy(autoBlockRule.pid);
@@ -173,13 +147,13 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
           // dns
           const dnsEntry = await intelTool.getDNS(ip);
-          if(dnsEntry) {
+          if (dnsEntry) {
             await intelTool.updateDNSExpire(ip, this.config.intelExpireTime);
           }
 
           // ssl
           const sslEntry = await intelTool.getSSLCertificate(ip);
-          if(sslEntry) {
+          if (sslEntry) {
             await intelTool.updateSSLExpire(ip, this.config.intelExpireTime);
           }
         }
@@ -187,8 +161,17 @@ class AutoBlocksRevalidationSensor extends Sensor {
       }
     }
 
+    if(f.isDevelopmentVersion() && revertCount > 0) {
+      sem.sendEventToFireApi({
+        type: 'FW_NOTIFICATION',
+        titleKey: 'NOTIF_REVERT_AUTOBLOCK_TITLE',
+        bodyKey: 'NOTIF_REVERT_AUTOBLOCK_BODY',
+        payload: {
+          count: revertCount
+        }
+      });
+    }
   }
-
 }
 
 module.exports = AutoBlocksRevalidationSensor;
