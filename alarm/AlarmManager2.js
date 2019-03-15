@@ -775,29 +775,25 @@ module.exports = class {
     });
   }
 
-  loadArchivedAlarms(options) {
+  async loadArchivedAlarms(options) {
     options = options || {}
     
     const offset = options.offset || 0 // default starts from 0
-    const limit = options.limit || 20 // default load 20 alarms
+    const limit = options.limit || 50 // default load 50 alarms
 
-    return async(() => {
-      let alarmIDs = await (rclient.
-                            zrevrangebyscoreAsync(alarmArchiveKey,
-                                                  "+inf",
-                                                  "-inf",
-                                                  "limit",
-                                                  offset,
-                                                  limit))
-      
-      let alarms = await (this.idsToAlarmsAsync(alarmIDs))
-
-      alarms = alarms.filter((a) => a != null)
-
-      return alarms
-      
-    })()
+    let alarmIDs = await rclient.
+                         zrevrangebyscoreAsync(alarmArchiveKey,
+                                               "+inf",
+                                               "-inf",
+                                               "limit",
+                                               offset,
+                                               limit);
     
+    let alarms = await this.idsToAlarmsAsync(alarmIDs);
+
+    alarms = alarms.filter((a) => a != null)
+
+    return alarms
   }
 
   async archiveAlarm(alarmID) {
