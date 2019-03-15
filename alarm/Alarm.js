@@ -63,7 +63,7 @@ class Alarm {
     return i18n.__(this.getNotificationCategory(), this);
   }
 
-  premiumAction() {
+  cloudAction() {
     const decision = this["p.cloud.decision"];
     switch(decision) {
       case "block": {

@@ -303,7 +303,7 @@ module.exports = class {
       alarmType: alarm.type,
       testing: alarm["p.monkey"],
       managementType: alarm.getManagementType(),
-      premiumAction: alarm.premiumAction()
+      cloudAction: alarm.cloudAction()
     };
 
     if (alarm.result_method === "auto") {
@@ -1275,11 +1275,6 @@ module.exports = class {
           case "ALARM_NEW_DEVICE":
             i_type = "mac"; // place holder, not going to be matched by any alarm/policy
             i_target = alarm["p.device.mac"];
-            break;
-
-          case "ALARM_BRO_NOTICE":
-            i_type = "ip";
-            i_target = alarm["p.dest.ip"];
             break;
 
           case "ALARM_UPNP":
