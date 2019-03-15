@@ -825,7 +825,7 @@ class netBot extends ControllerBot {
           data.alarmID = alarm.alarmID;
         }
 
-        if (alarm.autoblock) {
+        if (alarm.result_method === "auto" && alarm.result === "block") {
           data.category = "com.firewalla.category.autoblockalarm";
         } else {
           if (alarm.getManagementType() === "") {
