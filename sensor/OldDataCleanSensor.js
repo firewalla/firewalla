@@ -115,14 +115,6 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  cleanAlarm() {
-    // TODO
-  }
-
-  cleanPolicy() {
-    // TODO
-  }
-
   async cleanExceptions() {
     const queueKey = "exception_queue";
 
@@ -183,28 +175,23 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  cleanUserAgents() {
+  async cleanUserAgents() {
     // FIXME: not well coded here, deprecated code
-      let MAX_AGENT_STORED = 150;
-      rclient.keys("host:user_agent:*", (err, keys) => {
-        for (let j in keys) {
-          rclient.scard(keys[j], (err, count) => {
-//                    log.info(keys[j]," count ", count);
-            if (count > MAX_AGENT_STORED) {
-              log.info(keys[j], " pop count ", count - MAX_AGENT_STORED);
-              for (let i = 0; i < count - MAX_AGENT_STORED; i++) {
-                rclient.spop(keys[j], (err) => {
-                  if (err) {
-                    log.info(keys[j], " count ", count - MAX_AGENT_STORED, err);
-                  }
-                });
-              }
-            }
-          });
+    let MAX_AGENT_STORED = 150;
+    let keys = await rclient.keysAsync("host:user_agent:*");
+    for (let j in keys) {
+      let count = await rclient.scardAsync(keys[j]);
+      if (count > MAX_AGENT_STORED) {
+        log.info(keys[j], " pop count ", count - MAX_AGENT_STORED);
+        for (let i = 0; i < count - MAX_AGENT_STORED; i++) {
+          try {
+            await rclient.spopAsync(keys[j]);
+          } catch(err) {
+            log.info(keys[j], " count ", count - MAX_AGENT_STORED, err);
+          }
         }
-      });
-
-      return Promise.resolve();
+      }
+    }
   }
 
   async cleanFlowX509() {
@@ -336,6 +323,23 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanBrokenPolicies() {
+    try {
+      let keys = await rclient.keysAsync("policy:[0-9]*");
+      for (const key of keys) {
+        let policy = await rclient.hgetallAsync(key);
+        let policyKeys = Object.keys(policy);
+        if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
+          await rclient.zremAsync("policy_active", policy.pid);
+          await rclient.delAsync(key);
+          log.info("Remove broken policy:", policy.pid);
+        }
+      }
+    } catch(err) {
+      log.error("Failed to clean broken policies", err);
+    }
+  }
+
   async cleanSecurityIntelTracking() {
     const key = intelTool.getSecurityIntelTrackingKey();
     const intelKeys = await rclient.zrangeAsync(key, 0, -1);
@@ -395,6 +399,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
+      await this.cleanBrokenPolicies();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");

@@ -615,7 +615,7 @@ class PolicyManager2 {
 
     if (policyIds.length) { // policyIds & policyKeys should have same length
       await rclient.delAsync(policyKeys);
-      await rclient.zremAsync('policy_active', policyIds);
+      await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
   }
