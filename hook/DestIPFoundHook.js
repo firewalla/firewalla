@@ -323,7 +323,7 @@ class DestIPFoundHook extends Hook {
 
       // only set default action when cloud succeeded
       if(!aggrIntelInfo.action &&
-        !aggrIntelInfo.c !== 'intel' && // a special workaround here, only reset action when category is no longer intel
+        aggrIntelInfo.c !== 'intel' && // a special workaround here, only reset action when category is no longer intel
         !aggrIntelInfo.cloudFailed) {
         aggrIntelInfo.action = "none";
       }
