@@ -55,11 +55,11 @@ class BroNotice {
     if(sysManager.isLocalIP(scanTarget)) {
       deviceIP = scanTarget;
       destIP = scanSrc;
-      alarm["p.local_is_client"] = 0;
+      alarm["p.local_is_client"] = "0";
     } else {
       deviceIP = scanSrc;
       destIP = scanTarget;
-      alarm["p.local_is_client"] = 1;
+      alarm["p.local_is_client"] = "1";
     }
 
     alarm["p.device.ip"] = deviceIP;

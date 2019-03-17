@@ -1188,6 +1188,15 @@ module.exports = class {
           break;
         }
 
+        // record the direction of the trigger flow when block is created from alarm.
+        if("p.local_is_client" in alarm) {
+          if(Number(alarm["p.local_is_client"]) === 1) {
+            p.fd = "in";
+          } else if(Number(alarm["p.local_is_client"]) === 0) {
+            p.fd = "out";
+          }
+        }
+
         p = new Policy(p);
 
         log.info("Policy object:", p);
