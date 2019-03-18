@@ -603,10 +603,7 @@ module.exports = class FlowMonitor {
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
-    return {
-      inSpec: inSpec,
-      outSpec, outSpec
-    };
+    return { inSpec, outSpec };
   }
 
   //
@@ -1035,7 +1032,11 @@ module.exports = class FlowMonitor {
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
-      alarm["p.action.block"] = true
+      alarm["p.action.block"] = true;
+    }
+
+    if(flowObj && flowObj.fd !== 'in' && flowObj.category === 'intel' && Number(flowObj.t) >= 10) {
+      alarm["p.action.block"] = true;
     }
 
     alarm['p.security.category'] = [_category];
@@ -1105,6 +1106,10 @@ module.exports = class FlowMonitor {
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true
+    }
+
+    if(flowObj && flowObj.fd !== 'in' && flowObj.category === 'intel' && Number(flowObj.t) >= 10) {
+      alarm["p.action.block"] = true;
     }
 
     if (flowObj && flowObj.categoryArray) {
