@@ -78,6 +78,22 @@ class AutoBlocksRevalidationSensor extends Sensor {
     }
   }
 
+  shouldAutoBlock(policyRule, intel) {
+    if(!policyRule || !intel) {
+      return false;
+    }
+
+    if(intel.category === 'intel' && intel.action === 'block') {
+      return true;
+    }
+
+    if(intel.category === 'intel' && Number(intel.t) >= 10 && policyRule.fd && policyRule.fd !== 'in') {
+      return true;
+    }
+
+    return false;
+  }
+
   async iterateAllAutoBlocks() {
     log.info("Iterating auto blocks...");
     const rules = await pm2.loadActivePoliciesAsync();
@@ -121,7 +137,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
       } else {
 
-        if (intel.action !== 'block') { // not auto block any more
+        if (!this.shouldAutoBlock(autoBlockRule, intel)) { // not auto block any more
           log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
 
           // TODO

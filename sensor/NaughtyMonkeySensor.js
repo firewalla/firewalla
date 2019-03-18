@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,16 +63,17 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async randomFindDevice() {
-    let hosts = await rclient.keysAsync("host:ip4:*");
-    hosts = hosts.map((h) => h.replace("host:ip4:", ""));
+    const macs = hostManager.getActiveMACs();
 
-    const hostCount = hosts.length
-    if (hostCount > 0) {
-      let randomHostIndex = Math.floor(Math.random() * hostCount)
-      if (randomHostIndex == hostCount) {
-        randomHostIndex = hostCount - 1
+    const macCount = macs.length
+    if (macCount > 0) {
+      let randomHostIndex = Math.floor(Math.random() * macCount)
+      if (randomHostIndex == macCount) {
+        randomHostIndex = macCount - 1
       }
-      return hosts[randomHostIndex];
+
+      const mac = macs[randomHostIndex];
+      return rclient.hget(`host:mac:${mac}`, "ipv4Addr");
     } else {
       return null
     }
@@ -86,7 +87,8 @@ class NaughtyMonkeySensor extends Sensor {
       "204.8.156.142",
       "37.48.120.196",
       "37.187.7.74",
-      "162.247.72.199"
+      "162.247.72.199",
+      "81.129.164.141"
     ]
 
     return list[Math.floor(Math.random() * list.length)]
@@ -264,7 +266,7 @@ class NaughtyMonkeySensor extends Sensor {
       'p.upnp.private.port': parseInt(Math.random() * 65535),
       'p.upnp.protocol': this.randomBoolean() ? 'tcp' : 'udp',
       'p.upnp.enabled': this.randomBoolean(),
-      'p.upnp.description': 'A naughty monkey master piece',
+      'p.upnp.description': 'Monkey P2P Software',
       'p.upnp.ttl': parseInt(Math.random() * 9999),
       'p.upnp.local': this.randomBoolean(),
       'p.monkey': 1
