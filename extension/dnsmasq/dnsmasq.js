@@ -702,7 +702,9 @@ module.exports = class DNSMASQ {
 
       subnets.forEach(async subnet => {
         log.info("Remove dns rule: ", subnet, dns);
-        await iptables.dnsChangeAsync(subnet, dns, false, true);
+        try {
+          await iptables.dnsChangeAsync(subnet, dns, false);
+        } catch(e) { /*Ignore Erros*/ }
       })
       this._redirectedLocalSubnets = [];
       this._currentLocalIP = null;
