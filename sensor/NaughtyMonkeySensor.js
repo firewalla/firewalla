@@ -63,16 +63,17 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async randomFindDevice() {
-    let hosts = await rclient.keysAsync("host:ip4:*");
-    hosts = hosts.map((h) => h.replace("host:ip4:", ""));
+    const macs = hostManager.getActiveMACs();
 
-    const hostCount = hosts.length
-    if (hostCount > 0) {
-      let randomHostIndex = Math.floor(Math.random() * hostCount)
-      if (randomHostIndex == hostCount) {
-        randomHostIndex = hostCount - 1
+    const macCount = macs.length
+    if (macCount > 0) {
+      let randomHostIndex = Math.floor(Math.random() * macCount)
+      if (randomHostIndex == macCount) {
+        randomHostIndex = macCount - 1
       }
-      return hosts[randomHostIndex];
+
+      const mac = macs[randomHostIndex];
+      return rclient.hget(`host:mac:${mac}`, "ipv4Addr");
     } else {
       return null
     }

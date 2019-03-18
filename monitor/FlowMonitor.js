@@ -948,6 +948,11 @@ module.exports = class FlowMonitor {
 
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
+
+    if(!domain) {
+      return; // directly return if it's not a valid domain
+    }
+
     log.info("Domain for IP ", remoteIP, "is", domain);
 
     let isDomain = false;
@@ -1035,7 +1040,7 @@ module.exports = class FlowMonitor {
       alarm["p.action.block"] = true;
     }
 
-    if(flowObj && flowObj.fd !== 'in' && flowObj.category === 'intel' && Number(flowObj.t) >= 10) {
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
       alarm["p.action.block"] = true;
     }
 
@@ -1108,7 +1113,7 @@ module.exports = class FlowMonitor {
       alarm["p.action.block"] = true
     }
 
-    if(flowObj && flowObj.fd !== 'in' && flowObj.category === 'intel' && Number(flowObj.t) >= 10) {
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
       alarm["p.action.block"] = true;
     }
 
