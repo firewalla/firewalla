@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -603,10 +603,7 @@ module.exports = class FlowMonitor {
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
-    return {
-      inSpec: inSpec,
-      outSpec, outSpec
-    };
+    return { inSpec, outSpec };
   }
 
   //
@@ -951,6 +948,11 @@ module.exports = class FlowMonitor {
 
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
+
+    if(!domain) {
+      return; // directly return if it's not a valid domain
+    }
+
     log.info("Domain for IP ", remoteIP, "is", domain);
 
     let isDomain = false;
@@ -1035,7 +1037,11 @@ module.exports = class FlowMonitor {
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
-      alarm["p.action.block"] = true
+      alarm["p.action.block"] = true;
+    }
+
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+      alarm["p.action.block"] = true;
     }
 
     alarm['p.security.category'] = [_category];
@@ -1105,6 +1111,10 @@ module.exports = class FlowMonitor {
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true
+    }
+
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+      alarm["p.action.block"] = true;
     }
 
     if (flowObj && flowObj.categoryArray) {
