@@ -266,7 +266,7 @@ class NaughtyMonkeySensor extends Sensor {
       'p.upnp.private.port': parseInt(Math.random() * 65535),
       'p.upnp.protocol': this.randomBoolean() ? 'tcp' : 'udp',
       'p.upnp.enabled': this.randomBoolean(),
-      'p.upnp.description': 'A naughty monkey master piece',
+      'p.upnp.description': 'Monkey P2P Software',
       'p.upnp.ttl': parseInt(Math.random() * 9999),
       'p.upnp.local': this.randomBoolean(),
       'p.monkey': 1
