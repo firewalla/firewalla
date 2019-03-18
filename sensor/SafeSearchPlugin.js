@@ -377,7 +377,14 @@ class SafeSearchPlugin extends Sensor {
    * Safe Search DNS server will use local primary dns server as upstream server
    */
   async startDeviceMasq() {
+    if(this.starting) {
+      return;
+    }
+
     try {
+      this.starting = true;
+      await this.delay(5000);
+      this.starting = false;
       return exec("sudo systemctl restart devicemasq");
     } catch(err) {
       log.error(`Failed to restart devicemasq, err: ${err}`);
