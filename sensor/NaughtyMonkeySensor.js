@@ -86,7 +86,8 @@ class NaughtyMonkeySensor extends Sensor {
       "204.8.156.142",
       "37.48.120.196",
       "37.187.7.74",
-      "162.247.72.199"
+      "162.247.72.199",
+      "81.129.164.141"
     ]
 
     return list[Math.floor(Math.random() * list.length)]
