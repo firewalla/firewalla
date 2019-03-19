@@ -610,28 +610,49 @@ class netBot extends ControllerBot {
   }
 
   _dnsmasq(ip, value, callback) {
-    if(ip !== "0.0.0.0") {
-      if (callback != null)
-        callback(null); // per-device policy rule is not supported
-      return;
-    }
+    if(ip === "0.0.0.0") {
+      this.hostManager.loadPolicy((err, data) => {
+        let oldValue = {};
+        if (data["dnsmasq"]) {
+          oldValue = JSON.parse(data["dnsmasq"]);
+        }
+        const newValue = Object.assign({}, oldValue, value);
+        this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
+          if (err == null) {
+            if (callback != null)
+              callback(null, "Success");
+          } else {
+            if (callback != null)
+              callback(err, "Unable to apply config on dnsmasq: " + value);
+          }
+        });
+      });
+    } else {
+      this.hostManager.getHost(ip, (err, host) => {
+        if (host != null) {
+          host.loadPolicy((err, data) => {
+            if (err == null) {
+              host.setPolicy('dnsmasq', value, (err, data) => {
+                if (err == null) {
+                  if (callback != null)
+                    callback(null, "Success:" + ip);
+                } else {
+                  if (callback != null)
+                    callback(err, "Unable to change dnsmasq config of " + ip)
 
-    this.hostManager.loadPolicy((err, data) => {
-      let oldValue = {};
-      if (data["dnsmasq"]) {
-        oldValue = JSON.parse(data["dnsmasq"]);
-      }
-      const newValue = Object.assign({}, oldValue, value);
-      this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
+                }
+              });
+            } else {
+              if (callback != null)
+                callback("error", "Unable to change dnsmasq config of " + ip);
+            }
+          });
         } else {
           if (callback != null)
-            callback(err, "Unable to apply config on dnsmasq: " + value);
+            callback("error", "Host not found");
         }
       });
-    });
+    }
   }
 
   _externalAccess(ip, value, callback) {

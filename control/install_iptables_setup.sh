@@ -25,6 +25,7 @@ sudo ipset create whitelist_domain_set hash:ip family inet hashsize 128 maxelem 
 sudo ipset create whitelist_net_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65535 &>/dev/null
 sudo ipset create whitelist_mac_set hash:mac &>/dev/null
+sudo ipset create no_dns_caching_mac_set hash:mac &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush blocked_ip_set
@@ -41,6 +42,7 @@ sudo ipset flush whitelist_domain_set
 sudo ipset flush whitelist_net_set
 sudo ipset flush whitelist_ip_port_set
 sudo ipset flush whitelist_mac_set
+sudo ipset flush no_dns_caching_mac_set
 
 sudo ipset add -! blocked_ip_set $BLACK_HOLE_IP
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
