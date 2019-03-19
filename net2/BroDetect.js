@@ -517,8 +517,16 @@ module.exports = class {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
+        // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
+        // pick up the new data
         log.info("Conn:Learned:Ip","ping ",ip,flowspec);
         linux.ping6(ip)
+        setTimeout(() => {
+          linux.ping6(ip)
+        }, 1000 * 60 * 4);
+        setTimeout(() => {
+          linux.ping6(ip)
+        }, 1000 * 60 * 8);
         this.pingedIp[ip]=true;
       }
     }
