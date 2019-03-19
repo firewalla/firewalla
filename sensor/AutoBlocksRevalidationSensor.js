@@ -87,8 +87,12 @@ class AutoBlocksRevalidationSensor extends Sensor {
       return true;
     }
 
-    if(intel.category === 'intel' && Number(intel.t) >= 10 && policyRule.fd && policyRule.fd !== 'in') {
-      return true;
+    if(intel.category === 'intel' && Number(intel.t) >= 10) {
+      if(policyRule.fd && policyRule.fd === 'in') {
+        return false;
+      } else {
+        return true;
+      }
     }
 
     return false;
