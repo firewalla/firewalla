@@ -216,12 +216,12 @@ class ShieldManager {
       // disable shield globally
       let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD && sudo iptables -w -D FORWARD -j FW_SHIELD";
       await exec(cmd).catch((err) => {
-        log.error("Failed to deactivate global shield in iptables", err);
+        log.debug("Failed to deactivate global shield in iptables", err);
       });
   
       cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD && sudo ip6tables -w -D FORWARD -j FW_SHIELD";
       await exec(cmd).catch((err) => {
-        log.error("Failed to deactivate global shield in ip6tables", err);
+        log.debug("Failed to deactivate global shield in ip6tables", err);
       });
     } else {
       if (this.protected_macs[mac]) {

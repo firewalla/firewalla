@@ -73,7 +73,7 @@ class NaughtyMonkeySensor extends Sensor {
       }
 
       const mac = macs[randomHostIndex];
-      return rclient.hget(`host:mac:${mac}`, "ipv4Addr");
+      return rclient.hgetAsync(`host:mac:${mac}`, "ipv4Addr");
     } else {
       return null
     }
