@@ -65,7 +65,7 @@ class DnsLoopAvoidanceSensor extends Sensor {
           if (host != null) {
             host.loadPolicy((err, data) => {
               if (!err) {
-                const oldValue = (data && data['dnsmasq']) || {};
+                const oldValue = JSON.parse((data && data['dnsmasq']) || "{}");
                 const newValue = Object.assign({}, oldValue, {dnsCaching: false});
                 host.setPolicy('dnsmasq', newValue, (err, data) => {
                   if (err) {
