@@ -16,6 +16,11 @@ if [[ $branch =~ release.* ]]
     sudo -u pi git fetch origin $branch
     sudo -u pi git reset --hard origin/$branch
     sudo -u pi git pull
+
+    if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+        echo "no_auto_upgrade flag removed"
+        sudo rm /home/pi/.firewalla/config/.no_auto_upgrade
+    fi
   else
     echo "on devbranch"
   fi

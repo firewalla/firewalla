@@ -92,5 +92,6 @@ redef SSL::disable_analyzer_after_detection = F;
 # this might impact performance a bit.
 @load policy/protocols/ssl/heartbleed
 redef SSL::disable_analyzer_after_detection = F;
+redef Communication::listen_interface = 127.0.0.1;
 
 @load base/protocols/dhcp

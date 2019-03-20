@@ -22,7 +22,7 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 # call post upgrade
-${FIREWALLA_HOME}/scripts/fireupgrade_post.sh 
+${FIREWALLA_HOME}/scripts/fireupgrade_post.sh
 
 # call upgrade
 ${FIREWALLA_HOME}/scripts/firelog -t cloud -m  "INFO: Upgrade completed with services restart in soft mode $commit_before $commit_after"

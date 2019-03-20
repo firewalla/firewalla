@@ -171,12 +171,8 @@ class NmapSensor extends Sensor {
   getNetworkRanges() {
     return networkTool.getLocalNetworkInterface()
       .then((results) => {
-      this.networkRanges = results &&
-        results.map((x) => x.subnet)
-          .map((subnet) => {
-          return subnet.replace('/16', '/24') // a very hard code for 16 subnet
-        }) ;
-      return this.networkRanges;
+        return results &&
+          results.map((x) => networkTool.capSubnet(x.subnet))
       });
   }
 
@@ -197,8 +193,8 @@ class NmapSensor extends Sensor {
       .then((result) => {
         if(result) {
           return this.getNetworkRanges()
-            .then(() => {
-              return this.runOnce(fastMode)
+            .then((range) => {
+              return this.runOnce(fastMode, range)
             })
         }
       }).catch((err) => {
@@ -206,22 +202,24 @@ class NmapSensor extends Sensor {
     })
   }
 
-  runOnce(fastMode) {
-    if(!this.networkRanges)
+  runOnce(fastMode, networkRanges) {
+    if(!networkRanges)
       return Promise.reject(new Error("network range is required"));
 
-    return Promise.all(this.networkRanges.map((range) => {
+    return Promise.all(networkRanges.map((range) => {
 
       log.info("Scanning network", range, "to detect new devices...");
-      if (range.endsWith('/8')) {
-        log.info("Subnet " + range + " contains too many ip addresses to scan, skip it.")
-        return Promise.resolve();
+
+      try {
+        range = networkTool.capSubnet(range)
+      } catch (e) {
+        log.error('Error reducing scan range:', range, fastMode, e);
+        return Promise.resolve(); // Skipping this scan
       }
 
-      let cmd = util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
-      if (fastMode === true) {
-        cmd = util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary);
-      }
+      let cmd = fastMode
+        ? util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
+        : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
 
       return NmapSensor.scan(cmd)
         .then((hosts) => {
@@ -315,14 +313,14 @@ class NmapSensor extends Sensor {
         }
 
         if(!findings) {
-          reject(new Error("Invalid nmap scan result"));
+          reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 
         let hostsJSON = findings.nmaprun && findings.nmaprun.host;
 
         if(!hostsJSON) {
-          reject(new Error("Invalid nmap scan result"));
+          reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 

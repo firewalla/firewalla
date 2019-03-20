@@ -20,9 +20,6 @@ let cloudWrapper = new CloudWrapper();
 let instance = null;
 let log = null;
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
@@ -52,7 +49,7 @@ module.exports = class {
         if(err) {
             res.json({"error" : err});
             return;
-        } else {
+        } else {          
           decryptedMessage.mtype = decryptedMessage.message.mtype;
           req.body = decryptedMessage;
           next();

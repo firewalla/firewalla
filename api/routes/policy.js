@@ -15,22 +15,25 @@
 
 'use strict'
 
-let express = require('express');
-let router = express.Router();
-let bodyParser = require('body-parser')
+const express = require('express');
+const router = express.Router();
+const bodyParser = require('body-parser')
 
-let PM2 = require('../../alarm/PolicyManager2.js');
-let pm2 = new PM2();
+const log = require('../../net2/logger.js')(__filename);
 
-let AM2 = require('../../alarm/AlarmManager2');
-let am2 = new AM2();
+const Policy = require('../../alarm/Policy.js');
+const PM2 = require('../../alarm/PolicyManager2.js');
+const pm2 = new PM2();
+
+const AM2 = require('../../alarm/AlarmManager2');
+const am2 = new AM2();
 
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
 router.get('/list', (req, res, next) => {
-  pm2.loadActivePolicys((err, list) => {
+  pm2.loadActivePolicies((err, list) => {
     if(err) {
       res.status(500).send('');
       return;
@@ -73,19 +76,17 @@ let jsonParser = bodyParser.json()
 router.post('/create',
             jsonParser,
             (req, res, next) => {
-              pm2.createPolicyFromJson(req.body, (err, policy) => {
-                if(err) {
-                  res.status(400).send("Invalid policy data");
-                  return;
-                }
+              let policy = new Policy(req.body);
 
-                pm2.checkAndSave(policy, (err, policyID) => {
-                  if(err) {
-                    res.status(500).send('Failed to create json: ' + err);
-                  } else {
-                    res.status(201).json({policyID:policyID});
-                  }
-                });
+              pm2.checkAndSave(policy, (err, policyGen, alreadyExists) => {
+                if(err) {
+                  res.status(500).send('Failed to create json: ' + err);
+                } else {
+                  res.status(200).json({
+                    exists: alreadyExists,
+                    policy: policyGen
+                  });
+                }
               });
             });
 
@@ -104,19 +105,14 @@ router.post('/create/ip_port',
                 type: "ip_port"
               };
 
-              pm2.createPolicyFromJson(json, (err, policy) => {
-                if(err) {
-                  res.status(400).send("Invalid policy data");
-                  return;
-                }
+              let policy = new Policy(json);
 
-                pm2.checkAndSave(policy, (err, policyID) => {
-                  if(err) {
-                    res.status(400).send('Failed to create json: ' + err);
-                  } else {
-                    res.status(201).json({policyID:policyID});
-                  }
-                });
+              pm2.checkAndSave(policy, (err, policyID) => {
+                if(err) {
+                  res.status(400).send('Failed to create json: ' + err);
+                } else {
+                  res.status(201).json({policyID:policyID});
+                }
               });
             });
 

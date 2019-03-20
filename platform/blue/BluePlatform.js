@@ -19,11 +19,16 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
+const log = require('../../net2/logger.js')(__filename);
+
+const fs = require('fs');
 
 const ledPaths = [
 //  "/sys/devices/platform/leds/leds/nanopi:green:status",
   "/sys/devices/platform/leds/leds/nanopi:red:pwr"
 ];
+
+const cpuProfilePath = "/etc/default/cpufrequtils";
 
 class BluePlatform extends Platform {
 
@@ -81,6 +86,46 @@ class BluePlatform extends Platform {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
     });
+  }
+
+  getCPUDefaultFile() {
+    return `${__dirname}/files/cpu_default.conf`;
+  }
+
+  async applyCPUDefaultProfile() {
+    log.info("Applying CPU default profile...");
+    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
+    await exec(cmd);
+    return this.reload();
+  }
+
+  async reload() {
+    return exec("sudo systemctl reload cpufrequtils");
+  }
+
+  getCPUBoostFile() {
+    return `${__dirname}/files/cpu_boost.conf`;
+  }
+
+  async applyCPUBoostProfile() {
+    log.info("Applying CPU boost profile...");
+    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
+    await exec(cmd);
+    return this.reload();
+  }
+
+  getSubnetCapacity() {
+    return 19;
+  }
+
+  // via /etc/update-motd.d/30-armbian-sysinfo
+  getCpuTemperature() {
+    const source = '/etc/armbianmonitor/datasources/soctemp';
+    return Number(fs.readFileSync(source)) / 1000;
+  }
+
+  getPolicyCapacity() {
+    return 3000;
   }
 }
 

@@ -154,8 +154,7 @@ function getReleaseType() {
   if(isProduction()) {
     return "prod"
   } else if(isAlpha()) {
-    return "beta"; // TODO: will change to alpha when all app side codes are ready for alpha release
-    //return "alpha";
+    return "alpha";
   } else if(isBeta()) {
     return "beta"
   } else if (isDevelopmentVersion()) {
@@ -332,6 +331,7 @@ module.exports = {
 
   isProduction: isProduction,
   isBeta:isBeta,
+  isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
 

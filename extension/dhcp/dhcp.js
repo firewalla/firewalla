@@ -26,6 +26,10 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 
 const cp = require('child_process');
 
+const rclient = require('../../util/redis_manager.js').getRedisClient()
+const pclient = require('../../util/redis_manager.js').getPublishClient();
+
+
 async function dhcpDiscover(intf) {
   intf = intf || "eth0";
   log.info("Broadcasting DHCP discover on ", intf);

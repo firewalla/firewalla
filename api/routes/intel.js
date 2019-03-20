@@ -15,24 +15,23 @@
 
 'use strict'
 
-let log = require('../../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone");
 
-let express = require('express');
-let router = express.Router();
+const IntelTool = require('../../net2/IntelTool');
+const intelTool = new IntelTool();
+
+const express = require('express');
+const router = express.Router();
+
+const _ = require('lodash');
 
 router.get('/:ip',
   (req, res, next) => {
     let ip = req.params.ip
-    let force = req.query.force
+    let useLocal = req.query.useLocal
 
-    let options = {skipUpdate: true};
-
-    if (force) {
-      options = {
-        forceUpdate: true
-      };
-    }
+    let options = {skipReadLocalCache: useLocal ? false : true };
 
     let DestIPFoundHook = require('../../hook/DestIPFoundHook');
     let destIPFoundHook = new DestIPFoundHook();
@@ -47,6 +46,26 @@ router.get('/:ip',
       });
   });
 
+router.get('/domain/:domain', async (req, res, next) => {
+  let domain = req.params.domain;
+  log.info("/intel/domain/" + domain);
+
+  let result;
+  try {
+    result = await intelTool.checkIntelFromCloud([], [domain]);
+  } catch (err) {
+    log.error("Error when intel", err, {});
+  }
+
+  if (!result) {
+    log.info("invalid result:", domain);
+    res.status(500).send();
+    return;
+  }
+
+  res.json(result).send();
+});
+
 router.get('/finger/:target', async (req, res, next) => {
   let target = req.params.target;
   log.info("/intel/finger/" + target);
@@ -56,14 +75,14 @@ router.get('/finger/:target', async (req, res, next) => {
   } catch (err) {
     log.error("Error when intel finger", err, {});
   }
-  
+
   if (!result) {
     log.info("invalid result:", target);
     res.status(500).send();
     return;
   }
-  
-  res.json(result).send();      
+
+  res.json(result).send();
 });
 
 

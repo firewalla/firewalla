@@ -13,6 +13,12 @@ const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const model = platform.getName();
 const serial = platform.getBoardSerial();
+const fs = require('fs');
+const Promise = require('bluebird');
+
+const f = require('../../net2/Firewalla.js');
+
+Promise.promisifyAll(fs);
 
 const rp = require('request-promise');
 
@@ -81,6 +87,16 @@ class FWDiag {
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
+  async hasLicenseFile() {
+    const filePath = `${f.getHiddenFolder()}/license`;
+    try {
+      const stat = await fs.accessAsync(filePath, fs.constants.F_OK);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
     
@@ -127,6 +143,14 @@ class FWDiag {
     }
   }
 
+  async getCpuTemperature() {
+    try {
+      return platform.getCpuTemperature()
+    } catch(err) {
+      return -1;
+    }
+  }
+
   async prepareHelloData() {
     const inter = await this.getNetworkInfo();
     
@@ -136,17 +160,19 @@ class FWDiag {
 
     const version = this.getVersion();
 
-    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed] = await require('bluebird').all([
-      this.getGatewayMac(gateway),
-      this.getBranchInfo(),
-      this.getLongVersion(),
-      this.getTotalMemory(),
-      this.getGID(),
-      this.hasLicenseFile(),
-      platform.getNetworkSpeed()
-    ]);
+    const [gatewayMac, branch, longVersion, memory, gid, hasLicense, nicSpeed, cpuTemp] =
+      await Promise.all([
+        this.getGatewayMac(gateway),
+        this.getBranchInfo(),
+        this.getLongVersion(),
+        this.getTotalMemory(),
+        this.getGID(),
+        this.hasLicenseFile(),
+        platform.getNetworkSpeed(),
+        this.getCpuTemperature()
+      ]);
 
-    return {      
+    return {
       mac,
       firewallaIP,
       gatewayMac,
@@ -158,7 +184,8 @@ class FWDiag {
       serial,
       gid,
       hasLicense,
-      nicSpeed
+      nicSpeed,
+      cpuTemp
     };
   }
 

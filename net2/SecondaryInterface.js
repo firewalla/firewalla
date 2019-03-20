@@ -19,36 +19,46 @@ var ip = require('ip');
 var os = require('os');
 var dns = require('dns');
 var network = require('network');
-var log = require("./logger.js")(__filename, "info");
+var log = require('./logger.js')(__filename, 'info');
+const util = require('util');
 
-function  is_interface_valid(netif) {
-     return netif.ip_address != null && netif.mac_address != null && netif.type != null && !netif.ip_address.startsWith("169.254.");
+function is_interface_valid(netif) {
+  return (
+    netif.ip_address != null &&
+    netif.mac_address != null &&
+    netif.type != null &&
+    !netif.ip_address.startsWith('169.254.')
+  );
 }
 
-function    getSubnet(networkInterface, family) {
-        let networkInterfaces = os.networkInterfaces();
-        let interfaceData = networkInterfaces[networkInterface];
-        if (interfaceData == null) {
-            return null;
-        }
+function getSubnet(networkInterface, family) {
+  let networkInterfaces = os.networkInterfaces();
+  let interfaceData = networkInterfaces[networkInterface];
+  if (interfaceData == null) {
+    return null;
+  }
 
-        var ipSubnets = [];
+  var ipSubnets = [];
 
-
-        for (let i = 0; i < interfaceData.length; i++) {
-            if (interfaceData[i].family == family && interfaceData[i].internal == false) {
-                let subnet = ip.subnet(interfaceData[i].address, interfaceData[i].netmask);
-                let subnetmask = subnet.networkAddress + "/" + subnet.subnetMaskLength;
-                ipSubnets.push(subnetmask);
-            }
-        }
-
-        return ipSubnets;
-
+  for (let i = 0; i < interfaceData.length; i++) {
+    if (
+      interfaceData[i].family == family &&
+      interfaceData[i].internal == false
+    ) {
+      let subnet = ip.subnet(
+        interfaceData[i].address,
+        interfaceData[i].netmask
+      );
+      let subnetmask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
+      ipSubnets.push(subnetmask);
     }
+  }
 
-exports.create = function (config, callback) {
-/*
+  return ipSubnets;
+}
+
+exports.create = function(config, callback) {
+  /*
   "secondaryInterface": {
      "intf":"eth0:0",
      "ip":"192.168.218.1/24",
@@ -61,50 +71,69 @@ exports.create = function (config, callback) {
      "ipmask2":"255.255.255.0"
   },
 */
-    if (config.secondaryInterface && config.secondaryInterface.intf) {
-        let _secondaryIp = config.secondaryInterface.ip;
-        let _secondaryIpSubnet = config.secondaryInterface.ipsubnet;
-        let _secondaryIpNet = config.secondaryInterface.ipnet;
-        let _secondaryMask = config.secondaryInterface.ipmask;
-        let legacyIp = null;
-        let legacySubnet = null;
-        linux.get_network_interfaces_list((err,list)=>{
-            list = list.filter(function(x) { return is_interface_valid(x) });
-            for (let i in list) {
-                if (list[i].name == config.secondaryInterface.intf) {
-                    if (list[i].netmask === "Mask:" + _secondaryMask && list[i].ip_address === _secondaryIp.split('/')[0]) {
-                        // same ip and subnet mask
-                        log.info("Already Created Secondary Interface",list[i]);
-                        callback(null,_secondaryIp, _secondaryIpSubnet,_secondaryIpNet, _secondaryMask, legacyIp, legacySubnet);
-                        return;
-                    } else {
-                        log.info("Update existing secondary interface: " + config.secondaryInterface.intf);
-                        const legacyIpSubnet = ip.subnet(list[i].ip_address, list[i].netmask.substring(5));
-                        legacyIp = legacyIpSubnet.firstAddress + "/" + legacyIpSubnet.subnetMaskLength; // should be like 192.168.218.1/24
-                        legacySubnet = legacyIpSubnet.networkAddress + "/" + legacyIpSubnet.subnetMaskLength; // should be like 192.168.218.0/24
-                    }
-                } else {
-                    // other interface already occupies ip1, use alternative ip
-                    let subnet = getSubnet(list[i].name, 'IPv4');
-                    if (subnet == _secondaryIpSubnet) {
-                        _secondaryIpSubnet = config.secondaryInterface.ipsubnet2;
-                        _secondaryIp = config.secondaryInterface.ip2;
-                        _secondaryIpNet = config.secondaryInterface.ipnet2;
-                        _secondaryMask = config.secondaryInterface.ipmask2;
-                    }
-                }
+  if (config.secondaryInterface && config.secondaryInterface.intf) {
+    // ip can sufficiently identify a network configuration, all other configurations are redundant
+    let _secondaryIpSubnet = config.secondaryInterface.ip;
+    let _secondaryIp = _secondaryIpSubnet.split('/')[0];
+    let _secondaryMask = ip.cidrSubnet(_secondaryIpSubnet).subnetMask;
+    let legacyIpSubnet = null;
+    linux.get_network_interfaces_list((err, list) => {
+      list = list.filter(function(x) {
+        return is_interface_valid(x);
+      });
+      for (let i in list) {
+        if (list[i].name == config.secondaryInterface.intf) {
+          if (
+            list[i].netmask === 'Mask:' + _secondaryMask &&
+            list[i].ip_address === _secondaryIp
+          ) {
+            // same ip and subnet mask
+            log.info('Already Created Secondary Interface', list[i]);
+            if (callback) {
+              callback(
+                null,
+                _secondaryIpSubnet,
+                legacyIpSubnet
+              );
             }
-            // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
-            require('child_process').exec("sudo ifconfig "+config.secondaryInterface.intf+" "+_secondaryIp, (err, out, code) => {
-                if (err!=null) {
-                    log.error("SecondaryInterface: Error Creating Secondary Interface",_secondaryIp,out);
-                }
-                require('child_process').exec("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh "+_secondaryIp,(err,out,code)=>{
-                });
-                if (callback) {
-                    callback(err,_secondaryIp, _secondaryIpSubnet, _secondaryIpNet, _secondaryMask, legacyIp, legacySubnet);
-                }
-            });
-         });
-    }
+            return;
+          } else {
+            log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
+            // should be like 192.168.218.1
+            const legacyCidrSubnet = ip.subnet(list[i].ip_address, list[i].netmask.substring(5));
+            legacyIpSubnet = list[i].ip_address + "/" + legacyCidrSubnet.subnetMaskLength;
+          }
+        } else {
+          let subnets = getSubnet(list[i].name, 'IPv4');
+          // one interface may have multiple ip addresses assigned
+          if (subnets.includes(_secondaryIpSubnet)) {
+            // other interface already occupies ip1, use alternative ip
+            _secondaryIpSubnet = config.secondaryInterface.ip2;
+            _secondaryIp = _secondaryIpSubnet.split('/')[0];
+            _secondaryMask = ip.cidrSubnet(_secondaryIp).subnetMask;
+          }
+        }
+      }
+      // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
+      require('child_process').exec(
+        util.format("sudo ifconfig %s %s", config.secondaryInterface.intf, _secondaryIpSubnet),
+        (err, stdout, stderr) => {
+          if (err != null) {
+            log.error('SecondaryInterface: Error Creating Secondary Interface', _secondaryIpSubnet, err);
+          }
+          require('child_process').exec(
+            util.format("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh %s", _secondaryIpSubnet),
+            (err, stdout, stderr) => {}
+          );
+          if (callback) {
+            callback(
+              err,
+              _secondaryIpSubnet,
+              legacyIpSubnet
+            );
+          }
+        }
+      );
+    });
+  }
 };

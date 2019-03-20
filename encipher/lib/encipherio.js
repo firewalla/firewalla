@@ -39,6 +39,7 @@ let fConfig = require('../../net2/config.js').getConfig();
 
 let exec = require('child-process-promise').exec;
 
+const rp = require('request-promise');
 
 let instance = {};
 
@@ -199,6 +200,8 @@ let legoEptCloud = class {
 
         this.myPublicKey = ursa.createPublicKey(pubKeyPem);
         this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+        this.mypubkeyfile = pubKeyPem;
+        this.myprivkeyfile = privateKeyPem;
       })();
     }
 
@@ -253,6 +256,18 @@ let legoEptCloud = class {
         }
     }
 
+
+    eptloginAsync(appId, appSecret, eptInfo, tag) {
+      return new Promise((resolve, reject) => {
+        this.eptlogin(appId, appSecret, eptInfo, tag, (err, eid) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(eid);
+          }
+        })
+      });
+    }
 
     // Info is not encrypted
     eptlogin(appId, appSecret, eptInfo, tag, callback) {
@@ -434,6 +449,18 @@ let legoEptCloud = class {
         });
     }
 
+    async eptGroupListAsync(eid) {
+      return new Promise((resolve, reject) => {
+        this.eptGroupList(eid, (err, results) => {
+          if(err) {
+            reject(err);
+          } else {
+            resolve(results);
+          }
+        })
+      });
+    }
+
     eptGroupList(eid, callback) {
         let options = {
             uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
@@ -516,6 +543,26 @@ let legoEptCloud = class {
         });
     }
 
+    async deleteEidFromGroup(gid, eid) {
+      if (!gid || !eid) {
+        throw new Error("require gid and eid when deleting eid from group");
+      }
+
+      const options = {
+        uri: `${this.endpoint}/group/${gid}/${eid}`,
+        family: 4,
+        method: 'DELETE',
+        auth: {
+          bearer: this.token
+        }
+      }
+
+      log.info(`deleting eid ${eid} from group ${gid}`);
+      const result = await rp(options);
+      log.info(`deleted eid ${eid} from group ${gid}`);
+      return result;
+    }
+
     deleteGroup(gid, callback) {
         if (gid === undefined) {
             callback("parameter error", null);
@@ -551,6 +598,17 @@ let legoEptCloud = class {
             }
         })
     }
+
+  groupFindAsync(gid) {
+    return new Promise((resolve, reject) => {
+      this.groupFind(gid, (err, result) => {
+        if (err)
+          reject(err)
+        else
+          resolve(result);
+      })
+    })
+  }
 
     groupFind(gid, callback) {
 
@@ -870,8 +928,18 @@ let legoEptCloud = class {
           compressMode: true,
           data: output.toString('base64')
         };
+
+        const compressedPayload = JSON.stringify(payload);
+
+        const before = msgstr.length;
+        const after = compressedPayload.length;
+
+        if(before !== 0) {
+            const compressRatio = ((before - after) / before * 100).toFixed(1);
+            log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+        }
         
-        this._send(gid, JSON.stringify(payload), _beep, mtype, fid, mid, 5, callback)
+        this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)
       })
     } else {
       this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
@@ -990,7 +1058,7 @@ let legoEptCloud = class {
                     this.notifySocket = false;
                 });
                 this.socket.on("glisten200",(data)=>{
-                     log.forceInfo("SOCKET Glisten 200 group indicator");
+                     log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
                 });
                 this.socket.on("newMsg",(data)=>{
                      self.getMsgFromGroup(gid, data.ts, 100, (err, messages, cacheGroup2) => {
@@ -1118,7 +1186,7 @@ let legoEptCloud = class {
         });
     }
 
-    sendTextToGroup(gid, _msg, beepmsg, from, callback) {
+    sendTextToGroup2(gid, _msg, beepmsg, beepdata, from, callback) {
         let msg = {
             msg: _msg,
             type: 'msg',
@@ -1130,29 +1198,8 @@ let legoEptCloud = class {
                 cmd: 'apn',
                 msg: beepmsg
             };
-        }
-        this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
-            log.debug("sending logs ", e, r);
-            if (callback) {
-                callback(e);
-            }
-        });
-    }
-
-    sendTextToGroup2(gid, _msg, beepmsg, beepdata,from, callback) {
-        let msg = {
-            msg: _msg,
-            type: 'msg',
-            from: from
-        };
-        let beep = null;
-        if (beepmsg != null) {
-            beep = {
-                cmd: 'apn',
-                msg: beepmsg,
-                data: beepdata
-            };
-          log.info("APN notification payload: ", beep, {});
+            if (beepdata) beep.data = beepdata
+            log.info("APN notification payload: ", beep);
         }
         this.sendMsgToGroup(gid, msg, beep, "msg", null, null, (e, r) => {
             log.debug("sending logs ", e, r);

@@ -28,8 +28,6 @@ let sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
 let zlib = require('zlib');
 
-let redis = require('redis');
-
 let Firewalla = require('../../net2/Firewalla.js');
 
 let Promise = require('bluebird');
