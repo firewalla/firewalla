@@ -61,6 +61,8 @@ const iptables = require('../net2/Iptables');
 
 const fc = require('../net2/config.js');
 
+const iptool = require('ip')
+
 class SafeSearchPlugin extends Sensor {
   
   async run() {
@@ -235,6 +237,13 @@ class SafeSearchPlugin extends Sensor {
     const key = `rdns:domain:${domain}`;
     let results = await rclient.zrevrangeAsync(key, -1, -1);
     results = results.filter((ip) => !f.isReservedBlockingIP(ip));
+
+    const ipv4Results = results.filter((ip) => iptool.isV4Format(ip))
+
+    if(ipv4Results.length > 0) {
+      return ipv4Results[0]; // return ipv4 address as a priority
+    }
+
     if(results.length > 0) {
       log.info(`Domain ${domain} ======> ${results[0]}`);
       return results[0];
