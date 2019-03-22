@@ -233,7 +233,8 @@ class SafeSearchPlugin extends Sensor {
 
   async loadDomainCache(domain) {
     const key = `rdns:domain:${domain}`;
-    const results = await rclient.zrevrangeAsync(key, -1, -1);
+    let results = await rclient.zrevrangeAsync(key, -1, -1);
+    results = results.filter((ip) => !f.isReservedBlockingIP(ip));
     if(results.length > 0) {
       log.info(`Domain ${domain} ======> ${results[0]}`);
       return results[0];
