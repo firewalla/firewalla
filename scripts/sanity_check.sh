@@ -154,7 +154,7 @@ check_system_config() {
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" )
-    printf "%5s %30s %10s %25s %10s\n" "Rule" "Target" "Type" "Device" "Expire"
+    printf "%5s %30s %10s %25s %10s %15s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -167,7 +167,11 @@ check_policies() {
         if [[ ! -n $EXPIRE ]]; then
             EXPIRE="Infinite"
         fi
-        printf "%5s %30s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
+        local CRONTIME=$(redis-cli hget $RULE cronTime)
+        if [[ ! -n $CRONTIME ]]; then
+            CRONTIME="Always"
+        fi
+        printf "%5s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
     echo ""
