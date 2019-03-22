@@ -235,7 +235,7 @@ class SafeSearchPlugin extends Sensor {
 
   async loadDomainCache(domain) {
     const key = `rdns:domain:${domain}`;
-    let results = await rclient.zrevrangeAsync(key, -1, -1);
+    let results = await rclient.zrevrangeAsync(key, 0, -1);
     results = results.filter((ip) => !f.isReservedBlockingIP(ip));
 
     const ipv4Results = results.filter((ip) => iptool.isV4Format(ip))
@@ -307,6 +307,8 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async applyDeviceSafeSearch(macAddress) {
+    log.info("Applying safe search on device", macAddress);
+
     try {
       if(this.enabledMacAddresses[macAddress]) {
         const config = await this.getSafeSearchConfig();
