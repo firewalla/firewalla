@@ -153,7 +153,7 @@ check_system_config() {
 
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
-    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" )
+    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
     printf "%5s %30s %10s %25s %10s\n" "Rule" "Target" "Type" "Device" "Expire"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}

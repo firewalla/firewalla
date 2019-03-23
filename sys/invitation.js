@@ -112,7 +112,9 @@ class FWInvitation {
     log.info("\n\n-------------------------------\n");
     log.info("\n\nBonjour Message QR");
     log.info("\n");
-    qrcode.generate(JSON.stringify(msg))
+    const copy = JSON.parse(JSON.stringify(msg));
+    copy.type = "pairing";
+    qrcode.generate(JSON.stringify(copy))
   }
   
   async storeBonjourMessage(msg) {
