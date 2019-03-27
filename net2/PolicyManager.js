@@ -423,6 +423,14 @@ module.exports = class {
     await host.ipAllocation(policy);
   }
 
+  async compatibleSpoof(host, state) {
+    if (host.constructor.name !== 'HostManager') {
+      log.error("compatibleSpoof doesn't support per device policy", host);
+      return;
+    }
+    host.compatibleSpoof(state);
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -679,6 +687,8 @@ module.exports = class {
         this.scisurf(host, policy[p]);
       } else if (p === "shield") {
         host.shield(policy[p]);
+      } else if (p === "compatibleSpoof") {
+        this.compatibleSpoof(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
       } else if (p === "ipAllocation") {
