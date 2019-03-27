@@ -2620,6 +2620,10 @@ module.exports = class HostManager {
     })()
   }
 
+  async compatibleSpoof(state) {
+    await modeManager.toggleCompatibleSpoof(state);
+  }
+
   async shield(policy) {
     const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
     const state = policy.state;

@@ -553,6 +553,25 @@ class netBot extends ControllerBot {
     });
   }
 
+  _compatibleSpoof(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      callback(null);
+      return;
+    }
+
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("compatibleSpoof", value, (err, data) => {
+        if (err == null) {
+          if (callback)
+            callback(null, "Success");
+        } else {
+          if (callback)
+            callback(err, "Unable to apply compatible spoof: " + value);
+        }
+      })
+    })
+  }
+
   _vulScan(ip, value, callback) {
     if(ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
@@ -1194,6 +1213,11 @@ class netBot extends ControllerBot {
               break;
             case "scisurf":
               this._scisurf(msg.target, value.scisurf, (err, obj) => {
+                cb(err);
+              });
+              break;
+            case "compatibleSpoof":
+              this._compatibleSpoof(msg.target, value.compatibleSpoof, (err, obj) => {
                 cb(err);
               });
               break;

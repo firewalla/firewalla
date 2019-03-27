@@ -43,7 +43,7 @@ let Promise = require('bluebird');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let cp = require('child_process');
+let cp = require('child-process-promise');
 
 let mode = require('./Mode.js')
 
@@ -78,6 +78,15 @@ module.exports = class {
         await (rclient.saddAsync(monitoredKey, address))
         await (rclient.sremAsync(unmonitoredKeyAll, address));
         await (rclient.sremAsync(unmonitoredKey, address))
+        if (ipTool.isV4Format(address)) {
+          const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
+          await (cp.exec(cmd));  
+        } else {
+          if (ipTool.isV6Format(address)) {
+            const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
+            await (cp.exec(cmd));
+          }
+        }
       }
     })()
   }
@@ -88,6 +97,15 @@ module.exports = class {
       
       if(flag) {
         await (rclient.sremAsync(monitoredKey, address))
+        if (ipTool.isV4Format(address)) {
+          const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
+          await (cp.exec(cmd));
+        } else {
+          if (ipTool.isV6Format(address)) {
+            const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
+            await (cp.exec(cmd));
+          }
+        }
         const isMember = await (rclient.sismemberAsync(unmonitoredKeyAll, address));
         if(!isMember) {
           await (rclient.saddAsync(unmonitoredKey, address))
