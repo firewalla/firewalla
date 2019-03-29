@@ -26,8 +26,6 @@ const util = require('util');
 
 const firewalla = require('../net2/Firewalla.js');
 
-const RED_HOLE_IP="198.51.100.101";
-
 let instance = null;
 const DomainUpdater = require('../control/DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
@@ -117,7 +115,7 @@ class DNSTool {
     await domainUpdater.updateDomainMapping(dns, validAddresses);
     
     if(updated === false && existing === false) {
-      await rclient.zaddAsync(key, new Date() / 1000, RED_HOLE_IP); // red hole is a placeholder ip for non-existing domain 
+      await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
     }
 
     await rclient.expireAsync(key, expire)
