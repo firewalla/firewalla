@@ -331,6 +331,20 @@ function _disableDHCPMode() {
   return Promise.resolve();
 }
 
+async function toggleCompatibleSpoof(state) {
+  if (state) {
+    let cmd = "sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE || sudo iptables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE";
+    await execAsync(cmd);
+    cmd = "sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE || sudo ip6tables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE";
+    await execAsync(cmd);
+  } else {
+    let cmd = "(sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE && sudo iptables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE) || true";
+    await execAsync(cmd);
+    cmd = "(sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE && sudo ip6tables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE) || true";
+    await execAsync(cmd);
+  }
+}
+
 function apply() {
   return async(() => {
     let mode = await (Mode.getSetupMode())
@@ -547,5 +561,6 @@ module.exports = {
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,
   publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
-  enableSecondaryInterface:_enableSecondaryInterface
+  enableSecondaryInterface:_enableSecondaryInterface,
+  toggleCompatibleSpoof: toggleCompatibleSpoof
 }
