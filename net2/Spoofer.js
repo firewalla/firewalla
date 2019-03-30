@@ -78,9 +78,10 @@ module.exports = class {
         // Spoof redis set is cleared during initialization, see SpooferManager.startSpoofing()
         // This can ensure that all monitored hosts are added to redis set and ip set at the beginning
         // It's unnecessary to add ip address to monitored_ip_set that are already in redis set
-        await rclient.saddAsync(monitoredKey, address);
         const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
         await cp.exec(cmd);
+        // add membership at the end
+        await rclient.saddAsync(monitoredKey, address);
       }
       await rclient.sremAsync(unmonitoredKeyAll, address);
       await rclient.sremAsync(unmonitoredKey, address);
@@ -115,9 +116,9 @@ module.exports = class {
   async newSpoof6(address) {  
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (!isMember) {
-      await rclient.saddAsync(monitoredKey6, address);
       const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
       await cp.exec(cmd);
+      await rclient.saddAsync(monitoredKey6, address);
     }
   }
 
