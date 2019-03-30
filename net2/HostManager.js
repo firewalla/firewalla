@@ -2620,7 +2620,7 @@ module.exports = class HostManager {
     })()
   }
 
-  async compatibleSpoof(state) {
+  async enhancedSpoof(state) {
     await modeManager.toggleCompatibleSpoof(state);
   }
 

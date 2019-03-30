@@ -553,14 +553,14 @@ class netBot extends ControllerBot {
     });
   }
 
-  _compatibleSpoof(ip, value, callback) {
+  _enhancedSpoof(ip, value, callback) {
     if (ip !== "0.0.0.0") {
       callback(null);
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("compatibleSpoof", value, (err, data) => {
+      this.hostManager.setPolicy("enhancedSpoof", value, (err, data) => {
         if (err == null) {
           if (callback)
             callback(null, "Success");
@@ -1216,8 +1216,8 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
-            case "compatibleSpoof":
-              this._compatibleSpoof(msg.target, value.compatibleSpoof, (err, obj) => {
+            case "enhancedSpoof":
+              this._enhancedSpoof(msg.target, value.enhancedSpoof, (err, obj) => {
                 cb(err);
               });
               break;
