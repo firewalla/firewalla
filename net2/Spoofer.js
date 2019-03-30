@@ -65,69 +65,69 @@ module.exports = class {
     return false
   }
 
-  newSpoof(address) {
-    return async(() => {
+  async newSpoof(address) {
+    if(this.isSecondaryInterfaceIP(address)) {
+      return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
+    }
+    // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
+    let flag = await mode.isSpoofModeOn();
 
-      if(this.isSecondaryInterfaceIP(address)) {
-        return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
+    if (flag) {
+      const isMember = await rclient.sismemberAsync(monitoredKey, address);
+      if (!isMember) {
+        // Spoof redis set is cleared during initialization, see SpooferManager.startSpoofing()
+        // This can ensure that all monitored hosts are added to redis set and ip set at the beginning
+        // It's unnecessary to add ip address to monitored_ip_set that are already in redis set
+        await rclient.saddAsync(monitoredKey, address);
+        const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
+        await cp.exec(cmd);
       }
-      // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
-      let flag = await (mode.isSpoofModeOn())
-
-      if(flag) {
-        await (rclient.saddAsync(monitoredKey, address))
-        await (rclient.sremAsync(unmonitoredKeyAll, address));
-        await (rclient.sremAsync(unmonitoredKey, address))
-        if (ipTool.isV4Format(address)) {
-          const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
-          await (cp.exec(cmd));  
-        } else {
-          if (ipTool.isV6Format(address)) {
-            const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
-            await (cp.exec(cmd));
-          }
-        }
-      }
-    })()
+      await rclient.sremAsync(unmonitoredKeyAll, address);
+      await rclient.sremAsync(unmonitoredKey, address);
+    }
   }
 
-  newUnspoof(address) {
-    return async(() => {
-      let flag = await (mode.isSpoofModeOn())
-      
-      if(flag) {
-        await (rclient.sremAsync(monitoredKey, address))
-        if (ipTool.isV4Format(address)) {
-          const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
-          await (cp.exec(cmd));
-        } else {
-          if (ipTool.isV6Format(address)) {
-            const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
-            await (cp.exec(cmd));
-          }
-        }
-        const isMember = await (rclient.sismemberAsync(unmonitoredKeyAll, address));
-        if(!isMember) {
-          await (rclient.saddAsync(unmonitoredKey, address))
-          await (rclient.saddAsync(unmonitoredKeyAll, address))
-          setTimeout(() => {
-            rclient.sremAsync(unmonitoredKey, address)
-          }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
-        }        
+  async newUnspoof(address) {
+    let flag = await mode.isSpoofModeOn();
+
+    if (flag) {
+      let isMember = await rclient.sismemberAsync(monitoredKey, address);
+      if (isMember) {
+        await rclient.sremAsync(monitoredKey, address);
+        const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
+        await cp.exec(cmd);
       }
-    })()
+      isMember = await rclient.sismemberAsync(unmonitoredKeyAll, address);
+      if (!isMember) {
+        await rclient.saddAsync(unmonitoredKey, address);
+        await rclient.saddAsync(unmonitoredKeyAll, address);
+        setTimeout(() => {
+          rclient.sremAsync(unmonitoredKey, address);
+        }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
+      }
+    }
   }  
 
   /* spoof6 is different than ipv4.  Some hosts may take on random addresses
    * hence storing a unmonitoredKey list does not make sense.
    */
 
-  newSpoof6(address) {  
-    return rclient.saddAsync(monitoredKey6, address)
+  async newSpoof6(address) {  
+    const isMember = await rclient.sismemberAsync(monitoredKey6, address);
+    if (!isMember) {
+      await rclient.saddAsync(monitoredKey6, address);
+      const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
+      await cp.exec(cmd);
+    }
   }
 
-  newUnspoof6(address) {
-    return rclient.sremAsync(monitoredKey6, address)
+  async newUnspoof6(address) {
+    const isMember = await rclient.sismemberAsync(monitoredKey6, address);
+    if (isMember) {
+      await rclient.sremAsync(monitoredKey6, address);
+      const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
+      await cp.exec(cmd);
+    }
   }
   
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
