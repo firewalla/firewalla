@@ -15,44 +15,43 @@
 'use strict';
 
 var instance = null;
-var log = null;
-var SysManager = require('../../net2/SysManager.js');
-var sysManager = new SysManager('info');
-let firewalla = require('../../net2/Firewalla.js');
+const log = require("../../net2/logger.js")(__filename);
+
+const SysManager = require('../../net2/SysManager.js');
+const sysManager = new SysManager('info');
+const UPNP = require('../../extension/upnp/upnp');
+const upnp = new UPNP(sysManager.myGateway());
+const firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
-var key = require('../common/key.js');
-var fHome = firewalla.getFirewallaHome();
+const key = require('../common/key.js');
+const fHome = firewalla.getFirewallaHome();
 
-var later = require('later');
-var publicIp = require('public-ip');
+const later = require('later');
+const publicIp = require('public-ip');
 
-var fs = require('fs');
-var network = require('network');
-var natpmp = require('nat-pmp');
-var natupnp = require('nat-upnp');
-var ip = require('ip');
-var async = require('async');
+const fs = require('fs');
+const network = require('network');
+const ip = require('ip');
+const async = require('async');
 
-var util = require('util');
+const util = require('util');
 
-var jsonfile = require('jsonfile');
-var configFileLocation = fHome + '/etc/shadowsocks.config.json';
+const jsonfile = require('jsonfile');
+const configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
-var ttlExpire = 60*60*12;
+const ttlExpire = 60*60*12;
 
-let externalPort = 8388;
-let localPort = 8388;
+const externalPort = 8388;
+const localPort = 8388;
 
-let ssBinary = __dirname + "/bin." + firewalla.getPlatform() + "/fw_ss_server";
-let ssLogFile = firewalla.getLogFolder() + "/fw_ss_server.log";
+const ssBinary = __dirname + "/bin." + firewalla.getPlatform() + "/fw_ss_server";
+const ssLogFile = firewalla.getLogFolder() + "/fw_ss_server.log";
 
-let cp = require('child_process')
+const cp = require('child_process')
 
 module.exports = class {
     constructor(loglevel) {
         if (instance == null) {
-            log = require("../../net2/logger.js")("shadowsocks manager", loglevel);
-
             instance = this;
         }
         return instance;
@@ -76,8 +75,6 @@ module.exports = class {
 
       this.started = false;
 
-      let UPNP = require('../../extension/upnp/upnp');
-      let upnp = new UPNP("info", sysManager.myGateway());
       upnp.removePortMapping("tcp", localPort, externalPort);
 
       this._stop(callback);
@@ -153,8 +150,6 @@ module.exports = class {
     }
 
     setTimeout(() => {
-      let UPNP = require('../../extension/upnp/upnp');
-      let upnp = new UPNP("info", sysManager.myGateway());
       upnp.addPortMapping("tcp", localPort, externalPort, "Shadowsocks Proxy Port", (err) => {
         if(err) {
           log.error("Failed to add port mapping for Shadowsocks Proxy Port: " + err);

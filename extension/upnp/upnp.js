@@ -30,14 +30,15 @@ let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 const util = require('util');
 
+const SysManager = require('../../net2/SysManager.js');
+const sysManager = new SysManager();
+
 const _ = require('lodash');
 
 const f = require('../../net2/Firewalla.js');
 
 const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
-
-const Promise = require('bluebird');
 
 const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
@@ -48,9 +49,13 @@ let upnpMappings = [];
 const upnpCheckInterval = 15 * 60 * 1000 // 15 mins
 
 module.exports = class {
-  constructor(loglevel, gw) {
+  constructor(gw) {
     if (instance == null) {
-      this.gw = gw;
+      if (gw)
+        this.gw = gw;
+      else
+        this.gw = sysManager.myGateway();
+
       instance = this;
       this.refreshTimers = {};
 
@@ -150,7 +155,8 @@ module.exports = class {
           callback(new Error("no upnp/natpmp"));
         }
       } catch (e) {
-        log.error("UPNP.addPortMapping exception", e, {});
+        log.error("UPNP.addPortMapping exception", e);
+        callback(e);
       }
     });
   }
@@ -187,7 +193,7 @@ module.exports = class {
         log.info("Mapping handler already exists");
       }
 
-      callback(err);
+      callback();
     });
   }
 
@@ -254,7 +260,7 @@ module.exports = class {
       public: externalPort
     }, (err) => {
       if (err) {
-        log.error("UPNP Failed to remove port mapping: " + err);
+        log.error(`UPNP Failed to remove port mapping [${protocol}, ${localPort}, ${externalPort}]: ` + err);
         if (callback) {
           callback(err);
         }
