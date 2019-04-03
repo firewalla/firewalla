@@ -563,7 +563,7 @@ module.exports = class {
   isMonitoring(ip) {
     const hostObject = hostManager.getHostFast(ip)
 
-    if(hostObject && hostObject.spoofing == false) {
+    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
       return false
     } else {
       return true;
@@ -607,12 +607,14 @@ module.exports = class {
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
       let myip = sysManager.myIp()
+      const systemPolicy = hostManager.getPolicyFast();
+      const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
       // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
       if(myip && 
-        (data["id.orig_h"] === myip ||
-          data["id.resp_h"] === myip) && 
-        !this.isMonitoring(myip)) {        
+        (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
+        (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
       }
     }
