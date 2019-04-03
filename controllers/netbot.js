@@ -1218,14 +1218,7 @@ class netBot extends ControllerBot {
               break;
             case "enhancedSpoof":
               this._enhancedSpoof(msg.target, value.enhancedSpoof, (err, obj) => {
-                if (err) {
-                  cb(err);
-                } else {
-                  // turn monitoring of firewalla off/on if enhanced spoof is on/off
-                  this._block(sysManager.myIp(), "monitor", !value.enhancedSpoof, (err, obj) => {
-                    cb(err);
-                  });
-                }
+                cb(err);
               });
               break;
             case "vulScan":
