@@ -65,7 +65,7 @@ function startSpoofing() {
   log.info("start spoofing")
 
   return async(() => {
-    await (this.emptySpoofSet())
+    await (this.emptySpoofSet()) // all monitored_hosts* keys are cleared during startup
     
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();

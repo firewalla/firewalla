@@ -16,6 +16,7 @@ sudo ipset create blocked_domain_set hash:ip family inet hashsize 128 maxelem 65
 sudo ipset create blocked_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
 sudo ipset create trusted_ip_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create monitored_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create devicedns_mac_set hash:mac &>/dev/null
 sudo ipset create protected_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
@@ -29,6 +30,7 @@ sudo ipset flush blocked_domain_set
 sudo ipset flush blocked_ip_port_set
 sudo ipset flush blocked_mac_set
 sudo ipset flush trusted_ip_set
+sudo ipset flush monitored_ip_set
 sudo ipset flush devicedns_mac_set
 sudo ipset flush protected_ip_set
 sudo ipset flush whitelist_ip_set
@@ -177,6 +179,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create blocked_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create blocked_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create trusted_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create protected_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
@@ -187,6 +190,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush blocked_domain_set6
   sudo ipset flush blocked_ip_port_set6
   sudo ipset flush trusted_ip_set6
+  sudo ipset flush monitored_ip_set6
   sudo ipset flush protected_ip_set6
   sudo ipset flush whitelist_ip_set6
   sudo ipset flush whitelist_domain_set6
