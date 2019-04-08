@@ -34,7 +34,7 @@ const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
 
 const ShieldManager = require('../../net2/ShieldManager.js');
-const shieldManager = new ShieldManager();
+let shieldManager = null;
 
 const rp = require('request-promise')
 
@@ -162,6 +162,8 @@ class PortForward {
       }
       
       log.info("PORTMAP: Add",map);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
       await (shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport));
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
@@ -182,6 +184,8 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
       await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
 
       // we call remove anyway ... even there is no entry
@@ -208,6 +212,7 @@ class PortForward {
 
   start() {
     log.info("PortForwarder:Starting PortForwarder ...")
+    shieldManager = new ShieldManager();
     return async(() => {
       await (this.loadConfig())
       await (this.restore())

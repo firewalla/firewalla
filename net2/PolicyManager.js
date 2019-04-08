@@ -546,7 +546,7 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy", host);
+      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
       return; // doesn't support per-device policy
     }
     let needUpdate = false;
