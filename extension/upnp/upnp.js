@@ -145,6 +145,7 @@ module.exports = class {
   }
 
   addPortMapping(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     this.getCapability(() => {
       try {
         if (this.upnpEnabled == true) {
@@ -162,6 +163,7 @@ module.exports = class {
   }
 
   addPortMappingUPNP(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
 
     upnpClient.portMapping({
@@ -198,6 +200,7 @@ module.exports = class {
   }
 
   addPortMappingNATPMP(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
     if (this.natpmpClient() == null) {
       callback(new Error("natpmpClient null"), null);
@@ -215,6 +218,7 @@ module.exports = class {
   }
 
   removePortMappingNATPMP(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
     let timer = this.refreshTimers[localPort + ":" + externalPort];
     if (this.natpmpClient() == null) {
@@ -233,6 +237,7 @@ module.exports = class {
   }
 
   removePortMapping(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { }
     this.getCapability(() => {
       try {
@@ -252,6 +257,7 @@ module.exports = class {
   }
 
   removePortMappingUPNP(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
 
     upnpClient.portUnmapping({
@@ -296,6 +302,7 @@ module.exports = class {
   }
 
   hasPortMapping(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     upnpClient.getMappings({
       // local: true
       // description: description
