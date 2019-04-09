@@ -460,10 +460,14 @@ function reapply() {
     case "spoof":
     case "autoSpoof":
     case "manualSpoof":
-      _disableSpoofMode()
+      await (_disableSpoofMode())
       break;
     case "dhcp":
-      _disableDHCPMode()
+      await (_disableDHCPMode(lastMode))
+      break;
+    case "dhcpSpoof":
+      await (_disableSpoofMode())
+      await (_disableDHCPMode(lastMode))
       break;
     case "none":
       // do nothing

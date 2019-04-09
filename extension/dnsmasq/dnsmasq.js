@@ -1214,7 +1214,7 @@ module.exports = class DNSMASQ {
       this.dhcpSpoofMode = true;
     }
     try {
-      log.info("Enabling DHCP mode");
+      log.info("Enabling DHCP mode: " + mode);
       await this.start(true); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
       log.info("DHCP mode is enabled");
     } catch (err) {
@@ -1230,7 +1230,7 @@ module.exports = class DNSMASQ {
       this.dhcpSpoofMode = false;
     }
     try {
-      log.info("Disabling DHCP mode");
+      log.info("Disabling DHCP mode: " + mode);
       await (this.start(true)); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
       log.info("DHCP mode is disabled");
     } catch (err) {
