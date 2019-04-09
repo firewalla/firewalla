@@ -85,6 +85,11 @@ class DNSMASQSensor extends Sensor {
       .then((mode) => {
         if(mode === "dhcp") {
           dnsmasq.setDhcpMode(true);
+          dnsmasq.setDhcpSpoofMode(false); // just in case
+        }
+        if (mode === "dhcpSpoof") {
+          dnsmasq.setDhcpSpoofMode(true);
+          dnsmasq.setDhcpMode(false);
         }
 
         if(!this.registered) {

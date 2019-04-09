@@ -379,10 +379,10 @@ function apply() {
 
       await (hostManager.getHostsAsync())
       if (mode === Mode.MODE_DHCP_SPOOF) {
-        // dhcp service is needed for dhcp spoof mode
-        await (_enforceDHCPMode(mode))
         // enhanced spoof is necessary for dhcp spoof
         hostManager.setPolicy("enhancedSpoof", true);
+        // dhcp service is needed for dhcp spoof mode
+        await (_enforceDHCPMode(mode))
       }
       break;
     case Mode.MODE_MANUAL_SPOOF:
@@ -534,6 +534,13 @@ function setAutoSpoofAndPublish() {
     });
 }
 
+function setDHCPSpoofAndPublish() {
+  Mode.dhcpSpoofModeOn()
+    .then(() => {
+      publish(Mode.MODE_DHCP_SPOOF);
+    })
+}
+
 function setManualSpoofAndPublish() { 
   Mode.manualSpoofModeOn()
     .then(() => {
@@ -568,6 +575,7 @@ module.exports = {
   setDHCPAndPublish: setDHCPAndPublish,
   setSpoofAndPublish: setSpoofAndPublish,
   setAutoSpoofAndPublish: setAutoSpoofAndPublish,
+  setDHCPSpoofAndPublish: setDHCPSpoofAndPublish,
   setManualSpoofAndPublish: setManualSpoofAndPublish,
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,

@@ -91,6 +91,7 @@ module.exports = class DNSMASQ {
       instance = this;
 
       this.dhcpMode = false;
+      this.dhcpSpoofMode = false;
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
@@ -792,14 +793,14 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.dhcpMode) {
+    if (this.dhcpMode || this.dhcpSpoofMode) {
       this.needWriteHostsFile = true;
       log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
     }
   }
 
   onSpoofChanged() {
-    if (this.dhcpMode) {
+    if (this.dhcpMode || this.dhcpSpoofMode) {
       this.needWriteHostsFile = true;
       log.debug("Spoof status changed, set needWriteHostsFile to true");
     }
@@ -871,6 +872,13 @@ module.exports = class DNSMASQ {
       hostsList = hosts.map(h => (h.spoofing === 'false') ?
         `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
         `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
+      );
+    }
+
+    if (this.dhcpSpoofMode) {
+      hostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
+        `${h.mac},set:monitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}`
       );
     }
 
@@ -1234,6 +1242,10 @@ module.exports = class DNSMASQ {
     this.dhcpMode = isEnabled;
   }
 
+  setDhcpSpoofMode(isEnabled) {
+    this.dhcpSpoofMode = isEnabled;
+  }
+
   async verifyDNSConnectivity() {
     for (let i in VERIFICATION_DOMAINS) {
       const domain = VERIFICATION_DOMAINS[i];
@@ -1277,7 +1289,7 @@ module.exports = class DNSMASQ {
       if(!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      if (this.dhcpMode) {
+      if (this.dhcpMode || this.dhcpSpoofMode) {
         // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
         log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
         await this._remove_all_iptables_rules();

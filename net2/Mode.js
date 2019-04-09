@@ -86,6 +86,10 @@ function autoSpoofModeOn() {
   return setSetupMode(MODE_AUTO_SPOOF)
 }
 
+function dhcpSpoofModeOn() {
+  return setSetupMode(MODE_DHCP_SPOOF)
+}
+
 function manualSpoofModeOn() {
   return setSetupMode(MODE_MANUAL_SPOOF)
 }
@@ -98,12 +102,16 @@ function isDHCPModeOn() {
   return isXModeOn(MODE_DHCP)
 }
 
-function isSpoofModeOn() {
-  return isAutoSpoofModeOn()
+async function isSpoofModeOn() {
+  return (await isAutoSpoofModeOn()) || (await isDHCPSpoofModeOn())
 }
 
 function isAutoSpoofModeOn() {  
   return isXModeOn(MODE_AUTO_SPOOF)
+}
+
+function isDHCPSpoofModeOn() {
+  return isXModeOn(MODE_DHCP_SPOOF)
 }
 
 function isManualSpoofModeOn() {  
@@ -140,6 +148,7 @@ module.exports = {
   dhcpModeOn: dhcpModeOn,
   spoofModeOn: spoofModeOn,
   autoSpoofModeOn: autoSpoofModeOn,
+  dhcpSpoofModeOn: dhcpSpoofModeOn,
   manualSpoofModeOn: manualSpoofModeOn,
   noneModeOn: noneModeOn,
   

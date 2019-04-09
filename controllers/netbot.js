@@ -1476,6 +1476,9 @@ class netBot extends ControllerBot {
           case "autoSpoof":
             modeManager.setAutoSpoofAndPublish()
             break;
+          case "dhcpSpoof":
+            modeManager.setDHCPSpoofAndPublish()
+            break;
           case "manualSpoof":
             modeManager.setManualSpoofAndPublish()
             break;
