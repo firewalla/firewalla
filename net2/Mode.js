@@ -136,6 +136,7 @@ function isXModeOn(x) {
 module.exports = {
   isSpoofModeOn:isSpoofModeOn,
   isDHCPModeOn:isDHCPModeOn,
+  isDHCPSpoofModeOn: isDHCPSpoofModeOn,
   isManualSpoofModeOn:isManualSpoofModeOn,
   isNoneModeOn:isNoneModeOn,
   isAutoSpoofModeOn:isAutoSpoofModeOn,
