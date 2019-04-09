@@ -108,7 +108,7 @@ class DNSMASQSensor extends Sensor {
               this._bufferEvent(event);
             } else {
               log.info("Starting DHCP")
-              dnsmasq.enableDHCP();
+              dnsmasq.enableDHCP(event.mode);
             }
           });
 
@@ -116,7 +116,7 @@ class DNSMASQSensor extends Sensor {
             if (!this.started) {
               this._bufferEvent(event);
             } else {
-              dnsmasq.disableDHCP();
+              dnsmasq.disableDHCP(event.mode);
             }
           });
 

@@ -34,6 +34,7 @@ let MODE_NONE = "none"
 let MODE_AUTO_SPOOF = "spoof" // use spoof for backward compatibility
 let MODE_MANUAL_SPOOF = "manualSpoof"
 let MODE_DHCP = "dhcp"
+let MODE_DHCP_SPOOF = "dhcpSpoof"
 
 let DEFAULT_MODE = MODE_NONE
 
@@ -145,5 +146,6 @@ module.exports = {
   MODE_NONE: MODE_NONE,
   MODE_AUTO_SPOOF: MODE_AUTO_SPOOF,
   MODE_MANUAL_SPOOF: MODE_MANUAL_SPOOF,
-  MODE_DHCP: MODE_DHCP
+  MODE_DHCP: MODE_DHCP,
+  MODE_DHCP_SPOOF: MODE_DHCP_SPOOF
 };

@@ -315,17 +315,21 @@ function _enableSecondaryInterface() {
   });
 }
 
-function _enforceDHCPMode() {
+function _enforceDHCPMode(mode) {
+  mode = mode || "dhcp";
   sem.emitEvent({
     type: 'StartDHCP',
+    mode: mode,
     message: "Enabling DHCP Mode"
   });
   return Promise.resolve();
 }
 
-function _disableDHCPMode() {
+function _disableDHCPMode(mode) {
+  mode = mode || "dhcp";
   sem.emitEvent({
     type: 'StopDHCP',
+    mode: mode,
     message: "Disabling DHCP Mode"
   });
   return Promise.resolve();
@@ -364,6 +368,7 @@ function apply() {
       await (_enforceDHCPMode())
       pclient.publishAsync("System:IPChange", "");
       break;
+    case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
       await (_enableSecondaryInterface()) // secondary interface ip/subnet may be changed
       await (_restoreSimpleModeNetworkSettings())
@@ -373,6 +378,12 @@ function apply() {
       hostManager.cleanHostOperationHistory()
 
       await (hostManager.getHostsAsync())
+      if (mode === Mode.MODE_DHCP_SPOOF) {
+        // dhcp service is needed for dhcp spoof mode
+        await (_enforceDHCPMode(mode))
+        // enhanced spoof is necessary for dhcp spoof
+        hostManager.setPolicy("enhancedSpoof", true);
+      }
       break;
     case Mode.MODE_MANUAL_SPOOF:
       await (_enforceSpoofMode())
