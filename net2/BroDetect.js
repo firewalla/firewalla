@@ -276,21 +276,28 @@ module.exports = class {
     this.ipMacMapping = {};
   }
 
-  _activeMacHeartbeat() {
-    Object.keys(this.activeMac).forEach((key) => {
-      const ip = this.activeMac[key];
-      const host = {
-        ipv4: ip,
-        ipv4Addr: ip,
-        mac: key
-      };
-      sem.emitEvent({
-        type: "DeviceUpdate",
-        message: "Device network activity heartbeat",
-        host: host,
-        from: "BroDetect"
-      });
-    });
+  async _activeMacHeartbeat() {
+    for (let key in this.activeMac) {
+      let ip = this.activeMac[key];
+      if (!iptool.isV4Format(ip)) {
+        // get corresponding ipv4 address
+        const macEntry = await hostTool.getMACEntry(key);
+        ip = macEntry && macEntry.ipv4Addr;
+      }
+      if (ip) {
+        const host = {
+          ipv4: ip,
+          ipv4Addr: ip,
+          mac: key
+        };
+        sem.emitEvent({
+          type: "DeviceUpdate",
+          message: "Device network activity heartbeat",
+          host: host,
+          from: "BroDetect"
+        });
+      }
+    }
     this.activeMac = {};
   }
 
