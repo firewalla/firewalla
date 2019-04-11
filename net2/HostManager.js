@@ -2039,7 +2039,10 @@ module.exports = class HostManager {
     try {
       const routersString = await rclient.getAsync("guessed_router");
       if(routersString) {
-        json.guessedRouters = JSON.parse(routersString);
+        const routers = JSON.parse(routersString);
+        if(!_.isEmpty(routers)) {
+          json.guessedRouters = routers;
+        }
       }
     } catch (err) {
       log.error("Failed to get guessed routers:", err);
