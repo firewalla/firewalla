@@ -38,7 +38,7 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
-const _ = require('underscore')
+const _ = require('lodash');
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
@@ -48,12 +48,6 @@ const blockHttpPort = 8882;
 const blockHttpsPort = 8885;
 
 const WHITELIST_MARK = 1;
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 class CategoryUpdater {
 
@@ -77,19 +71,17 @@ class CategoryUpdater {
           this.refreshAllCategoryRecords()
         }, 60 * 60 * 1000) // update records every hour
 
-        setTimeout(() => {
+        setTimeout(async () => {
 
-          (async () => {
-            log.info("============= UPDATING CATEGORY IPSET =============")
-            await this.refreshAllCategoryRecords()
-            log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
-          })()
+          log.info("============= UPDATING CATEGORY IPSET =============")
+          await this.refreshAllCategoryRecords()
+          log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
 
         }, 2 * 60 * 1000) // after two minutes
-        
+
         sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
           if(event.category) {
-            this.recycleIPSet(event.category)    
+            this.recycleIPSet(event.category)
           }
         });
       }
@@ -308,7 +300,7 @@ class CategoryUpdater {
     if(!category || !domain) {
       return;
     }
-    
+
     if(!this.isActivated(category)) {
       return
     }
@@ -334,17 +326,17 @@ class CategoryUpdater {
     log.debug(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d, {})
+    await this.updateIPSetByDomain(category, d)
   }
 
   getMapping(category) {
     return `cuip:${category}`
   }
-  
+
   async updateDomainIPMapping(category, domain) {
     const domainBlock = require('./DomainBlock.js')()
     domainBlock.externalMapping = this.getMapping(category)
-    
+
     // resolve this domain and add resolved ip addresses to the given mapping pool
     // e.g. cuip:games
     // the ip addresses in this pool will dynamically added and cleaned up periodically
@@ -356,7 +348,7 @@ class CategoryUpdater {
   getIPSetName(category) {
     return Block.getDstSet(category);
   }
-  
+
   getIPSetNameForIPV6(category) {
     return Block.getDstSet6(category);
   }
@@ -368,20 +360,18 @@ class CategoryUpdater {
   getTempIPSetNameForIPV6(category) {
     return Block.getDstSet6(`tmp_${category}`);
   }
-  
+
   async updateIPSet(category, options) {
     const mapping = this.getMapping(category)
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
-    
+
     let cmd4 = `redis-cli smembers ${mapping} | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     let cmd6 = `redis-cli smembers ${mapping} | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-    return (async () => {
-      await exec(cmd4)
-      await exec(cmd6)
-    })()
+    await exec(cmd4)
+    await exec(cmd6)
   }
-  
+
   getDomainMapping(domain) {
     return `rdns:domain:${domain}`
   }
@@ -439,6 +429,7 @@ class CategoryUpdater {
     }
   }
 
+  // use "ipset restore" to add rdns entries to corresponding ipset
   async updateIPSetByDomain(category, domain, options) {
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
@@ -504,12 +495,12 @@ class CategoryUpdater {
 
       let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-      return (async () => {
+      try {
         await exec(cmd4)
         await exec(cmd6)
-      })().catch((err) => {
+      } catch(err) {
         log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      })
+      }
     }
   }
 
@@ -547,13 +538,13 @@ class CategoryUpdater {
       if(domainSuffix.startsWith("*.")) {
         domainSuffix = domainSuffix.substring(2);
       }
-      
+
       const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
       if(!existing) { // a new domain
         log.info(`Found a new domain with new rdns: ${domainSuffix}`)
         await domainBlock.resolveDomain(domainSuffix)
       }
-      
+
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
       })
@@ -704,7 +695,7 @@ class CategoryUpdater {
     await exec(cmdCreateNatOutgoingTCPRule6);
     await exec(cmdCreateNatOutgoingUDPRule6);
   }
-  
+
   async iptablesBlockCategory(category) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
@@ -796,13 +787,13 @@ class CategoryUpdater {
     await exec(cmdDeleteNatOutgoingUDPRule6)
   }
 
-  wrapIptables(rule) {        
+  wrapIptables(rule) {
     let command = " -I ";
     let checkRule = null;
 
     if(rule.indexOf(command) > -1) {
       checkRule = rule.replace(command, " -C ");
-    }      
+    }
 
     command = " -A ";
     if(rule.indexOf(command) > -1) {
@@ -818,8 +809,8 @@ class CategoryUpdater {
     if(checkRule) {
       return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
     } else {
-      return rule;  
-    }    
+      return rule;
+    }
   }
 
   async iptablesUnblockCategoryPerDeviceNew(category, macSet) {
@@ -835,7 +826,7 @@ class CategoryUpdater {
     await exec(cmdDeleteOutgoingTCPRule);
     await exec(cmdDeleteOutgoingUDPRule);
     await exec(cmdDeleteOutgoingTCPRule6);
-    await exec(cmdDeleteOutgoingUDPRule6);    
+    await exec(cmdDeleteOutgoingUDPRule6);
   }
 
   async iptablesUnblockCategoryPerDevice(category, macSet) {
@@ -851,14 +842,14 @@ class CategoryUpdater {
     const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`)
     const cmdDeleteIncomingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`)
 
-    await (exec(cmdDeleteOutgoingRule6))
-    await (exec(cmdDeleteIncomingRule6))
-    await (exec(cmdDeleteOutgoingTCPRule6))
-    await (exec(cmdDeleteIncomingTCPRule6))
-    await (exec(cmdDeleteOutgoingRule))
-    await (exec(cmdDeleteIncomingRule))
-    await (exec(cmdDeleteOutgoingTCPRule))
-    await (exec(cmdDeleteIncomingTCPRule))
+    await exec(cmdDeleteOutgoingRule6);
+    await exec(cmdDeleteIncomingRule6);
+    await exec(cmdDeleteOutgoingTCPRule6);
+    await exec(cmdDeleteIncomingTCPRule6);
+    await exec(cmdDeleteOutgoingRule);
+    await exec(cmdDeleteIncomingRule);
+    await exec(cmdDeleteOutgoingTCPRule);
+    await exec(cmdDeleteIncomingTCPRule);
   }
 
 }

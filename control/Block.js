@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,23 +14,14 @@
  */
 'use strict';
 
-let util = require('util');
-let cp = require('child_process');
-let path = require('path');
-let log = require("../net2/logger.js")(__filename);
-const Promise = require('bluebird');
+const util = require('util');
+const cp = require('child_process');
+const log = require("../net2/logger.js")(__filename);
 
-let iptool = require("ip");
-
-let inited = false;
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
+const iptool = require("ip");
 
 const Accounting = require('./Accounting.js');
 const accounting = new Accounting();
-
-const AUTO_ROLLBACK_TIME= 3600 * 1000; // in one hour, dns cache should already invalidated after one hour
 
 const exec = require('child-process-promise').exec
 
@@ -58,16 +49,14 @@ function setupBlockChain() {
   // FIXME: ignore if failed or not
   cp.execSync(cmd);
 
-  async(() => {
-    setupCategoryEnv("games");
-    setupCategoryEnv("porn");
-    setupCategoryEnv("social");
-    setupCategoryEnv("shopping");
-    setupCategoryEnv("p2p");
-    setupCategoryEnv("gamble");
-    setupCategoryEnv("av");
-    setupCategoryEnv("default_c");
-  })()
+  setupCategoryEnv("games");
+  setupCategoryEnv("porn");
+  setupCategoryEnv("social");
+  setupCategoryEnv("shopping");
+  setupCategoryEnv("p2p");
+  setupCategoryEnv("gamble");
+  setupCategoryEnv("av");
+  setupCategoryEnv("default_c");
 
   inited = true;
 }
@@ -90,7 +79,7 @@ async function enableGlobalWhitelist() {
     // Beware that _wrapIptables is not used here in purpose. Each global whitelist rule will create a MARK policy rule
     const cmdCreateMarkRule = `sudo iptables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`;
     const cmdCreateMarkRule6 = `sudo ip6tables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`;
-    
+
     await exec(cmdCreateMarkRule);
     await exec(cmdCreateMarkRule6);
   } catch (err) {
@@ -103,7 +92,7 @@ async function disableGlobalWhitelist() {
     // delete MARK policy rule in mangle table
     const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
     const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
-    
+
     await exec(cmdDeleteMarkRule);
     await exec(cmdDeleteMarkRule6);
   } catch (err) {
@@ -120,12 +109,12 @@ async function setupWhitelistEnv(macTag, dstTag) {
     const macSet = getMacSet(macTag);
     const dstSet = getDstSet(dstTag);
     const dstSet6 = getDstSet6(dstTag);
-  
+
     const cmdCreateMacSet = `sudo ipset create -! ${macSet} hash:mac`;
     const cmdCreateDstSet = `sudo ipset create -! ${dstSet} hash:ip family inet hashsize 128 maxelem 65536`;
     const cmdCreateDstSet6 = `sudo ipset create -! ${dstSet6} hash:ip family inet6 hashsize 128 maxelem 65536`;
 
-    // mark packet in mangle table which indicates the packets need to go through the whitelist chain. 
+    // mark packet in mangle table which indicates the packets need to go through the whitelist chain.
     // Use insert(-I) here since there is a clear mark rule at the end of the PREROUTING chain in mangle to allow all dns packets
     const cmdCreateMarkRule = _wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
     const cmdCreateMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
@@ -138,7 +127,7 @@ async function setupWhitelistEnv(macTag, dstTag) {
     const cmdCreateNatOutgoingUDPRule = _wrapIptables(`sudo iptables -w -t nat -I FW_NAT_WHITELIST -p udp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j RETURN`);
     const cmdCreateNatOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_WHITELIST -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j RETURN`);
     const cmdCreateNatOutgoingUDPRule6 = _wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_WHITELIST -p udp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j RETURN`);
-  
+
     await exec(cmdCreateMacSet);
     await exec(cmdCreateDstSet);
     await exec(cmdCreateDstSet6);
@@ -155,13 +144,13 @@ async function setupWhitelistEnv(macTag, dstTag) {
   }
 }
 
-function setupBlockingEnv(macTag, dstTag) {
+async function setupBlockingEnv(macTag, dstTag) {
   if(!macTag || !dstTag) {
     return Promise.resolve()
   }
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
-  return async(() => {
+  try {
     const macSet = getMacSet(macTag)
     const dstSet = getDstSet(dstTag)
     const dstSet6 = getDstSet6(dstTag)
@@ -185,29 +174,29 @@ function setupBlockingEnv(macTag, dstTag) {
     const cmdCreateNatOutgoingUDPRule6 = _wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j REDIRECT --to-ports 8888`)
 
 
-    await (exec(cmdCreateMacSet))
-    await (exec(cmdCreateDstSet))
-    await (exec(cmdCreateDstSet6))
-    await (exec(cmdCreateOutgoingRule))
-    await (exec(cmdCreateIncomingRule))
-    await (exec(cmdCreateOutgoingTCPRule))
-    await (exec(cmdCreateIncomingTCPRule))
-    await (exec(cmdCreateOutgoingRule6))
-    await (exec(cmdCreateIncomingRule6))
-    await (exec(cmdCreateOutgoingTCPRule6))
-    await (exec(cmdCreateIncomingTCPRule6))
-    await (exec(cmdCreateNatOutgoingTCPRule))
-    await (exec(cmdCreateNatOutgoingUDPRule))
-    await (exec(cmdCreateNatOutgoingTCPRule6))
-    await (exec(cmdCreateNatOutgoingUDPRule6))
-  })().catch(err => {
+    await exec(cmdCreateMacSet);
+    await exec(cmdCreateDstSet);
+    await exec(cmdCreateDstSet6);
+    await exec(cmdCreateOutgoingRule);
+    await exec(cmdCreateIncomingRule);
+    await exec(cmdCreateOutgoingTCPRule);
+    await exec(cmdCreateIncomingTCPRule);
+    await exec(cmdCreateOutgoingRule6);
+    await exec(cmdCreateIncomingRule6);
+    await exec(cmdCreateOutgoingTCPRule6);
+    await exec(cmdCreateIncomingTCPRule6);
+    await exec(cmdCreateNatOutgoingTCPRule);
+    await exec(cmdCreateNatOutgoingUDPRule);
+    await exec(cmdCreateNatOutgoingTCPRule6);
+    await exec(cmdCreateNatOutgoingUDPRule6);
+  } catch(err) {
     log.error('Error when setup blocking env', err);
-  })
+  }
 }
 
-function setupCategoryEnv(category) {
+async function setupCategoryEnv(category) {
   if(!category) {
-    return Promise.resolve()
+    return;
   }
 
   const ipset = getDstSet(category);
@@ -220,26 +209,24 @@ function setupCategoryEnv(category) {
   const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} hash:ip family inet hashsize 128 maxelem 65536`
   const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} hash:ip family inet6 hashsize 128 maxelem 65536`
 
-  return async(() => {
-    await (exec(cmdCreateCategorySet))
-    await (exec(cmdCreateCategorySet6))
-    await (exec(cmdCreateTempCategorySet))
-    await (exec(cmdCreateTempCategorySet6))
-  })()
+  await exec(cmdCreateCategorySet);
+  await exec(cmdCreateCategorySet6);
+  await exec(cmdCreateTempCategorySet);
+  await exec(cmdCreateTempCategorySet6);
 }
 
-function existsBlockingEnv(tag) {
+async function existsBlockingEnv(tag) {
   const cmd = `sudo iptables -w -L FW_BLOCK | grep ${getMacSet(tag)} | wc -l`
-  return async(() => {
-    let output = await (exec(cmd))
+  try {
+    let output = await exec(cmd);
     if(output.stdout == 4) {
       return true
     } else {
       return false
     }
-  })().catch(err => {
+  } catch(err) {
     log.error('Error when check blocking env existence', err);
-  })
+  }
 }
 
 async function destroyWhitelistEnv(macTag, dstTag, destroyDstCache) {
@@ -255,7 +242,7 @@ async function destroyWhitelistEnv(macTag, dstTag, destroyDstCache) {
 
     // delete MARK policy rule in mangle table
     const cmdDeleteMarkRule = _wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
-    
+
     const cmdDeleteMarkRule6 = _wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -m set --match-set ${macSet} src -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
 
     // delete RETURN policy rule in whitelist chain
@@ -266,7 +253,7 @@ async function destroyWhitelistEnv(macTag, dstTag, destroyDstCache) {
     const cmdDeleteNatOutgoingUDPRule = _wrapIptables(`sudo iptables -w -t nat -D FW_NAT_WHITELIST -p udp -m set --match-set ${macSet} src -m set --match-set ${dstSet} dst -j RETURN`);
     const cmdDeleteNatOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_WHITELIST -p tcp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j RETURN`);
     const cmdDeleteNatOutgoingUDPRule6 = _wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_WHITELIST -p udp -m set --match-set ${macSet} src -m set --match-set ${dstSet6} dst -j RETURN`);
-  
+
     const cmdDeleteMacSet = `sudo ipset destroy ${macSet}`;
     const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`;
     const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`;
@@ -285,7 +272,7 @@ async function destroyWhitelistEnv(macTag, dstTag, destroyDstCache) {
       await exec(cmdDeleteDstSet);
     if (!await _isIpsetReferenced(dstSet6) && destroyDstCache)
       await exec(cmdDeleteDstSet6);
-    
+
     log.info("Finish destroying whitelist environment for ", macTag, dstTag);
   } catch (err) {
     log.error("Error when destroy whitelist env", err);
@@ -299,15 +286,15 @@ async function _isIpsetReferenced(ipset) {
   return referenceCount !== "0";
 }
 
-function destroyBlockingEnv(macTag, dstTag, destroyDstCache) {
+async function destroyBlockingEnv(macTag, dstTag, destroyDstCache) {
   if(!macTag || !dstTag) {
-    return Promise.resolve()
+    return;
   }
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
-  return async(() => {
+  try {
     log.info("Destroying block environment for ", macTag, dstTag)
-    
+
     const macSet = getMacSet(macTag)
     const dstSet = getDstSet(dstTag)
     const dstSet6 = getDstSet6(dstTag)
@@ -331,29 +318,29 @@ function destroyBlockingEnv(macTag, dstTag, destroyDstCache) {
     const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`
     const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`
 
-    await (exec(cmdDeleteOutgoingRule6))
-    await (exec(cmdDeleteIncomingRule6))
-    await (exec(cmdDeleteOutgoingTCPRule6))
-    await (exec(cmdDeleteIncomingTCPRule6))
-    await (exec(cmdDeleteOutgoingRule))
-    await (exec(cmdDeleteIncomingRule))
-    await (exec(cmdDeleteOutgoingTCPRule))
-    await (exec(cmdDeleteIncomingTCPRule))
-    await (exec(cmdDeleteNatOutgoingTCPRule))
-    await (exec(cmdDeleteNatOutgoingUDPRule))
-    await (exec(cmdDeleteNatOutgoingTCPRule6))
-    await (exec(cmdDeleteNatOutgoingUDPRule6))
-    if (!await (_isIpsetReferenced(macSet)) && destroyDstCache)
-      await (exec(cmdDeleteMacSet))
-    if (!await (_isIpsetReferenced(dstSet)) && destroyDstCache)
-      await (exec(cmdDeleteDstSet))
-    if (!await (_isIpsetReferenced(dstSet6)) && destroyDstCache)
-      await (exec(cmdDeleteDstSet6))
+    await exec(cmdDeleteOutgoingRule6);
+    await exec(cmdDeleteIncomingRule6);
+    await exec(cmdDeleteOutgoingTCPRule6);
+    await exec(cmdDeleteIncomingTCPRule6);
+    await exec(cmdDeleteOutgoingRule);
+    await exec(cmdDeleteIncomingRule);
+    await exec(cmdDeleteOutgoingTCPRule);
+    await exec(cmdDeleteIncomingTCPRule);
+    await exec(cmdDeleteNatOutgoingTCPRule);
+    await exec(cmdDeleteNatOutgoingUDPRule);
+    await exec(cmdDeleteNatOutgoingTCPRule6);
+    await exec(cmdDeleteNatOutgoingUDPRule6);
+    if (!await _isIpsetReferenced(macSet) && destroyDstCache)
+      await exec(cmdDeleteMacSet);
+    if (!await _isIpsetReferenced(dstSet) && destroyDstCache)
+      await exec(cmdDeleteDstSet);
+    if (!await _isIpsetReferenced(dstSet6) && destroyDstCache)
+      await exec(cmdDeleteDstSet6);
 
     log.info("Finish destroying block environment for ", macTag, dstTag)
-  })().catch(err => {
+  } catch(err) {
     log.error('Error when destroy blocking env', err);
-  })
+  }
 }
 
 let ipsetQueue = [];
@@ -402,14 +389,14 @@ function ipsetEnqueue(ipsetCmd) {
   }
 }
 
-function block(destination, ipset) {
+async function block(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
   // never block black hole ip, they are already blocked in setup scripts
   if(f.isReservedBlockingIP(destination)) {
-    return Promise.resolve()
+    return;
   }
-  
+
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -418,12 +405,12 @@ function block(destination, ipset) {
     cmd = `add -! ${ipset}6 ${destination}`
   } else {
     // do nothing
-    return Promise.resolve()
+    return;
   }
 
   log.debug("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
-  return Promise.resolve()
+  return;
 }
 
 function blockImmediate(destination, ipset) {
@@ -433,7 +420,7 @@ function blockImmediate(destination, ipset) {
   if(f.isReservedBlockingIP(destination)) {
     return Promise.resolve()
   }
-  
+
   let cmd = null;
 
   if(iptool.isV4Format(destination)) {
@@ -453,7 +440,7 @@ function blockImmediate(destination, ipset) {
         reject(err);
         return;
       }
-      
+
       resolve();
     });
   });
@@ -522,7 +509,7 @@ function unblock(destination, ipset) {
   if(f.isReservedBlockingIP(destination)) {
     return Promise.resolve()
   }
-  
+
   let cmd = null;
   if(iptool.isV4Format(destination)) {
     cmd = `sudo ipset del -! ${ipset} ${destination}`
@@ -552,7 +539,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
   let destinationStr = ""
 
   let cmd = getIPTablesCmd(v6);
-  
+
   if (destination) {
      let destinationStr = " --destination "+destination;
   }
@@ -566,7 +553,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
           log.info("BLOCK:OUTGOING==> ", addCMD);
           cp.exec(addCMD, (err, stdout, stderr) => {
             log.debug(err, stdout, stderr);
-            callback(err);        
+            callback(err);
           });
         }
       });
@@ -574,7 +561,7 @@ function blockOutgoing(macAddress, destination, state, v6, callback) {
       let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
       cp.exec(delCMD, (err, stdout, stderr) => {
         log.debug(err, stdout, stderr);
-        callback(err);        
+        callback(err);
       });
   }
 }
@@ -583,7 +570,7 @@ function blockMac(macAddress, ipset) {
   ipset = ipset || "blocked_mac_set"
 
   let cmd = `sudo ipset add -! ${ipset} ${macAddress}`;
-  
+
   log.info("Control:Block:",cmd);
 
   accounting.addBlockedDevice(macAddress);
@@ -595,11 +582,11 @@ function unblockMac(macAddress, ipset) {
   ipset = ipset || "blocked_mac_set"
 
   let cmd = `sudo ipset del -! ${ipset} ${macAddress}`;
-  
+
   log.info("Control:Block:",cmd);
 
   accounting.removeBlockedDevice(macAddress);
-  
+
   return exec(cmd)
 }
 
@@ -610,7 +597,7 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
 
   let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
   let cmd = null;
-  
+
   if(iptool.isV4Format(localIPAddress)) {
     cmd = `sudo ipset add -! ${ipset} ${entry}`
   } else {
@@ -618,7 +605,7 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
   }
 
   let execAsync = Promise.promisify(cp.exec);
-  
+
   return execAsync(cmd);
 }
 
@@ -629,7 +616,7 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
 
   let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
   let cmd = null;
-  
+
   if(iptool.isV4Format(localIPAddress)) {
     cmd = `sudo ipset del -! ${ipset} ${entry}`
   } else {
@@ -637,17 +624,17 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   }
 
   let execAsync = Promise.promisify(cp.exec);
-  
+
   return execAsync(cmd);
 }
 
-function _wrapIptables(rule) {        
+function _wrapIptables(rule) {
   let command = " -I ";
   let checkRule = null;
 
   if(rule.indexOf(command) > -1) {
     checkRule = rule.replace(command, " -C ");
-  }      
+  }
 
   command = " -A ";
   if(rule.indexOf(command) > -1) {
@@ -663,8 +650,8 @@ function _wrapIptables(rule) {
   if(checkRule) {
     return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
   } else {
-    return rule;  
-  }    
+    return rule;
+  }
 }
 
 module.exports = {

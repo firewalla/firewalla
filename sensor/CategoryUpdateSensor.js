@@ -57,31 +57,42 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   async updateCategory(category) {
-    const domains = await this.loadCategoryFromBone(category);
+    log.info(`Loading domains for ${category} from cloud`);
+
+    const hashset = this.getCategoryHashset(category)
+    const domains = await this.loadCategoryFromBone(hashset);
+    log.info(`category ${category} has ${domains.length} domains`)
+
     await categoryUpdater.flushDefaultDomains(category);
     return categoryUpdater.addDefaultDomains(category,domains);
   }
 
   async updateSecurityCategory(category) {
-    const info = await this.loadSecurityInfoFromBone(category);
+    log.info(`Loading security info for ${category} from cloud`);
+
+    const hashset = securityHashMapping[category]
+    const info = await this.loadCategoryFromBone(hashset);
 
     const domains = info.domain
-    const ipv4Addresses = info["ip4"]
-    const ipv6Addresses = info["ip6"]
+    const ip4List = info["ip4"]
+    const ip6List = info["ip6"]
     
-    // if(domains) {
+    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+      + ` ${(ip6List || []).length} ipv6, ${(domain || []).length} domains`)
+
+    // if (domains) {
     //   await categoryUpdater.flushDefaultDomains(category);
     //   await categoryUpdater.addDefaultDomains(category,domains);
     // }
     
-    if(ipv4Addresses) {
+    if (ip4List) {
       await categoryUpdater.flushIPv4Addresses(category)
-      await categoryUpdater.addIPv4Addresses(category, ipv4Addresses)
+      await categoryUpdater.addIPv4Addresses(category, ip4List)
     }
     
-    if(ipv6Addresses) {
+    if (ip6List) {
       await categoryUpdater.flushIPv6Addresses(category)
-      await categoryUpdater.addIPv6Addresses(category, ipv6Addresses)
+      await categoryUpdater.addIPv6Addresses(category, ip6List)
     }
   }
 
@@ -94,30 +105,9 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   async loadCategoryFromBone(category) {
-    const hashset = this.getCategoryHashset(category)
-
-    if(hashset) {
-      log.info(`Loading domains for ${category} from cloud`);
+    if (hashset) {
       const data = await bone.hashsetAsync(hashset)
       const list = JSON.parse(data)
-      log.info(`category ${category} has ${list.length} domains`)
-      return list
-    } else {
-      return []
-    }
-  }
-
-  async loadSecurityInfoFromBone(category) {
-    const hashset = securityHashMapping[category]
-
-    if(hashset) {
-      log.info(`Loading domains for ${category} from cloud`);
-      const data = await bone.hashsetAsync(hashset)
-      const list = JSON.parse(data)
-      const ip4List = list["ip4"] || [];
-      const ip6List = list["ip6"] || [];
-      const domain = list.domain || [];
-      log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${domain.length} domains`)
       return list
     } else {
       return []

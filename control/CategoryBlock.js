@@ -15,44 +15,9 @@
 'use strict';
 
 const log = require("../net2/logger.js")(__filename);
-const Promise = require('bluebird');
-
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
-
-const Block = require('./Block.js');
-
-const DNSTool = require('../net2/DNSTool.js')
-const dnsTool = new DNSTool()
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const bone = require('../lib/Bone.js')
-
-const fc = require('../net2/config.js')
-
-const exec = require('child-process-promise').exec
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
-
-const categoryHashsetMapping = {
-  "games": "app.gaming",
-  "social": "app.social",
-  "video": "app.video",
-  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
-  "shopping": "app.shopping",
-  "gamble": "app.gamble",
-  "p2p": "app.p2p"
-}
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 class CategoryBlock {
 

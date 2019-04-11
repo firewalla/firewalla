@@ -499,7 +499,7 @@ module.exports = class DNSMASQ {
       }
       noent = true;
     }
-        
+
     // to update only if filter file has not been updated recently or doesn't exsit
     if(force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
       try {
@@ -542,16 +542,8 @@ module.exports = class DNSMASQ {
 
     log.info(`Load data set from bone: ${name}`);
 
-    return new Promise((resolve, reject) => {
-      bone.hashset(name, (err, data) => {
-        if (err) {
-          reject(err);
-        } else {
-          let d = JSON.parse(data)
-          resolve(d);
-        }
-      });
-    });
+    let data = await bone.hashsetAsync(name);
+    return JSON.parse(data);
   }
 
   async updateVpnIptablesRules(newVpnSubnet, force) {
