@@ -219,7 +219,6 @@ module.exports = class {
   }
 
   getConfig() {
-    
     return {
       started: this.started,
       port: this.port,

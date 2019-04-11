@@ -96,9 +96,6 @@ function run() {
   server.on('error', onError);
   server.on('listening', onListening);
 
-  let sl = require('../../sensor/APISensorLoader.js');
-  sl.initSensors();
-  sl.run();
 }
 
 run();

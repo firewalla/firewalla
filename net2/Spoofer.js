@@ -16,7 +16,7 @@
 
 var spawn = require('child_process').spawn;
 var StringDecoder = require('string_decoder').StringDecoder;
-var ip = require('ip');
+var ipTool = require('ip');
 
 let l2 = require('../util/Layer2.js');
 
@@ -29,76 +29,106 @@ let firewalla = require('./Firewalla.js');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+// hosts in key unmonitored_hosts will be auto removed in 8 seconds.
+// hosts in key unmonitored_hosts_all will not be auto removed
+// key unmonitored_hosts_all is used to prevent same host from inserting to unmonitored_hosts multiple times
+// this way can reduce amount of good arp spoofs.
+const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
 
-let fConfig = require('./config.js').getConfig();
+const SysManager = require('./SysManager.js');
 
 let Promise = require('bluebird');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let cp = require('child_process');
+let cp = require('child-process-promise');
 
 let mode = require('./Mode.js')
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
 
-const minimatch = require('minimatch')
 
 module.exports = class {
 
   isSecondaryInterfaceIP(ip) {
-    const prefix = fConfig.secondaryInterface && fConfig.secondaryInterface.ipnet
+    const sysManager = new SysManager();
+    const ip2 = sysManager.myIp2();
+    const ipMask2 = sysManager.myIpMask2();
     
-    if(prefix) {
-      return minimatch(ip, `${prefix}.*`)
+    if(ip && ip2 && ipMask2) {
+      return ipTool.subnet(ip2, ipMask2).contains(ip);
     }
 
     return false
   }
 
-  newSpoof(address) {
-    return async(() => {
+  async newSpoof(address) {
+    if(this.isSecondaryInterfaceIP(address)) {
+      return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
+    }
+    // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
+    let flag = await mode.isSpoofModeOn();
 
-      if(this.isSecondaryInterfaceIP(address)) {
-        return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
+    if (flag) {
+      const isMember = await rclient.sismemberAsync(monitoredKey, address);
+      if (!isMember) {
+        // Spoof redis set is cleared during initialization, see SpooferManager.startSpoofing()
+        // This can ensure that all monitored hosts are added to redis set and ip set at the beginning
+        // It's unnecessary to add ip address to monitored_ip_set that are already in redis set
+        const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
+        await cp.exec(cmd);
+        // add membership at the end
+        await rclient.saddAsync(monitoredKey, address);
       }
-      // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
-      let flag = await (mode.isSpoofModeOn())
-
-      if(flag) {
-        await (rclient.saddAsync(monitoredKey, address))
-        await (rclient.sremAsync(unmonitoredKey, address))
-      }
-    })()
+      await rclient.sremAsync(unmonitoredKeyAll, address);
+      await rclient.sremAsync(unmonitoredKey, address);
+    }
   }
 
-  newUnspoof(address) {
-    return async(() => {
-      let flag = await (mode.isSpoofModeOn())
-      
-      if(flag) {
-        await (rclient.sremAsync(monitoredKey, address))
-        await (rclient.saddAsync(unmonitoredKey, address))
+  async newUnspoof(address) {
+    let flag = await mode.isSpoofModeOn();
+
+    if (flag) {
+      let isMember = await rclient.sismemberAsync(monitoredKey, address);
+      if (isMember) {
+        await rclient.sremAsync(monitoredKey, address);
+        const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
+        await cp.exec(cmd);
+      }
+      isMember = await rclient.sismemberAsync(unmonitoredKeyAll, address);
+      if (!isMember) {
+        await rclient.saddAsync(unmonitoredKey, address);
+        await rclient.saddAsync(unmonitoredKeyAll, address);
         setTimeout(() => {
-          rclient.sremAsync(unmonitoredKey, address)
+          rclient.sremAsync(unmonitoredKey, address);
         }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
       }
-    })()
+    }
   }  
 
   /* spoof6 is different than ipv4.  Some hosts may take on random addresses
    * hence storing a unmonitoredKey list does not make sense.
    */
 
-  newSpoof6(address) {  
-    return rclient.saddAsync(monitoredKey6, address)
+  async newSpoof6(address) {  
+    const isMember = await rclient.sismemberAsync(monitoredKey6, address);
+    if (!isMember) {
+      const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
+      await cp.exec(cmd);
+      await rclient.saddAsync(monitoredKey6, address);
+    }
   }
 
-  newUnspoof6(address) {
-    return rclient.sremAsync(monitoredKey6, address)
+  async newUnspoof6(address) {
+    const isMember = await rclient.sismemberAsync(monitoredKey6, address);
+    if (isMember) {
+      await rclient.sremAsync(monitoredKey6, address);
+      const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
+      await cp.exec(cmd);
+    }
   }
   
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
@@ -396,7 +426,6 @@ module.exports = class {
   }
 
     clean(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge4';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
@@ -414,7 +443,6 @@ module.exports = class {
     }
 
     clean7() {
-      //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
       let cmdline = 'sudo pkill -f bitbridge7';
 
       log.info("Spoof:Clean:Running commandline: ", cmdline);
@@ -447,7 +475,6 @@ module.exports = class {
     }
 
     clean6(ip) {
-        //let cmdline = 'sudo nmap -sS -O '+range+' --host-timeout 400s -oX - | xml-json host';
         let cmdline = 'sudo pkill -f bitbridge6a';
         if (ip != null) {
             cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";

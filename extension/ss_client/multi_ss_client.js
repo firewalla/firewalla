@@ -112,6 +112,8 @@ class MultiSSClient {
     await exec(cmd2);
     const cmd3 = "sudo systemctl stop haproxy";
     await exec(cmd3);
+    const cmd4 = "sudo systemctl disable haproxy";
+    await exec(cmd4);
   }
 
   async prepareHAProxyConfigFile() {
@@ -207,7 +209,7 @@ class MultiSSClient {
     const cmd = "sudo ipset destroy chnroute";
     log.info("Running cmd:", cmd);
     return exec(cmd).catch((err) => {
-      log.error("Failed to destroy chnroute:", err);
+      log.debug("Failed to destroy chnroute:", err);
     });
   }
   

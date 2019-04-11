@@ -15,16 +15,13 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
-const redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let flat = require('flat');
-
-let audit = require('../util/audit.js');
-let util = require('util');
-let Bone = require('../lib/Bone.js');
+const audit = require('../util/audit.js');
+const util = require('util');
+const Bone = require('../lib/Bone.js');
 
 const async = require('asyncawait/async')
 const await = require('asyncawait/await')
@@ -38,19 +35,19 @@ const sysManager = new SysManager('info');
 
 let instance = null;
 
-let policyActiveKey = "policy_active";
+const policyActiveKey = "policy_active";
 
-let policyIDKey = "policy:id";
-let policyPrefix = "policy:";
-let initID = 1;
+const policyIDKey = "policy:id";
+const policyPrefix = "policy:";
+const initID = 1;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
-let Block = require('../control/Block.js');
+const Block = require('../control/Block.js');
 
-let Policy = require('./Policy.js');
+const Policy = require('./Policy.js');
 
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
@@ -69,9 +66,17 @@ const scheduler = require('../extension/scheduler/scheduler.js')()
 
 const Queue = require('bee-queue')
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const policyCapacity = platform.getPolicyCapacity();
+
+const EM = require('./ExceptionManager.js');
+const em = new EM();
+
+const _ = require('lodash')
+
 function delay(t) {
   return new Promise(function(resolve) {
-    setTimeout(resolve, t)
+    setTimeout(resolve, t);
   });
 }
 
@@ -93,6 +98,16 @@ class PolicyManager2 {
     }
     return instance;
   }
+  
+  shouldFilter(rule) {
+    // this is to filter legacy schedule rules that is not compatible with current system any more
+    // all legacy rules should already been migrated in OldDataCleanSensor, any leftovers should be bug
+    // and here is a protection for that
+    if(rule.cronTime && rule.cronTime.startsWith("* *")) {
+      return true;
+    }   
+    return false;   
+  }
 
   setupPolicyQueue() {
     this.queue = new Queue('policy', {
@@ -113,20 +128,25 @@ class PolicyManager2 {
     })
 
     this.queue.process((job, done) => {
-      const event = job.data
-      const policy = this.jsonToPolicy(event.policy)
-      const oldPolicy = this.jsonToPolicy(event.oldPolicy)
+      const event = job.data;
+      const policy = new Policy(event.policy);
+      const oldPolicy = event.oldPolicy ? new Policy(event.oldPolicy) : null;
       const action = event.action
       
+      if(this.shouldFilter(policy)) {
+        done();
+        return;
+      }
+
       switch(action) {
       case "enforce": {
         return async(() => {
-          log.info("START ENFORCING POLICY", policy.pid, action, {})
+          log.info("START ENFORCING POLICY", policy.pid, action);
           await(this.enforce(policy))
         })().catch((err) => {
           log.error("enforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -134,12 +154,12 @@ class PolicyManager2 {
 
       case "unenforce": {
         return async(() => {
-          log.info("START UNENFORCING POLICY", policy.pid, action, {})
+          log.info("START UNENFORCING POLICY", policy.pid, action);
           await(this.unenforce(policy))
         })().catch((err) => {
           log.error("unenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -150,7 +170,7 @@ class PolicyManager2 {
           if(!oldPolicy) {
             // do nothing
           } else {
-            log.info("START REENFORCING POLICY", policy.pid, action, {})
+            log.info("START REENFORCING POLICY", policy.pid, action);
 
             await(this.unenforce(oldPolicy))
             await(this.enforce(policy))
@@ -158,7 +178,7 @@ class PolicyManager2 {
         })().catch((err) => {
           log.error("reenforce policy failed:" + err)
         }).finally(() => {
-          log.info("COMPLETE ENFORCING POLICY", policy.pid, action, {})
+          log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
         })
         break
@@ -198,9 +218,9 @@ class PolicyManager2 {
             }
           })
         })().catch((err) => {
-          log.error("incremental update policy failed:", err, {})
+          log.error("incremental update policy failed:", err);
         }).finally(() => {
-          log.info("COMPLETE incremental update policy", {})
+          log.info("COMPLETE incremental update policy");
           done()
         })
       }
@@ -214,7 +234,7 @@ class PolicyManager2 {
 
     setInterval(() => {
       this.queue.checkHealth((error, counts) => {
-        log.debug("Policy queue status:", counts, {})
+        log.debug("Policy queue status:", counts);
       })
       
     }, 60 * 1000)
@@ -299,65 +319,52 @@ class PolicyManager2 {
     });
   }
 
-  createPolicyFromJson(json, callback) {
-    callback = callback || function() {}    
-
-    callback(null, this.jsonToPolicy(json));
-  }
-
-  createPolicy(json) {
-    return this.jsonToPolicy(json)
-  }
-
-  normalizePoilcy(policy) {
-    // convert array to string so that redis can store it as value
-    if(policy.scope && policy.scope.constructor.name === 'Array') {
-      policy.scope = JSON.stringify(policy.scope)
-    } 
-    
-    if(policy.expire && policy.expire === "") {
-      delete policy.expire;
-    }
-
-    if(policy.cronTime && policy.cronTime === "") {
-      delete policy.cronTime;
-    }
-
-    if(policy.activatedTime && policy.activatedTime === "") {
-      delete policy.activatedTime;
-    }
-  }
-
-  updatePolicyAsync(policy) {
-    const pid = policy.pid
-    if(pid) {
-      const policyKey = policyPrefix + pid;
-      return async(() => {
-        const policyCopy = JSON.parse(JSON.stringify(policy))
-
-        this.normalizePoilcy(policyCopy);
-
-        await (rclient.hmsetAsync(policyKey, flat.flatten(policyCopy)))
-
-        if(policyCopy.expire === "" || ! "expire" in policyCopy) {
-          await (rclient.hdelAsync(policyKey, "expire"))
-        }
-        if(policyCopy.cronTime === "" || ! "cronTime" in policyCopy) {
-          await (rclient.hdelAsync(policyKey, "cronTime"))
-          await (rclient.hdelAsync(policyKey, "duration"))
-        }
-        if(policyCopy.activatedTime === "" || ! "activatedTime" in policyCopy) {
-          await (rclient.hdelAsync(policyKey, "activatedTime"))
-        }
-        
-        if(policyCopy.scope === "" || 
-        ! "scope" in policyCopy || 
-        (policyCopy.constructor.name === 'Array' && policy.length === 0)) {
-          await (rclient.hdelAsync(policyKey, "scope"))
-        }
-      })()
-    } else {
+  // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
+  // it's hard to keep sanity dealing with partial update and redis in the same time
+  async updatePolicyAsync(policy) {
+    if (!policy.pid)
       return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+
+    const policyKey = policyPrefix + policy.pid;
+
+    if (policy instanceof Policy) {
+      let redisfied = policy.redisfy();
+      await rclient.hmsetAsync(policyKey, policy.redisfy());
+      return;
+    }
+
+    let existing = await this.getPolicy(policy.pid);
+
+    Object.assign(existing, policy);
+
+    if(existing.target && existing.type) {
+      switch(existing.type) {
+        case "mac":
+          existing.target = existing.target.toUpperCase(); // always upper case for mac address
+          break;
+        case "dns":
+        case "domain":
+          existing.target = existing.target.toLowerCase(); // always lower case for domain block
+          break;
+        default:
+          // do nothing;
+      }
+    }
+
+    await rclient.hmsetAsync(policyKey, existing.redisfy());
+
+    if (policy.expire === '') {
+      await rclient.hdelAsync(policyKey, "expire");
+    }
+    if (policy.cronTime === '') {
+      await rclient.hdelAsync(policyKey, "cronTime");
+      await rclient.hdelAsync(policyKey, "duration");
+    }
+    if (policy.activatedTime === '') {
+      await rclient.hdelAsync(policyKey, "activatedTime");
+    }
+    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope) ) {
+      await rclient.hdelAsync(policyKey, "scope");
     }
   }
 
@@ -371,6 +378,7 @@ class PolicyManager2 {
       })
     })
   }
+
   savePolicy(policy, callback) {
     callback = callback || function() {}
 
@@ -387,11 +395,7 @@ class PolicyManager2 {
 
       let policyKey = policyPrefix + id;
 
-      const policyCopy = JSON.parse(JSON.stringify(policy))
-
-      this.normalizePoilcy(policyCopy);
-    
-      rclient.hmset(policyKey, flat.flatten(policyCopy), (err) => {
+      rclient.hmset(policyKey, policy.redisfy(), (err) => {
         if(err) {
           log.error("Failed to set policy: " + err);
           callback(err);
@@ -413,11 +417,12 @@ class PolicyManager2 {
 
   checkAndSave(policy, callback) {
     callback = callback || function() {}
+    if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
     async(()=>{
       //FIXME: data inconsistence risk for multi-processes or multi-threads
       try {
-        if(this.isFirewallaCloud(policy)) {
-          callback(new Error("Firewalla cloud can't be blocked"))
+        if(this.isFirewallaOrCloud(policy)) {
+          callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
           return
         }
         let policies = await(this.getSamePolicies(policy))
@@ -468,7 +473,7 @@ class PolicyManager2 {
 
   getPolicy(policyID) {
     return new Promise((resolve, reject) => {
-      this.idsToPolicys([policyID], (err, results) => {
+      this.idsToPolicies([policyID], (err, results) => {
         if(err) {
           reject(err);
           return;
@@ -484,26 +489,12 @@ class PolicyManager2 {
     });
   }
 
-  getSamePolicies(policy) {
-    let pm2 = this
-    return async(() => {
-      return new Promise(function (resolve, reject) {
-        pm2.loadActivePolicys(1000, {
-          includingDisabled: true
-        }, (err, policies)=>{
-          if (err) {
-            log.error("failed to load active policies:" + err)
-            reject(err)
-          } else {
-            if (policies) {
-              resolve(policies.filter((p) => policy.isEqualToPolicy(p)))
-            } else {
-              resolve([])
-            }
-          }    
-        })
-      })
-    })();
+  async getSamePolicies(policy) {
+    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true });
+
+    if (policies) {
+      return policies.filter((p) => policy.isEqualToPolicy(p))
+    }
   }
 
   // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
@@ -516,7 +507,7 @@ class PolicyManager2 {
       }
       await (this._enablePolicy(policy))
       this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')      
+      Bone.submitIntelFeedback('enable', policy, 'policy')
       return policy
     })()
   }
@@ -547,6 +538,21 @@ class PolicyManager2 {
     })()
   }
 
+  getPolicyKey(pid) {
+    return policyPrefix + pid;
+  }
+
+  // for autoblock revalidation dry run only
+  async markAsShouldDelete(policyID) {
+    const policy = await this.getPolicy(policyID);
+
+    if(!policy) {
+      return;
+    }
+
+    return rclient.hsetAsync(this.getPolicyKey(policyID), "shouldDelete", "1");
+  }
+
   deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
     return this.policyExists(policyID)
@@ -574,81 +580,107 @@ class PolicyManager2 {
       });
   }
 
-  jsonToPolicy(json) {
-    if(!json) {
-      return null;
+  // await all async opertions here to ensure errors are caught
+  async deleteMacRelatedPolicies(mac) {
+    // device specified policy
+    await rclient.delAsync('policy:mac:' + mac);
+
+    let rules = await this.loadActivePoliciesAsync({includingDisabled: 1})
+    let policyIds = [];
+    let policyKeys = [];
+
+    for (let rule of rules) {
+      if (_.isEmpty(rule.scope)) continue;
+
+      if (rule.scope.some(m => m == mac)) {
+        // rule targets only deleted device
+        if (rule.scope.length <= 1) {
+          policyIds.push(rule.pid);
+          policyKeys.push('policy:' + rule.pid);
+
+          this.tryPolicyEnforcement(rule, 'unenforce');
+        }
+        // rule targets NOT only deleted device
+        else {
+          let reducedScope = _.without(rule.scope, mac);
+          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          const newRule = await this.getPolicy(rule.pid)
+
+          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+
+          log.info('remove scope from policy:' + rule.pid, mac);
+        }
+      }
     }
 
-    let proto = Policy.prototype;
-    if(proto) {
-      let obj = Object.assign(Object.create(proto), json);
-      if(!obj.timestamp)
-        obj.timestamp = new Date() / 1000;
-      return obj;
-    } else {
-      log.error("Unsupported policy type: " + json.type);
-      return null;
+    if (policyIds.length) { // policyIds & policyKeys should have same length
+      await rclient.delAsync(policyKeys);
+      await rclient.zremAsync(policyActiveKey, policyIds);
     }
+    log.info('Deleted', mac, 'related policies:', policyKeys);
   }
 
-    idsToPolicys(ids, callback) {
-      let multi = rclient.multi();
+  idsToPolicies(ids, callback) {
+    let multi = rclient.multi();
 
-      ids.forEach((pid) => {
-        multi.hgetall(policyPrefix + pid);
-      });
+    ids.forEach((pid) => {
+      multi.hgetall(policyPrefix + pid);
+    });
 
-      multi.exec((err, results) => {
-        if(err) {
-          log.error("Failed to load active policys (hgetall): " + err);
-          callback(err);
-          return;
-        }
-        
-        let rr = results.map((r) => {
-          if(r && r.scope && r.scope.constructor.name === 'String') {
-            try {
-              r.scope = JSON.parse(r.scope)
-            } catch(err) {
-              log.error("Failed to parse policy scope string:", r.scope, {})
-              r.scope = []
-            }
-          }
-          return this.jsonToPolicy(r)
-        }).filter((r) => r != null)
-
-        // recent first
-        rr.sort((a, b) => {
-          return b.timestamp > a.timestamp
-        })
-
-        callback(null, rr)
-
-      });
-    }
-
-    loadRecentPolicys(duration, callback) {
-      if(typeof(duration) == 'function') {
-        callback = duration;
-        duration = 86400;
+    multi.exec((err, results) => {
+      if(err) {
+        log.error("Failed to load active policies (hgetall): " + err);
+        callback(err);
+        return;
       }
 
-      callback = callback || function() {}
+      let rr = results
+        .map(r => {
+          if (!r) return null;
 
-      let scoreMax = new Date() / 1000 + 1;
-      let scoreMin = scoreMax - duration;
-      rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
-        if(err) {
-          log.error("Failed to load active policys: " + err);
-          callback(err);
-          return;
-        }
+          let p = null;
+          try {
+            p = new Policy(r)
+          } catch(e) {
+            log.error(e, r);
+          } finally {
+            return p;
+          }
+        })
+        .filter(r => r != null)
 
-        this.idsToPolicys(policyIDs, callback);
-      });
+      // recent first
+      rr.sort((a, b) => {
+        return b.timestamp > a.timestamp
+      })
+
+      callback(null, rr)
+
+    });
+  }
+
+  loadRecentPolicies(duration, callback) {
+    if(typeof(duration) == 'function') {
+      callback = duration;
+      duration = 86400;
     }
 
-  numberOfPolicys(callback) {
+    callback = callback || function() {}
+
+    let scoreMax = new Date() / 1000 + 1;
+    let scoreMin = scoreMax - duration;
+    rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
+      if(err) {
+        log.error("Failed to load active policies: " + err);
+        callback(err);
+        return;
+      }
+
+      this.idsToPolicies(policyIDs, callback);
+    });
+  }
+
+  numberOfPolicies(callback) {
     callback = callback || function() {}
 
     rclient.zcount(policyActiveKey, "-inf", "+inf", (err, result) => {
@@ -662,10 +694,9 @@ class PolicyManager2 {
     });
   }
 
-  loadActivePolicysAsync(number) {
-    number = number || 1000 // default 1000
+  loadActivePoliciesAsync(options) {
     return new Promise((resolve, reject) => {
-      this.loadActivePolicys(number, (err, policies) => {
+      this.loadActivePolicies(options, (err, policies) => {
         if(err) {
           reject(err)
         } else {
@@ -675,31 +706,26 @@ class PolicyManager2 {
     })
   }
   
-  // FIXME: top 1000 only by default
   // we may need to limit number of policy rules created by user
-  loadActivePolicys(number, options, callback) {
-
-    if(typeof(number) == 'function') {
-      callback = number;
-      number = 1000; // by default load last 1000 policy rules, for self-protection
-      options = {}
-    }
+  loadActivePolicies(options, callback) {
 
     if(typeof options === 'function') {
-      callback = options
-      options = {}
+      callback = options;
+      options = {};
     }
 
-    callback = callback || function() {}
+    options = options || {};
+    let number = options.number || policyCapacity;
+    callback = callback || function() {};
 
     rclient.zrevrange(policyActiveKey, 0, number -1 , (err, results) => {
       if(err) {
-        log.error("Failed to load active policys: " + err);
+        log.error("Failed to load active policies: " + err);
         callback(err);
         return;
       }
 
-      this.idsToPolicys(results, (err, policyRules) => {
+      this.idsToPolicies(results, (err, policyRules) => {
         if(options.includingDisabled) {
           callback(err, policyRules)
         } else {
@@ -716,60 +742,56 @@ class PolicyManager2 {
     })() 
   }
 
-  enforceAllPolicies() {
-    return new Promise((resolve, reject) => {
-      this.loadActivePolicys((err, rules) => {
-        
-        return async(() => {
-          rules.forEach((rule) => {
-            try {
-              if(this.queue) {
-                const job = this.queue.createJob({
-                  policy: rule,
-                  action: "enforce",
-                  booting: true
-                })
-                job.timeout(60000).save(function() {})
-              }
-            } catch(err) {
-              log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
-            }            
+  async enforceAllPolicies() {
+    let rules = await this.loadActivePoliciesAsync();
+
+    rules.forEach((rule) => {
+      try {
+        if(this.queue) {
+          const job = this.queue.createJob({
+            policy: rule,
+            action: "enforce",
+            booting: true
           })
-          log.info("All policy rules are enforced")
-        })()
-      });
-    });
+          job.timeout(60000).save(function() {})
+        }
+      } catch(err) {
+        log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
+      }
+    })
+    log.info("All policy rules are enforced")
   }
 
 
-  parseDevicePortRule(target) {
-    return async(() => {
-      let matches = target.match(/(.*):(\d+):(tcp|udp)/)
-      if(matches) {
-        let mac = matches[1]
-        let host = await (ht.getMACEntry(mac))
-        if(host) {
-          return {
-            ip: host.ipv4Addr,
-            port: matches[2],
-            protocol: matches[3]
-          }
-        } else {
-          return null
+  async parseDevicePortRule(target) {
+    let matches = target.match(/(.*):(\d+):(tcp|udp)/)
+    if(matches) {
+      let mac = matches[1];
+      let host = await ht.getMACEntry(mac);
+      if(host) {
+        return {
+          ip: host.ipv4Addr,
+          port: matches[2],
+          protocol: matches[3]
         }
       } else {
         return null
       }
+    } else {
+      return null
+    }
 
-    })()
   }
     
-  isFirewallaCloud(policy) {
+  isFirewallaOrCloud(policy) {
     const target = policy.target
 
     return sysManager.isMyServer(target) ||
            sysManager.myIp() === target ||
            sysManager.myIp2() === target ||
+           // compare mac, ignoring case
+           target.substring(0,17) // devicePort policies have target like mac:protocol:prot
+             .localeCompare(sysManager.myMAC(), undefined, {sensitivity: 'base'}) === 0 ||
            target === "firewalla.encipher.com" ||
            target === "firewalla.com" ||
            minimatch(target, "*.firewalla.com")
@@ -809,7 +831,7 @@ class PolicyManager2 {
               }
 
               log.info(`Revoke policy ${policy.pid}, since it's expired`)
-              await (this.unenforce(policy))
+              await (this.unenforce(policy));
               await (this._disablePolicy(policy))
               if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
                 await (this.deletePolicy(pid))
@@ -891,135 +913,99 @@ class PolicyManager2 {
     return policy;
   }
 
-  _enforce(policy) {
-    log.debug("Enforce policy: ", policy, {});
-    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, {});
+  async _enforce(policy) {
+    log.debug("Enforce policy: ", policy);
+    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
-    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    if(policy.scope) {
-      return this._advancedEnforce(policy)
+    await this._refreshActivatedTime(policy)
+
+    if (this.isFirewallaOrCloud(policy)) {
+      return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
     }
 
-    return async(() => {
-      await (this._refreshActivatedTime(policy))
+    const scope = policy.scope
 
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
-      }
-  
-      switch(type) {
-      case "ip":
-        return Block.block(policy.target);
-        break;
-      case "mac":
-        return Block.blockMac(policy.target);
-        break;
-      case "domain":
-      case "dns":    
-        return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
-        break;
-      case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.blockPublicPort(data.ip, data.port, data.protocol)
-          }
-        })()
-        break;
-      case "category":
-        return categoryBlock.blockCategory(policy.target)
-      case "timer":
-        // just send notification, purely testing purpose only
-      default:
-        return Promise.reject("Unsupported policy");
-      }
-    })()    
-  }
-
-  _advancedEnforce(policy) {
-    return async(() => {
-      log.info("Advance enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
-
-      const type = policy["i.type"] || policy["type"]; //backward compatibility
-
-      if(this.isFirewallaCloud(policy)) {
-        return Promise.reject(new Error("Firewalla cloud can't be blocked."))
-      }
-
-      let scope = policy.scope
-      if(typeof scope === 'string') {
-        try {
-          scope = JSON.parse(scope)
-        } catch(err) {
-          log.error("Failed to parse scope:", err, {})
-          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
-        }        
-      }
-
-      switch(type) {
+    switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedBlock(policy.pid, scope, [policy.target])
+          return Block.advancedBlock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist)
         } else {
-          return Block.block(policy.target)
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.block(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.block(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.blockMac(policy.target);
+        if (policy.whitelist) {
+          await Block.enableGlobalWhitelist();
+          return Block.blockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.blockMac(policy.target);
+        }
         break;
       case "domain":
-      case "dns":    
-        return async(() => {
-          if(scope) {
-            await (Block.advancedBlock(policy.pid, scope, []))
-            return domainBlock.blockDomain(policy.target, {
-              exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            })
-          } else {
-            return domainBlock.blockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+      case "dns":
+        if(scope) {
+          await Block.advancedBlock(policy.pid, policy.pid, scope, [], policy.whitelist);
+          return domainBlock.blockDomain(policy.target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(policy.pid),
+            no_dnsmasq_entry: true,
+            no_dnsmasq_reload: true
+          })
+        } else {
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            // whitelist rule should not add dnsmasq filter rule
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.enableGlobalWhitelist();
           }
-        })()        
-        
+          return domainBlock.blockDomain(policy.target, options);
+        }
+
         break;
       case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.blockPublicPort(data.ip, data.port, data.protocol)
+        let data = await this.parseDevicePortRule(policy.target);
+        if(data) {
+          if (policy.whitelist) {
+            await Block.enableGlobalWhitelist();
+            return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.blockPublicPort(data.ip, data.port, data.protocol)
           }
-        })()
+        }
         break;
       case "category":
-        return async(() => {
-          if(scope) {
-            await (Block.advancedBlock(policy.pid, scope, []))
-            return categoryBlock.blockCategory(policy.target, {
-              blockSet: Block.getDstSet(policy.pid),
-              macSet: Block.getMacSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            })
-          } else {
-            return categoryBlock.blockCategory(policy.target)
+        if(scope) {
+          // same category shares same dst tag
+          return Block.advancedBlock(policy.pid, policy.target, scope, [], policy.whitelist);
+        } else {
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.enableGlobalWhitelist();
           }
-        })()
+          return categoryBlock.blockCategory(policy.target, options);
+        }
         break;
 
       default:
         return Promise.reject("Unsupported policy");
-      }
+    }
 
-    })()
   }
 
   invalidateExpireTimer(policy) {
     const pid = policy.pid
     if(this.enabledTimers[pid]) {
-      log.info("Invalidate expire timer for policy", pid, {})
+      log.info("Invalidate expire timer for policy", pid);
       clearTimeout(this.enabledTimers[pid])
       delete this.enabledTimers[pid]
     }    
@@ -1036,118 +1022,89 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target, {})
+    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target);
 
     await this._removeActivatedTime(policy)
 
-    if(policy.scope) {
-      return this._advancedUnenforce(policy)
-    }
+    const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let type = policy["i.type"] || policy["type"]; //backward compatibility
+    const scope = policy.scope
+
     switch(type) {
-    case "ip":
-      return Block.unblock(policy.target);
-      break;
-    case "mac":
-      return Block.unblockMac(policy.target);
-      break;
-    case "domain":
-    case "dns":
-      return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
-    case "devicePort":
-      return async(() => {
-      let data = await (this.parseDevicePortRule(policy.target))
-      if(data) {
-        Block.unblockPublicPort(data.ip, data.port, data.protocol)
-      }
-      })()
-      break;
-    case "category":
-      return categoryBlock.unblockCategory(policy.target)
-      break
-    default:
-      return Promise.reject("Unsupported policy");
-    }
-  }
-
-  _advancedUnenforce(policy) {
-    return async(() => {
-      log.info("Advance unenforce policy: ", policy.pid, policy.type, policy.target, policy.scope, {})
-
-      const type = policy["i.type"] || policy["type"]; //backward compatibility
-
-      let scope = policy.scope
-      if(typeof scope === 'string') {
-        try {
-          scope = JSON.parse(scope)
-        } catch(err) {
-          log.error("Failed to parse scope:", err, {})
-          return Promise.reject(new Error(`Failed to parse scope: ${err}`))
-        }        
-      }
-
-      switch(type) {
       case "ip":
         if(scope) {
-          return Block.advancedUnblock(policy.pid, scope, [policy.target])
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist, true)
         } else {
-          return Block.unblock(policy.target)
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return block.unblock(policy.target, "whitelist_ip_set");
+          } else {
+            return Block.unblock(policy.target)
+          }
         }
         break;
       case "mac":
-        return Block.unblockMac(policy.target)
+        if (policy.whitelist) {
+          await Block.disableGlobalWhitelist();
+          return Block.unblockMac(policy.target, "whitelist_mac_set");
+        } else {
+          return Block.unblockMac(policy.target)
+        }
         break;
       case "domain":
-      case "dns":    
-        return async(() => {
-          if(scope) {
-            await (domainBlock.unblockDomain(policy.target, {
-              exactMatch: policy.domainExactMatch, 
-              blockSet: Block.getDstSet(policy.pid),
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            }))
-            return Block.advancedUnblock(policy.pid, scope, [])
-          } else {
-            return domainBlock.unblockDomain(policy.target, {exactMatch: policy.domainExactMatch})
+      case "dns":
+        if(scope) {
+          await (domainBlock.unblockDomain(policy.target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(policy.pid),
+            no_dnsmasq_entry: true,
+            no_dnsmasq_reload: true
+          }))
+          // destroy domain dst cache, since there may be various domain dst cache in different policies
+          return Block.advancedUnblock(policy.pid, policy.pid, scope, [], policy.whitelist, true)
+        } else {
+          let options = {exactMatch: policy.domainExactMatch};
+          if (policy.whitelist) {
+            options.blockSet = "whitelist_domain_set";
+            options.no_dnsmasq_entry = true;
+            options.no_dnsmasq_reload = true;
+            await Block.disableGlobalWhitelist();
           }
-        })()        
-        
+          return domainBlock.unblockDomain(policy.target, options);
+        }
+
         break;
       case "devicePort":
-        return async(() => {
-          let data = await (this.parseDevicePortRule(policy.target))
-          if(data) {
-            Block.unblockPublicPort(data.ip, data.port, data.protocol)
+        let data = await (this.parseDevicePortRule(policy.target))
+        if(data) {
+          if (policy.whitelist) {
+            await Block.disableGlobalWhitelist();
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+          } else {
+            return Block.unblockPublicPort(data.ip, data.port, data.protocol);
           }
-        })()
+        }
         break;
       case "category":
-        return async(() => {
-          if(scope) {
-            await (categoryBlock.unblockCategory(policy.target, {
-              blockSet: Block.getDstSet(policy.pid),
-              macSet: Block.getMacSet(policy.pid),
-              ignoreUnapplyBlock: true,
-              no_dnsmasq_entry: true,
-              no_dnsmasq_reload: true
-            }))
-            return Block.advancedUnblock(policy.pid, scope, [])
-          } else {
-            return categoryBlock.unblockCategory(policy.target)
+        if(scope) {
+          // keep category dst cache since the number of predefined categories is limited
+          return Block.advancedUnblock(policy.pid, policy.target, scope, [], policy.whitelist, false);
+        } else {
+          let options = {};
+          if (policy.whitelist) {
+            options.whitelist = true;
+            await Block.disableGlobalWhitelist();
           }
-        })()
-      
+          return categoryBlock.unblockCategory(policy.target, options);
+        }
+
       default:
         return Promise.reject("Unsupported policy");
-      }
-
-    })()
+    }
   }
 
   match(alarm, callback) {
-    this.loadActivePolicys((err, policies) => {
+    this.loadActivePolicies((err, policies) => {
       if(err) {
         log.error("Failed to load active policy rules")
         callback(err)
@@ -1168,19 +1125,17 @@ class PolicyManager2 {
 
 
   // utility functions
-  findPolicy(target, type) {
-    return async(() => {
-      let rules = await (this.loadActivePolicysAsync())
+  async findPolicy(target, type) {
+    let rules = await this.loadActivePoliciesAsync();
 
-      for (const index in rules) {
-        const rule = rules[index]
-        if(rule.target === target && type === rule.type) {
-          return rule 
-        }
+    for (const index in rules) {
+      const rule = rules[index]
+      if(rule.target === target && type === rule.type) {
+        return rule
       }
+    }
 
-      return null
-    })()
+    return null
   }
 }
 

@@ -44,6 +44,7 @@ let cp = require('child_process');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
+const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
 
@@ -64,7 +65,7 @@ function startSpoofing() {
   log.info("start spoofing")
 
   return async(() => {
-    await (this.emptySpoofSet())
+    await (this.emptySpoofSet()) // all monitored_hosts* keys are cleared during startup
     
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();
@@ -124,6 +125,7 @@ function emptySpoofSet() {
     // clean up redis key
     await (rclient.delAsync(monitoredKey))
     await (rclient.delAsync(unmonitoredKey))
+    await (rclient.delAsync(unmonitoredKeyAll))
     await (rclient.delAsync(monitoredKey6))
     await (rclient.delAsync(unmonitoredKey6))    
   })()
@@ -137,9 +139,14 @@ function loadManualSpoof(mac) {
     if(manualSpoof) {
       await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
       await (rclient.sremAsync(unmonitoredKey, host.ipv4Addr))
+      await (rclient.sremAsync(unmonitoredKeyAll, host.ipv4Addr))
     } else {
       await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
       await (rclient.saddAsync(unmonitoredKey, host.ipv4Addr))
+      await (rclient.saddAsync(unmonitoredKeyAll, host.ipv4Addr))
+      setTimeout(() => {
+        rclient.sremAsync(unmonitoredKey, host.ipv4Addr)
+      }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
     }    
   })()
 }

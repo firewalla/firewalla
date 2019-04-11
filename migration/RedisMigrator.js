@@ -50,11 +50,13 @@
     "ext.*",
     "scisurf.config",
     "sys:features",
-    "mode"
+    "mode",
+    "dhcp:static"
   ],
   "intel": [
     "category:*",
     "dynamicCategoryDomain:*",
+    "ipmapping:*",
     "intel:*",
     "lastCategory:*",
     "cache.intel:*",

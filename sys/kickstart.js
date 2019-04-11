@@ -100,6 +100,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   }
   
   (async() => {
+    await rclient.delAsync("firekick:pairing:message");
     await sysManager.setConfig(firewallaConfig)
     await interfaceDiscoverSensor.run()
     // await (nmapSensor.checkAndRunOnce(true));
@@ -564,8 +565,4 @@ process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.unhandledRejection',msg:msg,stack:reason.stack},null);
-  // setTimeout(()=>{
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
-  //   process.exit(1);
-  // },1000*2);
 });

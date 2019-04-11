@@ -103,7 +103,7 @@ class HostTool {
     return rclient.hsetAsync(key, "bname", name)
   }
 
-  updateHost(host) {
+  updateIPv4Host(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
 
@@ -154,7 +154,6 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
-
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
@@ -178,6 +177,7 @@ class HostTool {
   getMacKey(mac) {
     return "host:mac:" + mac;
   }
+
   deleteMac(mac) {
     return rclient.delAsync(this.getMacKey(mac));
   }
@@ -226,7 +226,7 @@ class HostTool {
       let host = null
 
       if (iptool.isV4Format(ip)) {
-        host = await (this.getIPv4Entry(ip))        
+        host = await (this.getIPv4Entry(ip))
       } else if(iptool.isV6Format(ip)) {
         host = await (this.getIPv6Entry(ip))
       } else {
@@ -244,11 +244,9 @@ class HostTool {
     })()
   }
 
-  getAllMACs() {
-    return async(() => {
-      let keys = await (rclient.keysAsync("host:mac:*"));
-      return keys.map((key) => key.replace("host:mac:", ""));
-    })();
+  async getAllMACs() {
+    let keys = await rclient.keysAsync("host:mac:*");
+    return keys.map((key) => key.replace("host:mac:", ""));
   }
 
   getAllMACEntries() {
@@ -293,6 +291,24 @@ class HostTool {
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
+  async removeDupIPv4FromMacEntry(mac, ip) {
+    // Keep uid for now as it's used as keys in a lot of places
+    // TODO: use mac as uid should be a true fix to this
+
+    let macEntry = await (this.getMACEntry(mac));
+    if (!macEntry) {
+      log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
+      return Promise.resolve();
+    }
+    log.info('removeDupIPv4FromMacEntry:', mac, macEntry);
+
+    let trans = rclient.multi()
+
+    if (macEntry.ipv4 == ip) trans.hdel(this.getMacKey(mac), "ipv4");
+    if (macEntry.ipv4Addr == ip) trans.hdel(this.getMacKey(mac), "ipv4Addr");
+
+    return trans.execAsync()
+  }
 
   ////////////// IPV6 /////////////////////
 
@@ -317,7 +333,8 @@ class HostTool {
       });
   }
 
-  updateIPv6Host(host,ipv6Addr) {
+  updateIPv6Host(host,ipv6Addr, skipTimeUpdate) {
+    skipTimeUpdate = skipTimeUpdate || false;
     return async(() => {
       if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
         ipv6Addr.forEach((addr) => {
@@ -328,20 +345,25 @@ class HostTool {
           
           if(existingData && existingData.mac === host.mac) {
             // just update last timestamp for existing device
-            data = {
-              lastActiveTimestamp: Date.now() / 1000
+            if (!skipTimeUpdate) {
+              data = {
+                lastActiveTimestamp: Date.now() / 1000
+              }
             }
           } else {
             data = {
-              mac: host.mac,
-              firstFoundTimestamp: Date.now() / 1000,
-              lastActiveTimestamp: Date.now() / 1000
+              mac: host.mac
+            };
+            if (!skipTimeUpdate) {
+              data.firstFoundTimestamp = Date.now() / 1000;
+              data.lastActiveTimestamp = Date.now() / 1000;
             }
           }
 
-          await (rclient.hmsetAsync(key, data))
-          await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4))
-          
+          if (data) {
+            await (rclient.hmsetAsync(key, data))
+            await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4))
+          }
         })
       }
     })()   

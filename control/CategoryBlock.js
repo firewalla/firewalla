@@ -42,7 +42,10 @@ const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
   "video": "app.video",
-  "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
+  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+  "shopping": "app.shopping",
+  "gamble": "app.gamble",
+  "p2p": "app.p2p"
 }
 
 function delay(t) {
@@ -60,12 +63,11 @@ class CategoryBlock {
   async blockCategory(category, options) {
     options = options || {}
     
-    // this policy has scope
-    if(options.macSet) {
-//      await categoryUpdater.iptablesBlockCategoryPerDevice(category, options.macSet);
-      await categoryUpdater.iptablesBlockCategoryPerDeviceNew(category, options.macSet);
+    if(options.whitelist) {
+      // whitelist policy
+      await categoryUpdater.iptablesWhitelistCategory(category)
     } else {
-      // global policy
+      // block policy
       await categoryUpdater.iptablesBlockCategory(category)
 
       if(category === 'default_c') {
@@ -79,13 +81,11 @@ class CategoryBlock {
   async unblockCategory(category, options) {
     options = options || {}
 
-    // this policy has scope
-    if(options.macSet) {
-      // TBD
-//      await categoryUpdater.iptablesUnblockCategoryPerDevice(category, options.macSet);
-      await categoryUpdater.iptablesUnblockCategoryPerDeviceNew(category, options.macSet);
+    if(options.whitelist) {
+      // whitelist policy
+      await categoryUpdater.iptablesUnWhitelistCategory(category)
     } else {
-      // global policy
+      // block policy
       await categoryUpdater.iptablesUnblockCategory(category)
 
       if(category === 'default_c') {

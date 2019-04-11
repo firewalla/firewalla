@@ -26,6 +26,8 @@ class ExtensionManager {
       this.hooks = {}
       this.onGets = {}
       this.onSets = {}
+      this.onCmds = {};
+      this.cmdMap = {}
       instance = this
     }
     return instance
@@ -56,12 +58,26 @@ class ExtensionManager {
     return this.onSets[key] != null
   }
 
+  hasCmd(key) {
+    return this.onCmds[key] != null;
+  }
+
+  // callback should return promise
   onGet(key, callback) {
+    this.cmdMap[key] = 1;
     this.onGets[key] = callback
   }
 
+  // callback should return promise
   onSet(key, callback) {
+    this.cmdMap[key] = 1;
     this.onSets[key] = callback
+  }
+
+  // callback should return promise
+  onCmd(key, callback) {
+    this.cmdMap[key] = 1;
+    this.onCmds[key] = callback;
   }
 
   get(key, msg) {
@@ -78,6 +94,18 @@ class ExtensionManager {
     }
 
     return Promise.reject(new Error("no such key:" + key))
+  }
+
+  cmd(key, msg, data) {
+    if(this.hasCmd(key)){
+      return this.onCmds[key](msg, data)
+    }
+
+    return Promise.reject(new Error("no such key:" + key))
+  }
+
+  getAllCmdKeys() {
+    return Object.keys(this.cmdMap);
   }
   
 }

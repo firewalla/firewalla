@@ -33,7 +33,7 @@ class EncipherTool {
     return instance;
   }
 
-  getGID() {
+  async getGID() {
     return rclient.hgetAsync("sys:ept", "gid")
   }
 }

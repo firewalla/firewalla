@@ -70,10 +70,11 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip,fd) {
+  appendNewFlow(ip, fd, retryCount) {
     let flow = {
        ip:ip,
-       fd:fd
+       fd:fd,
+       retryCount: retryCount || 0
     };
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
@@ -113,6 +114,10 @@ class DestIPFoundHook extends Hook {
 
     // app
     cloudIntelInfos.forEach((info) => {
+
+      if (info.failed) {
+        intel.cloudFailed = true;
+      }
 
 /*
       let hashes = [intel.ip, intel.host].map(
@@ -226,9 +231,24 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  processIP(flow, options) {
+  _isSimilarHost(h1, h2) {
+    if (!h1 || !h2)
+      return false;
+    const h1Sections = h1.split('.').reverse();
+    const h2Sections = h2.split('.').reverse();
+    // compare at most last three sections
+    const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 3);
+    for (let i = 0; i != limit; i++) {
+      if (h1Sections[i] !== h2Sections[i])
+        return false;
+    }
+    return true;
+  }
+
+  async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let retryCount = 0;
 
     if (flow) {
       let parsed = null;
@@ -237,6 +257,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          retryCount = parsed.retryCount || 0;
         } else {
           ip = flow;
           fd = 'in';
@@ -247,36 +268,48 @@ class DestIPFoundHook extends Hook {
     } 
     options = options || {};
 
-    let skipRedisUpdate = options.skipUpdate;
-    let forceRedisUpdate = options.forceUpdate;
+    const skipReadLocalCache = options.skipReadLocalCache;
+    const skipWriteLocalCache = options.skipWriteLocalCache;
+    let sslInfo = await intelTool.getSSLCertificate(ip);
+    let dnsInfo = await intelTool.getDNS(ip);
+    let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
+    if (domains.length == 0 && retryCount < 5) {
+      // domain is not fetched from either dns or ssl entries, retry in next job() schedule
+      this.appendNewFlow(ip, fd, retryCount + 1);
+    }
 
-    return (async() => {
+    try {
+      let intel;
+      if (!skipReadLocalCache) {
+        intel = await intelTool.getIntel(ip);
 
-      if(!skipRedisUpdate && !forceRedisUpdate) {
-        let result = await intelTool.intelExists(ip);
-
-        if(result) {
-          const intel = await intelTool.getIntel(ip)
-
-          await this.updateCategoryDomain(intel)
-
-          return;
+        if (intel && !intel.cloudFailed) {
+          // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
+          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
+            await this.updateCategoryDomain(intel);
+            return;
+          }
         }
       }
 
-      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+", checking intels...");
+      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
 
-      let sslInfo = await intelTool.getSSLCertificate(ip);
-      let dnsInfo = await intelTool.getDNS(ip);
-
-      let domains = this.getDomains(sslInfo, dnsInfo);
       let ips = [ip];
 
       let cloudIntelInfo = [];
 
       // ignore if domain contain firewalla domain
       if(domains.filter(d => this.isFirewalla(d)).length === 0) {
-        cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
+        try {
+          cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
+        } catch(err) {
+          // marks failure while not blocking local enrichement, e.g. country
+          cloudIntelInfo.push({failed: true});
+
+          if(options.noUpdateOnError) {
+            return null;
+          }
+        }
       }
 
       // Update intel dns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
@@ -286,51 +319,64 @@ class DestIPFoundHook extends Hook {
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
       // update category pool if necessary
-      await this.updateCategoryDomain(aggrIntelInfo)
+      await this.updateCategoryDomain(aggrIntelInfo);
 
-      if(!skipRedisUpdate) {
+      // only set default action when cloud succeeded
+      if(!aggrIntelInfo.action &&
+        aggrIntelInfo.category !== 'intel' && // a special workaround here, only reset action when category is no longer intel
+        !aggrIntelInfo.cloudFailed &&
+        skipReadLocalCache
+      ) {
+        const oldIntel = await intelTool.getIntel(ip);
+        if(oldIntel.category === 'intel') {
+          log.info("Reset local intel action since it's not intel categary anymore.");
+          aggrIntelInfo.action = "none";
+        }
+      }
+
+      if(!skipWriteLocalCache) {
+        if (intel && intel.cloudFailed) {
+          await intelTool.removeIntel(ip);
+        }
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
 
       return aggrIntelInfo;
 
-    })().catch((err) => {
+    } catch(err) {
       log.error(`Failed to process IP ${ip}, error: ${err}`);
       return null;
-    })
+    }
   }
 
-  job() {
-    (async() => {
-      log.debug("Checking if any IP Addresses pending for intel analysis...")
+  async job() {
+    log.debug("Checking if any IP Addresses pending for intel analysis...")
 
-      try {
-        let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+    try {
+      let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-        if(ips.length > 0) {
+      if(ips.length > 0) {
+        let promises = ips.map((ip) => this.processIP(ip));
 
-          let promises = ips.map((ip) => this.processIP(ip));
+        await Promise.all(promises)
 
-          await Promise.all(promises)
+        let args = [IP_SET_TO_BE_PROCESSED];
+        args.push.apply(args, ips);
 
-          let args = [IP_SET_TO_BE_PROCESSED];
-          args.push.apply(args, ips);
+        await rclient.zremAsync(args)
 
-          await rclient.zremAsync(args)
+        log.debug(ips.length + "IP Addresses are analyzed with intels");
 
-          log.debug(ips.length + "IP Addresses are analyzed with intels");
-
-        } else {
-          // log.info("No IP Addresses are pending for intels");
-        }
-      } catch(err) {
-        log.error("Got error when handling new dest IP addresses, err:", err)
+      } else {
+        // log.info("No IP Addresses are pending for intels");
       }
+    } catch(err) {
+      log.error("Got error when handling new dest IP addresses, err:", err)
+    }
 
-      setTimeout(() => {
-        this.job(); // sleep for only 100 mill-seconds
-      }, 500);
-    })();
+    setTimeout(() => {
+      this.job(); // sleep for only 500 mill-seconds
+    }, 500);
   }
 
   run() {
@@ -357,11 +403,13 @@ class DestIPFoundHook extends Hook {
         return; // reserved black hole and blue hole...
       }
       
-      this.appendNewFlow(ip,fd);
+      this.appendNewFlow(ip, fd);
     });
 
     sem.on('DestIP', (event) => {
-      this.processIP(event.ip)
+      const skipReadLocalCache = event.skipReadLocalCache;
+      const noUpdateOnError = event.noUpdateOnError;
+      this.processIP(event.ip, {skipReadLocalCache, noUpdateOnError});
     })
 
     this.job();
@@ -371,16 +419,14 @@ class DestIPFoundHook extends Hook {
     }, MONITOR_QUEUE_SIZE_INTERVAL)
   }
 
-  monitorQueue() {
-    return (async () => {
-      let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
-      if(count > QUEUE_SIZE_PAUSE) {
-        this.paused = true;
-      }
-      if(count < QUEUE_SIZE_RESUME) {
-        this.paused = false;
-      }
-    })();
+  async monitorQueue() {
+    let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
+    if(count > QUEUE_SIZE_PAUSE) {
+      this.paused = true;
+    }
+    if(count < QUEUE_SIZE_RESUME) {
+      this.paused = false;
+    }
   }
 }
 

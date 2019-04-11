@@ -14,7 +14,6 @@
  */
 'use strict'
 
-const firewalla = require('../net2/Firewalla.js')
 const log = require("../net2/logger.js")(__filename)
 
 const fc = require("../net2/config.js")
@@ -30,8 +29,18 @@ const Sensor = require('./Sensor.js').Sensor
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const HostManager = require('../net2/HostManager')
+const HostManager = require('../net2/HostManager');
 const hostManager = new HostManager('cli', 'server');
+
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const Alarm = require('../alarm/Alarm.js');
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -54,16 +63,17 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async randomFindDevice() {
-    let hosts = await rclient.keysAsync("host:ip4:*");
-    hosts = hosts.map((h) => h.replace("host:ip4:", ""));
+    const macs = hostManager.getActiveMACs();
 
-    const hostCount = hosts.length
-    if (hostCount > 0) {
-      let randomHostIndex = Math.floor(Math.random() * hostCount)
-      if (randomHostIndex == hostCount) {
-        randomHostIndex = hostCount - 1
+    const macCount = macs.length
+    if (macCount > 0) {
+      let randomHostIndex = Math.floor(Math.random() * macCount)
+      if (randomHostIndex == macCount) {
+        randomHostIndex = macCount - 1
       }
-      return hosts[randomHostIndex];
+
+      const mac = macs[randomHostIndex];
+      return rclient.hgetAsync(`host:mac:${mac}`, "ipv4Addr");
     } else {
       return null
     }
@@ -77,11 +87,16 @@ class NaughtyMonkeySensor extends Sensor {
       "204.8.156.142",
       "37.48.120.196",
       "37.187.7.74",
-      "162.247.72.199"
+      "162.247.72.199",
+      "81.129.164.141"
     ]
 
     return list[Math.floor(Math.random() * list.length)]
 
+  }
+
+  randomBoolean() {
+    return Math.random() >= 0.5;
   }
 
   async prepareVideoEnvironment(ip) {
@@ -139,6 +154,12 @@ class NaughtyMonkeySensor extends Sensor {
         break;
       case "abnormal_upload":
         await this.abnormal_upload();
+        break;
+      case "upnp":
+        await this.upnp();
+        break;
+      case "subnet":
+        await this.subnet();
         break;
       case "heartbleed":
         await this.heartbleed();
@@ -231,6 +252,60 @@ class NaughtyMonkeySensor extends Sensor {
     const ip = await this.randomFindDevice();
     await this.monkey(ip, remoteIP, "porn");
     await this.recordMonkey(remoteIP);
+  }
+
+  async upnp() {
+    const ip = await this.randomFindDevice();
+
+    const payload = {
+      'p.source': 'NaughtyMonkeySensor',
+      'p.device.ip': ip,
+      'p.upnp.public.host': '',
+      'p.upnp.public.port': parseInt(Math.random() * 65535),
+      'p.upnp.private.host': ip,
+      'p.upnp.private.port': parseInt(Math.random() * 65535),
+      'p.upnp.protocol': this.randomBoolean() ? 'tcp' : 'udp',
+      'p.upnp.enabled': this.randomBoolean(),
+      'p.upnp.description': 'Monkey P2P Software',
+      'p.upnp.ttl': parseInt(Math.random() * 9999),
+      'p.upnp.local': this.randomBoolean(),
+      'p.monkey': 1
+    };
+
+    payload["p.device.port"] = payload["p.upnp.private.port"];
+    payload["p.protocol"] = payload["p.upnp.protocol"];
+
+    let alarm = new Alarm.UpnpAlarm(
+      new Date() / 1000,
+      ip,
+      payload
+    );
+
+
+
+    try {
+      let enriched = await am2.enrichDeviceInfo(alarm);
+      am2.enqueueAlarm(enriched);
+    } catch(e) {}
+  }
+
+  async subnet() {
+    const gateway = sysManager.myGateway();
+
+    let alarm = new Alarm.SubnetAlarm(
+      new Date() / 1000,
+      gateway,
+      {
+        'p.device.ip': gateway,
+        'p.subnet.length': parseInt(Math.random() * platform.getSubnetCapacity()),
+        'p.monkey': 1
+      }
+    );
+
+    try {
+      let enriched = await am2.enrichDeviceInfo(alarm);
+      am2.enqueueAlarm(enriched);
+    } catch(e) {}
   }
 
   async malware() {
