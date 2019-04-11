@@ -92,9 +92,9 @@ class UPNPSensor extends Sensor {
         if (results && results.length >= 0) {
           const key = "sys:scan:nat";
 
-          let preMappings = await (rclient.hmgetAsync(key, 'upnp')
+          let preMappings = await (rclient.hgetAsync(key, 'upnp')
             .then(entries => { return JSON.parse(entries) })
-            .catch(err => log.error("Failed to update upnp mapping in database: " + err))
+            .catch(err => log.error("Failed to read upnp mapping in database: " + err))
           );
 
           const mergedResults = this.mergeResults(results, preMappings);
