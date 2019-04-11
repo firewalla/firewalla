@@ -6,7 +6,7 @@ const exec = require('child-process-promise').exec;
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
 
-const get_interfaces_list_async = require('bluebird').promisify(require('network').get_interfaces_list);
+const get_interfaces_list_async = require('util').promisify(require('network').get_interfaces_list);
 const activeInterface = fConfig.monitoringInterface || "eth0";
 
 const platformLoader = require('../../platform/PlatformLoader.js');
@@ -33,7 +33,7 @@ class FWDiag {
 
   async getNetworkInfo() {
     const list = await get_interfaces_list_async();
-    for(const inter of list) {
+    for(const inter of list || []) {
       if(inter.name === activeInterface) {
         return inter;
       }

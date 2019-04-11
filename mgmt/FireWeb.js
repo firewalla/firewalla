@@ -90,7 +90,7 @@ class FireWeb {
     const eptCloud = await this.getCloudInstance();
     try {
       const groups = await eptCloud.eptGroupListAsync(eptCloud.eid);
-      for(const group of groups) {
+      for(const group of groups || []) {
         if(group.gid === gid) {
           return true;
         }
