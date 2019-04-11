@@ -2035,6 +2035,17 @@ module.exports = class HostManager {
     json.recentFlows = recentFlows;
   }
 
+  async getGuessedRouters(json) {
+    try {
+      const routersString = await rclient.getAsync("guessed_router");
+      if(routersString) {
+        json.guessedRouters = JSON.parse(routersString);
+      }
+    } catch (err) {
+      log.error("Failed to get guessed routers:", err);
+    }
+  }
+
   async groupNameForInit(json) {
     const groupName = await rclient.getAsync("groupName");
     if(groupName) {
@@ -2114,7 +2125,8 @@ module.exports = class HostManager {
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
-          this.getRecentFlows(json)
+          this.getRecentFlows(json),
+          this.getGuessedRouters(json)
         ]
 
         this.basicDataForInit(json, options);
