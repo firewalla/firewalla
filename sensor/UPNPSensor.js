@@ -101,8 +101,8 @@ class UPNPSensor extends Sensor {
         const key = "sys:scan:nat";
 
         try {
-          let entries = await rclient.hmgetAsync(key, 'upnp');
-          let preMappings = JSON.parse(entries);
+          let entries = await rclient.hgetAsync(key, 'upnp');
+          let preMappings = JSON.parse(entries) || [];
 
           const mergedResults = this.mergeResults(results, preMappings);
 
