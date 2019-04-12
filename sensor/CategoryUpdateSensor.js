@@ -25,6 +25,9 @@ const bone = require('../lib/Bone.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 
+const CountryUpdater = require('../control/CountryUpdater.js');
+const countryUpdater = new CountryUpdater();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -37,22 +40,25 @@ const securityHashMapping = {
 }
 
 class CategoryUpdateSensor extends Sensor {
-  constructor() {
-    super();
-    this.config.refreshInterval = 8 * 3600 * 1000; // refresh every 8 hours
-  }
 
-  async job() {
+  async regularJob() {
     const categories = Object.keys(categoryHashsetMapping)
-    for (let i = 0; i < categories.length; i++) {
-      const category = categories[i];
+    for (const category of categories) {
       await this.updateCategory(category);
     }
+  }
 
+  async securityJob() {
     const securityCategories = Object.keys(securityHashMapping)
-    for (let i = 0; i < securityCategories.length; i++) {
-      const category = securityCategories[i]
+    for (const category of securityCategories) {
       await this.updateSecurityCategory(category)
+    }
+  }
+
+  async countryJob() {
+    const activeCategories = countryUpdater.getCategories();
+    for (const category of activeCategories) {
+      await this.updateCountryBlock(category)
     }
   }
 
@@ -78,7 +84,7 @@ class CategoryUpdateSensor extends Sensor {
     const ip6List = info["ip6"]
     
     log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
-      + ` ${(ip6List || []).length} ipv6, ${(domain || []).length} domains`)
+      + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
 
     // if (domains) {
     //   await categoryUpdater.flushDefaultDomains(category);
@@ -96,19 +102,60 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
-  run() {
-    this.job()
+  async updateCountryBlock(category) {
+    log.info(`Loading country ip block for ${category} from cloud`);
 
-    setInterval(() => {
-      this.job()
-    }, this.config.refreshInterval)
+    const info = await this.loadCategoryFromBone(category);
+
+    // TODO: distinguish v4 & v6 in intel
+    // const ip4List = info["ip4"]
+    // const ip6List = info["ip6"]
+
+    const ip4List = info
+    const ip6List = null
+    
+    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+      + ` ${(ip6List || []).length} ipv6`)
+
+    if (ip4List) {
+      await countryUpdater.flushIPv4Addresses(category)
+      await countryUpdater.addIPv4Addresses(category, ip4List)
+    }
+    
+    if (ip6List) {
+      await countryUpdater.flushIPv6Addresses(category)
+      await countryUpdater.addIPv6Addresses(category, ip6List)
+    }
   }
 
-  async loadCategoryFromBone(category) {
+  async run() {
+    await this.regularJob()
+    await this.securityJob()
+    await this.countryJob()
+
+    setInterval(() => {
+      this.regularJob()
+    }, this.config.regularInterval * 1000)
+
+    setInterval(() => {
+      this.securityJob()
+    }, this.config.securityInterval * 1000)
+
+    setInterval(() => {
+      this.countryJob()
+    }, this.config.countryInterval * 1000)
+  }
+
+  async loadCategoryFromBone(hashset) {
     if (hashset) {
-      const data = await bone.hashsetAsync(hashset)
-      const list = JSON.parse(data)
-      return list
+      try {
+        const data = await bone.hashsetAsync(hashset)
+        const list = JSON.parse(data)
+        return list
+      } catch(err) {
+        log.error("Failed to get hashset", hashset, err);
+        return []
+      }
     } else {
       return []
     }

@@ -38,6 +38,8 @@ const flowUtil = require('../net2/FlowUtil.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const CountryUpdater = require('../control/CountryUpdater.js')
+const countryUpdater = new CountryUpdater()
 
 const SysManager = require('../net2/SysManager.js')
 const sysManager = new SysManager('info');
@@ -51,12 +53,6 @@ const QUEUE_SIZE_RESUME = 1000;
 const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 class DestIPFoundHook extends Hook {
 
@@ -233,6 +229,12 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  async updateCountryIP(intel) {
+    if(intel.host && intel.country) {
+      await countryUpdater.updateIP(intel.country, intel.host)
+    }
+  }
+
   _isSimilarHost(h1, h2) {
     if (!h1 || !h2)
       return false;
@@ -293,6 +295,7 @@ class DestIPFoundHook extends Hook {
           // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
           if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
             await this.updateCategoryDomain(intel);
+            await this.updateCountryIP(intel);
             return;
           }
         }
@@ -326,6 +329,7 @@ class DestIPFoundHook extends Hook {
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
+      await this.updateCountryIP(aggrIntelInfo);
 
       // only set default action when cloud succeeded
       if(!aggrIntelInfo.action &&
@@ -350,7 +354,7 @@ class DestIPFoundHook extends Hook {
       return aggrIntelInfo;
 
     } catch(err) {
-      log.error(`Failed to process IP ${ip}, error: ${err}`);
+      log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
     }
   }

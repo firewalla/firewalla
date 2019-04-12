@@ -27,8 +27,9 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const dns = require('dns');
-const resolve4Async = Promise.promisify(dns.resolve4)
-const resolve6Async = Promise.promisify(dns.resolve6)
+const util = require('util');
+const resolve4Async = util.promisify(dns.resolve4)
+const resolve6Async = util.promisify(dns.resolve6)
 
 const SysManager = require("../net2/SysManager.js")
 const sysManager = new SysManager()

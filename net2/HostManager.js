@@ -492,19 +492,6 @@ class Host {
     }
   }
 
-  touch(date) {
-    if (date != null || date <= this.o.lastActiveTimestamp) {
-      return;
-    }
-    if (date == null) {
-      date = Date.now() / 1000;
-    }
-    this.o.lastActiveTimestamp = date;
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'lastActiveTimestamp': this.o.lastActiveTimestamp
-    });
-  }
-
   getAllIPs() {
     let list = [];
     list.push(this.o.ipv4Addr);

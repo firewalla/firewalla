@@ -115,7 +115,11 @@
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
-    "CategoryUpdateSensor": {},
+    "CategoryUpdateSensor": {
+      "regularInterval": 28800,
+      "securityInterval": 14400,
+      "countryInterval": 864000
+    },
     "AutoBlocksRevalidationSensor": {
     },
     "FlowAggregationSensor": {},
