@@ -236,9 +236,11 @@ class Host {
         }
       }
 
+      /* do not update last active time based on ipv6 host entry
       if (this.o.lastActiveTimestamp < lastActive) {
         this.o.lastActiveTimestamp = lastActive;
       }
+      */
 
       //await(this.saveAsync());
       log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
