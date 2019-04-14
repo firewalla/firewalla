@@ -227,7 +227,7 @@ class DeviceHook extends Hook {
 
         // v6
         if(enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost);
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr);
 
         log.info("Host entry is created for this new device:", host, {});
 
@@ -309,7 +309,8 @@ class DeviceHook extends Hook {
         });
 
         await hostTool.updateIPv4Host(enrichedHost); //v4
-        await hostTool.updateIPv6Host(enrichedHost); //v6
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
 
         log.info("New host entry is created for this old device");
 
@@ -374,7 +375,8 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateIPv4Host(enrichedHost);
-        await hostTool.updateIPv6Host(enrichedHost); //v6
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
 
         if(enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
@@ -441,8 +443,8 @@ class DeviceHook extends Hook {
 
         // FIXME: shoud not keep minimal info for host key, not all
         await hostTool.updateIPv4Host(enrichedHost);   // host:ip4:.......
-
-        await hostTool.updateIPv6Host(enrichedHost); // host:ip6:.........
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
 
