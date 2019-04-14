@@ -253,11 +253,39 @@ check_iptables() {
     echo ""
 }
 
+check_sys_features() {
+    echo "---------------------- System Features ------------------"
+
+    local HKEYS=$(redis-cli hkeys sys:features)
+
+    for hkey in $HKEYS; do
+      check_each_system_config $hkey $(redis-cli hget sys:features $hkey)
+    done
+
+    echo ""
+    echo ""
+}
+
+check_sys_config() {
+    echo "---------------------- System Configs ------------------"
+
+    local HKEYS=$(redis-cli hkeys sys:config)
+
+    for hkey in $HKEYS; do
+      check_each_system_config $hkey $(redis-cli hget sys:config $hkey)
+    done
+
+    echo ""
+    echo ""
+}
+
 check_systemctl_services
 check_rejection
 check_exception
 check_reboot
 check_system_config
+check_sys_features
+check_sys_config
 check_policies
 check_hosts
 check_iptables
