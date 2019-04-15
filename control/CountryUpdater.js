@@ -27,14 +27,12 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
-const _ = require('lodash');
 const iptool = require("ip");
 
-const WHITELIST_MARK = 0x1/0x1;
 const ACTIVE_COUNTRY_SET = 'category:country:list'
 
-// CountryUpdater is responsible for updating dynamic ip/subnet only
-// presistent subnet set is updated in CategoryUpdateSensor
+// CountryUpdater is responsible for updating dynamic ip/subnet
+// presistent subnet set update is triggered in CategoryUpdateSensor
 class CountryUpdater extends CategoryUpdaterBase {
 
   constructor() {

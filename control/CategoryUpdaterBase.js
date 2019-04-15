@@ -20,16 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
 
-const DNSTool = require('../net2/DNSTool.js')
-const dnsTool = new DNSTool()
-
-const domainBlock = require('../control/DomainBlock.js')();
-
 const exec = require('child-process-promise').exec
 
-const EXPIRE_TIME = 60 * 60 * 48 // one hour
-
-const _ = require('lodash');
 const wrapIptables = Block.wrapIptables
 
 const redirectHttpPort = 8880;
@@ -64,41 +56,6 @@ class CategoryUpdaterBase {
 
   getIPv6CategoryKey(category) {
     return `category:${category}:ip6:domain`
-  }
-
-  async getDomains(category) {
-    if(!this.isActivated(category))
-      return []
-
-    return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
-  }
-
-  async getDefaultDomains(category) {
-    if(!this.isActivated(category))
-      return []
-
-    return rclient.smembersAsync(this.getDefaultCategoryKey(category))
-  }
-
-  async addDefaultDomains(category, domains) {
-    if(!this.isActivated(category))
-      return []
-
-    if(domains.length === 0) {
-      return []
-    }
-
-    let commands = [this.getDefaultCategoryKey(category)]
-
-    commands.push.apply(commands, domains)
-    return rclient.saddAsync(commands)
-  }
-
-  async flushDefaultDomains(category) {
-    if(!this.isActivated(category))
-      return [];
-
-    return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
 
   async getIPv4Addresses(category) {
@@ -172,116 +129,6 @@ class CategoryUpdaterBase {
     return rclient.delAsync(this.getIPv6CategoryKey(category));
   }
 
-
-  async getIncludedDomains(category) {
-    if(!this.isActivated(category))
-      return []
-
-    return rclient.smembersAsync(this.getIncludeCategoryKey(category))
-  }
-
-  async addIncludedDomain(category, domain) {
-    if(!this.isActivated(category))
-      return
-
-    return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
-  }
-
-  async removeIncludedDomain(category, domain) {
-    if(!this.isActivated(category))
-      return
-
-    return rclient.sremAsync(this.getIncludeCategoryKey(category), domain)
-  }
-
-  async getExcludedDomains(category) {
-    if(!this.isActivated(category))
-      return []
-
-    return rclient.smembersAsync(this.getExcludeCategoryKey(category))
-  }
-
-  async addExcludedDomain(category, domain) {
-    if(!this.isActivated(category))
-      return
-
-    return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
-  }
-
-  async removeExcludedDomain(category, domain) {
-    if(!this.isActivated(category))
-      return
-
-    return rclient.sremAsync(this.getExcludeCategoryKey(category), domain)
-  }
-
-  async includeDomainExists(category, domain) {
-    if(!this.isActivated(category))
-      return false
-
-    return rclient.sismemberAsync(this.getIncludeCategoryKey(category), domain)
-  }
-
-  async excludeDomainExists(category, domain) {
-    if(!this.isActivated(category))
-      return false
-
-    return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
-  }
-
-  async getDomainsWithExpireTime(category) {
-    const key = this.getCategoryKey(category)
-
-    const domainAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores')
-    const results = []
-
-    for(let i = 0; i < domainAndScores.length; i++) {
-      if(i % 2 === 1) {
-        const domain = domainAndScores[i-1]
-        const score = Number(domainAndScores[i])
-        const expireDate = score + EXPIRE_TIME
-
-        results.push({domain: domain, expire: expireDate})
-      }
-    }
-
-    return results
-  }
-
-  async updateDomain(category, domain, isPattern) {
-
-    if(!category || !domain) {
-      return;
-    }
-
-    if(!this.isActivated(category)) {
-      return
-    }
-
-    const now = Math.floor(new Date() / 1000)
-    const key = this.getCategoryKey(category)
-
-    let d = domain
-    if(isPattern) {
-      d = `*.${domain}`
-    }
-
-    const included = await this.includeDomainExists(category, d);
-
-    if(!included) {
-      const excluded = await this.excludeDomainExists(category, d);
-
-      if(excluded) {
-        return;
-      }
-    }
-
-    log.debug(`Found a ${category} domain: ${d}`)
-
-    await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d)
-  }
-
   getIPSetName(category) {
     return Block.getDstSet(category);
   }
@@ -296,25 +143,6 @@ class CategoryUpdaterBase {
 
   getTempIPSetNameForIPV6(category) {
     return Block.getDstSet6(`tmp_${category}`);
-  }
-
-  getDomainMapping(domain) {
-    return `rdns:domain:${domain}`
-  }
-
-  async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.keysAsync(`rdns:domain:${domainPattern}`)
-    keys.push(this.getDomainMapping(domainPattern.substring(2)))
-    return keys
-  }
-
-  getSummedDomainMapping(domain) {
-    let d = domain
-    if(d.startsWith("*.")) {
-      d = d.substring(2)
-    }
-
-    return `srdns:pattern:${d}`
   }
 
   // add entries from category:{category}:ip:domain to ipset
@@ -410,7 +238,7 @@ class CategoryUpdaterBase {
         return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
       }
 
-      await rclient.expireAsync(smappings, 600) // auto expire in 60 seconds
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
       let ipsetName = this.getIPSetName(category)
       let ipset6Name = this.getIPSetNameForIPV6(category)
@@ -444,42 +272,7 @@ class CategoryUpdaterBase {
     }
   }
 
-  // rebuild category ipset
-  async recycleIPSet(category) {
-
-    await this.updatePersistentIPSets(category, {useTemp: true});
-
-    const domains = await this.getDomains(category)
-    const includedDomains = await this.getIncludedDomains(category);
-    const defaultDomains = await this.getDefaultDomains(category);
-    const excludeDomains = await this.getExcludedDomains(category);
-
-    let dd = _.union(domains, defaultDomains)
-    dd = _.difference(dd, excludeDomains)
-    dd = _.union(dd, includedDomains)
-
-    for (const domain of dd) {
-
-      let domainSuffix = domain
-      if(domainSuffix.startsWith("*.")) {
-        domainSuffix = domainSuffix.substring(2);
-      }
-
-      const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-      if(!existing) { // a new domain
-        log.info(`Found a new domain with new rdns: ${domainSuffix}`)
-        await domainBlock.resolveDomain(domainSuffix)
-      }
-
-      await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
-        log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
-      })
-    }
-
-    await this.swapIpset(category);
-
-    log.info(`Successfully recycled ipset for category ${category}`)
-  }
+  async recycleIPSet(category) { }
 
   async swapIpset(category) {
     const ipsetName = this.getIPSetName(category)
@@ -536,12 +329,7 @@ class CategoryUpdaterBase {
     return this.activeCategories[category] !== undefined
   }
 
-  async refreshCategoryRecord(category) {
-    const key = this.getCategoryKey(category)
-    const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
-
-    return rclient.zremrangebyscoreAsync(key, '-inf', date)
-  }
+  async refreshCategoryRecord(category) { }
 
   async refreshAllCategoryRecords() {
     const categories = this.getCategories()
