@@ -13,23 +13,22 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
-var stats = require('stats-lite');
+const log = require('./logger.js')(__filename);
+const stats = require('stats-lite');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager('info');
-var bone = require("../lib/Bone.js");
-var firewalla = require("../net2/Firewalla.js");
+const DNSManager = require('./DNSManager.js');
+const dnsManager = new DNSManager('info');
+const bone = require("../lib/Bone.js");
+const firewalla = require("../net2/Firewalla.js");
 
-const _async = require('async');
-var flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
-var QUERY_MAX_FLOW = 10000;
+const QUERY_MAX_FLOW = 10000;
 
 var bconfig;
 // Will use bconfig.config.flow.activitymin/activitymax
@@ -583,10 +582,8 @@ module.exports = class FlowManager {
         let txratios = [];
         let rxvalues = [];
         let txvalues = [];
-        let shostSummary = {};
-        let dhostSummary = {};
-        for (let i in _flows) {
-            let flow = _flows[i];
+
+        for (let flow of _flows) {
             if (flow.rb < minlength && flow.ob < minlength) {
                 continue;
             }
@@ -601,26 +598,6 @@ module.exports = class FlowManager {
                 rxvalues.push(flow.rb);
             } else if (flow.fd == "out") {
                 rxvalues.push(flow.ob);
-            }
-            let shost = shostSummary[flow.sh];
-            let dhost = dhostSummary[flow.dh];
-            if (shost) {
-                shost.ob += flow.ob;
-                shost.rb += flow.rb;
-            } else {
-                shostSummary[flow.sh] = {
-                    ob: flow.ob,
-                    rb: flow.rb
-                };
-            }
-            if (dhost) {
-                dhost.ob += flow.ob;
-                dhost.rb += flow.rb;
-            } else {
-                dhostSummary[flow.dh] = {
-                    ob: flow.ob,
-                    rb: flow.rb
-                };
             }
 
             if (flow.fd == "in") {
@@ -656,7 +633,7 @@ module.exports = class FlowManager {
 
         flowspec.txStdev = stats.stdev(txvalues);
         flowspec.rxStdev = stats.stdev(rxvalues);
-        flowspec.txratioStdev = stats.stdev(txratios)
+        flowspec.txRatioStdev = stats.stdev(txratios)
 
         if (flowspec.txStdev == 0) {
             flowspec.txStdev = 1;
@@ -664,110 +641,52 @@ module.exports = class FlowManager {
         if (flowspec.rxStdev == 0) {
             flowspec.rxStdev = 1;
         }
-        if (flowspec.txratioStdev == 0) {
-            flowspec.txratioStdev = 1;
+        if (flowspec.txRatioStdev == 0) {
+            flowspec.txRatioStdev = 1;
         }
 
         log.debug("txStd Deviation", flowspec.txStdev);
         log.debug("rxStd Deviation", flowspec.rxStdev);
-        log.debug("txRatioStd Deviation", flowspec.txratioStdev);
-        for (let i in flows) {
-            let flow = flows[i];
+        log.debug("txRatioStd Deviation", flowspec.txRatioStdev);
+        for (let flow of flows) {
             if (flow.fd == "in") {
                 flow['rxStdev'] = flow.rb / flowspec.rxStdev;
                 flow['txStdev'] = flow.ob / flowspec.txStdev;
-                flow['txratioStdev'] = flow.txratio / flowspec.txratioStdev;
+                flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
             } else if (flow.fd == "out") {
                 flow['rxStdev'] = flow.ob / flowspec.txStdev;
                 flow['txStdev'] = flow.rb / flowspec.rxStdev;
-                flow['txratioStdev'] = flow.txratio / flowspec.txratioStdev;
+                flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
             }
         }
 
+      // save top 5 results to 'Ranked' array
+      ['rx', 'tx', 'txRatio'].forEach(category => {
+        let cStdev = `${category}Stdev`;
+        let cRanked = `${category}Ranked`;
+
         flows.sort(function (a, b) {
-            return Number(b['rxStdev']) - Number(a['rxStdev']);
+            return Number(b[cStdev]) - Number(a[cStdev]);
         })
         let max = 5;
-        log.debug("RX ");
-        for (let i in flows) {
-            let flow = flows[i];
-            if (flow.rxStdev < sdv) {
+        log.debug(category);
+        for (let flow of flows) {
+            if (flow[cStdev] < sdv) {
                 continue;
             }
-            log.debug(flow,{});
-            flowspec.rxRanked.push(flow);
+            if (category == 'txRatio' && flow.txratio < 1) {
+                continue;
+            }
+            log.debug(flow);
+            flowspec[cRanked].push(flow);
             max--;
             if (max < 0) {
                 break;
             }
         }
-        flows.sort(function (a, b) {
-            return Number(b['txStdev']) - Number(a['txStdev']);
-        })
-        max = 5;
-        log.debug("TX ");
-        for (let i in flows) {
-            let flow = flows[i];
-            if (flow.txStdev < sdv) {
-                continue;
-            }
-            log.debug(flow,{});
-            flowspec.txRanked.push(flow);
-            max--;
-            if (max < 0) {
-                break;
-            }
-        }
-        flows.sort(function (a, b) {
-            return Number(b['txratioStdev']) - Number(a['txratioStdev']);
-        })
-        max = 5;
-        log.debug("TX Ratio");
-        for (let i in flows) {
-            let flow = flows[i];
-            if (flow.txratioStdev < sdv || flow.txratio < 1) {
-                continue;
-            }
-            log.debug(flow,{});
-            flowspec.txRatioRanked.push(flow);
-            max--;
-            if (max < 0) {
-                break;
-            }
-        }
+      })
 
         return flowspec;
-
-        //     log.info("ShostSummary", shostSummary, "DhostSummary", dhostSummary);
-
-    }
-
-    /* given a list of flows, break them down to conversations
-     *  
-     * produce a summary of flows like
-     *   {::flow:: + duration } ...
-     */
-    getAppSummary(flow, callback) {
-
-    }
-
-    summarizeHostBytes(host,from,to,block,callback) {
-            const target = host.o.mac;
-            host.flowsummary = {};
-            host.flowsummary.inbytes = 0;
-            host.flowsummary.outbytes = 0;
-            this.getStats(target,block,from,to,callback);
-    }
-
-    summarizeBytes2(hosts,from,to,block,callback) {
-        _async.eachLimit(hosts, 1, (host, cb) => {
-            this.summarizeHostBytes(host,from,to,block,(err,data)=>{
-                host.flowsummary = data;
-                cb();
-            });
-        },(err) => {
-            callback(null,null);
-        });
     }
 
     async summarizeActivityFromConnections(flows) {
@@ -1023,93 +942,45 @@ module.exports = class FlowManager {
           conndb = {};
         }
         let key = "";
-        if (o.pf) {
-          for (let k in o.pf) {
-            // aggregate by dst host and dst port and direction
-            if (o.sh == o.lh) {
-              key = o.dh + ":" + o.fd + ":" + k;
-            } else {
-              key = o.sh + ":" + o.fd + ":" + k;
-            }
-            let flow = conndb[key];
-            if (flow == null) {
-              conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other. The devil is in the details!!
-              flow = conndb[key];
-              let dp = k.split("\.", 2).slice(-1)[0];
-              // double check to ensure that k is <proto>.<port_number>
-              if (/^\d+$/.test(dp)) {
-                // flow.dp already exists in temp flow spec, 
-                // however overriding dp here should do no harm
-                // in case of stashed flow spec, dp can be parsed from port flow
-                // therefore in most cases, dp should be included in summarized flow
-                flow.dp = dp;
-              }
-              flow.rb = o.pf[k].rb;
-              flow.ct = o.pf[k].ct;
-              flow.ob = o.pf[k].ob;
-              flow.du = o.du;
-              if (o.pf[k].sp) {
-                flow.sp_array = o.pf[k].sp;
-              }
-            } else {
-              // use rb, ob and ct in port flow since key contains dst port
-              flow.rb += o.pf[k].rb;
-              flow.ct += o.pf[k].ct;
-              flow.ob += o.pf[k].ob;
-              flow.du += o.du;
-              if (flow.ts < o.ts) {
-                flow.ts = o.ts;
-              }
-              if (o.pf[k].sp) {
-                if (flow.sp_array) {
-                  flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
-                } else {
-                  flow.sp_array = o.pf[k].sp;
-                }
-              }
-              // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-              if (o.flows) {
-                if (flow.flows) {
-                  flow.flows = flow.flows.concat(o.flows);
-                } else {
-                  flow.flows = o.flows;
-                }
-              }
-            }
-            // NOTE: flow.pf will be removed in flowTool.trimFlow...
-            if (flow.pf[k] != null) {
-              flow.pf[k].rb += o.pf[k].rb;
-              flow.pf[k].ob += o.pf[k].ob;
-              flow.pf[k].ct += o.pf[k].ct;
-            } else {
-              flow.pf[k] = o.pf[k]
-            }
+        // No longer needs to take care of portflow, as flow:conn now sums only 1 dest port
+        if (o.sh == o.lh) {
+          key = o.dh + ":" + o.fd;
+        } else {
+          key = o.sh + ":" + o.fd;
+        }
+        //     let key = o.sh+":"+o.dh+":"+o.fd;
+        let flow = conndb[key];
+        if (flow == null) {
+          conndb[key] = o;
+          if (o.sp) {
+            conndb[key].sp_array = o.sp;
           }
         } else {
-          if (o.sh == o.lh) {
-            key = o.dh + ":" + o.fd;
-          } else {
-            key = o.sh + ":" + o.fd;
+          flow.rb += o.rb;
+          flow.ct += o.ct;
+          flow.ob += o.ob;
+
+          // flow.ts and flow.du should present the time span of all flows
+          if (flow.ts + flow.du < o.ts + o.du) {
+            flow.du = o.ts + o.du - flow.ts;
           }
-          //     let key = o.sh+":"+o.dh+":"+o.fd;
-          let flow = conndb[key];
-          if (flow == null) {
-            conndb[key] = o;
-          } else {
-            flow.rb += o.rb;
-            flow.ct += o.ct;
-            flow.ob += o.ob;
-            flow.du += o.du;
-            if (flow.ts < o.ts) {
-              flow.ts = o.ts;
+          if (flow.ts > o.ts) {
+            flow.ts = o.ts;
+          }
+
+          if (o.sp) {
+            if (flow.sp_array) {
+              flow.sp_array = flow.sp_array.concat(o.sp);
+            } else {
+              flow.sp_array = o.sp;
             }
-            // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-            if (o.flows) {
-              if (flow.flows) {
-                flow.flows = flow.flows.concat(o.flows);
-              } else {
-                flow.flows = o.flows;
-              }
+          }
+          // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+          if (o.flows) {
+            if (flow.flows) {
+              flow.flows = flow.flows.concat(o.flows);
+            } else {
+              flow.flows = o.flows;
             }
           }
         }
