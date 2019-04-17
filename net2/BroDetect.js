@@ -288,13 +288,13 @@ module.exports = class {
         const host = {
           ipv4: ip,
           ipv4Addr: ip,
-          mac: key
+          mac: key,
+          from: "macHeartbeat"
         };
         sem.emitEvent({
           type: "DeviceUpdate",
           message: "Device network activity heartbeat",
-          host: host,
-          from: "BroDetect"
+          host: host
         });
       }
     }
@@ -1591,12 +1591,13 @@ module.exports = class {
         let host = {
           ipv4: ip,
           ipv4Addr: ip,
-          mac: mac
+          mac: mac,
+          from: "broKnownHosts"
         };
 
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "Found a device via bonjour",
+          message: "Found a device via bro known hosts",
           host: host
         })
 
