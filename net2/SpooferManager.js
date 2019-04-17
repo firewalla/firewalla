@@ -55,40 +55,91 @@ let exec = require('child-process-promise').exec
 
 let spoofStarted = false;
 
+const registeredSpoofInstances = {};
+
+function registerSpoofInstance(intf, routerIP, selfIP, isV6) {
+  const key = _getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+  if (!key)
+    return;
+    
+  if (!registeredSpoofInstances[key]) {
+    registeredSpoofInstances[key] = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
+    if (spoofStarted) {
+      registeredSpoofInstances[key].start();
+    }
+  }
+}
+
+function deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
+  const key = _getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+  if (!key)
+    return;
+
+  if (registeredSpoofInstances[key]) {
+    const spoofInstance = registeredSpoofInstances[key];
+    if (spoofStarted) {
+      spoofInstance.stop();
+    }
+    delete registeredSpoofInstances[key];
+  }
+}
+
+function _getSpoofInstanceKey(intf, routerIP, selfIP, isV6) {
+  isV6 = isV6 || false;
+  if (!routerIP) {
+    log.error("Cannot create bitbridge instance. Router IP should be specified.");
+    return null;
+  }
+  if (!selfIP && !isV6) {
+    log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
+    return null;
+  }
+  intf = intf || "eth0";
+  return `${intf}_v4_${routerIP}_${selfIP}`;
+}
+
 // WORKAROUND VERSION HERE, will move to a better place
-function startSpoofing() {
+async function startSpoofing() {
 
   if(spoofStarted) {
-    return Promise.resolve();
+    return;
   }
   
   log.info("start spoofing")
 
-  return async(() => {
-    await (this.emptySpoofSet()) // all monitored_hosts* keys are cleared during startup
+  await this.emptySpoofSet(); // all monitored_hosts* keys are cleared during startup
+
+  for (let key in registeredBitBridgeInstances) {
+    const bitBridgeInstance = registeredBitBridgeInstances[key];
+    bitBridgeInstance.start();
+  }
     
-    let ifName = sysManager.monitoringInterface().name;
-    let routerIP = sysManager.myGateway();
-    let myIP = sysManager.myIp();
-    let gateway6 = sysManager.myGateway6();
+  /*
+  let ifName = sysManager.monitoringInterface().name;
+  let routerIP = sysManager.myGateway();
+  let myIP = sysManager.myIp();
+  let gateway6 = sysManager.myGateway6();
     
-    if(!ifName || !myIP || !routerIP) {
-      return Promise.reject("require valid interface name, ip address and gateway ip address");
-    }
+  if(!ifName || !myIP || !routerIP) {
+    return Promise.reject("require valid interface name, ip address and gateway ip address");
+  }
     
-    let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
-    b7.start()
+  let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
+  b7.start()
+  */
     
-    spoofStarted = true;
-    return Promise.resolve();
-  })()
-  
+  spoofStarted = true;
 }
 
-function stopSpoofing() {
-  return new Promise((resolve, reject) => {
+async function stopSpoofing() {
+  try {
     spoofStarted = false;
-    
+
+    for (let key in registeredBitBridgeInstances) {
+      const bitBridgeInstance = registeredBitBridgeInstances[key];
+      await bitBridgeInstance.stop();
+    }
+    /*
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();
     let myIP = sysManager.myIp();
@@ -102,10 +153,11 @@ function stopSpoofing() {
       .then(() => {
         resolve()
       })
-  }).catch((err) => {
+    */
+  } catch (err) {
     //catch everything here
     log.error("Failed to stop spoofing:", err, {})
-  })
+  }
 }
 
 function directSpoof(ip) {

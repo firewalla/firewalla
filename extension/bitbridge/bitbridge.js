@@ -30,6 +30,8 @@ const fc = require('../../net2/config.js')
 
 let instance = null
 
+let instances = {};
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -38,8 +40,27 @@ function delay(t) {
 
 
 class BitBridge {
-  static getInstance() {
-    return instance
+  static createInstance(intf, routerIP, selfIP, isV6) {
+    // factory method to get singleton instance of bitbridge
+    isV6 = isV6 || false;
+    if (!routerIP) {
+      log.error("Cannot create bitbridge instance. Router IP should be specified.");
+      return null;
+    }
+    if (!selfIP && !isV6) {
+      log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
+      return null;
+    }
+    intf = intf || "eth0";
+    let key = `${intf}_v4_${routerIP}_${selfIP}`;
+    if (isV6) {
+      key = `${intf}_v6_${routerIP}`;
+    }
+    if (!instances[key]) {
+      const instance = new BitBridge(intf, routerIP, selfIP, isV6);
+      instances[key] = instance;
+    }
+    return instances[key];
   }
   
   constructor(intf, routerIP, selfIP, selfMac, selfIP6, routerIP6) {
