@@ -48,6 +48,7 @@ let unmonitoredKey = "unmonitored_hosts";
 const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
@@ -62,8 +63,25 @@ module.exports = class SpooferManager {
     if (!instance) {
       this.spoofStarted = false;
       this.registeredSpoofInstances = {};
-      instance = this;
+      (async () => {
+        const gatewayIp = sysManager.myGateway();
+        this.gatewayMac = await hostTool.getMacByIP(gatewayIp);
+      })();
+
       if (firewalla.isMain()) {
+        sem.on("DeviceUpdate", (event) => {
+          const host = event.host;
+          if (sysManager.myGateway6() && this.gatewayMac && host.mac === this.gatewayMac 
+            && host.ipv6Addr && sysManager.myDNS().includes(sysManager.myGateway())) {
+            // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
+            log.info("Router also acts as dns, spoof all router's v6 addresses: ", host.ipv6Addr);
+            for (let i in host.ipv6Addr) {
+              const addr = host.ipv6Addr[i];
+              this.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
+            }
+          }
+        });
+
         sclient.subscribe("System:IPChange")
         
         sclient.on("message", (channel, message) => {
@@ -74,6 +92,7 @@ module.exports = class SpooferManager {
                 this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
               }
               break;
+            default:
           }
         });
 
@@ -96,6 +115,7 @@ module.exports = class SpooferManager {
           })          
         })()
       }
+      instance = this;
     }
     return instance;
   }

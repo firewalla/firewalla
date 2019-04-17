@@ -119,9 +119,9 @@ class BitBridge {
         require('child_process').execSync("sudo service bitbridge4 restart"); // legacy issue to use bitbridge4
       } else {
         binary = this.getBinary6()
-        args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP6];
+        args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP];
         
-        cmd = binary+" "+args.join(" ")
+        let cmd = binary+" "+args.join(" ")
         log.info("Launching Bitbridge6", cmd);
         const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge6.${this.intf}_${this.routerIP}.rc`;
         fs.writeFileSync(rcFilePath, `export BINARY_ARGUMENTS='${args.join(" ")}'`);

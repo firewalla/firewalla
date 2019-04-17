@@ -47,6 +47,9 @@ let curMode = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
@@ -92,6 +95,18 @@ function _enforceSpoofMode() {
       // register v6 spoof instance if v6 gateway is assigned
       if (sysManager.myGateway6()) { // empty string also returns false
         sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
+        if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
+          // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
+          const gateway = await (hostTool.getMacEntryByIP(sysManager.myGateway()));
+          if (gateway.ipv6Addr) {
+            const gatewayIpv6Addrs = JSON.parse(gateway.ipv6Addr);
+            log.info("Router also acts as dns, spoof all router's v6 addresses: ", gatewayIpv6Addrs);
+            for (let i in gatewayIpv6Addrs) {
+              const addr = gatewayIpv6Addrs[i];
+              sm.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
+            }
+          }
+        }
       }
       await (sm.startSpoofing())
       log.info("New Spoof is started");

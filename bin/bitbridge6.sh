@@ -21,7 +21,10 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
   fi
 
   if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
-    $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS
+    $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS &
+    LAST_PID=$!
   fi
 done
+
+wait $LAST_PID
 
