@@ -24,6 +24,8 @@ let Mode = require('./Mode.js');
 let SysManager = require('./SysManager.js');
 let sysManager = new SysManager('info');
 
+const SpooferManager = require('./SpooferManager.js');
+
 const Discovery = require('./Discovery.js');
 const d = new Discovery("modeManager", fConfig, "info", false);
 
@@ -85,7 +87,12 @@ function _enforceSpoofMode() {
     }
     
     if(fConfig.newSpoof) {
-      let sm = require('./SpooferManager.js')
+      let sm = new SpooferManager();
+      sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
+      // register v6 spoof instance if v6 gateway is assigned
+      if (sysManager.myGateway6()) { // empty string also returns false
+        sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
+      }
       await (sm.startSpoofing())
       log.info("New Spoof is started");
     } else {
@@ -101,7 +108,7 @@ function _enforceSpoofMode() {
 
 function _disableSpoofMode() {
   if(fConfig.newSpoof) {
-    let sm = require('./SpooferManager.js')
+    let sm = new SpooferManager();
     log.info("Stopping spoofing");
     return sm.stopSpoofing()
   } else {
@@ -387,7 +394,7 @@ function apply() {
       break;
     case Mode.MODE_MANUAL_SPOOF:
       await (_enforceSpoofMode())
-      let sm = require('./SpooferManager.js')
+      let sm = new SpooferManager();
       await (hostManager.getHostsAsync())
       await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
       break;
@@ -498,7 +505,7 @@ function listenOnChange() {
     } else if (channel === "ManualSpoof:Update") {
       let HostManager = require('./HostManager.js')
       let hostManager = new HostManager('cli', 'server', 'info')
-      let sm = require('./SpooferManager.js')
+      let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
       (async () => {

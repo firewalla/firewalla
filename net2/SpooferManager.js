@@ -35,6 +35,7 @@ const await = require('asyncawait/await')
 const iptool = require('ip')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 let log = require("./logger.js")(__filename, 'info');
 
@@ -50,225 +51,290 @@ let unmonitoredKey6 = "unmonitored_hosts6";
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
+const fc = require('./config.js')
 
 let exec = require('child-process-promise').exec
 
-let spoofStarted = false;
+let instance = null;
 
-const registeredSpoofInstances = {};
+module.exports = class SpooferManager {
+  constructor() {
+    if (!instance) {
+      this.spoofStarted = false;
+      this.registeredSpoofInstances = {};
+      instance = this;
+      if (firewalla.isMain()) {
+        sclient.subscribe("System:IPChange")
+        
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "System:IPChange":
+              this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
+              if (sysManager.myGateway6()) {
+                this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
+              }
+              break;
+          }
+        });
 
-function registerSpoofInstance(intf, routerIP, selfIP, isV6) {
-  const key = _getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
-  if (!key)
-    return;
-    
-  if (!registeredSpoofInstances[key]) {
-    registeredSpoofInstances[key] = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
-    if (spoofStarted) {
-      registeredSpoofInstances[key].start();
+        // feature change listener
+        (async () => {
+          if(fc.isFeatureOn("ipv6")) {
+            await this.ipv6On();
+          } else {
+            await this.ipv6Off();
+          }
+          fc.onFeature("ipv6", (feature, status) => {
+            if(feature != "ipv6")
+              return
+            
+            if(status) {
+              this.ipv6On()
+            } else {
+              this.ipv6Off()
+            }
+          })          
+        })()
+      }
     }
+    return instance;
   }
-}
 
-function deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
-  const key = _getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
-  if (!key)
-    return;
-
-  if (registeredSpoofInstances[key]) {
-    const spoofInstance = registeredSpoofInstances[key];
-    if (spoofStarted) {
-      spoofInstance.stop();
+  registerSpoofInstance(intf, routerIP, selfIP, isV6) {
+    const key = this._getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+    if (!key)
+      return;
+      
+    if (!this.registeredSpoofInstances[key]) {
+      this.registeredSpoofInstances[key] = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
+      if (this.spoofStarted) {
+        this.registeredSpoofInstances[key].start();
+      }
+    } else {
+      const oldInstance = this.registeredSpoofInstances[key];
+      const newInstance = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
+      if (newInstance !== oldInstance) {
+        // need to deregister old instance
+        this.deregisterSpoofInstance(intf, routerIP, selfIP, isV6);
+        this.registeredSpoofInstances[key] = newInstance;
+        if (this.spoofStarted) {
+          newInstance.start();
+        }
+      }
     }
-    delete registeredSpoofInstances[key];
-  }
-}
-
-function _getSpoofInstanceKey(intf, routerIP, selfIP, isV6) {
-  isV6 = isV6 || false;
-  if (!routerIP) {
-    log.error("Cannot create bitbridge instance. Router IP should be specified.");
-    return null;
-  }
-  if (!selfIP && !isV6) {
-    log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
-    return null;
-  }
-  intf = intf || "eth0";
-  return `${intf}_v4_${routerIP}_${selfIP}`;
-}
-
-// WORKAROUND VERSION HERE, will move to a better place
-async function startSpoofing() {
-
-  if(spoofStarted) {
-    return;
   }
   
-  log.info("start spoofing")
-
-  await this.emptySpoofSet(); // all monitored_hosts* keys are cleared during startup
-
-  for (let key in registeredBitBridgeInstances) {
-    const bitBridgeInstance = registeredBitBridgeInstances[key];
-    bitBridgeInstance.start();
-  }
-    
-  /*
-  let ifName = sysManager.monitoringInterface().name;
-  let routerIP = sysManager.myGateway();
-  let myIP = sysManager.myIp();
-  let gateway6 = sysManager.myGateway6();
-    
-  if(!ifName || !myIP || !routerIP) {
-    return Promise.reject("require valid interface name, ip address and gateway ip address");
-  }
-    
-  let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
-  b7.start()
-  */
-    
-  spoofStarted = true;
-}
-
-async function stopSpoofing() {
-  try {
-    spoofStarted = false;
-
-    for (let key in registeredBitBridgeInstances) {
-      const bitBridgeInstance = registeredBitBridgeInstances[key];
-      await bitBridgeInstance.stop();
+  deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
+    const key = this._getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+    if (!key)
+      return;
+  
+    if (this.registeredSpoofInstances[key]) {
+      const spoofInstance = this.registeredSpoofInstances[key];
+      if (this.spoofStarted) {
+        spoofInstance.stop();
+      }
+      delete this.registeredSpoofInstances[key];
     }
+  }
+  
+  _getSpoofInstanceKey(intf, routerIP, selfIP, isV6) {
+    isV6 = isV6 || false;
+    if (!routerIP) {
+      log.error("Cannot create bitbridge instance. Router IP should be specified.");
+      return null;
+    }
+    if (!selfIP && !isV6) {
+      log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
+      return null;
+    }
+    intf = intf || "eth0";
+    if (isV6) {
+      return `${intf}_v6_${routerIP}`;
+    } else {
+      return `${intf}_v4_${routerIP}`;  
+    }
+  }
+
+  async ipv6On() {
+    try {
+      await exec("touch /home/pi/.firewalla/config/enablev6");
+      await exec("sudo pkill bitbridge6");
+    } catch(err) {
+      log.warn("Error when turn on ipv6", err);
+    }
+  }
+
+  async ipv6Off() {
+    try {
+      await exec("rm -f /home/pi/.firewalla/config/enablev6");
+      await exec("sudo pkill bitbridge6");
+    } catch(err) {
+      log.warn("Error when turn off ipv6", err);
+    }
+  }
+  
+  // WORKAROUND VERSION HERE, will move to a better place
+  async startSpoofing() {
+  
+    if(this.spoofStarted) {
+      return;
+    }
+    
+    log.info("start spoofing")
+  
+    await this.emptySpoofSet(); // all monitored_hosts* keys are cleared during startup
+  
+    for (let key in this.registeredSpoofInstances) {
+      const spoofInstance = this.registeredSpoofInstances[key];
+      spoofInstance.start();
+    }
+      
     /*
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();
     let myIP = sysManager.myIp();
-
+    let gateway6 = sysManager.myGateway6();
+      
     if(!ifName || !myIP || !routerIP) {
       return Promise.reject("require valid interface name, ip address and gateway ip address");
     }
-    
-    let b7 = new BitBridge(ifName, routerIP, myIP)
-    b7.stop()
-      .then(() => {
-        resolve()
-      })
+      
+    let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
+    b7.start()
     */
-  } catch (err) {
-    //catch everything here
-    log.error("Failed to stop spoofing:", err, {})
+      
+    this.spoofStarted = true;
   }
-}
-
-function directSpoof(ip) {
-  return async(() => {
-    if(iptool.isV4Format(ip)) {
-      await (rclient.saddAsync(monitoredKey, ip))      
-    } else if(iptool.isV6Format(ip)) {
-      await (rclient.saddAsync(monitoredKey6, ip))
-    } else {
-      return Promise.reject(new Error("Invalid ip address: " + ip))
-    }
-  })()
-}
-
-function emptySpoofSet() {
-  return async(() => {
-    // clean up redis key
-    await (rclient.delAsync(monitoredKey))
-    await (rclient.delAsync(unmonitoredKey))
-    await (rclient.delAsync(unmonitoredKeyAll))
-    await (rclient.delAsync(monitoredKey6))
-    await (rclient.delAsync(unmonitoredKey6))    
-  })()
-}
-
-function loadManualSpoof(mac) {
-  return async(() => {
-    let key = hostTool.getMacKey(mac)
-    let host = await (rclient.hgetallAsync(key))
-    let manualSpoof = (host.manualSpoof === '1' ? true : false)
-    if(manualSpoof) {
-      await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
-      await (rclient.sremAsync(unmonitoredKey, host.ipv4Addr))
-      await (rclient.sremAsync(unmonitoredKeyAll, host.ipv4Addr))
-    } else {
-      await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
-      await (rclient.saddAsync(unmonitoredKey, host.ipv4Addr))
-      await (rclient.saddAsync(unmonitoredKeyAll, host.ipv4Addr))
-      setTimeout(() => {
-        rclient.sremAsync(unmonitoredKey, host.ipv4Addr)
-      }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
-    }    
-  })()
-}
-
-function loadManualSpoofs(hostManager) {
-  log.info("Reloading manual spoof configurations...")
-  let activeMACs = hostManager.getActiveMACs()
-
-  return async(() => {
-    await (emptySpoofSet()) // this is to ensure no other ip addresses are added to the list    
-    activeMACs.forEach((mac) => {
-      await (this.loadManualSpoof(mac))
-    })
-  })()
-}
-
-
-function isSpoofRunning() {
-  return async(() => {
+  
+  async stopSpoofing() {
     try {
-      await (exec("pgrep -x bitbridge7"))
-
-      // TODO: add ipv6 check in the future
-    } catch(err) {      
-      // error means no bitbridge7 is available
-      log.warn("service bitbridge7 is not running (yet)")
-      return false
+      this.spoofStarted = false;
+  
+      for (let key in this.registeredSpoofInstances) {
+        const spoofInstance = this.registeredSpoofInstances[key];
+        await spoofInstance.stop();
+      }
+      /*
+      let ifName = sysManager.monitoringInterface().name;
+      let routerIP = sysManager.myGateway();
+      let myIP = sysManager.myIp();
+  
+      if(!ifName || !myIP || !routerIP) {
+        return Promise.reject("require valid interface name, ip address and gateway ip address");
+      }
+      
+      let b7 = new BitBridge(ifName, routerIP, myIP)
+      b7.stop()
+        .then(() => {
+          resolve()
+        })
+      */
+    } catch (err) {
+      //catch everything here
+      log.error("Failed to stop spoofing:", err, {})
     }
-    return true
-  })()
-}
-
-// TODO support ipv6
-function isSpoof(ip) {
-  return async(() => {
-
-    try {
-      await (exec("pgrep -x bitbridge7"))
-
-      // TODO: add ipv6 check in the future
-    } catch(err) {      
-      // error means no bitbridge7 is available
-      log.warn("service bitbridge7 is not running (yet)")
-      return false
-    }
-    
-    // BitBridge.getInstance() is not available for other nodejs processes than FireMain
-    /*    
-    let instance = BitBridge.getInstance()
-    if(!instance) {
-      return false
-    }
-
-    let started = instance.started
-    if(!started) {
-      return false
-    }
-    */
-    
-    return await (rclient.sismemberAsync(monitoredKey, ip)) == 1
-  })()
-}
-
-module.exports = {
-  startSpoofing: startSpoofing,
-  stopSpoofing: stopSpoofing,
-  directSpoof:directSpoof,
-  isSpoofRunning:isSpoofRunning,
-  loadManualSpoofs: loadManualSpoofs,
-  loadManualSpoof: loadManualSpoof,
-  isSpoof: isSpoof,
-  emptySpoofSet: emptySpoofSet
+  }
+  
+  directSpoof(ip) {
+    return async(() => {
+      if(iptool.isV4Format(ip)) {
+        await (rclient.saddAsync(monitoredKey, ip))      
+      } else if(iptool.isV6Format(ip)) {
+        await (rclient.saddAsync(monitoredKey6, ip))
+      } else {
+        return Promise.reject(new Error("Invalid ip address: " + ip))
+      }
+    })()
+  }
+  
+  emptySpoofSet() {
+    return async(() => {
+      // clean up redis key
+      await (rclient.delAsync(monitoredKey))
+      await (rclient.delAsync(unmonitoredKey))
+      await (rclient.delAsync(unmonitoredKeyAll))
+      await (rclient.delAsync(monitoredKey6))
+      await (rclient.delAsync(unmonitoredKey6))    
+    })()
+  }
+  
+  loadManualSpoof(mac) {
+    return async(() => {
+      let key = hostTool.getMacKey(mac)
+      let host = await (rclient.hgetallAsync(key))
+      let manualSpoof = (host.manualSpoof === '1' ? true : false)
+      if(manualSpoof) {
+        await (rclient.saddAsync(monitoredKey, host.ipv4Addr))
+        await (rclient.sremAsync(unmonitoredKey, host.ipv4Addr))
+        await (rclient.sremAsync(unmonitoredKeyAll, host.ipv4Addr))
+      } else {
+        await (rclient.sremAsync(monitoredKey, host.ipv4Addr))
+        await (rclient.saddAsync(unmonitoredKey, host.ipv4Addr))
+        await (rclient.saddAsync(unmonitoredKeyAll, host.ipv4Addr))
+        setTimeout(() => {
+          rclient.sremAsync(unmonitoredKey, host.ipv4Addr)
+        }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
+      }    
+    })()
+  }
+  
+  loadManualSpoofs(hostManager) {
+    log.info("Reloading manual spoof configurations...")
+    let activeMACs = hostManager.getActiveMACs()
+  
+    return async(() => {
+      await (emptySpoofSet()) // this is to ensure no other ip addresses are added to the list    
+      activeMACs.forEach((mac) => {
+        await (this.loadManualSpoof(mac))
+      })
+    })()
+  }
+  
+  
+  isSpoofRunning() {
+    return async(() => {
+      try {
+        await (exec("pgrep -x bitbridge7"))
+  
+        // TODO: add ipv6 check in the future
+      } catch(err) {      
+        // error means no bitbridge7 is available
+        log.warn("service bitbridge7 is not running (yet)")
+        return false
+      }
+      return true
+    })()
+  }
+  
+  // TODO support ipv6
+  isSpoof(ip) {
+    return async(() => {
+  
+      try {
+        await (exec("pgrep -x bitbridge7"))
+  
+        // TODO: add ipv6 check in the future
+      } catch(err) {      
+        // error means no bitbridge7 is available
+        log.warn("service bitbridge7 is not running (yet)")
+        return false
+      }
+      
+      // BitBridge.getInstance() is not available for other nodejs processes than FireMain
+      /*    
+      let instance = BitBridge.getInstance()
+      if(!instance) {
+        return false
+      }
+  
+      let started = instance.started
+      if(!started) {
+        return false
+      }
+      */
+      
+      return await (rclient.sismemberAsync(monitoredKey, ip)) == 1
+    })()
+  }
 }
