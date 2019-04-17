@@ -165,6 +165,7 @@
     },
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
