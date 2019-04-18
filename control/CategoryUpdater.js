@@ -18,6 +18,8 @@ const log = require("../net2/logger.js")(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
+const firewalla = require("../net2/Firewalla.js");
+
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
@@ -64,7 +66,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       };
 
       // only run refresh category records for fire main process
-      if (process.title === 'FireMain') {
+      if (firewalla.isMain()) {
         setInterval(() => {
           this.refreshAllCategoryRecords()
         }, 60 * 60 * 1000) // update records every hour
