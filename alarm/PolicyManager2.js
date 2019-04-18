@@ -800,103 +800,91 @@ class PolicyManager2 {
            minimatch(target, "*.firewalla.com")
   }
 
-  enforce(policy) {
+  async enforce(policy) {
     if(policy.disabled == 1) {
       return // ignore disabled policy rules
     }
 
     // auto unenforce if expire time is set
-    if(policy.expire) {
-      if(policy.willExpireSoon())  {
+    if (policy.expire) {
+      if (policy.willExpireSoon())  {
         // skip enforce as it's already expired or expiring
-        return async(() => {
-          await (delay(policy.getExpireDiffFromNow() * 1000 ))
-          await (this._disablePolicy(policy))
-          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await (this.deletePolicy(policy.pid))
-          }
-        })()
+        await delay(policy.getExpireDiffFromNow() * 1000 );
+        await this._disablePolicy(policy);
+        if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+          await this.deletePolicy(policy.pid);
+        }
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
-        return async(() => {
-          await (this._enforce(policy))
-          log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
-          const pid = policy.pid
-          const policyTimer = setTimeout(() => {
-            async(() => {
-              log.info(`About to revoke policy ${pid} `)
-              // make sure policy is still enabled before disabling it
-              const policy = await (this.getPolicy(pid))
+        await this._enforce(policy);
+        log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
+        const pid = policy.pid;
+        const policyTimer = setTimeout(async () => {
+          log.info(`About to revoke policy ${pid} `)
+          // make sure policy is still enabled before disabling it
+          const policy = await this.getPolicy(pid);
 
-              // do not do anything if policy doesn't exist any more or it's disabled already
-              if(!policy || policy.isDisabled()) {
-                return
-              }
+          // do not do anything if policy doesn't exist any more or it's disabled already
+          if(!policy || policy.isDisabled()) {
+            return
+          }
 
-              log.info(`Revoke policy ${policy.pid}, since it's expired`)
-              await (this.unenforce(policy));
-              await (this._disablePolicy(policy))
-              if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-                await (this.deletePolicy(pid))
-              }
-            })()
-          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds, will be set to 1 if it is a negative number
+          log.info(`Revoke policy ${policy.pid}, since it's expired`)
+          await this.unenforce(policy);
+          await this._disablePolicy(policy);
+          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+            await this.deletePolicy(pid);
+          }
+        }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
 
-          this.invalidateExpireTimer(policy) // remove old one if exists
-          this.enabledTimers[pid] = policyTimer
-        })()
+        this.invalidateExpireTimer(policy); // remove old one if exists
+        this.enabledTimers[pid] = policyTimer;
       }
     } else if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
-      return scheduler.registerPolicy(policy)
+      return scheduler.registerPolicy(policy);
     } else {
-      return this._enforce(policy) // regular enforce
+      return this._enforce(policy); // regular enforce
     }
   }
 
   // this is the real execution of enable and disable policy
-  _enablePolicy(policy) {
-    return async(() => {
-      const now = new Date() / 1000
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        disabled: 0,
-        activatedTime: now
-      }))
-      policy.disabled = 0
-      policy.activatedTime = now
-      log.info(`Policy ${policy.pid} is enabled`)
-      return policy
-    })()
+  async _enablePolicy(policy) {
+    const now = new Date() / 1000
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      disabled: 0,
+      activatedTime: now
+    })
+    policy.disabled = 0
+    policy.activatedTime = now
+    log.info(`Policy ${policy.pid} is enabled`)
+    return policy
   }
 
-  _disablePolicy(policy) {
-    return async(() => {
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        disabled: 1 // flag to indicate that this policy is revoked successfully.
-      }))
-      policy.disabled = 1
-      log.info(`Policy ${policy.pid} is disabled`)
-      return policy
-    })()
+  async _disablePolicy(policy) {
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      disabled: 1 // flag to indicate that this policy is revoked successfully.
+    })
+    policy.disabled = 1
+    log.info(`Policy ${policy.pid} is disabled`)
+    return policy
   }
 
-  _refreshActivatedTime(policy) {
-    return async(() => {
-      const now = new Date() / 1000
-      let activatedTime = now;
-      // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
-      if (policy.activatedTime) {
-        activatedTime = policy.activatedTime;
-      }
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        activatedTime: activatedTime
-      }))
-      policy.activatedTime = activatedTime
-      return policy
-    })()
+  async _refreshActivatedTime(policy) {
+    const now = new Date() / 1000
+    let activatedTime = now;
+    // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
+    if (policy.activatedTime) {
+      activatedTime = policy.activatedTime;
+    }
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      activatedTime: activatedTime
+    })
+    policy.activatedTime = activatedTime
+    return policy
   }
 
   async _removeActivatedTime(policy) {
@@ -924,7 +912,7 @@ class PolicyManager2 {
     await this._refreshActivatedTime(policy)
 
     if (this.isFirewallaOrCloud(policy)) {
-      return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
+      throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
     const {pid, scope, target, whitelist} = policy
@@ -1015,9 +1003,8 @@ class PolicyManager2 {
         break;
 
       default:
-        return Promise.reject("Unsupported policy");
+        throw new Error("Unsupported policy type");
     }
-
   }
 
   invalidateExpireTimer(policy) {
