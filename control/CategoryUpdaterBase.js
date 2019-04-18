@@ -60,7 +60,7 @@ class CategoryUpdaterBase {
 
   async getIPv4Addresses(category) {
     if(!this.isActivated(category))
-      return []
+      return
 
     return rclient.smembersAsync(this.getIPv4CategoryKey(category))
   }
@@ -73,11 +73,9 @@ class CategoryUpdaterBase {
   }
 
   async addIPv4Addresses(category, addresses) {
-    if(!this.isActivated(category))
-      return []
-
-    if(addresses.length === 0) {
-      return []
+    if (!category || !this.isActivated(category)
+      || !Array.isArray(addresses) || addresses.length === 0) {
+      return
     }
 
     let args = [this.getIPv4CategoryKey(category)]
@@ -88,15 +86,14 @@ class CategoryUpdaterBase {
 
   async flushIPv4Addresses(category) {
     if(!this.isActivated(category))
-      return [];
+      return
 
     return rclient.delAsync(this.getIPv4CategoryKey(category));
   }
 
-
   async getIPv6Addresses(category) {
     if(!this.isActivated(category))
-      return []
+      return
 
     return rclient.smembersAsync(this.getIPv6CategoryKey(category))
   }
@@ -109,11 +106,9 @@ class CategoryUpdaterBase {
   }
 
   async addIPv6Addresses(category, addresses) {
-    if(!this.isActivated(category))
-      return []
-
-    if(addresses.length === 0) {
-      return []
+    if (!category || !this.isActivated(category)
+      || !Array.isArray(addresses) || addresses.length === 0) {
+      return
     }
 
     let commands = [this.getIPv6CategoryKey(category)]
@@ -123,8 +118,9 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv6Addresses(category) {
-    if(!this.isActivated(category))
-      return [];
+    if(!this.isActivated(category)) {
+      return
+    }
 
     return rclient.delAsync(this.getIPv6CategoryKey(category));
   }

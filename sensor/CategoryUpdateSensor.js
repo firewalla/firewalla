@@ -16,6 +16,8 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const fc = require('../net2/config.js')
+
 const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -105,27 +107,30 @@ class CategoryUpdateSensor extends Sensor {
   async updateCountryBlock(category) {
     log.info(`Loading country ip block for ${category} from cloud`);
 
-    const info = await this.loadCategoryFromBone(category);
-
-    // TODO: distinguish v4 & v6 in intel
-    // const ip4List = info["ip4"]
-    // const ip6List = info["ip6"]
+    const info = await this.loadCategoryFromBone(category + ':ip4');
 
     const ip4List = info
-    const ip6List = null
-    
-    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
-      + ` ${(ip6List || []).length} ipv6`)
 
     if (ip4List) {
       await countryUpdater.flushIPv4Addresses(category)
       await countryUpdater.addIPv4Addresses(category, ip4List)
     }
     
-    if (ip6List) {
-      await countryUpdater.flushIPv6Addresses(category)
-      await countryUpdater.addIPv6Addresses(category, ip6List)
+    let ip6List = [];
+
+    if (fc.isFeatureOn('ipv6')) {
+      const info = await this.loadCategoryFromBone(category);
+
+      ip6List = info["ip6"]
+
+      if (ip6List) {
+        await countryUpdater.flushIPv6Addresses(category)
+        await countryUpdater.addIPv6Addresses(category, ip6List)
+      }
     }
+
+    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+      + ` ${(ip6List || []).length} ipv6`)
   }
 
   async run() {
