@@ -60,6 +60,22 @@ class BitBridge {
     }
     return instances[key];
   }
+
+  static async cleanupSpoofInstanceConfigs() {
+    // cleanup rc files in directory
+    try {
+      const cmd = `rm ${firewalla.getFirewallaHome()}/bin/bitbridge7.*.rc`;
+      await exec(cmd);
+    } catch (err) { // file does not exist?
+      log.error("Failed to remove bitbridge7.*.rc", err);
+    }
+    try {
+      const cmd = `rm ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc`;
+      await exec(cmd);
+    } catch (err) { // file does not exist?
+      log.error("Failed to remove bitbridge6.*.rc", err);
+    }
+  }
   
   constructor(intf, routerIP, selfIP, isV6) {
     this.intf = intf

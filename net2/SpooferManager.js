@@ -204,6 +204,8 @@ module.exports = class SpooferManager {
     log.info("start spoofing")
   
     await this.emptySpoofSet(); // all monitored_hosts* keys are cleared during startup
+
+    await BitBridge.cleanupSpoofInstanceConfigs(); // cleanup Bitbridge config files (*.rc)
   
     for (let key in this.registeredSpoofInstances) {
       const spoofInstance = this.registeredSpoofInstances[key];
