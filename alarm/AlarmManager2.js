@@ -346,7 +346,18 @@ module.exports = class {
       alarm.aid = id + ""; // covnert to string to make it consistent
 
       let alarmKey = alarmPrefix + id;
-      
+
+      for(const alarmKey in alarm) {
+        // basic key or extended key
+        if (alarmKey.startsWith("p.") || alarmKey.startsWith("e.")) {
+          const value = alarm[alarmKey];
+          if(["Object", "Array"].includes(value.constructor.name)) {
+            // for hash or array, need to convert it to JSON string first
+            alarm[alarmKey] = JSON.stringify(value);
+          }
+        }
+      }
+
       const flatted = flat.flatten(alarm);
       
       const {basic, extended} = this.parseRawAlarm(flatted);
