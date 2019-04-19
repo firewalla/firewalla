@@ -865,10 +865,16 @@ module.exports = class FlowMonitor {
   }
 
   getDevicePort(obj) {
+    let port = null;
     if(sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['id.orig_p'];
+      port = obj['id.orig_p'];
     } else {
-      return obj['id.resp_p'];
+      port = obj['id.resp_p'];
+    }
+    if(port.constructor.name === 'Array' && port.length > 0) {
+      return port[0];
+    } else {
+      return port;
     }
   }
 
@@ -881,10 +887,18 @@ module.exports = class FlowMonitor {
   }
 
   getRemotePort(obj) {
+    let port = null;
+
     if(!sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['id.orig_p'];
+      port = obj['id.orig_p'];
     } else {
-      return obj['id.resp_p'];
+      port = obj['id.resp_p'];
+    }
+
+    if(port.constructor.name === 'Array' && port.length > 0) {
+      return port[0];
+    } else {
+      return port;
     }
   }
 
