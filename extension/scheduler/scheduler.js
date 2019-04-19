@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,6 +13,13 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+//    sem.on("PolicyEnforcement")
+// -> PolicyManager2.enforce()
+// -> Scheduler.enforce()
+// -> PolicyManager2._enforce()
+
+
 'use strict'
 
 const log = require('../../net2/logger.js')(__filename)
@@ -21,11 +28,10 @@ const CronJob = require('cron').CronJob;
 
 const Promise = require('bluebird');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const cronParser = require('cron-parser');
 const moment = require('moment');
+
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 let instance = null;
 
@@ -58,7 +64,7 @@ class PolicyScheduler {
     const cronTime = policy.cronTime
     const duration = parseFloat(policy.duration) // in seconds
 
-    if(!cronTime || !duration) {
+    if (!cronTime || !duration) {
       return 0
     }
 
@@ -68,67 +74,58 @@ class PolicyScheduler {
 
     const diff = now.diff(moment(lastDate), 'seconds')
 
-    if(diff < duration - MIN_DURATION) {
+    if (diff < duration - MIN_DURATION) {
       return duration - diff // how many seconds left
     } else {
       return 0
     }
   }
 
-  enforce(policy) {
-    return async(() => {
-      log.info(`=== Enforcing policy ${policy.pid}`)
-      if(this.enforceCallback) {
-        await (this.enforceCallback(policy))
-      }
-      log.info(`Policy ${policy.pid} is enforced`)
-    })()
+  async enforce(policy) {
+    log.info(`=== Enforcing policy ${policy.pid}`)
+    if (this.enforceCallback) {
+      await this.enforceCallback(policy);
+    }
+    log.info(`Policy ${policy.pid} is enforced`)
   }
 
-  unenforce(policy) {
-    return async(() => {
-      log.info(`=== Unenforcing policy ${policy.pid}`)
-      if(this.unenforceCallback) {
-        await (this.unenforceCallback(policy))
-      }
-    })()
+  async unenforce(policy) {
+    log.info(`=== Unenforcing policy ${policy.pid}`)
+    if (this.unenforceCallback) {
+      await this.unenforceCallback(policy);
+    }
   }
 
-  apply(policy, duration) {
+  async apply(policy, duration) {
     duration = duration || policy.duration
     
     const pid = policy.pid
 
-    return async(() => {
-      await (this.enforce(policy))
+    await this.enforce(policy);
 
-      const timer = setTimeout(() => {     // when timer expires, it will unenforce policy
-        async(() => {
-          await (this.unenforce(policy))
-          delete policyTimers[pid]
-        })()          
-      }, parseFloat(duration) * 1000)
+    const timer = setTimeout(async () => {     // when timer expires, it will unenforce policy
+      await this.unenforce(policy);
+      delete policyTimers[pid];
+    }, parseFloat(duration) * 1000)
 
-      policyTimers[pid] = timer;
-
-    })()
+    policyTimers[pid] = timer;
   }
 
-  registerPolicy(policy) {
+  async registerPolicy(policy) {
     const cronTime = policy.cronTime
     const duration = policy.duration
-    if(!cronTime || !duration) {
+    if (!cronTime || !duration) {
       const err = `Invalid Cron Time ${cronTime} / duration ${duration} for policy ${policy.pid}`
       log.error(err)
-      return Promise.reject(new Error(err))
+      throw new Error(err);
     }
 
     const pid = policy.pid
 
-    if(runningCronJobs[pid]) { // already have a running job for this pid
+    if (runningCronJobs[pid]) { // already have a running job for this pid
       const err = `Already have cron job running for policy ${pid}`
       log.error(err)
-      return Promise.reject(new Error(err))
+      throw new Error(err);
     }
 
     try {
@@ -143,23 +140,23 @@ class PolicyScheduler {
       runningCronJobs[pid] = job // register job
 
       const x = this.shouldPolicyBeRunning(policy) // it's in policy activation period when starting FireMain
-      if(x > 0) {
-        return this.apply(policy, x)
+      if (x > 0) {
+        return this.apply(policy, x);
       }
 
-      return Promise.resolve()
+      return;
 
     } catch (err) {
       log.error("Failed to register policy:", policy.pid, "error:", err, {})
-      return Promise.reject(err)
+      throw err;
     }
   }
 
-  deregisterPolicy(policy) {    
+  async deregisterPolicy(policy) {    
     const pid = policy.pid
-    if(pid == undefined) {
+    if (pid == undefined) {
       // ignore
-      return Promise.resolve()
+      return;
     }
 
     log.info(`deregistering policy ${pid}`)
@@ -167,17 +164,15 @@ class PolicyScheduler {
     const timer = policyTimers[pid]
     const job = runningCronJobs[pid]
 
-    if(job) {
+    if (job) {
       job.stop()
       delete runningCronJobs[pid]
     }    
 
-    if(timer) {
-      return async(() => {
-        await (this.unenforce(policy))
+    if (timer) {
+      await this.unenforce(policy);
         clearTimeout(timer);
         delete policyTimers[pid]
-      })()      
     }
   }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,12 +14,12 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var ip = require('ip');
-var spawn = require('child_process').spawn;
+const ip = require('ip');
+const spawn = require('child_process').spawn;
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
 exports.wrapIptables= function (rule) {
   let command = " -I ";
@@ -81,29 +81,17 @@ function reject(rule, callback) {
 }
 
 exports.reject = reject
-
-exports.rejectAsync = function (rule) {
-  return new Promise((resolve, r) => {
-    reject(rule, (err) => {
-      if(err) {
-        r(err);
-      } else {
-        resolve();
-      }
-    });
-  });
-}
-
+exports.rejectAsync = Promise.promisify(reject);
 exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
-exports.dnsChangeAsync = dnsChangeAsync;
+exports.dnsChangeAsync = Promise.promisify(dnsChange);
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
-exports.dhcpSubnetChangeAsync = dhcpSubnetChangeAsync;
+exports.dhcpSubnetChangeAsync = Promise.promisify(dhcpSubnetChange);
 exports.diagHttpChange = diagHttpChange;
-exports.diagHttpChangeAsync = diagHttpChangeAsync;
+exports.diagHttpChangeAsync = Promise.promisify(diagHttpChange);
 
 
 var workqueue = [];
@@ -359,17 +347,6 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function dnsChangeAsync(ip, dns, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    dnsChange(ip, dns, state, (err) => {
-      if(err && !ignoreError)
-        reject(err)
-      else
-        resolve();
-    })
-  });
-}
-
 function dnsChange(ip, dns, state, callback) {
   newRule({
       type: 'dns',
@@ -377,17 +354,6 @@ function dnsChange(ip, dns, state, callback) {
       dns: dns,
       state: state
   }, callback);
-}
-
-function dhcpSubnetChangeAsync(ip, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    dhcpSubnetChange(ip, state, (err) => {
-      if (err && !ignoreError)
-        reject(err);
-      else
-        resolve();
-    });
-  });
 }
 
 function dhcpSubnetChange(ip, state, callback) {
@@ -398,49 +364,12 @@ function dhcpSubnetChange(ip, state, callback) {
   }, callback);
 }
 
-function diagHttpChangeAsync(ip, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    diagHttpChange(ip, state, (err) => {
-      if (err && !ignoreError)
-        reject(err);
-      else
-        resolve();
-    });
-  });
-}
-
 function diagHttpChange(ip, state, callback) {
   newRule({
     type: 'diag_http',
     ip: ip,
     state: state
   }, callback);
-}
-
-function _dnsChange(ip, dns, state, callback) {
-    // TODO need to take care of 5353 as well
-    let action = "-A";
-    if (state == false || state == null) {
-        action = "-D";
-    }
-
-    let _src = " -s " + ip;
-    if (ip.includes("0.0.0.0")) {
-        _src = "-i eth0";
-    }
-
-    let cmd = "iptables";
-    let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
-
-    log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
-    this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        if (err && action !== "-D") {
-            log.error("IPTABLE:DNS:Unable to set", cmdline, err);
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
 }
 
 function flush(callback) {

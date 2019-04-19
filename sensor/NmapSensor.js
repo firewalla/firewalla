@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -230,12 +230,12 @@ class NmapSensor extends Sensor {
             return;
           }
           hosts.forEach((h) => {
-            log.debug("Found device:", h.ipv4Addr, {});
+            log.debug("Found device:", h.ipv4Addr);
             this._processHost(h);
           })
 
         }).catch((err) => {
-          log.error("Failed to scan:", err, {});
+          log.error("Failed to scan:", err);
         });
     })).then(() => {
       setTimeout(() => {

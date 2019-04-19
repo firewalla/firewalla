@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,9 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
-const _ = require('underscore')
+const _ = require('underscore');
+
+const lodash = require('lodash');
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
@@ -69,7 +71,17 @@ class CategoryUpdater {
         "default_c": 1,
         "p2p": 1,
         "gamble": 1
-      }
+      };
+
+      this.excludedDomains = {
+        "av": [
+          "www.google.com",
+          "forcesafesearch.google.com",
+          "docs.google.com",
+          "*.itunes.apple.com",
+          "itunes.apple.com"
+        ]
+      };
 
       // only run refresh category records for fire main process
       if(process.title === 'FireMain') {
@@ -334,7 +346,8 @@ class CategoryUpdater {
     log.debug(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d, {})
+    await this.updateIPSetByDomain(category, d, {});
+    await this.filterIPSetByDomain(category);
   }
 
   getMapping(category) {
@@ -470,6 +483,93 @@ class CategoryUpdater {
 
   }
 
+  async filterIPSetByDomain(category, options) {
+    options = options || {}
+
+    const list = this.excludedDomains && this.excludedDomains[category];
+
+    if(!lodash.isEmpty(list)) {
+      for(const domain of list) {
+        if(domain.startsWith("*.")) {
+          await this._filterIPSetByDomainPattern(category, domain, options).catch((err) => {
+            log.error("Got error when filter ip set for domain pattern", domain, "with err", err);
+          });
+        } else {
+          await this._filterIPSetByDomain(category, domain, options).catch((err) => {
+            log.error("Got error when filter ip set for domain", domain, "with err", err);
+          })
+        }
+      }
+    }
+  }
+
+  async _filterIPSetByDomain(category, domain, options) {
+    options = options || {}
+
+    const mapping = this.getDomainMapping(domain)
+    let ipsetName = this.getIPSetName(category)
+    let ipset6Name = this.getIPSetNameForIPV6(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetName(category)
+      ipset6Name = this.getTempIPSetNameForIPV6(category)
+    }
+
+    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
+
+    if(hasAny) {
+      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+      await exec(cmd6).catch((err) => {
+        log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
+  }
+
+  async _filterIPSetByDomainPattern(category, domain, options) {
+    if(!domain.startsWith("*.")) {
+      return
+    }
+
+    const mappings = await this.getDomainMappingsByDomainPattern(domain)
+
+    if(mappings.length > 0) {
+      const smappings = this.getSummedDomainMapping(domain)
+      let array = [smappings, mappings.length]
+
+      array.push.apply(array, mappings)
+
+      await rclient.zunionstoreAsync(array)
+
+      const exists = await rclient.typeAsync(smappings);
+      if(exists === "none") {
+        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
+      }
+
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
+
+      let ipsetName = this.getIPSetName(category)
+      let ipset6Name = this.getIPSetNameForIPV6(category)
+
+      if(options && options.useTemp) {
+        ipsetName = this.getTempIPSetName(category)
+        ipset6Name = this.getTempIPSetNameForIPV6(category)
+      }
+
+      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      return (async () => {
+        await exec(cmd4);
+        await exec(cmd6);
+      })().catch((err) => {
+        log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
+      })
+    }
+  }
+
   async updateIPSetByDomainPattern(category, domain, options) {
     if(!domain.startsWith("*.")) {
       return
@@ -492,7 +592,7 @@ class CategoryUpdater {
         return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
       }
 
-      await rclient.expireAsync(smappings, 600) // auto expire in 60 seconds
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
       let ipsetName = this.getIPSetName(category)
       let ipset6Name = this.getIPSetNameForIPV6(category)
@@ -556,6 +656,10 @@ class CategoryUpdater {
       
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
+      })
+
+      await this.filterIPSetByDomain(category, {useTemp: true}).catch((err) => {
+        log.error(`Failed to filter ipset for domain ${domain}, err: ${err}`)
       })
     }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,11 +53,11 @@ class BroNotice {
 
     if (alarm["p.device.ip"] == broObj.src) {
       // attacker is internal device
-      alarm["p.local_is_client"] = 1;
+      alarm["p.local_is_client"] = "1";
       alarm["p.dest.ip"] = target;
     } else {
       // attacker is external device
-      alarm["p.local_is_client"] = 0;
+      alarm["p.local_is_client"] = "0";
       alarm["p.device.ip"] = target;
       alarm["device"] = target;
     }
@@ -70,9 +70,9 @@ class BroNotice {
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
     if (alarm["p.device.ip"] == broObj.src) {
-      alarm["p.local_is_client"] = 1;
+      alarm["p.local_is_client"] = "1";
     } else {
-      alarm["p.local_is_client"] = 0;
+      alarm["p.local_is_client"] = "0";
     }
   }
 
@@ -108,9 +108,17 @@ class BroNotice {
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
-    alarm['p.file.url'] = broObj.file_desc;
-    alarm['p.file.mime'] = broObj.file_mime_type;
-    alarm['e.file.detail'] = broObj.sub;
+    if(broObj["file_mime_type"]) {
+      alarm["p.file.type"] = broObj["file_mime_type"];
+    }
+
+    if(broObj["file_desc"]) {
+      alarm["p.file.desc"] = broObj["file_desc"];
+    }
+
+    if(broObj.sub) {
+      alarm["p.malware.reference"] = broObj.sub;
+    }
   }
 
   //  src: victim

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -58,7 +58,10 @@ class VPNClientEnforcer {
       this.enabledHosts[mac] = host;
       switch (mode) {
         case "dhcp":
-          if (this._isSecondaryInterfaceIP(host.ipv4Addr)) {
+          const mode = require('../../net2/Mode.js');
+          await mode.reloadSetupMode();
+          // enforcement takes effect if devcie ip address is in overlay network or dhcp spoof mode is on
+          if (this._isSecondaryInterfaceIP(host.ipv4Addr) || mode.isDHCPSpoofModeOn()) {
             try {
               await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
             } catch (err) {
@@ -120,7 +123,9 @@ class VPNClientEnforcer {
       host.vpnClientMode = enabledMode;
       switch (enabledMode) {
         case "dhcp":
-          if (host.ipv4Addr !== oldHost.ipv4Addr || !this._isSecondaryInterfaceIP(host.ipv4Addr) || host.spoofing === "false") {
+          const mode = require('../../net2/Mode.js');
+          await mode.reloadSetupMode();
+          if (host.ipv4Addr !== oldHost.ipv4Addr || (!this._isSecondaryInterfaceIP(host.ipv4Addr) && (!mode.isDHCPSpoofModeOn())) || host.spoofing === "false") {
             // policy routing rule should be removed anyway if ip address is changed or ip address is not assigned by secondary interface
             // or host is not monitored
             try {
@@ -129,7 +134,7 @@ class VPNClientEnforcer {
               log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
             }
           }
-          if (this._isSecondaryInterfaceIP(host.ipv4Addr) && host.spoofing === "true") {
+          if ((this._isSecondaryInterfaceIP(host.ipv4Addr) || mode.isDHCPSpoofModeOn()) && host.spoofing === "true") {
             await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
           }
           this.enabledHosts[mac] = host;

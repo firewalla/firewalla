@@ -1,6 +1,6 @@
 'use strict';
 
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -90,7 +90,7 @@ class FireWeb {
     const eptCloud = await this.getCloudInstance();
     try {
       const groups = await eptCloud.eptGroupListAsync(eptCloud.eid);
-      for(const group of groups) {
+      for(const group of groups || []) {
         if(group.gid === gid) {
           return true;
         }

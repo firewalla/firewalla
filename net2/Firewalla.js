@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -291,6 +291,10 @@ function isReservedBlockingIP(ip) {
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip);
 }
 
+function getRedHoleIP() {
+  return RED_HOLE_IP;
+}
+
 function isMain() {
   return process.title === "FireMain";
 }
@@ -343,5 +347,7 @@ module.exports = {
   isMonitor:isMonitor,
   getLastCommitDate:getLastCommitDate,
 
-  getProcessName:getProcessName
+  getProcessName:getProcessName,
+
+  getRedHoleIP:getRedHoleIP
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -60,6 +60,8 @@ const safeSearchDNSPort = 8863;
 const iptables = require('../net2/Iptables');
 
 const fc = require('../net2/config.js');
+
+const iptool = require('ip')
 
 class SafeSearchPlugin extends Sensor {
   
@@ -233,7 +235,15 @@ class SafeSearchPlugin extends Sensor {
 
   async loadDomainCache(domain) {
     const key = `rdns:domain:${domain}`;
-    const results = await rclient.zrevrangeAsync(key, -1, -1);
+    let results = await rclient.zrevrangebyscoreAsync(key, '+inf', '-inf');
+    results = results.filter((ip) => !f.isReservedBlockingIP(ip));
+
+    const ipv4Results = results.filter((ip) => iptool.isV4Format(ip))
+
+    if(ipv4Results.length > 0) {
+      return ipv4Results[0]; // return ipv4 address as a priority
+    }
+
     if(results.length > 0) {
       log.info(`Domain ${domain} ======> ${results[0]}`);
       return results[0];
@@ -297,6 +307,8 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async applyDeviceSafeSearch(macAddress) {
+    log.info("Applying safe search on device", macAddress);
+
     try {
       if(this.enabledMacAddresses[macAddress]) {
         const config = await this.getSafeSearchConfig();
@@ -377,7 +389,14 @@ class SafeSearchPlugin extends Sensor {
    * Safe Search DNS server will use local primary dns server as upstream server
    */
   async startDeviceMasq() {
+    if(this.starting) {
+      return;
+    }
+
     try {
+      this.starting = true;
+      await this.delay(5000);
+      this.starting = false;
       return exec("sudo systemctl restart devicemasq");
     } catch(err) {
       log.error(`Failed to restart devicemasq, err: ${err}`);
@@ -440,7 +459,7 @@ class SafeSearchPlugin extends Sensor {
       const cmd = iptables.wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
-      for(const ip6 of ipv6s) {
+      for(const ip6 of ipv6s || []) {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
@@ -465,7 +484,7 @@ class SafeSearchPlugin extends Sensor {
       const cmd = iptables.wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
-      for(const ip6 of ipv6s) {
+      for(const ip6 of ipv6s || []) {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 

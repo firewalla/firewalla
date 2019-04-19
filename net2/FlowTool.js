@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -576,10 +576,11 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
         if (a.ets && b.ets) {
-          return b.ets - a.ets;
-        } else {
-          return b.ts - a.ts;
+          // sort by end timestamp if present
+          a.ts = a.ets;
+          b.ts = b.ets;
         }
+        return b.ts - a.ts;
       })); 
     } else {
       mergedFlow = flowObjects

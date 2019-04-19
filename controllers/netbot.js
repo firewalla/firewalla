@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -553,6 +553,25 @@ class netBot extends ControllerBot {
     });
   }
 
+  _enhancedSpoof(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      callback(null);
+      return;
+    }
+
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("enhancedSpoof", value, (err, data) => {
+        if (err == null) {
+          if (callback)
+            callback(null, "Success");
+        } else {
+          if (callback)
+            callback(err, "Unable to apply compatible spoof: " + value);
+        }
+      })
+    })
+  }
+
   _vulScan(ip, value, callback) {
     if(ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
@@ -841,13 +860,9 @@ class netBot extends ControllerBot {
           notifMsg.title = `[Monkey] ${notifMsg.title}`;
         }
 
-        const pa = alarm.premiumAction();
+        const pa = alarm.cloudAction();
         if(pa && f.isDevelopmentVersion()) {
-          if(pa === 'ignore') {
-            notifMsg.body = `${notifMsg.body} - This can be auto suppressed with Firewalla Premium Service.`;
-          } else if(pa === 'block') {
-            notifMsg.body = `${notifMsg.body} - Service provided by Firewalla Premium.`;
-          }
+          notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
         }
         this.tx2(this.primarygid, "test", notifMsg, data);
       }
@@ -1200,6 +1215,11 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
+            case "enhancedSpoof":
+              this._enhancedSpoof(msg.target, value.enhancedSpoof, (err, obj) => {
+                cb(err);
+              });
+              break;
             case "vulScan":
               this._vulScan(msg.target, value.vulScan, (err, obj) => {
                 cb(err);
@@ -1454,6 +1474,9 @@ class netBot extends ControllerBot {
           case "spoof":
           case "autoSpoof":
             modeManager.setAutoSpoofAndPublish()
+            break;
+          case "dhcpSpoof":
+            modeManager.setDHCPSpoofAndPublish()
             break;
           case "manualSpoof":
             modeManager.setManualSpoofAndPublish()
@@ -1750,10 +1773,9 @@ class netBot extends ControllerBot {
         const alarmID = value.alarmID;
         (async () => {
           if(alarmID) {
-            let detail = await am2.getAlarmDetail(alarmID); 
-            detail = detail || {}; // return empty {} if no extended alarm detail;
-            
-            this.simpleTxData(msg, detail, null, callback);  
+            const basic = await am2.getAlarm(alarmID);
+            const detail = (await am2.getAlarmDetail(alarmID)) || {};
+            this.simpleTxData(msg, Object.assign({}, basic, detail), null, callback);
           } else {
             this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
           }

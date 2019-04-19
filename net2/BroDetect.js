@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -248,9 +248,13 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.ipMacMapping = {};
+      this.activeMac = {};
       setInterval(() => {
         this._flushIPMacMapping();
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
+      setInterval(() => {
+        this._activeMacHeartbeat();
+      }, 60000);
     }
   }
 
@@ -270,6 +274,31 @@ module.exports = class {
 
   _flushIPMacMapping() {
     this.ipMacMapping = {};
+  }
+
+  async _activeMacHeartbeat() {
+    for (let key in this.activeMac) {
+      let ip = this.activeMac[key];
+      if (!iptool.isV4Format(ip)) {
+        // get corresponding ipv4 address
+        const macEntry = await hostTool.getMACEntry(key);
+        ip = macEntry && macEntry.ipv4Addr;
+      }
+      if (ip) {
+        const host = {
+          ipv4: ip,
+          ipv4Addr: ip,
+          mac: key
+        };
+        sem.emitEvent({
+          type: "DeviceUpdate",
+          message: "Device network activity heartbeat",
+          host: host,
+          from: "BroDetect"
+        });
+      }
+    }
+    this.activeMac = {};
   }
 
   start() {
@@ -517,8 +546,16 @@ module.exports = class {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
+        // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
+        // pick up the new data
         log.info("Conn:Learned:Ip","ping ",ip,flowspec);
         linux.ping6(ip)
+        setTimeout(() => {
+          linux.ping6(ip)
+        }, 1000 * 60 * 4);
+        setTimeout(() => {
+          linux.ping6(ip)
+        }, 1000 * 60 * 8);
         this.pingedIp[ip]=true;
       }
     }
@@ -533,7 +570,7 @@ module.exports = class {
   isMonitoring(ip) {
     const hostObject = hostManager.getHostFast(ip)
 
-    if(hostObject && hostObject.spoofing == false) {
+    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
       return false
     } else {
       return true;
@@ -547,43 +584,58 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    if(m === 'dhcp') { // only for dhcp
+    if(m === 'dhcp' || m === 'dhcpSpoof ') { // only for dhcp and dhcpSpoof
       let myip = sysManager.myIp()
-      if(myip) {
+      const myip6 = sysManager.myIp6();
+      if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-
-        if(data["id.orig_h"] === myip ||
+        if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
-          return false  
+          return false
         }
+      }
 
-        // ignore any devices' traffic who is set to monitoring off
-        const origIP = data["id.orig_h"]
-        const respIP = data["id.resp_h"]
-
-        if(sysManager.isLocalIP(origIP)) {
-          if(!this.isMonitoring(origIP)) {
-            return false // set it to invalid if it is not monitoring
+      if (myip6 && myip6.length !== 0) {
+        if (myip6.includes(data["id.orig_h"]) ||
+          myip6.includes(data["id.resp_h"])) {
+            return false;
           }
-        }
+      }
 
-        if(sysManager.isLocalIP(respIP)) {
-          if(!this.isMonitoring(respIP)) {
-            return false // set it to invalid if it is not monitoring
-          }
-        }
+      // ignore any devices' traffic who is set to monitoring off
+      const origIP = data["id.orig_h"]
+      const respIP = data["id.resp_h"]
 
-        // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      if (sysManager.isLocalIP(origIP)) {
+        if (!this.isMonitoring(origIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
+      }
+
+      if (sysManager.isLocalIP(respIP)) {
+        if (!this.isMonitoring(respIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
       let myip = sysManager.myIp()
+      const myip6 = sysManager.myIp6()
+      const systemPolicy = hostManager.getPolicyFast();
+      const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
       // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
       if(myip && 
-        (data["id.orig_h"] === myip ||
-          data["id.resp_h"] === myip) && 
-        !this.isMonitoring(myip)) {        
+        (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
+        (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if (myip6 && myip6.length !== 0 && 
+        (myip6.includes(data["id.orig_h"]) || myip6.includes(data["id.resp_h"])) &&
+        (!this.isMonitoring(myip) || isEnhancedSpoof) // it's okay to use my ipv4 address to determine whether walla is monitored
+      ) {
+        return false;
       }
     }
 
@@ -1010,6 +1062,7 @@ module.exports = class {
             return;
           }
           tmpspec.mac = mac;
+          this.activeMac[mac] = tmpspec.lh;
           let key = "flow:conn:" + tmpspec.fd + ":" + mac;
           let strdata = JSON.stringify(tmpspec);
 
@@ -1092,6 +1145,7 @@ module.exports = class {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
+              this.activeMac[mac] = spec.lh;
               let key = "flow:conn:" + spec.fd + ":" + mac;
               let strdata = JSON.stringify(spec);
               let ts = spec._ts; // this is the last time when this flowspec is updated

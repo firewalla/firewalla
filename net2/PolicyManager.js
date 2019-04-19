@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,7 +33,8 @@ var VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
 
-let UPNP = require('../extension/upnp/upnp');
+const UPNP = require('../extension/upnp/upnp');
+const upnp = new UPNP();
 
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
@@ -423,6 +424,14 @@ module.exports = class {
     await host.ipAllocation(policy);
   }
 
+  async enhancedSpoof(host, state) {
+    if (host.constructor.name !== 'HostManager') {
+      log.error("enhancedSpoof doesn't support per device policy", host);
+      return;
+    }
+    host.enhancedSpoof(state);
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -537,7 +546,7 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy", host);
+      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
       return; // doesn't support per-device policy
     }
     let needUpdate = false;
@@ -573,7 +582,6 @@ module.exports = class {
         return; // exit if the flag is still off
       }
 
-      let upnp = new UPNP();
       upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
       this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
     }, time)
@@ -588,7 +596,6 @@ module.exports = class {
         return; // exit if the flag is still on
       }
 
-      let upnp = new UPNP();
       upnp.removePortMapping("tcp", localPort, externalPort);
       this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
     }, time)
@@ -679,6 +686,8 @@ module.exports = class {
         this.scisurf(host, policy[p]);
       } else if (p === "shield") {
         host.shield(policy[p]);
+      } else if (p === "enhancedSpoof") {
+        this.enhancedSpoof(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
       } else if (p === "ipAllocation") {

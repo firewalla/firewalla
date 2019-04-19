@@ -83,7 +83,7 @@ class Alarm {
     return i18n.__(this.getNotificationCategory(), this);
   }
 
-  premiumAction() {
+  cloudAction() {
     const decision = this["p.cloud.decision"];
     switch(decision) {
       case "block": {
@@ -277,20 +277,21 @@ class BroNoticeAlarm extends Alarm {
     return [];
   }
 
+  localizedMessage() {
+    return this["p.message"]; // use bro content as basic localized message, usually app side should use it's own messaging template
+  }
+
   getI18NCategory() {
     let category = this.type;
 
-    const supportedNoticeTypes = [
-      "Heartbleed::SSL_Heartbeat_Attack",
-      "Heartbleed::SSL_Heartbeat_Attack_Success",
-      "TeamCymruMalwareHashRegistry::Match",
-      'HTTP::SQL_Injection_Victim'
-    ];
-    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
-      category = `${category}_${this["p.noticeType"]}`;
-    }
+    category = `${category}_${this["p.noticeType"]}`;
 
     category = suffixAutoBlock(this, category)
+
+    // fallback if localization for this special bro type does not exist
+    if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
+      category = this.type;
+    }
     
     return category;
   }
@@ -470,7 +471,7 @@ class LargeTransferAlarm extends OutboundAlarm {
           this["p.dest.countryLocalized"] = code[country]
           category = category + "_COUNTRY"
         } catch (error) {
-          log.error("Failed to parse country code file:", error, {})
+          log.error("Failed to parse country code file:", error)
         }
       }
     }
@@ -481,6 +482,11 @@ class LargeTransferAlarm extends OutboundAlarm {
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
+
+  // dedup implemented before generation @ FlowMonitor
+  isDup(alarm) {
+    return false;
   }
 }
 

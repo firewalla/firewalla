@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -315,20 +315,38 @@ function _enableSecondaryInterface() {
   });
 }
 
-function _enforceDHCPMode() {
+function _enforceDHCPMode(mode) {
+  mode = mode || "dhcp";
   sem.emitEvent({
     type: 'StartDHCP',
+    mode: mode,
     message: "Enabling DHCP Mode"
   });
   return Promise.resolve();
 }
 
-function _disableDHCPMode() {
+function _disableDHCPMode(mode) {
+  mode = mode || "dhcp";
   sem.emitEvent({
     type: 'StopDHCP',
+    mode: mode,
     message: "Disabling DHCP Mode"
   });
   return Promise.resolve();
+}
+
+async function toggleCompatibleSpoof(state) {
+  if (state) {
+    let cmd = "sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE || sudo iptables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE";
+    await execAsync(cmd);
+    cmd = "sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE || sudo ip6tables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE";
+    await execAsync(cmd);
+  } else {
+    let cmd = "(sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE && sudo iptables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE) || true";
+    await execAsync(cmd);
+    cmd = "(sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE && sudo ip6tables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE) || true";
+    await execAsync(cmd);
+  }
 }
 
 function apply() {
@@ -350,6 +368,7 @@ function apply() {
       await (_enforceDHCPMode())
       pclient.publishAsync("System:IPChange", "");
       break;
+    case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
       await (_enableSecondaryInterface()) // secondary interface ip/subnet may be changed
       await (_restoreSimpleModeNetworkSettings())
@@ -359,6 +378,12 @@ function apply() {
       hostManager.cleanHostOperationHistory()
 
       await (hostManager.getHostsAsync())
+      if (mode === Mode.MODE_DHCP_SPOOF) {
+        // enhanced spoof is necessary for dhcp spoof
+        hostManager.setPolicy("enhancedSpoof", true);
+        // dhcp service is needed for dhcp spoof mode
+        await (_enforceDHCPMode(mode))
+      }
       break;
     case Mode.MODE_MANUAL_SPOOF:
       await (_enforceSpoofMode())
@@ -435,10 +460,14 @@ function reapply() {
     case "spoof":
     case "autoSpoof":
     case "manualSpoof":
-      _disableSpoofMode()
+      await (_disableSpoofMode())
       break;
     case "dhcp":
-      _disableDHCPMode()
+      await (_disableDHCPMode(lastMode))
+      break;
+    case "dhcpSpoof":
+      await (_disableSpoofMode())
+      await (_disableDHCPMode(lastMode))
       break;
     case "none":
       // do nothing
@@ -509,6 +538,13 @@ function setAutoSpoofAndPublish() {
     });
 }
 
+function setDHCPSpoofAndPublish() {
+  Mode.dhcpSpoofModeOn()
+    .then(() => {
+      publish(Mode.MODE_DHCP_SPOOF);
+    })
+}
+
 function setManualSpoofAndPublish() { 
   Mode.manualSpoofModeOn()
     .then(() => {
@@ -543,9 +579,11 @@ module.exports = {
   setDHCPAndPublish: setDHCPAndPublish,
   setSpoofAndPublish: setSpoofAndPublish,
   setAutoSpoofAndPublish: setAutoSpoofAndPublish,
+  setDHCPSpoofAndPublish: setDHCPSpoofAndPublish,
   setManualSpoofAndPublish: setManualSpoofAndPublish,
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,
   publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
-  enableSecondaryInterface:_enableSecondaryInterface
+  enableSecondaryInterface:_enableSecondaryInterface,
+  toggleCompatibleSpoof: toggleCompatibleSpoof
 }

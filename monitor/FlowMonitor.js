@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,52 +13,46 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require("../net2/logger.js")(__filename, 'info');
-let os = require('os');
-let network = require('network');
+const log = require("../net2/logger.js")(__filename);
+const os = require('os');
+const network = require('network');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let FlowManager = require('../net2/FlowManager.js');
-let flowManager = new FlowManager('info');
+const FlowManager = require('../net2/FlowManager.js');
+const flowManager = new FlowManager('info');
 
-let Alarm = require('../alarm/Alarm.js');
-let AlarmManager2 = require('../alarm/AlarmManager2.js');
-let alarmManager2 = new AlarmManager2();
+const Alarm = require('../alarm/Alarm.js');
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const alarmManager2 = new AlarmManager2();
 
-let audit = require('../util/audit.js');
+const audit = require('../util/audit.js');
 
 const fc = require('../net2/config.js')
 
-let uuid = require('uuid');
+const uuid = require('uuid');
 
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
 
-let _async = require('async');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
-
 let instance = null;
-let HostManager = require("../net2/HostManager.js");
-let hostManager = new HostManager("cli", 'client', 'info');
+const HostManager = require("../net2/HostManager.js");
+const hostManager = new HostManager("cli", 'client', 'info');
 
-let default_stddev_limit = 8;
-let default_inbound_min_length = 1000000;
-let deafult_outbound_min_length = 500000;
+const default_stddev_limit = 8;
+const default_inbound_min_length = 1000000;
+const deafult_outbound_min_length = 500000;
 
-let IntelManager = require('../net2/IntelManager.js');
-let intelManager = new IntelManager('debug');
+const IntelManager = require('../net2/IntelManager.js');
+const intelManager = new IntelManager('debug');
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
 
-let DNSManager = require('../net2/DNSManager.js');
-let dnsManager = new DNSManager('info');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
 
-let fConfig = require('../net2/config.js').getConfig();
+const fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -74,7 +68,17 @@ function getDomain(ip) {
   return ip;
 }
 
-
+function alarmBootstrap(flow) {
+  return {
+    "p.device.id": flow.shname,
+    "p.device.name": flow.shname,
+    "p.device.ip": flow.sh,
+    "p.protocol": flow.pr,
+    "p.dest.name": flowUtil.dhnameFlow(flow),
+    "p.dest.ip": flow.dh,
+    "p.dest.port": flow.dp
+  }
+}
 
 module.exports = class FlowMonitor {
   constructor(timeslice, monitorTime, loglevel) {
@@ -87,7 +91,6 @@ module.exports = class FlowMonitor {
       this.recordedFlows = {};
 
       instance = this;
-      log = require("../net2/logger.js")("FlowMonitor", loglevel);
 
       // flowManager.last24HourDatabaseExists()
       //   .then((result) => {
@@ -101,6 +104,11 @@ module.exports = class FlowMonitor {
       //     }
       //   });
     }
+    
+    // largeTransferGuard stores the latest flow time for each device/dest.ip/dest.port
+    // combination, aim to elimates duplicate LargeTransferAlarm
+    if (!this.largeTransferGuard) this.largeTransferGuard = {};
+
     return instance;
   }
 
@@ -241,73 +249,31 @@ module.exports = class FlowMonitor {
           if (this.isFlowIntelInClass(flow['intel'],"av")) {
             if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
               let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
-              let actionobj = {
-                title: "Video Watching",
-                actions: ["block","ignore"],
-                src: flow.sh,
-                dst: flow.dh,
-                dhname: flowUtil.dhnameFlow(flow),
-                shname: flow["shname"],
-                mac: flow["mac"],
-                appr: flow["appr"],
-                org: flow["org"],
-                target: flow.lh,
-                fd: flow.fd,
-                du: flow.du,
-                msg: msg
-              };
 
-              let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
-                "p.device.id" : actionobj.shname,
-                "p.device.name" : actionobj.shname,
-                "p.device.ip": flow.sh,
-                "p.protocol": flow.pr,
-                "p.dest.name": actionobj.dhname,
-                "p.dest.ip": actionobj.dst,
-                "p.dest.port": flow.dp
-              });
+              let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+                alarmBootstrap(flow)
+              );
 
               alarmManager2.enqueueAlarm(alarm);
             }
-          } else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
+          }
+          else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
             if ((flow.du && Number(flow.du)>20) &&
               (flow.rb && Number(flow.rb)>1000000) ||
               this.flowIntelRecordFlow(flow,3)) {
 
               // there should be a unique ID between pi and cloud on websites
 
-
               let msg = "Watching porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
-              let actionobj = {
-                title: "Questionable Action",
-                actions: ["block","ignore"],
-                src: flow.sh,
-                dst: flow.dh,
-                dhname: flowUtil.dhnameFlow(flow),
-                shname: flow["shname"],
-                mac: flow["mac"],
-                appr: flow["appr"],
-                org: flow["org"],
-                target: flow.lh,
-                fd: flow.fd,
-                du: flow.du,
-                msg: msg
-              };
 
-
-              let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
-                "p.device.id" : actionobj.shname,
-                "p.device.name" : actionobj.shname,
-                "p.device.ip": flow.sh,
-                "p.protocol": flow.pr,
-                "p.dest.name": actionobj.dhname,
-                "p.dest.ip": actionobj.dst,
-                "p.dest.port": flow.dp
-              });
+              let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+                alarmBootstrap(flow)
+              );
 
               alarmManager2.enqueueAlarm(alarm);
             }
-          } else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'phishing', 'spam'])) {
+          }
+          else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
             // Intel object
             //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
             //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
@@ -317,63 +283,56 @@ module.exports = class FlowMonitor {
             if (flowUtil.checkFlag(flow,'s') && flow.fd==="out") {
               log.info("Intel:On:Partial:Flows", flow,{});
             } else {
-              let msg = "Intel "+flow["shname"] +" "+flow["dhname"];
-              let intelobj = null;
+              let msg = "Intel "+flow.shname+" "+flow.dhname;
+
+              let intelobj = {
+                uid: uuid.v4(),
+                ts: flow.ts,
+                fd: flow.fd,
+                intel: flow.intel,
+                sp_array: flow.sp_array,
+                "seen.indicator_type": "Intel::DOMAIN",
+              };
+
               if (flow.fd === "in") {
-                intelobj = {
-                  uid: uuid.v4(),
-                  ts: flow.ts,
-                  fd: flow.fd,
-                  intel: flow.intel,
+                Object.assign(intelobj, {
                   "id.orig_h": flow.sh,
                   "id.resp_h": flow.dh,
                   "id.orig_p": flow.sp,
                   "id.resp_p": flow.dp,
-                  sp_array: flow.sp_array,
-                  "seen.indicator_type": "Intel::DOMAIN",
-                };
-                if (flow.intel && flow.intel.action ) {
-                  intelobj.action = flow.intel.action;
-                }
-                if (flow.intel && flow.intel.cc) {
-                  intelobj.categoryArray = flow.intel.cc;
-                }
+                });
+
                 if (flow.dhname) {
                   intelobj['seen.indicator'] = flow.dhname;
                 } else {
                   intelobj['seen.indicator'] = flow.dh;
                 }
               } else {
-                intelobj = {
-                  uid: uuid.v4(),
-                  ts: flow.ts,
+                Object.assign(intelobj, {
                   shname: flow["shname"],
                   dhname: flow["dhname"],
                   mac: flow["mac"],
                   target: flow.lh,
-                  fd: flow.fd,
-                  intel: flow.intel,
                   appr: flow["appr"],
                   org: flow["org"],
                   "id.orig_h": flow.dh,
                   "id.resp_h": flow.sh,
                   "id.orig_p": flow.dp,
-                  "id.resp_p": flow.sp,
-                  sp_array: flow.sp_array,
-                  "seen.indicator_type":"Intel::DOMAIN",
-                };
+                  "id.resp_p": flow.sp
+                });
 
-                if (flow.intel && flow.intel.action ) {
-                  intelobj.action = flow.intel.action;
-                }
-                if (flow.intel && flow.intel.cc) {
-                  intelobj.categoryArray = flow.intel.cc;
-                }
                 if (flow.shname) {
                   intelobj['seen.indicator'] = flow.shname;
                 } else {
                   intelobj['seen.indicator'] = flow.sh;
                 }
+              }
+
+              if (flow.intel && flow.intel.action ) {
+                intelobj.action = flow.intel.action;
+              }
+              if (flow.intel && flow.intel.cc) {
+                intelobj.categoryArray = flow.intel.cc;
               }
 
               if (flow.pf) {
@@ -395,35 +354,14 @@ module.exports = class FlowMonitor {
               // Process intel to generate Alarm about it
               this.processIntelFlow(intelobj);
             }
-          } else if (this.isFlowIntelInClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
+          }
+          else if (this.isFlowIntelInClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
             if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
               let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
-              let actionobj = {
-                title: "Notify Action",
-                actions: ["block","ignore"],
-                src: flow.sh,
-                dst: flow.dh,
-                dhname: flowUtil.dhnameFlow(flow),
-                shname: flow["shname"],
-                mac: flow["mac"],
-                appr: flow["appr"],
-                org: flow["org"],
-                target: flow.lh,
-                fd: flow.fd,
-                du: flow.du,
-                msg: msg
-              };
 
-              let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow), {
-                "p.device.id" : actionobj.shname,
-                "p.device.name" : actionobj.shname,
-                "p.device.ip": flow.sh,
-                "p.protocol": flow.pr,
-                "p.dest.name": actionobj.dhname,
-                "p.dest.ip": actionobj.dst,
-                "p.dest.port": flow.dp
-              });
-
+              let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+                alarmBootstrap(flow)
+              );
 
               alarmManager2.enqueueAlarm(alarm);
             }
@@ -580,7 +518,7 @@ module.exports = class FlowMonitor {
   }
 
 
-  async flows(mac, period, host, callback) {
+  async getFlowSpecs(mac, host) {
     // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
@@ -591,6 +529,7 @@ module.exports = class FlowMonitor {
     let stddev_limit = default_stddev_limit;
 
     if (fc.isFeatureOn("insane_mode")) {
+      log.warn("INSANE MODE ON");
       inbound_min_length = 1000;
       outbound_min_length = 1000;
       stddev_limit = 1;
@@ -603,37 +542,24 @@ module.exports = class FlowMonitor {
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
-    return {
-      inSpec: inSpec,
-      outSpec, outSpec
-    };
+    return { inSpec, outSpec };
   }
 
   //
   // monitor:flow:ip:<>: <ts score> / { notification }
   //
 
-  // callback doesn't work for now
-  // this will callback with each flow that's valid
-
   saveSpecFlow(direction, ip, flow, callback) {
     let key = "monitor:flow:" + direction + ":" + ip;
     let strdata = JSON.stringify(flow);
     let redisObj = [key, flow.nts, strdata];
     log.debug("monitor:flow:save", redisObj);
-    rclient.zadd(redisObj, (err, response) => {
-      if (err) {
-        log.error("monitor:flow:save", key, err);
-      }
-      if (callback) {
-        callback(err, null);
-      }
-    });
+    return rclient.zaddAsync(redisObj);
   }
 
-  processSpec(direction, flows, callback) {
-    for (let i in flows) {
-      let flow = flows[i];
+  async processSpec(direction, rankedFlows) {
+    for (let i in rankedFlows) {
+      let flow = rankedFlows[i];
       flow.rank = i;
       let ip = flow.sh;
       if (direction == 'out') {
@@ -643,40 +569,42 @@ module.exports = class FlowMonitor {
       let fullkey = "monitor:flow:" + direction + ":" + flow.sh + ":" + flow.dh;
       log.debug("monitor:flow", key);
       let now = Date.now() / 1000;
-      rclient.zrevrangebyscore([key, now, now - 60 * 60 * 8], (err, results) => {
-        if (err == null && results.length > 0) {
-          log.debug("monitor:flow:found", results);
-          let found = false;
-          for (let i in results) {
-            let _flow = JSON.parse(results[i]);
-            if (_flow.sh == flow.sh && _flow.dh == flow.dh) {
-              found = true;
-              break;
-            }
-          }
-          if (this.fcache[fullkey] != null) {
+      let results = await rclient.zrevrangebyscoreAsync(key, now, now - 60 * 60 * 8);
+
+      if (results && results.length > 0) {
+        log.debug("monitor:flow:found", results);
+        let found = false;
+        for (let i in results) {
+          let _flow = JSON.parse(results[i]);
+          if (_flow.sh == flow.sh && _flow.dh == flow.dh) {
             found = true;
+            break;
           }
-
-          //found = false;
-
-          if (found == false) {
-            flow.nts = Date.now() / 1000;
-            this.fcache[fullkey] = flow;
-            this.saveSpecFlow(direction, ip, flow, (err) => {
-              callback(null, direction, flow);
-            });
-          } else {
-            log.debug("monitor:flow:duplicated", key);
-          }
-        } else if (err == null) {
-          flow.nts = Date.now() / 1000;
-          this.fcache[fullkey] = flow;
-          this.saveSpecFlow(direction, ip, flow, (err) => {
-            callback(null, direction, flow);
-          });
         }
-      });
+        if (this.fcache[fullkey] != null) {
+          found = true;
+        }
+
+        if (found) {
+          log.debug("monitor:flow:duplicated", key);
+          continue; // to next entry in rankedFlows
+        }
+      }
+
+      flow.nts = Date.now() / 1000;
+      this.fcache[fullkey] = flow;
+
+      try {
+        await this.saveSpecFlow(direction, ip, flow);
+      } catch (err) {
+        log.error('Failed to save flow', fullkey, err);
+      }
+
+      try {
+        await this.genLargeTransferAlarm(direction, flow);
+      } catch (err) {
+        log.error('Failed to generate alarm', fullkey, err);
+      }
     }
   }
 
@@ -702,154 +630,124 @@ module.exports = class FlowMonitor {
 
   async run(service, period) {
     let runid = new Date() / 1000
-    log.info("FlowMonitor Running Process :", service, period, runid);
+    log.info("Starting:", service, service == 'dlp' ? this.monitorTime : period, runid);
     const startTime = new Date() / 1000
-    hostManager.getHosts((err, result) => {
+
+    try {
+      let hosts = await hostManager.getHostsAsync();
+
       this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
-      result = result.filter(x => x) // workaround if host is undefined or null
-      _async.eachLimit(result, 2, async (host, cb) => {
+      hosts = hosts.filter(x => x) // workaround if host is undefined or null
+      for (const host of hosts) {
         const mac = host.o.mac;
         if (!service || service === "dlp") {
-          log.debug("DLP", mac);
-          const {inSpec, outSpec} = await this.flows(mac, period, host);
+          log.info("Running DLP", mac);
+          // aggregation time window set on FlowMonitor instance creation
+          const {inSpec, outSpec} = await this.getFlowSpecs(mac, host);
           log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
-          cb();
-          if (outSpec) {
-            if ((outSpec.txRanked && outSpec.txRanked.length > 0) ||
-              (outSpec.rxRanked && outSpec.rxRanked.length > 0) ||
-              (outSpec.txRatioRanked && outSpec.txRatioRanked.length > 0)) {
-              this.processSpec("out", outSpec.txRatioRanked, (err, direction, flow) => {
-                if (flow) {
-                  let copy = JSON.parse(JSON.stringify(flow));
-                  let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'out', 'txdata');
-                  copy.msg = msg;
-                  let actionobj = {
-                    title: "Suspicious Large Upload",
-                    actions: ["block", "ignore"],
-                    src: flow.dh,
-                    dst: flow.sh,
-                    target: flow.lh,
-                    //info: ,
-                    //infourl:
-                    msg: msg
-                  }
-                  let remoteHost = flow.dh;
-                  if (flow.lh == flow.dh) {
-                    remoteHost = flow.sh;
-                  }
 
-                  intelManager.ipinfo(remoteHost).then(loc => {
-                    if (loc) {
-                      copy.lobj = loc;
-                    }
+          for (let spec of [inSpec, outSpec]) {
+            if (!spec) continue;
 
-                    if (fc.isFeatureOn("large_upload")) {
-                      let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.dh, flow.shname || flow.sh, {
-                        "p.device.id": flow.dhname,
-                        "p.device.name": flow.dhname,
-                        "p.device.ip": flow.dh,
-                        "p.device.port": flow.dp || 0,
-                        "p.dest.name": flow.shname || flow.sh,
-                        "p.dest.ip": flow.sh,
-                        "p.dest.port": flow.sp,
-                        "p.protocol": flow.pr,
-                        "p.transfer.outbound.size": flow.rb,
-                        "p.transfer.inbound.size": flow.ob,
-                        "p.transfer.duration": flow.du,
-                        "p.local_is_client": 0, // connection is initiated from remote
-                        "p.flow": JSON.stringify(flow)
-                      });
-
-                      (async () => {
-                        await alarmManager2.checkAndSaveAsync(alarm)
-                      })().catch((err) => {
-                        log.error("Failed to enrich and save alarm", err)
-                      })
-                    }
-                  });
-                }
-              });
+            if (
+              spec.txRanked && spec.txRanked.length > 0 ||
+              spec.rxRanked && spec.rxRanked.length > 0 ||
+              spec.txRatioRanked && spec.txRatioRanked.length > 0
+            ) {
+              await this.processSpec(spec.direction, spec.txRatioRanked);
             }
           }
-          if (inSpec) {
-            if ((inSpec.txRanked && inSpec.txRanked.length > 0) ||
-              (inSpec.rxRanked && inSpec.rxRanked.length > 0) ||
-              (inSpec.txRatioRanked && inSpec.txRatioRanked.length > 0)) {
-              this.processSpec("in", inSpec.txRatioRanked, (err, direction, flow) => {
-                if (flow) {
-                  let copy = JSON.parse(JSON.stringify(flow));
-                  let msg = "Warning: " + flowManager.toStringShortShort2(flow, 'in', 'txdata');
-                  copy.msg = msg;
-                  let actionobj = {
-                    title: "Suspicious Large Upload",
-                    actions: ["block", "ignore"],
-                    src: flow.sh,
-                    dst: flow.dh,
-                    target: flow.lh,
-                    msg: msg
-                  }
-                  let remoteHost = flow.dh;
-                  if (flow.lh == flow.dh) {
-                    remoteHost = flow.sh;
-                  }
-
-                  intelManager.ipinfo(remoteHost).then(loc => {
-                    if (loc) {
-                      copy.lobj = loc;
-                    }
-
-                    if (fc.isFeatureOn("large_upload")) {
-                      // flow in means connection initiated from inside
-                      // flow out means connection initiated from outside (more dangerous)
-
-                      let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
-                        "p.device.id": flow.shname,
-                        "p.device.name": flow.shname,
-                        "p.device.ip": flow.sh,
-                        "p.device.port": flow.sp || 0,
-                        "p.dest.name": flow.dhname || flow.dh,
-                        "p.dest.ip": flow.dh,
-                        "p.dest.port": flow.dp,
-                        "p.protocol": flow.pr,
-                        "p.transfer.outbound.size": flow.ob,
-                        "p.transfer.inbound.size": flow.rb,
-                        "p.transfer.duration": flow.du,
-                        "p.local_is_client": 1, // connection is initiated from local
-                        "p.flow": JSON.stringify(flow)
-                      });
-
-                      // ideally each destination should have a unique ID, now just use hostname as a workaround
-                      // so destionationName, destionationHostname, destionationID are the same for now
-                      (async () => {
-                        await alarmManager2.checkAndSaveAsync(alarm)
-                      })().catch((err) => {
-                        log.error("Failed to enrich and save alarm", err)
-                      })
-                    }
-
-                  });
-                }
-              });
-            }
-          }
-        } else if (service === "detect") {
+        } 
+        else if (service === "detect") {
           if (mac) {
             log.info("Running Detect:", mac);
           }
-          this.detect(mac, period, host).then(() => {
-            cb();
-          });
+          await this.detect(mac, period, host);
         }
-      }, (err) => {
-        const endTime = new Date() / 1000
-        log.info(`FlowMonitor Running Process End with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
-        this.garbagecollect();
-      });
-    });
+      }
+    } catch(e) {
+      log.error('Error in run', service, period, runid, e);
+    } finally {
+      const endTime = new Date() / 1000
+      log.info(`Run ends with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
+      this.garbagecollect();
+    }
   }
   // Reslve v6 or v4 address into a local host
+
+
+  async genLargeTransferAlarm(direction, flow) {
+    if (!flow) return;
+
+    let copy = JSON.parse(JSON.stringify(flow));
+
+    if (direction === 'out') {
+      copy.sh     = flow.dh;
+      copy.shname = flow.dhname;
+      copy.sp     = flow.dp;
+
+      copy.dh     = flow.sh;
+      copy.dhname = flow.shname;
+      copy.dp     = flow.sp;
+
+      copy.ob     = flow.rb;
+      copy.rb     = flow.ob;
+    }
+
+    let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
+    copy.msg = msg;
+
+    let remoteHost = flow.lh == flow.dh ? flow.sh : flow.dh;
+
+    let loc = await intelManager.ipinfo(remoteHost);
+
+    if (loc) {
+      copy.lobj = loc;
+    }
+
+    if (fc.isFeatureOn("large_upload")) {
+      // flow in means connection initiated from inside
+      // flow out means connection initiated from outside (more dangerous)
+
+      // clear obsoleted data in largeTransferGuard
+      for (let k in this.largeTransferGuard) {
+        if (this.largeTransferGuard[k] < Date.now() / 1000 - this.monitorTime)
+          delete this.largeTransferGuard[k];
+      }
+
+      // prevent alarm generation if summed flow starts before last alarm flow ends
+      let guardKey = `${flow.sh}:${flow.dh}:${flow.dp}`;
+      if (this.largeTransferGuard[guardKey] > flow.ts) {
+        log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${flow.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
+        return;
+      }
+
+      this.largeTransferGuard[guardKey] = flow.ts + flow.du;
+
+      let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
+        "p.device.id": flow.shname,
+        "p.device.name": flow.shname,
+        "p.device.ip": flow.sh,
+        "p.device.port": flow.sp || 0,
+        "p.dest.name": flow.dhname || flow.dh,
+        "p.dest.ip": flow.dh,
+        "p.dest.port": flow.dp,
+        "p.protocol": flow.pr,
+        "p.transfer.outbound.size": flow.ob,
+        "p.transfer.inbound.size": flow.rb,
+        "p.transfer.duration": flow.du,
+        "p.local_is_client": direction == 'in' ? 1 : 0, // connection is initiated from local
+        "p.flow": JSON.stringify(flow)
+      });
+
+      // ideally each destination should have a unique ID, now just use hostname as a workaround
+      // so destionationName, destionationHostname, destionationID are the same for now
+
+      await alarmManager2.enqueueAlarm(alarm);
+    }
+  }
 
   getDeviceIP(obj) {
     if(sysManager.isLocalIP(obj['id.orig_h'])) {
@@ -899,18 +797,6 @@ module.exports = class FlowMonitor {
     }
   }
 
-  processPornFlow(flow) {
-
-  }
-
-  processVideoFlow(flow) {
-
-  }
-
-  processGameFlow(flow) {
-    //TODO
-  }
-
   async processIntelFlow(flowObj) {
     log.info("Process intel flow for", flowObj);  
     const deviceIP = this.getDeviceIP(flowObj);
@@ -921,9 +807,6 @@ module.exports = class FlowMonitor {
       return;
     }
 
-
-
-    // TODO: handle alarm dedup or surpression in AlarmManager2
     let success;
     try {
       success = await this.checkDomainAlarm(remoteIP, deviceIP, flowObj);
@@ -951,6 +834,11 @@ module.exports = class FlowMonitor {
 
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
+
+    if(!domain) {
+      return; // directly return if it's not a valid domain
+    }
+
     log.info("Domain for IP ", remoteIP, "is", domain);
 
     let isDomain = false;
@@ -1035,7 +923,11 @@ module.exports = class FlowMonitor {
     });
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
-      alarm["p.action.block"] = true
+      alarm["p.action.block"] = true;
+    }
+
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+      alarm["p.action.block"] = true;
     }
 
     alarm['p.security.category'] = [_category];
@@ -1107,6 +999,10 @@ module.exports = class FlowMonitor {
       alarm["p.action.block"] = true
     }
 
+    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+      alarm["p.action.block"] = true;
+    }
+
     if (flowObj && flowObj.categoryArray) {
       alarm['p.security.category'] = flowObj.categoryArray;
     }
@@ -1119,14 +1015,6 @@ module.exports = class FlowMonitor {
 
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
-    alarmManager2.checkAndSaveAsync(alarm)
-      .then(() => {
-        log.info(`Alarm ${alarm.aid} is created successfully`);
-      }).catch((err) => {
-        if(err) {
-          log.error("Failed to create alarm: ", err);
-        }
-      });
+    alarmManager2.enqueueAlarm(alarm)
   };
-
 }

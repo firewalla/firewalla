@@ -30,6 +30,7 @@
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
     "alarm.vpn_client_connection.cooldown": 14400,
+    "alarm.upnp.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000
   },
   "secondaryInterface": {
@@ -113,11 +114,9 @@
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
-    "DoubleNatPlugin": {},
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {},
     "AutoBlocksRevalidationSensor": {
-      "dryrun": true
     },
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
@@ -179,7 +178,7 @@
     },
     "OldDataCleanSensor": {
       "alarm": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 1000
       },
       "neighbor": {
@@ -370,7 +369,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
-    "safe_search": true
+    "safe_search": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -1,5 +1,5 @@
 
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,11 +21,6 @@ const log = require("../../net2/logger.js")(__filename);
 const firewalla = require('../../net2/Firewalla.js');
 
 const fHome = firewalla.getFirewallaHome()
-
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const FRP = require('./frp.js')
 

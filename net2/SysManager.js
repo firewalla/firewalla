@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -768,6 +768,7 @@ module.exports = class {
       return this.inMySubnet6(ip);
     } else {
       log.error("SysManager:ERROR:isLocalIP", ip);
+      // TODO: we should throw error here
       return false;
     }
   }

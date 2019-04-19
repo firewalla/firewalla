@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -170,7 +170,7 @@ module.exports = class {
       intelObj = {};
       intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
     } else {
-      intelObj = this.summarizeIntelObj(ip, intelObj);  ;
+      intelObj = this.summarizeIntelObj(ip, intelObj);
     }
 
     log.debug("Ipinfo:", ipinfo)
@@ -300,15 +300,15 @@ module.exports = class {
   }
 
   summarizeIntelObj(ip, intelObj) {
-    let weburl = "https://cymon.io/" + ip;
+    const weburl = "https://cymon.io/" + ip;
     log.info("INFO:------ Intel Information", intelObj.count);
 
-    let results = intelObj.results.filter(x => !IGNORED_TAGS.includes(x.tag));
+    const results = intelObj.results.filter(x => !IGNORED_TAGS.includes(x.tag));
     intelObj.count = results.length;
-    let summary = intelObj.count + " reported this IP.\n";
+    const summary = intelObj.count + " reported this IP.\n";
 
     let tags = {};
-    for (let r of intelObj.results) {
+    for (let r of results || []) {
       if (r.tag) {
         if (tags[r.tag] == null) {
           tags[r.tag] = {

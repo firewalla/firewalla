@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -65,7 +65,7 @@ function startSpoofing() {
   log.info("start spoofing")
 
   return async(() => {
-    await (this.emptySpoofSet())
+    await (this.emptySpoofSet()) // all monitored_hosts* keys are cleared during startup
     
     let ifName = sysManager.monitoringInterface().name;
     let routerIP = sysManager.myGateway();

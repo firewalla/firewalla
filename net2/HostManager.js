@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -236,9 +236,11 @@ class Host {
         }
       }
 
+      /* do not update last active time based on ipv6 host entry
       if (this.o.lastActiveTimestamp < lastActive) {
         this.o.lastActiveTimestamp = lastActive;
       }
+      */
 
       //await(this.saveAsync());
       log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
@@ -2035,6 +2037,20 @@ module.exports = class HostManager {
     json.recentFlows = recentFlows;
   }
 
+  async getGuessedRouters(json) {
+    try {
+      const routersString = await rclient.getAsync("guessed_router");
+      if(routersString) {
+        const routers = JSON.parse(routersString);
+        if(!_.isEmpty(routers)) {
+          json.guessedRouters = routers;
+        }
+      }
+    } catch (err) {
+      log.error("Failed to get guessed routers:", err);
+    }
+  }
+
   async groupNameForInit(json) {
     const groupName = await rclient.getAsync("groupName");
     if(groupName) {
@@ -2114,7 +2130,8 @@ module.exports = class HostManager {
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
-          this.getRecentFlows(json)
+          this.getRecentFlows(json),
+          this.getGuessedRouters(json)
         ]
 
         this.basicDataForInit(json, options);
@@ -2620,6 +2637,10 @@ module.exports = class HostManager {
     })()
   }
 
+  async enhancedSpoof(state) {
+    await modeManager.toggleCompatibleSpoof(state);
+  }
+
   async shield(policy) {
     const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
     const state = policy.state;
@@ -2702,6 +2723,10 @@ module.exports = class HostManager {
       }
       return msg;
     }
+  }
+
+  getPolicyFast() {
+    return this.policy;
   }
 
   savePolicy(callback) {

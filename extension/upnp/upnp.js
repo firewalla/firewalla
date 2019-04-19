@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2017 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,14 +30,15 @@ let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 const util = require('util');
 
+const SysManager = require('../../net2/SysManager.js');
+const sysManager = new SysManager();
+
 const _ = require('lodash');
 
 const f = require('../../net2/Firewalla.js');
 
 const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
-
-const Promise = require('bluebird');
 
 const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
@@ -48,9 +49,13 @@ let upnpMappings = [];
 const upnpCheckInterval = 15 * 60 * 1000 // 15 mins
 
 module.exports = class {
-  constructor(loglevel, gw) {
+  constructor(gw) {
     if (instance == null) {
-      this.gw = gw;
+      if (gw)
+        this.gw = gw;
+      else
+        this.gw = sysManager.myGateway();
+
       instance = this;
       this.refreshTimers = {};
 
@@ -140,6 +145,7 @@ module.exports = class {
   }
 
   addPortMapping(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     this.getCapability(() => {
       try {
         if (this.upnpEnabled == true) {
@@ -150,12 +156,14 @@ module.exports = class {
           callback(new Error("no upnp/natpmp"));
         }
       } catch (e) {
-        log.error("UPNP.addPortMapping exception", e, {});
+        log.error("UPNP.addPortMapping exception", e);
+        callback(e);
       }
     });
   }
 
   addPortMappingUPNP(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
 
     upnpClient.portMapping({
@@ -187,11 +195,12 @@ module.exports = class {
         log.info("Mapping handler already exists");
       }
 
-      callback(err);
+      callback();
     });
   }
 
   addPortMappingNATPMP(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
     if (this.natpmpClient() == null) {
       callback(new Error("natpmpClient null"), null);
@@ -209,6 +218,7 @@ module.exports = class {
   }
 
   removePortMappingNATPMP(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
     let timer = this.refreshTimers[localPort + ":" + externalPort];
     if (this.natpmpClient() == null) {
@@ -227,6 +237,7 @@ module.exports = class {
   }
 
   removePortMapping(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { }
     this.getCapability(() => {
       try {
@@ -246,6 +257,7 @@ module.exports = class {
   }
 
   removePortMappingUPNP(protocol, localPort, externalPort, callback) {
+    protocol = protocol.toLowerCase()
     callback = callback || function () { };
 
     upnpClient.portUnmapping({
@@ -254,7 +266,7 @@ module.exports = class {
       public: externalPort
     }, (err) => {
       if (err) {
-        log.error("UPNP Failed to remove port mapping: " + err);
+        log.error(`UPNP Failed to remove port mapping [${protocol}, ${localPort}, ${externalPort}]: ` + err);
         if (callback) {
           callback(err);
         }
@@ -290,6 +302,7 @@ module.exports = class {
   }
 
   hasPortMapping(protocol, localPort, externalPort, description, callback) {
+    protocol = protocol.toLowerCase()
     upnpClient.getMappings({
       // local: true
       // description: description

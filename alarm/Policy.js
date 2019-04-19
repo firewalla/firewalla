@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,6 +42,7 @@ function arraysEqual(a, b) {
 class Policy {
   constructor(raw) {
     if (!raw) throw new Error("Empty policy payload");
+    if (!raw.type && !raw['i.type']) throw new Error("Invalid policy payload");
 
     Object.assign(this, raw);
 
