@@ -52,6 +52,9 @@ let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
 
 let exec = require('child-process-promise').exec
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+let deviceUpdateListened = false;
 
 let spoofStarted = false;
 
@@ -71,6 +74,20 @@ function startSpoofing() {
     let routerIP = sysManager.myGateway();
     let myIP = sysManager.myIp();
     let gateway6 = sysManager.myGateway6();
+    const dnsServers = sysManager.myDNS();
+    const gatewayMac = await (hostTool.getMacByIP(routerIP));
+    if (dnsServers && dnsServers.includes(routerIP)) {
+      const gatewayIpv6Addrs = await (hostTool.getIPv6AddressesByMAC(gatewayMac));
+      // v4 dns includes router ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses
+      if (gateway6 && !gatewayIpv6Addrs.includes(gateway6))
+        gatewayIpv6Addrs.push(gateway6);
+      gateway6 = gatewayIpv6Addrs;
+    }
+    // make gateway6 is an array anyway
+    if (gateway6 && !Array.isArray(gateway6))
+      gateway6 = [gateway6];
+    if (!gateway6)
+      gateway6 = [];
     
     if(!ifName || !myIP || !routerIP) {
       return Promise.reject("require valid interface name, ip address and gateway ip address");
@@ -78,6 +95,32 @@ function startSpoofing() {
     
     let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
     b7.start()
+    
+    if (firewalla.isMain()) {
+      if (!deviceUpdateListened) {
+        sem.on("DeviceUpdate", (event) => {
+          const host = event.host;
+          if (sysManager.myGateway6() && gatewayMac && host.mac === gatewayMac
+            && host.ipv6Addr && dnsServers.includes(routerIP)) {
+              // v4 dns includes router ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses
+              let needRestart = false;
+              for (let i in host.ipv6Addr) {
+                const addr = host.ipv6Addr[i];
+                if (!gateway6.includes(addr)) {
+                  gateway6.push(addr);
+                  needRestart = true;
+                }
+              }
+              log.info("Router also acts as dns, spoof all router's v6 addresses: ", gateway6);
+              // gateway6 is changed, restart bitbridge
+              if (spoofStarted && needRestart)
+                b7.start();
+            }
+        });
+        deviceUpdateListened = true; // ensure that the event listener is registered only once
+      }
+      
+    }
     
     spoofStarted = true;
     return Promise.resolve();
