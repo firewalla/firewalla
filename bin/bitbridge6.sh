@@ -15,6 +15,8 @@ fi
 
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_BIN/$BINARY
 
+PIDS=""
+
 for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
   if [[ -e $RC_FILE ]]; then
     source $RC_FILE # taking arguments from here
@@ -22,8 +24,8 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
 
   if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
     $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS &
-    LAST_PID=$!
+    PIDS="$PIDS $!"
   fi
 done
 
-wait $LAST_PID
+wait $PIDS
