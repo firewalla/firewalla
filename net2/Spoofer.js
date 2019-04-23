@@ -53,6 +53,17 @@ const await = require('asyncawait/await')
 
 module.exports = class {
 
+  isPrimaryInterfaceIP(ip) {
+    const sysManager = new SysManager();
+    const primaryIp = sysManager.myIp();
+    const primaryIpMask = sysManager.myIpMask();
+
+    if (ip && primaryIp && primaryIpMask) {
+      return ipTool.subnet(primaryIp, primaryIpMask).contains(ip);
+    }
+    return false;
+  }
+
   isSecondaryInterfaceIP(ip) {
     const sysManager = new SysManager();
     const ip2 = sysManager.myIp2();
@@ -66,7 +77,7 @@ module.exports = class {
   }
 
   async newSpoof(address) {
-    if(this.isSecondaryInterfaceIP(address)) {
+    if(!this.isPrimaryInterfaceIP(address)) {
       return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
     }
     // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly

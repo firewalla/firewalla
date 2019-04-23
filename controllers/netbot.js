@@ -120,7 +120,7 @@ const hostTool = new HostTool();
 
 const appTool = require('../net2/AppTool')();
 
-const spooferManager = require('../net2/SpooferManager.js')
+const SpooferManager = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
@@ -2691,7 +2691,7 @@ class netBot extends ControllerBot {
 
           let mode = require('../net2/Mode.js')
           if(mode.isManualSpoofModeOn()) {
-            await (spooferManager.loadManualSpoof(mac))
+            await (new SpooferManager().loadManualSpoof(mac))
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -2726,7 +2726,7 @@ class netBot extends ControllerBot {
             while(new Date() / 1000 < begin + timeout) {
               const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await (spooferManager.isSpoofRunning())
+              running = await (new SpooferManager().isSpoofRunning())
               if(running) {
                 break
               }
@@ -2734,7 +2734,7 @@ class netBot extends ControllerBot {
             }
 
           } else {
-            running = await (spooferManager.isSpoofRunning())
+            running = await (new SpooferManager().isSpoofRunning())
           }
 
           this.simpleTxData(msg, {running: running}, null, callback)
@@ -2775,7 +2775,7 @@ class netBot extends ControllerBot {
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await (spooferManager.directSpoof(ip))
+          await (new SpooferManager().directSpoof(ip))
 
           let begin = new Date() / 1000;
 
@@ -2789,7 +2789,7 @@ class netBot extends ControllerBot {
 
           while(new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await (spooferManager.isSpoof(ip))
+            result = await (new SpooferManager().isSpoof(ip))
             if(result) {
               break
             }

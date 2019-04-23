@@ -63,7 +63,7 @@ const pm2 = policyManager2
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 
-let spooferManager = require('./SpooferManager.js')
+let SpooferManager = require('./SpooferManager.js')
 
 let modeManager = require('./ModeManager.js');
 
@@ -2630,7 +2630,7 @@ module.exports = class HostManager {
       if (state == false) {
         // flush all ip addresses
         log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-        return spooferManager.emptySpoofSet()
+        return new SpooferManager().emptySpoofSet()
       } else {
         // do nothing if state is true
       }
