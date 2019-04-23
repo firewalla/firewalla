@@ -309,53 +309,53 @@ module.exports = class FlowManager {
 
   
   
-    // stats are 'hour', 'day'
-    // stats:hour:mac_address score=bytes key=_ts-_ts%3600
-    // target = 0.0.0.0 is system
-  recordStats(target,type,ts,inBytes,outBytes,callback) {
+  // stats are 'hour', 'day'
+  // stats:hour:mac_address score=bytes key=_ts-_ts%3600
+  // target = 0.0.0.0 is system
+  recordStats(target, type, ts, inBytes, outBytes, callback) {
     callback = callback || function() {}
-    
-        let period = 3600;
-        if (type === "day") {
-            period = 60*60*24;
-        } else if (type ==="month") {
-            period = 60*60*24*30;
-        }
-        let inkey = "stats:"+type+":in:"+target;
-        let outkey = "stats:"+type+":out:"+target;
-        // round down according to period
-        let subkey = ts-ts%period;
 
-        if (inBytes == null || outBytes == null) {
-            return;
-        }
+    let period = 3600;
+    if (type === "day") {
+      period = 60*60*24;
+    } else if (type === "month") {
+      period = 60*60*24*30;
+    }
+    let inkey = "stats:"+type+":in:"+target;
+    let outkey = "stats:"+type+":out:"+target;
+    // round down according to period
+    let subkey = ts-ts%period;
 
-      rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
+    if (inBytes == null || outBytes == null) {
+      return;
+    }
+
+    rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
+      if(err) {
+        log.error("Failed to record stats on download bytes: " + err);
+        callback(err);
+        return;
+      }
+
+      rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
         if(err) {
-          log.error("Failed to record stats on download bytes: " + err);
-          callback(err);
+          log.error("Failed to record stats on upload bytes: " + err);
           return;
         }
 
-        rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
-          if(err) {
-            log.error("Failed to record stats on upload bytes: " + err);
-            return;
-          }
+        if(target === "0.0.0.0")
+          target = null;
 
-          if(target === "0.0.0.0")
-            target = null;
-          
-          this.recordLast24HoursStats(subkey, downloadBytes, uploadBytes, target)
-            .then(() => {
-              callback();
-            }).catch((err) => {
-              log.error("Failed to record stats on last 24 hours stats: " + err);
-              callback(err);
-            });
-        }); 
-      }); 
-    }
+        this.recordLast24HoursStats(subkey, downloadBytes, uploadBytes, target)
+          .then(() => {
+            callback();
+          }).catch((err) => {
+            log.error("Failed to record stats on last 24 hours stats: " + err);
+            callback(err);
+          });
+      });
+    });
+  }
 
   parseGetStatsResult(result, db, from, to) {
     let bytes = 0;
@@ -919,7 +919,8 @@ module.exports = class FlowManager {
           if (direction == 'in') {
             totalInBytes += Number(o.rb);
             totalOutBytes += Number(o.ob);
-            // use end timestamp to record stats, so that connection which lasts more than 24 hours will still be recorded 
+            // use end timestamp to record stats, so that connection which lasts
+            // more than 24 hours will still be recorded
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
           } else {
             totalInBytes += Number(o.ob);

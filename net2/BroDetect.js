@@ -856,7 +856,7 @@ module.exports = class {
         return;
       }
 
-      // Mark all flows that are partially completed.  
+      // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
       //  flag == s 
