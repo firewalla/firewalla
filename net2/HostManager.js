@@ -2395,16 +2395,16 @@ module.exports = class HostManager {
             _async.setImmediate(cb);
             return;
           }
+          if (o.ipv4) {
+            o.ipv4Addr = o.ipv4;
+          }
+          if (o.ipv4Addr == null) {
+            log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac);
+            _async.setImmediate(cb);
+            return;
+          }
           if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp > inactiveTimeline) {
             //log.info("Processing GetHosts ",o);
-            if (o.ipv4) {
-              o.ipv4Addr = o.ipv4;
-            }
-            if (o.ipv4Addr == null) {
-              log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac,{});
-              _async.setImmediate(cb);
-              return;
-            }
             let hostbymac = this.hostsdb["host:mac:" + o.mac];
             let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 

@@ -116,14 +116,6 @@ class FlowTool {
     return key;
   }
 
-  _getRemoteIP(flow) {
-    if (flow.sh === flow.lh) {
-      return flow.dh;
-    } else {
-      return flow.sh;
-    }
-  }
-
   // append to existing flow or create new
   _appendFlow(conndb, flowObject, ip) {
     let o = flowObject;

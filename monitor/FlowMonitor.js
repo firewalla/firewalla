@@ -718,26 +718,26 @@ module.exports = class FlowMonitor {
       }
 
       // prevent alarm generation if summed flow starts before last alarm flow ends
-      let guardKey = `${flow.sh}:${flow.dh}:${flow.dp}`;
-      if (this.largeTransferGuard[guardKey] > flow.ts) {
-        log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${flow.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
+      let guardKey = `${copy.sh}:${copy.dh}:${copy.dp}`;
+      if (this.largeTransferGuard[guardKey] > copy.ts) {
+        log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${copy.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
         return;
       }
 
-      this.largeTransferGuard[guardKey] = flow.ts + flow.du;
+      this.largeTransferGuard[guardKey] = copy.ts + copy.du;
 
-      let alarm = new Alarm.LargeTransferAlarm(flow.ts, flow.shname, flow.dhname || flow.dh, {
-        "p.device.id": flow.shname,
-        "p.device.name": flow.shname,
-        "p.device.ip": flow.sh,
-        "p.device.port": flow.sp || 0,
-        "p.dest.name": flow.dhname || flow.dh,
-        "p.dest.ip": flow.dh,
-        "p.dest.port": flow.dp,
-        "p.protocol": flow.pr,
-        "p.transfer.outbound.size": flow.ob,
-        "p.transfer.inbound.size": flow.rb,
-        "p.transfer.duration": flow.du,
+      let alarm = new Alarm.LargeTransferAlarm(copy.ts, copy.shname, copy.dhname || copy.dh, {
+        "p.device.id": copy.shname,
+        "p.device.name": copy.shname,
+        "p.device.ip": copy.sh,
+        "p.device.port": copy.sp || 0,
+        "p.dest.name": copy.dhname || copy.dh,
+        "p.dest.ip": copy.dh,
+        "p.dest.port": copy.dp,
+        "p.protocol": copy.pr,
+        "p.transfer.outbound.size": copy.ob,
+        "p.transfer.inbound.size": copy.rb,
+        "p.transfer.duration": copy.du,
         "p.local_is_client": direction == 'in' ? 1 : 0, // connection is initiated from local
         "p.flow": JSON.stringify(flow)
       });
