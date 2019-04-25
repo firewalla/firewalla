@@ -26,13 +26,17 @@ const f = require('../net2/Firewalla.js');
 
 const updateInterval = 2 * 24 * 3600 * 1000 // once per two days
 
-const hashKey = "hashset:gsb:bloomfilter";
+const hashKey = "gsb:bloomfilter";
 
 const BloomFilter = require('../vendor_lib/bloomfilter.js').BloomFilter;
 
 const urlhash = require("../util/UrlHash.js");
 
 const _ = require('lodash');
+
+const bone = require("../lib/Bone.js");
+
+const jsonfile = require('jsonfile');
 
 class IntelLocalCachePlugin extends Sensor {
 
@@ -41,7 +45,9 @@ class IntelLocalCachePlugin extends Sensor {
     const data = await bone.hashsetAsync(hashKey)
     try {
       const payload = JSON.parse(data);
+      jsonfile.writeFileSync("/tmp/x.json", payload);
       this.bf = new BloomFilter(payload, 16);
+      log.info("Intel cache is loaded successfully!");
     } catch (err) {
       log.error(`Failed to load intel cache from cloud, err: ${err}`);
       this.bf = null;
@@ -58,7 +64,7 @@ class IntelLocalCachePlugin extends Sensor {
 
   checkUrl(url) {
     if(!this.bf) {
-      return null;
+      return false;
     }
 
     const hashes = urlhash.canonicalizeAndHashExpressions(url);
@@ -76,9 +82,11 @@ class IntelLocalCachePlugin extends Sensor {
 
       const prefixHex = this.toHex(prefix);
 
-      return this.bf.test(prefixHex);
+      const testResult = this.bf.test(prefixHex);
+      return testResult;
+    });
 
-    })
+    return !_.isEmpty(matchedHashes);
   }
 
   toHex(base64) {

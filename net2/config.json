@@ -109,6 +109,7 @@
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
+    "IntelLocalCachePlugin": {},
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
@@ -272,6 +273,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
+    "DestURLFoundHook": {},
     "VPNHook": {}
   },
   "bro": {
