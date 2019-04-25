@@ -27,8 +27,7 @@ const f = require("../net2/Firewalla.js")
 const Promise = require('bluebird');
 
 let DNSManager = require('../net2/DNSManager.js');
-let dnsManager = new DNSManager('info');
-
+let dnsManager = new DNSManager('info'); 
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
@@ -50,6 +49,8 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
+const _ = require('lodash');
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -66,10 +67,7 @@ class DestURLFoundHook extends Hook {
   }
 
   appendURL(url) {
-    const info = {
-      url: url,
-      retryCount: 0
-    };
+    const info = {url};
     return rclient.zaddAsync(URL_SET_TO_BE_PROCESSED, 0, JSON.stringify(info));
   }
 
@@ -112,6 +110,7 @@ class DestURLFoundHook extends Hook {
       const url = subURLHash[0];
 
       const safe = await this.isUrlSafe(url);
+
       if(safe) {
         continue;
       }
@@ -121,16 +120,15 @@ class DestURLFoundHook extends Hook {
 
     if(urlsNeedCheck.length > 0) {
       const result = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
-      log.info("XXXXXXXXXXX", result);
     }
   }
 
   async markAsSafe(subURL) {
-    await rclient.zadd(CommonKeys.intel.safe_urls, new Date() / 1000, subURL);
+    await rclient.zaddAsync(CommonKeys.intel.safe_urls, new Date() / 1000, subURL);
   }
 
   async isUrlSafe(subURL) {
-    const score = await rclient.zscore(CommonKeys.intel.safe_urls, subURL);
+    const score = await rclient.zscoreAsync(CommonKeys.intel.safe_urls, subURL);
     return score !== null;
   }
 
@@ -143,26 +141,47 @@ class DestURLFoundHook extends Hook {
       if(urls.length > 0) {
         const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
+	let filteredURLs = urls.map((urlJSON) => {
+          try {
+            const urlData = JSON.parse(urlJSON);
+            return urlData.url;
+          } catch(err) {
+            return null;
+          }
+        }).filter((url) => url !== null);
+
         if(cachePlugin) {
-          urls = urls.filter((url) => cachePlugin.checkUrl(url));
+          filteredURLs = filteredURLs.filter((url) => {
+            const subURLHashes = this.getSubURLWithHashes(url);
+            return subURLHashes.some((hash) => {
+              if(_.isEmpty(hash) || hash.length !== 3) {
+                return false;
+              }
+              return cachePlugin.checkUrl(hash[0]);
+            });
+          });
         }
 
-        const promises = urls.map((url) => this.processURL(url));
+        const promises = filteredURLs.map((url) => this.processURL(url).catch((err) => {
+          log.error(`Got error when handling url ${url}, err: ${err}`);
+        }));
 
-        await Promise.all(promises)
+        await Promise.all(promises);
 
         const args = [URL_SET_TO_BE_PROCESSED];
         args.push.apply(args, urls);
 
-        await rclient.zremAsync(args)
+        if(args.length > 1) {
+          await rclient.zremAsync(args);
+        }
 
-        log.debug(ips.length + "URLs are analyzed with intels");
+        log.debug(urls.length + "URLs are analyzed with intels");
 
       } else {
         // log.info("No IP Addresses are pending for intels");
       }
     } catch(err) {
-      log.error("Got error when handling new dest IP addresses, err:", err)
+      log.error("Got error when handling new URL, err:", err)
     }
 
     setTimeout(() => {

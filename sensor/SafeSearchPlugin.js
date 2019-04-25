@@ -459,7 +459,7 @@ class SafeSearchPlugin extends Sensor {
       const cmd = iptables.wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
-      for(const ip6 of ipv6s) {
+      for(const ip6 of ipv6s || []) {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 
@@ -484,7 +484,7 @@ class SafeSearchPlugin extends Sensor {
       const cmd = iptables.wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
-      for(const ip6 of ipv6s) {
+      for(const ip6 of ipv6s || []) {
         if (ip6.startsWith("fe80::")) {
           // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
 

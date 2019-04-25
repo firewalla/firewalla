@@ -116,14 +116,6 @@ class FlowTool {
     return key;
   }
 
-  _getRemoteIP(flow) {
-    if (flow.sh === flow.lh) {
-      return flow.dh;
-    } else {
-      return flow.sh;
-    }
-  }
-
   // append to existing flow or create new
   _appendFlow(conndb, flowObject, ip) {
     let o = flowObject;
@@ -576,10 +568,11 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
         if (a.ets && b.ets) {
-          return b.ets - a.ets;
-        } else {
-          return b.ts - a.ts;
+          // sort by end timestamp if present
+          a.ts = a.ets;
+          b.ts = b.ets;
         }
+        return b.ts - a.ts;
       })); 
     } else {
       mergedFlow = flowObjects

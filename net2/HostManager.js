@@ -63,7 +63,7 @@ const pm2 = policyManager2
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 
-let spooferManager = require('./SpooferManager.js')
+let SpooferManager = require('./SpooferManager.js')
 
 let modeManager = require('./ModeManager.js');
 
@@ -236,9 +236,11 @@ class Host {
         }
       }
 
+      /* do not update last active time based on ipv6 host entry
       if (this.o.lastActiveTimestamp < lastActive) {
         this.o.lastActiveTimestamp = lastActive;
       }
+      */
 
       //await(this.saveAsync());
       log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
@@ -2393,16 +2395,16 @@ module.exports = class HostManager {
             _async.setImmediate(cb);
             return;
           }
+          if (o.ipv4) {
+            o.ipv4Addr = o.ipv4;
+          }
+          if (o.ipv4Addr == null) {
+            log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac);
+            _async.setImmediate(cb);
+            return;
+          }
           if (sysManager.isLocalIP(o.ipv4Addr) && o.lastActiveTimestamp > inactiveTimeline) {
             //log.info("Processing GetHosts ",o);
-            if (o.ipv4) {
-              o.ipv4Addr = o.ipv4;
-            }
-            if (o.ipv4Addr == null) {
-              log.info("hostmanager:gethosts:error:noipv4", o.uid, o.mac,{});
-              _async.setImmediate(cb);
-              return;
-            }
             let hostbymac = this.hostsdb["host:mac:" + o.mac];
             let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
@@ -2628,7 +2630,7 @@ module.exports = class HostManager {
       if (state == false) {
         // flush all ip addresses
         log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-        return spooferManager.emptySpoofSet()
+        return new SpooferManager().emptySpoofSet()
       } else {
         // do nothing if state is true
       }
@@ -2721,6 +2723,10 @@ module.exports = class HostManager {
       }
       return msg;
     }
+  }
+
+  getPolicyFast() {
+    return this.policy;
   }
 
   savePolicy(callback) {

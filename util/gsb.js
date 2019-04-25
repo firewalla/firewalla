@@ -121,11 +121,11 @@ function urlCheck(threatlist,callback) {
 let urls = [
 //      {"url": "http://05p.com/"},
 //      {"url": "http://amazon.com/"},
-      {"url": "malware.testing.google.test/testing/malware/"},
+//      {"url": "malware.testing.google.test/testing/malware/"},
 //        {"url": "http://cdethstfrjhstfrjeadfrds.cx.cc/w.php"},
     //    {"url": "http://bluga.com.ar/fran/googledocs/login.php"},
 //        {"url": "bluga.com.ar/fran/googledocs/login.php"},
-        {"url":"http://goooogleadsence.biz/"},
+        {"url":"malware.wicar.org/data/eicar.com"},
 //      {"url": "bluga.com.ar/*"},
 //      {"url":"mirror.os6.org"},
 //      {"url":"allora-tour.by"},

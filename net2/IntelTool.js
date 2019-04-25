@@ -153,7 +153,7 @@ class IntelTool {
 
     log.info("Checking Intel for urls:", urlList);
 
-    let list = null;
+    let list = [];
 
     const hashList = urlList.map((item) => item.slice(1, 2));
 
@@ -184,6 +184,7 @@ class IntelTool {
 
     try {
       const result = await bone.intelAsync("*", "", "check", data);
+log.info("XXXXXXXXXXXX", result);
       return result;
     } catch (err) {
       log.error("Failed to get intel for urls", urlList, "err:", err);
