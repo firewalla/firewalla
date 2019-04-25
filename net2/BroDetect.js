@@ -1260,6 +1260,15 @@ module.exports = class {
       let dstPort = obj["id.resp_p"];
       let flowdir = "in";
 
+      if(obj.host && obj.uri) {
+        const url = `${obj.host}${obj.uri}`;
+        sem.emitEvent({
+          type: 'DestURLFound',
+          url: url,
+          suppressEventLogging: true
+        });
+      }
+
       /*
       if (!iptool.isV4Format(host)) {
            return;
