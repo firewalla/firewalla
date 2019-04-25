@@ -348,10 +348,15 @@ module.exports = class {
       let alarmKey = alarmPrefix + id;
 
       for(const alarmKey in alarm) {
+        const value = alarm[alarmKey];
+        if(value === null || value === undefined) {
+          delete alarm[alarmKey];
+          continue;
+        }
+
         // basic key or extended key
         if (alarmKey.startsWith("p.") || alarmKey.startsWith("e.")) {
-          const value = alarm[alarmKey];
-          if(["Object", "Array"].includes(value.constructor.name)) {
+          if(value && value.constructor && ["Object", "Array"].includes(value.constructor.name)) {
             // for hash or array, need to convert it to JSON string first
             alarm[alarmKey] = JSON.stringify(value);
           }
