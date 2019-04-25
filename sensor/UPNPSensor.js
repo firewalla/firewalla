@@ -97,7 +97,7 @@ class UPNPSensor extends Sensor {
             .catch(err => log.error("Failed to read upnp mapping in database: " + err))
           );
 
-          const mergedResults = this.mergeResults(results, preMappings);
+          const mergedResults = this.mergeResults(results, preMappings || []);
 
           if (cfg.isFeatureOn(ALARM_UPNP)) {
             mergedResults.forEach(current => {
