@@ -22,7 +22,6 @@ let l2 = require('../util/Layer2.js');
 
 var instance = null;
 
-var debugging = false;
 let log = require("./logger.js")(__filename, 'info');
 
 let firewalla = require('./Firewalla.js');
@@ -497,9 +496,7 @@ module.exports = class {
         });
     }
 
-  constructor(intf, config, clean, debug) {
-
-        debugging = debug;
+  constructor(intf, config, clean) {
 
         // Warning, should not clean default ACL's applied to ip tables
         // there is one applied for ip6 spoof, can't be deleted

@@ -262,7 +262,7 @@ class NmapSensor extends Sensor {
       } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
         return // do nothing on secondary ip
       } else {
-        log.error("Invalid MAC Address for host", host, {})
+        log.error("Invalid MAC Address for host", host)
         return
       }
     }
