@@ -522,7 +522,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       msg: "Firekick Terminated",
       gidPrefix: gidPrefix
     }).catch((err) => {
-      log.err("failed to submit diag info on termination", err);
+      log.error("failed to submit diag info on termination", err);
     });
   }
   
