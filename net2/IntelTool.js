@@ -127,6 +127,30 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
+  async addURLIntel(url, intel, expire) {
+    intel = intel || {}
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    let key = this.getIntelKey(ip);
+
+    log.debug("Storing intel for ip", ip);
+
+    intel.updateTime = `${new Date() / 1000}`
+
+    await rclient.hmsetAsync(key, intel);
+    if(intel.host && intel.ip) {
+      // sync reverse dns info when adding intel
+      await dnsTool.addReverseDns(intel.host, [intel.ip])
+    }
+
+    if(intel.category === 'intel') {
+      await this.updateSecurityIntelTracking(key);
+    } else {
+      await this.removeFromSecurityIntelTracking(key);
+    }
+    return rclient.expireAsync(key, expire);
+  }
+
   async updateExpire(ip, expire) {
     expire = expire || 7 * 24 * 3600; // one week by default
 
@@ -159,24 +183,14 @@ class IntelTool {
 
     if (this.debugMode) {
       list.push({
-        iplist:[],
-        hlist:hashList,
         alist:hashList,
-        _iplist:[],
-        _hlist:urlList,
         _alist:urlList,
-        flow:{
-          fd:fd
-        }
+        flow:{ fd }
       });
     } else {
       list.push({
-        _iplist:[],
-        _hlist:hashList,
         _alist:hashList,
-        flow:{
-          fd:fd
-        }
+        flow:{ fd }
       });
     }
 
@@ -184,10 +198,10 @@ class IntelTool {
 
     try {
       const result = await bone.intelAsync("*", "", "check", data);
-log.info("XXXXXXXXXXXX", result);
       return result;
     } catch (err) {
       log.error("Failed to get intel for urls", urlList, "err:", err);
+      return null;
     }
   }
 

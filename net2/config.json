@@ -254,6 +254,10 @@
       "appflow": {
         "expires": 86400,
         "count": 1000
+      },
+      "safe_urls": {
+        "expires": 604800,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {

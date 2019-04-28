@@ -119,8 +119,45 @@ class DestURLFoundHook extends Hook {
     }
 
     if(urlsNeedCheck.length > 0) {
-      const result = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
+      const results = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
+      if(_.isEmpty(results)) {
+        for(const urlWithHash of urlsNeedCheck) {
+          if(urlWithHash[0]) {
+            await this.markAsSafe(urlWithHash[0])
+          }
+        }
+      }
     }
+  }
+
+  async _storeIntel(url, result) {
+    await intelTool.addURLIntel(url, result, this.config.intelExpireTime);
+  }
+
+  findURLByHash(hash, urlsWithHash) {
+    for(const urlWithHash of urlsWithHash) {
+      if(urlWithHash && urlWithHash.length === 3 && urlWithHash[2] === 'hash') {
+        return urlWithHash[0];
+      }
+    }
+
+    return null;
+  }
+
+  async storeIntels(urlsNeedCheck, results) {
+    for(const result of results) {
+      const hash = result && result.ip;
+      if(!hash) {
+        continue;
+      }
+
+      const url = this.findURLByHash(hash, urlsNeedCheck);
+      if(!url) {
+        continue;
+      }
+
+      await this._storeIntel(url, result);
+    }    
   }
 
   async markAsSafe(subURL) {
@@ -141,7 +178,7 @@ class DestURLFoundHook extends Hook {
       if(urls.length > 0) {
         const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-	let filteredURLs = urls.map((urlJSON) => {
+	      let filteredURLs = urls.map((urlJSON) => {
           try {
             const urlData = JSON.parse(urlJSON);
             return urlData.url;
