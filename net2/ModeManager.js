@@ -315,7 +315,14 @@ function _enableSecondaryInterface() {
   });
 }
 
-function _enforceDHCPMode() {
+async function _enforceDHCPMode() {
+  // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
+  const cmd = "pidof dhclient && sudo pkill dhclient; true";
+  try {
+    await execAsync(cmd);
+  } catch (err) {
+    log.warn("Failed to kill dhclient");
+  }
   sem.emitEvent({
     type: 'StartDHCP',
     message: "Enabling DHCP Mode"

@@ -95,7 +95,7 @@ class UPNPSensor extends Sensor {
           let preMappings = await (rclient.hgetAsync(key, 'upnp')
             .then(entries => { return JSON.parse(entries) })
             .catch(err => log.error("Failed to read upnp mapping in database: " + err))
-          );
+          ) || [];
 
           const mergedResults = this.mergeResults(results, preMappings);
 

@@ -106,7 +106,7 @@ class BitBridge {
       //sudo ./bitbridge6 eth0 -q -w 1 -k monitored_hosts6 -g fe80::250:f1ff:fe80:0
       if(this.routerIP6) {
         binary = this.getBinary6()
-        cmd = `rm ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc`;
+        cmd = `ls ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc && rm ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc; true`;
         // remove all bitbridge6 rc files
         try {
           require('child_process').execSync(cmd);
@@ -193,7 +193,7 @@ class BitBridge {
   async ipv6On() {
     try {
       await exec("touch /home/pi/.firewalla/config/enablev6");
-      await exec("sudo pkill bitbridge6");
+      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn on ipv6", err);
     }
@@ -202,7 +202,7 @@ class BitBridge {
   async ipv6Off() {
     try {
       await exec("rm -f /home/pi/.firewalla/config/enablev6");
-      await exec("sudo pkill bitbridge6");
+      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn off ipv6", err);
     }
