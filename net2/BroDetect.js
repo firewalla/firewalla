@@ -1103,7 +1103,7 @@ module.exports = class {
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
           try {
-            if (Object.keys(spec._afmap).length>0) {
+            if (spec._afmap && Object.keys(spec._afmap).length>0) {
               for (let i in spec._afmap) {
                 let afobj = this.lookupAppMap(i);
                 if (afobj) {
