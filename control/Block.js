@@ -24,7 +24,6 @@ const Accounting = require('./Accounting.js');
 const accounting = new Accounting();
 
 const exec = require('child-process-promise').exec
-const execAsync = util.promisify(exec);
 
 const f = require('../net2/Firewalla.js')
 
@@ -442,7 +441,7 @@ async function unblock(destination, ipset) {
 
   log.info("Control:UnBlock:",cmd);
 
-  return execAsync(cmd)
+  return exec(cmd)
 }
 
 // Block every connection initiated from one local machine to a remote ip address
@@ -516,7 +515,7 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset add -! ${ipset}6 ${entry}`
   }
 
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
@@ -533,7 +532,7 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset del -! ${ipset}6 ${entry}`
   }
 
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function _wrapIptables(rule) {
