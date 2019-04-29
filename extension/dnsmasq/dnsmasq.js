@@ -956,7 +956,9 @@ module.exports = class DNSMASQ {
 
   async restartDnsmasq() {
     try {
-      await execAsync("sudo systemctl restart firemasq");
+      //await execAsync("sudo systemctl restart firemasq");
+      if (!this.needRestart)
+        this.needRestart = new Date() / 1000;
       if (!statusCheckTimer) {
         statusCheckTimer = setInterval(() => {
           this.statusCheck()
