@@ -522,7 +522,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       msg: "Firekick Terminated",
       gidPrefix: gidPrefix
     }).catch((err) => {
-      log.err("failed to submit diag info on termination", err);
+      log.error("failed to submit diag info on termination", err);
     });
   }
   
@@ -554,7 +554,13 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.exception',msg:err.message,stack:err.stack},null);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.KICKSTART.exception',
+    msg: err.message,
+    stack: err.stack,
+    err: JSON.stringify(err)
+  }, null);
   setTimeout(()=>{
     require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
     process.exit(1);
@@ -563,6 +569,12 @@ process.on('uncaughtException',(err)=>{
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
-  bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.unhandledRejection',msg:msg,stack:reason.stack},null);
+  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.KICKSTART.unhandledRejection',
+    msg: msg,
+    stack: reason.stack,
+    err: JSON.stringify(reason)
+  }, null);
 });
