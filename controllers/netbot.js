@@ -134,6 +134,8 @@ const migration = require('../migration/migration.js');
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
+const conncheck = require('../diagnostic/conncheck.js');
+
 const _ = require('lodash')
 
 class netBot extends ControllerBot {
@@ -3331,7 +3333,49 @@ class netBot extends ControllerBot {
         })
         break;
       }
-
+      case "getConnTestDest": {
+        (async () => {
+          const dest = await conncheck.getDestToCheck();
+          this.simpleTxData(msg, dest, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "startConnTest": {
+        (async () => {
+          if (!value.src || !value.src.ip) {
+            this.simpleTxData(msg, {}, new Error("src.ip should be specified"), callback);
+            return;
+          }
+          if (!value.dst || !value.dst.ip || !value.dst.port) {
+            this.simpleTxData(msg, {}, new Error("dst.ip and dst.port should be specified"), callback);
+            return;
+          }
+          const pid = await conncheck.startConnCheck(value.src, value.dst, value.duration);
+          this.simpleTxData(msg, {pid: pid}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "getConnTestResult": {
+        (async () => {
+          if (!value.pid) {
+            this.simpleTxData(msg, {}, new Error("pid should be specified"), callback);
+            return;
+          }
+          const result = await conncheck.getConnCheckResult(value.pid);
+          if (!result) {
+            this.simpleTxData(msg, {}, new Error("Test result of specified pid is not found"), callback);
+          } else {
+            this.simpleTxData(msg, result, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
