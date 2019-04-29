@@ -3632,7 +3632,8 @@ process.on('unhandledRejection', (reason, p)=>{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
-    stack:reason.stack
+    stack:reason.stack,
+    err: JSON.stringify(reason)
   },null);
 });
 
@@ -3642,7 +3643,8 @@ process.on('uncaughtException', (err) => {
     version: sysManager.version(),
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
-    stack: err.stack
+    stack: err.stack,
+    err: JSON.stringify(err)
   }, null);
   setTimeout(() => {
     try {

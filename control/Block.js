@@ -106,7 +106,8 @@ async function setupWhitelistEnv(macTag, dstTag, dstType = "hash:ip", destroy = 
   }
 
   try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'whitelist environment for', macTag || "null", dstTag);
+    log.info(destroy ? 'Destroying' : 'Creating', 'whitelist environment for', macTag || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
 
     const macSet = macTag ? getMacSet(macTag) : '';
     const dstSet = getDstSet(dstTag);
@@ -184,7 +185,8 @@ async function setupBlockingEnv(macTag, dstTag, dstType = "hash:ip", destroy = f
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
   try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', macTag || "null", dstTag);
+    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', macTag || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
 
     const macSet = macTag ? getMacSet(macTag) : '';
     const dstSet = getDstSet(dstTag)
@@ -293,7 +295,7 @@ async function existsBlockingEnv(tag) {
 async function _isIpsetReferenced(ipset) {
   const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
   const result = await exec(listCommand);
-  const referenceCount = result.stdout;
+  const referenceCount = result.stdout.trim();
   return referenceCount !== "0";
 }
 
@@ -419,12 +421,12 @@ async function advancedUnblockMAC(macAddress, setName) {
   }
 }
 
-function unblock(destination, ipset) {
+async function unblock(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
   // never unblock black hole ip
   if(f.isReservedBlockingIP(destination)) {
-    return Promise.resolve()
+    return
   }
 
   let cmd = null;
@@ -434,20 +436,12 @@ function unblock(destination, ipset) {
     cmd = `sudo ipset del -! ${ipset}6 ${destination}`
   } else {
     // do nothing
+    return
   }
 
   log.info("Control:UnBlock:",cmd);
 
-  return new Promise((resolve, reject) => {
-    cp.exec(cmd, (err, stdout, stderr) => {
-      if(err) {
-        log.error("Unable to ipset remove ", cmd, err)
-        reject(err);
-        return;
-      }
-      resolve();
-    });
-  });
+  return exec(cmd)
 }
 
 // Block every connection initiated from one local machine to a remote ip address
@@ -521,9 +515,7 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset add -! ${ipset}6 ${entry}`
   }
 
-  let execAsync = util.promisify(cp.exec);
-
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
@@ -540,9 +532,7 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset del -! ${ipset}6 ${entry}`
   }
 
-  let execAsync = util.promisify(cp.exec);
-
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function _wrapIptables(rule) {
