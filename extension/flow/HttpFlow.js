@@ -5,8 +5,11 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const useragent = require('useragent');
 
-const HostTool = require('../net2/HostTool.js');
+const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+
+const SysManager = require('../../net2/SysManager.js');
+const sysManager = new SysManager('info');
 
 const config = require('../../net2/config.js').getConfig();
 
