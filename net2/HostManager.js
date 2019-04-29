@@ -2725,6 +2725,10 @@ module.exports = class HostManager {
     }
   }
 
+  getPolicyFast() {
+    return this.policy;
+  }
+
   savePolicy(callback) {
     let key = "policy:system";
     let d = {};

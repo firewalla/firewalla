@@ -153,11 +153,7 @@ module.exports = class DNSMASQ {
               (async () => {
                 const started = await this.checkStatus();
                 if (started)
-                  await this.rawRestart(); // restart firemasq service to bind new ip addresses
-                if (this.vpnSubnet) {
-                  await this.updateVpnIptablesRules(this.vpnSubnet, true);
-                }
-                await this._update_local_interface_iptables_rules();
+                  await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
               })();
               break;
             case "DHCPReservationChanged":
@@ -984,7 +980,9 @@ module.exports = class DNSMASQ {
 
   async restartDnsmasq() {
     try {
-      await execAsync("sudo systemctl restart firemasq");
+      //await execAsync("sudo systemctl restart firemasq");
+      if (!this.needRestart)
+        this.needRestart = new Date() / 1000;
       if (!statusCheckTimer) {
         statusCheckTimer = setInterval(() => {
           this.statusCheck()

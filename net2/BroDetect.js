@@ -570,7 +570,7 @@ module.exports = class {
   isMonitoring(ip) {
     const hostObject = hostManager.getHostFast(ip)
 
-    if(hostObject && hostObject.spoofing == false) {
+    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
       return false
     } else {
       return true;
@@ -584,43 +584,58 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    if(m === 'dhcp') { // only for dhcp
+    if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
       let myip = sysManager.myIp()
-      if(myip) {
+      const myip6 = sysManager.myIp6();
+      if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-
-        if(data["id.orig_h"] === myip ||
+        if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
-          return false  
+          return false
         }
+      }
 
-        // ignore any devices' traffic who is set to monitoring off
-        const origIP = data["id.orig_h"]
-        const respIP = data["id.resp_h"]
-
-        if(sysManager.isLocalIP(origIP)) {
-          if(!this.isMonitoring(origIP)) {
-            return false // set it to invalid if it is not monitoring
+      if (myip6 && myip6.length !== 0) {
+        if (myip6.includes(data["id.orig_h"]) ||
+          myip6.includes(data["id.resp_h"])) {
+            return false;
           }
-        }
+      }
 
-        if(sysManager.isLocalIP(respIP)) {
-          if(!this.isMonitoring(respIP)) {
-            return false // set it to invalid if it is not monitoring
-          }
-        }
+      // ignore any devices' traffic who is set to monitoring off
+      const origIP = data["id.orig_h"]
+      const respIP = data["id.resp_h"]
 
-        // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      if (sysManager.isLocalIP(origIP)) {
+        if (!this.isMonitoring(origIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
+      }
+
+      if (sysManager.isLocalIP(respIP)) {
+        if (!this.isMonitoring(respIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
       let myip = sysManager.myIp()
+      const myip6 = sysManager.myIp6()
+      const systemPolicy = hostManager.getPolicyFast();
+      const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
       // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
       if(myip && 
-        (data["id.orig_h"] === myip ||
-          data["id.resp_h"] === myip) && 
-        !this.isMonitoring(myip)) {        
+        (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
+        (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if (myip6 && myip6.length !== 0 && 
+        (myip6.includes(data["id.orig_h"]) || myip6.includes(data["id.resp_h"])) &&
+        (!this.isMonitoring(myip) || isEnhancedSpoof) // it's okay to use my ipv4 address to determine whether walla is monitored
+      ) {
+        return false;
       }
     }
 
