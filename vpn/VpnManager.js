@@ -72,6 +72,11 @@ module.exports = class {
         const serverNetwork = this.serverNetwork;
         const localIp = sysManager.myIp();
         this._currentLocalIp = localIp;
+        if (!serverNetwork) {
+          if (callback)
+            callback(null, null);
+          return;
+        }
         log.info("VpnManager:SetIptables", serverNetwork, localIp);
       
         const commands =[
@@ -88,6 +93,11 @@ module.exports = class {
         let localIp = sysManager.myIp();
         if (this._currentLocalIp)
           localIp = this._currentLocalIp;
+        if (!serverNetwork) {
+          if (callback)
+            callback(null, null);
+          return;
+        }
         log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
         const commands = [
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
