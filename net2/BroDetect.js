@@ -966,6 +966,7 @@ module.exports = class {
         pr: obj.proto,
         f: flag,
         flows: [ flowDescriptor ],
+        uids: [obj.uid]
       };
 
       let afobj = this.lookupAppMap(obj.uid);
@@ -1120,6 +1121,7 @@ module.exports = class {
           } catch(e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
+          spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
           this._getMacByIP(spec.lh).then((mac) => {
             if (!mac) {
@@ -1513,57 +1515,12 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-
-  // recordHit(data) {
-  //     const ts = Math.floor(data.ts)
-  //     const inBytes = data.inBytes
-  //     const outBytes = data.outBytes
-
-  //     timeSeries
-  //     .recordHit('download',ts, Number(inBytes))
-  //     .recordHit('upload',ts, Number(outBytes))
-  // }
-
-  //   recordManyHits(datas) {
-  //       datas.forEach((data) => {
-  //         const ts = Math.floor(data.ts)
-  //         const inBytes = data.inBytes
-  //         const outBytes = data.outBytes
-
-  //         timeSeries.recordHit('download',ts, Number(inBytes))
-  //         timeSeries.recordHit('upload',ts, Number(outBytes))
-  //       })
-
-  //       return new Promise((resolve, reject) => {
-  //         timeSeries.exec(() => {
-  //             resolve()
-  //         })
-  //       })
-  //   }
-
   enableRecordHitsTimer() {
     setInterval(() => {
       timeSeries.exec(() => {})
       this.cc = 0
     }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
   }
-
-  //   recordHits() {
-  //     if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-  //         this.recording = true
-  //         const copy = JSON.parse(JSON.stringify(this.recordCache))
-  //         this.recordCache = []
-  //         async(() => {
-  //             await(this.recordManyHits(copy))
-  //         })().finally(() => {
-  //             this.recording = false
-  //         })
-  //     } else {
-  //         if(this.recording) {
-  //             log.info("still recording......")
-  //         }
-  //     }
-  //   }
 
   recordTraffic(ts, inBytes, outBytes) {
     if(this.enableRecording) {

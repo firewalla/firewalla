@@ -13,6 +13,8 @@ const sysManager = new SysManager('info');
 
 const config = require('../../net2/config.js').getConfig();
 
+const flowGraph = require('./FlowGraph.js');
+
 let instance = null;
 
 /*
@@ -104,7 +106,7 @@ class HttpFlow {
   async process(flow) {
     try {
       const obj = JSON.parse(flow);
-      if (obj == null) {
+      if (obj == null || !obj.uid) {
         log.error("HTTP:Drop", obj);
         return;
       }
@@ -159,6 +161,8 @@ class HttpFlow {
         const expireTime = (config && config.bro && config.bro.http && config.bro.http.expires) || 1800; // default 30 minutes
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
+
+        flowGraph.recordHttp(obj.uid, obj.ts);
       } catch(err) {
         log.error(`Failed to save http flow, err: ${err}`);
       }
