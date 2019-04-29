@@ -20,7 +20,7 @@ class FlowGraph {
   async recordConn(flowUID, ts, options) {
     options = options || {};
 
-    const expire = option.expire || 1800 // 30 minutes
+    const expire = options.expire || 1800 // 30 minutes
 
     const key = this.getFlowGraphKey(flowUID);
 
@@ -31,11 +31,14 @@ class FlowGraph {
   async recordHttp(flowUID, ts, options) {
     options = options || {};
 
-    const expire = option.expire || 1800 // 30 minutes
+    const expire = options.expire || 1800 // 30 minutes
 
     const key = this.getFlowGraphKey(flowUID);
 
     await rclient.hsetAsync(key, "http", ts);
+    if(options.mac) {
+      await rclient.hsetAsync(key, "mac", options.mac);
+    }
     await rclient.expireAsync(key, expire);
   }
 }

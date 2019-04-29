@@ -45,7 +45,7 @@ class IntelLocalCachePlugin extends Sensor {
     const data = await bone.hashsetAsync(hashKey)
     try {
       const payload = JSON.parse(data);
-      jsonfile.writeFileSync("/tmp/x.json", payload);
+      // jsonfile.writeFileSync("/tmp/x.json", payload);
       this.bf = new BloomFilter(payload, 16);
       log.info("Intel cache is loaded successfully!");
     } catch (err) {

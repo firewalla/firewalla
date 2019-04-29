@@ -162,7 +162,7 @@ class HttpFlow {
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
 
-        flowGraph.recordHttp(obj.uid, obj.ts);
+        flowGraph.recordHttp(obj.uid, obj.ts, {mac});
       } catch(err) {
         log.error(`Failed to save http flow, err: ${err}`);
       }
