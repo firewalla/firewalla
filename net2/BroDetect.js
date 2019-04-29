@@ -1123,7 +1123,7 @@ module.exports = class {
           }
           spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          this._getMacByIP(spec.lh).then((mac) => {
+          hostTool.getMacByIPWithCache(spec.lh).then((mac) => {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
