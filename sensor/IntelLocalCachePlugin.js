@@ -63,6 +63,11 @@ class IntelLocalCachePlugin extends Sensor {
   }
 
   checkUrl(url) {
+    // for testing only
+    if(this.config && this.config.testURLs && this.config.testURLs.includes(url)) {
+      return true;
+    }
+
     if(!this.bf) {
       return false;
     }

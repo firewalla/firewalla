@@ -1,9 +1,9 @@
 {
   "version": 1.963,
-  "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
-  "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
-  "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
-  "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
+    "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
+    "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
+    "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
+    "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
@@ -109,7 +109,11 @@
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
-    "IntelLocalCachePlugin": {},
+    "IntelLocalCachePlugin": {
+      "testURLs": [
+        "api.firewalla.com/test/malware"
+      ]
+    },
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},

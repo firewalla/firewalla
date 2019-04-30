@@ -2,6 +2,7 @@
 
 let instance = null;
 
+const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 
 class FlowGraph {
@@ -20,7 +21,7 @@ class FlowGraph {
   async recordConn(flowUID, ts, options) {
     options = options || {};
 
-    const expire = options.expire || 1800 // 30 minutes
+    const expire = options.expire || 300 // 5 minutes
 
     const key = this.getFlowGraphKey(flowUID);
 
@@ -31,14 +32,19 @@ class FlowGraph {
   async recordHttp(flowUID, ts, options) {
     options = options || {};
 
-    const expire = options.expire || 1800 // 30 minutes
+    const expire = options.expire || 300 // 5 minutes
 
     const key = this.getFlowGraphKey(flowUID);
 
-    await rclient.hsetAsync(key, "http", ts);
+    const content = {http: ts};
     if(options.mac) {
-      await rclient.hsetAsync(key, "mac", options.mac);
+      content.mac = options.mac;
     }
+    if(options.flowDirection) {
+      content.flowDirection = options.flowDirection;
+    }
+
+    await rclient.hmsetAsync(key, content);
     await rclient.expireAsync(key, expire);
   }
 }
