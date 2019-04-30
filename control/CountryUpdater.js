@@ -24,6 +24,7 @@ const Block = require('./Block.js');
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 
 const exec = require('child-process-promise').exec
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
 
@@ -40,6 +41,7 @@ class CountryUpdater extends CategoryUpdaterBase {
   constructor() {
     if (instance == null) {
       super()
+      this.inited = false;
       instance = this
 
       this.init();
@@ -70,23 +72,25 @@ class CountryUpdater extends CategoryUpdaterBase {
     for (const code of this.activeCountries) {
       const category = this.getCategory(code);
       this.activeCategories[category] = 1
-      await Block.setupCategoryEnv(category, 'hash:net');
     }
 
     // only run refresh category records for fire main process
-    if (firewalla.isMain()) {
-      setInterval(() => {
-        this.refreshAllCategoryRecords()
-      }, 24 * 60 * 60 * 1000) // update records every day
+    sem.once('IPTABLES_READY', async () => {
+      this.inited = true;
+      if (firewalla.isMain()) {
+        for (const category of this.getCategories()) {
+          await Block.setupCategoryEnv(category, 'hash:net');
+        }
 
-      setTimeout(async () => {
+        setInterval(() => {
+          this.refreshAllCategoryRecords()
+        }, 24 * 60 * 60 * 1000) // update records every day
 
         log.info("============= UPDATING COUNTRY IPSET =============")
         await this.refreshAllCategoryRecords()
         log.info("============= UPDATING COUNTRY IPSET COMPLETE =============")
-
-      }, 3 * 60 * 1000) // after 3 minutes
-    }
+      }
+    })
   }
 
   // included/excluded ip/subnet should be implemented as exception rules

@@ -15,7 +15,6 @@
 'use strict';
 
 const util = require('util');
-const cp = require('child_process');
 const log = require("../net2/logger.js")(__filename);
 
 const iptool = require("ip");
@@ -26,6 +25,8 @@ const accounting = new Accounting();
 const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
+
+const _wrapIptables = require('../net2/Iptables.js').wrapIptables;
 
 const WHITELIST_MARK = "0x1/0x1";
 
@@ -42,21 +43,24 @@ function getIPTablesCmd(v6) {
 }
 
 // This function MUST be called at the beginning of main.js
-function setupBlockChain() {
+async function setupBlockChain() {
   log.info("Setting up iptables for traffic blocking");
   let cmd = __dirname + "/install_iptables_setup.sh";
 
-  // FIXME: ignore if failed or not
-  cp.execSync(cmd);
+  await exec(cmd);
 
-  setupCategoryEnv("games");
-  setupCategoryEnv("porn");
-  setupCategoryEnv("social");
-  setupCategoryEnv("shopping");
-  setupCategoryEnv("p2p");
-  setupCategoryEnv("gamble");
-  setupCategoryEnv("av");
-  setupCategoryEnv("default_c");
+  await Promise.all([
+    setupCategoryEnv("games"),
+    setupCategoryEnv("porn"),
+    setupCategoryEnv("social"),
+    setupCategoryEnv("shopping"),
+    setupCategoryEnv("p2p"),
+    setupCategoryEnv("gamble"),
+    setupCategoryEnv("av"),
+    setupCategoryEnv("default_c"),
+  ])
+
+  log.info("Finished setup for traffic blocking");
 }
 
 function getMacSet(tag) {
@@ -444,39 +448,6 @@ async function unblock(destination, ipset) {
   return exec(cmd)
 }
 
-// Block every connection initiated from one local machine to a remote ip address
-function blockOutgoing(macAddress, destination, state, v6, callback) {
-
-  let destinationStr = ""
-
-  let cmd = getIPTablesCmd(v6);
-
-  if (destination) {
-     let destinationStr = " --destination "+destination;
-  }
-
-  if (state == true) {
-      let checkCMD = util.format("sudo %s -C FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-      let addCMD = util.format("sudo %s -I FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-
-      cp.exec(checkCMD, (err, stdout, stderr) => {
-        if(err) {
-          log.info("BLOCK:OUTGOING==> ", addCMD);
-          cp.exec(addCMD, (err, stdout, stderr) => {
-            log.debug(err, stdout, stderr);
-            callback(err);
-          });
-        }
-      });
-  } else {
-      let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-      cp.exec(delCMD, (err, stdout, stderr) => {
-        log.debug(err, stdout, stderr);
-        callback(err);
-      });
-  }
-}
-
 function blockMac(macAddress, ipset) {
   ipset = ipset || "blocked_mac_set"
 
@@ -535,35 +506,8 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   return exec(cmd);
 }
 
-function _wrapIptables(rule) {
-  let command = " -I ";
-  let checkRule = null;
-
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
-
-  command = " -A ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
-
-  command = " -D ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
-  }
-
-  if(checkRule) {
-    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
-  } else {
-    return rule;
-  }
-}
-
 module.exports = {
   setupBlockChain:setupBlockChain,
-  blockOutgoing : blockOutgoing,
   blockMac: blockMac,
   unblockMac: unblockMac,
   block: block,
@@ -580,6 +524,5 @@ module.exports = {
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
   enableGlobalWhitelist: enableGlobalWhitelist,
-  disableGlobalWhitelist: disableGlobalWhitelist,
-  wrapIptables: _wrapIptables
+  disableGlobalWhitelist: disableGlobalWhitelist
 }

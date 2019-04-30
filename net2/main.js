@@ -28,9 +28,6 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const fs = require('fs');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -75,7 +72,7 @@ resetModeInInitStage()
 
 run0();
 
-function run0() {  
+function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
@@ -136,27 +133,22 @@ process.on('unhandledRejection', (reason, p)=>{
   }, null);
 });
 
-let hl = null;
-let sl = null;
-
-function resetModeInInitStage() {
+async function resetModeInInitStage() {
   // this needs to be execute early!!
-  return async(() => {
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
-    
-    // always reset to none mode if
-    //        bootingComplete flag is off
-    //    AND
-    //        firstBinding is complete (old version doesn't have this flag )
-    // this is to ensure a safe launch
-    // in case something wrong with the spoof, firemain will not
-    // start spoofing again when restarting
+  let bootingComplete = await firewalla.isBootingComplete()
+  let firstBindDone = await firewalla.isFirstBindDone()
 
-    if(!bootingComplete && firstBindDone) {
-      await (mode.noneModeOn())
-    }
-  })()  
+  // always reset to none mode if
+  //        bootingComplete flag is off
+  //    AND
+  //        firstBinding is complete (old version doesn't have this flag )
+  // this is to ensure a safe launch
+  // in case something wrong with the spoof, firemain will not
+  // start spoofing again when restarting
+
+  if(!bootingComplete && firstBindDone) {
+    await mode.noneModeOn()
+  }
 }
 
 function enableFireBlue() {
@@ -177,16 +169,16 @@ function disableFireBlue() {
   })
 }
 
-function run() {
+async function run() {
 
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
-  
-  hl = require('../hook/HookLoader.js');
+
+  const hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
 
-  sl = require('../sensor/SensorLoader.js');
+  const sl = require('../sensor/SensorLoader.js');
   sl.initSensors();
   sl.run();
 
@@ -198,9 +190,6 @@ function run() {
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
-
-  let SSH = require('../extension/ssh/ssh.js');
-  let ssh = new SSH('debug');
 
   // make sure there is at least one usable ethernet
   d.discoverInterfaces(function(err, list) {
@@ -233,86 +222,68 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  async(() => {
-    // always create the secondary interface
-    await (ModeManager.enableSecondaryInterface())
-    d.discoverInterfaces((err, list) => {
-      if(!err && list && list.length >= 2) {
-        sysManager.update(null) // if new interface is found, update sysManager
-        const pclient = require('../util/redis_manager.js').getPublishClient()
-        pclient.publishAsync("System:IPChange", "");
-        // recreate port direct after secondary interface is created
-        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
-      }
-    })
-  })()
+  // always create the secondary interface
+  await ModeManager.enableSecondaryInterface()
+  d.discoverInterfaces((err, list) => {
+    if(!err && list && list.length >= 2) {
+      sysManager.update(null) // if new interface is found, update sysManager
+      pclient.publishAsync("System:IPChange", "");
+      // recreate port direct after secondary interface is created
+      // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
+    }
+  })
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-
-  if (process.env.FWPRODUCTION) {
-    /*
-      ssh.resetRandomPassword((err,password) => {
-      if(err) {
-      log.error("Failed to reset ssh password");
-      } else {
-      log.info("A new random SSH password is used!");
-      sysManager.sshPassword = password;
-      }
-      })
-    */
-  }
 
   // Launch PortManager
 
   let PortForward = require("../extension/portforward/portforward.js");
   let portforward = new PortForward();
 
-  setTimeout(()=> {
+  setTimeout(async ()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager();
 
-    policyManager.flush(config, (err) => {
-      if(err) {
-        log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
-        return;
-      }
+    try {
+      await policyManager.flush(config)
+    } catch(err) {
+      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
+      return;
+    }
 
-      sem.emitEvent({
-        type: 'IPTABLES_READY'
-      });
-
-      async(() => {
-        await (mode.reloadSetupMode()) // make sure get latest mode from redis
-        await (ModeManager.apply())
-        
-        // when mode is changed by anyone else, reapply automatically
-        ModeManager.listenOnChange();        
-        await (portforward.start());
-      })()
-
-      let PolicyManager2 = require('../alarm/PolicyManager2.js');
-      let pm2 = new PolicyManager2();
-      pm2.setupPolicyQueue()
-      pm2.registerPolicyEnforcementListener()
-
-      setTimeout(() => {
-        async(() => {
-          await (pm2.cleanupPolicyData())
-          await (pm2.enforceAllPolicies())
-          log.info("========= All existing policy rules are applied =========");
-        })().catch((err) => {
-          log.error("Failed to apply some policy rules: ", err, {});
-        });          
-      }, 1000 * 10); // delay for 10 seconds
-      require('./UpgradeManager').finishUpgrade();
+    sem.emitEvent({
+      type: 'IPTABLES_READY'
     });
+
+    await mode.reloadSetupMode() // make sure get latest mode from redis
+    await ModeManager.apply()
+
+    // when mode is changed by anyone else, reapply automatically
+    ModeManager.listenOnChange();
+    await portforward.start();
+
+    let PolicyManager2 = require('../alarm/PolicyManager2.js');
+    let pm2 = new PolicyManager2();
+    pm2.setupPolicyQueue()
+    pm2.registerPolicyEnforcementListener()
+
+    setTimeout(async () => {
+      try {
+        await pm2.cleanupPolicyData()
+        await pm2.enforceAllPolicies()
+        log.info("========= All existing policy rules are applied =========");
+      } catch(err) {
+        log.error("Failed to apply some policy rules: ", err);
+      };
+    }, 1000 * 10); // delay for 10 seconds
+    require('./UpgradeManager').finishUpgrade();
 
   },1000*2);
 
   updateTouchFile();
-  
+
   setInterval(()=>{
     let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
@@ -322,7 +293,7 @@ function run() {
       }
     } catch(e) {
     }
-    
+
     updateTouchFile();
 
   },1000*60*5);

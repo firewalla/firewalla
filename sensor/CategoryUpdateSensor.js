@@ -133,22 +133,24 @@ class CategoryUpdateSensor extends Sensor {
       + ` ${(ip6List || []).length} ipv6`)
   }
 
-  async run() {
-    await this.regularJob()
-    await this.securityJob()
-    await this.countryJob()
+  run() {
+    sem.once('IPTABLES_READY', async() => {
+      await this.regularJob()
+      await this.securityJob()
+      await this.countryJob()
 
-    setInterval(() => {
-      this.regularJob()
-    }, this.config.regularInterval * 1000)
+      setInterval(() => {
+        this.regularJob()
+      }, this.config.regularInterval * 1000)
 
-    setInterval(() => {
-      this.securityJob()
-    }, this.config.securityInterval * 1000)
+      setInterval(() => {
+        this.securityJob()
+      }, this.config.securityInterval * 1000)
 
-    setInterval(() => {
-      this.countryJob()
-    }, this.config.countryInterval * 1000)
+      setInterval(() => {
+        this.countryJob()
+      }, this.config.countryInterval * 1000)
+    })
   }
 
   async loadCategoryFromBone(hashset) {

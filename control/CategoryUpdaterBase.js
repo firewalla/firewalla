@@ -22,7 +22,7 @@ const Block = require('./Block.js');
 
 const exec = require('child-process-promise').exec
 
-const wrapIptables = Block.wrapIptables
+const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;

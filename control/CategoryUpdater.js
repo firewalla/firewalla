@@ -41,7 +41,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   constructor() {
     if (instance == null) {
       super()
-
+      this.inited = false;
       instance = this
 
       this.activeCategories = {
@@ -66,25 +66,24 @@ class CategoryUpdater extends CategoryUpdaterBase {
       };
 
       // only run refresh category records for fire main process
-      if (firewalla.isMain()) {
-        setInterval(() => {
-          this.refreshAllCategoryRecords()
-        }, 60 * 60 * 1000) // update records every hour
-
-        setTimeout(async () => {
+      sem.once('IPTABLES_READY', async () => {
+        this.inited = true;
+        if (firewalla.isMain()) {
+          setInterval(() => {
+            this.refreshAllCategoryRecords()
+          }, 60 * 60 * 1000) // update records every hour
 
           log.info("============= UPDATING CATEGORY IPSET =============")
           await this.refreshAllCategoryRecords()
           log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
 
-        }, 2 * 60 * 1000) // after two minutes
-
-        sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
-          if(event.category) {
-            this.recycleIPSet(event.category)
-          }
-        });
-      }
+          sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
+            if(event.category) {
+              this.recycleIPSet(event.category)
+            }
+          });
+        }
+      })
     }
 
     return instance
@@ -256,6 +255,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // use "ipset restore" to add rdns entries to corresponding ipset
   async updateIPSetByDomain(category, domain, options) {
+    if (!this.inited) return
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
     const mapping = this.getDomainMapping(domain)
@@ -287,6 +287,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async filterIPSetByDomain(category, options) {
+    if (!this.inited) return
+
     options = options || {}
 
     const list = this.excludedDomains && this.excludedDomains[category];
@@ -461,7 +463,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const key = this.getCategoryKey(category)
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
-     return rclient.zremrangebyscoreAsync(key, '-inf', date)
+    return rclient.zremrangebyscoreAsync(key, '-inf', date)
   }
 }
 

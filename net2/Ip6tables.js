@@ -13,15 +13,14 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var ip = require('ip');
-var cp = require('child_process');
+const ip = require('ip');
+const cp = require('child_process');
+const execAsync = require('util').promisify(cp.exec)
 
 const log = require('./logger.js')(__filename);
 
 var running = false;
 var workqueue = [];
-
-const Promise = require('bluebird')
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -154,18 +153,12 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function flush(callback) {
-  this.process = cp.exec(
+function flush() {
+  return execAsync(
     "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
-    (err, stdout, stderr) => {
-      if (err) {
-        log.error("IP6TABLE:FLUSH:Unable to flush", err, stdout);
-      }
-      if (callback) {
-        callback(err, null);
-      }
-    }
-  );
+  ).catch(err => {
+    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+  });
 }
 
 // run() is deleted as same functionality is provided in Iptables.run() 
