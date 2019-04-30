@@ -20,6 +20,8 @@ const f = require('../../net2/Firewalla.js')
 const utils = require('../../lib/utils.js');
 const led = require('../../util/Led.js');
 
+const fs = require('fs');
+
 class RedPlatform extends Platform {
 
   getName() {
@@ -56,6 +58,11 @@ class RedPlatform extends Platform {
 
   blinkPowerLED() {
     led.blink();
+  }
+
+  getCpuTemperature() {
+    const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
+    return Number(fs.readFileSync(source)) / 1000;
   }
 }
 

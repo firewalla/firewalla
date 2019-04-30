@@ -29,6 +29,9 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 
 let Promise = require('bluebird');
 
@@ -617,6 +620,12 @@ module.exports = class {
         if (serial != null) {
             serial = serial.trim();
         }
+
+        let cpuTemperature = 50; // stub cpu temperature for docker/travis
+        if (!f.isDocker() && !f.isTravis()) {
+          cpuTemperature = platform.getCpuTemperature();
+        }
+
         let stat = require("../util/Stats.js");
         stat.sysmemory(null,(err,data)=>{
             callback(null,{
@@ -628,7 +637,8 @@ module.exports = class {
                repoTag: repoTag,
                language: this.language,
                timezone: this.timezone,
-               memory: data
+               memory: data,
+               cpuTemperature: cpuTemperature
             });
         });
     }
