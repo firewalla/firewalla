@@ -19,6 +19,7 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
+const fs = require('fs');
 
 const ledPaths = [
 //  "/sys/devices/platform/leds/leds/nanopi:green:status",
@@ -81,6 +82,11 @@ class BluePlatform extends Platform {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
     });
+  }
+
+  getCpuTemperature() {
+    const source = '/etc/armbianmonitor/datasources/soctemp';
+    return Number(fs.readFileSync(source)) / 1000;
   }
 }
 
