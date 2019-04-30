@@ -65,10 +65,13 @@ module.exports = class {
     return instance;
   }
 
-  setIptables() {
+  async setIptables() {
     const serverNetwork = this.serverNetwork;
     const localIp = sysManager.myIp();
     this._currentLocalIp = localIp;
+    if (!serverNetwork) {
+      return;
+    }
     log.info("VpnManager:SetIptables", serverNetwork, localIp);
 
     const commands =[
@@ -77,20 +80,23 @@ module.exports = class {
       // insert back as top rule in table
       `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
     ];
-    return iptable.run(commands);
+    await iptable.run(commands);
   }
 
-  unsetIptables() {
+  async unsetIptables() {
     const serverNetwork = this.serverNetwork;
     let localIp = sysManager.myIp();
     if (this._currentLocalIp)
       localIp = this._currentLocalIp;
+    if (!serverNetwork) {
+      return;
+    }
     log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
     const commands = [
       wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
     ];
     this._currentLocalIp = null;
-    return iptable.run(commands);
+    await iptable.run(commands);
   }
 
   removeUpnpPortMapping(opts, callback) {
