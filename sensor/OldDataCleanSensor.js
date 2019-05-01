@@ -45,6 +45,8 @@ const intelTool = new IntelTool();
 
 const migrationPrefix = "oldDataMigration";
 
+const CommonKeys = require('../net2/CommonKeys.js');
+
 let fConfig = require('../net2/config.js').getConfig();
 
 function arrayDiff(a, b) {
@@ -388,6 +390,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("syssumflow", "syssumflow:*");
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
+      await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);

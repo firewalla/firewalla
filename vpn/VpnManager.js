@@ -41,7 +41,7 @@ var ttlExpire = 12 * 60 * 60;
 module.exports = class {
     constructor() {
         if (instance == null) {
-            this.upnp = new UPNP("info", sysManager.myGateway());
+            this.upnp = new UPNP(sysManager.myGateway());
             if (firewalla.isMain()) {
               sclient.on("message", (channel, message) => {
                 switch (channel) {

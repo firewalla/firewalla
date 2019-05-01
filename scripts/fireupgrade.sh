@@ -149,7 +149,7 @@ if [[ ! -f /.dockerenv ]]; then
     sync
 fi
 
-GITHUB_STATUS_API=https://status.github.com/api.json
+GITHUB_STATUS_API=https://api.github.com
 
 logger `date`
 rc=1

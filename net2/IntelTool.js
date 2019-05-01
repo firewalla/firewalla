@@ -53,6 +53,16 @@ class IntelTool {
     return util.format("intel:ip:%s", ip);
   }
 
+  getURLIntelKey(url) {
+    return util.format("intel:url:%s", url);
+  }
+
+  async urlIntelExists(url) {
+    const key = this.getURLIntelKey(url);
+    const exists = await rclient.existsAsync(key);
+    return exists == 1;
+  }
+
   async intelExists(ip) {
     let key = this.getIntelKey(ip);
     let exists = await rclient.existsAsync(key);
@@ -68,6 +78,11 @@ class IntelTool {
   getIntel(ip) {
     let key = this.getIntelKey(ip);
 
+    return rclient.hgetallAsync(key);
+  }
+
+  getURLIntel(url) {
+    const key = this.getURLIntelKey(url);
     return rclient.hgetallAsync(key);
   }
 
@@ -112,6 +127,30 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
+  async addURLIntel(url, intel, expire) {
+    intel = intel || {}
+    expire = expire || 7 * 24 * 3600; // one week by default
+
+    let key = this.getIntelKey(ip);
+
+    log.debug("Storing intel for ip", ip);
+
+    intel.updateTime = `${new Date() / 1000}`
+
+    await rclient.hmsetAsync(key, intel);
+    if(intel.host && intel.ip) {
+      // sync reverse dns info when adding intel
+      await dnsTool.addReverseDns(intel.host, [intel.ip])
+    }
+
+    if(intel.category === 'intel') {
+      await this.updateSecurityIntelTracking(key);
+    } else {
+      await this.removeFromSecurityIntelTracking(key);
+    }
+    return rclient.expireAsync(key, expire);
+  }
+
   async updateExpire(ip, expire) {
     expire = expire || 7 * 24 * 3600; // one week by default
 
@@ -130,6 +169,39 @@ class IntelTool {
       const origin = hash[0]
       const hashedOrigin = hash[2]
       hashCache[hashedOrigin] = origin
+    }
+  }
+
+  async checkURLIntelFromCloud(urlList, fd) {
+    fd = fd || 'in';
+
+    log.info("Checking Intel for urls:", urlList);
+
+    let list = [];
+
+    const hashList = urlList.map((item) => item.slice(1, 2));
+
+    if (this.debugMode) {
+      list.push({
+        alist:hashList,
+        _alist:urlList,
+        flow:{ fd }
+      });
+    } else {
+      list.push({
+        _alist:hashList,
+        flow:{ fd }
+      });
+    }
+
+    let data = {flowlist:list, hashed:1};
+
+    try {
+      const result = await bone.intelAsync("*", "", "check", data);
+      return result;
+    } catch (err) {
+      log.error("Failed to get intel for urls", urlList, "err:", err);
+      return null;
     }
   }
 

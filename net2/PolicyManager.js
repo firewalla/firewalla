@@ -33,7 +33,8 @@ var VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
 
-let UPNP = require('../extension/upnp/upnp');
+const UPNP = require('../extension/upnp/upnp');
+const upnp = new UPNP();
 
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
@@ -545,7 +546,7 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy", host);
+      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
       return; // doesn't support per-device policy
     }
     let needUpdate = false;
@@ -581,7 +582,6 @@ module.exports = class {
         return; // exit if the flag is still off
       }
 
-      let upnp = new UPNP();
       upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
       this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
     }, time)
@@ -596,7 +596,6 @@ module.exports = class {
         return; // exit if the flag is still on
       }
 
-      let upnp = new UPNP();
       upnp.removePortMapping("tcp", localPort, externalPort);
       this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
     }, time)

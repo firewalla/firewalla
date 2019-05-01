@@ -14,47 +14,45 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let Hook = require('./Hook.js');
+const Hook = require('./Hook.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let country = require('../extension/country/country.js');
+const country = require('../extension/country/country.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const f = require("../net2/Firewalla.js")
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let DNSManager = require('../net2/DNSManager.js');
-let dnsManager = new DNSManager('info');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const CountryUpdater = require('../control/CountryUpdater.js')
+const countryUpdater = new CountryUpdater()
 
-let IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
+const SysManager = require('../net2/SysManager.js')
+const sysManager = new SysManager('info');
 
-let ITEMS_PER_FETCH = 100;
-let QUEUE_SIZE_PAUSE = 2000;
-let QUEUE_SIZE_RESUME = 1000;
+const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
+
+const ITEMS_PER_FETCH = 100;
+const QUEUE_SIZE_PAUSE = 2000;
+const QUEUE_SIZE_RESUME = 1000;
 
 const TRUST_THRESHOLD = 10 // to be updated
 
-
-let MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
+const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
 class DestIPFoundHook extends Hook {
 
@@ -231,6 +229,12 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  async updateCountryIP(intel) {
+    if(intel.host && intel.country) {
+      await countryUpdater.updateIP(intel.country, intel.host)
+    }
+  }
+
   _isSimilarHost(h1, h2) {
     if (!h1 || !h2)
       return false;
@@ -268,6 +272,10 @@ class DestIPFoundHook extends Hook {
     } 
     options = options || {};
 
+    if (sysManager.isLocalIP(ip)) {
+      return
+    }
+
     const skipReadLocalCache = options.skipReadLocalCache;
     const skipWriteLocalCache = options.skipWriteLocalCache;
     let sslInfo = await intelTool.getSSLCertificate(ip);
@@ -287,6 +295,7 @@ class DestIPFoundHook extends Hook {
           // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
           if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
             await this.updateCategoryDomain(intel);
+            await this.updateCountryIP(intel);
             return;
           }
         }
@@ -320,6 +329,7 @@ class DestIPFoundHook extends Hook {
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
+      await this.updateCountryIP(aggrIntelInfo);
 
       // only set default action when cloud succeeded
       if(!aggrIntelInfo.action &&
@@ -344,7 +354,7 @@ class DestIPFoundHook extends Hook {
       return aggrIntelInfo;
 
     } catch(err) {
-      log.error(`Failed to process IP ${ip}, error: ${err}`);
+      log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
     }
   }

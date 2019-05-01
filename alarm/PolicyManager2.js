@@ -60,7 +60,10 @@ const domainIPTool = new DomainIPTool();
 
 const domainBlock = require('../control/DomainBlock.js')()
 
-const categoryBlock = require('../control/CategoryBlock.js')()
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+const CountryUpdater = require('../control/CountryUpdater.js')
+const countryUpdater = new CountryUpdater()
 
 const scheduler = require('../extension/scheduler/scheduler.js')()
 
@@ -94,19 +97,19 @@ class PolicyManager2 {
       }
 
       this.enabledTimers = {}
-      
+
     }
     return instance;
   }
-  
+
   shouldFilter(rule) {
     // this is to filter legacy schedule rules that is not compatible with current system any more
     // all legacy rules should already been migrated in OldDataCleanSensor, any leftovers should be bug
     // and here is a protection for that
     if(rule.cronTime && rule.cronTime.startsWith("* *")) {
       return true;
-    }   
-    return false;   
+    }
+    return false;
   }
 
   setupPolicyQueue() {
@@ -132,7 +135,7 @@ class PolicyManager2 {
       const policy = new Policy(event.policy);
       const oldPolicy = event.oldPolicy ? new Policy(event.oldPolicy) : null;
       const action = event.action
-      
+
       if(this.shouldFilter(policy)) {
         done();
         return;
@@ -144,7 +147,7 @@ class PolicyManager2 {
           log.info("START ENFORCING POLICY", policy.pid, action);
           await(this.enforce(policy))
         })().catch((err) => {
-          log.error("enforce policy failed:" + err)
+          log.error("enforce policy failed:" + err, policy)
         }).finally(() => {
           log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
@@ -157,7 +160,7 @@ class PolicyManager2 {
           log.info("START UNENFORCING POLICY", policy.pid, action);
           await(this.unenforce(policy))
         })().catch((err) => {
-          log.error("unenforce policy failed:" + err)
+          log.error("unenforce policy failed:" + err, policy)
         }).finally(() => {
           log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           done()
@@ -176,7 +179,7 @@ class PolicyManager2 {
             await(this.enforce(policy))
           }
         })().catch((err) => {
-          log.error("reenforce policy failed:" + err)
+          log.error("reenforce policy failed:" + err, policy)
         }).finally(() => {
           log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           done()
@@ -193,7 +196,7 @@ class PolicyManager2 {
               const domain = matchDomain[1]
               await (domainBlock.incrementalUpdateIPMapping(domain, {}))
               return
-            } 
+            }
 
             const matchBlockSetDomain = l.match(/ipmapping:blockset:({^:}*):domain:(.*)/);
             if (matchBlockSetDomain) {
@@ -202,7 +205,7 @@ class PolicyManager2 {
               await (domainBlock.incrementalUpdateIPMapping(domain, {blockSet: blockSet}))
               return;
             }
-            
+
             const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
             if(matchExactDomain) {
               const domain = matchExactDomain[1]
@@ -236,7 +239,7 @@ class PolicyManager2 {
       this.queue.checkHealth((error, counts) => {
         log.debug("Policy queue status:", counts);
       })
-      
+
     }, 60 * 1000)
   }
 
@@ -705,7 +708,7 @@ class PolicyManager2 {
       })
     })
   }
-  
+
   // we may need to limit number of policy rules created by user
   loadActivePolicies(options, callback) {
 
@@ -739,7 +742,7 @@ class PolicyManager2 {
   cleanupPolicyData() {
     return async(() => {
       await (domainIPTool.removeAllDomainIPMapping())
-    })() 
+    })()
   }
 
   async enforceAllPolicies() {
@@ -782,7 +785,7 @@ class PolicyManager2 {
     }
 
   }
-    
+
   isFirewallaOrCloud(policy) {
     const target = policy.target
 
@@ -797,103 +800,91 @@ class PolicyManager2 {
            minimatch(target, "*.firewalla.com")
   }
 
-  enforce(policy) {
+  async enforce(policy) {
     if(policy.disabled == 1) {
       return // ignore disabled policy rules
     }
-    
+
     // auto unenforce if expire time is set
-    if(policy.expire) {
-      if(policy.willExpireSoon())  {
+    if (policy.expire) {
+      if (policy.willExpireSoon())  {
         // skip enforce as it's already expired or expiring
-        return async(() => {
-          await (delay(policy.getExpireDiffFromNow() * 1000 ))
-          await (this._disablePolicy(policy))
-          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await (this.deletePolicy(policy.pid))
-          }
-        })()
+        await delay(policy.getExpireDiffFromNow() * 1000 );
+        await this._disablePolicy(policy);
+        if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+          await this.deletePolicy(policy.pid);
+        }
         log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
       } else {
-        return async(() => {
-          await (this._enforce(policy))
-          log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
-          const pid = policy.pid          
-          const policyTimer = setTimeout(() => {
-            async(() => {
-              log.info(`About to revoke policy ${pid} `)
-              // make sure policy is still enabled before disabling it
-              const policy = await (this.getPolicy(pid))
+        await this._enforce(policy);
+        log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
+        const pid = policy.pid;
+        const policyTimer = setTimeout(async () => {
+          log.info(`About to revoke policy ${pid} `)
+          // make sure policy is still enabled before disabling it
+          const policy = await this.getPolicy(pid);
 
-              // do not do anything if policy doesn't exist any more or it's disabled already
-              if(!policy || policy.isDisabled()) {
-                return
-              }
+          // do not do anything if policy doesn't exist any more or it's disabled already
+          if(!policy || policy.isDisabled()) {
+            return
+          }
 
-              log.info(`Revoke policy ${policy.pid}, since it's expired`)
-              await (this.unenforce(policy));
-              await (this._disablePolicy(policy))
-              if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-                await (this.deletePolicy(pid))
-              }
-            })()
-          }, policy.getExpireDiffFromNow() * 1000) // in milli seconds, will be set to 1 if it is a negative number
+          log.info(`Revoke policy ${policy.pid}, since it's expired`)
+          await this.unenforce(policy);
+          await this._disablePolicy(policy);
+          if(policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+            await this.deletePolicy(pid);
+          }
+        }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
 
-          this.invalidateExpireTimer(policy) // remove old one if exists
-          this.enabledTimers[pid] = policyTimer
-        })()
+        this.invalidateExpireTimer(policy); // remove old one if exists
+        this.enabledTimers[pid] = policyTimer;
       }
     } else if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
-      return scheduler.registerPolicy(policy)
+      return scheduler.registerPolicy(policy);
     } else {
-      return this._enforce(policy) // regular enforce
+      return this._enforce(policy); // regular enforce
     }
   }
 
   // this is the real execution of enable and disable policy
-  _enablePolicy(policy) {
-    return async(() => {
-      const now = new Date() / 1000
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        disabled: 0,
-        activatedTime: now
-      }))
-      policy.disabled = 0
-      policy.activatedTime = now
-      log.info(`Policy ${policy.pid} is enabled`)
-      return policy
-    })()
+  async _enablePolicy(policy) {
+    const now = new Date() / 1000
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      disabled: 0,
+      activatedTime: now
+    })
+    policy.disabled = 0
+    policy.activatedTime = now
+    log.info(`Policy ${policy.pid} is enabled`)
+    return policy
   }
 
-  _disablePolicy(policy) {
-    return async(() => {
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        disabled: 1 // flag to indicate that this policy is revoked successfully.
-      }))
-      policy.disabled = 1
-      log.info(`Policy ${policy.pid} is disabled`)
-      return policy
-    })()
+  async _disablePolicy(policy) {
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      disabled: 1 // flag to indicate that this policy is revoked successfully.
+    })
+    policy.disabled = 1
+    log.info(`Policy ${policy.pid} is disabled`)
+    return policy
   }
 
-  _refreshActivatedTime(policy) {
-    return async(() => {
-      const now = new Date() / 1000
-      let activatedTime = now;
-      // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
-      if (policy.activatedTime) {
-        activatedTime = policy.activatedTime;
-      }
-      await (this.updatePolicyAsync({
-        pid: policy.pid,
-        activatedTime: activatedTime
-      }))
-      policy.activatedTime = activatedTime
-      return policy
-    })()
+  async _refreshActivatedTime(policy) {
+    const now = new Date() / 1000
+    let activatedTime = now;
+    // retain previous activated time, this happens if policy is not deactivated normally, e.g., reboot, restart
+    if (policy.activatedTime) {
+      activatedTime = policy.activatedTime;
+    }
+    await this.updatePolicyAsync({
+      pid: policy.pid,
+      activatedTime: activatedTime
+    })
+    policy.activatedTime = activatedTime
+    return policy
   }
 
   async _removeActivatedTime(policy) {
@@ -914,67 +905,68 @@ class PolicyManager2 {
   }
 
   async _enforce(policy) {
-    log.debug("Enforce policy: ", policy);
-    log.info("Enforce policy: ", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
+    log.info("Enforce policy:", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
     await this._refreshActivatedTime(policy)
 
     if (this.isFirewallaOrCloud(policy)) {
-      return Promise.reject(new Error("Firewalla and it's cloud service can't be blocked."))
+      throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    const scope = policy.scope
+    const {pid, scope, target, whitelist} = policy
+
+    // scope !== []
 
     switch(type) {
       case "ip":
-        if(scope) {
-          return Block.advancedBlock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist)
+        if (scope) {
+          await Block.setupRules(pid, pid, "hash:ip", whitelist);
+          await Block.addMacToSet(pid, scope);
+          await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
-          if (policy.whitelist) {
-            await Block.enableGlobalWhitelist();
-            return Block.block(policy.target, "whitelist_ip_set");
-          } else {
-            return Block.block(policy.target)
-          }
+          await Block.block(target, null, whitelist)
         }
         break;
+
       case "mac":
-        if (policy.whitelist) {
+        if (whitelist) {
           await Block.enableGlobalWhitelist();
-          return Block.blockMac(policy.target, "whitelist_mac_set");
+          return Block.blockMac(target, "whitelist_mac_set");
         } else {
-          return Block.blockMac(policy.target);
+          return Block.blockMac(target);
         }
         break;
+
       case "domain":
       case "dns":
         if(scope) {
-          await Block.advancedBlock(policy.pid, policy.pid, scope, [], policy.whitelist);
-          return domainBlock.blockDomain(policy.target, {
+          await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
+          await Block.addMacToSet(pid, scope);
+          return domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(policy.pid),
+            blockSet: Block.getDstSet(pid),
             no_dnsmasq_entry: true,
             no_dnsmasq_reload: true
           })
         } else {
           let options = {exactMatch: policy.domainExactMatch};
-          if (policy.whitelist) {
+          if (whitelist) {
             options.blockSet = "whitelist_domain_set";
             // whitelist rule should not add dnsmasq filter rule
             options.no_dnsmasq_entry = true;
             options.no_dnsmasq_reload = true;
             await Block.enableGlobalWhitelist();
           }
-          return domainBlock.blockDomain(policy.target, options);
+          return domainBlock.blockDomain(target, options);
         }
-
         break;
+
       case "devicePort":
-        let data = await this.parseDevicePortRule(policy.target);
+        let data = await this.parseDevicePortRule(target);
         if(data) {
-          if (policy.whitelist) {
+          if (whitelist) {
             await Block.enableGlobalWhitelist();
             return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
@@ -982,24 +974,37 @@ class PolicyManager2 {
           }
         }
         break;
+
       case "category":
-        if(scope) {
-          // same category shares same dst tag
-          return Block.advancedBlock(policy.pid, policy.target, scope, [], policy.whitelist);
-        } else {
-          let options = {};
-          if (policy.whitelist) {
-            options.whitelist = true;
-            await Block.enableGlobalWhitelist();
-          }
-          return categoryBlock.blockCategory(policy.target, options);
+        await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
+        await Block.addMacToSet(pid, scope);
+
+        if (!scope && !whitelist && target === 'default_c') try {
+          await categoryUpdater.iptablesRedirectCategory(target)
+        } catch(err) {
+          log.error("Failed to redirect default_c traffic", err)
         }
         break;
 
-      default:
-        return Promise.reject("Unsupported policy");
-    }
+      case "net":
+        if (scope) {
+          await Block.setupRules(pid, pid, "hash:net", whitelist);
+          await Block.addMacToSet(pid, scope);
+          await Block.block(target, Block.getDstSet(pid), whitelist)
+        } else {
+          await Block.block(target, null, whitelist)
+        }
+        break;
 
+      case "country":
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
+        await Block.addMacToSet(pid, scope);
+        await countryUpdater.activateCountry(target);
+        break;
+
+      default:
+        throw new Error("Unsupported policy type");
+    }
   }
 
   invalidateExpireTimer(policy) {
@@ -1008,7 +1013,7 @@ class PolicyManager2 {
       log.info("Invalidate expire timer for policy", pid);
       clearTimeout(this.enabledTimers[pid])
       delete this.enabledTimers[pid]
-    }    
+    }
   }
 
   unenforce(policy) {
@@ -1022,62 +1027,55 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info("Unenforce policy: ", policy.pid, policy.type, policy.target);
+    log.info("Unenforce policy:", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
     await this._removeActivatedTime(policy)
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    const scope = policy.scope
+    const {pid, scope, target, whitelist} = policy
 
     switch(type) {
       case "ip":
-        if(scope) {
-          return Block.advancedUnblock(policy.pid, policy.pid, scope, [policy.target], policy.whitelist, true)
-        } else {
-          if (policy.whitelist) {
-            await Block.disableGlobalWhitelist();
-            return block.unblock(policy.target, "whitelist_ip_set");
-          } else {
-            return Block.unblock(policy.target)
-          }
-        }
+        await Block.destroyRules(scope && pid, pid, whitelist);
         break;
+
       case "mac":
-        if (policy.whitelist) {
+        if (whitelist) {
           await Block.disableGlobalWhitelist();
-          return Block.unblockMac(policy.target, "whitelist_mac_set");
+          return Block.unblockMac(target, "whitelist_mac_set");
         } else {
-          return Block.unblockMac(policy.target)
+          return Block.unblockMac(target)
         }
         break;
+
       case "domain":
       case "dns":
         if(scope) {
-          await (domainBlock.unblockDomain(policy.target, {
+          await (domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(policy.pid),
+            blockSet: Block.getDstSet(pid),
             no_dnsmasq_entry: true,
             no_dnsmasq_reload: true
           }))
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          return Block.advancedUnblock(policy.pid, policy.pid, scope, [], policy.whitelist, true)
+          return Block.destroyRules(pid, pid, whitelist);
         } else {
           let options = {exactMatch: policy.domainExactMatch};
-          if (policy.whitelist) {
+          if (whitelist) {
             options.blockSet = "whitelist_domain_set";
             options.no_dnsmasq_entry = true;
             options.no_dnsmasq_reload = true;
             await Block.disableGlobalWhitelist();
           }
-          return domainBlock.unblockDomain(policy.target, options);
+          return domainBlock.unblockDomain(target, options);
         }
-
         break;
+
       case "devicePort":
-        let data = await (this.parseDevicePortRule(policy.target))
+        let data = await (this.parseDevicePortRule(target))
         if(data) {
-          if (policy.whitelist) {
+          if (whitelist) {
             await Block.disableGlobalWhitelist();
             return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
@@ -1085,18 +1083,25 @@ class PolicyManager2 {
           }
         }
         break;
+
       case "category":
-        if(scope) {
-          // keep category dst cache since the number of predefined categories is limited
-          return Block.advancedUnblock(policy.pid, policy.target, scope, [], policy.whitelist, false);
-        } else {
-          let options = {};
-          if (policy.whitelist) {
-            options.whitelist = true;
-            await Block.disableGlobalWhitelist();
-          }
-          return categoryBlock.unblockCategory(policy.target, options);
+        await Block.destroyRules(scope && pid, target, whitelist, false);
+
+        if (!scope && !whitelist && target === 'default_c') try {
+          await categoryUpdater.iptablesUnredirectCategory(target)
+        } catch(err) {
+          log.error("Failed to redirect default_c traffic", err)
         }
+        break;
+
+      case "net":
+        await Block.destroyRules(scope && pid, target, whitelist);
+        break;
+
+      case "country":
+        await Block.destroyRules(scope && pid, target, whitelist, false);
+        // TODO: deactivateCountry ?
+        break;
 
       default:
         return Promise.reject("Unsupported policy");
@@ -1114,11 +1119,11 @@ class PolicyManager2 {
       const matchedPolicies = policies.filter((policy) => {
         return policy.match(alarm)
       })
-      
+
       if(matchedPolicies.length > 0) {
         callback(null, true)
       } else {
-        callback(null, false)  
+        callback(null, false)
       }
     })
   }

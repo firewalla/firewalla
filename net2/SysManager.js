@@ -132,7 +132,7 @@ module.exports = class {
           this.publicIp = event.ip;
       });
       sem.on("DDNS:Updated", (event) => {
-        log.info("Updating DDNS:", event, {});
+        log.info("Updating DDNS:", event);
         if(event.ddns) {
           this.ddns = event.ddns;
         }
@@ -719,39 +719,19 @@ module.exports = class {
     return false;
   }
 
-
-  isLocalIP4(intf, ip) {
-    if (this.sysinfo[intf]==null) {
-      return false;
-    }
-
-    let subnet = this.sysinfo[intf].subnet;
-    if (subnet == null) {
-      return false;
-    }
-
-    if (this.isMulticastIP(ip)) {
-      return true;
-    }
-
-    return iptool.cidrSubnet(subnet).contains(ip);
-  }
-
   isLocalIP(ip) {
+    if (!ip) {
+      log.warn("SysManager:WARN:isLocalIP empty ip");
+      // TODO: we should throw error here
+      return false;
+    }
+
     if (iptool.isV4Format(ip)) {
-
-      this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
-
-      if (this.subnet == null) {
-        log.error("SysManager:Error getting subnet ");
+      if (this.isMulticastIP4(ip)) {
         return true;
       }
+      return this.inMySubnets4(ip);
 
-      if (this.isMulticastIP(ip)) {
-        return true;
-      }
-
-      return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
     } else if (iptool.isV6Format(ip)) {
       if (ip.startsWith('::')) {
         return true;
@@ -767,8 +747,9 @@ module.exports = class {
       }
       return this.inMySubnet6(ip);
     } else {
-      log.debug("SysManager:ERROR:isLocalIP", ip);
-      return true;
+      log.error("SysManager:ERROR:isLocalIP", ip);
+      // TODO: we should throw error here
+      return false;
     }
   }
 

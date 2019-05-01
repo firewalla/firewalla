@@ -43,6 +43,11 @@ class HostTool {
   constructor() {
     if(!instance) {
       instance = this;
+
+      this.ipMacMapping = {};
+      setInterval(() => {
+        this._flushIPMacMapping();
+      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
   }
@@ -221,20 +226,36 @@ class HostTool {
     })();
   }
 
-  getMacByIP(ip) {
-    return async(() => {
-      let host = null
+  async getMacByIP(ip) {
+    let host = null
 
-      if (iptool.isV4Format(ip)) {
-        host = await (this.getIPv4Entry(ip))
-      } else if(iptool.isV6Format(ip)) {
-        host = await (this.getIPv6Entry(ip))
+    if (iptool.isV4Format(ip)) {
+      host = await this.getIPv4Entry(ip);
+    } else if(iptool.isV6Format(ip)) {
+      host = await this.getIPv6Entry(ip);
+    } else {
+      return null
+    }
+
+    return host && host.mac;
+  }
+
+  async getMacByIPWithCache(ip) {
+    if (this.ipMacMapping[ip]) {
+      return this.ipMacMapping[ip];
+    } else {
+      const mac = await this.getMacByIP(ip);
+      if (mac) {
+        this.ipMacMapping[ip] = mac;
+        return mac;
       } else {
-        return null
+        return null;
       }
+    }
+  }
 
-      return host && host.mac
-    })();
+  _flushIPMacMapping() {
+    this.ipMacMapping = {};
   }
 
   getMacEntryByIP(ip) {

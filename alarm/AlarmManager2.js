@@ -120,7 +120,7 @@ module.exports = class {
     })
 
     this.queue.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+      log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
     });
 
     this.queue.destroy(() => {
@@ -149,7 +149,7 @@ module.exports = class {
             log.error("failed to create alarm:" + err);
           }
 
-          log.info("complete alarm creation process", alarm.aid, {});
+          log.info("complete alarm creation process", alarm.aid);
           done();          
         })();
 
@@ -346,7 +346,23 @@ module.exports = class {
       alarm.aid = id + ""; // covnert to string to make it consistent
 
       let alarmKey = alarmPrefix + id;
-      
+
+      for(const alarmKey in alarm) {
+        const value = alarm[alarmKey];
+        if(value === null || value === undefined) {
+          delete alarm[alarmKey];
+          continue;
+        }
+
+        // basic key or extended key
+        if (alarmKey.startsWith("p.") || alarmKey.startsWith("e.")) {
+          if(value && value.constructor && ["Object", "Array"].includes(value.constructor.name)) {
+            // for hash or array, need to convert it to JSON string first
+            alarm[alarmKey] = JSON.stringify(value);
+          }
+        }
+      }
+
       const flatted = flat.flatten(alarm);
       
       const {basic, extended} = this.parseRawAlarm(flatted);
@@ -459,60 +475,52 @@ module.exports = class {
     }
   }
 
-  checkAndSaveAsync(alarm) {
-    return new Promise((resolve, reject) => {
-      this.checkAndSave(alarm, (err, alarmID) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(alarmID);
-        }
-      })
-    })
+  async checkAndSave(alarm, callback) {
+    callback = callback || function () { };
+
+    try {
+      let res = await this.checkAndSaveAsync(alarm);
+      callback(null, res);
+    }
+    catch (err) {
+      callback(err, null);
+    }
   }
 
-  checkAndSave(alarm, callback) {
-    callback = callback || function() {};
+  async checkAndSaveAsync(alarm) {
+    const il = require('../intel/IntelLoader.js');
 
-    (async () => {
+    alarm = await il.enrichAlarm(alarm);
 
-      const il = require('../intel/IntelLoader.js');
+    let verifyResult = this.validateAlarm(alarm);
+    if (!verifyResult) {
+      throw new Error("invalid alarm, failed to pass verification");
+    }
 
-      alarm = await il.enrichAlarm(alarm);
+    const result = await bone.arbitration(alarm);
 
-      let verifyResult = this.validateAlarm(alarm);
-      if(!verifyResult) {
-        callback(new Error("invalid alarm, failed to pass verification"));
-        return;
+    if (!result) {
+      throw new Error("invalid alarm, failed to pass cloud verification");
+    }
+
+    alarm = this.jsonToAlarm(result);
+
+    if (!alarm) {
+      throw new Error("invalid alarm json from cloud");
+    }
+
+    if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
+      log.info(`Alarm is ignored by cloud: ${alarm}`);
+      if (!f.isDevelopmentVersion()) {
+        return 0;
       }
-
-      const result = await bone.arbitration(alarm);
-
-      if(!result) {
-        callback(new Error("invalid alarm, failed to pass cloud verification"));
-        return;
+    } else {
+      if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
+        log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
       }
+    }
 
-      alarm = this.jsonToAlarm(result);
-
-      if(!alarm) {
-        callback(new Error("invalid alarm json from cloud"));
-        return;
-      }
-
-      if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
-        log.info(`Alarm is ignored by cloud: ${alarm}`);
-        if(!f.isDevelopmentVersion()) {
-          callback(null, 0);
-          return;
-        }
-      } else {
-        if(alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
-          log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
-        }
-      }
-      this._checkAndSave(alarm, callback);
-    })();
+    return util.promisify(this._checkAndSave.bind(this))(alarm);
   }
 
   _checkAndSave(alarm, callback) {
@@ -602,10 +610,7 @@ module.exports = class {
 
             callback(null, alarmID);
           });
-          
         })
-
-
       });
     });
   }

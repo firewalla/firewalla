@@ -61,6 +61,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
+const httpFlow = require('../extension/flow/HttpFlow.js');
+
 /*
  *
  *  config.bro.notice.path {
@@ -157,7 +159,7 @@ module.exports = class {
         log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
         this.httpLog.on('line', (data) => {
           log.debug("Detect:Http", data);
-          this.processHttpData(data);
+          httpFlow.process(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -247,50 +249,35 @@ module.exports = class {
 
       this.enableRecording = true
       this.cc = 0
-      this.ipMacMapping = {};
       this.activeMac = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
     }
   }
-
-  async _getMacByIP(ip) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
-    } else {
-      const mac = await hostTool.getMacByIP(ip);
-      if (mac) {
-        this.ipMacMapping[ip] = mac;
-        return mac;
-      } else {
-        return null;
+  
+  async _activeMacHeartbeat() {
+    for (let key in this.activeMac) {
+      let ip = this.activeMac[key];
+      if (!iptool.isV4Format(ip)) {
+        // get corresponding ipv4 address
+        const macEntry = await hostTool.getMACEntry(key);
+        ip = macEntry && macEntry.ipv4Addr;
+      }
+      if (ip) {
+        const host = {
+          ipv4: ip,
+          ipv4Addr: ip,
+          mac: key,
+          from: "macHeartbeat"
+        };
+        sem.emitEvent({
+          type: "DeviceUpdate",
+          message: "Device network activity heartbeat",
+          host: host
+        });
       }
     }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
-  }
-
-  _activeMacHeartbeat() {
-    Object.keys(this.activeMac).forEach((key) => {
-      const ip = this.activeMac[key];
-      const host = {
-        ipv4: ip,
-        ipv4Addr: ip,
-        mac: key
-      };
-      sem.emitEvent({
-        type: "DeviceUpdate",
-        message: "Device network activity heartbeat",
-        host: host,
-        from: "BroDetect"
-      });
-    });
     this.activeMac = {};
   }
 
@@ -563,7 +550,7 @@ module.exports = class {
   isMonitoring(ip) {
     const hostObject = hostManager.getHostFast(ip)
 
-    if(hostObject && hostObject.spoofing == false) {
+    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
       return false
     } else {
       return true;
@@ -577,43 +564,58 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    if(m === 'dhcp') { // only for dhcp
+    if(m === 'dhcp' || m === 'dhcpSpoof ') { // only for dhcp and dhcpSpoof
       let myip = sysManager.myIp()
-      if(myip) {
+      const myip6 = sysManager.myIp6();
+      if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-
-        if(data["id.orig_h"] === myip ||
+        if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
-          return false  
+          return false
         }
+      }
 
-        // ignore any devices' traffic who is set to monitoring off
-        const origIP = data["id.orig_h"]
-        const respIP = data["id.resp_h"]
-
-        if(sysManager.isLocalIP(origIP)) {
-          if(!this.isMonitoring(origIP)) {
-            return false // set it to invalid if it is not monitoring
+      if (myip6 && myip6.length !== 0) {
+        if (myip6.includes(data["id.orig_h"]) ||
+          myip6.includes(data["id.resp_h"])) {
+            return false;
           }
-        }
+      }
 
-        if(sysManager.isLocalIP(respIP)) {
-          if(!this.isMonitoring(respIP)) {
-            return false // set it to invalid if it is not monitoring
-          }
-        }
+      // ignore any devices' traffic who is set to monitoring off
+      const origIP = data["id.orig_h"]
+      const respIP = data["id.resp_h"]
 
-        // TODO: ipv6 network should NOT have this problem since ipv6 is not NAT-based
+      if (sysManager.isLocalIP(origIP)) {
+        if (!this.isMonitoring(origIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
+      }
+
+      if (sysManager.isLocalIP(respIP)) {
+        if (!this.isMonitoring(respIP)) {
+          return false // set it to invalid if it is not monitoring
+        }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
       let myip = sysManager.myIp()
+      const myip6 = sysManager.myIp6()
+      const systemPolicy = hostManager.getPolicyFast();
+      const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
       // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
       if(myip && 
-        (data["id.orig_h"] === myip ||
-          data["id.resp_h"] === myip) && 
-        !this.isMonitoring(myip)) {        
+        (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
+        (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if (myip6 && myip6.length !== 0 && 
+        (myip6.includes(data["id.orig_h"]) || myip6.includes(data["id.resp_h"])) &&
+        (!this.isMonitoring(myip) || isEnhancedSpoof) // it's okay to use my ipv4 address to determine whether walla is monitored
+      ) {
+        return false;
       }
     }
 
@@ -834,7 +836,7 @@ module.exports = class {
         return;
       }
 
-      // Mark all flows that are partially completed.  
+      // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
       //  flag == s 
@@ -964,6 +966,7 @@ module.exports = class {
         pr: obj.proto,
         f: flag,
         flows: [ flowDescriptor ],
+        uids: [obj.uid]
       };
 
       let afobj = this.lookupAppMap(obj.uid);
@@ -1034,7 +1037,7 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        this._getMacByIP(tmpspec.lh).then((mac) => {
+        hostTool.getMacByIPWithCache(tmpspec.lh).then((mac) => {
           if (!mac) {
             log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
             return;
@@ -1100,7 +1103,7 @@ module.exports = class {
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
           try {
-            if (Object.keys(spec._afmap).length>0) {
+            if (spec._afmap && Object.keys(spec._afmap).length>0) {
               for (let i in spec._afmap) {
                 let afobj = this.lookupAppMap(i);
                 if (afobj) {
@@ -1118,8 +1121,9 @@ module.exports = class {
           } catch(e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
+          spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          this._getMacByIP(spec.lh).then((mac) => {
+          hostTool.getMacByIPWithCache(spec.lh).then((mac) => {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
@@ -1221,153 +1225,6 @@ module.exports = class {
     }
 
   }
-
-/*
-{"ts":1506304095.747873,"uid":"CgTsJH3vHBNpMIREU9","id.orig_h":"192.168.2.227","id.orig_p":47292,"id.resp_h":"103.224.182.240","id.resp_p":80,"trans_depth":1,"method":"GET","host":"goooogleadsence.biz","uri":"/","user_agent":"Wget/1.16 (linux-gnueabihf)","request_body_len":0,"response_body_len":0,"status_code":302,"status_msg":"Found","tags":[]}
-*/
-  processHttpData(data) {
-    try {
-      let obj = JSON.parse(data);
-      if (obj == null) {
-        log.error("HTTP:Drop", obj);
-        return;
-      }
-
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
-      let dstPort = obj["id.resp_p"];
-      let flowdir = "in";
-
-      /*
-      if (!iptool.isV4Format(host)) {
-           return;
-      }
-      */
-
-      if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
-        let flowdir = 'local';
-        return;
-      } else if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst) == false) {
-        let flowdir = "out";
-      } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst)) {
-        let flowdir = "in";
-      } else {
-        log.error("HTTP:Error:Drop", data);
-        return;
-      }
-
-
-      // Cache
-      let appCacheObj = {
-        uid: obj.uid,
-        host: obj.host,
-        uri: obj.uri,
-        rqbl: obj.request_body_len,
-        rsbl: obj.response_body_len,
-      };
-
-      this.addAppMap(appCacheObj.uid, appCacheObj);
-
-      // TODO: Need to write code take care to ensure orig host is us ...
-
-      if (obj.user_agent != null) {
-        let agent = useragent.parse(obj.user_agent);
-        if (agent != null) {
-          if (agent.device.family != null) {
-            let okey = "host:user_agent:" + host;
-            let o = {
-              'family': agent.device.family,
-              'os': agent.os.toString(),
-              'ua': obj.user_agent
-            };
-            rclient.sadd(okey, JSON.stringify(o), (err, response) => {
-              rclient.expireat(okey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-              if (err != null) {
-                log.error("HTTP:Save:Error", err, o);
-              } else {
-                log.debug("HTTP:Save:Agent", host, o);
-              }
-            });
-            let ukey = "user_agent:" + host + ":" + dst + ":" + dstPort;
-            rclient.set(ukey, obj.user_agent, (err, response) => {
-              if (err != null) {
-                log.error("USER_AGENT:Save:Error", err, obj.user_agent);
-              } else {
-                rclient.expire(ukey, this.config.bro.activityUserAgent.expires); // a much shorter expiration since this is used to enrich alarm data
-              }
-            });
-            dnsManager.resolveLocalHost(host, (err, data) => {
-              if (data && data.mac) {
-                let mkey = "host:user_agent_m:" + data.mac;
-                rclient.sadd(mkey, JSON.stringify(o), (err, response) => {
-                  rclient.expireat(mkey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-                  if (err != null) {
-                    log.error("HTTP:Save:Error", err, o);
-                  } else {
-                    log.debug("HTTP:Save:Agent", host, o);
-                  }
-                });
-              }
-            });
-
-          }
-        }
-      }
-
-      let key = "flow:http:" + flowdir + ":" + host;
-      let strdata = JSON.stringify(obj);
-      let redisObj = [key, obj.ts, strdata];
-      log.debug("HTTP:Save", redisObj);
-
-      rclient.zadd(redisObj, (err, response) => {
-        if (err == null) {
-          if (this.config.bro.http.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.http.expires);
-          } else {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + 60*30);
-          }
-        } else {
-          log.error("HTTP:Save:Error", err);
-        }
-      });
-
-      /* this piece of code uses http to map dns */
-      if (flowdir === "in" && obj.host) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.host,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1
-        }
-        log.debug("HTTP:Dns:values",key,value,{});
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("HTTP:Dns:Set",rvalue,value);
-            } else {
-              log.error("HTTP:Dns:Error", "unable to update count", err, {});
-            }
-          });
-        });
-      }
-    } catch (e) {
-      log.error("HTTP:Error Unable to save", e, data, e.stack, {});
-    }
-
-  }
-
 
   cleanUpSanDNS(obj) {
     // san.dns may be an array, need to convert it to string to avoid redis warning
@@ -1569,12 +1426,13 @@ module.exports = class {
         let host = {
           ipv4: ip,
           ipv4Addr: ip,
-          mac: mac
+          mac: mac,
+          from: "broKnownHosts"
         };
 
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "Found a device via bonjour",
+          message: "Found a device via bro known hosts",
           host: host
         })
 
@@ -1657,57 +1515,12 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-
-  // recordHit(data) {
-  //     const ts = Math.floor(data.ts)
-  //     const inBytes = data.inBytes
-  //     const outBytes = data.outBytes
-
-  //     timeSeries
-  //     .recordHit('download',ts, Number(inBytes))
-  //     .recordHit('upload',ts, Number(outBytes))
-  // }
-
-  //   recordManyHits(datas) {
-  //       datas.forEach((data) => {
-  //         const ts = Math.floor(data.ts)
-  //         const inBytes = data.inBytes
-  //         const outBytes = data.outBytes
-
-  //         timeSeries.recordHit('download',ts, Number(inBytes))
-  //         timeSeries.recordHit('upload',ts, Number(outBytes))
-  //       })
-
-  //       return new Promise((resolve, reject) => {
-  //         timeSeries.exec(() => {
-  //             resolve()
-  //         })
-  //       })
-  //   }
-
   enableRecordHitsTimer() {
     setInterval(() => {
       timeSeries.exec(() => {})
       this.cc = 0
     }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
   }
-
-  //   recordHits() {
-  //     if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-  //         this.recording = true
-  //         const copy = JSON.parse(JSON.stringify(this.recordCache))
-  //         this.recordCache = []
-  //         async(() => {
-  //             await(this.recordManyHits(copy))
-  //         })().finally(() => {
-  //             this.recording = false
-  //         })
-  //     } else {
-  //         if(this.recording) {
-  //             log.info("still recording......")
-  //         }
-  //     }
-  //   }
 
   recordTraffic(ts, inBytes, outBytes) {
     if(this.enableRecording) {
