@@ -564,7 +564,7 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    if(m === 'dhcp' || m === 'dhcpSpoof ') { // only for dhcp and dhcpSpoof
+    if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
       let myip = sysManager.myIp()
       const myip6 = sysManager.myIp6();
       if (myip) {

@@ -1,9 +1,10 @@
 "use strict";
 
-var os    = require('os'),
-    ip    = require('ip'),
-    exec  = require('child_process').exec,
-    async = require('async');
+const log   = require("../net2/logger.js")(__filename),
+      os    = require('os'),
+      ip    = require('ip'),
+      exec  = require('child_process').exec,
+      async = require('async');
 
 function trim_exec(cmd, cb) {
   exec(cmd, function(err, out) {
