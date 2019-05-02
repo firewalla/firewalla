@@ -179,12 +179,12 @@ class IntelTool {
 
     let list = [];
 
-    const hashList = urlList.map((item) => item.slice(1, 2));
+    const hashList = urlList.map((item) => item.slice(1, 3));
 
     if (this.debugMode) {
       list.push({
-        alist:hashList,
-        _alist:urlList,
+        _alist:hashList,
+        alist:urlList,
         flow:{ fd }
       });
     } else {

@@ -126,6 +126,8 @@ class DestURLFoundHook extends Hook {
             await this.markAsSafe(urlWithHash[0])
           }
         }
+      } else {
+        await this.storeIntels(urlsNeedCheck, results);
       }
     }
   }
