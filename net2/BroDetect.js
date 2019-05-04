@@ -567,11 +567,13 @@ module.exports = class {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip) {
-    const hostObject = hostManager.getHostFast(ip)
+   isMonitoring(ip) {
+    let hostObject = hostManager.getHostFast(ip)
+    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
+      hostObject = hostManager.getHostFast6(ip);
 
-    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
-      return false
+    if(hostObject && hostObject.o && (!host.o.spoofing || hostObject.o.spoofing === "false")) {
+      return false;
     } else {
       return true;
     }
