@@ -448,6 +448,20 @@ class netBot extends ControllerBot {
       callback(null)
       return;
     }
+    if (value.alternativeIp && value.type === "static") {
+      const mySubnet = sysManager.mySubnet();
+      if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+        callback(`IP address should be in ${mySubnet}`);
+        return;
+      }
+    }
+    if (value.secondaryIp && value.type === "static") {
+      const mySubnet2 = sysManager.mySubnet2();
+      if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+        callback(`IP address should be in ${mySubnet2}`);
+        return;
+      }
+    }
     this.hostManager.getHost(ip, (err, host) => {
       if (host != null) {
         host.loadPolicy((err, data) => {
