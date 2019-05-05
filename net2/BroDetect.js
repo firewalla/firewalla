@@ -568,10 +568,12 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    const hostObject = hostManager.getHostFast(ip)
+    let hostObject = hostManager.getHostFast(ip);
+    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
+      hostObject = hostManager.getHostFast6(ip);
 
-    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
-      return false
+    if(hostObject && hostObject.o && (!hostObject.o.spoofing || hostObject.o.spoofing === "false")) {
+      return false;
     } else {
       return true;
     }
