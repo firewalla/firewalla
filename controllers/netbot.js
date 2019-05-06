@@ -1325,18 +1325,21 @@ class netBot extends ControllerBot {
             break;
           }
         }), (err) => {
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let reply = {
+              type: 'jsonmsg',
+              mtype: 'policy',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+            };
+            reply.code = 200;
+            reply.data = value;
+            log.info("Repling ", reply.code, reply.data);
+            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          }
         });
         break;
       case "host":
