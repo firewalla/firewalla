@@ -135,7 +135,7 @@ class DestURLFoundHook extends Hook {
   async _storeIntel(url, result) {
     const normalized = this.normalizeIntelResult(url, result);
     if(normalized) {
-      await intelTool.addURLIntel(url, result, this.config.intelExpireTime);
+      await intelTool.addURLIntel(url, normalized, this.config.intelExpireTime);
     }
   }
 

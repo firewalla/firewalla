@@ -131,7 +131,7 @@ class IntelTool {
     intel = intel || {}
     expire = expire || 7 * 24 * 3600; // one week by default
 
-    let key = this.getIntelKey(url);
+    let key = this.getURLIntelKey(url);
 
     log.debug("Storing intel for url", url);
 
