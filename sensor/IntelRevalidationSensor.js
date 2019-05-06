@@ -85,6 +85,8 @@ class IntelRevalidationSensor extends Sensor {
         await this.revalidateIPIntel(intelKey);
       } else if(intelKey.startsWith("intel:url:")) {
         await this.revalidateURLIntel(intelKey);
+      } else if(intelKey === '_') {
+        // do nothing
       } else {
         log.error("Invalid intel key:", intelKey);
       }

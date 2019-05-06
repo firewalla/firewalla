@@ -130,12 +130,13 @@ class DestURLFoundHook extends Hook {
       results = results.filter((result) => result.c === 'intel');
 
       const safeURLs = urlsNeedCheck.filter((urlNeedCheck) => {
-        const matchedResults = results.filter((result) => result.ip && urlNeedCheck[0] && result.ip === urlNeedCheck[0]);
+        const matchedResults = results.filter((result) => result.ip && urlNeedCheck[2] && result.ip === urlNeedCheck[2]);
+        // if this url matches no result from cloud, consider as safe urls
         return _.isEmpty(matchedResults);
-      })
+      }).map((urlNeedCheck) => urlNeedCheck[0]);
 
       for(const safeURL of safeURLs) {
-        await this.markAsSafe(urlWithHash[0]);
+        await this.markAsSafe(safeURL);
       }
 
       if(!_.isEmpty(results)) {
