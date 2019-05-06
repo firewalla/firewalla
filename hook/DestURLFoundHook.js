@@ -115,18 +115,30 @@ class DestURLFoundHook extends Hook {
         continue;
       }
 
+      const existing = await this.alreadyEnriched(url);
+      if(existing) {
+        continue;
+      }
+
       urlsNeedCheck.push(subURLHash);
     }
 
     if(urlsNeedCheck.length > 0) {
-      const results = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
-      if(_.isEmpty(results)) {
-        for(const urlWithHash of urlsNeedCheck) {
-          if(urlWithHash[0]) {
-            await this.markAsSafe(urlWithHash[0])
-          }
-        }
-      } else {
+      let results = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
+
+      // only focus on intels
+      results = results.filter((result) => result.c === 'intel');
+
+      const safeURLs = urlsNeedCheck.filter((urlNeedCheck) => {
+        const matchedResults = results.filter((result) => result.ip && urlNeedCheck[0] && result.ip === urlNeedCheck[0]);
+        return _.isEmpty(matchedResults);
+      })
+
+      for(const safeURL of safeURLs) {
+        await this.markAsSafe(urlWithHash[0]);
+      }
+
+      if(!_.isEmpty(results)) {
         await this.storeIntels(urlsNeedCheck, results);
       }
     }
