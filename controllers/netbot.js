@@ -451,14 +451,14 @@ class netBot extends ControllerBot {
     if (value.alternativeIp && value.type === "static") {
       const mySubnet = sysManager.mySubnet();
       if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
-        callback(`IP address should be in ${mySubnet}`);
+        callback(`Alternative IP address should be in ${mySubnet}`);
         return;
       }
     }
     if (value.secondaryIp && value.type === "static") {
       const mySubnet2 = sysManager.mySubnet2();
       if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
-        callback(`IP address should be in ${mySubnet2}`);
+        callback(`Secondary IP address should be in ${mySubnet2}`);
         return;
       }
     }
