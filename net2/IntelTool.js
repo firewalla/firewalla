@@ -131,17 +131,13 @@ class IntelTool {
     intel = intel || {}
     expire = expire || 7 * 24 * 3600; // one week by default
 
-    let key = this.getIntelKey(ip);
+    let key = this.getIntelKey(url);
 
-    log.debug("Storing intel for ip", ip);
+    log.debug("Storing intel for url", url);
 
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, intel);
-    if(intel.host && intel.ip) {
-      // sync reverse dns info when adding intel
-      await dnsTool.addReverseDns(intel.host, [intel.ip])
-    }
 
     if(intel.category === 'intel') {
       await this.updateSecurityIntelTracking(key);

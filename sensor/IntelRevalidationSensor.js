@@ -81,22 +81,45 @@ class IntelRevalidationSensor extends Sensor {
     const intelKeys = await rclient.zrangeAsync(trackingKey, 0, -1);
 
     for(const intelKey of intelKeys) {
-      if(!intelKey.startsWith("intel:ip:")) {
-        continue;
+      if(intelKey.startsWith("intel:ip:")) {
+        await this.revalidateIPIntel(intelKey);
+      } else if(intelKey.startsWith("intel:url:")) {
+        await this.revalidateURLIntel(intelKey);
+      } else {
+        log.error("Invalid intel key:", intelKey);
       }
-
-      const exists = await rclient.existsAsync(intelKey);
-      const ip = intelKey.replace("intel:ip:", "");
-      log.info(`Revalidating intel for IP ${ip} ...`);
-      sem.emitEvent({
-        type: 'DestIP',
-        skipReadLocalCache: true,
-        noUpdateOnError: true,
-        ip: ip
-      });
     }
-
   }
+
+  async revalidateIPIntel(intelKey) {
+    const exists = await rclient.existsAsync(intelKey);
+    if(!exists) {
+      return;
+    }
+    const ip = intelKey.replace("intel:ip:", "");
+    log.info(`Revalidating intel for IP ${ip} ...`);
+    sem.emitEvent({
+      type: 'DestIP',
+      skipReadLocalCache: true,
+      noUpdateOnError: true,
+      ip: ip
+    });
+  }
+
+  async revalidateURLIntel(intelKey) {
+    const exists = await rclient.existsAsync(intelKey);
+    if(!exists) {
+      return;
+    }
+    const url = intelKey.replace("intel:url:", "");
+    log.info(`Revalidating intel for URL ${url} ...`);
+    sem.emitEvent({
+      type: 'DestURL',
+      skipReadLocalCache: true,
+      noUpdateOnError: true,
+      url: url
+    });
+  }  
 
   async revalidateAllIntels() {
     // TODO

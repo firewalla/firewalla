@@ -133,12 +133,29 @@ class DestURLFoundHook extends Hook {
   }
 
   async _storeIntel(url, result) {
-    await intelTool.addURLIntel(url, result, this.config.intelExpireTime);
+    const normalized = this.normalizeIntelResult(url, result);
+    if(normalized) {
+      await intelTool.addURLIntel(url, result, this.config.intelExpireTime);
+    }
+  }
+
+  normalizeIntelResult(url, result) {
+    if(!result) {
+      return null;
+    }
+
+    const copy = JSON.parse(JSON.stringify(result));
+    copy.url = url;
+    if(copy.c) {
+      copy.category = copy.c;
+      delete copy.c;            
+    }
+    return copy;
   }
 
   findURLByHash(hash, urlsWithHash) {
     for(const urlWithHash of urlsWithHash) {
-      if(urlWithHash && urlWithHash.length === 3 && urlWithHash[2] === 'hash') {
+      if(urlWithHash && urlWithHash.length === 3 && urlWithHash[2] === hash) {
         return urlWithHash[0];
       }
     }
