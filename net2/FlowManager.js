@@ -42,6 +42,11 @@ let flowTool = require('./FlowTool')();
 const HostTool = require('./HostTool.js');
 const hostTool = new HostTool();
 
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+
+const _ = require('lodash');
+
 class FlowGraph {
     constructor(name,flowarray) {
          if (flowarray) {
@@ -956,6 +961,9 @@ module.exports = class FlowManager {
           if (o.sp) {
             conndb[key].sp_array = o.sp;
           }
+          if (o.uids) {
+            conndb[key].uids_array = o.uids;
+          }
         } else {
           flow.rb += o.rb;
           flow.ct += o.ct;
@@ -976,6 +984,9 @@ module.exports = class FlowManager {
               flow.sp_array = o.sp;
             }
           }
+          if (o.uids) {
+            flow.uids_array.push.apply(flow.uids_array, o.uids);
+          }
           // NOTE: flow.flows will be removed in FlowTool.trimFlow...
           if (o.flows) {
             if (flow.flows) {
@@ -995,7 +1006,7 @@ module.exports = class FlowManager {
 
       for (let m in conndb) {
         sorted.push(conndb[m]);
-      }
+      }      
 
       // trim to reduce size
       sorted.forEach(flowTool.trimFlow);
@@ -1058,6 +1069,67 @@ module.exports = class FlowManager {
       };
     }
   }
+
+  async enrichHttpFlowsInfo(flows) {
+    if(_.isEmpty(flows)) {
+      return;
+    }
+
+    for(const flow of flows) {
+      let urls = await this._findRelatedHttpFlows(flow);
+      urls = urls.filter((url, index) => urls.indexOf(url) === index);
+
+      let intels = [];
+
+      for(const url of urls) {      
+        const intel = await intelTool.getURLIntel(url);
+        if(intel) {
+          intel.url = url;
+          log.info("XXXXXXXXXXXx", intel);
+          intels.push(intel);
+        }
+      }
+      
+      flow.urls = intels;
+    }
+  }
+
+  async _findRelatedHttpFlows(flow) {
+    if(!flow || !flow.uids) {
+      return;
+    }
+
+    const urls = [];
+
+    for(const uid of flow.uids) {
+      const key = `flowgraph:${uid}`;
+      const fg = await rclient.hgetallAsync(key);
+      if(!fg || !fg.mac || !fg.flowDirection) {
+        log.error(`Invalid flowgraph: ${fg}`);
+        continue;
+      }
+
+      const httpFlowKey = `flow:http:${fg.flowDirection}:${fg.mac}`;
+
+      const httpFlows = await rclient.zrangebyscoreAsync(httpFlowKey, fg.ts, fg.ts);
+
+      for(const httpFlowJSON of httpFlows) {
+        try {
+          const httpFlow = JSON.parse(httpFlowJSON);
+          if(httpFlow.uid === uid && httpFlow.uri && httpFlow.host) {
+            const url = `${httpFlow.host}${httpFlow.uri}`;
+            urls.push(url);
+          }
+        } catch(err) {
+          log.error(`Failed to parse http flow json ${httpFlowJSON} from key ${httpFlowKey}, ts: ${fg.ts}, err: ${err}`);
+        }
+      }
+    }
+
+    return urls;
+  }
+
+
 
     toStringShort(obj) {
         //  // "{\"ts\":1464328076.816846,\"sh\":\"192.168.2.192\",\"dh\":\"224.0.0.251\",\"ob\":672001,\"rb\":0,\"ct\":1,\"fd\":\"in\",\"lh\":\"192.168.2.192\",\"bl\":3600}"

@@ -493,6 +493,8 @@ module.exports = class FlowMonitor {
     let start = end - period; // in seconds
     //log.info("Detect",listip);
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+    await flowManager.enrichHttpFlowsInfo(result.connections);
+    log.info("XXXXXXXXXXXXX", result.connections);
     this.flowIntel(result.connections);
     this.summarizeNeighbors(host,result.connections,'in');
     if (result.activities !=null) {
@@ -513,6 +515,7 @@ module.exports = class FlowMonitor {
       host.save("activities",null);
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+    await flowManager.enrichHttpFlowsInfo(result.connections);
     this.flowIntel(result.connections);
     this.summarizeNeighbors(host,result.connections,'out');
   }
