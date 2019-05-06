@@ -1085,12 +1085,13 @@ module.exports = class FlowManager {
         const intel = await intelTool.getURLIntel(url);
         if(intel) {
           intel.url = url;
-          log.info("XXXXXXXXXXXx", intel);
           intels.push(intel);
         }
       }
       
-      flow.urls = intels;
+      if(!_.isEmpty(intels)) {
+        flow.urls = intels;
+      }
     }
   }
 

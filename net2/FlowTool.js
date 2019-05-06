@@ -70,7 +70,7 @@ class FlowTool {
 //      delete flow.f;
     if("uids_array" in flow) {
       flow.uids = flow.uids_array.filter((v, i) => {
-        flow.uids_array.indexOf(v) === i;
+        return flow.uids_array.indexOf(v) === i;
       });
       delete flow.uids_array;
     }
