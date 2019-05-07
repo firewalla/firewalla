@@ -111,7 +111,7 @@
     "ActiveProtectSensor": {},
     "IntelLocalCachePlugin": {
       "testURLs": [
-        "www.github.com/test/malware"
+        "example.com/test/malware"
       ]
     },
     "DNSMASQSensor": {},
