@@ -52,11 +52,13 @@ const frp = fm.getSupportFRP()
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const policyManager2 = new PolicyManager2();
+
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const policyManager2 = new PolicyManager2();
+const SpooferManager = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
 
@@ -1333,13 +1335,13 @@ module.exports = class HostManager {
     });
   }
 
-  spoof(state) {
+  async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
     let gateway = sysManager.monitoringInterface().gateway;
     if (state == false) {
       // flush all ip addresses
       log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      return new SpooferManager().emptySpoofSet()
+      await new SpooferManager().emptySpoofSet()
     } else {
       // do nothing if state is true
     }
