@@ -448,6 +448,20 @@ class netBot extends ControllerBot {
       callback(null)
       return;
     }
+    if (value.alternativeIp && value.type === "static") {
+      const mySubnet = sysManager.mySubnet();
+      if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+        callback(`Alternative IP address should be in ${mySubnet}`);
+        return;
+      }
+    }
+    if (value.secondaryIp && value.type === "static") {
+      const mySubnet2 = sysManager.mySubnet2();
+      if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+        callback(`Secondary IP address should be in ${mySubnet2}`);
+        return;
+      }
+    }
     this.hostManager.getHost(ip, (err, host) => {
       if (host != null) {
         host.loadPolicy((err, data) => {
@@ -1311,18 +1325,21 @@ class netBot extends ControllerBot {
             break;
           }
         }), (err) => {
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let reply = {
+              type: 'jsonmsg',
+              mtype: 'policy',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+            };
+            reply.code = 200;
+            reply.data = value;
+            log.info("Repling ", reply.code, reply.data);
+            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          }
         });
         break;
       case "host":
