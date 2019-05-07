@@ -137,7 +137,11 @@ class BitBridge {
         require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
         
         (async () => {
-          if(fc.isFeatureOn("ipv6")) {
+          let ipv6Default = false;
+          if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
+            ipv6Default = true;
+          }
+          if(fc.isFeatureOn("ipv6", ipv6Default)) {
             await this.ipv6On();
           } else {
             await this.ipv6Off();
