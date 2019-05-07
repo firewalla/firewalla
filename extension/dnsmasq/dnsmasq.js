@@ -318,7 +318,7 @@ module.exports = class DNSMASQ {
 
       log.info(`Start to clean up ${type} filters.`);
       this.cleanUpFilter(type)
-        .catch(err => log.error(`Error when clean up ${type} filters`, err);)
+        .catch(err => log.error(`Error when clean up ${type} filters`, err))
         .then(() => this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
     }
   }
