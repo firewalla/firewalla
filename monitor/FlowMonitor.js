@@ -509,6 +509,7 @@ module.exports = class FlowMonitor {
           if(parsedInfo && parsedInfo.hostname) {
             conn.intel.host = parsedInfo.hostname;
           }
+          conn.intel.fromURL = "1";
           break;
         }
       }
