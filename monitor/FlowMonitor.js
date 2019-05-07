@@ -778,7 +778,7 @@ module.exports = class FlowMonitor {
         "p.transfer.outbound.size": copy.ob,
         "p.transfer.inbound.size": copy.rb,
         "p.transfer.duration": copy.du,
-        "p.local_is_client": direction == 'in' ? 1 : 0, // connection is initiated from local
+        "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
         "p.flow": JSON.stringify(flow)
       });
 
@@ -886,15 +886,15 @@ module.exports = class FlowMonitor {
       if(flowObj.fd === 'in' ) {
         alarmPayload["p.dest.urls"] = flowObj.urls;
         
-        if(!_.isEmpty(flowObj.urls)) {
-          alarmPayload["p.dest.url"] = flowObj.urls[0];
+        if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
+          alarmPayload["p.dest.url"] = flowObj.urls[0].url;
         }
         
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
-        if(!_.isEmpty(flowObj.urls)) {
-          alarmPayload["p.device.url"] = flowObj.urls[0];
+        if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
+          alarmPayload["p.device.url"] = flowObj.urls[0].url;
         }
       }
     }
@@ -988,7 +988,7 @@ module.exports = class FlowMonitor {
       "p.security.reason": reasons.join(","),
       "p.security.primaryReason": reasons[0],
       "p.security.numOfReportSources": "Firewalla global security intel",
-      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
+      "p.local_is_client": (flowObj.fd === 'in' ? "1" : "0"),
       "p.source": "firewalla_intel",
       "p.severity.score": intelObj.severityscore,
       "r.dest.whois": JSON.stringify(intelObj.whois),
@@ -1068,7 +1068,7 @@ module.exports = class FlowMonitor {
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reason,
       "p.security.numOfReportSources": iobj.count,
-      "p.local_is_client": (flowObj.fd === 'in' ? 1 : 0),
+      "p.local_is_client": (flowObj.fd === 'in' ? "1" : "0"),
       // "p.dest.whois": JSON.stringify(iobj.whois),
       "p.severity.score": iobj.severityscore,
       "p.from": iobj.from,
