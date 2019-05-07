@@ -65,7 +65,7 @@
   "NOTIF_ALARM_INTEL_FROM_OUTSIDE": "{{{p.dest.name}}} is accessing device {{{p.device.name}}}'s port {{{p.device.port}}}. {{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources.",
   "NOTIF_ALARM_INTEL_FROM_INSIDE": "{{{p.device.name}}} is accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}}.",
   "NOTIF_FW_INTEL_ALARM_URL_INTEL_FROM_OUTSIDE": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing {{{p.device.url}}} on device {{{p.device.name}}}.",
-  "NOTIF_FW_INTEL_ALARM_URL_INTEL_FROM_INSIDE": "{{{p.device.name}}} is accessing {{{p.dest.url}}}, which is marked as {{{p.security.primaryReason}}}",
+  "NOTIF_FW_INTEL_ALARM_URL_INTEL_FROM_INSIDE": "{{{p.device.name}}} is accessing {{{p.security.primaryReason}}} web link {{{p.dest.url}}}.",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE": "Blocked {{{p.dest.name}}} from accessing device {{{p.device.name}}}. (Reported by {{{p.security.numOfReportSources}}} sources)",
   "NOTIF_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE": "Blocked device {{{p.device.name}}} from accessing {{{p.dest.name}}}. (Reported by {{{p.security.numOfReportSources}}} sources)",
   "NOTIF_FW_INTEL_ALARM_INTEL_FROM_OUTSIDE": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing {{{p.device.name}}}'s port {{{p.device.port}}}.",
