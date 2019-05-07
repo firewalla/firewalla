@@ -333,9 +333,17 @@ class IntelAlarm extends Alarm {
     } else {
       if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
         if(this["p.local_is_client"] === "1") {
-          return "FW_INTEL_ALARM_INTEL_FROM_INSIDE";
+          if("p.dest.url" in this) {
+            return "FW_INTEL_ALARM_URL_INTEL_FROM_INSIDE";
+          } else {
+            return "FW_INTEL_ALARM_INTEL_FROM_INSIDE";
+          }
         } else {
-          return "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE";
+          if("p.dest.url" in this) {
+            return "FW_INTEL_ALARM_URL_INTEL_FROM_OUTSIDE";
+          } else {
+            return "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE";
+          }
         }
       } else {
         if(this["p.local_is_client"] === "1") {

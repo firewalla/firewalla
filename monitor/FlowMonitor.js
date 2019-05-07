@@ -58,6 +58,10 @@ const flowUtil = require('../net2/FlowUtil.js');
 
 const validator = require('validator');
 
+const URL = require('url');
+
+const _ = require('lodash');
+
 function getDomain(ip) {
   if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
     let splited = ip.split(".");
@@ -495,11 +499,15 @@ module.exports = class FlowMonitor {
   updateIntelFromHTTP(conn) {
     delete conn.uids;
     const urls = conn.urls;
-    if(_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+    if(!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
       for(const url of urls) {
         if(url && url.category === 'intel') {
-          for(const key of ["category", "c", "cc", "cs", "t", "v", "s", "updateTime"]) {
+          for(const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
             conn.intel[key] = url[key];
+          }
+          const parsedInfo = URL.parse(url.url);
+          if(parsedInfo && parsedInfo.hostname) {
+            conn.intel.host = parsedInfo.hostname;
           }
           break;
         }
@@ -872,6 +880,26 @@ module.exports = class FlowMonitor {
     }
   }
 
+
+  updateURLPart(alarmPayload, flowObj) {
+    if("urls" in flowObj) {
+      if(flowObj.fd === 'in' ) {
+        alarmPayload["p.dest.urls"] = flowObj.urls;
+        
+        if(!_.isEmpty(flowObj.urls)) {
+          alarmPayload["p.dest.url"] = flowObj.urls[0];
+        }
+        
+      } else {
+
+        alarmPayload["p.device.urls"] = flowObj.urls;
+        if(!_.isEmpty(flowObj.urls)) {
+          alarmPayload["p.device.url"] = flowObj.urls[0];
+        }
+      }
+    }
+  }
+
   async checkDomainAlarm(remoteIP, deviceIP, flowObj) {
     if (!fc.isFeatureOn("cyber_security")) {
       log.info("Feature cyber_security is off, skip...");
@@ -949,7 +977,7 @@ module.exports = class FlowMonitor {
 
     log.info("Start to generate alarm for domain", domain);
 
-    const alarmPlayload = {
+    const alarmPayload = {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
@@ -969,15 +997,9 @@ module.exports = class FlowMonitor {
       "p.from": intelObj.from
     };
 
-    if("urls" in flowObj) {
-      if(flowObj.fd === 'in' ) {
-        alarmPlayload["p.dest.urls"] = flowObj.urls;
-      } else {
-        alarmPlayload["p.device.urls"] = flowObj.urls;
-      }
-    }
+    this.updateURLPart(alarmPayload, flowObj);
 
-    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPlayload);
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
 
  
 
@@ -1054,15 +1076,9 @@ module.exports = class FlowMonitor {
       "e.dest.ports": this.getRemotePorts(flowObj)
     };
 
-    if("urls" in flowObj) {
-      if(flowObj.fd === 'in' ) {
-        alarmPlayload["p.dest.urls"] = flowObj.urls;
-      } else {
-        alarmPlayload["p.device.urls"] = flowObj.urls;
-      }
-    }
+    this.updateURLPart(alarmPayload, flowObj);
 
-    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPlayload);
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true
