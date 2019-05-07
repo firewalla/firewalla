@@ -46,7 +46,7 @@ class BoneSensor extends Sensor {
       this.checkIn()
         .then(() => {})
         .catch((err) => {
-          log.error("Failed to check in", err, {});
+          log.error("Failed to check in", err);
         })
 
     })
@@ -149,7 +149,7 @@ class BoneSensor extends Sensor {
 
     let sysInfo = await sysManager.getSysInfoAsync();
 
-    log.debug("Checking in Cloud...", sysInfo, {});
+    log.debug("Checking in Cloud...", sysInfo);
 
     // First checkin usually have no meaningful data ... 
     //
@@ -269,7 +269,7 @@ class BoneSensor extends Sensor {
           .then(() => {
             log.info("Service config is updated");
           }).catch((err) => {
-          log.error("Failed to store service config in redis:", err, {});
+          log.error("Failed to store service config in redis:", err);
         })
       }
     })

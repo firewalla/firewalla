@@ -147,7 +147,7 @@ class PolicyScheduler {
       return;
 
     } catch (err) {
-      log.error("Failed to register policy:", policy.pid, "error:", err, {})
+      log.error("Failed to register policy:", policy.pid, "error:", err);
       throw err;
     }
   }

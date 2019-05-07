@@ -61,7 +61,7 @@ function compressPayloadIfRequired(req, res, next) {
   let compressed = req.body.compressed || req.query.compressed;
 
   if(compressed) { // compress payload to reduce traffic
-    log.debug("encipher uncompressed message size: ", res.body.length, {});
+    log.debug("encipher uncompressed message size: ", res.body.length);
     const before = res.body.length;
     let input = new Buffer(res.body, 'utf8');
     zlib.deflate(input, (err, output) => {
@@ -79,7 +79,7 @@ function compressPayloadIfRequired(req, res, next) {
         const ratio = ((before - after) / before * 100).toFixed(1);
         log.info(`Compression is enabled, size is reduced by ${ratio}%`);
       }
-      log.debug("compressed message size: ", res.body.length, {});
+      log.debug("compressed message size: ", res.body.length);
       next();
     });
   } else {

@@ -77,7 +77,7 @@ class PublicIPSensor extends Sensor {
         });
       }
     } catch(err) {
-      log.error("Failed to query public ip:", err, {});
+      log.error("Failed to query public ip:", err);
     }
   }
 

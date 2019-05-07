@@ -307,7 +307,7 @@ module.exports = class DNSMASQ {
           log.info(`Update ${type} filters successful.`);
           this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
         }).catch(err => {
-          log.error(`Update ${type} filters Failed!`, err, {});
+          log.error(`Update ${type} filters Failed!`, err);
         });
     } else {
       if (preState === false && nextState === false) {
@@ -318,7 +318,7 @@ module.exports = class DNSMASQ {
 
       log.info(`Start to clean up ${type} filters.`);
       this.cleanUpFilter(type)
-        .catch(err => log.error(`Error when clean up ${type} filters`, err, {}))
+        .catch(err => log.error(`Error when clean up ${type} filters`, err);)
         .then(() => this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
     }
   }
@@ -344,7 +344,7 @@ module.exports = class DNSMASQ {
         // ignore
         log.info(`Filter file '${file}' not exist, ignore`);
       } else {
-        log.error(`Failed to remove filter file: '${file}'`, err, {})
+        log.error(`Failed to remove filter file: '${file}'`, err);
       }
     }
   }
@@ -369,7 +369,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
-      log.error("Failed to add policy filter entry into file:", err, {});
+      log.error("Failed to add policy filter entry into file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -392,7 +392,7 @@ module.exports = class DNSMASQ {
 
       await fs.writeFileAsync(policyFilterFile, newData);
     } catch (err) {
-      log.error("Failed to write policy data file:", err, {});
+      log.error("Failed to write policy data file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
@@ -470,7 +470,7 @@ module.exports = class DNSMASQ {
       await self.start(false);
       log.info("Dnsmasq reload complete.");
     } catch (err) {
-      log.error("Got error when reloading dnsmasq:", err, {})
+      log.error("Got error when reloading dnsmasq:", err);
     }
   }
   
@@ -480,7 +480,7 @@ module.exports = class DNSMASQ {
     try {
       await mkdirp(FILTER_DIR);
     } catch (err) {
-      log.error("Error when mkdir:", FILTER_DIR, err, {});
+      log.error("Error when mkdir:", FILTER_DIR, err);
       return;
     }
     
@@ -493,7 +493,7 @@ module.exports = class DNSMASQ {
       stats = await fs.statAsync(filterFile);
     } catch (err) {
       // no such file, need to crate one
-      //log.error("Error when fs.stat", filterFile, err, {});
+      //log.error("Error when fs.stat", filterFile, err);
       if(err.code !== "ENOENT") {
         throw err;
       }
@@ -522,14 +522,14 @@ module.exports = class DNSMASQ {
       try {
         await this._writeHashFilterFile(type, hashes, filterFileTmp);
       } catch (err) {
-        log.error("Error when writing hashes into filter file", err, {});
+        log.error("Error when writing hashes into filter file", err);
         return;
       }
 
       try {
         await this._writeHashIntoRedis(type, hashes);
       } catch (err) {
-        log.error("Error when writing hashes into filter redis", err, {});
+        log.error("Error when writing hashes into filter redis", err);
         return;
       }
       
@@ -632,7 +632,7 @@ module.exports = class DNSMASQ {
         }
       }
     } catch (err) {
-      log.error("Error when remove ip6tables rules", err, {});
+      log.error("Error when remove ip6tables rules", err);
     }
   }    
 
@@ -648,7 +648,7 @@ module.exports = class DNSMASQ {
       await execAsync(rule);
       log.info("DNSMASQ:IPTABLES", "Iptables rules are added successfully");
     } catch (err) {
-      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err, {});
+      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err);
       throw err;
     }
   }
@@ -683,7 +683,7 @@ module.exports = class DNSMASQ {
 
       await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {
-      log.error("Error when removing iptable rules", err, {});
+      log.error("Error when removing iptable rules", err);
     }
   }
 
@@ -757,7 +757,7 @@ module.exports = class DNSMASQ {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
 
     if (this.needRestart) {
-      log.info("need restart is", this.needRestart, {});
+      log.info("need restart is", this.needRestart);
     }
 
     if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
@@ -774,7 +774,7 @@ module.exports = class DNSMASQ {
 
   checkIfWriteHostsFile() {
     if(this.needWriteHostsFile) {
-      log.info("need writeHostsFile is", this.needWriteHostsFile, {});
+      log.info("need writeHostsFile is", this.needWriteHostsFile);
     }
     if(this.shouldStart && this.needWriteHostsFile) {
       this.needWriteHostsFile = null;
@@ -806,7 +806,7 @@ module.exports = class DNSMASQ {
     try {
       await execAsync('sudo systemctl reload firemasq');
     } catch (err) {
-      log.error("Unable to reload firemasq service", err, {});
+      log.error("Unable to reload firemasq service", err);
     }
     log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
   }
@@ -944,11 +944,11 @@ module.exports = class DNSMASQ {
     const p = spawn('/bin/bash', ['-c', cmd])
 
     p.stdout.on('data', (data) => {
-      log.info("DNSMASQ STDOUT:", data.toString(), {})
+      log.info("DNSMASQ STDOUT:", data.toString());
     })
 
     p.stderr.on('data', (data) => {
-      log.info("DNSMASQ STDERR:", data.toString(), {})
+      log.info("DNSMASQ STDERR:", data.toString());
     })
 
     await this.delay(1000);
@@ -966,7 +966,7 @@ module.exports = class DNSMASQ {
         log.info("Status check timer installed")
       }
     } catch (err) {
-      log.error("Got error when restarting firemasq:", err, {})
+      log.error("Got error when restarting firemasq:", err);
     }
   }
 
@@ -1124,7 +1124,7 @@ module.exports = class DNSMASQ {
         log.info("status check timer is stopped")
       }
     } catch (err) {
-      log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code:", err, {});
+      log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code:", err);
     }
   }
 
@@ -1142,7 +1142,7 @@ module.exports = class DNSMASQ {
       await execAsync(cmd);
       log.info("Dnsmasq restart successful");
     } catch (err) {
-      log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq:", err, {});
+      log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq:", err);
     }
   }
 
@@ -1151,7 +1151,7 @@ module.exports = class DNSMASQ {
     // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
     // 3. update iptables rule
-    log.info("Starting DNSMASQ...", {});
+    log.info("Starting DNSMASQ...");
 
     this.shouldStart = false
 
@@ -1189,7 +1189,7 @@ module.exports = class DNSMASQ {
     // optional to remove filter file
     this.shouldStart = false;
 
-    log.info("Stopping DNSMASQ:", {});
+    log.info("Stopping DNSMASQ:");
     await this._remove_all_iptables_rules();
     await this.rawStop();
   }
@@ -1251,15 +1251,15 @@ module.exports = class DNSMASQ {
       try {
         let {stdout, stderr} = await execAsync(cmd);
         if (stdout === "") {
-          log.error(`Got empty dns result when verifying dns connectivity to ${domain}:`, {})
+          log.error(`Got empty dns result when verifying dns connectivity to ${domain}:`);
         } else if (stderr !== "") {
-          log.error(`Got error output when verifying dns connectivity to ${domain}:`, cmd, result.stderr, {})
+          log.error(`Got error output when verifying dns connectivity to ${domain}:`, cmd, result.stderr);
         } else {
           log.debug("DNS connectivity looks good")
           return true
         }
       } catch (err) {
-        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, {})
+        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout);
       }
     }
     log.error("DNS connectivity check fails to resolve all domains.");
@@ -1309,7 +1309,7 @@ module.exports = class DNSMASQ {
       try {
         await this.rawRestart();
       } catch (err) {
-        log.error("Failed to restart dnsmasq:", err, {})
+        log.error("Failed to restart dnsmasq:", err);
       }
     }
   }

@@ -182,7 +182,7 @@ module.exports = class {
       return new Promise(function (resolve, reject) {
         em.loadExceptions((err, exceptions) =>{
           if (err) {
-            log.error("failed to load exceptions:", err, {})
+            log.error("failed to load exceptions:", err);
             reject(err)
           } else {
             if (exceptions) {

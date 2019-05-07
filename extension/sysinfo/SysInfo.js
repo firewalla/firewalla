@@ -145,9 +145,9 @@ function getRealMemoryUsage() {
 
   } catch (err) {
     if(err.code === 'ENOMEM') {
-      log.error("Not enough memory to spawn process 'free':", err, {});
+      log.error("Not enough memory to spawn process 'free':", err);
     } else {
-      log.error("Failed to spawn process 'free':", err, {});
+      log.error("Failed to spawn process 'free':", err);
     }
     // do nothing
   }

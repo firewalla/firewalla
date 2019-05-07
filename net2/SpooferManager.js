@@ -254,7 +254,7 @@ module.exports = class SpooferManager {
       */
     } catch (err) {
       //catch everything here
-      log.error("Failed to stop spoofing:", err, {})
+      log.error("Failed to stop spoofing:", err);
     }
   }
   

@@ -57,7 +57,7 @@ function bootstrap() {
     await (bone.waitUntilCloudReadyAsync())
     await (sysManager.setConfig(firewallaConfig))
     let sysInfo = await (sysManager.getSysInfoAsync())
-    log.debug("License:", license.getLicense(), {});
+    log.debug("License:", license.getLicense());
     await (bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo));
   })()
 

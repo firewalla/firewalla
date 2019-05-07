@@ -412,7 +412,7 @@ module.exports = class {
         log.debug("Intel:Drop", JSON.parse(data));
       }
     } catch (e) {
-      log.error("Intel:Error Unable to save", e, e.stack, data, {});
+      log.error("Intel:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -476,7 +476,7 @@ module.exports = class {
                   rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                 }
               } else {
-                log.error("Dns:Error", "unable to update count", err, {});
+                log.error("Dns:Error", "unable to update count", err);
               }
               //  });
             });
@@ -495,17 +495,17 @@ module.exports = class {
               bname: hostname
             };
             //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
-            log.debug("Dns:Redis:Merge", key, changeset, {});
+            log.debug("Dns:Redis:Merge", key, changeset);
             rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
               if (err) {
-                log.error("Discovery:Nmap:Update:Error", err, {});
+                log.error("Discovery:Nmap:Update:Error", err);
               }
             });
           }
         });
       }
     } catch (e) {
-      log.error("Detect:Dns:Error", e, data, e.stack, {});
+      log.error("Detect:Dns:Error", e, data, e.stack);
     }
   }
 
@@ -528,7 +528,7 @@ module.exports = class {
 
       });
     } catch (e) {
-      log.error("Detect:Software:Error", e, data, e.stack, {});
+      log.error("Detect:Software:Error", e, data, e.stack);
     }
   }
 
@@ -1241,7 +1241,7 @@ module.exports = class {
       //    return;
       // }
     } catch (e) {
-      log.error("Conn:Error Unable to save", e, data, new Error().stack, {});
+      log.error("Conn:Error Unable to save", e, data, new Error().stack);
     }
 
   }
@@ -1381,13 +1381,13 @@ module.exports = class {
               }
               log.debug("HTTP:Dns:Set",rvalue,value);
             } else {
-              log.error("HTTP:Dns:Error", "unable to update count", err, {});
+              log.error("HTTP:Dns:Error", "unable to update count", err);
             }
           });
         });
       }
     } catch (e) {
-      log.error("HTTP:Error Unable to save", e, data, e.stack, {});
+      log.error("HTTP:Error Unable to save", e, data, e.stack);
     }
 
   }
@@ -1520,7 +1520,7 @@ module.exports = class {
               }
               log.debug("SSL:Dns:Set",key,rvalue,value);
             } else {
-              log.error("SSL:Dns:Error", "unable to update count", err, {});
+              log.error("SSL:Dns:Error", "unable to update count", err);
             }
           });
         });
@@ -1528,7 +1528,7 @@ module.exports = class {
 
 
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data, {});
+      log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -1561,7 +1561,7 @@ module.exports = class {
         }
       });
     } catch (e) {
-      log.error("X509:Error Unable to save", e, data, e.stack, {});
+      log.error("X509:Error Unable to save", e, data, e.stack);
     }
   }
 
@@ -1576,17 +1576,17 @@ module.exports = class {
 
       let ip = obj.host;
       if(!ip) {
-        log.error("Invalid knownHosts entry:", obj, {});
+        log.error("Invalid knownHosts entry:", obj);
         return;
       }
 
-      log.info("Found a known host from host:", ip, {});
+      log.info("Found a known host from host:", ip);
 
       l2.getMAC(ip, (err, mac) => {
 
         if(err) {
           // not found, ignore this host
-          log.error("Not able to found mac address for host:", ip, mac, {});
+          log.error("Not able to found mac address for host:", ip, mac);
           return;
         }
 

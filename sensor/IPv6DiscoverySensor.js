@@ -82,7 +82,7 @@ class IPv6DiscoverySensor extends Sensor {
             })
         }
       }).catch((err) => {
-        log.error("Failed to check if sensor is enabled", err, {});
+        log.error("Failed to check if sensor is enabled", err);
       })
   }
 

@@ -84,7 +84,7 @@ function login() {
               });
             });
           } else {
-            log.error("Unable to get group id:", err, {})
+            log.error("Unable to get group id:", err);
             reject(err);
           }
         });

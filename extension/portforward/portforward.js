@@ -106,7 +106,7 @@ class PortForward {
           let config = JSON.parse(json)
           this.config = config
         } catch(err) {
-          log.error("PortForwarder:Failed to parse config:", json, err, {})
+          log.error("PortForwarder:Failed to parse config:", json, err);
           this.config = {maps:[]};
         }
       } else {
@@ -171,7 +171,7 @@ class PortForward {
       let state = await (iptable.portforwardAsync(dupMap));
       return state;
     })().catch((err) => {
-      log.error("Failed to add port mapping:", err, {})
+      log.error("Failed to add port mapping:", err);
     }) 
   }
 

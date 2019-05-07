@@ -42,7 +42,7 @@ class RefreshMacBackupNameHook extends Hook {
           hostTool.updateBackupName(mac, name)
             .then(() => {})
             .catch((err) => {
-            log.error("Failed to update backup name: ", err, {})
+            log.error("Failed to update backup name: ", err);
           })
         })
     });

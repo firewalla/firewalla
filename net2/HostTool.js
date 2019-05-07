@@ -98,7 +98,7 @@ class HostTool {
   }
 
   updateBackupName(mac, name) {
-    log.info("Updating backup name", name, "for mac:", mac, {});
+    log.info("Updating backup name", name, "for mac:", mac);
     let key = "host:mac:" + mac;
     return rclient.hsetAsync(key, "bname", name)
   }
@@ -126,7 +126,7 @@ class HostTool {
     let hostCopy = JSON.parse(JSON.stringify(host))
 
     if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
-      log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
+      log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack);
       //return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
       return // ignore 00:00:00:00:00:00
     }

@@ -260,7 +260,7 @@ function getVersion() {
       versionElements = require('child_process').execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
     } catch (err) {
-      log.error("Failed to get git version tags", err, {});
+      log.error("Failed to get git version tags", err);
     }
 
     if(versionElements.length === 3) {

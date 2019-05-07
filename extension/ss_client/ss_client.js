@@ -251,13 +251,13 @@ class SSClient {
   async _startDNSForwarder() {
     const cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${this.getDNSForwardPort()} -s ${remoteDNS}:${remoteDNSPort}`
 
-    log.info("dns forwarder cmd:", cmd, {})
+    log.info("dns forwarder cmd:", cmd);
 
     const process = p.spawn(cmd, {shell: true})
 
     process.on('exit', (code, signal) => {
       if(code !== 0) {
-        log.error("dns forwarder exited with error:", code, signal, {})
+        log.error("dns forwarder exited with error:", code, signal);
       } else {
         log.info("dns forwarder exited successfully!")
       }
