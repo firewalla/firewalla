@@ -360,7 +360,6 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "ipv6": false,
     "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,
