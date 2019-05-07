@@ -34,7 +34,7 @@ class Samba {
 
   getSambaName(ip) {
     let cmd = util.format("nbtscan -e %s | head -n 1 | awk '{print $2}'", ip);
-    log.info("Running command:", cmd, {});
+    log.info("Running command:", cmd);
 
     return async(() => {
       let exists = await (this.nbtscanExists());

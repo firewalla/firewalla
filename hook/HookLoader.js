@@ -37,7 +37,7 @@ function initHooks() {
 
 function run() {
   hooks.forEach((h) => {
-    log.info("Installing Hook:", h.constructor.name, {});
+    log.info("Installing Hook:", h.constructor.name);
     h.run()
   });
 }

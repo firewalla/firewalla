@@ -347,7 +347,7 @@ module.exports = class {
 
           callback(null)
         } catch(err) {
-          log.error("Failed to set timezone:", err, {})
+          log.error("Failed to set timezone:", err);
           callback(err)
         }
       })()
@@ -414,7 +414,7 @@ module.exports = class {
       .then(() => {
         this.config = config;
       }).catch((err) => {
-        log.error("Failed to set sys:network:info in redis", err, {});
+        log.error("Failed to set sys:network:info in redis", err);
       });
   }
 

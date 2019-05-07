@@ -892,7 +892,7 @@ module.exports = class FlowManager {
         return connArray;
         
         }).catch((err) => {
-        log.error("Failed to query flow data for ip", ip, ":", err, err.stack, {});
+        log.error("Failed to query flow data for ip", ip, ":", err, err.stack);
         return;
       });
     }

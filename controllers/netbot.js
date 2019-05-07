@@ -683,7 +683,7 @@ class netBot extends ControllerBot {
           if (callback != null)
             callback(err, "Unable to setNotify " + ip);
         }
-        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify),{});
+        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
         nm.loadConfig();
       });
     });
@@ -693,15 +693,15 @@ class netBot extends ControllerBot {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid+".tar.gz.gpg";
     let path = "";
-    log.info("sendLog: ", filename, password,{});
+    log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
-      log.info("sendLog: Storage ", filename, password,url,{});
+      log.info("sendLog: Storage ", filename, password,url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg,{},"Unable to get storage",callback);   
       } else {
         path = URL.parse(url.url).pathname;
         let cmdline = '/home/pi/firewalla/scripts/encrypt-upload-s3.sh '+filename+' '+password+' '+"'"+url.url+"'";
-        log.info("sendLog: cmdline", filename, password,cmdline,{});
+        log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
           log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
@@ -1365,7 +1365,7 @@ class netBot extends ControllerBot {
 
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
-            log.info("set host name alias by mac address", macAddress, {})
+            log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
               name: data.value.name,
@@ -2025,7 +2025,7 @@ class netBot extends ControllerBot {
             let alarmIDs = list.map((p) => p.aid);
             am2.idsToAlarms(alarmIDs, (err, alarms) => {
               if(err) {
-                log.error("Failed to get alarms by ids:", err, {});
+                log.error("Failed to get alarms by ids:", err);
                 this.simpleTxData(msg, {}, err, callback);
                 return;
               }
@@ -2178,7 +2178,7 @@ class netBot extends ControllerBot {
   }
   
   deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
-    log.info("Getting info on device", target, {});
+    log.info("Getting info on device", target);
 
     return async(() => {
       if(target === '0.0.0.0') {
@@ -2206,7 +2206,7 @@ class netBot extends ControllerBot {
       }
       
       // if(hostTool.isMacAddress(target)) {
-      //   log.info("Loading host info by mac address", target, {})
+      //   log.info("Loading host info by mac address", target);
       //   const macAddress = target
       //   const hostObject = await (hostTool.getMACEntry(macAddress))
 
@@ -2246,13 +2246,13 @@ class netBot extends ControllerBot {
           netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
         if(!jsonobj.flows["appDetails"]) {
-          log.warn("Fell back to legacy mode on app details:", mac, options, {})
+          log.warn("Fell back to legacy mode on app details:", mac, options);
           await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
           await (this.validateFlowAppIntel(jsonobj))
         }
 
         if(!jsonobj.flows["categoryDetails"]) {
-          log.warn("Fell back to legacy mode on category details:", mac, options, {})
+          log.warn("Fell back to legacy mode on category details:", mac, options);
           await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
           await (this.validateFlowCategoryIntel(jsonobj))
         }
@@ -2276,7 +2276,7 @@ class netBot extends ControllerBot {
     if(msg && msg.data && msg.data.item === 'ping') {
 
     } else {
-      log.info("API: CmdHandler ",gid,msg,{});
+      log.info("API: CmdHandler ",gid,msg);
     }
 
     if(extMgr.hasCmd(msg.data.item)) {
@@ -2630,7 +2630,7 @@ class netBot extends ControllerBot {
             try {
               result = await bone.intelFinger(target);
             } catch (err) {
-              log.error("Error when intel finger", err, {});
+              log.error("Error when intel finger", err);
             }
             if (result && result.whois) {
               this.simpleTxData(msg, result, null, callback);
@@ -3419,7 +3419,7 @@ class netBot extends ControllerBot {
         break
       }
 
-      log.info("Going to switch to branch", targetBranch, {})
+      log.info("Going to switch to branch", targetBranch);
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
       sysTool.upgradeToLatest()
@@ -3442,7 +3442,7 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err, err.stack, {});
+      log.error("Got error before simpleTxData:", err, err.stack);
       code = 500;
       if(err && err.code) {
         code = err.code;
@@ -3552,7 +3552,7 @@ class netBot extends ControllerBot {
       rawmsg.message.obj.data.item === 'ping') {
 
       } else {
-        log.info("Received jsondata from app", rawmsg.message, {});
+        log.info("Received jsondata from app", rawmsg.message);
       }
       
       if (rawmsg.message.obj.type === "jsonmsg") {
@@ -3687,7 +3687,7 @@ class netBot extends ControllerBot {
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.error(msg,reason.stack,{});
+  log.error(msg,reason.stack);
   bone.log("error",{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',
@@ -3720,7 +3720,7 @@ setInterval(()=>{
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
       }
     } catch(e) {
     }

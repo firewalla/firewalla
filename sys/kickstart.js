@@ -277,7 +277,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
-        log.info("Error looking up group", err, err.stack, {});
+        log.info("Error looking up group", err, err.stack);
         callback(err, false);
         return;
       }
@@ -296,7 +296,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
         eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
-          log.error("Failed to record registered clients, err:", err, {})
+          log.error("Failed to record registered clients, err:", err);
         });
         
         // new group without any apps bound;
@@ -308,7 +308,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           
           let onSuccess = function(payload) {
             return (async() => {
-              log.info("some license stuff on device:", payload, {});
+              log.info("some license stuff on device:", payload);
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               postAppLinked(); // app linked, do any post-link tasks
@@ -385,7 +385,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
               await eptCloudExtension.job().catch((err) => {
-                log.error("Failed to update group info, err:", err, {})
+                log.error("Failed to update group info, err:", err);
               });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)

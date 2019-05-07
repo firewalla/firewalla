@@ -221,8 +221,8 @@ module.exports = class {
       let k = keys[i];
       if(!alarm[k]) {
         // typically bug occurs if reaching this code block
-        log.error("Invalid payload for " + alarm.type + ", missing " + k, new Error("").stack, {});
-        log.error("Invalid alarm is: " + alarm, {});
+        log.error("Invalid payload for " + alarm.type + ", missing " + k, new Error("").stack);
+        log.error("Invalid alarm is: " + alarm);
         return false;
       }
     }
@@ -268,7 +268,7 @@ module.exports = class {
   }
 
   reportBug(alarmID, feedback) {
-    log.info("Going to report feedback on alarm", alarmID, feedback, {})
+    log.info("Going to report feedback on alarm", alarmID, feedback);
 
     return async(() => {
       //      await (this.ignoreAlarm(alarmID)) // TODO: report issue to cloud
@@ -995,7 +995,7 @@ module.exports = class {
     this.getAlarm(alarmID)
       .then((alarm) => {
 
-        log.info("Alarm to block:", alarm, {});
+        log.info("Alarm to block:", alarm);
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);

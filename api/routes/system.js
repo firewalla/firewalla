@@ -162,7 +162,7 @@ router.get('/apps',
       }))
       res.json(json)
     })().catch((err) => {
-      log.error("Failed to process /apps: ", err, err.stack, {})
+      log.error("Failed to process /apps: ", err, err.stack);
       res.status(500).send({error: err});
     })
   }
@@ -182,7 +182,7 @@ router.get('/categories',
       }))
       res.json(json)
     })().catch((err) => {
-      log.error("Failed to process /categories: ", err, err.stack, {})
+      log.error("Failed to process /categories: ", err, err.stack);
       res.status(500).send({error: err});
     })
   }
@@ -237,7 +237,7 @@ router.get('/heapdump',
                 res.download(file);
               }
             } catch (err) {
-              log.error("Failed to parse payload of heapdump_done message: ", message, err, {});
+              log.error("Failed to parse payload of heapdump_done message: ", message, err);
             }
           }
         });
