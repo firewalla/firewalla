@@ -1612,15 +1612,17 @@ module.exports = class {
   //"192.168.2.190","dst":"192.168.2.108","peer_descr":"bro","actions":["Notice::ACTION_LOG"],"suppress_for":3600.0,"dropped":false}
 
 
-  processNoticeData(data) {
+  async processNoticeData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
-        // log.error("Notice:Drop", obj);
         return;
       }
-      if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-        // log.error("Notice:Drop My IP", obj);
+      // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
+      // and the other one will be suppressed. And we'll lost either device/dest info
+      if (obj.src != null && obj.src == sysManager.myIp() ||
+          obj.dst != null && obj.dst == sysManager.myIp())
+      {
         return;
       }
       log.debug("Notice:Processing",obj);
@@ -1629,52 +1631,48 @@ module.exports = class {
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
-        rclient.zadd(redisObj, (err, response) => {
-          if (err) {
-            log.error("Notice:Save:Error", err);
-          } else {
-            if (this.config.bro.notice.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
-            }
-          }
-        });
+        await rclient.zadd(redisObj);
+        if (this.config.bro.notice.expires) {
+          await rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
+        }
         let lh = null;
         let dh = null;
-        if (sysManager.isLocalIP(obj.src)) {
-          lh = obj.src || "0.0.0.0";
-          dh = obj.dst || "0.0.0.0";
-        } else if (sysManager.isLocalIP(obj.dst)) {
-          lh = obj.dst || "0.0.0.0";
-          dh = obj.src || "0.0.0.0";
+
+        // using src & dst by default, or id.orig_h & id.resp_h
+        if (obj.src) {
+          lh = obj.src;
+          dh = obj.dst || (obj['id.orig_h'] == obj.src ? obj['id.resp_h'] : obj['id.orig_h']);
         } else {
-          lh = "0.0.0.0";
-          dh = "0.0.0.0";
+          lh = obj['id.orig_h'];
+          dh = obj['id.resp_h'];
         }
 
-        (async () => {
-          let localIP = lh;
-          let message = obj.msg;
-          let noticeType = obj.note;
-          let timestamp = parseFloat(obj.ts);
+        lh = lh || "0.0.0.0";
+        dh = dh || "0.0.0.0";
 
-          // TODO: create dedicate alarm type for each notice type
-          let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-            "p.device.ip": localIP,
-            "p.dest.ip": dh
-          });
+        // make sure lh points to local device
+        if (lh && !sysManager.isLocalIP(lh)) {
+          let tmp = lh;
+          lh = dh;
+          dh = tmp;
+        }
 
-          await broNotice.processNotice(alarm, obj);
+        let message = obj.msg;
+        let noticeType = obj.note;
+        let timestamp = parseFloat(obj.ts);
 
-          am2.enqueueAlarm(alarm);
+        // TODO: create dedicate alarm type for each notice type
+        let alarm = new Alarm.BroNoticeAlarm(timestamp, lh, noticeType, message, {
+          "p.device.ip": lh,
+          "p.dest.ip": dh
+        });
 
-        })().catch((err) => {
-          log.error("Failed to generate alarm:", err, {})
-        })
-      } else {
-        // log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+        await broNotice.processNotice(alarm, obj);
+
+        am2.enqueueAlarm(alarm);
       }
     } catch (e) {
-      log.error("Notice:Error Unable to save", e,data, e.stack, {});
+      log.error("Notice:Error Unable to save", e, data);
     }
   }
 
