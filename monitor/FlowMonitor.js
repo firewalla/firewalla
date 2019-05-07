@@ -887,14 +887,13 @@ module.exports = class FlowMonitor {
         alarmPayload["p.dest.urls"] = flowObj.urls;
         
         if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
-          alarmPayload["p.dest.url"] = flowObj.urls[0].url;
-        }
-        
+          alarmPayload["p.dest.url"] = `http://${flowObj.urls[0].url}`;
+        }        
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
         if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
-          alarmPayload["p.device.url"] = flowObj.urls[0].url;
+          alarmPayload["p.device.url"] = `http://${flowObj.urls[0].url}`;
         }
       }
     }
