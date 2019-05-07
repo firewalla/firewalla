@@ -125,7 +125,7 @@ function getRealMemoryUsage() {
     prc = spawn('free',  []);
 
     if (prc == null || prc.stdout == null) {
-      log.error("Failed to spawn process 'free'",{});
+      log.error("Failed to spawn process 'free'");
       return;
     }
 

@@ -211,7 +211,7 @@ module.exports = class DNSManager {
         });
       } 
     },(err)=> {
-      log.info("DNS:QueryACL:",list,{});
+      log.info("DNS:QueryACL:",list);
       callback(err,list,ipchanged);
     });    
 

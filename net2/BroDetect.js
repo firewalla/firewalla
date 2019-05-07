@@ -1363,7 +1363,7 @@ module.exports = class {
           'lastActive': Math.ceil(Date.now() / 1000),
           'count': 1
         }
-        log.debug("HTTP:Dns:values",key,value,{});
+        log.debug("HTTP:Dns:values",key,value);
         rclient.hgetall(key,(err,entry)=>{
           if (entry && entry.host) {
             return;
@@ -1502,7 +1502,7 @@ module.exports = class {
           'ssl':1,
           'established':obj.established
         }
-        log.debug("SSL:Dns:values",key,value,{});
+        log.debug("SSL:Dns:values",key,value);
         rclient.hgetall(key,(err,entry)=>{
           if (entry && entry.host && entry.ssl) {
             return;

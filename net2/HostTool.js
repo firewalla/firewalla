@@ -395,12 +395,12 @@ class HostTool {
           }
           ipv6array.unshift(v6addr);
       }
-      log.info("V6 Overflow Check Removed: ", removed,{});
+      log.info("V6 Overflow Check Removed: ", removed);
  
       if (unspoof && removed && removed.length>0) {
           _async.eachLimit(removed, 10, (ip6, cb) => {
               rclient.srem("monitored_hosts6", ip6,(err)=>{
-                  log.info("V6 Overflow Removed for real", ip6,err,{});
+                  log.info("V6 Overflow Removed for real", ip6,err);
                   cb();
               });
           }, (err) => {
@@ -457,7 +457,7 @@ class HostTool {
                   data.mac = mac.toUpperCase();
                   data.ipv6Addr = JSON.stringify(ipv6array);
                   data.lastActiveTimestamp = Date.now() / 1000;
-                  log.info("HostTool:Writing Data:", mackey, data,{});
+                  log.info("HostTool:Writing Data:", mackey, data);
                   rclient.hmset(mackey, data, (err, result) => {
                     callback(err, null);
                   });
@@ -471,7 +471,7 @@ class HostTool {
                 data.ipv6Addr = JSON.stringify([v6addr]);;
                 data.lastActiveTimestamp = Date.now() / 1000;
                 data.firstFoundTimestamp = data.lastActiveTimestamp;
-                log.info("HostTool:Writing Data:", mackey, data,{});
+                log.info("HostTool:Writing Data:", mackey, data);
                 rclient.hmset(mackey, data, (err, result) => {
                   callback(err, null);
                 });

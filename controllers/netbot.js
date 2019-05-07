@@ -683,7 +683,7 @@ class netBot extends ControllerBot {
           if (callback != null)
             callback(err, "Unable to setNotify " + ip);
         }
-        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify),{});
+        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
         nm.loadConfig();
       });
     });
@@ -693,15 +693,15 @@ class netBot extends ControllerBot {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid+".tar.gz.gpg";
     let path = "";
-    log.info("sendLog: ", filename, password,{});
+    log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
-      log.info("sendLog: Storage ", filename, password,url,{});
+      log.info("sendLog: Storage ", filename, password,url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg,{},"Unable to get storage",callback);   
       } else {
         path = URL.parse(url.url).pathname;
         let cmdline = '/home/pi/firewalla/scripts/encrypt-upload-s3.sh '+filename+' '+password+' '+"'"+url.url+"'";
-        log.info("sendLog: cmdline", filename, password,cmdline,{});
+        log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
           log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
@@ -2276,7 +2276,7 @@ class netBot extends ControllerBot {
     if(msg && msg.data && msg.data.item === 'ping') {
 
     } else {
-      log.info("API: CmdHandler ",gid,msg,{});
+      log.info("API: CmdHandler ",gid,msg);
     }
 
     if(extMgr.hasCmd(msg.data.item)) {
@@ -3687,7 +3687,7 @@ class netBot extends ControllerBot {
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.error(msg,reason.stack,{});
+  log.error(msg,reason.stack);
   bone.log("error",{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',

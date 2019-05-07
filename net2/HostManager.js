@@ -599,7 +599,7 @@ class Host {
       }
 
       /* put a safety on the spoof */
-      log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
+      log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr));
       let myIp6 = sysManager.myIp6();
       if (this.ipv6Addr && this.ipv6Addr.length>0) {
         for (let i in this.ipv6Addr) {
@@ -619,7 +619,7 @@ class Host {
               log.error("Failed to spoof", this.ipv6Addr);
             })
             if (i>20) {
-              log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
+              log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
               break;
             }
             // prototype

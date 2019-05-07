@@ -160,7 +160,7 @@ class BoneSensor extends Sensor {
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {
-      log.error("BoneCheckIn Error fetching hostInfo",e,{});
+      log.error("BoneCheckIn Error fetching hostInfo",e);
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
