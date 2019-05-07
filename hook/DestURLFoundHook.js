@@ -94,7 +94,6 @@ class DestURLFoundHook extends Hook {
     options = options || {};
 
     const skipReadLocalCache = options.skipReadLocalCache;
-    const skipWriteLocalCache = options.skipWriteLocalCache;
 
     const subURLHashes = this.getSubURLWithHashes(url);
 
@@ -115,9 +114,11 @@ class DestURLFoundHook extends Hook {
         continue;
       }
 
-      const existing = await this.alreadyEnriched(url);
-      if(existing) {
-        continue;
+      if(!skipReadLocalCache) {
+        const existing = await this.alreadyEnriched(url);
+        if(existing) {
+          continue;
+        }
       }
 
       urlsNeedCheck.push(subURLHash);
@@ -199,6 +200,7 @@ class DestURLFoundHook extends Hook {
 
   async markAsSafe(subURL) {
     await rclient.zaddAsync(CommonKeys.intel.safe_urls, new Date() / 1000, subURL);
+    await intelTool.removeURLIntel(subURL);
   }
 
   async isUrlSafe(subURL) {
@@ -271,8 +273,7 @@ class DestURLFoundHook extends Hook {
 
     sem.on('DestURL', (event) => {
       const skipReadLocalCache = event.skipReadLocalCache;
-      const noUpdateOnError = event.noUpdateOnError;
-      this.processURL(event.url, {skipReadLocalCache, noUpdateOnError});
+      this.processURL(event.url, {skipReadLocalCache});
     })
 
     this.job();

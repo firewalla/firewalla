@@ -118,7 +118,6 @@ class IntelRevalidationSensor extends Sensor {
     sem.emitEvent({
       type: 'DestURL',
       skipReadLocalCache: true,
-      noUpdateOnError: true,
       url: url
     });
   }  

@@ -160,6 +160,10 @@ class IntelTool {
     return rclient.delAsync(key);
   }
 
+  removeURLIntel(url) {
+    return rclient.delAsync(this.getURLIntelKey(url));
+  }
+
   updateHashMapping(hashCache, hash) {
     if(Array.isArray(hash)) {
       const origin = hash[0]
