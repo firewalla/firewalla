@@ -164,9 +164,9 @@ class DestURLFoundHook extends Hook {
       delete copy.c;            
     }
 
-    if(copy.flowid) delete copy.flowid;
-    if(copy.ip) delete copy.ip;
-    if(copy.ts) delete copy.ts;
+    if("flowid" in copy) delete copy.flowid;
+    if("ip" in copy) delete copy.ip;
+    if("ts" in copy) delete copy.ts;
 
     return copy;
   }

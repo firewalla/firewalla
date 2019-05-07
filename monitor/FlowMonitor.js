@@ -294,6 +294,10 @@ module.exports = class FlowMonitor {
                 "seen.indicator_type": "Intel::DOMAIN",
               };
 
+              if("urls" in flow) {
+                intelobj.urls = flow.urls;
+              }
+
               if (flow.fd === "in") {
                 Object.assign(intelobj, {
                   "id.orig_h": flow.sh,
@@ -488,12 +492,33 @@ module.exports = class FlowMonitor {
     });
   }
 
+  updateIntelFromHTTP(conn) {
+    delete conn.uids;
+    const urls = conn.urls;
+    if(_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for(const url of urls) {
+        if(url && url.category === 'intel') {
+          for(const key of ["category", "c", "cc", "cs", "t", "v", "s", "updateTime"]) {
+            conn.intel[key] = url[key];
+          }
+          break;
+        }
+      }
+    }
+  }
+
   async detect(mac, period,host) {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
+    if(!_.isEmpty(result.connections)) {
+      result.connections.forEach((conn) => {
+        this.updateIntelFromHTTP(conn);
+      });
+    }
+
     this.flowIntel(result.connections);
     this.summarizeNeighbors(host,result.connections,'in');
     if (result.activities !=null) {
@@ -515,6 +540,11 @@ module.exports = class FlowMonitor {
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
+    if(!_.isEmpty(result.connections)) {
+      result.connections.forEach((conn) => {
+        this.updateIntelFromHTTP(conn);
+      });
+    }
     this.flowIntel(result.connections);
     this.summarizeNeighbors(host,result.connections,'out');
   }
@@ -918,7 +948,8 @@ module.exports = class FlowMonitor {
     log.info("Domain", domain, "'s intel is", intelObj);
 
     log.info("Start to generate alarm for domain", domain);
-    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+
+    const alarmPlayload = {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
@@ -936,7 +967,19 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from
-    });
+    };
+
+    if("urls" in flowObj) {
+      if(flowObj.fd === 'in' ) {
+        alarmPlayload["p.dest.urls"] = flowObj.urls;
+      } else {
+        alarmPlayload["p.device.urls"] = flowObj.urls;
+      }
+    }
+
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPlayload);
+
+ 
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;
@@ -993,7 +1036,7 @@ module.exports = class FlowMonitor {
       return;
     }
 
-    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, {
+    const alarmPayload = {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given
@@ -1009,7 +1052,17 @@ module.exports = class FlowMonitor {
       "p.from": iobj.from,
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj)
-    });
+    };
+
+    if("urls" in flowObj) {
+      if(flowObj.fd === 'in' ) {
+        alarmPlayload["p.dest.urls"] = flowObj.urls;
+      } else {
+        alarmPlayload["p.device.urls"] = flowObj.urls;
+      }
+    }
+
+    let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPlayload);
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true

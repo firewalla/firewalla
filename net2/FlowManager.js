@@ -1105,14 +1105,23 @@ module.exports = class FlowManager {
     for(const uid of flow.uids) {
       const key = `flowgraph:${uid}`;
       const fg = await rclient.hgetallAsync(key);
-      if(!fg || !fg.mac || !fg.flowDirection) {
+
+      if(!fg) {
+        continue; // no related urls
+      }
+
+      if(!fg.http) {
+        continue; // no related urls
+      }
+
+      if(!fg.mac || !fg.flowDirection) {
         log.error(`Invalid flowgraph: ${fg}`);
         continue;
       }
 
       const httpFlowKey = `flow:http:${fg.flowDirection}:${fg.mac}`;
 
-      const httpFlows = await rclient.zrangebyscoreAsync(httpFlowKey, fg.ts, fg.ts);
+      const httpFlows = await rclient.zrangebyscoreAsync(httpFlowKey, fg.http, fg.http);
 
       for(const httpFlowJSON of httpFlows) {
         try {
