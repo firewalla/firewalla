@@ -33,12 +33,17 @@ const fc = require('../net2/config.js');
 const i18n = require('../util/i18n');
 
 let callback = async (event) => {
-  const alarm = am2.jsonToAlarm(event.alarm);
-  const alarmMessage = alarm.localizedNotification();
-  const groupName = await rclient.getAsync("groupName");
-  const title = i18n.__(alarm.alarmNotifType);
-  const message = `[${groupName} - ${title}] ${alarmMessage}`;
-  await slack.postMessage(message);
+  try {
+    const alarm = await am2.getAlarm(event.alarmId);
+    const alarmMessage = alarm.localizedNotification();
+    const groupName = await rclient.getAsync("groupName");
+    const title = i18n.__(alarm.alarmNotifType);
+    const message = `[${groupName} - ${title}] ${alarmMessage}`;
+    await slack.postMessage(message);
+  }
+  catch (err) {
+    log.error("Error triggering slack alert, alarmId:", event.alarmId, err)
+  }
 };
 
 class SlackSensor extends Sensor {

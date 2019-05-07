@@ -127,7 +127,7 @@ module.exports = class {
       log.info("alarm queue is cleaned up")
     })
 
-    this.queue.process((job, done) => {
+    this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
 
@@ -139,27 +139,24 @@ module.exports = class {
       const action = event.action;
       
       switch(action) {
-      case "create": {
-        (async () => {
+        case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            await this.checkAndSaveAsync(alarm);
-            log.info(`Alarm ${alarm.aid} is created successfully`);
+            let aid = await this.checkAndSaveAsync(alarm);
+            log.info(`Alarm ${aid} is created successfully`);
           } catch(err) {
             log.error("failed to create alarm:" + err);
           }
 
-          log.info("complete alarm creation process", alarm.aid);
-          done();          
-        })();
+          done();
 
-        break
-      }
+          break
+        }
 
-      default:
-        log.error("unrecoganized policy enforcement action:" + action)
-        done()
-        break
+        default:
+          log.error("unrecoganized policy enforcement action:" + action)
+          done()
+          break
       }
     })
   }
@@ -290,30 +287,8 @@ module.exports = class {
     sem.sendEventToAll({
       type: "Alarm:NewAlarm",
       message: "A new alarm is generated",
-      alarm: alarm
+      alarmID: alarm.aid
     });
-
-
-    // TODO: eventually this legacy mode should be replaced
-    let data = {
-      notif: alarm.localizedNotification(),
-      alarmID: alarm.aid,
-      aid: alarm.aid,
-      alarmNotifType: alarm.notifType,
-      alarmType: alarm.type,
-      testing: alarm["p.monkey"],
-      managementType: alarm.getManagementType(),
-      cloudAction: alarm.cloudAction()
-    };
-
-    if (alarm.result_method === "auto") {
-      data.autoblock = true;
-    }
-
-    this.publisher.publish("ALARM",
-      "ALARM:CREATED",
-      alarm.device,
-      data);
   }
   
   // exclude extended info from basic info, these two info will be stored separately 
@@ -529,15 +504,15 @@ module.exports = class {
     // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
     const destName = alarm["p.dest.name"]
     const destIP = alarm["p.dest.ip"]
-    if(destName && destIP && destName !== destIP) {
+    if (destName && destIP && destName !== destIP) {
       dnsTool.addReverseDns(destName, [destIP])
     }
     
     log.info("Checking if similar alarms are generated recently");
 
-    let dedupResult = this.dedup(alarm).then((dup) => {
+    this.dedup(alarm).then((dup) => {
 
-      if(dup) {
+      if (dup) {
         log.warn("Same alarm is already generated, skipped this time");
         log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
         log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
@@ -548,12 +523,12 @@ module.exports = class {
       }
 
       exceptionManager.match(alarm, (err, result, matches) => {
-        if(err) {
+        if (err) {
           callback(err);
           return;
         }
 
-        if(result) {
+        if (result) {
           matches.forEach((e) => {
             log.info("Matched Exception: " + e.eid);
             exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
@@ -564,12 +539,12 @@ module.exports = class {
 
         pm2.match(alarm, (err, result) => {
           
-          if(err) {
+          if (err) {
             callback(err)
             return
           }
 
-          if(result) {
+          if (result) {
             // already matched some policy
 
             const err2 = new Error("alarm is covered by policies");
@@ -579,7 +554,7 @@ module.exports = class {
           }
 
           this.saveAlarm(alarm, (err, alarmID) => {
-            if(err) {
+          if (err) {
               callback(err);
               return;
             }
@@ -616,6 +591,11 @@ module.exports = class {
   }
 
   shouldAutoBlock(alarm) {
+    if (!fConfig || !fConfig.policy ||
+        !fConfig.policy.autoBlock ||
+        !fc.isFeatureOn("cyber_security.autoBlock"))
+      return false;
+
     if(alarm["p.cloud.decision"] === "block") {
       return true;
     } else 
@@ -720,7 +700,7 @@ module.exports = class {
   async newAlarmEvent() {
     return new Promise((resolve, reject) => {
       sem.once("Alarm:NewAlarm", (event) => {
-        resolve(this.jsonToAlarm(event.alarm));
+        this.getAlarm(event.alarmID).then(resolve, reject);
       });
     });
   }
@@ -923,101 +903,92 @@ module.exports = class {
 
   // }
 
-  findSimilarAlarmsByPolicy(policy, curAlarmID) {
-    return async(() => {
-      let alarms = await (this.loadActiveAlarmsAsync(200)) // load 200 alarms for comparison
-      return alarms.filter((alarm) => {
-        if(alarm.aid === curAlarmID) {
-          return false // ignore current alarm id, since it's already blocked
-        }
-        
-        if(alarm.result && alarm.result !== "") {
-          return false
-        }
-        
-        if(policy.match(alarm)) {
-          return true
-        } else {
-          return false
-        }
-      })                  
-    })()
-  }
-
-  blockAlarmByPolicy(alarm, policy, info, needArchive) {
-    return async(() => {
-      if(!alarm || !policy) {
-        return
+  async findSimilarAlarmsByPolicy(policy, curAlarmID) {
+    let alarms = await this.loadActiveAlarmsAsync(200); // load 200 alarms for comparison
+    return alarms.filter((alarm) => {
+      if(alarm.aid === curAlarmID) {
+        return false // ignore current alarm id, since it's already blocked
       }
 
-      log.info(`Alarm to block: ${alarm.aid}`)
-
-      alarm.result_policy = policy.pid;
-      alarm.result = "block";
-
-      if(info && info.method === "auto") {
-        alarm.result_method = "auto";
+      if(alarm.result && alarm.result !== "") {
+        return false
       }
 
-      await (this.updateAlarm(alarm))
-
-      if(needArchive) {
-        await (this.archiveAlarm(alarm.aid))
+      if(policy.match(alarm)) {
+        return true
       } else {
-        await (this.removeFromActiveQueueAsync(alarm.aid))
+        return false
       }
-
-      log.info(`Alarm ${alarm.aid} is blocked successfully`)
-    })()
+    })                  
   }
 
-  findSimilarAlarmsByException(exception, curAlarmID) {
-    return async(() => {
-      let alarms = await (this.loadActiveAlarmsAsync())
-      return alarms.filter((alarm) => {
-        if(alarm.aid === curAlarmID) {
-          return false // ignore current alarm id, since it's already blocked
-        }
-        
-        if(alarm.result && alarm.result !== "") {
-          return false
-        }
-        
-        if(exception.match(alarm)) {
-          return true
-        } else {
-          return false
-        }
-      })                  
-    })()
+  async blockAlarmByPolicy(alarm, policy, info, needArchive) {
+    if(!alarm || !policy) {
+      return
+    }
+
+    log.info(`Alarm to block: ${alarm.aid}`)
+
+    alarm.result_policy = policy.pid;
+    alarm.result = "block";
+
+    if(info && info.method === "auto") {
+      alarm.result_method = "auto";
+    }
+
+    await this.updateAlarm(alarm);
+
+    if(needArchive) {
+      await this.archiveAlarm(alarm.aid);
+    } else {
+      await this.removeFromActiveQueueAsync(alarm.aid);
+    }
+
+    log.info(`Alarm ${alarm.aid} is blocked successfully`)
   }
 
-  allowAlarmByException(alarm, exception, info, needArchive) {
-    return async(() => {
-      if(!alarm || !exception) {
-        return
+  async findSimilarAlarmsByException(exception, curAlarmID) {
+    let alarms = await this.loadActiveAlarmsAsync();
+    return alarms.filter((alarm) => {
+      if(alarm.aid === curAlarmID) {
+        return false // ignore current alarm id, since it's already blocked
       }
 
-      log.info(`Alarm to allow: ${alarm.aid}`)
-
-      alarm.result_exception = exception.eid;
-      alarm.result = "allow";
-
-      if(info.method === "auto") {
-        alarm.result_method = "auto";
+      if(alarm.result && alarm.result !== "") {
+        return false
       }
 
-      await (this.updateAlarm(alarm))
-
-      if(needArchive) {
-        await (this.archiveAlarm(alarm.aid))
+      if(exception.match(alarm)) {
+        return true
       } else {
-        await (this.removeFromActiveQueueAsync(alarm.aid))
+        return false
       }
-      
-      log.info(`Alarm ${alarm.aid} is allowed successfully`)
+    })                  
+  }
 
-    })()
+  async allowAlarmByException(alarm, exception, info, needArchive) {
+    if(!alarm || !exception) {
+      return
+    }
+
+    log.info(`Alarm to allow: ${alarm.aid}`)
+
+    alarm.result_exception = exception.eid;
+    alarm.result = "allow";
+
+    if(info.method === "auto") {
+      alarm.result_method = "auto";
+    }
+
+    await this.updateAlarm(alarm);
+
+    if(needArchive) {
+      await this.archiveAlarm(alarm.aid);
+    } else {
+      await this.removeFromActiveQueueAsync(alarm.aid);
+    }
+
+    log.info(`Alarm ${alarm.aid} is allowed successfully`)
   }
   
   blockFromAlarm(alarmID, value, callback) {
@@ -1226,12 +1197,6 @@ module.exports = class {
                 // archive alarm unless it's auto block
                 await (this.archiveAlarm(alarm.aid))
               }
-
-              // // old way
-              // if(!info.matchAll) {
-              //   callback(null, policy)
-              //   return
-              // }
 
               log.info("Trying to find if any other active alarms are covered by this new policy")
               let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
@@ -1483,97 +1448,65 @@ module.exports = class {
   }
 
   unblockFromAlarm(alarmID, info, callback) {
+    unblockFromAlarmAsync().then(
+      res => callback(null, res),
+      err => callback(err, null)
+    )
+  }
+
+  async unblockFromAlarmAsync(alarmID, info) {
     log.info("Going to unblock alarm " + alarmID);
 
     let alarmInfo = info.info; // not used by now
 
-     this.getAlarm(alarmID)
-      .then((alarm) => {
+    let alarm = await this.getAlarm(alarmID)
 
-        if(!alarm) {
-          log.error("Invalid alarm ID:", alarmID);
-          callback(new Error("Invalid alarm ID: " + alarmID));
-          return;
-        }
+    if(!alarm) {
+      log.error("Invalid alarm ID:", alarmID);
+      throw new Error("Invalid alarm ID: " + alarmID);
+    }
 
-        let pid = alarm.result_policy;
+    let pid = alarm.result_policy;
 
-        if(!pid || pid === "") {
-          alarm.result = "";
-          alarm.result_policy = "";
-          alarm.result_method = "";
-          this.updateAlarm(alarm)
-            .then(() => {
-              callback(null);
-            });
-          return;
-        }
+    // FIXME: make it transactional
+    // set alarm handle result + add policy
 
-        // FIXME: make it transactional
-        // set alarm handle result + add policy
+    await pm2.disableAndDeletePolicy(pid)
 
-        pm2.disableAndDeletePolicy(pid)
-          .then(() => {
-            alarm.result = "";
-            alarm.result_policy = "";
-            alarm.result_method = "";
-            this.updateAlarm(alarm)
-              .then(() => {
-                callback(null);
-              });
-          }).catch((err) => {
-            callback(err);
-          });
-
-      }).catch((err) => {
-        callback(err);
-      });
+    alarm.result = "";
+    alarm.result_policy = "";
+    alarm.result_method = "";
+    await this.updateAlarm(alarm)
   }
 
   unallowFromAlarm(alarmID, info, callback) {
+    unallowFromAlarmAsync().then(
+      res => callback(null, res),
+      err => callback(err, null)
+    )
+  }
+
+  async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
 
      let alarmInfo = info.info; // not used by now
 
-     this.getAlarm(alarmID)
-      .then((alarm) => {
+    let alarm = await this.getAlarm(alarmID)
 
         if(!alarm) {
           log.error("Invalid alarm ID:", alarmID);
-          callback(new Error("Invalid alarm ID: " + alarmID));
-          return;
+      throw new Error("Invalid alarm ID: " + alarmID);
         }
 
         let eid = alarm.result_exception;
 
-        if(!eid || eid === "") {
-          alarm.result = "";
-          alarm.result_policy = "";
-          this.updateAlarm(alarm)
-            .then(() => {
-              callback(null);
-            })
-          return;
-        }
-
         // FIXME: make it transactional
         // set alarm handle result + add policy
 
-        exceptionManager.deleteException(eid)
-          .then(() => {
+    await exceptionManager.deleteException(eid);
             alarm.result = "";
             alarm.result_policy = "";
-            this.updateAlarm(alarm)
-              .then(() => {
-                callback(null);
-              });
-          }).catch((err) => {
-            callback(err);
-          });
-
-      }).catch((err) => {
-        callback(err);
-      });
+    await this.updateAlarm(alarm);
   }
 
 

@@ -19,7 +19,7 @@
   "iptables": {
     "defaults": [
       "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
+      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
       "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
@@ -296,7 +296,8 @@
         "PacketFilter::Dropped_Packets": "ignore",
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
-        "Weird::Activity": "ignore"
+        "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
       "expires": 604800

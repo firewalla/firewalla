@@ -4,12 +4,8 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const jsonfile = require('jsonfile');
 const util = require('util');
 
-// FIXME: this profile should be loaded from cloud
-const profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
 const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js')
-
-const extend = require('util')._extend;
 
 // let moment = require('moment');
 
@@ -24,6 +20,27 @@ const extend = require('util')._extend;
 //      e:  extended    required to rander alarm detail
 //      r:  ?           required in neither scenarios above
 
+function suffixAutoBlock(alarm, category) {
+  if (alarm.result === "block" &&
+      alarm.result_method === "auto") {
+    return `${category}_AUTOBLOCK`;
+  }
+
+  return category;
+}
+
+function suffixDirection(alarm, category) {
+  if ("p.local_is_client" in alarm) {
+    if(alarm["p.local_is_client"] === "1") {
+      return `${category}_OUTBOUND`;
+    } else {
+      return `${category}_INBOUND`;
+    }
+  }
+
+  return category;
+}
+
 class Alarm {
   constructor(type, timestamp, device, info) {
     this.aid = 0;
@@ -31,7 +48,6 @@ class Alarm {
     this.device = device;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
-    this.notifType = `NOTIF_TITLE_${this.type}`; // default security
 
     if (info) Object.assign(this, info);
 
@@ -41,6 +57,10 @@ class Alarm {
 
   getManagementType() {
     return "";
+  }
+
+  getNotifType() {
+    return "NOTIF_TITLE_" + this.type;
   }
 
   getNotificationCategory() {
@@ -56,7 +76,7 @@ class Alarm {
   }
 
   localizedMessage() {
-    return i18n.__(this.getI18NCategory(), this);
+    return i18n.__(this.getInfoCategory(), this);
   }
 
   localizedNotification() {
@@ -85,11 +105,11 @@ class Alarm {
   }
 
   localizedInfo() {
-    if(this.timestamp)
-      //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
-      this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
-    
-    return i18n.__(this.getInfoCategory(), this);
+    // if(this.timestamp)
+    //   //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
+    //   this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
+
+    return this.localizedMessage() + this.timestamp ? " %@" : "";
   }
 
   toString() {
@@ -266,18 +286,7 @@ class BroNoticeAlarm extends Alarm {
 
     category = `${category}_${this["p.noticeType"]}`;
 
-    if("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
-        category = `${category}_OUTBOUND`;
-      } else {
-        category = `${category}_INBOUND`;
-      }
-    }
-
-    if(this.result === "block" &&
-    this.result_method === "auto") {
-      category = `${category}_AUTOBLOCK`;
-    }
+    category = suffixAutoBlock(this, category)
 
     // fallback if localization for this special bro type does not exist
     if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
@@ -307,6 +316,7 @@ class IntelReportAlarm extends Alarm {
     return [];
   }
 }
+
 class IntelAlarm extends Alarm {
   constructor(timestamp, device, severity, info) {
     super("ALARM_INTEL", timestamp, device, info);
@@ -315,44 +325,20 @@ class IntelAlarm extends Alarm {
 
   getI18NCategory() {
     this["p.dest.readableName"] = this.getReadableDestination()
-    
-    if(this.result === "block" && this.result_method === "auto") {
-      if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
-        if(this["p.local_is_client"] === "1") {
-          return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
-        } else {
-          return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
-        }
-      } else {
-        if (this["p.local_is_client"] === "1") {
-          return "AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
-        } else {
-          return "AUTO_BLOCK_ALARM_INTEL_FROM_OUTSIDE";
-        }
-      }
-    } else {
-      if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
-        if(this["p.local_is_client"] === "1") {
-          if("p.dest.url" in this) {
-            return "FW_INTEL_ALARM_URL_INTEL_FROM_INSIDE";
-          } else {
-            return "FW_INTEL_ALARM_INTEL_FROM_INSIDE";
-          }
-        } else {
-          if("p.dest.url" in this) {
-            return "FW_INTEL_ALARM_URL_INTEL_FROM_OUTSIDE";
-          } else {
-            return "FW_INTEL_ALARM_INTEL_FROM_OUTSIDE";
-          }
-        }
-      } else {
-        if(this["p.local_is_client"] === "1") {
-          return "ALARM_INTEL_FROM_INSIDE";
-        } else {
-          return "ALARM_INTEL_FROM_OUTSIDE";
-        }
-      }
+
+    let category = "ALARM_INTEL";
+
+    if("p.dest.url" in this) {
+      category = "ALARM_URL_INTEL";
     }
+
+    if (this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"])
+      category = 'FW_INTEL_' + category;
+
+    category = suffixDirection(this, category);
+    category = suffixAutoBlock(this, category)
+   
+    return category;
   }
   
   getReadableDestination() {
@@ -382,17 +368,10 @@ class IntelAlarm extends Alarm {
 }
 
 class OutboundAlarm extends Alarm {
-  // p
-  //   destinationID
-  //   destinationName
-  //   destinationHostname
 
   constructor(type, timestamp, device, destinationID, info) {
     super(type, timestamp ,device, info);
     this["p.dest.id"] = destinationID;
-    // if(profile[destinationID]) {
-    //   extend(payloads, profile[destinationID]);
-    // }
   }
 
   requiredKeys() {
@@ -476,19 +455,15 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getI18NCategory() {
-    let category = null
-    
-    if(this["p.local_is_client"] === "1") {
-      category = "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_INSIDE";
-    } else {
-      category = "ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE";
-    }
+    let category = "ALARM_LARGE_UPLOAD";
+
+    category = suffixDirection(this, category);
 
     return category
   }
 
   getNotificationCategory() {
-    let category = super.getNotificationCategory()    
+    let category = super.getNotificationCategory()
     
     if(this["p.dest.name"] === this["p.dest.ip"]) {
       if(this["p.dest.country"]) {
