@@ -448,6 +448,20 @@ class netBot extends ControllerBot {
       callback(null)
       return;
     }
+    if (value.alternativeIp && value.type === "static") {
+      const mySubnet = sysManager.mySubnet();
+      if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+        callback(`Alternative IP address should be in ${mySubnet}`);
+        return;
+      }
+    }
+    if (value.secondaryIp && value.type === "static") {
+      const mySubnet2 = sysManager.mySubnet2();
+      if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+        callback(`Secondary IP address should be in ${mySubnet2}`);
+        return;
+      }
+    }
     this.hostManager.getHost(ip, (err, host) => {
       if (host != null) {
         host.loadPolicy((err, data) => {
@@ -798,78 +812,77 @@ class netBot extends ControllerBot {
       }
     });
 
-    this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
-      if (msg) {
-        let notifMsg = msg.notif;
-        let aid = msg.aid;
-        if (notifMsg) {
-          log.info("Sending notification: " + JSON.stringify(msg));
-          if (this.hostManager.policy && this.hostManager.policy["notify"]) {
-               if (this.hostManager.policy['notify']['state']==false) {
-                   log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", msg);
-                   return;
-               }
-               if (msg.alarmType) {
-                   let alarmType = msg.alarmType;
-                   if (msg.alarmType  === "ALARM_LARGE_UPLOAD") {
-                       alarmType = "ALARM_BEHAVIOR";
-                   }
-                   if (this.hostManager.policy["notify"][alarmType] === false || 
-                   this.hostManager.policy["notify"][alarmType] === 0
-                   ) {
-                       log.info("ALARM_NOTIFY_BLOCKED", msg);
-                       return;
-                   }
-               }
+    sem.on('Alarm:NewAlarm', async (event) => {
+      let alarm;
+      try {
+        alarm = await am2.getAlarm(event.alarmID)
+      }
+      catch(err) {
+        log.error("Failed to fetch alarm", event)
+      }
+
+      let notifMsg = alarm.localizedNotification();
+      if (notifMsg) {
+        log.info("Sending notification: " + JSON.stringify(alarm));
+        if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+          if (this.hostManager.policy['notify']['state'] == false) {
+            log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+            return;
           }
-
-          log.info("ALARM_NOTIFY_PASSED");
-
-          notifMsg = {
-            title: i18n.__("SECURITY_ALERT"),
-            body: notifMsg
-          }
-
-          let data = {
-            gid: this.primarygid,
-            notifType: "ALARM"
-          };
-
-          if (msg.aid) {
-            data.aid = msg.aid;
-          }
-
-          if (msg.alarmID) {
-            data.alarmID = msg.alarmID;
-          }
-
-          if(msg.alarmNotifType) {
-            notifMsg.title = i18n.__(msg.alarmNotifType);
-          }
-
-          if (msg.autoblock) {
-            data.category = "com.firewalla.category.autoblockalarm";
-          } else {
-            if (msg.managementType === "") {
-              // default category
-              data.category = "com.firewalla.category.alarm";
-            } else {
-              data.category = "com.firewalla.category.alarm." + msg.managementType;
+          if (alarm.type) {
+            let alarmType = alarm.type;
+            if (alarmType === "ALARM_LARGE_UPLOAD") {
+              alarmType = "ALARM_BEHAVIOR";
+            }
+            if (this.hostManager.policy["notify"][alarmType] === false ||
+              this.hostManager.policy["notify"][alarmType] === 0
+            ) {
+              log.info("ALARM_NOTIFY_BLOCKED", alarm);
+              return;
             }
           }
-
-          // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
-          if(msg["testing"] && msg["testing"] == 1) {
-            notifMsg.title = `[Monkey] ${notifMsg.title}`;
-          }
-          if(msg["cloudAction"] && f.isDevelopmentVersion()) {
-            const pa = msg["cloudAction"];
-            notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
-          }
-          this.tx2(this.primarygid, "test", notifMsg, data);
-
         }
+
+        log.info("ALARM_NOTIFY_PASSED");
+
+        notifMsg = {
+          title: i18n.__(alarm.getNotifType()),
+          body: notifMsg
+        }
+
+        let data = {
+          gid: this.primarygid,
+          notifType: "ALARM"
+        };
+
+        if (alarm.aid) {
+          data.aid = alarm.aid;
+          data.alarmID = alarm.alarmID;
+        }
+
+        if (alarm.result_method === "auto" && alarm.result === "block") {
+          data.category = "com.firewalla.category.autoblockalarm";
+        } else {
+          if (alarm.getManagementType() === "") {
+            // default category
+            data.category = "com.firewalla.category.alarm";
+          } else {
+            data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
+          }
+        }
+
+        // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+        if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
+          notifMsg.title = `[Monkey] ${notifMsg.title}`;
+        }
+
+        const pa = alarm.cloudAction();
+        if(pa && f.isDevelopmentVersion()) {
+          notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
+        }
+        this.tx2(this.primarygid, "test", notifMsg, data);
       }
+
     });
 
     sem.on("FW_NOTIFICATION", (event) => {
@@ -1311,18 +1324,21 @@ class netBot extends ControllerBot {
             break;
           }
         }), (err) => {
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let reply = {
+              type: 'jsonmsg',
+              mtype: 'policy',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+            };
+            reply.code = 200;
+            reply.data = value;
+            log.info("Repling ", reply.code, reply.data);
+            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          }
         });
         break;
       case "host":

@@ -325,11 +325,38 @@ function ipsetEnqueue(ipsetCmd) {
       log.info("Control:Block:Processing:Error", code);
       ipsetEnqueue(null);
     });
-    for (let i in _ipsetQueue) {
-      log.debug("Control:Block:Processing", _ipsetQueue[i]);
-      child.stdin.write(_ipsetQueue[i]+"\n");
+    let errorOccurred = false;
+    child.stderr.on('data', (data) => {
+      log.error("ipset restore error: " + data);
+    });
+    child.stdin.on('error', (err) =>{
+      errorOccurred = true;
+      log.error("Failed to write to stdin", err);
+    });
+    writeToStdin(0);
+    function writeToStdin(i) {
+      const stdinReady = child.stdin.write(_ipsetQueue[i] + "\n", (err) => {
+        if (err) {
+          errorOccurred = true;
+          log.error("Failed to write to stdin", err);
+        } else {
+          if (i == _ipsetQueue.length - 1) {
+            child.stdin.end();
+          }
+        }
+      });
+      if (!stdinReady) {
+        child.stdin.once('drain', () => {
+          if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
+            writeToStdin(i + 1);
+          }
+        });
+      } else {
+        if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
+          writeToStdin(i + 1);
+        }
+      }
     }
-    child.stdin.end();
     log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
   } else {
     if (ipsetTimerSet == false) {

@@ -286,7 +286,8 @@
         "PacketFilter::Dropped_Packets": "ignore",
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
-        "Weird::Activity": "ignore"
+        "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
       "expires": 604800
