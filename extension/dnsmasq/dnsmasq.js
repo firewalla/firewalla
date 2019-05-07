@@ -254,7 +254,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.writeFileAsync(resolvFile, effectiveConfig);
     } catch (err) {
-      log.error("Error when updating resolv.conf:", resolveFile, "error msg:", err.message, {});
+      log.error("Error when updating resolv.conf:", resolvFile, "error msg:", err.message);
       throw err;
     }
 
