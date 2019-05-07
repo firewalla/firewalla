@@ -6,33 +6,28 @@
 
 const log = require("../../net2/logger.js")(__filename, "info");
 
-let fs = require('fs');
-let util = require('util');
+const fs = require('fs');
+const util = require('util');
 
-let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
-let logFolder = f.getLogFolder();
+const f = require('../../net2/Firewalla.js');
+const fHome = f.getFirewallaHome();
+const logFolder = f.getLogFolder();
 
-let config = require("../../net2/config.js").getConfig();
+const config = require("../../net2/config.js").getConfig();
 
-let userID = f.getUserID();
+const userID = f.getUserID();
 
 const df = require('node-df');
 
-//let SysManager = require('../../net2/SysManager');
-//let sysManager = new SysManager();
+//const SysManager = require('../../net2/SysManager');
+//const sysManager = new SysManager();
 
-let os  = require('../../vendor_lib/osutils.js');
+const os  = require('../../vendor_lib/osutils.js');
 
-let exec = require('child-process-promise').exec;
+const exec = require('child-process-promise').exec;
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-let _async = require('async');
-
-let Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const _async = require('async');
 
 let cpuUsage = 0;
 let memUsage = 0;
@@ -87,17 +82,19 @@ function stopUpdating() {
   updateFlag = 0;
 }
 
-function getThreadInfo() {
-  return async(() => {
-    let count = await (exec("ps -Haux | wc -l", {encoding: 'utf8'}));
-    let mainCount = await (exec("ps -Haux | grep Fi[r]eMain | wc -l", {encoding: 'utf8'}));
-    let apiCount = await (exec("ps -Haux | grep Fi[r]eApi | wc -l", {encoding: 'utf8'}));
-    let monitorCount = await (exec("ps -Haux | grep Fi[r]eMon | wc -l", {encoding: 'utf8'}));
+async function getThreadInfo() {
+  try {
+    const count = await exec("ps -Haux | wc -l", {encoding: 'utf8'});
+    const mainCount = await exec("ps -Haux | grep Fi[r]eMain | wc -l", {encoding: 'utf8'});
+    const apiCount = await exec("ps -Haux | grep Fi[r]eApi | wc -l", {encoding: 'utf8'});
+    const monitorCount = await exec("ps -Haux | grep Fi[r]eMon | wc -l", {encoding: 'utf8'});
     threadInfo.count = count.stdout.replace("\n", "");
     threadInfo.mainCount = mainCount.stdout.replace("\n", "");
     threadInfo.apiCount = apiCount.stdout.replace("\n", "");
     threadInfo.monitorCount = monitorCount.stdout.replace("\n", "");
-  })();
+  } catch(err) {
+    log.error("Failed to get thread info", err);
+  }
 }
 
 function getDiskInfo() {
@@ -115,10 +112,8 @@ function getDiskInfo() {
   });
 }
 
-function getIntelQueueSize() {
-  return async(() => {
-    intelQueueSize = await( rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf") )
-  })();
+async function getIntelQueueSize() {
+  intelQueueSize = await rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf")
 }
 
 function getRealMemoryUsage() {

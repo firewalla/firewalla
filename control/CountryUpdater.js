@@ -178,7 +178,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       await exec(check)
     } catch(err) {
       if (err.stderr.indexOf(`is NOT in set ${ipset}`) > 0)
-        await Block.block(ip, ipset);
+        await Block.block(ip, this.getIPSetName(category));
     }
   }
 }

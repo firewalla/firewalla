@@ -20,6 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const Block = require('./Block.js');
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+const _ = require('lodash')
 
 var instance = null;
 
@@ -46,21 +47,14 @@ class DomainUpdater {
   }
 
   async updateDomainMapping(domain, addresses) {
-    for (let key in this.updateOptions) {
+    if (!_.isString(domain)) return;
+
+    for (const key in this.updateOptions) {
       const config = this.updateOptions[key];
       const d = config.domain;
       const options = config.options;
-      let matched = false;
-      if (options.exactMatch) {
-        if (domain === d) {
-          matched = true;
-        }
-      } else {
-        if (domain.endsWith("." + d)) {
-          matched = true;
-        }
-      }
-      if (matched) {
+
+      if (options.exactMatch && domain === d || domain.endsWith("." + d)) {
         const existingAddresses = await domainIPTool.getMappedIPAddresses(domain, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {

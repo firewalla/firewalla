@@ -65,11 +65,10 @@ class DataMigrationSensor extends Sensor {
     switch (codeName) {
       case "clairvoyant": // Device has nowhere to hide through mac address!
         const hosts = await hostTool.getAllIPs();
-        hosts.forEach(async (host) => {
+        for (const host of hosts) {
           const mac = host.mac;
           const ips = host.ips;
-          for (let i in ips) {
-            const ip = ips[i];
+          for (const ip of ips) {
             log.info("Mac of " + ip + " is " + mac);
             if (mac) {
               let key = "flow:conn:in:" + ip;
@@ -78,34 +77,34 @@ class DataMigrationSensor extends Sensor {
                 await rclient.zunionstoreAsync([dstKey, 2, key, dstKey, "AGGREGATE", "MAX"]);
                 await rclient.delAsync(key);
               }
-  
+
               key = "flow:conn:out:" + ip;
               dstKey = "flow:conn:out:" + mac;
               if (await rclient.existsAsync(key)) {
                 await rclient.zunionstoreAsync([dstKey, 2, key, dstKey, "AGGREGATE", "MAX"]);
                 await rclient.delAsync(key);
               }
-  
+
               key = "stats:hour:in:" + ip;
               dstKey = "stats:hour:in:" + mac;
               if (await rclient.existsAsync(key)) {
                 await rclient.zunionstoreAsync([dstKey, 2, key, dstKey, "AGGREGATE", "MAX"]);
                 await rclient.delAsync(key);
               }
-  
+
               key = "stats:hour:out:" + ip;
               dstKey = "stats:hour:out:" + mac;
               if (await rclient.existsAsync(key)) {
                 await rclient.zunionstoreAsync([dstKey, 2, key, dstKey, "AGGREGATE", "MAX"]);
                 await rclient.delAsync(key);
               }
-  
+
               key = "stats:last24:" + ip + ":upload";
               dstKey = "stats:last24:" + mac + ":upload";
               if (ipTool.isV4Format(ip) && (await rclient.existsAsync(key))) { // only handle ip v4 stats since hash merge is too complicated
                 await rclient.renameAsync(key, dstKey);
               }
-  
+
               key = "stats:last24:" + ip + ":download";
               dstKey = "stats:last24:" + mac + ":download";
               if (ipTool.isV4Format(ip) && (await rclient.existsAsync(key))) { // only handle ip v4 stats since hash merge is too complicated
@@ -113,7 +112,7 @@ class DataMigrationSensor extends Sensor {
               }
             }
           }
-        });
+        };
         break;
       default:
         log.warn("Unrecognized code name: " + codeName);

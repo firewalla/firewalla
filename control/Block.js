@@ -346,28 +346,29 @@ function ipsetEnqueue(ipsetCmd) {
 }
 
 async function block(target, ipset, whitelist = false) {
+  const slashIndex = target.indexOf('/')
+  const ipAddr = slashIndex > 0 ? target.substring(0, slashIndex) : target;
+
+  // default ipsets
   if (!ipset) {
     const prefix = whitelist ? 'whitelist' : 'blocked'
-
-    const slashIndex = target.indexOf('/')
-    const ipAddr = slashIndex > 0 ? target.substring(0, slashIndex) : target;
     const type = slashIndex > 0 ? 'net' : 'ip';
-
-    let suffix = '';
-    if (iptool.isV4Format(ipAddr)) {
-      // ip.isV6Format() will return true on v4 addresses
-    } else if(iptool.isV6Format(ipAddr)) {
-      suffix = '6'
-    } else {
-      // do nothing
-      return;
-    }
-
-    ipset = `${prefix}_${type}_set${suffix}`
+    ipset = `${prefix}_${type}_set`
   }
 
-  const cmd = `add -! ${ipset} ${target}`
+  // check and add v6 suffix
+  let suffix = '';
+  if (iptool.isV4Format(ipAddr)) {
+    // ip.isV6Format() will return true on v4 addresses
+  } else if (iptool.isV6Format(ipAddr)) {
+    suffix = '6'
+  } else {
+    // do nothing
+    return;
+  }
+  ipset = ipset + suffix;
 
+  const cmd = `add -! ${ipset} ${target}`
   log.debug("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return;
