@@ -19,15 +19,11 @@ const userID = f.getUserID();
 
 const df = require('node-df');
 
-//const SysManager = require('../../net2/SysManager');
-//const sysManager = new SysManager();
-
 const os  = require('../../vendor_lib/osutils.js');
 
 const exec = require('child-process-promise').exec;
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-const _async = require('async');
 
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -169,7 +165,7 @@ async function getConns() {
   try {
     const keys = await rclient.keysAsync('flow:conn:*');
 
-    let results = Promise.all(
+    let results = await Promise.all(
       keys.map(key => rclient.zcountAsync(key, '-inf', '+inf'))
     );
 
@@ -241,60 +237,45 @@ function getSysInfo() {
   return sysinfo;
 }
 
-function getRecentLogs(callback) {
-  let logFiles = ["api.log", "kickui.log", "main.log", "monitor.log", "dns.log"].map((name) => logFolder + "/" + name);
+async function getRecentLogs() {
+  const logFiles = ["api.log", "kickui.log", "main.log", "monitor.log", "dns.log"].map((name) => logFolder + "/" + name);
 
-  let tailNum = config.sysInfo.tailNum || 100; // default 100
-  let tailFunction = function(file, callback) {
-    let cmd = util.format('tail -n %d %s', tailNum, file);
-    require('child_process').exec(cmd, (code, stdout, stderr) => {
-      if(code) {
-        log.warn("error when reading file " + file + ": " + stderr);
-        callback(null, { file: file, content: "" });
-      } else {
-        callback(null, { file: file, content: stdout } );
-      }
-    });
-  }
+  const tailNum = config.sysInfo.tailNum || 100; // default 100
 
-  _async.map(logFiles, tailFunction, callback);
+  let results = await Promise.all(logFiles.map(async file => {
+    // ignore all errors
+    try {
+      let res = await exec(util.format('tail -n %d %s', tailNum, file))
+      return { file: file, content: res.stdout }
+    } catch(err) {
+      return { file: file, content: "" }
+    }
+  }));
+
+  return results
 }
 
 function getTopStats() {
   return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
 }
 
-function getTop5Flows(callback) {
-  rclient.keys("flow:conn:*", (err, results) => {
-    if(err) {
-      callback(err);
-      return;
-    }
+async function getTop5Flows() {
+  let flows = await rclient.keysAsync("flow:conn:*");
 
-    _async.map(results, (flow, callback) => {
-      rclient.zcount(flow, "-inf", "+inf", (err, count) => {
-        if(err) {
-          callback(err);
-          return;
-        }
-        callback(null, {name: flow, count: count});
-      });
-    }, (err, results) => {
-      _async.sortBy(results, (x, callback) => callback(null, x.count * -1), (err, results) => {
-        callback(null, results.slice(0, 5));
-      });
-    });
-  });
+  let stats = await Promise.all(flows.map(async (flow) => {
+    let count = await rclient.zcountAsync(flow, "-inf", "+inf")
+    return {name: flow, count: count};
+  }))
+    
+  return stats.sort((a, b) => b.count - a.count).slice(0, 5);
 }
 
-function getPerfStats(callback) {
-  getTop5Flows((err, results) => {
-    callback(err, {
-      top: getTopStats(),
-      sys: getSysInfo(),
-      perf: results
-    });
-  });
+async function getPerfStats() {
+  return {
+    top: getTopStats(),
+    sys: getSysInfo(),
+    perf: await getTop5Flows()
+  }
 }
 
 function getHeapDump(file, callback) {

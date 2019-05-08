@@ -190,15 +190,13 @@ router.get('/categories',
 
 router.get('/perfstat',
           function(req, res, next) {
-            sysInfo.getPerfStats((err, stat) => {
-              if(err) {
-                res.status(500);
-                res.send('server error');
-                return;
-              }
-
+            sysInfo.getPerfStats().then(stat => {
               res.json(stat);
-            });
+            }).catch(err => {
+              log.error(err);
+              res.status(500);
+              res.send('server error');
+            })
           });
 
 router.get('/heapdump',

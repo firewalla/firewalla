@@ -1749,8 +1749,10 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, SysInfo.getSysInfo(), null, callback);
         break;
       case "logFiles":
-        SysInfo.getRecentLogs((err, results) => {
+        SysInfo.getRecentLogs().then(results => {
           this.simpleTxData(msg, results, null, callback);
+        }).catch(err => {
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "scisurfconfig":
