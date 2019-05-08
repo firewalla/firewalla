@@ -70,7 +70,7 @@ let flowControl = require('../util/FlowControl');
 //       dnsmasq.stop((err) => {
 //         if(!err) {
 //           log.info("dnsmasq service is stopped successfully");
-//           require('../util/delay.js').delay(1000)
+//           require('../util/util.js').delay(1000)
 //           .then(() => {
 //             resolve();
 //           })

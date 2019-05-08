@@ -22,11 +22,6 @@ const firewalla = require('../../net2/Firewalla.js');
 
 const fHome = firewalla.getFirewallaHome()
 
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const FRP = require('./frp.js')
 
 function delay(t) {

@@ -47,7 +47,7 @@ class HeapSensor extends Sensor {
             heapdump.writeSnapshot(m.file, this.onComplete);
           }
         } catch (err) {
-          log.error("Failed to parse JSON message: ", message, {});
+          log.error("Failed to parse JSON message: ", message);
         }
       } else if(channel === "gc" && message === process.title)  {
         global.gc()
@@ -61,7 +61,7 @@ class HeapSensor extends Sensor {
   
   onComplete(err, file) {
     if(err) {
-      log.error("Failed to dump heap data:", err, {});
+      log.error("Failed to dump heap data:", err);
       return;
     }
     

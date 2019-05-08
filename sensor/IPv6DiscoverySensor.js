@@ -82,7 +82,7 @@ class IPv6DiscoverySensor extends Sensor {
             })
         }
       }).catch((err) => {
-        log.error("Failed to check if sensor is enabled", err, {});
+        log.error("Failed to check if sensor is enabled", err);
       })
   }
 
@@ -112,7 +112,8 @@ class IPv6DiscoverySensor extends Sensor {
       suppressAlarm: true,
       host:  {
         ipv6Addr: v6addrs,
-        mac: mac.toUpperCase()
+        mac: mac.toUpperCase(),
+        from: "ip6neighbor"
       }
     });
   }

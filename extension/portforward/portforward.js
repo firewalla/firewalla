@@ -34,7 +34,7 @@ const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
 
 const ShieldManager = require('../../net2/ShieldManager.js');
-const shieldManager = new ShieldManager();
+let shieldManager = null;
 
 const rp = require('request-promise')
 
@@ -106,7 +106,7 @@ class PortForward {
           let config = JSON.parse(json)
           this.config = config
         } catch(err) {
-          log.error("PortForwarder:Failed to parse config:", json, err, {})
+          log.error("PortForwarder:Failed to parse config:", json, err);
           this.config = {maps:[]};
         }
       } else {
@@ -162,6 +162,8 @@ class PortForward {
       }
       
       log.info("PORTMAP: Add",map);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
       await (shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport));
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
@@ -169,7 +171,7 @@ class PortForward {
       let state = await (iptable.portforwardAsync(dupMap));
       return state;
     })().catch((err) => {
-      log.error("Failed to add port mapping:", err, {})
+      log.error("Failed to add port mapping:", err);
     }) 
   }
 
@@ -182,6 +184,8 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
       await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
 
       // we call remove anyway ... even there is no entry
@@ -198,7 +202,7 @@ class PortForward {
       if (this.config && this.config.maps) {
         for (let i in this.config.maps) {
           let map = this.config.maps[i];
-          log.info("Restoring Map: ",map,{});
+          log.info("Restoring Map: ",map);
           await (this.addPort(map,true));
         }
       }
@@ -208,6 +212,7 @@ class PortForward {
 
   start() {
     log.info("PortForwarder:Starting PortForwarder ...")
+    shieldManager = new ShieldManager();
     return async(() => {
       await (this.loadConfig())
       await (this.restore())

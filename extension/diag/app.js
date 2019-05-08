@@ -78,28 +78,28 @@ class App {
       try {
         await (exec(fireKickCmd))
       } catch(err) {
-        log.error("firekick is not alive", err, {})
+        log.error("firekick is not alive", err);
         return errorCodes.firekick
       }
 
       try {
         await (exec(fireMainCmd))
       } catch(err) {
-        log.error("firemain is not alive", err, {})
+        log.error("firemain is not alive", err);
         return errorCodes.firemain
       }
       
       try {
         await (exec(fireApiCmd))
       } catch(err) {
-        log.error("fireapi is not alive", err, {})
+        log.error("fireapi is not alive", err);
         return errorCodes.fireapi
       }
 
       try {
         await (exec(fireMonCmd))
       } catch(err) {
-        log.error("firemon is not alive", err, {})
+        log.error("firemon is not alive", err);
         return errorCodes.firemon
       }
 
@@ -144,7 +144,7 @@ class App {
       try {
         await (exec("systemctl is-active redis-server"))
       } catch(err) {
-        log.error("Failed to check database", err, {})
+        log.error("Failed to check database", err);
         return errorCodes.database
       }
 
@@ -158,7 +158,7 @@ class App {
         const gid = await (exec("redis-cli hget sys:ept gid"))
         return gid && gid.stdout && gid.stdout.substring(0,8)
       } catch(err) {
-        log.error("Failed to get gid", err, {})
+        log.error("Failed to get gid", err);
         return null
       }
     })()
@@ -170,7 +170,7 @@ class App {
         const gid = await (exec("redis-cli hget sys:ept gid"))
         return gid && gid.stdout && gid.stdout.replace("\n", "")
       } catch(err) {
-        log.error("Failed to get gid", err, {})
+        log.error("Failed to get gid", err);
         return null
       }
     })()
@@ -248,7 +248,7 @@ class App {
         res.setHeader('content-type', 'text/plain');
         res.end(lines.join("\n"))
       })().catch((err) => {
-        log.error("Failed to fetch log", err, {})
+        log.error("Failed to fetch log", err);
         res.status(404).send('')
       })
     });
@@ -330,7 +330,7 @@ class App {
         res.render('welcome', values)
         
       })().catch((err) => {
-        log.error("Failed to process request", err, {})
+        log.error("Failed to process request", err);
         res.status(500).send({})
       })
     })

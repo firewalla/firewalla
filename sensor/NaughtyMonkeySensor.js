@@ -382,7 +382,7 @@ class NaughtyMonkeySensor extends Sensor {
     await exec(cmd, {
       cwd: f.getFirewallaHome() + "/testLegacy/"
     }).catch((err) => {
-      log.error("Failed to release monkey", cmd, err, {})
+      log.error("Failed to release monkey", cmd, err);
     })
 
   }

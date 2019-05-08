@@ -85,10 +85,10 @@ class AdvancedNmapSensor extends Sensor {
       .enrichDeviceInfo(alarm)
       .then(alarm => {
         am2.enqueueAlarm(alarm);
-        log.info('Created a vulnerability alarm', alarm.aid, 'on device', ip, {});
+        log.info('Created a vulnerability alarm', alarm.aid, 'on device', ip);
       })
       .catch(err => {
-        log.error('Failed to create vulnerability alarm:', err, err.stack, {});
+        log.error('Failed to create vulnerability alarm:', err, err.stack);
       });
   }
 
@@ -106,7 +106,7 @@ class AdvancedNmapSensor extends Sensor {
         }
       })
       .catch(err => {
-        log.error('Failed to check if sensor is enabled', err, {});
+        log.error('Failed to check if sensor is enabled', err);
       });
   }
 
@@ -116,7 +116,7 @@ class AdvancedNmapSensor extends Sensor {
     log.info('Scanning network to detect vulnerability...');
 
     Object.keys(scriptConfig).forEach(scriptName => {
-      log.info('Running script', scriptName, {});
+      log.info('Running script', scriptName);
 
       let ports = scriptConfig[scriptName].ports;
       if (ports) {
@@ -138,7 +138,7 @@ class AdvancedNmapSensor extends Sensor {
               if (h.scripts) {
                 h.scripts.forEach(script => {
                   if (script.state === 'VULNERABLE') {
-                    log.info( 'Found vulnerability', script.key, 'on host', h.ipv4Addr, {});
+                    log.info( 'Found vulnerability', script.key, 'on host', h.ipv4Addr);
                     this.createVulnerabilityAlarm(h, script);
                   }
                 });

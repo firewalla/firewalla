@@ -33,7 +33,8 @@ var VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
 
-let UPNP = require('../extension/upnp/upnp');
+const UPNP = require('../extension/upnp/upnp');
+const upnp = new UPNP();
 
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
@@ -119,7 +120,7 @@ module.exports = class {
             defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
           }
         }
-        log.debug("PolicyManager:flush", defaultTable, {});
+        log.debug("PolicyManager:flush", defaultTable);
         iptable.run(defaultTable);
 
         // Setup iptables so that it's ready for blocking
@@ -280,7 +281,7 @@ module.exports = class {
         if (err.code === 'ENOENT') {
           log.info('Dnsmasq: No family_filter.conf, skip remove');
         } else {
-          log.warn('Dnsmasq: Error when remove family_filter.conf', err, {});
+          log.warn('Dnsmasq: Error when remove family_filter.conf', err);
         }
       }
     });
@@ -314,7 +315,7 @@ module.exports = class {
         
         // auto redirect all porn traffic in v2 mode
         categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
-          log.error("Failed to redirect porn traffic, err", err, {})
+          log.error("Failed to redirect porn traffic, err", err);
         })
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
@@ -322,7 +323,7 @@ module.exports = class {
 
         // auto redirect all porn traffic in v2 mode
         categoryUpdater.iptablesUnredirectCategory("porn").catch((err) => {
-          log.error("Failed to unredirect porn traffic, err", err, {})
+          log.error("Failed to unredirect porn traffic, err", err);
         })
       }
     });
@@ -423,6 +424,14 @@ module.exports = class {
     await host.ipAllocation(policy);
   }
 
+  async enhancedSpoof(host, state) {
+    if (host.constructor.name !== 'HostManager') {
+      log.error("enhancedSpoof doesn't support per device policy", host);
+      return;
+    }
+    host.enhancedSpoof(state);
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -486,7 +495,7 @@ module.exports = class {
         await mss_client.start()
         log.info("SciSurf feature is enabled successfully");
       })().catch((err) => {
-        log.error("Failed to start scisurf feature:", err, {})
+        log.error("Failed to start scisurf feature:", err);
       })
 
     } else {
@@ -537,7 +546,7 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy", host);
+      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
       return; // doesn't support per-device policy
     }
     let needUpdate = false;
@@ -573,7 +582,6 @@ module.exports = class {
         return; // exit if the flag is still off
       }
 
-      let upnp = new UPNP();
       upnp.addPortMapping("tcp", localPort, externalPort, "Firewalla API");
       this.addAPIPortMapping(UPNP_INTERVAL * 1000); // add port every hour
     }, time)
@@ -588,7 +596,6 @@ module.exports = class {
         return; // exit if the flag is still on
       }
 
-      let upnp = new UPNP();
       upnp.removePortMapping("tcp", localPort, externalPort);
       this.removeAPIPortMapping(UPNP_INTERVAL * 1000); // remove port every hour
     }, time)
@@ -679,6 +686,8 @@ module.exports = class {
         this.scisurf(host, policy[p]);
       } else if (p === "shield") {
         host.shield(policy[p]);
+      } else if (p === "enhancedSpoof") {
+        this.enhancedSpoof(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
       } else if (p === "ipAllocation") {
@@ -795,7 +804,7 @@ module.exports = class {
           delete newblock._dst;
         }
         policy.push(newblock);
-        log.info("PolicyManager:ModifiedACL", block, newblock, {});
+        log.info("PolicyManager:ModifiedACL", block, newblock);
       }
     }
 

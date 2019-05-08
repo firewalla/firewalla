@@ -260,7 +260,7 @@ function getVersion() {
       versionElements = require('child_process').execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
     } catch (err) {
-      log.error("Failed to get git version tags", err, {});
+      log.error("Failed to get git version tags", err);
     }
 
     if(versionElements.length === 3) {
@@ -289,6 +289,10 @@ const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip);
+}
+
+function getRedHoleIP() {
+  return RED_HOLE_IP;
 }
 
 function isMain() {
@@ -343,5 +347,7 @@ module.exports = {
   isMonitor:isMonitor,
   getLastCommitDate:getLastCommitDate,
 
-  getProcessName:getProcessName
+  getProcessName:getProcessName,
+
+  getRedHoleIP:getRedHoleIP
 }

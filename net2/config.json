@@ -1,5 +1,5 @@
 {
-  "version": 1.963,
+  "version": 1.965,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -19,7 +19,7 @@
   "iptables": {
     "defaults": [
       "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
+      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
       "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
@@ -30,6 +30,7 @@
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
     "alarm.vpn_client_connection.cooldown": 14400,
+    "alarm.upnp.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000
   },
   "secondaryInterface": {
@@ -114,7 +115,11 @@
     "VPNRelaySensor": {},
     "PublicIPSensor": {},
     "APIRelaySensor": {},
-    "CategoryUpdateSensor": {},
+    "CategoryUpdateSensor": {
+      "regularInterval": 28800,
+      "securityInterval": 14400,
+      "countryInterval": 864000
+    },
     "AutoBlocksRevalidationSensor": {
     },
     "FlowAggregationSensor": {},
@@ -164,6 +169,7 @@
     },
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
@@ -280,7 +286,8 @@
         "PacketFilter::Dropped_Packets": "ignore",
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
-        "Weird::Activity": "ignore"
+        "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
       "expires": 604800
@@ -354,7 +361,6 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "ipv6": false,
     "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,

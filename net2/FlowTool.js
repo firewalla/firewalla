@@ -14,31 +14,25 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-let Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let DNSManager = require('./DNSManager.js');
-let dnsManager = new DNSManager('info');
+const util = require('util');
 
-let async2 = require('async');
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let util = require('util');
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
+const destIPFoundHook = new DestIPFoundHook();
 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
-let DestIPFoundHook = require('../hook/DestIPFoundHook');
-let destIPFoundHook = new DestIPFoundHook();
-
-let HostTool = require('../net2/HostTool.js');
-let hostTool = new HostTool();
-
-let country = require('../extension/country/country.js');
+const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const QUERY_MAX_FLOW = 10000;
@@ -114,14 +108,6 @@ class FlowTool {
       key = flow.sh + ":" + flow.fd;
     }
     return key;
-  }
-
-  _getRemoteIP(flow) {
-    if (flow.sh === flow.lh) {
-      return flow.dh;
-    } else {
-      return flow.sh;
-    }
   }
 
   // append to existing flow or create new
@@ -560,7 +546,7 @@ class FlowTool {
     let to = options.end || new Date() / 1000;
     let from = options.begin || (to - MAX_RECENT_INTERVAL);
 
-    let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
+    let results = await rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]);
 
     if(results === null || results.length === 0)
       return [];
@@ -576,10 +562,11 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
         if (a.ets && b.ets) {
-          return b.ets - a.ets;
-        } else {
-          return b.ts - a.ts;
+          // sort by end timestamp if present
+          a.ts = a.ets;
+          b.ts = b.ets;
         }
+        return b.ts - a.ts;
       })); 
     } else {
       mergedFlow = flowObjects

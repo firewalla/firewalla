@@ -198,7 +198,7 @@ class NmapSensor extends Sensor {
             })
         }
       }).catch((err) => {
-      log.error("Failed to check if sensor is enabled", err, {});
+      log.error("Failed to check if sensor is enabled", err);
     })
   }
 
@@ -226,16 +226,16 @@ class NmapSensor extends Sensor {
           log.info("Analyzing scan result...");
 
           if(hosts.length === 0) {
-            log.info("No device is found for network", range, {});
+            log.info("No device is found for network", range);
             return;
           }
           hosts.forEach((h) => {
-            log.debug("Found device:", h.ipv4Addr, {});
+            log.debug("Found device:", h.ipv4Addr);
             this._processHost(h);
           })
 
         }).catch((err) => {
-          log.error("Failed to scan:", err, {});
+          log.error("Failed to scan:", err);
         });
     })).then(() => {
       setTimeout(() => {
@@ -262,7 +262,7 @@ class NmapSensor extends Sensor {
       } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
         return // do nothing on secondary ip
       } else {
-        log.error("Invalid MAC Address for host", host, {})
+        log.error("Invalid MAC Address for host", host);
         return
       }
     }

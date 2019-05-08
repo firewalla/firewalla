@@ -84,7 +84,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("[Developerment] Got error when handling request:", err, err.stack, {});
+    log.error("[Developerment] Got error when handling request:", err, err.stack);
     res.status(err.status || 500);
     res.json({
       message: err.message,
@@ -96,7 +96,7 @@ if (app.get('env') === 'development') {
 // production error handler
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
-  log.error("Got error when handling request: ", err, err.stack, {});
+  log.error("Got error when handling request: ", err, err.stack);
   res.status(err.status || 500);
   res.json({
     message: err.message,

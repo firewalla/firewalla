@@ -58,7 +58,7 @@ class DeviceMgmtTool {
 
         cp.exec(cmd, (err) => {
           if(err) {
-            log.error("Failed to rename overlay upper work directory to backup:", err, {});
+            log.error("Failed to rename overlay upper work directory to backup:", err);
           }
           log.info("Resetting with cmd ",cmd);
           resolve();

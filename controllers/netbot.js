@@ -120,7 +120,7 @@ const hostTool = new HostTool();
 
 const appTool = require('../net2/AppTool')();
 
-const spooferManager = require('../net2/SpooferManager.js')
+const SpooferManager = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
@@ -133,6 +133,8 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+
+const conncheck = require('../diagnostic/conncheck.js');
 
 const _ = require('lodash')
 
@@ -446,6 +448,20 @@ class netBot extends ControllerBot {
       callback(null)
       return;
     }
+    if (value.alternativeIp && value.type === "static") {
+      const mySubnet = sysManager.mySubnet();
+      if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+        callback(`Alternative IP address should be in ${mySubnet}`);
+        return;
+      }
+    }
+    if (value.secondaryIp && value.type === "static") {
+      const mySubnet2 = sysManager.mySubnet2();
+      if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+        callback(`Secondary IP address should be in ${mySubnet2}`);
+        return;
+      }
+    }
     this.hostManager.getHost(ip, (err, host) => {
       if (host != null) {
         host.loadPolicy((err, data) => {
@@ -553,6 +569,25 @@ class netBot extends ControllerBot {
     });
   }
 
+  _enhancedSpoof(ip, value, callback) {
+    if (ip !== "0.0.0.0") {
+      callback(null);
+      return;
+    }
+
+    this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.setPolicy("enhancedSpoof", value, (err, data) => {
+        if (err == null) {
+          if (callback)
+            callback(null, "Success");
+        } else {
+          if (callback)
+            callback(err, "Unable to apply compatible spoof: " + value);
+        }
+      })
+    })
+  }
+
   _vulScan(ip, value, callback) {
     if(ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
@@ -648,7 +683,7 @@ class netBot extends ControllerBot {
           if (callback != null)
             callback(err, "Unable to setNotify " + ip);
         }
-        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify),{});
+        log.info("Notification Set",value," CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
         nm.loadConfig();
       });
     });
@@ -658,15 +693,15 @@ class netBot extends ControllerBot {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid+".tar.gz.gpg";
     let path = "";
-    log.info("sendLog: ", filename, password,{});
+    log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
-      log.info("sendLog: Storage ", filename, password,url,{});
+      log.info("sendLog: Storage ", filename, password,url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg,{},"Unable to get storage",callback);   
       } else {
         path = URL.parse(url.url).pathname;
         let cmdline = '/home/pi/firewalla/scripts/encrypt-upload-s3.sh '+filename+' '+password+' '+"'"+url.url+"'";
-        log.info("sendLog: cmdline", filename, password,cmdline,{});
+        log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
           log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
@@ -777,78 +812,77 @@ class netBot extends ControllerBot {
       }
     });
 
-    this.subscriber.subscribe("ALARM", "ALARM:CREATED", null, (channel, type, ip, msg) => {
-      if (msg) {
-        let notifMsg = msg.notif;
-        let aid = msg.aid;
-        if (notifMsg) {
-          log.info("Sending notification: " + JSON.stringify(msg));
-          if (this.hostManager.policy && this.hostManager.policy["notify"]) {
-               if (this.hostManager.policy['notify']['state']==false) {
-                   log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", msg);
-                   return;
-               }
-               if (msg.alarmType) {
-                   let alarmType = msg.alarmType;
-                   if (msg.alarmType  === "ALARM_LARGE_UPLOAD") {
-                       alarmType = "ALARM_BEHAVIOR";
-                   }
-                   if (this.hostManager.policy["notify"][alarmType] === false || 
-                   this.hostManager.policy["notify"][alarmType] === 0
-                   ) {
-                       log.info("ALARM_NOTIFY_BLOCKED", msg);
-                       return;
-                   }
-               }
+    sem.on('Alarm:NewAlarm', async (event) => {
+      let alarm;
+      try {
+        alarm = await am2.getAlarm(event.alarmID)
+      }
+      catch(err) {
+        log.error("Failed to fetch alarm", event)
+      }
+
+      let notifMsg = alarm.localizedNotification();
+      if (notifMsg) {
+        log.info("Sending notification: " + JSON.stringify(alarm));
+        if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+          if (this.hostManager.policy['notify']['state'] == false) {
+            log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+            return;
           }
-
-          log.info("ALARM_NOTIFY_PASSED");
-
-          notifMsg = {
-            title: i18n.__("SECURITY_ALERT"),
-            body: notifMsg
-          }
-
-          let data = {
-            gid: this.primarygid,
-            notifType: "ALARM"
-          };
-
-          if (msg.aid) {
-            data.aid = msg.aid;
-          }
-
-          if (msg.alarmID) {
-            data.alarmID = msg.alarmID;
-          }
-
-          if(msg.alarmNotifType) {
-            notifMsg.title = i18n.__(msg.alarmNotifType);
-          }
-
-          if (msg.autoblock) {
-            data.category = "com.firewalla.category.autoblockalarm";
-          } else {
-            if (msg.managementType === "") {
-              // default category
-              data.category = "com.firewalla.category.alarm";
-            } else {
-              data.category = "com.firewalla.category.alarm." + msg.managementType;
+          if (alarm.type) {
+            let alarmType = alarm.type;
+            if (alarmType === "ALARM_LARGE_UPLOAD") {
+              alarmType = "ALARM_BEHAVIOR";
+            }
+            if (this.hostManager.policy["notify"][alarmType] === false ||
+              this.hostManager.policy["notify"][alarmType] === 0
+            ) {
+              log.info("ALARM_NOTIFY_BLOCKED", alarm);
+              return;
             }
           }
-
-          // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
-          if(msg["testing"] && msg["testing"] == 1) {
-            notifMsg.title = `[Monkey] ${notifMsg.title}`;
-          }
-          if(msg["cloudAction"] && f.isDevelopmentVersion()) {
-            const pa = msg["cloudAction"];
-            notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
-          }
-          this.tx2(this.primarygid, "test", notifMsg, data);
-
         }
+
+        log.info("ALARM_NOTIFY_PASSED");
+
+        notifMsg = {
+          title: i18n.__(alarm.getNotifType()),
+          body: notifMsg
+        }
+
+        let data = {
+          gid: this.primarygid,
+          notifType: "ALARM"
+        };
+
+        if (alarm.aid) {
+          data.aid = alarm.aid;
+          data.alarmID = alarm.alarmID;
+        }
+
+        if (alarm.result_method === "auto" && alarm.result === "block") {
+          data.category = "com.firewalla.category.autoblockalarm";
+        } else {
+          if (alarm.getManagementType() === "") {
+            // default category
+            data.category = "com.firewalla.category.alarm";
+          } else {
+            data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
+          }
+        }
+
+        // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+        if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
+          notifMsg.title = `[Monkey] ${notifMsg.title}`;
+        }
+
+        const pa = alarm.cloudAction();
+        if(pa && f.isDevelopmentVersion()) {
+          notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
+        }
+        this.tx2(this.primarygid, "test", notifMsg, data);
       }
+
     });
 
     sem.on("FW_NOTIFICATION", (event) => {
@@ -1197,6 +1231,11 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
+            case "enhancedSpoof":
+              this._enhancedSpoof(msg.target, value.enhancedSpoof, (err, obj) => {
+                cb(err);
+              });
+              break;
             case "vulScan":
               this._vulScan(msg.target, value.vulScan, (err, obj) => {
                 cb(err);
@@ -1285,18 +1324,21 @@ class netBot extends ControllerBot {
             break;
           }
         }), (err) => {
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
+          } else {
+            let reply = {
+              type: 'jsonmsg',
+              mtype: 'policy',
+              id: uuid.v4(),
+              expires: Math.floor(Date.now() / 1000) + 60 * 5,
+              replyid: msg.id,
+            };
+            reply.code = 200;
+            reply.data = value;
+            log.info("Repling ", reply.code, reply.data);
+            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          }
         });
         break;
       case "host":
@@ -1323,7 +1365,7 @@ class netBot extends ControllerBot {
 
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
-            log.info("set host name alias by mac address", macAddress, {})
+            log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
               name: data.value.name,
@@ -1451,6 +1493,9 @@ class netBot extends ControllerBot {
           case "spoof":
           case "autoSpoof":
             modeManager.setAutoSpoofAndPublish()
+            break;
+          case "dhcpSpoof":
+            modeManager.setDHCPSpoofAndPublish()
             break;
           case "manualSpoof":
             modeManager.setManualSpoofAndPublish()
@@ -1980,7 +2025,7 @@ class netBot extends ControllerBot {
             let alarmIDs = list.map((p) => p.aid);
             am2.idsToAlarms(alarmIDs, (err, alarms) => {
               if(err) {
-                log.error("Failed to get alarms by ids:", err, {});
+                log.error("Failed to get alarms by ids:", err);
                 this.simpleTxData(msg, {}, err, callback);
                 return;
               }
@@ -2133,7 +2178,7 @@ class netBot extends ControllerBot {
   }
   
   deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
-    log.info("Getting info on device", target, {});
+    log.info("Getting info on device", target);
 
     return async(() => {
       if(target === '0.0.0.0') {
@@ -2161,7 +2206,7 @@ class netBot extends ControllerBot {
       }
       
       // if(hostTool.isMacAddress(target)) {
-      //   log.info("Loading host info by mac address", target, {})
+      //   log.info("Loading host info by mac address", target);
       //   const macAddress = target
       //   const hostObject = await (hostTool.getMACEntry(macAddress))
 
@@ -2201,13 +2246,13 @@ class netBot extends ControllerBot {
           netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
 
         if(!jsonobj.flows["appDetails"]) {
-          log.warn("Fell back to legacy mode on app details:", mac, options, {})
+          log.warn("Fell back to legacy mode on app details:", mac, options);
           await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
           await (this.validateFlowAppIntel(jsonobj))
         }
 
         if(!jsonobj.flows["categoryDetails"]) {
-          log.warn("Fell back to legacy mode on category details:", mac, options, {})
+          log.warn("Fell back to legacy mode on category details:", mac, options);
           await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
           await (this.validateFlowCategoryIntel(jsonobj))
         }
@@ -2231,7 +2276,7 @@ class netBot extends ControllerBot {
     if(msg && msg.data && msg.data.item === 'ping') {
 
     } else {
-      log.info("API: CmdHandler ",gid,msg,{});
+      log.info("API: CmdHandler ",gid,msg);
     }
 
     if(extMgr.hasCmd(msg.data.item)) {
@@ -2585,7 +2630,7 @@ class netBot extends ControllerBot {
             try {
               result = await bone.intelFinger(target);
             } catch (err) {
-              log.error("Error when intel finger", err, {});
+              log.error("Error when intel finger", err);
             }
             if (result && result.whois) {
               this.simpleTxData(msg, result, null, callback);
@@ -2664,7 +2709,7 @@ class netBot extends ControllerBot {
 
           let mode = require('../net2/Mode.js')
           if(mode.isManualSpoofModeOn()) {
-            await (spooferManager.loadManualSpoof(mac))
+            await (new SpooferManager().loadManualSpoof(mac))
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -2699,7 +2744,7 @@ class netBot extends ControllerBot {
             while(new Date() / 1000 < begin + timeout) {
               const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await (spooferManager.isSpoofRunning())
+              running = await (new SpooferManager().isSpoofRunning())
               if(running) {
                 break
               }
@@ -2707,7 +2752,7 @@ class netBot extends ControllerBot {
             }
 
           } else {
-            running = await (spooferManager.isSpoofRunning())
+            running = await (new SpooferManager().isSpoofRunning())
           }
 
           this.simpleTxData(msg, {running: running}, null, callback)
@@ -2748,7 +2793,7 @@ class netBot extends ControllerBot {
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await (spooferManager.directSpoof(ip))
+          await (new SpooferManager().directSpoof(ip))
 
           let begin = new Date() / 1000;
 
@@ -2762,7 +2807,7 @@ class netBot extends ControllerBot {
 
           while(new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await (spooferManager.isSpoof(ip))
+            result = await (new SpooferManager().isSpoof(ip))
             if(result) {
               break
             }
@@ -3304,7 +3349,49 @@ class netBot extends ControllerBot {
         })
         break;
       }
-
+      case "getConnTestDest": {
+        (async () => {
+          const dest = await conncheck.getDestToCheck();
+          this.simpleTxData(msg, dest, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "startConnTest": {
+        (async () => {
+          if (!value.src || !value.src.ip) {
+            this.simpleTxData(msg, {}, new Error("src.ip should be specified"), callback);
+            return;
+          }
+          if (!value.dst || !value.dst.ip || !value.dst.port) {
+            this.simpleTxData(msg, {}, new Error("dst.ip and dst.port should be specified"), callback);
+            return;
+          }
+          const pid = await conncheck.startConnCheck(value.src, value.dst, value.duration);
+          this.simpleTxData(msg, {pid: pid}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "getConnTestResult": {
+        (async () => {
+          if (!value.pid) {
+            this.simpleTxData(msg, {}, new Error("pid should be specified"), callback);
+            return;
+          }
+          const result = await conncheck.getConnCheckResult(value.pid);
+          if (!result) {
+            this.simpleTxData(msg, {}, new Error("Test result of specified pid is not found"), callback);
+          } else {
+            this.simpleTxData(msg, result, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
@@ -3332,7 +3419,7 @@ class netBot extends ControllerBot {
         break
       }
 
-      log.info("Going to switch to branch", targetBranch, {})
+      log.info("Going to switch to branch", targetBranch);
 
       await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
       sysTool.upgradeToLatest()
@@ -3355,7 +3442,7 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err, err.stack, {});
+      log.error("Got error before simpleTxData:", err, err.stack);
       code = 500;
       if(err && err.code) {
         code = err.code;
@@ -3465,7 +3552,7 @@ class netBot extends ControllerBot {
       rawmsg.message.obj.data.item === 'ping') {
 
       } else {
-        log.info("Received jsondata from app", rawmsg.message, {});
+        log.info("Received jsondata from app", rawmsg.message);
       }
       
       if (rawmsg.message.obj.type === "jsonmsg") {
@@ -3600,12 +3687,13 @@ class netBot extends ControllerBot {
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.error(msg,reason.stack,{});
+  log.error(msg,reason.stack);
   bone.log("error",{
     version: sysManager.version(),
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
-    stack:reason.stack
+    stack:reason.stack,
+    err: JSON.stringify(reason)
   },null);
 });
 
@@ -3615,7 +3703,8 @@ process.on('uncaughtException', (err) => {
     version: sysManager.version(),
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
-    stack: err.stack
+    stack: err.stack,
+    err: JSON.stringify(err)
   }, null);
   setTimeout(() => {
     try {
@@ -3631,7 +3720,7 @@ setInterval(()=>{
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
       }
     } catch(e) {
     }

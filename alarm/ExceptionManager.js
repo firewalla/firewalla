@@ -182,7 +182,7 @@ module.exports = class {
       return new Promise(function (resolve, reject) {
         em.loadExceptions((err, exceptions) =>{
           if (err) {
-            log.error("failed to load exceptions:", err, {})
+            log.error("failed to load exceptions:", err);
             reject(err)
           } else {
             if (exceptions) {
@@ -289,47 +289,36 @@ module.exports = class {
     return rclient.keysAsync(exceptionPrefix + exceptionID);
   }
 
-  deleteException(exceptionID) {
+  async deleteException(exceptionID) {
     log.info("Trying to delete exception " + exceptionID);
-    return this.exceptionExists(exceptionID)
-      .then((exists) => {
-        if(!exists) {
-          log.error("exception " + exceptionID + " doesn't exists");
-          return Promise.resolve();
-        }
 
-        return new Promise((resolve, reject) => {
-          let multi = rclient.multi();
+    if (!exceptionID) return;
 
-          rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
-            if(err) {
-              log.error(`exception ${exceptionID} doesn't exist`)
-              reject(err)
-              return
-            }
-            
-            log.info("Exception in CB: ", obj, {});
-            let exception = obj;
+    let exists = await this.exceptionExists(exceptionID);
+    if(!exists) {
+      log.error("exception " + exceptionID + " doesn't exists");
+      return;
+    }
 
-            multi.srem(exceptionQueue, exceptionID);
-            multi.del(exceptionPrefix + exceptionID);
-            multi.exec((err) => {
-              if (err) {
-                log.error("Fail to delete exception: " + err);
-                reject(err);
-              }
+    let multi = rclient.multi();
 
-            });
+    let exception = await rclient.hgetallAsync(exceptionPrefix + exceptionID);
 
-            // unignore is set for backward compatibility, it's actually should be called "unallow"
-            Bone.submitIntelFeedback('unignore', exception, "exception");
+    log.info("Deleting Exception:", exception);
 
-            resolve();
-          });
+    multi.srem(exceptionQueue, exceptionID);
+    multi.del(exceptionPrefix + exceptionID);
 
-        });
+    try {
+      await multi.execAsync();
+    }
+    catch(err) {
+      log.error("Fail to delete exception: " + err);
+      throw err;
+    }
 
-      });
+    // unignore is set for backward compatibility, it's actually should be called "unallow"
+    Bone.submitIntelFeedback('unignore', exception, "exception");
   }
 
   async deleteExceptions(idList) {

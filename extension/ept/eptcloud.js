@@ -62,7 +62,7 @@ class EptCloudExtension {
     return new Promise((resolve, reject) => {
       this.eptcloud.groupFind(gid, (err, group)=> {
         if (err) {
-          log.info("Error looking up group", err, err.stack, {});
+          log.info("Error looking up group", err, err.stack);
           reject(err);
           return;
         }

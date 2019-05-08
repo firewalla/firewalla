@@ -28,6 +28,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 let Promise = require('bluebird');
 
@@ -132,7 +134,7 @@ module.exports = class {
           this.publicIp = event.ip;
       });
       sem.on("DDNS:Updated", (event) => {
-        log.info("Updating DDNS:", event, {});
+        log.info("Updating DDNS:", event);
         if(event.ddns) {
           this.ddns = event.ddns;
         }
@@ -345,7 +347,7 @@ module.exports = class {
 
           callback(null)
         } catch(err) {
-          log.error("Failed to set timezone:", err, {})
+          log.error("Failed to set timezone:", err);
           callback(err)
         }
       })()
@@ -412,7 +414,7 @@ module.exports = class {
       .then(() => {
         this.config = config;
       }).catch((err) => {
-        log.error("Failed to set sys:network:info in redis", err, {});
+        log.error("Failed to set sys:network:info in redis", err);
       });
   }
 
@@ -646,6 +648,11 @@ module.exports = class {
       this.serial = serial;
     }
 
+    let cpuTemperature = 50; // stub cpu value for docker/travis
+    if (!f.isDocker() && !f.isTravis()) {
+      cpuTemperature = platform.getCpuTemperature();
+    }
+
     try {
       this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8").trim();
       this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
@@ -667,7 +674,8 @@ module.exports = class {
         repoTag: this.repo.tag,
         language: this.language,
         timezone: this.timezone,
-        memory: data
+        memory: data,
+        cpuTemperature: cpuTemperature
       });
     });
   }
@@ -719,39 +727,19 @@ module.exports = class {
     return false;
   }
 
-
-  isLocalIP4(intf, ip) {
-    if (this.sysinfo[intf]==null) {
-      return false;
-    }
-
-    let subnet = this.sysinfo[intf].subnet;
-    if (subnet == null) {
-      return false;
-    }
-
-    if (this.isMulticastIP(ip)) {
-      return true;
-    }
-
-    return iptool.cidrSubnet(subnet).contains(ip);
-  }
-
   isLocalIP(ip) {
+    if (!ip) {
+      log.warn("SysManager:WARN:isLocalIP empty ip");
+      // TODO: we should throw error here
+      return false;
+    }
+
     if (iptool.isV4Format(ip)) {
-
-      this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
-
-      if (this.subnet == null) {
-        log.error("SysManager:Error getting subnet ");
+      if (this.isMulticastIP4(ip)) {
         return true;
       }
+      return this.inMySubnets4(ip);
 
-      if (this.isMulticastIP(ip)) {
-        return true;
-      }
-
-      return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
     } else if (iptool.isV6Format(ip)) {
       if (ip.startsWith('::')) {
         return true;
@@ -767,8 +755,9 @@ module.exports = class {
       }
       return this.inMySubnet6(ip);
     } else {
-      log.debug("SysManager:ERROR:isLocalIP", ip);
-      return true;
+      log.error("SysManager:ERROR:isLocalIP", ip);
+      // TODO: we should throw error here
+      return false;
     }
   }
 

@@ -48,22 +48,26 @@ class DoubleNatPlugin extends Sensor {
   }
 
   async job() {
-    const ip = await upnp.getExternalIP();
-    if(ip) {
-      const key = "ext.external.ip";
-      log.info("External IP is", ip);
-      await rclient.setAsync(key, ip);
-      await rclient.expireAsync(key, expireTime);
+    try {
+      const ip = await upnp.getExternalIP();
+      if(ip) {
+        const key = "ext.external.ip";
+        log.info("External IP is", ip);
+        await rclient.setAsync(key, ip);
+        await rclient.expireAsync(key, expireTime);
 
-      const key2 = "ext.doublenat";
-      if(iptool.isPrivate(ip)) {
-        log.info("This network has double nat");
-        await rclient.setAsync(key2, 1);
-      } else {
-        await rclient.setAsync(key2, 0);
+        const key2 = "ext.doublenat";
+        if(iptool.isPrivate(ip)) {
+          log.info("This network has double nat");
+          await rclient.setAsync(key2, 1);
+        } else {
+          await rclient.setAsync(key2, 0);
+        }
+        await rclient.expireAsync(key2, expireTime);
+
       }
-      await rclient.expireAsync(key2, expireTime);
-
+    } catch(err) {
+      log.error("Failed to scan double nat", err)
     }
   }
 }

@@ -200,7 +200,7 @@ class FlowAggregationSensor extends Sensor {
 
     let macs = hostManager.getActiveMACs();
     await Promise.all(macs.map(async mac => {
-      log.debug("FlowAggrSensor on mac", mac, {})
+      log.debug("FlowAggrSensor on mac", mac);
       await this.aggr(mac, ts);
       await this.aggr(mac, ts + this.config.interval);
       await this.aggrActivity(mac, ts);
@@ -553,7 +553,7 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
     })().catch((err) => {
-      log.error(`Failed to clean app activity: `, err, {})
+      log.error(`Failed to clean app activity: `, err);
     })
   }
 
@@ -641,7 +641,7 @@ class FlowAggregationSensor extends Sensor {
         await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
       }
     })().catch((err) => {
-      log.error(`Failed to clean category activity: `, err, {})
+      log.error(`Failed to clean category activity: `, err);
     })
   }
 

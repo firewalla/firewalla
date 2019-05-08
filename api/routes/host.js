@@ -169,7 +169,7 @@ router.get('/:host/topDownload',
     })()
     .then(() => res.json(json))
     .catch((err) => {
-      log.error("Got error when calling topDownload:", err, {})
+      log.error("Got error when calling topDownload:", err);
       res.status(404);
       res.send("");
     })
@@ -190,7 +190,7 @@ router.get('/:host/topUpload',
     })()
     .then(() => res.json(json))
     .catch((err) => {
-      log.error("Got error when calling topUpload:", err, {})
+      log.error("Got error when calling topUpload:", err);
       res.status(404);
       res.send("");
     })
