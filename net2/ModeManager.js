@@ -340,7 +340,7 @@ function _enableSecondaryInterface() {
 async function _enforceDHCPMode(mode) {
   mode = mode || "dhcp";
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
-  const cmd = "pidof dhclient && sudo pkill dhclient; true";
+  const cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
   try {
     await execAsync(cmd);
   } catch (err) {

@@ -3,15 +3,15 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-firemon_pid=$(pidof FireMon)
-firemain_pid=$(pidof FireMain)
-firemon_mem2=$(pidof FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-fireapi_mem2=$(pidof FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-firemain_mem2=$(pidof FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-redis_mem2=$(pidof redis-server | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bitbridge7_mem2=$(pidof bitbridge7 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bitbridge6_mem2=$(pidof bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bro_mem2=$(pidof bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+firemon_pid=$(pgrep -x FireMon)
+firemain_pid=$(pgrep -x FireMain)
+firemon_mem2=$(pgrep -x FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+fireapi_mem2=$(pgrep -x FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+firemain_mem2=$(pgrep -x FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+redis_mem2=$(pgrep -x redis-server | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+bitbridge7_mem2=$(pgrep -x bitbridge7 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+bitbridge6_mem2=$(pgrep -x bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+bro_mem2=$(pgrep -x bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
 firemain_NOF=`lsof -p $firemain_pid | wc -l`
