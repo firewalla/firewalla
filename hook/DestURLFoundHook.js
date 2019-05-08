@@ -127,6 +127,10 @@ class DestURLFoundHook extends Hook {
     if(urlsNeedCheck.length > 0) {
       let results = await intelTool.checkURLIntelFromCloud(urlsNeedCheck);
 
+      if(!results) {
+         return;
+      }
+
       // only focus on intels
       results = results.filter((result) => result.c === 'intel');
 
