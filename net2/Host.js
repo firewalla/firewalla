@@ -88,10 +88,10 @@ class Host {
       this.spoofing = false;
 
       /*
-         if (this.o.ipv6Addr) {
-         this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-         }
-         */
+      if (this.o.ipv6Addr) {
+      this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
+      }
+      */
       this.predictHostNameUsingUserAgent();
 
       this.loadPolicy(callback);
@@ -120,14 +120,14 @@ class Host {
   }
 
   /* example of ipv6Host
-1) "mac"
-2) "B8:53:AC:5F:99:51"
-3) "firstFoundTimestamp"
-4) "1511599097.786"
-5) "lastActiveTimestamp"
-6) "1511846844.798"
+  1) "mac"
+  2) "B8:53:AC:5F:99:51"
+  3) "firstFoundTimestamp"
+  4) "1511599097.786"
+  5) "lastActiveTimestamp"
+  6) "1511846844.798"
 
-*/
+  */
 
   keepalive() {
     for (let i in this.ipv6Addr) {
@@ -190,8 +190,6 @@ class Host {
     if (this.hasBeenGivenName() == false) {
       rclient.smembers("host:user_agent_m:" + this.o.mac, (err, results) => {
         if (results != null && results.length > 0) {
-          let familydb = {};
-          let osdb = {};
           let mobile = false;
           let md_osdb = {};
           let md_name = {};
@@ -225,26 +223,8 @@ class Host {
                 }
               }
             }
-
-            /*
-            if (r!=null) {
-                if (r.family.indexOf("Other")==-1) {
-                    if (familydb[r.family]) {
-                       familydb[r.family] += 1;
-                    } else {
-                       familydb[r.family] = 1;
-                    }
-                    bestFamily = r.family;
-                } else if (r.os.indexOf("Other")==-1) {
-                    bestOS = r.os;
-                }
-                break;
-            }
-            */
           }
           log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-          let bestOS = null;
-          let bestName = null;
           let osarray = [];
           let namearray = [];
           for (let i in md_osdb) {
@@ -289,53 +269,8 @@ class Host {
           if (this.o.pname) {
             this.save("pname", null);
           }
-          //this.save("ua_name",null);
-
-          /*
-          if (bestFamily!=null) {
-              this.hostname = "(?)"+bestFamily;
-          } else if (bestOS!=null) {
-              this.hostname = "(?)"+bestOS;
-          }
-          log.info(this.o.name,this.hostname);
-          if (this.hostname!=null && this.o.name!=this.hostname) {
-            //this.o.name = this.hostname;
-              this.save("name",null);
-          }
-          */
       }
       });
-
-      /*
-          rclient.smembers("host:user_agent:"+this.o.ipv4Addr,(err,results)=> {
-              if (results!=null && results.length>0) {
-                  let bestFamily = null;
-                  let bestOS = null;
-                  for (let i in results) {
-                      let r = JSON.parse(results[i]);
-                      if (r!=null) {
-                          if (r.family.indexOf("Other")==-1) {
-                              bestFamily = r.family;
-                          } else if (r.os.indexOf("Other")==-1) {
-                              bestOS = r.os;
-                          }
-                          break;
-                      }
-                  }
-                  if (bestFamily!=null) {
-                      this.hostname = "(?)"+bestFamily;
-                  } else if (bestOS!=null) {
-                      this.hostname = "(?)"+bestOS;
-                  }
-                  log.info(this.o.name,this.hostname);
-                  if (this.hostname!=null && this.o.name!=this.hostname) {
-                    //this.o.name = this.hostname;
-                      this.save("name",null);
-                  }
-              }
-          });
-      */
-
     }
   }
 
@@ -404,10 +339,10 @@ class Host {
   parse() {
     if (this.o.ipv6Addr) {
       this.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-    } else {}
+    }
     if (this.o.admin) {
       this.admin = JSON.parse(this.o.admin);
-    } else {}
+    }
     if (this.o.dtype) {
       this.dtype = JSON.parse(this.o.dtype);
     }
@@ -590,18 +525,6 @@ class Host {
           }
         }
       }
-    } else {
-      /*
-        if (state === true && this.spoofing === false) {
-          log.info("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
-          spoofer.spoof(this.o.ipv4Addr, gateway, this.o.mac, this.ipv6Addr,gateway6);
-          this.spoofing = true;
-        } else if (state === false && this.spoofing === true) {
-          log.info("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
-          spoofer.unspoof(this.o.ipv4Addr, gateway, this.o.mac,this.ipv6Addr, gateway6);
-          this.spoofing = false;
-        }
-        */
     }
   }
 
