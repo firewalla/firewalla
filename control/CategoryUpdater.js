@@ -38,7 +38,9 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
-const _ = require('underscore')
+const _ = require('underscore');
+
+const lodash = require('lodash');
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
@@ -46,6 +48,8 @@ const blackHoleHttpPort = 8881;
 const blackHoleHttpsPort = 8884;
 const blockHttpPort = 8882;
 const blockHttpsPort = 8885;
+
+const WHITELIST_MARK = 1;
 
 function delay(t) {
   return new Promise(function(resolve) {
@@ -64,8 +68,20 @@ class CategoryUpdater {
         "porn": 1,
         "shopping": 1,
         "av": 1,
-        "default_c": 1
-      }
+        "default_c": 1,
+        "p2p": 1,
+        "gamble": 1
+      };
+
+      this.excludedDomains = {
+        "av": [
+          "www.google.com",
+          "forcesafesearch.google.com",
+          "docs.google.com",
+          "*.itunes.apple.com",
+          "itunes.apple.com"
+        ]
+      };
 
       // only run refresh category records for fire main process
       if(process.title === 'FireMain') {
@@ -330,7 +346,8 @@ class CategoryUpdater {
     log.debug(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d, {})
+    await this.updateIPSetByDomain(category, d, {});
+    await this.filterIPSetByDomain(category);
   }
 
   getMapping(category) {
@@ -350,19 +367,19 @@ class CategoryUpdater {
   }
 
   getIPSetName(category) {
-    return `c_category_${category}`
+    return Block.getDstSet(category);
   }
   
   getIPSetNameForIPV6(category) {
-    return `c_category6_${category}`
+    return Block.getDstSet6(category);
   }
 
   getTempIPSetName(category) {
-    return `c_tmp_category_${category}`
+    return Block.getDstSet(`tmp_${category}`);
   }
 
   getTempIPSetNameForIPV6(category) {
-    return `c_tmp_category6_${category}`
+    return Block.getDstSet6(`tmp_${category}`);
   }
   
   async updateIPSet(category, options) {
@@ -466,6 +483,93 @@ class CategoryUpdater {
 
   }
 
+  async filterIPSetByDomain(category, options) {
+    options = options || {}
+
+    const list = this.excludedDomains && this.excludedDomains[category];
+
+    if(!lodash.isEmpty(list)) {
+      for(const domain of list) {
+        if(domain.startsWith("*.")) {
+          await this._filterIPSetByDomainPattern(category, domain, options).catch((err) => {
+            log.error("Got error when filter ip set for domain pattern", domain, "with err", err);
+          });
+        } else {
+          await this._filterIPSetByDomain(category, domain, options).catch((err) => {
+            log.error("Got error when filter ip set for domain", domain, "with err", err);
+          })
+        }
+      }
+    }
+  }
+
+  async _filterIPSetByDomain(category, domain, options) {
+    options = options || {}
+
+    const mapping = this.getDomainMapping(domain)
+    let ipsetName = this.getIPSetName(category)
+    let ipset6Name = this.getIPSetNameForIPV6(category)
+
+    if(options && options.useTemp) {
+      ipsetName = this.getTempIPSetName(category)
+      ipset6Name = this.getTempIPSetNameForIPV6(category)
+    }
+
+    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
+
+    if(hasAny) {
+      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+      await exec(cmd6).catch((err) => {
+        log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
+  }
+
+  async _filterIPSetByDomainPattern(category, domain, options) {
+    if(!domain.startsWith("*.")) {
+      return
+    }
+
+    const mappings = await this.getDomainMappingsByDomainPattern(domain)
+
+    if(mappings.length > 0) {
+      const smappings = this.getSummedDomainMapping(domain)
+      let array = [smappings, mappings.length]
+
+      array.push.apply(array, mappings)
+
+      await rclient.zunionstoreAsync(array)
+
+      const exists = await rclient.typeAsync(smappings);
+      if(exists === "none") {
+        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
+      }
+
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
+
+      let ipsetName = this.getIPSetName(category)
+      let ipset6Name = this.getIPSetNameForIPV6(category)
+
+      if(options && options.useTemp) {
+        ipsetName = this.getTempIPSetName(category)
+        ipset6Name = this.getTempIPSetNameForIPV6(category)
+      }
+
+      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      return (async () => {
+        await exec(cmd4);
+        await exec(cmd6);
+      })().catch((err) => {
+        log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
+      })
+    }
+  }
+
   async updateIPSetByDomainPattern(category, domain, options) {
     if(!domain.startsWith("*.")) {
       return
@@ -488,7 +592,7 @@ class CategoryUpdater {
         return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
       }
 
-      await rclient.expireAsync(smappings, 600) // auto expire in 60 seconds
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
       let ipsetName = this.getIPSetName(category)
       let ipset6Name = this.getIPSetNameForIPV6(category)
@@ -552,6 +656,10 @@ class CategoryUpdater {
       
       await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
         log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
+      })
+
+      await this.filterIPSetByDomain(category, {useTemp: true}).catch((err) => {
+        log.error(`Failed to filter ipset for domain ${domain}, err: ${err}`)
       })
     }
 
@@ -648,10 +756,10 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule = `sudo iptables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo iptables -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -w -t nat -C PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)} || sudo ip6tables -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule = this.wrapIptables(`sudo iptables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule = this.wrapIptables(`sudo iptables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
+    const cmdRedirectHTTPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)
@@ -663,29 +771,61 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdRedirectHTTPRule = `sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule = `sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
-    const cmdRedirectHTTPRule6 = `sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`
-    const cmdRedirectHTTPSRule6 = `sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`
+    const cmdRedirectHTTPRule = this.wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule = this.wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipsetName} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
+    const cmdRedirectHTTPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 80 -j REDIRECT --to-ports ${this.getHttpPort(category)}`)
+    const cmdRedirectHTTPSRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D PREROUTING -p tcp -m set --match-set ${ipset6Name} dst --destination-port 443 -j REDIRECT --to-ports ${this.getHttpsPort(category)}`)
 
     await exec(cmdRedirectHTTPRule)
     await exec(cmdRedirectHTTPSRule)
     await exec(cmdRedirectHTTPRule6)
     await exec(cmdRedirectHTTPSRule6)
   }
+
+  async iptablesWhitelistCategory(category) {
+    const ipsetName = this.getIPSetName(category);
+    const ipset6Name = this.getIPSetNameForIPV6(category);
+
+    // mark all packets in mangle table which indicates the packets need to go through the whitelist chain
+    const cmdCreateMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdCreateMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -I PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+
+    // add RETURN policy to white list chain in filter table
+    const cmdCreateOutgoingRule = this.wrapIptables(`sudo iptables -w -I FW_WHITELIST -p all -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdCreateOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_WHITELIST -p all -m set --match-set ${ipset6Name} dst -j RETURN`);
+    // add corresponding whitelist rules into nat table
+    const cmdCreateNatOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_WHITELIST -p tcp -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdCreateNatOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_WHITELIST -p udp -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdCreateNatOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_WHITELIST -p tcp -m set --match-set ${ipset6Name} dst -j RETURN`);
+    const cmdCreateNatOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_WHITELIST -p udp -m set --match-set ${ipset6Name} dst -j RETURN`);
+
+    await exec(cmdCreateMarkRule);
+    await exec(cmdCreateMarkRule6);
+    await exec(cmdCreateOutgoingRule);
+    await exec(cmdCreateOutgoingRule6);
+    await exec(cmdCreateNatOutgoingTCPRule);
+    await exec(cmdCreateNatOutgoingUDPRule);
+    await exec(cmdCreateNatOutgoingTCPRule6);
+    await exec(cmdCreateNatOutgoingUDPRule6);
+  }
   
   async iptablesBlockCategory(category) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${ipsetName} dst -j DROP`
-    const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${ipsetName} src -j DROP`
-    const cmdCreateOutgoingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REJECT`
-    const cmdCreateIncomingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${ipsetName} src -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${ipsetName} src -j REJECT`
-    const cmdCreateOutgoingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${ipset6Name} dst -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${ipset6Name} dst -j DROP`
-    const cmdCreateIncomingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${ipset6Name} src -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${ipset6Name} src -j DROP`
-    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`
-    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`
+    const cmdCreateOutgoingRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${ipsetName} dst -j DROP`)
+    const cmdCreateIncomingRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${ipsetName} src -j DROP`)
+    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REJECT`)
+    const cmdCreateIncomingTCPRule = this.wrapIptables(`sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${ipsetName} src -j REJECT`)
+    const cmdCreateOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${ipset6Name} dst -j DROP`)
+    const cmdCreateIncomingRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${ipset6Name} src -j DROP`)
+    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`)
+    const cmdCreateIncomingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`)
+    // add corresponding rules in nat table
+    const cmdCreateNatOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`)
+    const cmdCreateNatOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`)
+    const cmdCreateNatOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`)
+    const cmdCreateNatOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`)
 
     await exec(cmdCreateOutgoingRule)
     await exec(cmdCreateIncomingRule)
@@ -695,29 +835,69 @@ class CategoryUpdater {
     await exec(cmdCreateIncomingRule6)
     await exec(cmdCreateOutgoingTCPRule6)
     await exec(cmdCreateIncomingTCPRule6)
+    await exec(cmdCreateNatOutgoingTCPRule)
+    await exec(cmdCreateNatOutgoingUDPRule)
+    await exec(cmdCreateNatOutgoingTCPRule6)
+    await exec(cmdCreateNatOutgoingUDPRule6)
+  }
+
+  async iptablesUnWhitelistCategory(category) {
+    const ipsetName = this.getIPSetName(category);
+    const ipset6Name = this.getIPSetNameForIPV6(category);
+
+    // delete MARK policy rule in mangle table
+    const cmdDeleteMarkRule = this.wrapIptables(`sudo iptables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+    const cmdDeleteMarkRule6 = this.wrapIptables(`sudo ip6tables -w -t mangle -D PREROUTING -j CONNMARK --set-xmark ${WHITELIST_MARK}`);
+
+    // delete RETURN policy to white list chain in filter table
+    const cmdDeleteOutgoingRule = this.wrapIptables(`sudo iptables -w -D FW_WHITELIST -p all -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdDeleteOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_WHITELIST -p all -m set --match-set ${ipset6Name} dst -j RETURN`);
+    // delete corresponding whitelist rules into nat table
+    const cmdDeleteNatOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_WHITELIST -p tcp -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdDeleteNatOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_WHITELIST -p udp -m set --match-set ${ipsetName} dst -j RETURN`);
+    const cmdDeleteNatOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_WHITELIST -p tcp -m set --match-set ${ipset6Name} dst -j RETURN`);
+    const cmdDeleteNatOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_WHITELIST -p udp -m set --match-set ${ipset6Name} dst -j RETURN`);
+
+    await exec(cmdDeleteMarkRule);
+    await exec(cmdDeleteMarkRule6);
+    await exec(cmdDeleteOutgoingRule);
+    await exec(cmdDeleteOutgoingRule6);
+    await exec(cmdDeleteNatOutgoingTCPRule);
+    await exec(cmdDeleteNatOutgoingUDPRule);
+    await exec(cmdDeleteNatOutgoingTCPRule6);
+    await exec(cmdDeleteNatOutgoingUDPRule6);
   }
 
   async iptablesUnblockCategory(category) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdDeleteOutgoingRule = `sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${ipsetName} dst -j DROP`
-    const cmdDeleteIncomingRule = `sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${ipsetName} src -j DROP`
-    const cmdDeleteOutgoingTCPRule = `sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REJECT`
-    const cmdDeleteIncomingTCPRule = `sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${ipsetName} src -j REJECT`
-    const cmdDeleteOutgoingRule6 = `sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${ipset6Name} dst -j DROP`
-    const cmdDeleteIncomingRule6 = `sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${ipset6Name} src -j DROP`
-    const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`
-    const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`
+    const cmdDeleteOutgoingRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${ipsetName} dst -j DROP`)
+    const cmdDeleteIncomingRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${ipsetName} src -j DROP`)
+    const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REJECT`)
+    const cmdDeleteIncomingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${ipsetName} src -j REJECT`)
+    const cmdDeleteOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${ipset6Name} dst -j DROP`)
+    const cmdDeleteIncomingRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${ipset6Name} src -j DROP`)
+    const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REJECT`)
+    const cmdDeleteIncomingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${ipset6Name} src -j REJECT`)
+    // delete corresponding rules in nat table
+    const cmdDeleteNatOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`)
+    const cmdDeleteNatOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`)
+    const cmdDeleteNatOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p tcp -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`)
+    const cmdDeleteNatOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -D FW_NAT_BLOCK -p udp -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`)
 
-    await exec(this.wrapIptables(cmdDeleteOutgoingRule))
-    await exec(this.wrapIptables(cmdDeleteIncomingRule))
-    await exec(this.wrapIptables(cmdDeleteOutgoingTCPRule))
-    await exec(this.wrapIptables(cmdDeleteIncomingTCPRule))
-    await exec(this.wrapIptables(cmdDeleteOutgoingRule6))
-    await exec(this.wrapIptables(cmdDeleteIncomingRule6))
-    await exec(this.wrapIptables(cmdDeleteOutgoingTCPRule6))
-    await exec(this.wrapIptables(cmdDeleteIncomingTCPRule6))
+    await exec(cmdDeleteOutgoingRule)
+    await exec(cmdDeleteIncomingRule)
+    await exec(cmdDeleteOutgoingTCPRule)
+    await exec(cmdDeleteIncomingTCPRule)
+    await exec(cmdDeleteOutgoingRule6)
+    await exec(cmdDeleteIncomingRule6)
+    await exec(cmdDeleteOutgoingTCPRule6)
+    await exec(cmdDeleteIncomingTCPRule6)
+    await exec(cmdDeleteNatOutgoingTCPRule)
+    await exec(cmdDeleteNatOutgoingUDPRule)
+    await exec(cmdDeleteNatOutgoingTCPRule6)
+    await exec(cmdDeleteNatOutgoingUDPRule6)
   }
 
   wrapIptables(rule) {        
@@ -746,54 +926,6 @@ class CategoryUpdater {
     }    
   }
 
-  async iptablesBlockCategoryPerDeviceNew(category, macSet) {
-    const ipsetName = this.getIPSetName(category)
-    const ipset6Name = this.getIPSetNameForIPV6(category)
-
-    // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
-    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
-
-    const cmdCreateOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingUDPRule = this.wrapIptables(`sudo iptables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REDIRECT --to-ports 8888`);
-
-    const cmdCreateOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-    const cmdCreateOutgoingUDPRule6 = this.wrapIptables(`sudo ip6tables -w -t nat -I FW_NAT_BLOCK -p udp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REDIRECT --to-ports 8888`);
-
-    await exec(cmdCreateOutgoingTCPRule);
-    await exec(cmdCreateOutgoingUDPRule);
-    await exec(cmdCreateOutgoingTCPRule6);
-    await exec(cmdCreateOutgoingUDPRule6);
-  }
-
-  // This function requires the mac ipset has already been created
-  async iptablesBlockCategoryPerDevice(category, macSet) {
-    const ipsetName = this.getIPSetName(category)
-    const ipset6Name = this.getIPSetNameForIPV6(category)
-
-      // -A PREROUTING -p tcp -m set --match-set c_category_av dst -m tcp -j REDIRECT --to-ports 8888
-    // -A FW_BLOCK -p tcp -m set --match-set c_bm_150_set dst -m set --match-set c_bd_150_set src -j REJECT --reject-with icmp-port-unreachable
-
-
-
-    const cmdCreateOutgoingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
-    const cmdCreateIncomingRule = `sudo iptables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP || sudo iptables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
-    const cmdCreateOutgoingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`
-    const cmdCreateIncomingTCPRule = `sudo iptables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT || sudo iptables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
-    const cmdCreateOutgoingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
-    const cmdCreateIncomingRule6 = `sudo ip6tables -w -C FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP || sudo ip6tables -w -I FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
-    const cmdCreateOutgoingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
-    const cmdCreateIncomingTCPRule6 = `sudo ip6tables -w -C FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT || sudo ip6tables -w -I FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
-
-    await exec(cmdCreateOutgoingRule)
-    await exec(cmdCreateIncomingRule)
-    await exec(cmdCreateOutgoingTCPRule)
-    await exec(cmdCreateIncomingTCPRule)
-    await exec(cmdCreateOutgoingRule6)
-    await exec(cmdCreateIncomingRule6)
-    await exec(cmdCreateOutgoingTCPRule6)
-    await exec(cmdCreateIncomingTCPRule6)
-  }
-
   async iptablesUnblockCategoryPerDeviceNew(category, macSet) {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
@@ -814,14 +946,14 @@ class CategoryUpdater {
     const ipsetName = this.getIPSetName(category)
     const ipset6Name = this.getIPSetNameForIPV6(category)
 
-    const cmdDeleteOutgoingRule6 = `sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`
-    const cmdDeleteIncomingRule6 = `sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`
-    const cmdDeleteOutgoingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`
-    const cmdDeleteIncomingTCPRule6 = `sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`
-    const cmdDeleteOutgoingRule = `sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`
-    const cmdDeleteIncomingRule = `sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`
-    const cmdDeleteOutgoingTCPRule = `sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`
-    const cmdDeleteIncomingTCPRule = `sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`
+    const cmdDeleteOutgoingRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j DROP`)
+    const cmdDeleteIncomingRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j DROP`)
+    const cmdDeleteOutgoingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipset6Name} dst -j REJECT`)
+    const cmdDeleteIncomingTCPRule6 = this.wrapIptables(`sudo ip6tables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipset6Name} src -j REJECT`)
+    const cmdDeleteOutgoingRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j DROP`)
+    const cmdDeleteIncomingRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p all -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j DROP`)
+    const cmdDeleteOutgoingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} src -m set --match-set ${ipsetName} dst -j REJECT`)
+    const cmdDeleteIncomingTCPRule = this.wrapIptables(`sudo iptables -w -D FW_BLOCK -p tcp -m set --match-set ${macSet} dst -m set --match-set ${ipsetName} src -j REJECT`)
 
     await (exec(cmdDeleteOutgoingRule6))
     await (exec(cmdDeleteIncomingRule6))

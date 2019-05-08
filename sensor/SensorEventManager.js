@@ -12,6 +12,36 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+/* Event list at 2018.11.2 (via global search emitEvent)
+ *
+ * DDNS:Updated
+ * DestIPFound
+ * DeviceOffline
+ * DeviceUpdate
+ * IPTABLES_READY
+ * IPv6DeviceInfoUpdate
+ * NewDevice
+ * NewDeviceFound
+ * NewDeviceWithMacOnly
+ * OldDeviceChangedToNewIP
+ * OldDeviceTakenOverOtherDeviceIP
+ * PolicyEnforcement
+ * PublicIP:Updated
+ * RefreshMacBackupName
+ * RegularDeviceInfoUpdate
+ * ReleaseMonkey
+ * ReloadDNSRule
+ * StartDHCP
+ * StartDNS
+ * StopDHCP
+ * StopDNS
+ * UPDATE_CATEGORY_DYNAMIC_DOMAIN
+ * VPNConnectionAccepted
+ * Alarm:NewAlarm
+ */
+
+
 'use strict';
 
 let log = require('../net2/logger.js')(__filename);
@@ -35,12 +65,17 @@ class SensorEventManager extends EventEmitter {
   }
 
   subscribeEvent() {
-    sclient.on("message", (channel, message) => {
-      if(channel === this.getRemoteChannel(process.title)) {
+    sclient.on("message", (channel, message) => {      
+      if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
           let m = JSON.parse(message)
-          this.emitEvent(m);
+
+          // only process redis events not originated from this process
+          // local event will be processed by EventEmitter
+          if(m.fromProcess !== process.title) {
+            this.emitLocalEvent(m); // never send remote pubsub event back to remote 
+          }
         } catch (err) {
           log.error("Failed to parse channel message:", err, {});
         }
@@ -50,23 +85,38 @@ class SensorEventManager extends EventEmitter {
     });
 
     sclient.subscribe(this.getRemoteChannel(process.title));
+    sclient.subscribe(this.getRemoteChannel("*")); // subscribe events for all components
   }
 
   clearEventType(eventType) {
     this.removeAllListeners(eventType)
   }
   
+  sendEvent(event, target) {
+    this.emitEvent(Object.assign({}, event, {
+      toProcess: target
+    }))
+  }
 
-  emitEvent(event) {
+  sendEventToFireApi(event) {
+    this.sendEvent(event, "FireApi");
+  }
+
+  sendEventToFireMain(event) {
+    this.sendEvent(event, "FireMain");
+  }
+
+  sendEventToFireMon(event) {
+    this.sendEvent(event, "FireMon");
+  }
+
+  sendEventToAll(event) {
+    this.sendEvent(event, "*");
+  }
+  
+  emitLocalEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
-    }
-
-    if(event.toProcess && event.toProcess !== process.title) {
-      // this event is meant to send to another process
-      let channel = this.getRemoteChannel(event.toProcess);
-      pclient.publish(channel, JSON.stringify(event));
-      return;
     }
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
@@ -75,11 +125,28 @@ class SensorEventManager extends EventEmitter {
       log.warn("No subscription on event type:", event.type, {});
     } else if (count > 1) {
       // most of time, only one subscribe on each event type
-      log.warn("Subscribers on event type:", event.type, "is more than ONE", {});
+      log.debug("Subscribers on event type:", event.type, "is more than ONE", {});
       this.emit(event.type, event);
     } else {
       this.emit(event.type, event);
     }
+  }
+
+  emitEvent(event) {
+    if(event.toProcess && event.toProcess !== process.title) {
+      if(!event.suppressEventLogging) {
+        log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
+      }
+
+      // this event is meant to send to another process
+      let channel = this.getRemoteChannel(event.toProcess);
+      const eventCopy = JSON.parse(JSON.stringify(event));
+      eventCopy.fromProcess = process.title;
+      pclient.publish(channel, JSON.stringify(eventCopy));
+      return; // local will also be processed in .on(channel, event)..
+    }
+
+    this.emitLocalEvent(event);
   }
 
   on(event, callback) {
@@ -90,6 +157,16 @@ class SensorEventManager extends EventEmitter {
         .replace(/.*\//, "")
         .replace(/:[^:]*$/,""));
     super.on(event, callback);
+  }
+
+  once(event, callback) {
+    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
+    log.debug("Subscribing event", event, "from",
+    new Error().stack.split("\n")[2]
+      .replace("     at", "")
+      .replace(/.*\//, "")
+      .replace(/:[^:]*$/,""));
+   super.once(event, callback);
   }
 
   clearAllSubscriptions() {

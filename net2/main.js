@@ -17,15 +17,16 @@
 // config.discovery.networkInterface
 
 process.title = "FireMain";
-require('events').EventEmitter.prototype._maxListeners = 100;
 
-let log = require("./logger.js")(__filename);
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const log = require("./logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("Main Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+require('events').EventEmitter.prototype._maxListeners = 100;
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
@@ -46,24 +47,25 @@ function updateTouchFile() {
   })
 }
 
-let bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 
-let firewalla = require("./Firewalla.js");
+const firewalla = require("./Firewalla.js");
 
-let ModeManager = require('./ModeManager.js')
-
-let mode = require('./Mode.js')
+const ModeManager = require('./ModeManager.js')
+const mode = require('./Mode.js')
 
 // api/main/monitor all depends on sysManager configuration
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
-var config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
-let BoneSensor = require('../sensor/BoneSensor');
-let boneSensor = new BoneSensor();
+const BoneSensor = require('../sensor/BoneSensor');
+const boneSensor = new BoneSensor();
 
 const fc = require('./config.js')
-const cp = require('child_process')
+const cp = require('child_process');
+
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
@@ -109,7 +111,7 @@ process.on('uncaughtException',(err)=>{
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
   setTimeout(()=>{
     try {
-      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+      cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);
@@ -120,10 +122,6 @@ process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack,{});
   bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
-  // setTimeout(()=>{
-  //   require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
-  //   process.exit(1);
-  // },1000*5);
 });
 
 let hl = null;
@@ -192,7 +190,7 @@ function run() {
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('debug');
 
-  // make sure there is at least one usable enternet
+  // make sure there is at least one usable ethernet
   d.discoverInterfaces(function(err, list) {
     var failure = 1;
     if (list.length > 0) {
@@ -204,7 +202,7 @@ function run() {
     }
 
     if(failure) {
-      log.error("Failed to find any alive ethernets, taking down the entire main.js")
+      log.error("Failed to find any alive ethernet, taking down the entire main.js")
       process.exit(1);
     }
   });
@@ -229,7 +227,8 @@ function run() {
     d.discoverInterfaces((err, list) => {
       if(!err && list && list.length >= 2) {
         sysManager.update(null) // if new interface is found, update sysManager
-
+        const pclient = require('../util/redis_manager.js').getPublishClient()
+        pclient.publishAsync("System:IPChange", "");
         // recreate port direct after secondary interface is created
         // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
       }
@@ -260,12 +259,9 @@ function run() {
 
   setTimeout(()=> {
     var PolicyManager = require('./PolicyManager.js');
-    var policyManager = new PolicyManager('info');
+    var policyManager = new PolicyManager();
 
     policyManager.flush(config, (err) => {
-
-      //policyManager.defaults(config);
-
       if(err) {
         log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
         return;
@@ -275,7 +271,6 @@ function run() {
         type: 'IPTABLES_READY'
       });
 
-
       async(() => {
         await (mode.reloadSetupMode()) // make sure get latest mode from redis
         await (ModeManager.apply())
@@ -283,7 +278,7 @@ function run() {
         // when mode is changed by anyone else, reapply automatically
         ModeManager.listenOnChange();        
         await (portforward.start());
-      })()     
+      })()
 
       let PolicyManager2 = require('../alarm/PolicyManager2.js');
       let pm2 = new PolicyManager2();

@@ -30,6 +30,9 @@ var fs = require('fs');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 var util = require('util');
 
+const pclient = require('../util/redis_manager.js').getPublishClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+
 var linux = require('../util/linux');
 var UPNP = require('../extension/upnp/upnp.js');
 
@@ -39,6 +42,27 @@ module.exports = class {
     constructor() {
         if (instance == null) {
             this.upnp = new UPNP("info", sysManager.myGateway());
+            if (firewalla.isMain()) {
+              sclient.on("message", (channel, message) => {
+                switch (channel) {
+                  case "System:IPChange":
+                    // update SNAT rule in iptables
+                    this.unsetIptables((err, result) => {
+                      if (err) {
+                        log.error("Failed to unset iptables", err);
+                      }
+                      this.setIptables((err, result) => {
+                        if (err) {
+                          log.error("Failed to set iptables", err);
+                        }
+                      })
+                    })
+                  default:
+                }
+              });
+
+              sclient.subscribe("System:IPChange");
+            }
             instance = this;
         }
         return instance;
@@ -47,28 +71,72 @@ module.exports = class {
     setIptables(callback) {
         const serverNetwork = this.serverNetwork;
         const localIp = sysManager.myIp();
+        this._currentLocalIp = localIp;
+        if (!serverNetwork) {
+          if (callback)
+            callback(null, null);
+          return;
+        }
         log.info("VpnManager:SetIptables", serverNetwork, localIp);
-        const commands = [
+      
+        const commands =[
+            // delete this rule if it exists, logical opertion ensures correct execution
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
-            `sudo iptables -w -t nat -I POSTROUTING 2 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}` // insert this rule next to first rule of POSTROUTING
+            // insert back as top rule in table
+            `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
         ];
         iptable.run(commands, null, callback);
     }
 
     unsetIptables(callback) {
         const serverNetwork = this.serverNetwork;
-        const localIp = sysManager.myIp();
+        let localIp = sysManager.myIp();
+        if (this._currentLocalIp)
+          localIp = this._currentLocalIp;
+        if (!serverNetwork) {
+          if (callback)
+            callback(null, null);
+          return;
+        }
         log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
         const commands = [
             `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
         ];
-        iptable.run(commands, callback);
+        iptable.run(commands, null, callback);
+        this._currentLocalIp = null;
     }
 
-    unpunchNat(opts, callback) {
-        log.info("VpnManager:UnpunchNat", opts);
-        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
+    removeUpnpPortMapping(opts, callback) {
+        log.info("VpnManager:RemoveUpnpPortMapping", opts);
+        let timeoutExecuted = false;
+        const timeout = setTimeout(() => {
+            timeoutExecuted = true;
+            log.error("Failed to remove upnp port mapping due to timeout");
             if (callback) {
+                callback(new Error("Timeout"));
+            }
+        }, 10000);
+        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
+            clearTimeout(timeout);
+            if (callback && !timeoutExecuted) {
+                callback(err);
+            }
+        });
+    }
+
+    addUpnpPortMapping(protocol, localPort, externalPort, description, callback) {
+        log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
+        let timeoutExecuted = false;
+        const timeout = setTimeout(() => {
+            timeoutExecuted = true;
+            log.error("Failed to add upnp port mapping due to timeout");
+            if (callback) {
+                callback(new Error("Timeout"));
+            }
+        }, 10000);
+        this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
+            clearTimeout(timeout);
+            if (callback && !timeoutExecuted) {
                 callback(err);
             }
         });
@@ -150,7 +218,7 @@ module.exports = class {
 
     stop(callback) {
         this.started = false;
-        this.unpunchNat({
+        this.removeUpnpPortMapping({
             protocol: 'udp',
             private: this.localPort,
             public: this.localPort
@@ -184,7 +252,7 @@ module.exports = class {
 
         this.upnp.gw = sysManager.myGateway();
 
-        this.unpunchNat({
+        this.removeUpnpPortMapping({
             protocol: 'udp',
             private: this.localPort,
             public: this.localPort
@@ -211,14 +279,17 @@ module.exports = class {
                             callback(err);
                         }
                     } else {
-                        this.upnp.addPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
+                        this.addUpnpPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
                             log.info("VpnManager:UPNP:SetDone", err);
+                            pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/24");
+                            /*
                             sem.emitEvent({
                                 type: "VPNSubnetChanged",
                                 message: "VPN subnet is updated",
                                 vpnSubnet: this.serverNetwork + "/24",
                                 toProcess: "FireMain"
                             });
+                            */
                             if (err) {
                                 if (callback) {
                                     callback(null, null, null, this.serverNetwork, this.localPort);

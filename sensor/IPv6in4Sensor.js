@@ -49,7 +49,11 @@ class IPv6in4Sensor extends Sensor {
     })      
   }
 
-  applyPolicy(policy) {
+  applyPolicy(host, ip, policy) {
+    if(ip !== "0.0.0.0") {
+      return;
+    }
+
     log.info("Applying policy:", policy, {})
     if(policy === true) {
       return this.start()

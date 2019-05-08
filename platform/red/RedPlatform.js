@@ -16,7 +16,7 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const utils = require('../../lib/utils.js');
 const led = require('../../util/Led.js');
 
@@ -60,9 +60,26 @@ class RedPlatform extends Platform {
     led.blink();
   }
 
+  async applyCPUDefaultProfile() {
+    return; // do nothing for red
+  }
+
+  async applyCPUBoostProfile() {
+    return; // do nothing for red
+  }
+
+  getSubnetCapacity() {
+    return 24;
+  }
+
+  // via /etc/update-motd.d/30-sysinfo
   getCpuTemperature() {
     const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
     return Number(fs.readFileSync(source)) / 1000;
+  }
+
+  getPolicyCapacity() {
+    return 1000;
   }
 }
 

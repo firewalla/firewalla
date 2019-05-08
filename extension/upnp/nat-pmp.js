@@ -11,6 +11,7 @@
  * Module dependencies.
  */
 
+const log = require("../../net2/logger.js")(__filename);
 var dgram = require('dgram');
 var assert = require('assert');
 var debug = require('debug')('nat-pmp');
@@ -367,7 +368,7 @@ function on (name, target) {
     try {
       return target['on' + name].apply(target, arguments);
     } catch (e) {
-      // no need to do anything
+      return target.onerror(e)
     }
   });
 }

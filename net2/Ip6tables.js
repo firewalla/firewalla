@@ -14,7 +14,7 @@
  */
 'use strict';
 var ip = require('ip');
-var spawn = require('child_process').spawn;
+var cp = require('child_process');
 
 const log = require('./logger.js')(__filename);
 
@@ -45,7 +45,7 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 
 function iptables(rule, callback) {
-  log.debug("IPTABLE6: rule:",rule);
+  log.debug("IP6TABLE: rule:",rule);
   running = true;
   
   let cmd = 'ip6tables';
@@ -68,7 +68,7 @@ function iptables(rule, callback) {
       cmd = `${checkCmd} || ${cmd}`
       break
     case "-D":
-      cmd = `${checkCmd} && ${cmd}`
+      cmd = `(${checkCmd} && ${cmd}); true`
       break
     default:
       break
@@ -88,39 +88,42 @@ function iptables(rule, callback) {
     return
   }
   
-  const proc = spawn(cmd, {shell: true});
-    proc.stderr.on('data', function (buf) {
-        log.error("IP6TABLE6:", buf.toString());
-    });
-    proc.on('exit', (code) => {
-        if (callback) {
-            callback(null, code);
-        }
-        running = false;
-        newRule(null, null);
-    });
-    return proc;
+  cp.exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      log.error("Failed to execute cmd ", cmd, err);
+    }
+    if (stdout) {
+      log.info("stdout captured for:", cmd, "\n", stdout)
+    }
+    if (stderr) {
+      log.info("stderr captured for:", cmd, "\n", stderr)
+    }
+
+    callback(err, stdout)
+    running = false
+    newRule(null, null);
+  })
 }
 
 function iptablesArgs(rule) {
-    var args = [];
+  var args = [];
 
-    if (!rule.chain) rule.chain = 'INPUT';
+  if (!rule.chain) rule.chain = 'INPUT';
   if(rule.table) args = args.concat(["-t", rule.table])
-    if (rule.chain) args = args.concat([rule.action, rule.chain]);
-    if (rule.protocol) args = args.concat(["-p", rule.protocol]);
-    if (rule.src) args = args.concat(["--source", rule.src]);
-    if (rule.dst) args = args.concat(["--destination", rule.dst]);
-    if (rule.sport) args = args.concat(["--sport", rule.sport]);
-    if (rule.dport) args = args.concat(["--dport", rule.dport]);
-    if (rule.in) args = args.concat(["-i", rule.in]);
-    if (rule.out) args = args.concat(["-o", rule.out]);
-    if (rule.target) args = args.concat(["-j", rule.target]);
-    if (rule.list) args = args.concat(["-n", "-v"]);
+  if (rule.chain) args = args.concat([rule.action, rule.chain]);
+  if (rule.protocol) args = args.concat(["-p", rule.protocol]);
+  if (rule.src) args = args.concat(["--source", rule.src]);
+  if (rule.dst) args = args.concat(["--destination", rule.dst]);
+  if (rule.sport) args = args.concat(["--sport", rule.sport]);
+  if (rule.dport) args = args.concat(["--dport", rule.dport]);
+  if (rule.in) args = args.concat(["-i", rule.in]);
+  if (rule.out) args = args.concat(["-o", rule.out]);
+  if (rule.target) args = args.concat(["-j", rule.target]);
+  if (rule.list) args = args.concat(["-n", "-v"]);
   if (rule.mac) args = args.concat(["-m","mac","--mac-source",rule.mac]);
   if(rule.todest) args = args.concat(["--to-destination", rule.todest])
 
-    return args;
+  return args;
 }
 
 function newRule(rule, callback) {
@@ -152,44 +155,20 @@ function deleteRule(rule, callback) {
 }
 
 function flush(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo iptables -w -F -t nat", (err, out, code) => {
-        if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
+  this.process = cp.exec(
+    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
+    (err, stdout, stderr) => {
+      if (err) {
+        log.error("IP6TABLE:FLUSH:Unable to flush", err, stdout);
+      }
+      if (callback) {
+        callback(err, null);
+      }
+    }
+  );
 }
 
-function flush6(callback) {
-    this.process = require('child_process').exec("sudo ip6tables -w -F && sudo iptables -w -F -t nat", (err, out, code) => {
-        if (err) {
-            log.error("IPTABLE:DNS:Error unable to set", err, {});
-        }
-        if (callback) {
-            callback(err, null);
-        }
-    });
-}
-
-function run(listofcmds, callback) {
-    async.eachLimit(listofcmds, 1, (cmd, cb) => {
-        log.debug("IPTABLE:RUNCOMMAND", cmd);
-        this.process = require('child_process').exec(cmd, (err, out, code) => {
-            if (err) {
-                log.error("IPTABLE:DNS:Error unable to set", err, {});
-            }
-            if (callback) {
-                callback(err, null);
-            }
-            cb();
-        });
-    }, (err) => {
-        if (callback)
-            callback(err, null);
-    });
-}
+// run() is deleted as same functionality is provided in Iptables.run() 
 
 function dnsRedirectAsync(server, port) {
   return new Promise((resolve, reject) => {
@@ -265,3 +244,4 @@ function dnsUnredirect(server, port, cb) {
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
+exports.flush = flush 

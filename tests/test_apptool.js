@@ -38,12 +38,6 @@ describe('AppTool', () => {
     "platform": "ios"
   }
 
-  it('should support isAppReadyForNewDeviceHandler', (done) => {
-    expect(appTool.isAppReadyForNewDeviceHandler(appTool)).to.be.true;
-    expect(appTool.isAppReadyForNewDeviceHandler(undefined)).to.be.false;
-    done();
-  })
-
   it('should support isAppReadyToDiscardLegacyFlowInfo', (done) => {
     expect(appTool.isAppReadyToDiscardLegacyFlowInfo(appTool)).to.be.true;
     expect(appTool.isAppReadyToDiscardLegacyFlowInfo(undefined)).to.be.false;

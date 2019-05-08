@@ -16,12 +16,8 @@
 
 var instance = null;
 var log = null;
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-var later = require('later');
 
 module.exports = class {
     constructor(path, loglevel) {
