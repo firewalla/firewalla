@@ -108,20 +108,32 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.MAIN.exception',
+    msg: err.message,
+    stack: err.stack,
+    err: JSON.stringify(err)
+  }, null);
   setTimeout(()=>{
     try {
       cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);
-  },1000*5);
+  }, 1000*5);
 });
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.MAIN.unhandledRejection',
+    msg: msg,
+    stack: reason.stack,
+    err: JSON.stringify(reason)
+  }, null);
 });
 
 let hl = null;
@@ -151,7 +163,7 @@ function enableFireBlue() {
   // start firemain process only in v2 mode
   cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to start firehttpd:", err, {})
+        log.error("Failed to start firehttpd:", err);
     }
   })
 }
@@ -160,7 +172,7 @@ function disableFireBlue() {
   // stop firehttpd in v1
   cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to stop firehttpd:", err, {})
+        log.error("Failed to stop firehttpd:", err);
     }
   })
 }
@@ -291,7 +303,7 @@ function run() {
           await (pm2.enforceAllPolicies())
           log.info("========= All existing policy rules are applied =========");
         })().catch((err) => {
-          log.error("Failed to apply some policy rules: ", err, {});
+          log.error("Failed to apply some policy rules: ", err);
         });          
       }, 1000 * 10); // delay for 10 seconds
       require('./UpgradeManager').finishUpgrade();
@@ -306,7 +318,7 @@ function run() {
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
       }
     } catch(e) {
     }
@@ -321,7 +333,7 @@ function run() {
         try {
           if (global.gc) {
             global.gc();
-            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB");
           }
         } catch(e) {
         }

@@ -277,7 +277,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     eptcloud.groupFind(gid, (err, group)=> {
       if (err) {
-        log.info("Error looking up group", err, err.stack, {});
+        log.info("Error looking up group", err, err.stack);
         callback(err, false);
         return;
       }
@@ -296,7 +296,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
         eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
-          log.error("Failed to record registered clients, err:", err, {})
+          log.error("Failed to record registered clients, err:", err);
         });
         
         // new group without any apps bound;
@@ -308,7 +308,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           
           let onSuccess = function(payload) {
             return (async() => {
-              log.info("some license stuff on device:", payload, {});
+              log.info("some license stuff on device:", payload);
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               postAppLinked(); // app linked, do any post-link tasks
@@ -385,7 +385,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
               
               const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
               await eptCloudExtension.job().catch((err) => {
-                log.error("Failed to update group info, err:", err, {})
+                log.error("Failed to update group info, err:", err);
               });;
 
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
@@ -522,7 +522,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       msg: "Firekick Terminated",
       gidPrefix: gidPrefix
     }).catch((err) => {
-      log.err("failed to submit diag info on termination", err);
+      log.error("failed to submit diag info on termination", err);
     });
   }
   
@@ -554,7 +554,13 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.exception',msg:err.message,stack:err.stack},null);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.KICKSTART.exception',
+    msg: err.message,
+    stack: err.stack,
+    err: JSON.stringify(err)
+  }, null);
   setTimeout(()=>{
     require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
     process.exit(1);
@@ -563,6 +569,12 @@ process.on('uncaughtException',(err)=>{
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
-  bone.log("error",{version:config.version,type:'FIREWALLA.KICKSTART.unhandledRejection',msg:msg,stack:reason.stack},null);
+  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.KICKSTART.unhandledRejection',
+    msg: msg,
+    stack: reason.stack,
+    err: JSON.stringify(reason)
+  }, null);
 });

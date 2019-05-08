@@ -54,7 +54,7 @@ class IPv6in4Sensor extends Sensor {
       return;
     }
 
-    log.info("Applying policy:", policy, {})
+    log.info("Applying policy:", policy);
     if(policy === true) {
       return this.start()
     } else {

@@ -28,6 +28,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 let Promise = require('bluebird');
 
@@ -345,7 +347,7 @@ module.exports = class {
 
           callback(null)
         } catch(err) {
-          log.error("Failed to set timezone:", err, {})
+          log.error("Failed to set timezone:", err);
           callback(err)
         }
       })()
@@ -412,7 +414,7 @@ module.exports = class {
       .then(() => {
         this.config = config;
       }).catch((err) => {
-        log.error("Failed to set sys:network:info in redis", err, {});
+        log.error("Failed to set sys:network:info in redis", err);
       });
   }
 
@@ -646,6 +648,11 @@ module.exports = class {
       this.serial = serial;
     }
 
+    let cpuTemperature = 50; // stub cpu value for docker/travis
+    if (!f.isDocker() && !f.isTravis()) {
+      cpuTemperature = platform.getCpuTemperature();
+    }
+
     try {
       this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8").trim();
       this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
@@ -667,7 +674,8 @@ module.exports = class {
         repoTag: this.repo.tag,
         language: this.language,
         timezone: this.timezone,
-        memory: data
+        memory: data,
+        cpuTemperature: cpuTemperature
       });
     });
   }

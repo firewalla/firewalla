@@ -58,25 +58,37 @@ function run0() {
 }
 
 process.on('uncaughtException',(err)=>{
-    log.info("################### CRASH #############");
-    log.info("+-+-+-",err.message,err.stack);
-    if (err && err.message && err.message.includes("Redis connection")) {
-        return;
+  log.info("################### CRASH #############");
+  log.info("+-+-+-",err.message,err.stack);
+  if (err && err.message && err.message.includes("Redis connection")) {
+    return;
+  }
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.MON.exception',
+    msg: err.message,
+    stack: err.stack,
+    err: JSON.stringify(err)
+  }, null);
+  setTimeout(()=>{
+    try {
+      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+    } catch(e) {
     }
-    bone.log("error",{version:config.version,type:'FIREWALLA.MON.exception',msg:err.message,stack:err.stack},null);
-    setTimeout(()=>{
-        try {
-            require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
-        } catch(e) {
-        }
-        process.exit(1);
-    },1000*2);
+    process.exit(1);
+  },1000*2);
 });
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
-  bone.log("error",{version:config.version,type:'FIREWALLA.MON.unhandledRejection',msg:msg,stack:reason.stack},null);
+  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  bone.log("error", {
+    version: config.version,
+    type: 'FIREWALLA.MON.unhandledRejection',
+    msg: msg,
+    stack: reason.stack,
+    err: JSON.stringify(reason)
+  }, null);
 });
 
 let heapSensor = null;

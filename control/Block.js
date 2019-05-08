@@ -106,7 +106,8 @@ async function setupWhitelistEnv(macTag, dstTag, dstType = "hash:ip", destroy = 
   }
 
   try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'whitelist environment for', macTag || "null", dstTag);
+    log.info(destroy ? 'Destroying' : 'Creating', 'whitelist environment for', macTag || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
 
     const macSet = macTag ? getMacSet(macTag) : '';
     const dstSet = getDstSet(dstTag);
@@ -184,7 +185,8 @@ async function setupBlockingEnv(macTag, dstTag, dstType = "hash:ip", destroy = f
 
   // sudo ipset create blocked_ip_set hash:ip family inet hashsize 128 maxelem 65536
   try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', macTag || "null", dstTag);
+    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', macTag || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
 
     const macSet = macTag ? getMacSet(macTag) : '';
     const dstSet = getDstSet(dstTag)
@@ -293,7 +295,7 @@ async function existsBlockingEnv(tag) {
 async function _isIpsetReferenced(ipset) {
   const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
   const result = await exec(listCommand);
-  const referenceCount = result.stdout;
+  const referenceCount = result.stdout.trim();
   return referenceCount !== "0";
 }
 
@@ -323,11 +325,38 @@ function ipsetEnqueue(ipsetCmd) {
       log.info("Control:Block:Processing:Error", code);
       ipsetEnqueue(null);
     });
-    for (let i in _ipsetQueue) {
-      log.debug("Control:Block:Processing", _ipsetQueue[i]);
-      child.stdin.write(_ipsetQueue[i]+"\n");
+    let errorOccurred = false;
+    child.stderr.on('data', (data) => {
+      log.error("ipset restore error: " + data);
+    });
+    child.stdin.on('error', (err) =>{
+      errorOccurred = true;
+      log.error("Failed to write to stdin", err);
+    });
+    writeToStdin(0);
+    function writeToStdin(i) {
+      const stdinReady = child.stdin.write(_ipsetQueue[i] + "\n", (err) => {
+        if (err) {
+          errorOccurred = true;
+          log.error("Failed to write to stdin", err);
+        } else {
+          if (i == _ipsetQueue.length - 1) {
+            child.stdin.end();
+          }
+        }
+      });
+      if (!stdinReady) {
+        child.stdin.once('drain', () => {
+          if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
+            writeToStdin(i + 1);
+          }
+        });
+      } else {
+        if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
+          writeToStdin(i + 1);
+        }
+      }
     }
-    child.stdin.end();
     log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
   } else {
     if (ipsetTimerSet == false) {
@@ -344,28 +373,29 @@ function ipsetEnqueue(ipsetCmd) {
 }
 
 async function block(target, ipset, whitelist = false) {
+  const slashIndex = target.indexOf('/')
+  const ipAddr = slashIndex > 0 ? target.substring(0, slashIndex) : target;
+
+  // default ipsets
   if (!ipset) {
     const prefix = whitelist ? 'whitelist' : 'blocked'
-
-    const slashIndex = target.indexOf('/')
-    const ipAddr = slashIndex > 0 ? target.substring(0, slashIndex) : target;
     const type = slashIndex > 0 ? 'net' : 'ip';
-
-    let suffix = '';
-    if (iptool.isV4Format(ipAddr)) {
-      // ip.isV6Format() will return true on v4 addresses
-    } else if(iptool.isV6Format(ipAddr)) {
-      suffix = '6'
-    } else {
-      // do nothing
-      return;
-    }
-
-    ipset = `${prefix}_${type}_set${suffix}`
+    ipset = `${prefix}_${type}_set`
   }
 
-  const cmd = `add -! ${ipset} ${target}`
+  // check and add v6 suffix
+  let suffix = '';
+  if (iptool.isV4Format(ipAddr)) {
+    // ip.isV6Format() will return true on v4 addresses
+  } else if (iptool.isV6Format(ipAddr)) {
+    suffix = '6'
+  } else {
+    // do nothing
+    return;
+  }
+  ipset = ipset + suffix;
 
+  const cmd = `add -! ${ipset} ${target}`
   log.debug("Control:Block:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return;
@@ -419,12 +449,12 @@ async function advancedUnblockMAC(macAddress, setName) {
   }
 }
 
-function unblock(destination, ipset) {
+async function unblock(destination, ipset) {
   ipset = ipset || "blocked_ip_set"
 
   // never unblock black hole ip
   if(f.isReservedBlockingIP(destination)) {
-    return Promise.resolve()
+    return
   }
 
   let cmd = null;
@@ -434,20 +464,12 @@ function unblock(destination, ipset) {
     cmd = `sudo ipset del -! ${ipset}6 ${destination}`
   } else {
     // do nothing
+    return
   }
 
   log.info("Control:UnBlock:",cmd);
 
-  return new Promise((resolve, reject) => {
-    cp.exec(cmd, (err, stdout, stderr) => {
-      if(err) {
-        log.error("Unable to ipset remove ", cmd, err)
-        reject(err);
-        return;
-      }
-      resolve();
-    });
-  });
+  return exec(cmd)
 }
 
 // Block every connection initiated from one local machine to a remote ip address
@@ -521,14 +543,12 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset add -! ${ipset}6 ${entry}`
   }
 
-  let execAsync = util.promisify(cp.exec);
-
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   ipset = ipset || "blocked_ip_port_set";
-  log.info("Unblocking public port:", localIPAddress, localPort, protocol, {});
+  log.info("Unblocking public port:", localIPAddress, localPort, protocol);
   protocol = protocol || "tcp";
 
   let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
@@ -540,9 +560,7 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
     cmd = `sudo ipset del -! ${ipset}6 ${entry}`
   }
 
-  let execAsync = util.promisify(cp.exec);
-
-  return execAsync(cmd);
+  return exec(cmd);
 }
 
 function _wrapIptables(rule) {

@@ -412,7 +412,7 @@ module.exports = class {
         log.debug("Intel:Drop", JSON.parse(data));
       }
     } catch (e) {
-      log.error("Intel:Error Unable to save", e, e.stack, data, {});
+      log.error("Intel:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -476,7 +476,7 @@ module.exports = class {
                   rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                 }
               } else {
-                log.error("Dns:Error", "unable to update count", err, {});
+                log.error("Dns:Error", "unable to update count", err);
               }
               //  });
             });
@@ -495,17 +495,17 @@ module.exports = class {
               bname: hostname
             };
             //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
-            log.debug("Dns:Redis:Merge", key, changeset, {});
+            log.debug("Dns:Redis:Merge", key, changeset);
             rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
               if (err) {
-                log.error("Discovery:Nmap:Update:Error", err, {});
+                log.error("Discovery:Nmap:Update:Error", err);
               }
             });
           }
         });
       }
     } catch (e) {
-      log.error("Detect:Dns:Error", e, data, e.stack, {});
+      log.error("Detect:Dns:Error", e, data, e.stack);
     }
   }
 
@@ -528,7 +528,7 @@ module.exports = class {
 
       });
     } catch (e) {
-      log.error("Detect:Software:Error", e, data, e.stack, {});
+      log.error("Detect:Software:Error", e, data, e.stack);
     }
   }
 
@@ -568,10 +568,12 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    const hostObject = hostManager.getHostFast(ip)
+    let hostObject = hostManager.getHostFast(ip);
+    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
+      hostObject = hostManager.getHostFast6(ip);
 
-    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
-      return false
+    if(hostObject && hostObject.o && (!hostObject.o.spoofing || hostObject.o.spoofing === "false")) {
+      return false;
     } else {
       return true;
     }
@@ -584,7 +586,7 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    if(m === 'dhcp' || m === 'dhcpSpoof ') { // only for dhcp and dhcpSpoof
+    if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
       let myip = sysManager.myIp()
       const myip6 = sysManager.myIp6();
       if (myip) {
@@ -1239,7 +1241,7 @@ module.exports = class {
       //    return;
       // }
     } catch (e) {
-      log.error("Conn:Error Unable to save", e, data, new Error().stack, {});
+      log.error("Conn:Error Unable to save", e, data, new Error().stack);
     }
 
   }
@@ -1361,7 +1363,7 @@ module.exports = class {
           'lastActive': Math.ceil(Date.now() / 1000),
           'count': 1
         }
-        log.debug("HTTP:Dns:values",key,value,{});
+        log.debug("HTTP:Dns:values",key,value);
         rclient.hgetall(key,(err,entry)=>{
           if (entry && entry.host) {
             return;
@@ -1379,13 +1381,13 @@ module.exports = class {
               }
               log.debug("HTTP:Dns:Set",rvalue,value);
             } else {
-              log.error("HTTP:Dns:Error", "unable to update count", err, {});
+              log.error("HTTP:Dns:Error", "unable to update count", err);
             }
           });
         });
       }
     } catch (e) {
-      log.error("HTTP:Error Unable to save", e, data, e.stack, {});
+      log.error("HTTP:Error Unable to save", e, data, e.stack);
     }
 
   }
@@ -1500,7 +1502,7 @@ module.exports = class {
           'ssl':1,
           'established':obj.established
         }
-        log.debug("SSL:Dns:values",key,value,{});
+        log.debug("SSL:Dns:values",key,value);
         rclient.hgetall(key,(err,entry)=>{
           if (entry && entry.host && entry.ssl) {
             return;
@@ -1518,7 +1520,7 @@ module.exports = class {
               }
               log.debug("SSL:Dns:Set",key,rvalue,value);
             } else {
-              log.error("SSL:Dns:Error", "unable to update count", err, {});
+              log.error("SSL:Dns:Error", "unable to update count", err);
             }
           });
         });
@@ -1526,7 +1528,7 @@ module.exports = class {
 
 
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data, {});
+      log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -1559,7 +1561,7 @@ module.exports = class {
         }
       });
     } catch (e) {
-      log.error("X509:Error Unable to save", e, data, e.stack, {});
+      log.error("X509:Error Unable to save", e, data, e.stack);
     }
   }
 
@@ -1574,17 +1576,17 @@ module.exports = class {
 
       let ip = obj.host;
       if(!ip) {
-        log.error("Invalid knownHosts entry:", obj, {});
+        log.error("Invalid knownHosts entry:", obj);
         return;
       }
 
-      log.info("Found a known host from host:", ip, {});
+      log.info("Found a known host from host:", ip);
 
       l2.getMAC(ip, (err, mac) => {
 
         if(err) {
           // not found, ignore this host
-          log.error("Not able to found mac address for host:", ip, mac, {});
+          log.error("Not able to found mac address for host:", ip, mac);
           return;
         }
 
@@ -1610,15 +1612,17 @@ module.exports = class {
   //"192.168.2.190","dst":"192.168.2.108","peer_descr":"bro","actions":["Notice::ACTION_LOG"],"suppress_for":3600.0,"dropped":false}
 
 
-  processNoticeData(data) {
+  async processNoticeData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
-        // log.error("Notice:Drop", obj);
         return;
       }
-      if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-        // log.error("Notice:Drop My IP", obj);
+      // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
+      // and the other one will be suppressed. And we'll lost either device/dest info
+      if (obj.src != null && obj.src == sysManager.myIp() ||
+          obj.dst != null && obj.dst == sysManager.myIp())
+      {
         return;
       }
       log.debug("Notice:Processing",obj);
@@ -1627,52 +1631,48 @@ module.exports = class {
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
-        rclient.zadd(redisObj, (err, response) => {
-          if (err) {
-            log.error("Notice:Save:Error", err);
-          } else {
-            if (this.config.bro.notice.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
-            }
-          }
-        });
+        await rclient.zadd(redisObj);
+        if (this.config.bro.notice.expires) {
+          await rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
+        }
         let lh = null;
         let dh = null;
-        if (sysManager.isLocalIP(obj.src)) {
-          lh = obj.src || "0.0.0.0";
-          dh = obj.dst || "0.0.0.0";
-        } else if (sysManager.isLocalIP(obj.dst)) {
-          lh = obj.dst || "0.0.0.0";
-          dh = obj.src || "0.0.0.0";
+
+        // using src & dst by default, or id.orig_h & id.resp_h
+        if (obj.src) {
+          lh = obj.src;
+          dh = obj.dst || (obj['id.orig_h'] == obj.src ? obj['id.resp_h'] : obj['id.orig_h']);
         } else {
-          lh = "0.0.0.0";
-          dh = "0.0.0.0";
+          lh = obj['id.orig_h'];
+          dh = obj['id.resp_h'];
         }
 
-        (async () => {
-          let localIP = lh;
-          let message = obj.msg;
-          let noticeType = obj.note;
-          let timestamp = parseFloat(obj.ts);
+        lh = lh || "0.0.0.0";
+        dh = dh || "0.0.0.0";
 
-          // TODO: create dedicate alarm type for each notice type
-          let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-            "p.device.ip": localIP,
-            "p.dest.ip": dh
-          });
+        // make sure lh points to local device
+        if (lh && !sysManager.isLocalIP(lh)) {
+          let tmp = lh;
+          lh = dh;
+          dh = tmp;
+        }
 
-          await broNotice.processNotice(alarm, obj);
+        let message = obj.msg;
+        let noticeType = obj.note;
+        let timestamp = parseFloat(obj.ts);
 
-          am2.enqueueAlarm(alarm);
+        // TODO: create dedicate alarm type for each notice type
+        let alarm = new Alarm.BroNoticeAlarm(timestamp, lh, noticeType, message, {
+          "p.device.ip": lh,
+          "p.dest.ip": dh
+        });
 
-        })().catch((err) => {
-          log.error("Failed to generate alarm:", err, {})
-        })
-      } else {
-        // log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+        await broNotice.processNotice(alarm, obj);
+
+        am2.enqueueAlarm(alarm);
       }
     } catch (e) {
-      log.error("Notice:Error Unable to save", e,data, e.stack, {});
+      log.error("Notice:Error Unable to save", e, data);
     }
   }
 

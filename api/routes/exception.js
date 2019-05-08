@@ -37,7 +37,7 @@ router.get('/list', (req, res, next) => {
 
       am2.idsToAlarms(alarmIDs, (err, alarms) => {
         if (err) {
-          log.error("Failed to get alarms by ids:", err, {});
+          log.error("Failed to get alarms by ids:", err);
           reject(err);
           return;
         }

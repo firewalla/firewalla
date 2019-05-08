@@ -64,7 +64,7 @@ class DeviceHook extends Hook {
     let ipv6Addr = host.ipv6Addr
 
     if(!mac) { // ignore if no mac
-      log.info("Invalid MAC address for process device update:", event, {})
+      log.info("Invalid MAC address for process device update:", event);
       return;
     }
 
@@ -149,7 +149,7 @@ class DeviceHook extends Hook {
       }
       
     })().catch((err) => {
-      log.error("Failed to process DeviceUpdate event:", err, {});
+      log.error("Failed to process DeviceUpdate event:", err);
     })
   }
 
@@ -229,7 +229,7 @@ class DeviceHook extends Hook {
         if(enrichedHost.ipv6Addr)
           await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr);
 
-        log.info("Host entry is created for this new device:", host, {});
+        log.info("Host entry is created for this new device:", host);
 
         let mac = enrichedHost.mac;
 
@@ -242,7 +242,7 @@ class DeviceHook extends Hook {
           vendor = await this.getVendorInfoAsync(mac);
         } catch(err) {
           // do nothing
-          log.error("Failed to get vendor info from cloud", err, {});
+          log.error("Failed to get vendor info from cloud", err);
         }
 
         let v = "Unknown";
@@ -270,7 +270,7 @@ class DeviceHook extends Hook {
         if(!event.suppressAlarm) {
           this.createAlarm(enrichedHost);
         } else {
-          log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost), {})
+          log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
         }
         const hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr, (err, host) => {
@@ -283,7 +283,7 @@ class DeviceHook extends Hook {
           }
         });
       })().catch((err) => {
-        log.error("Failed to handle NewDeviceFound event:", err, {});
+        log.error("Failed to handle NewDeviceFound event:", err);
       });
     });
 
@@ -344,7 +344,7 @@ class DeviceHook extends Hook {
         let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);                                     
       })().catch((err) => {
-        log.error("Failed to process OldDeviceChangedToNewIP event:", err, {})
+        log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
     });
 
@@ -416,7 +416,7 @@ class DeviceHook extends Hook {
         let hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr);
       })().catch((err) => {
-        log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err, {})
+        log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
     });
 
@@ -485,12 +485,12 @@ class DeviceHook extends Hook {
         //         });
         //       }
         //     }).catch((err) => {
-        //       log.error("Failed to create mac entry:", err, err.stack, {});
+        //       log.error("Failed to create mac entry:", err, err.stack);
         //     })
 
         // })        
       })().catch((err) => {
-        log.error("Failed to create host entry:", err, err.stack, {});
+        log.error("Failed to create host entry:", err, err.stack);
       });
     
       
@@ -511,7 +511,7 @@ class DeviceHook extends Hook {
           log.error("Failed to load device presence settings", err);
         }
       })().catch((err) => {
-        log.error("Failed to process DeviceOffline event:", err, {});
+        log.error("Failed to process DeviceOffline event:", err);
       });
     });
   }

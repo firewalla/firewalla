@@ -194,13 +194,17 @@ if((f.isProductionOrBeta())
     if (err && err.message && err.message.includes("Redis connection")) {
       return;
     }
-    bone.log("error",{version:config.version,type:'FIREWALLA.UI.exception',msg:err.message,stack:err.stack},null);
+    bone.log("error", {
+      version: config.version,
+      type: 'FIREWALLA.UI.exception',
+      msg: err.message,
+      stack: err.stack,
+      err: JSON.stringify(err)
+    }, null);
     setTimeout(()=>{
       process.exit(1);
     },1000*2);
   });
-
-  
 }
 
 sem.on("ChangeLogLevel", (event) => {

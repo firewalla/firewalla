@@ -78,7 +78,7 @@ module.exports = class {
     try {
       range = networkTool.capSubnet(range)
     } catch (e) {
-      log.error('Nmap:Scan:Error', range, fast, e, {});
+      log.error('Nmap:Scan:Error', range, fast, e);
       callback(e);
       return;
     }
@@ -114,7 +114,7 @@ module.exports = class {
       cmdline,
       (err, stdout, stderr) => {
         if (err) {
-          log.error('Failed to nmap scan:', err, 'stderr:', stderr, {});
+          log.error('Failed to nmap scan:', err, 'stderr:', stderr);
           callback(err);
           return;
         }

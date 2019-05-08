@@ -112,7 +112,7 @@ class BitBridge {
       let logStream = fs.createWriteStream("/dev/null", {flags: 'a'});
 
       this.spawnProcess = spawn(binary, args);
-      log.info("starting new spoofing: ", binary, args, {});
+      log.info("starting new spoofing: ", binary, args);
 
       this.spawnProcess.stdout.pipe(logStream);
       this.spawnProcess.stderr.pipe(logStream);

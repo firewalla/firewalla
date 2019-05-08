@@ -182,7 +182,7 @@ class FWInvitation {
                    };
                 } else {
                   log.forceInfo("Got a new license");
-                  log.info("Got a new license:", lic, {});
+                  log.info("Got a new license:", lic);
                   await (license.writeLicense(lic));
                 }
               }
@@ -218,7 +218,7 @@ class FWInvitation {
 
       } catch(err) {
         if(err != "404") {
-          log.error(err, {});
+          log.error(err);
         }
 
         if (this.leftCheckCount <= 0) {
@@ -284,7 +284,7 @@ class FWInvitation {
     network.get_private_ip((err, ip) => {
         txtfield.ipaddress = ip;
 
-        log.info("TXT:", txtfield, {});
+        log.info("TXT:", txtfield);
         const serial = platform.getBoardSerial();
         this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
         this.displayBonjourMessage(txtfield);

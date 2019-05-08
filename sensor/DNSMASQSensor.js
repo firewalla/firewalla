@@ -53,7 +53,7 @@ class DNSMASQSensor extends Sensor {
         throw err;
       })
       .then(() => log.info("dnsmasq service is stopped successfully"))
-      .then(() => require('../util/delay.js').delay(1000));
+      .then(() => require('../util/util.js').delay(1000));
   }
 
   reload() {

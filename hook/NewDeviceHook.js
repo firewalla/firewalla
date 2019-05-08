@@ -43,7 +43,7 @@ class NewDeviceHook extends Hook {
     // get ip address and mac vendor
     d.discoverMac(mac, (err, result) => {
       if(err) {
-        log.error("Failed to discover mac address", mac, ": " + err, {});
+        log.error("Failed to discover mac address", mac, ": " + err);
         return;
       }
 

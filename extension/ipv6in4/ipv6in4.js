@@ -73,7 +73,7 @@ class IPV6In4 {
           let config = JSON.parse(json)
           this.config = config
         } catch(err) {
-          log.error("Failed to parse config:", json, err, {})
+          log.error("Failed to parse config:", json, err);
         }
       }
     })()
@@ -215,7 +215,7 @@ class IPV6In4 {
       await (exec("which radvd && sudo systemctl stop radvd"))
       await (this.disableTunnel())
     })().catch((err) => {
-      log.error("Failed to stop ip6in4 due to err:", err, {})
+      log.error("Failed to stop ip6in4 due to err:", err);
     })
   }
 }

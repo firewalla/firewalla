@@ -316,7 +316,7 @@ module.exports = class {
           this._startHealthChecker();
           resolve();
         } else {
-          log.error("Failed to start " + serviceName, code, signal, {});
+          log.error("Failed to start " + serviceName, code, signal);
         }
       })
       

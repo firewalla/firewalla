@@ -117,7 +117,7 @@ function _enforceSpoofMode() {
       return Promise.resolve();
     }
   })().catch((err) => {
-    log.error("Failed to start new spoof", err, {});
+    log.error("Failed to start new spoof", err);
   });
 }
 
@@ -337,8 +337,15 @@ function _enableSecondaryInterface() {
   });
 }
 
-function _enforceDHCPMode(mode) {
+async function _enforceDHCPMode(mode) {
   mode = mode || "dhcp";
+  // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
+  const cmd = "pidof dhclient && sudo pkill dhclient; true";
+  try {
+    await execAsync(cmd);
+  } catch (err) {
+    log.warn("Failed to kill dhclient");
+  }
   sem.emitEvent({
     type: 'StartDHCP',
     mode: mode,
@@ -377,7 +384,7 @@ function apply() {
 
     curMode = mode;
     
-    log.info("Applying mode", mode, "...", {})
+    log.info("Applying mode", mode, "...");
 
     let HostManager = require('./HostManager.js')
     let hostManager = new HostManager('cli', 'server', 'info')
