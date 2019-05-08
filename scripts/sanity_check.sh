@@ -160,6 +160,9 @@ check_policies() {
         local TARGET=$(redis-cli hget $RULE target)
         local TYPE=$(redis-cli hget $RULE type)
         local SCOPE=$(redis-cli hget $RULE scope)
+        local ALARM_ID=$(redis-cli hget $RULE aid)
+        local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
+
         if [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
         fi
@@ -167,9 +170,20 @@ check_policies() {
         if [[ ! -n $EXPIRE ]]; then
             EXPIRE="Infinite"
         fi
-        printf "%5s %30s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
+        local CRONTIME=$(redis-cli hget $RULE cronTime)
+        if [[ ! -n $CRONTIME ]]; then
+            CRONTIME="Always"
+        fi
+        if [[ -n $ALARM_ID ]]; then
+            RULE_ID="* $RULE_ID"
+        elif [[ -n $FLOW_DESCRIPTION ]]; then
+            RULE_ID="** $RULE_ID"
+        fi        
+        printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
+    echo ""
+    echo "Note: * - created from alarm, ** - created from network flow"
     echo ""
     echo ""
 }
