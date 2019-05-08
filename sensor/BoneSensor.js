@@ -14,123 +14,209 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Bone = require('../lib/Bone');
+const Bone = require('../lib/Bone');
 
-let Sensor = require('./Sensor.js').Sensor;
+const extensionManager = require('./ExtensionManager.js')
 
-let serviceConfigKey = "bone:service:config";
+const Sensor = require('./Sensor.js').Sensor;
 
-let syncInterval = 1000 * 3600 * 4; // sync every 4 hourly
+const serviceConfigKey = "bone:service:config";
+
+const syncInterval = 1000 * 3600 * 4; // sync every 4 hours
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const Promise = require('bluebird');
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const License = require('../util/license');
 
-let License = require('../util/license');
+const fConfig = require('../net2/config.js').getConfig();
 
-let fConfig = require('../net2/config.js').getConfig();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const CLOUD_URL_KEY = "sys:bone:url";
+const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
 
 
 class BoneSensor extends Sensor {
   scheduledJob() {
-    Bone.waitUtilCloudReady(() => {
+    Bone.waitUntilCloudReady(() => {
       this.checkIn()
         .then(() => {})
         .catch((err) => {
-        log.error("Failed to check in", err, {});
+          log.error("Failed to check in", err, {});
         })
 
     })
   }
 
-  checkIn() {
-    let license = License.getLicense();
+  apiRun() {
+    // register get/set handlers for fireapi
+    extensionManager.onGet("cloudInstance", async (msg) => {
+      return this.getCloudInstanceURL();
+    })
+
+    extensionManager.onGet("boneJWToken", async (msg) => {
+      const jwt = await rclient.getAsync("sys:bone:jwt");
+      return {jwt};
+    })
+
+    extensionManager.onSet("cloudInstance", async (msg, data) => {
+      if(data.instance) {
+        const url = `https://firewalla.encipher.io/bone/api/${data.instance}`;
+        return this.setCloudInstanceURL(url);
+      }
+    })
+
+    extensionManager.onCmd("recheckin", async (msg, data) => {
+
+      return new Promise((resolve, reject) => {
+
+        sem.once("CloudReCheckinComplete", async (event) => {
+          const jwt = await rclient.getAsync("sys:bone:jwt");
+          resolve({jwt});
+        });
+
+        sem.sendEventToFireMain({
+          type: 'CloudReCheckin',
+          message: "",
+        });
+      });      
+    });
+  }
+
+  async getCloudInstanceURL() {
+    return rclient.getAsync(CLOUD_URL_KEY);
+  }
+
+  async getForcedCloudInstanceURL() {
+    return rclient.getAsync(FORCED_CLOUD_URL_KEY);
+  }
+
+  async setCloudInstanceURL(url) {
+    const curUrl = await this.getCloudInstanceURL();
+    if(curUrl === url) {
+      return;
+    }    
+
+    log.info(`Applying new cloud url: ${url}`);
+
+    await rclient.setAsync(CLOUD_URL_KEY, url);
+    sem.emitEvent({
+      type: 'CloudURLUpdate',
+      toProcess: 'FireMain',
+      message: "",
+      url: url
+    });
+  }
+
+  async setForcedCloudInstanceURL(url) {
+    const curUrl = await this.getCloudInstanceURL();
+    if(curUrl === url) {
+      return;
+    }
+
+    log.info(`Applying new forced cloud url: ${url}`);
+
+    await rclient.setAsync(FORCED_CLOUD_URL_KEY, url);
+
+    return this.setCloudInstanceURL(url);
+  }
+
+  async applyNewCloudInstanceURL() {
+    const curUrl = await this.getCloudInstanceURL();
+
+    log.info(`Applying new cloud server url ${curUrl}`);
+
+    return this.checkIn();
+  }
+
+  async checkIn() {
+    const url = await this.getForcedCloudInstanceURL();
+
+    if(url) {
+      Bone.setEndpoint(url);
+    }
+
+    const license = License.getLicense();
 
     if(!license) {
       log.error("License file is required!");
       // return Promise.resolve();
     }
 
-    return async(() => {
-      let sysInfo = await (sysManager.getSysInfoAsync());
+    let sysInfo = await sysManager.getSysInfoAsync();
 
-      log.debug("Checking in Cloud...",sysInfo,{});
- 
-      // First checkin usually have no meaningful data ... 
-      //
-      try {
-        if (this.lastCheckedIn) {
-            let HostManager = require("../net2/HostManager.js");
-            let hostManager = new HostManager("cli", 'server', 'info');
-            sysInfo.hostInfo = await (hostManager.getCheckInAsync());
+    log.debug("Checking in Cloud...", sysInfo, {});
+
+    // First checkin usually have no meaningful data ... 
+    //
+    try {
+      if (this.lastCheckedIn) {
+        let HostManager = require("../net2/HostManager.js");
+        let hostManager = new HostManager("cli", 'server', 'info');
+        sysInfo.hostInfo = await hostManager.getCheckInAsync();
+      }
+    } catch (e) {
+      log.error("BoneCheckIn Error fetching hostInfo",e,{});
+    }
+
+    const data = await Bone.checkinAsync(fConfig, license, sysInfo);
+
+    this.lastCheckedIn = Date.now() / 1000;
+
+    log.info("Cloud checked in successfully:")//, JSON.stringify(data));
+
+    await rclient.setAsync("sys:bone:info",JSON.stringify(data));
+
+    const existingDDNS = await rclient.hgetAsync("sys:network:info", "ddns");
+    if (data.ddns) {
+      sysManager.ddns = data.ddns;
+      await rclient.hsetAsync(
+        "sys:network:info",
+        "ddns",
+        JSON.stringify(data.ddns)); // use JSON.stringify for backward compatible
+    }
+
+    let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
+    if(data.publicIp) {
+      sysManager.publicIp = data.publicIp;
+      await rclient.hsetAsync(
+        "sys:network:info",
+        "publicIp",
+        JSON.stringify(data.publicIp)); // use JSON.stringify for backward compatible
+    }
+
+    // broadcast new change
+    if(existingDDNS !== JSON.stringify(data.ddns) ||
+    existingPublicIP !== JSON.stringify(data.publicIp)) {
+      sem.emitEvent({
+        type: 'DDNS:Updated',
+        toProcess: 'FireApi',
+        publicIp: data.publicIp,
+        ddns: data.ddns,
+        message: 'DDNS is updated'
+      })
+    }
+
+    if (data && data.upgrade) {
+        log.info("Bone:Upgrade", data.upgrade);
+        if (data.upgrade.type == "soft") {
+            log.info("Bone:Upgrade:Soft", data.upgrade);
+            require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft', (err, out, code) => {
+            });
+        } else if (data.upgrade.type == "hard") {
+            log.info("Bone:Upgrade:Hard", data.upgrade);
+            require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
+            });
         }
-      } catch (e) {
-        log.error("BoneCheckIn Error fetching hostInfo",e,{});
-      }
+    }
 
-      let data = await (Bone.checkinAsync(fConfig, license, sysInfo));
-
-      this.lastCheckedIn = Date.now() / 1000;
-
-      log.info("Cloud checked in successfully:")//, JSON.stringify(data));
-
-      await (rclient.setAsync("sys:bone:info",JSON.stringify(data)));
-
-      let existingDDNS = await (rclient.hgetAsync("sys:network:info", "ddns"));
-      if (data.ddns) {
-        sysManager.ddns = data.ddns;
-        await (rclient.hsetAsync(
-          "sys:network:info",
-          "ddns",
-          JSON.stringify(data.ddns))); // use JSON.stringify for backward compatible
-      }
-
-      let existingPublicIP = await (rclient.hgetAsync("sys:network:info", "publicIp"));
-      if(data.publicIp) {
-        sysManager.publicIp = data.publicIp;
-        await (rclient.hsetAsync(
-          "sys:network:info",
-          "publicIp",
-          JSON.stringify(data.publicIp))); // use JSON.stringify for backward compatible
-      }
-
-      // broadcast new change
-      if(existingDDNS !== JSON.stringify(data.ddns) ||
-      existingPublicIP !== JSON.stringify(data.publicIp)) {
-        sem.emitEvent({
-          type: 'DDNS:Updated',
-          toProcess: 'FireApi',
-          publicIp: data.publicIp,
-          ddns: data.ddns,
-          message: 'DDNS is updated'
-        })
-      }
-
-      if (data && data.upgrade) {
-          log.info("Bone:Upgrade", data.upgrade);
-          if (data.upgrade.type == "soft") {
-             log.info("Bone:Upgrade:Soft", data.upgrade);
-             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft', (err, out, code) => {
-             });
-          } else if (data.upgrade.type == "hard") {
-             log.info("Bone:Upgrade:Hard", data.upgrade);
-             require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
-             });
-          }
-      }
-
-      if (data && data.frpToken) {
-        await (rclient.hsetAsync("sys:config", "frpToken", data.frpToken))
-      }
-    })();
+    if (data && data.frpToken) {
+      await rclient.hsetAsync("sys:config", "frpToken", data.frpToken)
+    }
   }
 
   run() {
@@ -141,6 +227,19 @@ class BoneSensor extends Sensor {
     setInterval(() => {
       this.scheduledJob();
     }, syncInterval);
+
+    sem.on("CloudURLUpdate", async (event) => {
+      return this.applyNewCloudInstanceURL()
+    })
+
+    sem.on("CloudReCheckin", async (event) => {
+      await this.checkIn();
+
+      sem.sendEventToFireApi({
+        type: 'CloudReCheckinComplete',
+        message: ""
+      });
+    });
   }
 
   // make config redis-friendly..

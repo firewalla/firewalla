@@ -1,43 +1,42 @@
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
-let jsonfile = require('jsonfile');
-let util = require('util');
+const log = require('../net2/logger.js')(__filename, 'info');
+const jsonfile = require('jsonfile');
+const util = require('util');
 
 // FIXME: this profile should be loaded from cloud
-let profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
-let i18n = require('../util/i18n.js');
+const profile = jsonfile.readFileSync(__dirname + "/destinationProfile.json");
+const i18n = require('../util/i18n.js');
+const fc = require('../net2/config.js')
 
-let uuid = require('uuid');
-
-let extend = require('util')._extend;
+const extend = require('util')._extend;
 
 // let moment = require('moment');
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
+//   timestamp (when event occcured)
 //   device (each alarm should have a related device)
 //   message (a summarized information about what happened, need support localization)
 //   payloads (key-value pairs, used to populate message/investigation)
-//   timestamp (when event occcured)
+//      payload properties are prefixed in 3 different categories
+//      p:  primary     required to rander alarm list
+//      e:  extended    required to rander alarm detail
+//      r:  ?           required in neither scenarios above
 
 class Alarm {
   constructor(type, timestamp, device, info) {
     this.aid = 0;
     this.type = type;
     this.device = device;
-//    this.payloads = payloads;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
     this.notifType = `NOTIF_TITLE_${this.type}`; // default security
-    if(info)
-      extend(this, info);
 
-    // check schema, minimal required key/value pairs in payloads
+    if (info) Object.assign(this, info);
+
 //    this.validate(type);
 
-
-    return;
   }
 
   getManagementType() {
@@ -62,6 +61,27 @@ class Alarm {
 
   localizedNotification() {
     return i18n.__(this.getNotificationCategory(), this);
+  }
+
+  cloudAction() {
+    const decision = this["p.cloud.decision"];
+    switch(decision) {
+      case "block": {
+        if(!this["p.action.block"]) {
+          return decision;
+        } else {
+          return null;
+        }
+      }
+      case "ignore": {
+        return decision;
+      }
+      case "alarm": {
+        return null;
+      }
+      default:
+        return decision;
+    }
   }
 
   localizedInfo() {
@@ -114,9 +134,10 @@ class Alarm {
     if(alarm.type !== alarm2.type)
       return false;
 
-    for(var key in keysToCompare) {
-      let k = keysToCompare[key];
-      if(alarm[k] && alarm2[k] && alarm[k] === alarm2[k]) {
+    for(var i in keysToCompare) {
+      let k = keysToCompare[i];
+      // using == to compromise numbers comparison
+      if(alarm[k] && alarm2[k] && alarm[k] == alarm2[k]) {
 
       } else {
         return false;
@@ -124,6 +145,10 @@ class Alarm {
     }
 
     return true;
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.cooldown") || 15 * 60; // 15 minutes
   }
 };
 
@@ -188,6 +213,11 @@ class VPNClientConnectionAlarm extends Alarm {
   requiredKeys() {
     return ["p.dest.ip"];
   }
+
+  getExpirationTime() {
+    // for vpn client connection activities, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.vpn_client_connection.cooldown") || 60 * 60 * 4;
+  }
 }
 
 class VulnerabilityAlarm extends Alarm {
@@ -227,13 +257,14 @@ class BroNoticeAlarm extends Alarm {
     return [];
   }
 
+  localizedMessage() {
+    return this["p.message"]; // use bro content as basic localized message, usually app side should use it's own messaging template
+  }
+
   getI18NCategory() {
     let category = this.type;
 
-    const supportedNoticeTypes = ["Heartbleed::SSL_Heartbeat_Attack"];
-    if(supportedNoticeTypes.includes(this["p.noticeType"])) {
-      category = `${category}_${this["p.noticeType"]}`;
-    }
+    category = `${category}_${this["p.noticeType"]}`;
 
     if("p.local_is_client" in this) {
       if(this["p.local_is_client"] === "1") {
@@ -246,6 +277,11 @@ class BroNoticeAlarm extends Alarm {
     if(this.result === "block" &&
     this.result_method === "auto") {
       category = `${category}_AUTOBLOCK`;
+    }
+
+    // fallback if localization for this special bro type does not exist
+    if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
+      category = this.type;
     }
     
     return category;
@@ -280,8 +316,7 @@ class IntelAlarm extends Alarm {
   getI18NCategory() {
     this["p.dest.readableName"] = this.getReadableDestination()
     
-    if(this.result === "block" &&
-    this.result_method === "auto") {
+    if(this.result === "block" && this.result_method === "auto") {
       if(this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"]) {
         if(this["p.local_is_client"] === "1") {
           return "FW_INTEL_AUTO_BLOCK_ALARM_INTEL_FROM_INSIDE";
@@ -464,6 +499,11 @@ class LargeTransferAlarm extends OutboundAlarm {
 
     return category
   }
+
+  getExpirationTime() {
+    // for upload activity, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
 }
 
 class VideoAlarm extends OutboundAlarm {
@@ -487,6 +527,51 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+class SubnetAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SUBNET", timestamp, device, info);
+    this["p.showMap"] = false;
+  }
+
+  getManagementType() {
+    return "info";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.device.mac", "p.device.ip", "p.subnet.length"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.subnet.cooldown") || 30 * 24 * 60 * 60;
+  }
+}
+
+class UpnpAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_UPNP', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return [
+      'p.device.mac',
+      'p.upnp.protocol',
+      //'p.upnp.public.host', check header of UPNPSensor for details
+      'p.upnp.public.port',
+      'p.upnp.private.host',
+      'p.upnp.private.port'
+    ];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
+  }
+}
+
 let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -500,7 +585,9 @@ let classMapping = {
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
-  ALARM_INTEL_REPORT: IntelReportAlarm.prototype
+  ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
+  ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_UPNP: UpnpAlarm.prototype
 }
 
 module.exports = {
@@ -519,5 +606,7 @@ module.exports = {
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
+  SubnetAlarm: SubnetAlarm,
+  UpnpAlarm: UpnpAlarm,
   mapping: classMapping
 }

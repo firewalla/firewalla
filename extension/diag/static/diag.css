@@ -2,7 +2,7 @@
   text-align:left;
   color:#8e8e8e;
   font-size:17px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: medium;
   font-style: regular;
   border-bottom: 1px solid #C8C7CC;
@@ -15,7 +15,7 @@
   text-align:right;
   color:#8e8e8e;
   font-size:17px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: medium;
   font-style: regular;
   border-bottom: 1px solid #C8C7CC;
@@ -28,7 +28,7 @@
   text-align:left;
   color:#222222;
   font-size:17px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: medium;
   font-style: regular;
   border-bottom: 1px solid #C8C7CC;
@@ -40,7 +40,7 @@
   text-align:right;
   color:#222222;
   font-size:17px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: medium;
   font-style: regular;
   border-bottom: 1px solid #C8C7CC;
@@ -51,7 +51,7 @@
 .table {
   border-collapse: collapse;
   width: 100%;
-  margin-left:auto; 
+  margin-left:auto;
   margin-right:auto;
   margin-top:auto;
   margin-bottom:auto;
@@ -60,7 +60,7 @@
 .header {
   font-size:20px;
   text-align:center;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: Black;
   font-style: bold;
 }
@@ -68,14 +68,14 @@
 .title {
   font-size:34px;
   text-align:center;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: bold;
 }
 
 .footer {
   font-size:14px;
   text-align:center;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: 300;
   font-style: regular;
 }
@@ -85,28 +85,28 @@
 }
 
 .outer {
-    display: table;
-    height: 100%;
-    width: 100%;
+  display: table;
+  height: 100%;
+  width: 100%;
 }
 
 .middle {
-    display: table-cell;
-    vertical-align: middle;
+  display: table-cell;
+  vertical-align: middle;
 }
 
 .inner {
-    margin-left: auto;
-    margin-right: auto;
-    width: 90%;
-    max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 90%;
+  max-width: 640px;
 }
 
 .available {
   text-align:center;
   color:#222222;
   font-size:14px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: 300;
   padding-bottom: 8px;
   margin-bottom: 0px;
@@ -116,38 +116,39 @@
   text-align:center;
   color:#222222;
   font-size:36px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: bold;
   margin-top: 0;
   padding-top: 0;
-  padding-bottom: 100px;
+  padding-bottom: 32px;
 }
 
 .welcome {
   text-align:center;
   color:#222222;
   font-size:36px;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
   font-weight: bold;
   margin-bottom: 0;
   padding-bottom: 0;
+  padding-top: 8px;
 }
 
 .logo {
   height:90px;
-  margin-left:auto; 
+  margin-left:auto;
   margin-right:auto;
   display: block;
   vertical-align: center;
 }
 
 .download {
-  text-align:center;  
+  text-align:center;
 }
 
 .download_table {
   border-collapse: collapse;
-  margin-left:auto; 
+  margin-left:auto;
   margin-right:auto;
   margin-top:auto;
   margin-bottom:auto;
@@ -156,8 +157,39 @@
 
 .error_logo {
   width: 83px;
-  display:block; 
+  display:block;
 }
+
+.qrcode_div {
+  box-shadow: rgba(0, 0, 0, 0.23) 0px 3px 6px 0px, rgba(0, 0, 0, 0.16) 0px 3px 6px 0px;
+  width: 320px;
+  text-align:center;
+  display: block;
+  align-items: center;
+  margin-left:auto;
+  margin-right:auto;
+  margin-bottom:40px;
+}
+
+.qrcode_header {
+  text-align:center;
+  color:#222222;
+  font-size:14px;
+  font-family: Lato, Avenir, Helvetica, Arial, sans-serif;
+  font-weight: 300;
+  padding-top:36px;
+  padding-bottom: 0px;
+}
+
+.qrcode_image {
+  width: 200px;
+  height: 200px;
+  margin-top: 24px;
+  margin-bottom: 36px;
+  padding-left:60px;
+  padding-right:60px;
+}
+
 
 @media screen and (max-width: 500px) {
   .inner {
@@ -180,10 +212,10 @@
   }
 }
 
-@media only screen 
-  and (min-device-width: 414px) 
-  and (max-device-width: 736px) 
-  and (-webkit-min-device-pixel-ratio: 3) { 
+@media only screen
+and (min-device-width: 414px)
+and (max-device-width: 736px)
+and (-webkit-min-device-pixel-ratio: 3) {
   .title {
     font-size: 20px;
   }
@@ -198,4 +230,3 @@
   }
 
 }
-

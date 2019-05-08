@@ -90,7 +90,7 @@ module.exports = class {
       cp.exec(cmd, (err, out, code) => {
         if(err) {
           log.debug("Failed to stop fw_ss_server", err, {});
-          callback(err);
+          callback();
           return;
         }
 

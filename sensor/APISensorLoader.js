@@ -21,7 +21,7 @@ let config = require('../net2/config.js').getConfig();
 let sensors = [];
 let sensorsHash = {}
 
-function initSensors() {
+function initSensors(eptcloud) {
   let sensorConfigs = config.apiSensors;
 
   if(!sensorConfigs)
@@ -33,8 +33,9 @@ function initSensors() {
       let s = require(fp);
       let ss = new s();
       ss.setConfig(sensorConfigs[sensorName]);
+      ss.eptcloud = eptcloud;
       sensors.push(ss);
-      sensorsHash[sensorName] = ss
+      sensorsHash[sensorName] = ss;
     } catch(err) {
       log.error(`Failed to load sensor: ${sensorName}: ${err}`)
     }
@@ -43,7 +44,7 @@ function initSensors() {
 
 function run() {
   sensors.forEach((s) => {
-    log.info("Installing Sensor:", s.constructor.name, {});
+    log.info("Installing Sensor:", s.constructor.name);
     try {
       s.apiRun()
     } catch(err) {

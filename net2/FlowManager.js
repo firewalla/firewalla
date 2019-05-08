@@ -40,6 +40,9 @@ var flowconfig = {
 
 let flowTool = require('./FlowTool')();
 
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+
 class FlowGraph {
     constructor(name,flowarray) {
          if (flowarray) {
@@ -59,15 +62,16 @@ class FlowGraph {
 
     flowarraySorted(recent) {
         if (recent == true) {
-             this.flowarray.sort(function (a, b) {
-                 return Number(b[1]) - Number(a[1]);
-             })
-             return this.flowarray;
+            // sort by end timestamp in descending order
+            this.flowarray.sort(function (a, b) {
+                return Number(b[1]) - Number(a[1]);
+            })
+            return this.flowarray;
         } else {
-             this.flowarray.sort(function (a, b) {
-                 return Number(a[1]) - Number(b[1]);
-             })
-             return this.flowarray;
+            this.flowarray.sort(function (a, b) {
+                return Number(a[1]) - Number(b[1]);
+            })
+            return this.flowarray;
         }
     }
 
@@ -95,42 +99,44 @@ class FlowGraph {
     }
 
     addRawFlow(flowStart, flowEnd, ob,rb,ct) {
-         let insertindex = 0;
+        let insertindex = 0;
 
-         for (let i in this.flowarray) {
-             let e = this.flowarray[i];
-             if (flowStart < e[0]) {
-                 break;
-             }
-             if (flowStart<e[1]) {
-                 flowStart = e[0];
-                 break;
-             }
-             insertindex = Number(i)+Number(1);
-         }
+        for (let i in this.flowarray) {
+            let e = this.flowarray[i];
+            if (flowStart < e[0]) {
+                break;
+            }
+            if (flowStart<e[1]) {
+                flowStart = e[0];
+                break;
+            }
+            insertindex = Number(i)+Number(1);
+        }
 
-         let removed = Number(0);
-         for (let i = insertindex; i <this.flowarray.length;i++) {
-             let e = this.flowarray[Number(i)];
-             if (e[1]<flowEnd) {
-                 ob += e[2];
-                 rb += e[3];
-                 ct += e[4];
-                 removed++;
-                 continue;
-             } else if (e[1]>=flowEnd) {
-                 ob += e[2];
-                 rb += e[3];
-                 ct += e[4];
-                 flowEnd = e[1];
-                 removed++;
-                 break;
-             }
-         }
+        let removed = Number(0);
+        for (let i = insertindex; i < this.flowarray.length; i++) {
+            let e = this.flowarray[Number(i)];
+            if (e[1] < flowEnd) {
+                ob += e[2];
+                rb += e[3];
+                ct += e[4];
+                removed++;
+                continue;
+            } else if (e[1] >= flowEnd) {
+                if (e[0] <= flowEnd) {
+                    // [flowStart, flowEnd] has overlap with [e[0], e[1]]
+                    ob += e[2];
+                    rb += e[3];
+                    ct += e[4];
+                    flowEnd = e[1];
+                    removed++;
+                }
+                break;
+            }
+        }
 
-         this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
+        this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
     //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
-
     }
 
 }
@@ -147,22 +153,28 @@ module.exports = class FlowManager {
     
 
   // use redis hash to store last 24 hours stats
-  recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, ip) {
+  recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, target) {
     
     if(!downloadBytes || !uploadBytes)
       return Promise.reject(new Error("either downloadBytes or uploadBytes is null"));
     
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let downloadKey = key + ":download";
     let uploadKey = key + ":upload";
     
     timestamp = timestamp - timestamp % 3600; // trim minutes and seconds...
-    let hourOfDay = (timestamp / 3600) % 24;
+    const now = Date.now() / 1000;
+    const currentHour = ((now - now % 3600) / 3600);
+    if (currentHour - timestamp / 3600 > 23) {
+      // rounded timestamp is more than 23 hours ago, which is out of range
+      return Promise.resolve();
+    }
 
+    let hourOfDay = (timestamp / 3600) % 24;
     let downloadValue = JSON.stringify({bytes: downloadBytes, ts: timestamp});
     let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
 
@@ -225,11 +237,11 @@ module.exports = class FlowManager {
     return rclient.existsAsync("stats:last24:download");
   }
   
-  getLast24HoursDownloadsStats(ip) {
+  getLast24HoursDownloadsStats(target) {
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let downloadKey = key + ":download";
 
@@ -241,11 +253,11 @@ module.exports = class FlowManager {
       });
   }
 
-  getLast24HoursUploadsStats(ip) {
+  getLast24HoursUploadsStats(target) {
     let key = 'stats:last24';
     
-    if(ip)
-      key = key + ":" + ip;
+    if(target)
+      key = key + ":" + target;
 
     let uploadKey = key + ":upload";
 
@@ -299,9 +311,9 @@ module.exports = class FlowManager {
   
   
     // stats are 'hour', 'day'
-    // stats:hour:ip_address score=bytes key=_ts-_ts%3600
-    // ip = 0.0.0.0 is system
-  recordStats(ip,type,ts,inBytes,outBytes,callback) {
+    // stats:hour:mac_address score=bytes key=_ts-_ts%3600
+    // target = 0.0.0.0 is system
+  recordStats(target,type,ts,inBytes,outBytes,callback) {
     callback = callback || function() {}
     
         let period = 3600;
@@ -310,8 +322,9 @@ module.exports = class FlowManager {
         } else if (type ==="month") {
             period = 60*60*24*30;
         }
-        let inkey = "stats:"+type+":in:"+ip;
-        let outkey = "stats:"+type+":out:"+ip;
+        let inkey = "stats:"+type+":in:"+target;
+        let outkey = "stats:"+type+":out:"+target;
+        // round down according to period
         let subkey = ts-ts%period;
 
         if (inBytes == null || outBytes == null) {
@@ -331,7 +344,6 @@ module.exports = class FlowManager {
             return;
           }
 
-          let target = ip;
           if(target === "0.0.0.0")
             target = null;
           
@@ -461,8 +473,10 @@ module.exports = class FlowManager {
     
     host.flowsummary.tophour = tsnow;
 
-    let ipList = host.getAllIPs();
-    let downloadPromiseList = ipList.map((ip) => this.getLast24HoursDownloadsStats(ip));
+    const mac = host.o.mac;
+    let downloadPromiseList = [this.getLast24HoursDownloadsStats(mac)]; // you may be wondering why a single element list is used here. 
+    // It is changed from a previous implementation which aggregates stats by ip addresses, and a host may have multiple ip addresses. The promise list is retained to avoid changing code structure too much.
+
 
     return Promise.all(downloadPromiseList)
       .then((results) => {
@@ -471,7 +485,7 @@ module.exports = class FlowManager {
         host.flowsummary.flowinbytes = legacyFormat;
         host.flowsummary.inbytes = this.sumBytes(sum);
 
-        let uploadPromiseList = ipList.map((ip) => this.getLast24HoursUploadsStats(ip));
+        let uploadPromiseList = [this.getLast24HoursUploadsStats(mac)]; // the reason why a single element list is used here is same as the one above.
 
         return Promise.all(uploadPromiseList)
           .then((results) => {
@@ -483,25 +497,23 @@ module.exports = class FlowManager {
       });  
   }
   
-    getStats(iplist,type,from,to,callback) {
+    getStats(target,type,from,to,callback) {
       let outdb = {};
       let indb = {};
       let inbytes = 0;
       let outbytes = 0;
       let lotsofkeys = 24*30*6;  //half months ... of data 
-      log.debug("Getting stats:",type,iplist,from,to);
+      log.debug("Getting stats:",type,target,from,to);
 
       let multi = rclient.multi();
 
       let len = iplist.length;
 
-      iplist.forEach((ip) => {
-        let inkey = "stats:"+type+":in:"+ip;
-        let outkey = "stats:"+type+":out:"+ip;
+      let inkey = "stats:"+type+":in:"+target;
+      let outkey = "stats:"+type+":out:"+target;
         
-        multi.zscan(inkey, 0, 'count', lotsofkeys);
-        multi.zscan(outkey, 0, 'count', lotsofkeys);
-      });
+      multi.zscan(inkey, 0, 'count', lotsofkeys);
+      multi.zscan(outkey, 0, 'count', lotsofkeys);
 
       multi.exec((err, results) => {
 
@@ -614,12 +626,12 @@ module.exports = class FlowManager {
             if (flow.fd == "in") {
                 flow.txratio = flow.ob / flow.rb;
                 if (flow.rb == 0) {
-                    flow.txratio = Math.min(flow.ob, 10);
+                    flow.txratio = Math.min(flow.ob, 10); // ???
                 }
             } else if (flow.fd == "out") {
                 flow.txratio = flow.rb / flow.ob;
                 if (flow.ob == 0) {
-                    flow.txratio = Math.min(flow.rb);
+                    flow.txratio = Math.min(flow.rb); // ???
                 }
             } else {
                 log.error("FlowManager:FlowSummary:Error", flow);
@@ -740,17 +752,11 @@ module.exports = class FlowManager {
     }
 
     summarizeHostBytes(host,from,to,block,callback) {
-            let listip = []
-            listip.push(host.o.ipv4Addr);
-            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-                for (let j in host['ipv6Addr']) {
-                    listip.push(host['ipv6Addr'][j]);
-                }
-            }
+            const target = host.o.mac;
             host.flowsummary = {};
             host.flowsummary.inbytes = 0;
             host.flowsummary.outbytes = 0;
-            this.getStats(listip,block,from,to,callback);
+            this.getStats(target,block,from,to,callback);
     }
 
     summarizeBytes2(hosts,from,to,block,callback) {
@@ -764,145 +770,7 @@ module.exports = class FlowManager {
         });
     }
 
-    // block is in seconds
-    // deprecated 
-/*
-    summarizeBytes(hosts, from, to, block, callback) {
-        let sys = {};
-        sys.inbytes = 0;
-        sys.outbytes = 0;
-        sys.flowinbytes = [];
-        sys.flowoutbytes = [];
-        async.eachLimit(hosts, 5, (host, cb) => {
-            let listip = []
-            listip.push(host.o.ipv4Addr);
-            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-                for (let j in host['ipv6Addr']) {
-                    listip.push(host['ipv6Addr'][j]);
-                }
-            }
-            host.flowsummary = {};
-            host.flowsummary.inbytes = 0;
-            host.flowsummary.outbytes = 0;
-            let flows = [];
-            async.eachLimit(listip, 5, (ip, cb2) => {
-                let key = "flow:conn:" + "in" + ":" + ip;
-                rclient.zrevrangebyscore([key, from, to,'withscores','limit',0,QUERY_MAX_FLOW], (err, result) => {
-                    log.info("SummarizeBytes:",key,from,to,result.length);
-                    host.flowsummary.inbytesArray = [];
-                    host.flowsummary.outbytesArray = [];
-                    if (err == null) {
-                        for (let i=0;i<result.length;i++) {
-                            let o = JSON.parse(result[i]);
-                            if (o == null) {
-                                log.error("Host:Flows:Sorting:Parsing", result[i]);
-                                i++;
-                                continue;
-                            }
-                            o._ts = Number(result[i+1]); 
-                            if (o._ts<to) {
-                                i++;
-                                continue;
-                            }  
-                            i++;
-                            sys.inbytes += o.rb;
-                            sys.outbytes += o.ob;
-                            host.flowsummary.inbytes += o.rb;
-                            host.flowsummary.outbytes += o.ob;
-                            flows.push(o);
-                        }
-                    }
-                    let okey = "flow:conn:" + "out" + ":" + ip;
-                    rclient.zrevrangebyscore([okey, from, to,'withscores','limit',0,QUERY_MAX_FLOW], (err, result) => {
-                        if (err == null) {
-                            for (let i=0;i<result.length;i++) {
-                                let o = JSON.parse(result[i]);
-                                if (o == null) {
-                                    log.error("Host:Flows:Sorting:Parsing", result[i]);
-                                    i++;
-                                    continue;
-                                }
-                                o._ts = Number(result[i+1]);
-                                if (o._ts<to) {
-                                    i++;
-                                    continue;
-                                }
-                                i++;
-                                sys.inbytes += o.ob;
-                                sys.outbytes += o.rb;
-                                host.flowsummary.inbytes += o.ob;
-                                host.flowsummary.outbytes += o.rb;
-                                flows.push(o);
-                            }
-                        }
-                        cb2();
-                    });
-                });
-            }, (err) => {
-                //  break flows down in to blocks
-                let btime = from - block;
-                let flowinbytes = [];
-                let flowoutbytes = [];
-                let currentFlowin = 0;
-                let currentFlowout = 0;
-
-                flows.sort(function (a, b) {
-                    return Number(b._ts) - Number(a._ts);
-                })
-                for (let i in flows) {
-                    let flow = flows[i];
-                    if (flow._ts > btime) {
-                        if (flow.fd == "in") {
-                            currentFlowin += flow.rb;
-                            currentFlowout += flow.ob;
-                        } else {
-                            currentFlowin += flow.ob;
-                            currentFlowout += flow.rb;
-                        }
-                    } else {
-                        flowinbytes.push({
-                            ts: btime,
-                            size: currentFlowin
-                        });
-                        flowoutbytes.push({
-                            ts: btime,
-                            size: currentFlowout
-                        });
-                        let j = flowinbytes.length - 1;
-                        if (sys.flowinbytes[j]) {
-                            sys.flowinbytes[j].size += currentFlowin;
-                        } else {
-                            sys.flowinbytes[j] = {
-                                ts: btime,
-                                size: currentFlowin
-                            };
-                        }
-                        if (sys.flowoutbytes[j]) {
-                            sys.flowoutbytes[j].size += currentFlowout;
-                        } else {
-                            sys.flowoutbytes[j] = {
-                                ts: btime,
-                                size: currentFlowout
-                            };
-                        }
-                        btime = btime - block;
-                        currentFlowin = 0;
-                        currentFlowout = 0;
-                    }
-                }
-                host.flowsummary.flowinbytes = flowinbytes;
-                host.flowsummary.flowoutbytes = flowoutbytes;
-
-                cb();
-            });
-        }, (err) => {
-            log.info(sys);
-            callback(err, sys);
-        });
-    }
-*/
-
-    summarizeActivityFromConnections(flows,callback) {
+    async summarizeActivityFromConnections(flows) {
         let appdb = {};
         let activitydb = {};
 
@@ -960,6 +828,7 @@ module.exports = class FlowManager {
                 f.addFlow(appdb[i][j]);
                 hasFlows = true;
             }
+            // f.name is i, which is the name of app
             flowobj.app[f.name]= f.flowarraySorted(true);
             for (let k in flowobj.app[f.name]) {
                 let _f = flowobj.app[f.name][k];
@@ -980,18 +849,15 @@ module.exports = class FlowManager {
         // linear these flows
        
         if (!hasFlows) {
-            if (callback) {
-                callback(null,null);
-            }
-            return;
+            return null;
         }
 
         //log.info("### Cleaning",flowobj);
 
-        bone.flowgraph("clean", [flowobj],(err,data)=>{
-            if (callback) {
-                callback(err,data);
-            }
+        return new Promise((resolve, reject) => {
+          bone.flowgraph("clean", [flowobj],(err,data)=>{
+            resolve(data);
+          });
         });
     }
 
@@ -1008,6 +874,10 @@ module.exports = class FlowManager {
       }
       if (o.rb == 0 && o.ob ==0) {
         // ignore zero length flows
+        return false;
+      }
+      if (o.f === "s") {
+        // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
         return false;
       }
       
@@ -1051,11 +921,11 @@ module.exports = class FlowManager {
     }
     
     // append to existing flow or create new
-    appendFlow(conndb, flowObject, ip) {
+    appendFlow(conndb, flowObject) {
       let o = flowObject;
       
       let key = "";
-      if (o.sh == ip) {
+      if (o.sh == o.lh) {
         key = o.dh + ":" + o.fd;
       } else {
         key = o.sh + ":" + o.fd;
@@ -1070,10 +940,11 @@ module.exports = class FlowManager {
     }   
   
     // conns in last 24 hours
-    recentOutgoingConnections(ip, interval) {
+    // 2018.11.13 This function is not used
+    recentOutgoingConnections(mac, interval) {
       interval = interval || 3600 * 24;
       
-      let key = "flow:conn:in:" + ip;
+      let key = "flow:conn:in:" + mac;
       let to = new Date() / 1000;
       let from = to - interval;
       
@@ -1090,7 +961,7 @@ module.exports = class FlowManager {
         let conndb = {};
         
         flowObjects.forEach((flowObject) => {
-          this.appendFlow(conndb, flowObject, ip);  
+          this.appendFlow(conndb, flowObject);  
         });
         
         let connArray = [];
@@ -1107,209 +978,214 @@ module.exports = class FlowManager {
       });
     }
     
-    summarizeConnections(ipList, direction, from, to, sortby, hours, resolve, saveStats, callback) {
-        let sorted = [];
-        _async.each(ipList, (ip, cb) => {
-            let key = "flow:conn:" + direction + ":" + ip;
-            rclient.zrevrangebyscore([key, from, to,"LIMIT",0,QUERY_MAX_FLOW], (err, result) => {
-                let conndb = {};
-                let interval = 0;
-                let totalInBytes = 0;
-                let totalOutBytes = 0;
-                if (err == null) {
-                    if (result!=null && result.length>0) 
-                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length);
-                    for (let i in result) {
-                        let o = JSON.parse(result[i]);
-                        
-                        if(!this.isFlowValid(o))
-                          continue;
-                        
-                        if (saveStats) {
-                            if (direction == 'in') {
-                                totalInBytes+=Number(o.rb);
-                                totalOutBytes+=Number(o.ob);
-                                this.recordStats(ip,"hour",o.ts,Number(o.rb),Number(o.ob),null);
-                            } else {
-                                totalInBytes+=Number(o.ob);
-                                totalOutBytes+=Number(o.rb);
-                                this.recordStats(ip,"hour",o.ts,Number(o.ob),Number(o.rb),null);
-                            }
-                        }
-                        let ts = o.ts;
-                        if (o._ts) {
-                            ts = o._ts;
-                        }
-                        if (interval == 0 || ts < interval) {
-                            if (interval == 0) {
-                                interval = Date.now() / 1000;
-                            }
-                            interval = interval - hours * 60 * 60;
-                            for (let j in conndb) {
-                                sorted.push(conndb[j]);
-                            }
-                            conndb = {};
-                        }
-                        let key = "";
-                        if (o.pf) {
-                            for (let k in o.pf) {
-                                // aggregate by dst host and dst port and direction
-                                if (o.sh == ip) {
-                                    key = o.dh + ":" + o.fd + ":" + k;
-                                } else {
-                                    key = o.sh + ":" + o.fd + ":" + k;
-                                }
-                                let flow = conndb[key];
-                                if (flow == null) {
-                                    conndb[key] = o;
-                                    flow = conndb[key];
-                                    let dp = k.split("\.", 2).slice(-1)[0];
-                                    // double check to ensure that k is <proto>.<port_number>
-                                    if (/^\d+$/.test(dp)) {
-                                        // flow.dp already exists in temp flow spec, 
-                                        // however overriding dp here should do no harm
-                                        // in case of stashed flow spec, dp can be parsed from port flow
-                                        // therefore in most cases, dp should be included in summarized flow
-                                        flow.dp = dp;
-                                    }
-                                    flow.rb = o.pf[k].rb;
-                                    flow.ct = o.pf[k].ct;
-                                    flow.ob = o.pf[k].ob;
-                                    flow.du = o.du;
-                                    if (o.pf[k].sp) {
-                                        flow.sp_array = o.pf[k].sp;
-                                    }
-                                } else {
-                                    // use rb, ob and ct in port flow since key contains dst port
-                                    flow.rb += o.pf[k].rb;
-                                    flow.ct += o.pf[k].ct;
-                                    flow.ob += o.pf[k].ob;
-                                    flow.du += o.du;
-                                    if (flow.ts < o.ts) {
-                                        flow.ts = o.ts;
-                                    }
-                                    if (o.pf[k].sp) {
-                                        if (flow.sp_array) {
-                                            flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
-                                        } else {
-                                            flow.sp_array = o.pf[k].sp;
-                                        }
-                                    }
-                                    // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-                                    if (o.flows) {
-                                        if (flow.flows) {
-                                            flow.flows = flow.flows.concat(o.flows);
-                                        } else {
-                                            flow.flows = o.flows;
-                                        }
-                                    }
-                                }
-                                // NOTE: flow.pf will be removed in flowTool.trimFlow...
-                                if (flow.pf[k] != null) {
-                                    flow.pf[k].rb += o.pf[k].rb;
-                                    flow.pf[k].ob += o.pf[k].ob;
-                                    flow.pf[k].ct += o.pf[k].ct;
-                                } else {
-                                    flow.pf[k] = o.pf[k]
-                                }
-                            }
-                        } else {
-                            if (o.sh == ip) {
-                                key = o.dh + ":" + o.fd;
-                            } else {
-                                key = o.sh + ":" + o.fd;
-                            }
-                            //     let key = o.sh+":"+o.dh+":"+o.fd;
-                            let flow = conndb[key];
-                            if (flow == null) {
-                                conndb[key] = o;
-                            } else {
-                                flow.rb += o.rb;
-                                flow.ct += o.ct;
-                                flow.ob += o.ob;
-                                flow.du += o.du;
-                                if (flow.ts < o.ts) {
-                                    flow.ts = o.ts;
-                                }
-                                // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-                                if (o.flows) {
-                                    if (flow.flows) {
-                                        flow.flows = flow.flows.concat(o.flows);
-                                    } else {
-                                        flow.flows = o.flows;
-                                    }
-                                }
-                            }
-                        }
-                    }
+  async summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats) {
+    let sorted = [];
+    try {
+      let key = "flow:conn:" + direction + ":" + mac;
+      const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
+      let conndb = {};
+      let interval = 0;
+      let totalInBytes = 0;
+      let totalOutBytes = 0;
 
-                    if (saveStats) {
-                        let _ts = Math.ceil(Date.now() / 1000);
-                        this.recordStats("0.0.0.0","hour",_ts,totalInBytes,totalOutBytes,null);
-                    }
+      if (result != null && result.length > 0)
+        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length);
+      for (let i in result) {
+        let o = JSON.parse(result[i]);
 
-                    for (let m in conndb) {
-                        sorted.push(conndb[m]);
-                    }
-                    
-                    // trim to reduce size
-                    sorted.forEach(flowTool.trimFlow);                   
-                  
-                    if (result.length>0) 
-                        log.debug("### Flow:Summarize",key,direction,from,to,sortby,hours,resolve,saveStats,result.length,totalInBytes,totalOutBytes);
-                    conndb = {};
-                    cb();
-                } else {
-                    log.error("Unable to search software");
-                    cb();
-                }
-            });
-        }, (err) => {
-            if (err) {
-                log.error("Flow Manager Error");
-                callback(null, sorted);
+        if (!this.isFlowValid(o))
+          continue;
+
+        if (saveStats) {
+          if (direction == 'in') {
+            totalInBytes += Number(o.rb);
+            totalOutBytes += Number(o.ob);
+            // use end timestamp to record stats, so that connection which lasts more than 24 hours will still be recorded 
+            this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+          } else {
+            totalInBytes += Number(o.ob);
+            totalOutBytes += Number(o.rb);
+            this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.ob), Number(o.rb), null);
+          }
+        }
+        let ts = o.ts;
+        if (o._ts) {
+          ts = o._ts;
+        }
+        if (interval == 0 || ts < interval) {
+          if (interval == 0) {
+            interval = Date.now() / 1000;
+          }
+          interval = interval - hours * 60 * 60;
+          for (let j in conndb) {
+            sorted.push(conndb[j]);
+          }
+          conndb = {};
+        }
+        let key = "";
+        if (o.pf) {
+          for (let k in o.pf) {
+            // aggregate by dst host and dst port and direction
+            if (o.sh == o.lh) {
+              key = o.dh + ":" + o.fd + ":" + k;
             } else {
-                log.debug("============ Host:Flows:Sorted", sorted.length);
-                if (sortby == "time") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.ts) - Number(a.ts);
-                    })
-                } else if (sortby == "rxdata") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.rb) - Number(a.rb);
-                    })
-                } else if (sortby == "txdata") {
-                    sorted.sort(function (a, b) {
-                        return Number(b.ob) - Number(a.ob);
-                    })
-                }
-
-                if (resolve == true) {
-                    log.debug("flows:sorted Query dns manager");
-                    dnsManager.query(sorted, "sh", "dh", (err) => {
-                        if (err != null) {
-                            log.error("flow:conn unable to map dns", err);
-                        }
-                        log.debug("flows:sorted Query dns manager returnes");
-                        this.summarizeActivityFromConnections(sorted,(err,activities)=>{
-                            //log.info("Activities",activities);
-                            let _sorted = [];
-                            for (let i in sorted) {
-                                if (flowUtil.checkFlag(sorted[i],'x')) {
-                                    //log.info("DroppingFlow",sorted[i]); 
-                                } else {
-                                    _sorted.push(sorted[i]);
-                                }
-                            }
-                            callback(null, _sorted,activities);
-                        });
-                    });;
-                } else {
-                    callback(null, sorted);
-                }
+              key = o.sh + ":" + o.fd + ":" + k;
             }
-        });
+            let flow = conndb[key];
+            if (flow == null) {
+              conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other. The devil is in the details!!
+              flow = conndb[key];
+              let dp = k.split("\.", 2).slice(-1)[0];
+              // double check to ensure that k is <proto>.<port_number>
+              if (/^\d+$/.test(dp)) {
+                // flow.dp already exists in temp flow spec, 
+                // however overriding dp here should do no harm
+                // in case of stashed flow spec, dp can be parsed from port flow
+                // therefore in most cases, dp should be included in summarized flow
+                flow.dp = dp;
+              }
+              flow.rb = o.pf[k].rb;
+              flow.ct = o.pf[k].ct;
+              flow.ob = o.pf[k].ob;
+              flow.du = o.du;
+              if (o.pf[k].sp) {
+                flow.sp_array = o.pf[k].sp;
+              }
+            } else {
+              // use rb, ob and ct in port flow since key contains dst port
+              flow.rb += o.pf[k].rb;
+              flow.ct += o.pf[k].ct;
+              flow.ob += o.pf[k].ob;
+              flow.du += o.du;
+              if (flow.ts < o.ts) {
+                flow.ts = o.ts;
+              }
+              if (o.pf[k].sp) {
+                if (flow.sp_array) {
+                  flow.sp_array = flow.sp_array.concat(o.pf[k].sp);
+                } else {
+                  flow.sp_array = o.pf[k].sp;
+                }
+              }
+              // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+              if (o.flows) {
+                if (flow.flows) {
+                  flow.flows = flow.flows.concat(o.flows);
+                } else {
+                  flow.flows = o.flows;
+                }
+              }
+            }
+            // NOTE: flow.pf will be removed in flowTool.trimFlow...
+            if (flow.pf[k] != null) {
+              flow.pf[k].rb += o.pf[k].rb;
+              flow.pf[k].ob += o.pf[k].ob;
+              flow.pf[k].ct += o.pf[k].ct;
+            } else {
+              flow.pf[k] = o.pf[k]
+            }
+          }
+        } else {
+          if (o.sh == o.lh) {
+            key = o.dh + ":" + o.fd;
+          } else {
+            key = o.sh + ":" + o.fd;
+          }
+          //     let key = o.sh+":"+o.dh+":"+o.fd;
+          let flow = conndb[key];
+          if (flow == null) {
+            conndb[key] = o;
+          } else {
+            flow.rb += o.rb;
+            flow.ct += o.ct;
+            flow.ob += o.ob;
+            flow.du += o.du;
+            if (flow.ts < o.ts) {
+              flow.ts = o.ts;
+            }
+            // NOTE: flow.flows will be removed in FlowTool.trimFlow...
+            if (o.flows) {
+              if (flow.flows) {
+                flow.flows = flow.flows.concat(o.flows);
+              } else {
+                flow.flows = o.flows;
+              }
+            }
+          }
+        }
+      }
+
+      if (saveStats) {
+        let _ts = Math.ceil(Date.now() / 1000);
+        // Date.now() is used here, which looks inconsistent with per device recordStats, nevertheless the traffic end timestamp and Date.now() should be close
+        this.recordStats("0.0.0.0", "hour", _ts, totalInBytes, totalOutBytes, null);
+      }
+
+      for (let m in conndb) {
+        sorted.push(conndb[m]);
+      }
+
+      // trim to reduce size
+      sorted.forEach(flowTool.trimFlow);
+
+      if (result.length > 0)
+        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, saveStats, result.length, totalInBytes, totalOutBytes);
+      conndb = {};
+    } catch (err) {
+      log.error("Flow Manager Error");
+      return {
+        connections: sorted,
+        activities: null
+      };
     }
+    log.debug("============ Host:Flows:Sorted", sorted.length);
+    if (sortby == "time") {
+      sorted.sort(function (a, b) {
+        return Number(b.ts) - Number(a.ts);
+      })
+    } else if (sortby == "rxdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.rb) - Number(a.rb);
+      })
+    } else if (sortby == "txdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.ob) - Number(a.ob);
+      })
+    }
+
+    if (resolve == true) {
+      log.debug("flows:sorted Query dns manager");
+      return new Promise((resolve, reject) => {
+        dnsManager.query(sorted, "sh", "dh", (err) => {
+          if (err != null) {
+            log.error("flow:conn unable to map dns", err);
+          }
+          log.debug("flows:sorted Query dns manager returnes");
+          (async () => {
+            const activities = await this.summarizeActivityFromConnections(sorted);
+            //log.info("Activities",activities);
+            let _sorted = [];
+            for (let i in sorted) {
+              if (flowUtil.checkFlag(sorted[i], 'x')) {
+                //log.info("DroppingFlow",sorted[i]); 
+              } else {
+                _sorted.push(sorted[i]);
+              }
+            }
+            resolve({
+              connections: _sorted,
+              activities: activities
+            });
+          })();
+        });
+      });
+    } else {
+      return {
+        connections: sorted,
+        activities: null
+      };
+    }
+  }
 
     toStringShort(obj) {
         //  // "{\"ts\":1464328076.816846,\"sh\":\"192.168.2.192\",\"dh\":\"224.0.0.251\",\"ob\":672001,\"rb\":0,\"ct\":1,\"fd\":\"in\",\"lh\":\"192.168.2.192\",\"bl\":3600}"
@@ -1421,4 +1297,18 @@ module.exports = class FlowManager {
         return sorted;
     }
 
+  removeFlowsAll(mac) {
+    // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
+
+    let keys = [
+      'flow:conn:in:' + mac,
+      'flow:conn:out:' + mac,
+      'stats:hour:in:' + mac,
+      'stats:hour:out:' + mac,
+      'stats:last24:' + mac + ':upload',
+      'stats:last24:' + mac + ':download',
+    ];
+
+    return rclient.delAsync(keys);
+  }
 }

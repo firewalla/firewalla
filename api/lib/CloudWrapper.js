@@ -28,7 +28,7 @@ var configFileLocation = "/encipher.config/netbot.config";
 
 var config = jsonfile.readFileSync(configFileLocation);
 if (config == null) {
-  console.log("Unable to read config file");
+  console.log("Unable to read config file", configFileLocation);
   process.exit(1);
 }
 
@@ -80,7 +80,14 @@ module.exports = class {
 
         log.info("[Boot] Setting up communication channel with cloud");
         this.tryingInit();
+
+        // setup API sensors
+        this.sl = require('../../sensor/APISensorLoader.js');
+        this.sl.initSensors(eptcloud);
+        this.sl.run();
       })();
+
+
     }
     return instance;
   }

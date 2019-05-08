@@ -136,7 +136,7 @@ class IPv6DiscoverySensor extends Sensor {
             let v6addr = parts[0];
             let mac = parts[4].toUpperCase();
             if (mac == "FAILED" || mac.length < 16) {
-              cb();
+              async.setImmediate(cb);
             } else {
               /* 
                  hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
@@ -150,10 +150,10 @@ class IPv6DiscoverySensor extends Sensor {
                 _host = [v6addr];
                 macHostMap[mac]=_host;
               }
-              cb()
+              async.setImmediate(cb);
             }
           } else {
-            cb();
+            async.setImmediate(cb);
           }
         }, (err) => {
           for (let mac in macHostMap) {
@@ -162,7 +162,7 @@ class IPv6DiscoverySensor extends Sensor {
 
           // FIXME
           // This is a very workaround activity to send scan done out in 5 seconds
-          // several seconds is necesary to ensure new ip addresses are added
+          // several seconds is necessary to ensure new ip addresses are added
           setTimeout(() => {
             log.info("IPv6 Scan:Done");
             this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});

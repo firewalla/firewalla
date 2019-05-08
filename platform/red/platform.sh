@@ -30,3 +30,10 @@ function get_node_modules_url {
     echo "https://github.com/firewalla/fnm.node8.armv7l"
   fi
 }
+
+
+CURRENT_DIR=$(dirname $0)
+
+function get_brofish_service {
+  echo "${CURRENT_DIR}/files/brofish.service"
+}
