@@ -29,6 +29,9 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const _async = require('async');
 
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 let cpuUsage = 0;
 let memUsage = 0;
 let realMemUsage = 0;
@@ -54,19 +57,19 @@ let diskInfo = null;
 
 let intelQueueSize = 0;
 
-function update() {
+async function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
     cpuUsage = v;
   });
 
-  getRealMemoryUsage();
+  await getRealMemoryUsage();
   getTemp();
-  getConns();
-  getRedisMemoryUsage();
-  getThreadInfo();
-  getIntelQueueSize();
-  getDiskInfo();
+  await getConns();
+  await getRedisMemoryUsage();
+  await getThreadInfo();
+  await getIntelQueueSize();
+  await getDiskInfo();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -98,75 +101,55 @@ async function getThreadInfo() {
 }
 
 function getDiskInfo() {
-  df((err, response) => {
-    if(err) {
-      log.error("Failed to get disk info, err:", err);
-      return;
-    }
+  return new Promise((resolve, reject) => {
+    df((err, response) => {
+      if(err) {
+        log.error("Failed to get disk info", err);
+        resolve();
+        return
+      }
 
-    const disks = response.filter((entry) => {
-      return entry.filesystem.startsWith("/dev/mmc");
-    })
+      const disks = response.filter((entry) => {
+        return entry.filesystem.startsWith("/dev/mmc");
+      })
 
-    diskInfo = disks;
-  });
+      diskInfo = disks;
+
+      resolve();
+    });
+  })
 }
 
 async function getIntelQueueSize() {
-  intelQueueSize = await rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf")
+  intelQueueSize = await rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf");
 }
 
-function getRealMemoryUsage() {
-  let spawn = require('child_process').spawn;
-
-  let prc = null;
-
+async function getRealMemoryUsage() {
   try {
-    prc = spawn('free',  []);
-
-    if (prc == null || prc.stdout == null) {
-      log.error("Failed to spawn process 'free'");
-      return;
+    const res = await exec('free');
+    var lines = res.stdout.split(/\n/g);
+    for(var i = 0; i < lines.length; i++) {
+      lines[i] = lines[i].split(/\s+/);
     }
 
-    prc.stdout.setEncoding('utf8');
-    prc.stdout.on('data', function (data) {
-      var str = data.toString()
-      var lines = str.split(/\n/g);
-      for(var i = 0; i < lines.length; i++) {
-        lines[i] = lines[i].split(/\s+/);
-      }
-
-      usedMem = parseInt(lines[1][2]);
-      allMem = parseInt(lines[1][1]);
-      realMemUsage = 1.0 * usedMem / allMem;
-      log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
-    });
-
+    usedMem = parseInt(lines[1][2]);
+    allMem = parseInt(lines[1][1]);
+    realMemUsage = 1.0 * usedMem / allMem;
+    log.debug("Memory Usage: ", usedMem, " ", allMem, " ", realMemUsage);
   } catch (err) {
-    if(err.code === 'ENOMEM') {
-      log.error("Not enough memory to spawn process 'free':", err);
-    } else {
-      log.error("Failed to spawn process 'free':", err);
-    }
-    // do nothing
+    log.error("Failed to get memory usuage:", err);
   }
-
-
 }
 
 function getTemp() {
-  let tempFile = "/sys/class/thermal/thermal_zone0/temp";
-  fs.readFile(tempFile, (err, data) => {
-    if(err) {
-      log.debug("Temperature is not supported");
-      curTemp = -1;
-    } else {
-      curTemp = parseInt(data);
-      log.debug("Current Temp: ", curTemp);
-      peakTemp = peakTemp > curTemp ? peakTemp : curTemp;
-    }
-  });
+  try {
+    curTemp = platform.getCpuTemperature();
+    log.debug("Current Temp: ", curTemp);
+    peakTemp = peakTemp > curTemp ? peakTemp : curTemp;
+  } catch(err) {
+    log.debug("Failed getting CPU temperature", err);
+    curTemp = -1;
+  }
 }
 
 function getUptime() {
@@ -181,35 +164,34 @@ function getTimestamp() {
   return new Date();
 }
 
-function getConns() {
+async function getConns() {
   // get conns in last 24 hours
-  rclient.keys('flow:conn:*', (err, keys) => {
-    if(err) {
-      conn = -1;
-      return;
+  try {
+    const keys = await rclient.keysAsync('flow:conn:*');
+
+    let results = Promise.all(
+      keys.map(key => rclient.zcountAsync(key, '-inf', '+inf'))
+    );
+
+    if(results.length > 0) {
+      conn = results.reduce((a,b) => (a + b));
+      peakConn = peakConn > conn ? peakConn : conn;
     }
-
-    let countConns = function(key, callback) {
-      rclient.zcount(key, '-inf', '+inf', callback);
-    }
-
-    _async.map(keys, countConns, (err, results) => {
-      if(results.length > 0) {
-        conn = results.reduce((a,b) => (a+b));
-        peakConn = peakConn > conn ? peakConn : conn;
-      }
-    });
-
-  });
+  } catch(err) {
+    log.error("Failed getting connections in 24 hrs", err);
+    conn = -1;
+    return;
+  }
 }
 
-function getRedisMemoryUsage() {
-  let cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
-  require('child_process').exec(cmd, (err, stdout, stderr) => {
-    if(!err) {
-      redisMemory = stdout.replace(/\r?\n$/,'');
-    }
-  });
+async function getRedisMemoryUsage() {
+  const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
+  try {
+    const res = await exec(cmd);
+    redisMemory = res.stdout.replace(/\r?\n$/,'');
+  } catch(err) {
+    log.error("Error getting Redis memory usage", err);
+  }
 }
 
 function getCategoryStats() {
