@@ -98,7 +98,11 @@ module.exports = class SpooferManager {
 
         // feature change listener
         (async () => {
-          if(fc.isFeatureOn("ipv6")) {
+          let ipv6Default = false;
+          if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
+            ipv6Default = true;
+          }
+          if(fc.isFeatureOn("ipv6", ipv6Default)) {
             await this.ipv6On();
           } else {
             await this.ipv6Off();
@@ -179,7 +183,7 @@ module.exports = class SpooferManager {
   async ipv6On() {
     try {
       await exec("touch /home/pi/.firewalla/config/enablev6");
-      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
+      await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn on ipv6", err);
     }
@@ -188,7 +192,7 @@ module.exports = class SpooferManager {
   async ipv6Off() {
     try {
       await exec("rm -f /home/pi/.firewalla/config/enablev6");
-      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
+      await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn off ipv6", err);
     }
@@ -254,7 +258,7 @@ module.exports = class SpooferManager {
       */
     } catch (err) {
       //catch everything here
-      log.error("Failed to stop spoofing:", err, {})
+      log.error("Failed to stop spoofing:", err);
     }
   }
   

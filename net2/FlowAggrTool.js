@@ -274,7 +274,7 @@ class FlowAggrTool {
       let num = tickKeys.length;
 
       if(num <= 0) {
-        log.debug("Nothing to sum for key", sumFlowKey, {});
+        log.debug("Nothing to sum for key", sumFlowKey);
 
         // add a placeholder in redis to avoid duplicated queries
         await (rclient.zaddAsync(sumFlowKey, 0, '_'));
@@ -285,7 +285,7 @@ class FlowAggrTool {
       let args = [sumFlowKey, num];
       args.push.apply(args, tickKeys);
 
-      log.debug("zunionstore args: ", args, {});
+      log.debug("zunionstore args: ", args);
 
       if(options.skipIfExists) {
         let exists = await(rclient.keysAsync(sumFlowKey));
@@ -337,7 +337,7 @@ class FlowAggrTool {
               let json = JSON.parse(payload);
               results.push({ip: json.destIP, device: json.device, count: count});
             } catch(err) {
-              log.error("Failed to parse payload: ", payload, {});
+              log.error("Failed to parse payload: ", payload);
             }
           }
         }
@@ -372,7 +372,7 @@ class FlowAggrTool {
               result.count = count
               results.push(result)
             } catch(err) {
-              log.error("Failed to parse payload: ", payload, {});
+              log.error("Failed to parse payload: ", payload);
             }
           }
         }
@@ -485,7 +485,7 @@ class FlowAggrTool {
         let obj = JSON.parse(dataString)
         return obj
       } catch(err) {
-        log.error("Failed to parse json:", dataString, "err:", err, {})
+        log.error("Failed to parse json:", dataString, "err:", err);
         return null
       }
     })()
@@ -555,7 +555,7 @@ class FlowAggrTool {
         let obj = JSON.parse(dataString)
         return obj
       } catch(err) {
-        log.error("Failed to parse json:", dataString, "err:", err, {})
+        log.error("Failed to parse json:", dataString, "err:", err);
         return null
       }
     })()

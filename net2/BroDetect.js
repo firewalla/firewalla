@@ -61,6 +61,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
+const httpFlow = require('../extension/flow/HttpFlow.js');
+
 /*
  *
  *  config.bro.notice.path {
@@ -157,7 +159,7 @@ module.exports = class {
         log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
         this.httpLog.on('line', (data) => {
           log.debug("Detect:Http", data);
-          this.processHttpData(data);
+          httpFlow.process(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -247,35 +249,13 @@ module.exports = class {
 
       this.enableRecording = true
       this.cc = 0
-      this.ipMacMapping = {};
       this.activeMac = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
     }
   }
-
-  async _getMacByIP(ip) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
-    } else {
-      const mac = await hostTool.getMacByIP(ip);
-      if (mac) {
-        this.ipMacMapping[ip] = mac;
-        return mac;
-      } else {
-        return null;
-      }
-    }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
-  }
-
+  
   async _activeMacHeartbeat() {
     for (let key in this.activeMac) {
       let ip = this.activeMac[key];
@@ -412,7 +392,7 @@ module.exports = class {
         log.debug("Intel:Drop", JSON.parse(data));
       }
     } catch (e) {
-      log.error("Intel:Error Unable to save", e, e.stack, data, {});
+      log.error("Intel:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -476,7 +456,7 @@ module.exports = class {
                   rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
                 }
               } else {
-                log.error("Dns:Error", "unable to update count", err, {});
+                log.error("Dns:Error", "unable to update count", err);
               }
               //  });
             });
@@ -495,17 +475,17 @@ module.exports = class {
               bname: hostname
             };
             //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
-            log.debug("Dns:Redis:Merge", key, changeset, {});
+            log.debug("Dns:Redis:Merge", key, changeset);
             rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
               if (err) {
-                log.error("Discovery:Nmap:Update:Error", err, {});
+                log.error("Discovery:Nmap:Update:Error", err);
               }
             });
           }
         });
       }
     } catch (e) {
-      log.error("Detect:Dns:Error", e, data, e.stack, {});
+      log.error("Detect:Dns:Error", e, data, e.stack);
     }
   }
 
@@ -528,7 +508,7 @@ module.exports = class {
 
       });
     } catch (e) {
-      log.error("Detect:Software:Error", e, data, e.stack, {});
+      log.error("Detect:Software:Error", e, data, e.stack);
     }
   }
 
@@ -568,10 +548,12 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    const hostObject = hostManager.getHostFast(ip)
+    let hostObject = hostManager.getHostFast(ip);
+    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
+      hostObject = hostManager.getHostFast6(ip);
 
-    if(hostObject && hostObject.o && hostObject.o.spoofing == false) {
-      return false
+    if(hostObject && hostObject.o && (!hostObject.o.spoofing || hostObject.o.spoofing === "false")) {
+      return false;
     } else {
       return true;
     }
@@ -986,6 +968,7 @@ module.exports = class {
         pr: obj.proto,
         f: flag,
         flows: [ flowDescriptor ],
+        uids: [obj.uid]
       };
 
       let afobj = this.lookupAppMap(obj.uid);
@@ -1056,7 +1039,7 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        this._getMacByIP(tmpspec.lh).then((mac) => {
+        hostTool.getMacByIPWithCache(tmpspec.lh).then((mac) => {
           if (!mac) {
             log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
             return;
@@ -1122,7 +1105,7 @@ module.exports = class {
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
           try {
-            if (Object.keys(spec._afmap).length>0) {
+            if (spec._afmap && Object.keys(spec._afmap).length>0) {
               for (let i in spec._afmap) {
                 let afobj = this.lookupAppMap(i);
                 if (afobj) {
@@ -1140,8 +1123,9 @@ module.exports = class {
           } catch(e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
+          spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          this._getMacByIP(spec.lh).then((mac) => {
+          hostTool.getMacByIPWithCache(spec.lh).then((mac) => {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
@@ -1239,157 +1223,10 @@ module.exports = class {
       //    return;
       // }
     } catch (e) {
-      log.error("Conn:Error Unable to save", e, data, new Error().stack, {});
+      log.error("Conn:Error Unable to save", e, data, new Error().stack);
     }
 
   }
-
-/*
-{"ts":1506304095.747873,"uid":"CgTsJH3vHBNpMIREU9","id.orig_h":"192.168.2.227","id.orig_p":47292,"id.resp_h":"103.224.182.240","id.resp_p":80,"trans_depth":1,"method":"GET","host":"goooogleadsence.biz","uri":"/","user_agent":"Wget/1.16 (linux-gnueabihf)","request_body_len":0,"response_body_len":0,"status_code":302,"status_msg":"Found","tags":[]}
-*/
-  processHttpData(data) {
-    try {
-      let obj = JSON.parse(data);
-      if (obj == null) {
-        log.error("HTTP:Drop", obj);
-        return;
-      }
-
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
-      let dstPort = obj["id.resp_p"];
-      let flowdir = "in";
-
-      /*
-      if (!iptool.isV4Format(host)) {
-           return;
-      }
-      */
-
-      if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
-        let flowdir = 'local';
-        return;
-      } else if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst) == false) {
-        let flowdir = "out";
-      } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst)) {
-        let flowdir = "in";
-      } else {
-        log.error("HTTP:Error:Drop", data);
-        return;
-      }
-
-
-      // Cache
-      let appCacheObj = {
-        uid: obj.uid,
-        host: obj.host,
-        uri: obj.uri,
-        rqbl: obj.request_body_len,
-        rsbl: obj.response_body_len,
-      };
-
-      this.addAppMap(appCacheObj.uid, appCacheObj);
-
-      // TODO: Need to write code take care to ensure orig host is us ...
-
-      if (obj.user_agent != null) {
-        let agent = useragent.parse(obj.user_agent);
-        if (agent != null) {
-          if (agent.device.family != null) {
-            let okey = "host:user_agent:" + host;
-            let o = {
-              'family': agent.device.family,
-              'os': agent.os.toString(),
-              'ua': obj.user_agent
-            };
-            rclient.sadd(okey, JSON.stringify(o), (err, response) => {
-              rclient.expireat(okey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-              if (err != null) {
-                log.error("HTTP:Save:Error", err, o);
-              } else {
-                log.debug("HTTP:Save:Agent", host, o);
-              }
-            });
-            let ukey = "user_agent:" + host + ":" + dst + ":" + dstPort;
-            rclient.set(ukey, obj.user_agent, (err, response) => {
-              if (err != null) {
-                log.error("USER_AGENT:Save:Error", err, obj.user_agent);
-              } else {
-                rclient.expire(ukey, this.config.bro.activityUserAgent.expires); // a much shorter expiration since this is used to enrich alarm data
-              }
-            });
-            dnsManager.resolveLocalHost(host, (err, data) => {
-              if (data && data.mac) {
-                let mkey = "host:user_agent_m:" + data.mac;
-                rclient.sadd(mkey, JSON.stringify(o), (err, response) => {
-                  rclient.expireat(mkey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-                  if (err != null) {
-                    log.error("HTTP:Save:Error", err, o);
-                  } else {
-                    log.debug("HTTP:Save:Agent", host, o);
-                  }
-                });
-              }
-            });
-
-          }
-        }
-      }
-
-      let key = "flow:http:" + flowdir + ":" + host;
-      let strdata = JSON.stringify(obj);
-      let redisObj = [key, obj.ts, strdata];
-      log.debug("HTTP:Save", redisObj);
-
-      rclient.zadd(redisObj, (err, response) => {
-        if (err == null) {
-          if (this.config.bro.http.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.http.expires);
-          } else {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + 60*30);
-          }
-        } else {
-          log.error("HTTP:Save:Error", err);
-        }
-      });
-
-      /* this piece of code uses http to map dns */
-      if (flowdir === "in" && obj.host) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.host,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1
-        }
-        log.debug("HTTP:Dns:values",key,value,{});
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("HTTP:Dns:Set",rvalue,value);
-            } else {
-              log.error("HTTP:Dns:Error", "unable to update count", err, {});
-            }
-          });
-        });
-      }
-    } catch (e) {
-      log.error("HTTP:Error Unable to save", e, data, e.stack, {});
-    }
-
-  }
-
 
   cleanUpSanDNS(obj) {
     // san.dns may be an array, need to convert it to string to avoid redis warning
@@ -1500,7 +1337,7 @@ module.exports = class {
           'ssl':1,
           'established':obj.established
         }
-        log.debug("SSL:Dns:values",key,value,{});
+        log.debug("SSL:Dns:values",key,value);
         rclient.hgetall(key,(err,entry)=>{
           if (entry && entry.host && entry.ssl) {
             return;
@@ -1518,7 +1355,7 @@ module.exports = class {
               }
               log.debug("SSL:Dns:Set",key,rvalue,value);
             } else {
-              log.error("SSL:Dns:Error", "unable to update count", err, {});
+              log.error("SSL:Dns:Error", "unable to update count", err);
             }
           });
         });
@@ -1526,7 +1363,7 @@ module.exports = class {
 
 
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data, {});
+      log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
 
@@ -1559,7 +1396,7 @@ module.exports = class {
         }
       });
     } catch (e) {
-      log.error("X509:Error Unable to save", e, data, e.stack, {});
+      log.error("X509:Error Unable to save", e, data, e.stack);
     }
   }
 
@@ -1574,17 +1411,17 @@ module.exports = class {
 
       let ip = obj.host;
       if(!ip) {
-        log.error("Invalid knownHosts entry:", obj, {});
+        log.error("Invalid knownHosts entry:", obj);
         return;
       }
 
-      log.info("Found a known host from host:", ip, {});
+      log.info("Found a known host from host:", ip);
 
       l2.getMAC(ip, (err, mac) => {
 
         if(err) {
           // not found, ignore this host
-          log.error("Not able to found mac address for host:", ip, mac, {});
+          log.error("Not able to found mac address for host:", ip, mac);
           return;
         }
 
@@ -1610,15 +1447,17 @@ module.exports = class {
   //"192.168.2.190","dst":"192.168.2.108","peer_descr":"bro","actions":["Notice::ACTION_LOG"],"suppress_for":3600.0,"dropped":false}
 
 
-  processNoticeData(data) {
+  async processNoticeData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
-        // log.error("Notice:Drop", obj);
         return;
       }
-      if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
-        // log.error("Notice:Drop My IP", obj);
+      // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
+      // and the other one will be suppressed. And we'll lost either device/dest info
+      if (obj.src != null && obj.src == sysManager.myIp() ||
+          obj.dst != null && obj.dst == sysManager.myIp())
+      {
         return;
       }
       log.debug("Notice:Processing",obj);
@@ -1627,52 +1466,48 @@ module.exports = class {
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
-        rclient.zadd(redisObj, (err, response) => {
-          if (err) {
-            log.error("Notice:Save:Error", err);
-          } else {
-            if (this.config.bro.notice.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
-            }
-          }
-        });
+        await rclient.zadd(redisObj);
+        if (this.config.bro.notice.expires) {
+          await rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
+        }
         let lh = null;
         let dh = null;
-        if (sysManager.isLocalIP(obj.src)) {
-          lh = obj.src || "0.0.0.0";
-          dh = obj.dst || "0.0.0.0";
-        } else if (sysManager.isLocalIP(obj.dst)) {
-          lh = obj.dst || "0.0.0.0";
-          dh = obj.src || "0.0.0.0";
+
+        // using src & dst by default, or id.orig_h & id.resp_h
+        if (obj.src) {
+          lh = obj.src;
+          dh = obj.dst || (obj['id.orig_h'] == obj.src ? obj['id.resp_h'] : obj['id.orig_h']);
         } else {
-          lh = "0.0.0.0";
-          dh = "0.0.0.0";
+          lh = obj['id.orig_h'];
+          dh = obj['id.resp_h'];
         }
 
-        (async () => {
-          let localIP = lh;
-          let message = obj.msg;
-          let noticeType = obj.note;
-          let timestamp = parseFloat(obj.ts);
+        lh = lh || "0.0.0.0";
+        dh = dh || "0.0.0.0";
 
-          // TODO: create dedicate alarm type for each notice type
-          let alarm = new Alarm.BroNoticeAlarm(timestamp, localIP, noticeType, message, {
-            "p.device.ip": localIP,
-            "p.dest.ip": dh
-          });
+        // make sure lh points to local device
+        if (lh && !sysManager.isLocalIP(lh)) {
+          let tmp = lh;
+          lh = dh;
+          dh = tmp;
+        }
 
-          await broNotice.processNotice(alarm, obj);
+        let message = obj.msg;
+        let noticeType = obj.note;
+        let timestamp = parseFloat(obj.ts);
 
-          am2.enqueueAlarm(alarm);
+        // TODO: create dedicate alarm type for each notice type
+        let alarm = new Alarm.BroNoticeAlarm(timestamp, lh, noticeType, message, {
+          "p.device.ip": lh,
+          "p.dest.ip": dh
+        });
 
-        })().catch((err) => {
-          log.error("Failed to generate alarm:", err, {})
-        })
-      } else {
-        // log.info("Notice:Drop> Notice type " + obj.note + " is ignored");
+        await broNotice.processNotice(alarm, obj);
+
+        am2.enqueueAlarm(alarm);
       }
     } catch (e) {
-      log.error("Notice:Error Unable to save", e,data, e.stack, {});
+      log.error("Notice:Error Unable to save", e, data);
     }
   }
 
@@ -1680,57 +1515,12 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-
-  // recordHit(data) {
-  //     const ts = Math.floor(data.ts)
-  //     const inBytes = data.inBytes
-  //     const outBytes = data.outBytes
-
-  //     timeSeries
-  //     .recordHit('download',ts, Number(inBytes))
-  //     .recordHit('upload',ts, Number(outBytes))
-  // }
-
-  //   recordManyHits(datas) {
-  //       datas.forEach((data) => {
-  //         const ts = Math.floor(data.ts)
-  //         const inBytes = data.inBytes
-  //         const outBytes = data.outBytes
-
-  //         timeSeries.recordHit('download',ts, Number(inBytes))
-  //         timeSeries.recordHit('upload',ts, Number(outBytes))
-  //       })
-
-  //       return new Promise((resolve, reject) => {
-  //         timeSeries.exec(() => {
-  //             resolve()
-  //         })
-  //       })
-  //   }
-
   enableRecordHitsTimer() {
     setInterval(() => {
       timeSeries.exec(() => {})
       this.cc = 0
     }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
   }
-
-  //   recordHits() {
-  //     if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-  //         this.recording = true
-  //         const copy = JSON.parse(JSON.stringify(this.recordCache))
-  //         this.recordCache = []
-  //         async(() => {
-  //             await(this.recordManyHits(copy))
-  //         })().finally(() => {
-  //             this.recording = false
-  //         })
-  //     } else {
-  //         if(this.recording) {
-  //             log.info("still recording......")
-  //         }
-  //     }
-  //   }
 
   recordTraffic(ts, inBytes, outBytes) {
     if(this.enableRecording) {

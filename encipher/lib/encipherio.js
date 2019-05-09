@@ -837,7 +837,7 @@ let legoEptCloud = class {
     
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl, {});
+    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
     this.getKey(gid, (err, key, cacheGroup) => {
       if (err != null && key == null) {
@@ -899,7 +899,7 @@ let legoEptCloud = class {
   }
 
   sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
-    log.debug(msg, {});
+    log.debug(msg);
     let mpackage = {
       'random': this.keygen(),
       'message': msg,
@@ -919,7 +919,7 @@ let legoEptCloud = class {
       let input = new Buffer(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
-          log.error("Failed to compress payload:", err, {});
+          log.error("Failed to compress payload:", err);
           callback(err);
           return;
         }
@@ -1385,7 +1385,7 @@ let legoEptCloud = class {
                 callback(err, null);
                 return;
             }
-            log.info("found rinfo", rinfo, {});
+            log.info("found rinfo", rinfo);
             callback(null, rinfo);
         });
     }

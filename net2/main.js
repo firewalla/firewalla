@@ -155,7 +155,7 @@ function enableFireBlue() {
   // start firemain process only in v2 mode
   cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to start firehttpd:", err, {})
+        log.error("Failed to start firehttpd:", err);
     }
   })
 }
@@ -164,7 +164,7 @@ function disableFireBlue() {
   // stop firehttpd in v1
   cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to stop firehttpd:", err, {})
+        log.error("Failed to stop firehttpd:", err);
     }
   })
 }
@@ -289,7 +289,7 @@ async function run() {
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
       }
     } catch(e) {
     }
@@ -304,7 +304,7 @@ async function run() {
         try {
           if (global.gc) {
             global.gc();
-            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB");
           }
         } catch(e) {
         }

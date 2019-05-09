@@ -93,7 +93,7 @@ class BonjourSensor extends Sensor {
     }
     
     if(this.hostCache[key]) {
-      log.debug("Ignoring duplicated bonjour services from same ip:", key, {});
+      log.debug("Ignoring duplicated bonjour services from same ip:", key);
       return true;
     }
 
@@ -112,13 +112,13 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    log.info("Found a bonjour service from host:", ipv4Addr, service.name, {});
+    log.info("Found a bonjour service from host:", ipv4Addr, service.name);
 
     l2.getMAC(ipv4Addr, (err, mac) => {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
+        log.info("Ignore, not able to found mac address for host:", ipv4Addr, mac, {});
         return;
       }
 
@@ -126,7 +126,7 @@ class BonjourSensor extends Sensor {
         if(ipv4Addr === sysManager.myIp()) { // if the found device is firewalla itself
           mac = sysManager.myMAC()
         } else {
-          log.error("Not able to found mac address for host:", ipv4Addr, mac, {});
+          log.info("Ignore2, not able to found mac address for host:", ipv4Addr, mac, {});
           return;
         }
       }
@@ -176,7 +176,7 @@ class BonjourSensor extends Sensor {
   }
   
   bonjourParse(service) {
-    log.debug("Discover:Bonjour:Parsing:Received", service, {});
+    log.debug("Discover:Bonjour:Parsing:Received", service);
       if (service == null) {
       return;
     }

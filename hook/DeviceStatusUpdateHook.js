@@ -45,9 +45,9 @@ class DeviceStatusUpdateHook extends Hook {
             console.log("mergedHost", mergedHost, {});
             hostTool.updateIPv4Host(mergedHost)
               .then(() => {
-              log.info("Updated host info for device ", mergedHost.bname, "(", mergedHost.ipv4, ")", {});
+              log.info("Updated host info for device ", mergedHost.bname, "(", mergedHost.ipv4, ")");
               }).catch((err) => {
-              log.error("Failed to updateIPv4Host: ", err, {});
+              log.error("Failed to updateIPv4Host: ", err);
             })
           })
       })

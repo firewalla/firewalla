@@ -274,7 +274,7 @@ module.exports = class {
         if (err.code === 'ENOENT') {
           log.info('Dnsmasq: No family_filter.conf, skip remove');
         } else {
-          log.warn('Dnsmasq: Error when remove family_filter.conf', err, {});
+          log.warn('Dnsmasq: Error when remove family_filter.conf', err);
         }
       }
     });
@@ -308,7 +308,7 @@ module.exports = class {
         
         // auto redirect all porn traffic in v2 mode
         categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
-          log.error("Failed to redirect porn traffic, err", err, {})
+          log.error("Failed to redirect porn traffic, err", err);
         })
       } else {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
@@ -316,7 +316,7 @@ module.exports = class {
 
         // auto redirect all porn traffic in v2 mode
         categoryUpdater.iptablesUnredirectCategory("porn").catch((err) => {
-          log.error("Failed to unredirect porn traffic, err", err, {})
+          log.error("Failed to unredirect porn traffic, err", err);
         })
       }
     });
@@ -488,7 +488,7 @@ module.exports = class {
         await mss_client.start()
         log.info("SciSurf feature is enabled successfully");
       })().catch((err) => {
-        log.error("Failed to start scisurf feature:", err, {})
+        log.error("Failed to start scisurf feature:", err);
       })
 
     } else {
@@ -797,7 +797,7 @@ module.exports = class {
           delete newblock._dst;
         }
         policy.push(newblock);
-        log.info("PolicyManager:ModifiedACL", block, newblock, {});
+        log.info("PolicyManager:ModifiedACL", block, newblock);
       }
     }
 

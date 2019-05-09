@@ -98,7 +98,7 @@ module.exports = class {
     callback = callback || function () { }
 
     this.discoverInterfaces((err, list) => {
-      log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces, {});
+      log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
       let found = null;
       async.eachLimit(this.config.discovery.networkInterfaces, 1, (name, cb) => {
         let intf = this.interfaces[name];
@@ -111,12 +111,12 @@ module.exports = class {
           return;
         }
         if (intf != null) {
-          log.debug("Prepare to scan subnet", intf, {});
+          log.debug("Prepare to scan subnet", intf);
           if (this.nmap == null) {
             this.nmap = new Nmap(intf.subnet, false);
           }
 
-          log.info("Start scanning network ", intf.subnet, "to look for mac", mac, {});
+          log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
 
           // intf.subnet is in v4 CIDR notation
           this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
@@ -206,7 +206,7 @@ module.exports = class {
     networkTool.listInterfaces().then(list => {
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
-        log.debug(list[i], {});
+        log.debug(list[i]);
 
         redisobjs.push(list[i].name);
         this.interfaces[list[i].name] = list[i];
@@ -235,7 +235,7 @@ module.exports = class {
         }
       }
 
-      log.debug("Setting redis", redisobjs, {});
+      log.debug("Setting redis", redisobjs);
 
       rclient.hmset(redisobjs, (error, result) => {
         if (error) {
@@ -305,7 +305,7 @@ module.exports = class {
     let key = "host:ip4:" + host.uid;
     log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid, host.ipv4Addr, host.name, host.nname);
     rclient.hgetall(key, (err, data) => {
-      log.debug("Discovery:Nmap:Redis:Search", key, data, {});
+      log.debug("Discovery:Nmap:Redis:Search", key, data);
       if (err == null) {
         if (data != null) {
           let changeset = hostTool.mergeHosts(data, host);
@@ -316,7 +316,7 @@ module.exports = class {
             changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
           }
           changeset['mac'] = host.mac;
-          log.debug("Discovery:Nmap:Redis:Merge", key, changeset, {});
+          log.debug("Discovery:Nmap:Redis:Merge", key, changeset);
           if (data.mac != null && data.mac != host.mac) {
             this.ipChanged(data.mac, host.uid, host.mac);
           }

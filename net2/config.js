@@ -112,7 +112,7 @@ function isFeatureHidden(featureName) {
   }
 }
 
-function isFeatureOn(featureName) {
+function isFeatureOn(featureName, defaultValue) {
   if(isFeatureHidden(featureName)) {
     return false;
   }
@@ -126,7 +126,7 @@ function isFeatureOn(featureName) {
   if(staticFlag !== undefined) {
     return staticFlag
   } else {
-    return false // default disabled
+    return defaultValue || false // default disabled
   }
 }
 

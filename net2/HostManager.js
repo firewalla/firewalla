@@ -245,7 +245,7 @@ class Host {
       //await(this.saveAsync());
       log.debug("HostManager:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     })().catch((err) => {
-      log.error("Got error when cleanV6", err, {})            
+      log.error("Got error when cleanV6", err);            
     });
   }
 
@@ -599,7 +599,7 @@ class Host {
       }
 
       /* put a safety on the spoof */
-      log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr),{});
+      log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr));
       let myIp6 = sysManager.myIp6();
       if (this.ipv6Addr && this.ipv6Addr.length>0) {
         for (let i in this.ipv6Addr) {
@@ -619,7 +619,7 @@ class Host {
               log.error("Failed to spoof", this.ipv6Addr);
             })
             if (i>20) {
-              log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr,{});
+              log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
               break;
             }
             // prototype
@@ -686,7 +686,7 @@ class Host {
           this.callbacks[e](channel, ip2, type, obj);
         }
       } else if (type === "Intel:Detected") {
-        // no need to handle intel here.                
+        // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && this.type === "server") {
         this.applyPolicy((err)=>{
         });
@@ -1052,7 +1052,7 @@ class Host {
       try {
         json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
       } catch(err) {
-        log.error("Failed to parse device type top 3 info:", err, {})
+        log.error("Failed to parse device type top 3 info:", err);
       }          
     }
 
@@ -1305,7 +1305,7 @@ class Host {
     }
     rclient.hmset(key, d, (err, data) => {
       if (err != null) {
-        log.error("Host:Policy:Save:Error", key, err, {});
+        log.error("Host:Policy:Save:Error", key, err);
       }
       if (callback)
         callback(err, null);
@@ -1319,7 +1319,7 @@ class Host {
     rclient.hgetall(key, (err, data) => {
       log.debug("Host:Policy:Load:Debug", key, data);
       if (err != null) {
-        log.error("Host:Policy:Load:Error", key, err, {});
+        log.error("Host:Policy:Load:Error", key, err);
         if (callback) {
           callback(err, null);
         }
@@ -1805,7 +1805,7 @@ module.exports = class HostManager {
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
             if(err) {
-              log.error("Failed to get alarms by ids:", err, {});
+              log.error("Failed to get alarms by ids:", err);
               reject(err);
               return;
             }
@@ -1864,7 +1864,7 @@ module.exports = class HostManager {
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
             if(err) {
-              log.error("Failed to get alarms by ids:", err, {});
+              log.error("Failed to get alarms by ids:", err);
               reject(err);
               return;
             }
@@ -1900,7 +1900,7 @@ module.exports = class HostManager {
         host.loadPolicy(cb)
       }, (err) => {
         if(err) {
-          log.error("Failed to load individual host policy rules", err, {});
+          log.error("Failed to load individual host policy rules", err);
           reject(err);
         } else {
           resolve(json);

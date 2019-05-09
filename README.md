@@ -3,6 +3,7 @@
 * Support https://help.firewalla.com (email help@firewalla.com)
 * Current Stable Branch: release_6_0 
 * Current Beta Branch: beta_6_0
+* Current Alpha Branch: beta_7_0
 * Unstable Branch: master
 
 ## Software Image

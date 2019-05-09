@@ -190,7 +190,7 @@ function dnsRedirect(server, port, cb) {
 
   newRule(rule, (err) => {
     if(err) {
-      log.error("Failed to apply rule:", rule, {})
+      log.error("Failed to apply rule:", rule);
       cb(err)
     } else {
       rule.protocol = 'tcp'
@@ -226,7 +226,7 @@ function dnsUnredirect(server, port, cb) {
 
   newRule(rule, (err) => {
     if(err) {
-      log.error("Failed to apply rule:", rule, {})
+      log.error("Failed to apply rule:", rule);
       cb(err)
     } else {
       rule.protocol = 'tcp'

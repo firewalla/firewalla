@@ -45,6 +45,8 @@ const intelTool = new IntelTool();
 
 const migrationPrefix = "oldDataMigration";
 
+const CommonKeys = require('../net2/CommonKeys.js');
+
 let fConfig = require('../net2/config.js').getConfig();
 
 function arrayDiff(a, b) {
@@ -223,7 +225,7 @@ class OldDataCleanSensor extends Sensor {
         }
       })
     ).then(() => {
-      // log.info("CleanHostData on", keys, "is completed", {});
+      // log.info("CleanHostData on", keys, "is completed");
     })
   }
 
@@ -379,7 +381,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip/, /^intel:url/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -388,6 +390,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("syssumflow", "syssumflow:*");
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
+      await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
@@ -448,7 +451,7 @@ class OldDataCleanSensor extends Sensor {
         }
       }
     } catch (err) {
-      log.error("Failed to migrate host policy rules:", err, {})
+      log.error("Failed to migrate host policy rules:", err);
     }
   }
 
