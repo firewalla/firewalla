@@ -103,8 +103,10 @@ module.exports = class SpooferManager {
             ipv6Default = true;
           }
           if(fc.isFeatureOn("ipv6", ipv6Default)) {
+            await fc.enableDynamicFeature("ipv6"); // ensure dynamic feature flag is set
             await this.ipv6On();
           } else {
+            await fc.disableDynamicFeature("ipv6"); // ensure dynamic feature flag is cleared
             await this.ipv6Off();
           }
           fc.onFeature("ipv6", (feature, status) => {
