@@ -40,7 +40,7 @@ class RecentFlowPlugin extends Sensor {
 
   apiRun() {
     extensionManager.onGet("flow:global:recent", async (msg, options) => {
-      const flows = flowTool.getGlobalRecentConns(options);
+      const flows = await flowTool.getGlobalRecentConns(options);
       return {flows};
     })
   }

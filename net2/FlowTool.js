@@ -525,7 +525,11 @@ class FlowTool {
 
     const key = "flow:global:recent";
     const limit = options.limit || 50;
-    const offset = options.offset || "-inf";
+    let offset = options.offset || "-inf";
+
+    if(offset !== '-inf') {
+      offset = `(${offset}`;
+    }
 
     const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
 
