@@ -30,6 +30,7 @@ const fc = require('../net2/config.js')
 const URL = require("url");
 const bone = require("../lib/Bone");
 const dhcp = require("../extension/dhcp/dhcp.js");
+const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
@@ -1745,13 +1746,13 @@ class netBot extends ControllerBot {
         });
         break;
       case "sysInfo":
-        let si = require('../extension/sysinfo/SysInfo.js');
-        this.simpleTxData(msg, si.getSysInfo(), null, callback);
+        this.simpleTxData(msg, SysInfo.getSysInfo(), null, callback);
         break;
       case "logFiles":
-        let si2 = require('../extension/sysinfo/SysInfo.js');
-        si2.getRecentLogs((err, results) => {
+        SysInfo.getRecentLogs().then(results => {
           this.simpleTxData(msg, results, null, callback);
+        }).catch(err => {
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "scisurfconfig":
